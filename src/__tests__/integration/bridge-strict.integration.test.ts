@@ -61,8 +61,8 @@ describe("Strict Bridge Integration Tests", { timeout: 120000 }, () => {
     // Derive Solana address
     const { Keypair } = await import("@solana/web3.js");
     const bs58 = await import("bs58");
-    const solanaKey = process.env.pk;
-    if (!solanaKey) throw new Error("Missing 'pk' in .env (Solana private key)");
+    const solanaKey = process.env.pk ?? process.env.PACIFICA_PRIVATE_KEY;
+    if (!solanaKey) throw new Error("Missing 'pk' or 'PACIFICA_PRIVATE_KEY' in .env");
     const keypair = Keypair.fromSecretKey(bs58.default.decode(solanaKey));
     solanaAddress = keypair.publicKey.toBase58();
 

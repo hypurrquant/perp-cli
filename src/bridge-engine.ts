@@ -1878,7 +1878,10 @@ export async function executeBestBridge(
     if (!match) throw new Error(`Provider "${provider}" not available for ${srcChain} → ${dstChain}`);
     quote = match;
   } else {
-    quote = await getBestQuote(srcChain, dstChain, amountUsdc, senderAddress, recipientAddress);
+    // Default: prefer deBridge DLN (fastest, ~2s), fallback to best available
+    const quotes = await getAllQuotes(srcChain, dstChain, amountUsdc, senderAddress, recipientAddress);
+    if (quotes.length === 0) throw new Error(`No bridge available for ${srcChain} → ${dstChain}`);
+    quote = quotes.find(q => q.provider === "debridge") ?? quotes[0];
   }
 
   if (quote.provider === "cctp") {
