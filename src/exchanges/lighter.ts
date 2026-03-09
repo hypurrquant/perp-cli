@@ -1,0 +1,898 @@
+import { createRequire } from "node:module";
+import type {
+  ExchangeAdapter,
+  ExchangeMarketInfo,
+  ExchangePosition,
+  ExchangeOrder,
+  ExchangeBalance,
+  ExchangeTrade,
+  ExchangeFundingPayment,
+  ExchangeKline,
+} from "./interface.js";
+
+// Use createRequire to load the CJS build of lighter-sdk
+// (the ESM build has a broken require polyfill that fails on Node built-ins)
+const require = createRequire(import.meta.url);
+type LighterSignerClientType = import("lighter-sdk").LighterSignerClient;
+
+export class LighterAdapter implements ExchangeAdapter {
+  readonly name = "lighter";
+  private _signer!: LighterSignerClientType;
+  private _accountIndex = -1;
+  private _address: string;
+  private _marketMap = new Map<string, number>(); // symbol → marketIndex
+  private _marketDecimals = new Map<string, { size: number; price: number }>(); // symbol → decimals
+  private _evmKey: string;
+  private _apiKey: string;
+  private _accountIndexInit: number;
+  private _baseUrl: string;
+  private _chainId: number;
+  private _testnet: boolean;
+  private _readOnly: boolean;
+
+  /**
+   * @param evmKey    EVM private key (0x-prefixed, 32 bytes) — for deposits & key registration
+   * @param testnet   Use testnet (chain ID 300) instead of mainnet (chain ID 304)
+   * @param opts      Optional: apiKey (40-byte Lighter signing key), accountIndex
+   */
+  constructor(evmKey: string, testnet = false, opts?: { apiKey?: string; accountIndex?: number }) {
+    this._evmKey = evmKey;
+    this._apiKey = opts?.apiKey || process.env.LIGHTER_API_KEY || "";
+    this._accountIndexInit = opts?.accountIndex ?? parseInt(process.env.LIGHTER_ACCOUNT_INDEX || "-1");
+    this._address = "";
+    this._testnet = testnet;
+    this._readOnly = !this._apiKey;
+    this._baseUrl = testnet
+      ? (process.env.LIGHTER_TESTNET_URL || "https://testnet.zklighter.elliot.ai")
+      : "https://mainnet.zklighter.elliot.ai";
+    this._chainId = testnet ? 300 : 304;
+  }
+
+  get signer(): LighterSignerClientType {
+    return this._signer;
+  }
+
+  get accountIndex(): number {
+    return this._accountIndex;
+  }
+
+  get address(): string {
+    return this._address;
+  }
+
+  get evmKey(): string {
+    return this._evmKey;
+  }
+
+  get isReadOnly(): boolean {
+    return this._readOnly;
+  }
+
+  async init(): Promise<void> {
+    // Resolve address and account index from EVM key via REST
+    const { ethers } = await import("ethers");
+    const wallet = new ethers.Wallet(this._evmKey);
+    this._address = wallet.address;
+
+    // Fetch account index from REST API
+    const res = await fetch(`${this._baseUrl}/api/v1/account?by=l1_address&value=${this._address}`);
+    const json = await res.json() as { accounts?: { account_index: number; l1_address: string }[] };
+    if (json.accounts && json.accounts.length > 0) {
+      this._accountIndex = this._accountIndexInit >= 0
+        ? this._accountIndexInit
+        : json.accounts[0].account_index;
+    }
+
+    // Initialize signer for trading if we have an API key
+    if (this._apiKey) {
+      const { LighterSignerClient } = require("lighter-sdk") as typeof import("lighter-sdk");
+      this._signer = new LighterSignerClient({
+        url: this._baseUrl,
+        privateKey: this._apiKey,
+        chainId: this._chainId,
+        accountIndex: this._accountIndex,
+        apiKeyIndex: parseInt(process.env.LIGHTER_API_KEY_INDEX || "3"),
+        loaderType: "wasm",
+      });
+      // Only initialize (load WASM + create client), skip checkClient which does HTTP from WASM
+      await this._signer.initialize();
+      this._readOnly = false;
+    }
+
+    // Build symbol → marketIndex map + decimals from orderBookDetails
+    try {
+      const res = await this.restGet("/orderBookDetails", {}) as {
+        order_book_details?: Array<{
+          symbol: string; market_id: number;
+          size_decimals?: number; price_decimals?: number;
+          market_type?: string;
+        }>;
+      };
+      for (const d of res.order_book_details ?? []) {
+        this._marketMap.set(d.symbol.toUpperCase(), d.market_id);
+        this._marketDecimals.set(d.symbol.toUpperCase(), {
+          size: d.size_decimals ?? 0,
+          price: d.price_decimals ?? 0,
+        });
+      }
+    } catch {
+      // Market map will be empty, use fallback
+    }
+  }
+
+  getMarketIndex(symbol: string): number {
+    const idx = this._marketMap.get(symbol.toUpperCase());
+    if (idx === undefined) throw new Error(`Unknown Lighter market: ${symbol}`);
+    return idx;
+  }
+
+  private async getMarkPrice(symbol: string): Promise<number> {
+    try {
+      const res = await this.restGet("/orderBookDetails", {}) as {
+        order_book_details?: Array<{ symbol: string; last_trade_price?: number }>;
+      };
+      const m = res.order_book_details?.find(d => d.symbol.toUpperCase() === symbol.toUpperCase());
+      return m?.last_trade_price ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private toTicks(symbol: string, size: number, price: number): { baseAmount: number; priceTicks: number } {
+    const dec = this._marketDecimals.get(symbol.toUpperCase()) ?? { size: 0, price: 0 };
+    return {
+      baseAmount: Math.round(size * Math.pow(10, dec.size)),
+      priceTicks: Math.round(price * Math.pow(10, dec.price)),
+    };
+  }
+
+  async getMarkets(): Promise<ExchangeMarketInfo[]> {
+    const markets: ExchangeMarketInfo[] = [];
+
+    try {
+      const res = await this.restGet("/orderBookDetails", {}) as {
+        order_book_details?: Array<{
+          symbol: string;
+          market_id: number;
+          last_trade_price?: number;
+          open_interest?: number | string;
+          daily_base_token_volume?: number | string;
+          daily_quote_token_volume?: number | string;
+          default_initial_margin_fraction?: number;
+          min_initial_margin_fraction?: number;
+          market_type?: string;
+        }>;
+      };
+
+      for (const d of res.order_book_details ?? []) {
+        if (d.market_type !== "perp") continue;
+        // max_leverage from min_initial_margin_fraction (e.g. 400 = 4% margin = 25x)
+        const imf = d.min_initial_margin_fraction ?? d.default_initial_margin_fraction ?? 500;
+        const maxLev = imf > 0 ? Math.floor(10000 / imf) : 50;
+        markets.push({
+          symbol: d.symbol,
+          markPrice: String(d.last_trade_price ?? 0),
+          indexPrice: String(d.last_trade_price ?? 0),
+          fundingRate: "0", // funding rates require auth
+          volume24h: String(d.daily_quote_token_volume ?? 0),
+          openInterest: String(d.open_interest ?? 0),
+          maxLeverage: maxLev,
+        });
+      }
+    } catch { /* non-critical */ }
+
+    return markets;
+  }
+
+  private async fetchAccount(): Promise<Record<string, unknown> | null> {
+    if (!this._address) return null;
+    const res = await this.restGet("/account", {
+      by: "l1_address",
+      value: this._address,
+    }) as { accounts?: Record<string, unknown>[] };
+    const acct = this._accountIndex >= 0
+      ? res.accounts?.find(a => (a as Record<string, unknown>).account_index === this._accountIndex || (a as Record<string, unknown>).index === this._accountIndex)
+      : res.accounts?.[0];
+    return acct ?? res.accounts?.[0] ?? null;
+  }
+
+  async getOrderbook(symbol: string) {
+    try {
+      const marketId = this.getMarketIndex(symbol);
+      const res = await this.restGet("/orderBookOrders", {
+        market_id: String(marketId),
+        limit: "50",
+      }) as { asks?: Record<string, string>[]; bids?: Record<string, string>[] };
+      return {
+        bids: (res.bids ?? []).map((l) => [l.price, l.remaining_base_amount ?? l.size ?? "0"] as [string, string]),
+        asks: (res.asks ?? []).map((l) => [l.price, l.remaining_base_amount ?? l.size ?? "0"] as [string, string]),
+      };
+    } catch {
+      return { bids: [], asks: [] };
+    }
+  }
+
+  async getBalance(): Promise<ExchangeBalance> {
+    const acct = await this.fetchAccount();
+    if (!acct) return { equity: "0", available: "0", marginUsed: "0", unrealizedPnl: "0" };
+
+    const totalAsset = Number(acct.total_asset_value || 0);
+    const available = Number(acct.available_balance || 0);
+    const collateral = Number(acct.collateral || 0);
+    const unrealizedPnl = (acct.positions as unknown as Record<string, unknown>[])?.reduce(
+      (sum: number, p: Record<string, unknown>) => sum + Number(p.unrealized_pnl || 0), 0
+    ) ?? 0;
+
+    return {
+      equity: String(totalAsset),
+      available: String(available),
+      marginUsed: String(Math.max(0, collateral - available)),
+      unrealizedPnl: String(unrealizedPnl),
+    };
+  }
+
+  async getPositions(): Promise<ExchangePosition[]> {
+    const acct = await this.fetchAccount();
+    if (!acct) return [];
+
+    return ((acct.positions as unknown as Record<string, unknown>[]) ?? [])
+      .filter((p: Record<string, unknown>) => Number(p.position || 0) !== 0)
+      .map((p: Record<string, unknown>) => {
+        const posSize = Number(p.position || 0);
+        return {
+          symbol: String(p.symbol || `Market-${p.market_id}`),
+          side: (Number(p.sign) > 0 ? "long" : "short") as "long" | "short",
+          size: String(Math.abs(posSize)),
+          entryPrice: String(p.avg_entry_price || "0"),
+          markPrice: String(
+            posSize !== 0
+              ? (Number(p.position_value || 0) / Math.abs(posSize)).toFixed(4)
+              : "0"
+          ),
+          liquidationPrice: String(p.liquidation_price || "N/A"),
+          unrealizedPnl: String(p.unrealized_pnl || "0"),
+          leverage: Number(p.initial_margin_fraction || 0) > 0
+            ? Math.round(100 / Number(p.initial_margin_fraction))
+            : 1,
+        };
+      });
+  }
+
+  private async getAuthToken(): Promise<string> {
+    if (this._readOnly) throw new Error("Auth requires API key");
+    const deadline = Math.floor(Date.now() / 1000) + 3600;
+    const auth = await this._signer.createAuthToken(deadline) as { authToken: string };
+    return auth.authToken;
+  }
+
+  private async restGetAuth(path: string, params: Record<string, string>): Promise<unknown> {
+    const auth = await this.getAuthToken();
+    params.auth = auth;
+    return this.restGet(path, params);
+  }
+
+  async getOpenOrders(): Promise<ExchangeOrder[]> {
+    if (this._accountIndex < 0 || this._readOnly) return [];
+    try {
+      // Check if account has any orders first
+      const acct = await this.fetchAccount();
+      const totalOrders = Number((acct as Record<string, unknown>)?.total_order_count ?? 0);
+      if (totalOrders === 0) return [];
+
+      // Query each market in parallel (accountActiveOrders requires auth + market_id)
+      const allOrders: ExchangeOrder[] = [];
+      const entries = Array.from(this._marketMap.entries());
+      const results = await Promise.allSettled(
+        entries.map(([sym, marketId]) =>
+          this.restGetAuth("/accountActiveOrders", {
+            account_index: String(this._accountIndex),
+            market_id: String(marketId),
+          }).then(res => ({ sym, orders: ((res as Record<string, unknown>).orders ?? []) as Array<Record<string, unknown>> }))
+        )
+      );
+
+      for (const r of results) {
+        if (r.status !== "fulfilled" || !r.value.orders.length) continue;
+        for (const o of r.value.orders) {
+          allOrders.push({
+            orderId: String(o.order_id ?? o.order_index ?? ""),
+            symbol: String(o.symbol ?? r.value.sym),
+            side: o.is_ask ? ("sell" as const) : ("buy" as const),
+            price: String(o.price ?? "0"),
+            size: String(o.initial_base_amount ?? o.remaining_base_amount ?? "0"),
+            filled: String(o.filled_base_amount ?? "0"),
+            status: String(o.status ?? "open"),
+            type: String(o.type ?? "limit"),
+          });
+        }
+      }
+      return allOrders;
+    } catch {
+      return [];
+    }
+  }
+
+  async marketOrder(symbol: string, side: "buy" | "sell", size: string) {
+    this.ensureSigner();
+    const nonce = await this.getNextNonce();
+    const marketIndex = this.getMarketIndex(symbol);
+    const { baseAmount } = this.toTicks(symbol, parseFloat(size), 0);
+    // Market orders need a max slippage price (buy=high, sell=low)
+    const markPrice = await this.getMarkPrice(symbol);
+    const slippagePrice = side === "buy" ? markPrice * 2 : markPrice * 0.5;
+    const { priceTicks: slippageTicks } = this.toTicks(symbol, 0, slippagePrice);
+    const signed = await this.signOrder({
+      marketIndex,
+      clientOrderIndex: 0,
+      baseAmount,
+      price: Math.max(slippageTicks, 1),
+      isAsk: side === "sell" ? 1 : 0,
+      type: 1, // ORDER_TYPE_MARKET
+      timeInForce: 0, // IOC (Immediate or Cancel)
+      reduceOnly: 0,
+      triggerPrice: 0,
+      orderExpiry: 0, // DEFAULT_IOC_EXPIRY
+      nonce,
+    });
+    return this.sendTx(signed);
+  }
+
+  async limitOrder(symbol: string, side: "buy" | "sell", price: string, size: string) {
+    this.ensureSigner();
+    const nonce = await this.getNextNonce();
+    const marketIndex = this.getMarketIndex(symbol);
+    const { baseAmount, priceTicks } = this.toTicks(symbol, parseFloat(size), parseFloat(price));
+    const signed = await this.signOrder({
+      marketIndex,
+      clientOrderIndex: 0,
+      baseAmount,
+      price: priceTicks,
+      isAsk: side === "sell" ? 1 : 0,
+      type: 0, // ORDER_TYPE_LIMIT
+      timeInForce: 1, // GTT (Good Till Time) — rests on orderbook
+      reduceOnly: 0,
+      triggerPrice: 0,
+      orderExpiry: -1, // DEFAULT_28_DAY_ORDER_EXPIRY (WASM auto-computes 28 days)
+      nonce,
+    });
+    return this.sendTx(signed);
+  }
+
+  async cancelOrder(symbol: string, orderId: string) {
+    this.ensureSigner();
+    const nonce = await this.getNextNonce();
+    const marketIndex = this.getMarketIndex(symbol);
+    const signed = await this._signer.signCancelOrder(marketIndex, parseInt(orderId), nonce);
+    return this.sendTx(signed);
+  }
+
+  async cancelAllOrders(_symbol?: string) {
+    this.ensureSigner();
+    const nonce = await this.getNextNonce();
+    const signed = await this._signer.signCancelAllOrders(0, Math.floor(Date.now() / 1000) + 86400, nonce);
+    return this.sendTx(signed);
+  }
+
+  async modifyOrder(symbol: string, orderId: string, price: string, size: string): Promise<unknown> {
+    this.ensureSigner();
+    const nonce = await this.getNextNonce();
+    const marketIndex = this.getMarketIndex(symbol);
+    const { baseAmount, priceTicks } = this.toTicks(symbol, parseFloat(size), parseFloat(price));
+    const signed = await this._signer.signModifyOrder({
+      marketIndex,
+      index: parseInt(orderId),
+      baseAmount,
+      price: priceTicks,
+      triggerPrice: 0,
+      nonce,
+    });
+    if ((signed as Record<string, unknown>).error) {
+      throw new Error(`Signer: ${(signed as Record<string, unknown>).error}`);
+    }
+    return this.sendTx(signed);
+  }
+
+  async stopOrder(symbol: string, side: "buy" | "sell", size: string, triggerPrice: string, opts?: { limitPrice?: string; reduceOnly?: boolean }): Promise<unknown> {
+    this.ensureSigner();
+    const nonce = await this.getNextNonce();
+    const marketIndex = this.getMarketIndex(symbol);
+    const { baseAmount } = this.toTicks(symbol, parseFloat(size), 0);
+    const { priceTicks: triggerTicks } = this.toTicks(symbol, 0, parseFloat(triggerPrice));
+
+    // If limitPrice given → stop-limit (type 0, GTT), else stop-market (type 1, IOC)
+    const isMarket = !opts?.limitPrice;
+    let priceTicks: number;
+    if (isMarket) {
+      const markPrice = await this.getMarkPrice(symbol);
+      const slippagePrice = side === "buy" ? markPrice * 2 : markPrice * 0.5;
+      priceTicks = this.toTicks(symbol, 0, slippagePrice).priceTicks;
+    } else {
+      priceTicks = this.toTicks(symbol, 0, parseFloat(opts!.limitPrice!)).priceTicks;
+    }
+
+    const signed = await this.signOrder({
+      marketIndex,
+      clientOrderIndex: 0,
+      baseAmount,
+      price: Math.max(priceTicks, 1),
+      isAsk: side === "sell" ? 1 : 0,
+      type: isMarket ? 1 : 0,
+      timeInForce: isMarket ? 0 : 1, // IOC for market, GTT for limit
+      reduceOnly: opts?.reduceOnly ? 1 : 0,
+      triggerPrice: triggerTicks,
+      orderExpiry: isMarket ? 0 : -1,
+      nonce,
+    });
+    return this.sendTx(signed);
+  }
+
+  async updateLeverage(symbol: string, leverage: number, marginMode: "cross" | "isolated" = "cross"): Promise<unknown> {
+    this.ensureSigner();
+    const nonce = await this.getNextNonce();
+    const marketIndex = this.getMarketIndex(symbol);
+    // fraction = initial margin fraction in basis points: 10000/leverage
+    const fraction = Math.round(10000 / leverage);
+    const mode = marginMode === "isolated" ? 1 : 0;
+    const signed = await this._signer.signUpdateLeverage(marketIndex, fraction, mode, nonce);
+    if ((signed as Record<string, unknown>).error) {
+      throw new Error(`Signer: ${(signed as Record<string, unknown>).error}`);
+    }
+    return this.sendTx(signed);
+  }
+
+  async withdraw(amount: number, assetId = 2, routeType = 0): Promise<unknown> {
+    this.ensureSigner();
+    const nonce = await this.getNextNonce();
+    const signed = await this._signer.signWithdraw(amount, assetId, routeType, nonce);
+    return this.sendTx(signed);
+  }
+
+  // ── Interface aliases ──
+
+  async editOrder(symbol: string, orderId: string, price: string, size: string) {
+    return this.modifyOrder(symbol, orderId, price, size);
+  }
+
+  async setLeverage(symbol: string, leverage: number, marginMode: "cross" | "isolated" = "cross") {
+    return this.updateLeverage(symbol, leverage, marginMode);
+  }
+
+  async getRecentTrades(symbol: string, limit = 20): Promise<ExchangeTrade[]> {
+    const marketId = this.getMarketIndex(symbol);
+    const res = await this.restGet("/recentTrades", { market_id: String(marketId), limit: String(limit) }) as Record<string, unknown>;
+    const trades = (res.trades ?? []) as Record<string, unknown>[];
+    return trades.map((t) => ({
+      time: Number(t.timestamp ?? 0) * 1000,
+      symbol,
+      side: t.is_ask ? "sell" as const : "buy" as const,
+      price: String(t.price ?? "0"),
+      size: String(t.base_amount ?? t.amount ?? ""),
+      fee: String(t.fee ?? "0"),
+    }));
+  }
+
+  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string }[]> {
+    const rates = await this.getFundingRates();
+    const r = rates.get(symbol.toUpperCase());
+    if (!r) return [];
+    // Lighter funding-rates is current only, not historical
+    return [{ time: Date.now(), rate: r.rate, price: r.markPrice }];
+  }
+
+  async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
+    const res = await this.getCandles(symbol, interval, startTime, endTime) as Record<string, unknown>;
+    const candles = (res.candles ?? []) as Record<string, unknown>[];
+    return candles.map((c) => ({
+      time: Number(c.start_timestamp ?? c.t ?? 0),
+      open: String(c.open ?? c.o ?? "0"),
+      high: String(c.high ?? c.h ?? "0"),
+      low: String(c.low ?? c.l ?? "0"),
+      close: String(c.close ?? c.c ?? "0"),
+      volume: String(c.base_token_volume ?? c.v ?? ""),
+      trades: Number(c.trades_count ?? c.n ?? 0),
+    }));
+  }
+
+  async getOrderHistory(limit = 30): Promise<ExchangeOrder[]> {
+    const raw = await this._getOrderHistoryRaw() as Record<string, unknown>;
+    const orders = (raw.orders ?? []) as Record<string, unknown>[];
+    return orders.slice(0, limit).map((o) => ({
+      orderId: String(o.order_index ?? o.order_id ?? ""),
+      symbol: String(o.symbol ?? ""),
+      side: o.is_ask ? "sell" as const : "buy" as const,
+      price: String(o.price ?? "0"),
+      size: String(o.initial_base_amount ?? o.base_amount ?? ""),
+      filled: String(o.filled_base_amount ?? "0"),
+      status: String(o.status ?? "done"),
+      type: String(o.type ?? "limit"),
+    }));
+  }
+
+  async getTradeHistory(limit = 30): Promise<ExchangeTrade[]> {
+    const raw = await this._getTradeHistoryRaw(limit) as Record<string, unknown>;
+    const trades = (raw.trades ?? []) as Record<string, unknown>[];
+    return trades.slice(0, limit).map((t) => ({
+      time: Number(t.timestamp ?? 0) * 1000,
+      symbol: String(t.symbol ?? ""),
+      side: t.is_ask ? "sell" as const : "buy" as const,
+      price: String(t.price ?? "0"),
+      size: String(t.base_amount ?? t.amount ?? ""),
+      fee: String(t.fee ?? "0"),
+    }));
+  }
+
+  async getFundingPayments(limit = 30): Promise<ExchangeFundingPayment[]> {
+    const raw = await this._getPositionFundingRaw() as Record<string, unknown>;
+    const items = (raw.funding ?? []) as Record<string, unknown>[];
+    return items.slice(0, limit).map((f) => ({
+      time: Number(f.timestamp ?? 0) * 1000,
+      symbol: String(f.symbol ?? ""),
+      payment: String(f.amount ?? f.payment ?? "0"),
+    }));
+  }
+
+  /**
+   * Get funding rates for all markets.
+   * API: GET /api/v1/funding-rates
+   */
+  async getFundingRates(): Promise<Map<string, { rate: string; markPrice: string }>> {
+    const map = new Map<string, { rate: string; markPrice: string }>();
+    try {
+      const res = await this.restGet("/funding-rates", {}) as {
+        funding_rates?: Array<{ market_id: number; rate: number; symbol: string; funding_rate?: string; mark_price?: string }>;
+      };
+
+      const reverseMap = new Map<number, string>();
+      for (const [sym, idx] of this._marketMap) {
+        reverseMap.set(idx, sym);
+      }
+
+      for (const fr of res.funding_rates ?? []) {
+        const symbol = fr.symbol || reverseMap.get(fr.market_id);
+        if (symbol) {
+          map.set(symbol, {
+            rate: String(fr.rate ?? fr.funding_rate ?? "0"),
+            markPrice: fr.mark_price ?? "0",
+          });
+        }
+      }
+    } catch { /* non-critical */ }
+    return map;
+  }
+
+  /**
+   * Get candle data for a market.
+   */
+  async getCandles(symbol: string, resolution: string, startTime: number, endTime: number, countBack = 100): Promise<unknown> {
+    const marketId = this.getMarketIndex(symbol);
+    return this.restGet("/candles", {
+      market_id: String(marketId),
+      resolution,
+      start_timestamp: String(startTime),
+      end_timestamp: String(endTime),
+      count_back: String(countBack),
+    });
+  }
+
+  /**
+   * Get order history (inactive orders) — raw response.
+   */
+  private async _getOrderHistoryRaw(): Promise<unknown> {
+    if (this._accountIndex < 0 || this._readOnly) return { orders: [] };
+    const allOrders: Record<string, unknown>[] = [];
+    const entries = Array.from(this._marketMap.entries());
+    const results = await Promise.allSettled(
+      entries.map(([sym, marketId]) =>
+        this.restGetAuth("/accountInactiveOrders", {
+          account_index: String(this._accountIndex),
+          market_id: String(marketId),
+        }).then((res) => {
+          const orders = ((res as Record<string, unknown>).orders ?? []) as Record<string, unknown>[];
+          return orders.map((o) => ({ ...o, symbol: o.symbol ?? sym }));
+        })
+      )
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled") allOrders.push(...r.value);
+    }
+    return { orders: allOrders };
+  }
+
+  /**
+   * Get trade history — raw response.
+   */
+  private async _getTradeHistoryRaw(limit = 100): Promise<unknown> {
+    if (this._accountIndex < 0) return { trades: [] };
+    const allTrades: Record<string, unknown>[] = [];
+    const entries = Array.from(this._marketMap.entries());
+    const results = await Promise.allSettled(
+      entries.map(([sym, marketId]) =>
+        this.restGetAuth("/trades", {
+          account_index: String(this._accountIndex),
+          market_id: String(marketId),
+          limit: String(Math.min(limit, 20)),
+        }).then((res) => {
+          const trades = ((res as Record<string, unknown>).trades ?? []) as Record<string, unknown>[];
+          return trades.map((t) => ({ ...t, symbol: t.symbol ?? sym }));
+        })
+      )
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled") allTrades.push(...r.value);
+    }
+    // Sort by timestamp descending
+    allTrades.sort((a, b) => Number(b.timestamp ?? 0) - Number(a.timestamp ?? 0));
+    return { trades: allTrades.slice(0, limit) };
+  }
+
+  /**
+   * Get position funding history — raw response.
+   */
+  private async _getPositionFundingRaw(): Promise<unknown> {
+    if (this._accountIndex < 0) return { funding: [] };
+    const allFunding: Record<string, unknown>[] = [];
+    const entries = Array.from(this._marketMap.entries());
+    const results = await Promise.allSettled(
+      entries.map(([sym, marketId]) =>
+        this.restGetAuth("/positionFunding", {
+          account_index: String(this._accountIndex),
+          market_id: String(marketId),
+        }).then((res) => {
+          const items = ((res as Record<string, unknown>).funding ?? (res as Record<string, unknown>).data ?? []) as Record<string, unknown>[];
+          return items.map((f) => ({ ...f, symbol: f.symbol ?? sym }));
+        })
+      )
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled") allFunding.push(...r.value);
+    }
+    allFunding.sort((a, b) => Number(b.timestamp ?? 0) - Number(a.timestamp ?? 0));
+    return { funding: allFunding };
+  }
+
+  /**
+   * Get PnL chart data.
+   */
+  async getPnl(period = "1d"): Promise<unknown> {
+    return this.restGet("/pnl", {
+      account_index: String(this._accountIndex),
+      period,
+    });
+  }
+
+  /**
+   * Get deposit history.
+   */
+  async getDepositHistory(): Promise<unknown> {
+    return this.restGet("/deposit_history", {
+      l1_address: this._address,
+    });
+  }
+
+  /**
+   * Get withdrawal history.
+   */
+  async getWithdrawHistory(): Promise<unknown> {
+    return this.restGet("/withdraw_history", {
+      account_index: String(this._accountIndex),
+    });
+  }
+
+  /**
+   * Get transfer history.
+   */
+  async getTransferHistory(): Promise<unknown> {
+    return this.restGet("/transfer_history", {
+      account_index: String(this._accountIndex),
+    });
+  }
+
+  /**
+   * Get asset details.
+   */
+  async getAssetDetails(assetId?: number): Promise<unknown> {
+    const params: Record<string, string> = {};
+    if (assetId !== undefined) params.asset_id = String(assetId);
+    return this.restGet("/assetDetails", params);
+  }
+
+  /**
+   * Get exchange metrics.
+   */
+  async getExchangeMetrics(symbol?: string): Promise<unknown> {
+    const params: Record<string, string> = {};
+    if (symbol) params.symbol = symbol;
+    return this.restGet("/exchangeMetrics", params);
+  }
+
+  /**
+   * Get account limits.
+   */
+  async getAccountLimits(): Promise<unknown> {
+    return this.restGet("/accountLimits", {
+      account_index: String(this._accountIndex),
+    });
+  }
+
+  /**
+   * Create CCTP intent address for cross-chain deposit.
+   */
+  async createIntentAddress(chainId: number): Promise<unknown> {
+    const res = await fetch(`${this._baseUrl}/api/v1/createIntentAddress`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        chain_id: String(chainId),
+        from_addr: this._address,
+        amount: "0",
+        is_external_deposit: "true",
+      }),
+    });
+    if (!res.ok) throw new Error(`createIntentAddress failed: ${await res.text()}`);
+    return res.json();
+  }
+
+  /**
+   * Use a referral code.
+   */
+  async useReferralCode(code: string): Promise<unknown> {
+    // Referral codes are typically set via the web interface or REST API
+    return this.restGet("/referral/use", { code });
+  }
+
+  /**
+   * Direct REST GET helper.
+   */
+  private async getNextNonce(): Promise<number> {
+    const apiKeyIndex = parseInt(process.env.LIGHTER_API_KEY_INDEX || "3");
+    const res = await this.restGet("/nextNonce", {
+      account_index: String(this._accountIndex),
+      api_key_index: String(apiKeyIndex),
+    }) as { nonce?: number; next_nonce?: number };
+    return res.nonce ?? res.next_nonce ?? 0;
+  }
+
+  private async signOrder(params: Parameters<LighterSignerClientType["signCreateOrder"]>[0]): Promise<{ txType?: number; txInfo?: string; txHash?: string }> {
+    try {
+      const result = await this._signer.signCreateOrder(params);
+      if ((result as Record<string, unknown>).error) {
+        throw new Error(`Signer: ${(result as Record<string, unknown>).error}`);
+      }
+      return result;
+    } catch (e: unknown) {
+      if (e instanceof Error) throw e;
+      if (typeof e === "object" && e !== null && "error" in e) {
+        throw new Error(`Signer: ${(e as Record<string, string>).error}`);
+      }
+      throw new Error(`Signer: ${JSON.stringify(e)}`);
+    }
+  }
+
+  private async sendTx(signed: { txType?: number; txInfo?: string; txHash?: string; error?: string }): Promise<unknown> {
+    if (signed.error) throw new Error(`Signer error: ${signed.error}`);
+    if (!signed.txInfo) throw new Error("Signer returned empty txInfo");
+    const res = await fetch(`${this._baseUrl}/api/v1/sendTx`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        tx_type: String(signed.txType ?? 0),
+        tx_info: signed.txInfo,
+      }),
+    });
+    const json = await res.json() as { code: number; message?: string; tx_hash?: string };
+    if (json.code !== 200) throw new Error(`sendTx failed: ${json.message ?? JSON.stringify(json)}`);
+    return json;
+  }
+
+  private async restGet(path: string, params: Record<string, string>): Promise<unknown> {
+    const url = new URL(`${this._baseUrl}/api/v1${path}`);
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    const res = await fetch(url.toString());
+    if (!res.ok) throw new Error(`GET ${path} failed (${res.status}): ${await res.text()}`);
+    return res.json();
+  }
+
+  private ensureSigner(): void {
+    if (this._readOnly) {
+      throw new Error(
+        "This command requires a Lighter API key. Run `perp -e lighter manage setup-api-key` first, " +
+        "then set LIGHTER_API_KEY in your .env"
+      );
+    }
+  }
+
+  private static async getWasmOps() {
+    const { WasmLoader } = require("lighter-sdk") as typeof import("lighter-sdk");
+    const loader = WasmLoader.getInstance();
+    await loader.load({});
+    return loader.getOperations();
+  }
+
+  /**
+   * Generate a new Lighter API key pair using the WASM signer.
+   * Returns { privateKey, publicKey } (both 0x-prefixed, 40 bytes).
+   */
+  static async generateApiKey(seed?: string): Promise<{ privateKey: string; publicKey: string }> {
+    const ops = await LighterAdapter.getWasmOps();
+    const result = (ops as unknown as Record<string, (s: string) => { privateKey: string; publicKey: string; err?: string }>)
+      .GenerateAPIKey(seed ?? `pacifica-cli-${Date.now()}-${Math.random()}`);
+    if (result.err) throw new Error(`GenerateAPIKey failed: ${result.err}`);
+    return { privateKey: result.privateKey, publicKey: result.publicKey };
+  }
+
+  /**
+   * Generate an API key and register it on-chain via ChangePubKey.
+   * Uses WASM signer to sign + ETH key for L1 signature.
+   * Returns the generated key pair.
+   */
+  async setupApiKey(apiKeyIndex = 2): Promise<{ privateKey: string; publicKey: string }> {
+    const { ethers } = await import("ethers");
+
+    // 1. Generate key pair
+    const { privateKey, publicKey } = await LighterAdapter.generateApiKey();
+
+    // 2. Get nonce from API
+    const nonceRes = await this.restGet("/nextNonce", {
+      account_index: String(this._accountIndex),
+      api_key_index: String(apiKeyIndex),
+    }) as { next_nonce?: number };
+    const nonce = nonceRes.next_nonce ?? 0;
+
+    // 3. Create signer client with new key and sign ChangePubKey
+    const ops = await LighterAdapter.getWasmOps();
+    const opsAny = ops as unknown as Record<string, (...args: unknown[]) => unknown>;
+
+    // CreateClient with the new API key
+    opsAny.CreateClient(
+      this._baseUrl,
+      privateKey,
+      this._chainId,
+      apiKeyIndex,
+      this._accountIndex,
+    );
+
+    // Sign ChangePubKey
+    const signed = await (opsAny.SignChangePubKey as (
+      pubKey: string, nonce: number, apiKeyIdx: number, acctIdx: number
+    ) => Promise<{ txType?: number; txInfo?: string; txHash?: string; messageToSign?: string; error?: string }>)(
+      publicKey, nonce, apiKeyIndex, this._accountIndex
+    );
+
+    if (signed.error) throw new Error(`SignChangePubKey failed: ${signed.error}`);
+    if (!signed.txInfo || !signed.messageToSign) {
+      throw new Error("SignChangePubKey returned incomplete response");
+    }
+
+    // 4. Sign messageToSign with ETH key (EIP-191 personal_sign)
+    const wallet = new ethers.Wallet(this._evmKey);
+    const l1Sig = await wallet.signMessage(signed.messageToSign);
+
+    // 5. Add L1Sig to txInfo
+    const txInfo = JSON.parse(signed.txInfo);
+    txInfo.L1Sig = l1Sig;
+
+    // 6. Submit to Lighter API
+    const sendRes = await fetch(`${this._baseUrl}/api/v1/sendTx`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        tx_type: String(signed.txType ?? 0),
+        tx_info: JSON.stringify(txInfo),
+      }),
+    });
+
+    if (!sendRes.ok) {
+      const errText = await sendRes.text();
+      throw new Error(`ChangePubKey sendTx failed (${sendRes.status}): ${errText}`);
+    }
+
+    const result = await sendRes.json() as { code: number; message?: string; tx_hash?: string };
+    if (result.code !== 200) {
+      throw new Error(`ChangePubKey failed: ${result.message ?? JSON.stringify(result)}`);
+    }
+
+    return { privateKey, publicKey };
+  }
+
+  // No longer need getApi() — all reads go through REST, all writes through signer + sendTx
+}

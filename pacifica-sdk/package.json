@@ -1,0 +1,28 @@
+{
+  "name": "@pacifica/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.0",
+    "bs58": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.0"
+  }
+}

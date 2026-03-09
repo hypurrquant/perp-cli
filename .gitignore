@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+.serena/
+pacifica-sdk/node_modules/
+pacifica-sdk/dist/
+pacifica-sdk/.turbo/
