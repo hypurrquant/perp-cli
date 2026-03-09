@@ -4,6 +4,3 @@ dist/
 .env
 .env.*
 .serena/
-pacifica-sdk/node_modules/
-pacifica-sdk/dist/
-pacifica-sdk/.turbo/

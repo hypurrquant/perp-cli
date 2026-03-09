@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { Command } from "commander";
 import chalk from "chalk";
-import type { Network } from "@pacifica/sdk";
+import type { Network } from "./pacifica/index.js";
 import { loadPrivateKey, parseSolanaKeypair, type Exchange } from "./config.js";
 import { PacificaAdapter } from "./exchanges/pacifica.js";
 import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";

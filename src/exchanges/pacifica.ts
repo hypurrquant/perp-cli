@@ -1,6 +1,6 @@
 import { Keypair } from "@solana/web3.js";
 import nacl from "tweetnacl";
-import { PacificaClient, type Network } from "@pacifica/sdk";
+import { PacificaClient, type Network } from "../pacifica/index.js";
 import type {
   ExchangeAdapter,
   ExchangeMarketInfo,

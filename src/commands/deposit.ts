@@ -3,7 +3,7 @@ import chalk from "chalk";
 import { printJson, formatUsd, jsonOk } from "../utils.js";
 import type { ExchangeAdapter } from "../exchanges/interface.js";
 import { PacificaAdapter } from "../exchanges/pacifica.js";
-import type { Network } from "@pacifica/sdk";
+import type { Network } from "../pacifica/index.js";
 
 const DEFAULT_RELAYER = "http://localhost:3100";
 

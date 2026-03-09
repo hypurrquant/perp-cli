@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { PacificaWSClient, type Network } from "@pacifica/sdk";
+import { PacificaWSClient, type Network } from "../pacifica/index.js";
 import chalk from "chalk";
 import { formatUsd, formatPercent } from "../utils.js";
 
