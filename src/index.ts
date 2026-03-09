@@ -85,9 +85,7 @@ async function getAdapter(): Promise<ExchangeAdapter> {
       const keypair = parseSolanaKeypair(pk);
       const pacNetwork = (isTestnet ? "testnet" : "mainnet") as Network;
       const settings = loadSettings();
-      const builderCode = settings.referrals
-        ? (process.env.PACIFICA_BUILDER_CODE || process.env.NEXT_PUBLIC_BUILDER_CODE || settings.referralCodes.pacifica)
-        : "";
+      const builderCode = process.env.PACIFICA_BUILDER_CODE || settings.referralCodes.pacifica || "PERPCLI";
       _pacificaAdapter = new PacificaAdapter(keypair, pacNetwork, builderCode);
       _adapter = _pacificaAdapter;
       break;
@@ -180,9 +178,7 @@ async function getAdapterForExchange(exchange: string): Promise<ExchangeAdapter>
       const keypair = parseSolanaKeypair(pk);
       const pacNetwork = (isTestnet ? "testnet" : "mainnet") as Network;
       const s1 = loadSettings();
-      const builderCode = s1.referrals
-        ? (process.env.PACIFICA_BUILDER_CODE || process.env.NEXT_PUBLIC_BUILDER_CODE || s1.referralCodes.pacifica)
-        : "";
+      const builderCode = process.env.PACIFICA_BUILDER_CODE || s1.referralCodes.pacifica || "PERPCLI";
       _pacificaAdapter = new PacificaAdapter(keypair, pacNetwork, builderCode);
       if (!_adapter) _adapter = _pacificaAdapter;
       return _pacificaAdapter;
