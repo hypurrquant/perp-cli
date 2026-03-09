@@ -499,9 +499,26 @@ export function registerTradeCommands(
     .action(async (symbol: string, leverage: string, opts: { isolated?: boolean }) => {
       const adapter = await getAdapter();
       const mode = opts.isolated ? "isolated" : "cross";
-      const result = await adapter.setLeverage(symbol.toUpperCase(), parseInt(leverage), mode);
-      if (isJson()) return printJson(jsonOk(result));
-      console.log(chalk.green(`\n  Leverage set to ${leverage}x (${mode}) for ${symbol.toUpperCase()} on ${adapter.name}.\n`));
+      try {
+        const result = await adapter.setLeverage(symbol.toUpperCase(), parseInt(leverage), mode);
+
+        logExecution({
+          type: "rebalance", exchange: adapter.name, symbol: symbol.toUpperCase(), side: mode,
+          size: leverage, status: "success", dryRun: false,
+          meta: { action: "set_leverage", leverage: parseInt(leverage), mode },
+        });
+
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.green(`\n  Leverage set to ${leverage}x (${mode}) for ${symbol.toUpperCase()} on ${adapter.name}.\n`));
+      } catch (err) {
+        logExecution({
+          type: "rebalance", exchange: adapter.name, symbol: symbol.toUpperCase(), side: mode,
+          size: leverage, status: "failed", dryRun: false,
+          error: err instanceof Error ? err.message : String(err),
+          meta: { action: "set_leverage", leverage: parseInt(leverage), mode },
+        });
+        throw err;
+      }
     });
 
   // ── Grid Bot (shortcut with --background) ──

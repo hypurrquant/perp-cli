@@ -4,6 +4,7 @@ import { printJson, formatUsd, jsonOk } from "../utils.js";
 import type { ExchangeAdapter } from "../exchanges/interface.js";
 import { PacificaAdapter } from "../exchanges/pacifica.js";
 import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
+import { logExecution } from "../execution-log.js";
 
 export function registerWithdrawCommands(
   program: Command,
@@ -32,16 +33,32 @@ export function registerWithdrawCommands(
         console.log(`  Destination: ${dest}`);
       }
 
-      const result = await adapter.sdk.withdraw(
-        { amount: String(amountNum), dest_address: dest },
-        adapter.publicKey,
-        adapter.signer
-      );
+      try {
+        const result = await adapter.sdk.withdraw(
+          { amount: String(amountNum), dest_address: dest },
+          adapter.publicKey,
+          adapter.signer
+        );
 
-      if (isJson()) return printJson(jsonOk(result));
-      console.log(chalk.green(`\n  Withdrawal submitted!`));
-      console.log(`  Amount: $${formatUsd(amountNum)} USDC`);
-      console.log(chalk.gray(`\n  Funds arrive in your Solana wallet shortly.\n`));
+        logExecution({
+          type: "bridge", exchange: "pacifica", symbol: "USDC", side: "withdraw",
+          size: String(amountNum), status: "success", dryRun: false,
+          meta: { action: "withdraw", destination: dest },
+        });
+
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.green(`\n  Withdrawal submitted!`));
+        console.log(`  Amount: $${formatUsd(amountNum)} USDC`);
+        console.log(chalk.gray(`\n  Funds arrive in your Solana wallet shortly.\n`));
+      } catch (err) {
+        logExecution({
+          type: "bridge", exchange: "pacifica", symbol: "USDC", side: "withdraw",
+          size: String(amountNum), status: "failed", dryRun: false,
+          error: err instanceof Error ? err.message : String(err),
+          meta: { action: "withdraw", destination: dest },
+        });
+        throw err;
+      }
     });
 
   // ── Hyperliquid ──
@@ -72,12 +89,28 @@ export function registerWithdrawCommands(
         process.exit(1);
       }
 
-      const result = await adapter.withdraw(String(amountNum), dest);
+      try {
+        const result = await adapter.withdraw(String(amountNum), dest);
 
-      if (isJson()) return printJson(jsonOk(result));
-      console.log(chalk.green(`\n  Withdrawal submitted!`));
-      console.log(`  Amount: $${formatUsd(amountNum)} USDC`);
-      console.log(chalk.gray(`\n  Processing may take a few minutes.\n`));
+        logExecution({
+          type: "bridge", exchange: "hyperliquid", symbol: "USDC", side: "withdraw",
+          size: String(amountNum), status: "success", dryRun: false,
+          meta: { action: "withdraw", destination: dest },
+        });
+
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.green(`\n  Withdrawal submitted!`));
+        console.log(`  Amount: $${formatUsd(amountNum)} USDC`);
+        console.log(chalk.gray(`\n  Processing may take a few minutes.\n`));
+      } catch (err) {
+        logExecution({
+          type: "bridge", exchange: "hyperliquid", symbol: "USDC", side: "withdraw",
+          size: String(amountNum), status: "failed", dryRun: false,
+          error: err instanceof Error ? err.message : String(err),
+          meta: { action: "withdraw", destination: dest },
+        });
+        throw err;
+      }
     });
 
   // ── Lighter ──
@@ -102,12 +135,28 @@ export function registerWithdrawCommands(
         console.log(`  Address: ${adapter.address}`);
       }
 
-      const result = await adapter.withdraw(amountNum, parseInt(opts.assetId), parseInt(opts.route));
+      try {
+        const result = await adapter.withdraw(amountNum, parseInt(opts.assetId), parseInt(opts.route));
 
-      if (isJson()) return printJson(jsonOk(result));
-      console.log(chalk.green(`\n  Withdrawal submitted!`));
-      console.log(`  Amount: $${formatUsd(amountNum)} USDC`);
-      console.log(chalk.gray(`\n  Standard withdrawal takes ~12 hours. Use Lighter web for fast withdrawal.\n`));
+        logExecution({
+          type: "bridge", exchange: "lighter", symbol: "USDC", side: "withdraw",
+          size: String(amountNum), status: "success", dryRun: false,
+          meta: { action: "withdraw" },
+        });
+
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.green(`\n  Withdrawal submitted!`));
+        console.log(`  Amount: $${formatUsd(amountNum)} USDC`);
+        console.log(chalk.gray(`\n  Standard withdrawal takes ~12 hours. Use Lighter web for fast withdrawal.\n`));
+      } catch (err) {
+        logExecution({
+          type: "bridge", exchange: "lighter", symbol: "USDC", side: "withdraw",
+          size: String(amountNum), status: "failed", dryRun: false,
+          error: err instanceof Error ? err.message : String(err),
+          meta: { action: "withdraw" },
+        });
+        throw err;
+      }
     });
 
   // ── Transfer (HL internal) ──

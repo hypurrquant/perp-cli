@@ -4,6 +4,7 @@ import { printJson, formatUsd, jsonOk } from "../utils.js";
 import type { ExchangeAdapter } from "../exchanges/interface.js";
 import { PacificaAdapter } from "../exchanges/pacifica.js";
 import type { Network } from "../pacifica/index.js";
+import { logExecution } from "../execution-log.js";
 
 const DEFAULT_RELAYER = "http://localhost:3100";
 
@@ -45,59 +46,75 @@ export function registerDepositCommands(
         const adapter = await getAdapter();
         if (!(adapter instanceof PacificaAdapter)) throw new Error("Requires --exchange pacifica");
 
-        // 1. Get sponsored TX from relayer
-        const buildRes = await fetch(`${getRelayerUrl()}/deposit/pacifica/build`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userPubkey: adapter.keypair.publicKey.toBase58(),
-            amount: amountNum,
-            testnet: getNetwork() === "testnet",
-          }),
-        });
+        try {
+          // 1. Get sponsored TX from relayer
+          const buildRes = await fetch(`${getRelayerUrl()}/deposit/pacifica/build`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userPubkey: adapter.keypair.publicKey.toBase58(),
+              amount: amountNum,
+              testnet: getNetwork() === "testnet",
+            }),
+          });
 
-        if (!buildRes.ok) {
-          const err = await buildRes.json() as Record<string, string>;
-          throw new Error(err.error || "Relayer build failed");
+          if (!buildRes.ok) {
+            const err = await buildRes.json() as Record<string, string>;
+            throw new Error(err.error || "Relayer build failed");
+          }
+
+          const { transaction, fee, netAmount } = (await buildRes.json()) as {
+            transaction: string; fee: number; netAmount: number;
+          };
+
+          if (!isJson()) {
+            console.log(`  Fee:       $${formatUsd(fee)} (gas sponsored)`);
+            console.log(`  Net:       $${formatUsd(netAmount)} to Pacifica\n`);
+          }
+
+          // 2. User signs the TX
+          const { Transaction } = await import("@solana/web3.js");
+          const tx = Transaction.from(Buffer.from(transaction, "base64"));
+          tx.partialSign(adapter.keypair);
+          const signed = tx.serialize().toString("base64");
+
+          // 3. Submit via relayer
+          const submitRes = await fetch(`${getRelayerUrl()}/deposit/pacifica/submit`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              signedTransaction: signed,
+              testnet: getNetwork() === "testnet",
+            }),
+          });
+
+          if (!submitRes.ok) {
+            const err = await submitRes.json() as Record<string, string>;
+            throw new Error(err.error || "Submit failed");
+          }
+
+          const result = (await submitRes.json()) as { signature: string };
+
+          logExecution({
+            type: "bridge", exchange: "pacifica", symbol: "USDC", side: "deposit",
+            size: String(amountNum), status: "success", dryRun: false,
+            meta: { action: "deposit", method: "relay", signature: result.signature },
+          });
+
+          if (isJson()) return printJson(jsonOk({ ...result, fee, netAmount, method: "relay" }));
+          console.log(chalk.green(`  Deposit confirmed!`));
+          console.log(`  Signature: ${result.signature}`);
+          console.log(chalk.gray(`\n  Gas: FREE (relayer sponsored)\n`));
+          return;
+        } catch (err) {
+          logExecution({
+            type: "bridge", exchange: "pacifica", symbol: "USDC", side: "deposit",
+            size: String(amountNum), status: "failed", dryRun: false,
+            error: err instanceof Error ? err.message : String(err),
+            meta: { action: "deposit", method: "relay" },
+          });
+          throw err;
         }
-
-        const { transaction, fee, netAmount } = (await buildRes.json()) as {
-          transaction: string; fee: number; netAmount: number;
-        };
-
-        if (!isJson()) {
-          console.log(`  Fee:       $${formatUsd(fee)} (gas sponsored)`);
-          console.log(`  Net:       $${formatUsd(netAmount)} to Pacifica\n`);
-        }
-
-        // 2. User signs the TX
-        const { Transaction } = await import("@solana/web3.js");
-        const tx = Transaction.from(Buffer.from(transaction, "base64"));
-        tx.partialSign(adapter.keypair);
-        const signed = tx.serialize().toString("base64");
-
-        // 3. Submit via relayer
-        const submitRes = await fetch(`${getRelayerUrl()}/deposit/pacifica/submit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            signedTransaction: signed,
-            testnet: getNetwork() === "testnet",
-          }),
-        });
-
-        if (!submitRes.ok) {
-          const err = await submitRes.json() as Record<string, string>;
-          throw new Error(err.error || "Submit failed");
-        }
-
-        const result = (await submitRes.json()) as { signature: string };
-
-        if (isJson()) return printJson(jsonOk({ ...result, fee, netAmount, method: "relay" }));
-        console.log(chalk.green(`  Deposit confirmed!`));
-        console.log(`  Signature: ${result.signature}`);
-        console.log(chalk.gray(`\n  Gas: FREE (relayer sponsored)\n`));
-        return;
       }
 
       // Fallback: direct deposit (user pays gas)
@@ -111,32 +128,48 @@ export function registerDepositCommands(
 
       if (amountNum < 10) throw new Error("Minimum deposit is 10 USDC");
 
-      const { Connection, Transaction } = await import("@solana/web3.js");
-      const { buildDepositInstruction } = await import("@pacifica/sdk");
-      const network = getNetwork();
-      const rpcUrl = network === "testnet" ? "https://api.devnet.solana.com" : "https://api.mainnet-beta.solana.com";
-      const connection = new Connection(rpcUrl, "confirmed");
+      try {
+        const { Connection, Transaction } = await import("@solana/web3.js");
+        const { buildDepositInstruction } = await import("@pacifica/sdk");
+        const network = getNetwork();
+        const rpcUrl = network === "testnet" ? "https://api.devnet.solana.com" : "https://api.mainnet-beta.solana.com";
+        const connection = new Connection(rpcUrl, "confirmed");
 
-      const solBalance = await connection.getBalance(adapter.keypair.publicKey);
-      if (solBalance < 5_000_000) {
-        console.error(chalk.red("  Insufficient SOL for gas. Need ~0.005 SOL."));
-        console.error(chalk.gray("  Tip: Use relayer for gasless deposits (start relayer server)\n"));
-        process.exit(1);
+        const solBalance = await connection.getBalance(adapter.keypair.publicKey);
+        if (solBalance < 5_000_000) {
+          console.error(chalk.red("  Insufficient SOL for gas. Need ~0.005 SOL."));
+          console.error(chalk.gray("  Tip: Use relayer for gasless deposits (start relayer server)\n"));
+          process.exit(1);
+        }
+
+        const ix = await buildDepositInstruction(adapter.keypair.publicKey, amountNum, network);
+        const tx = new Transaction().add(ix);
+        tx.feePayer = adapter.keypair.publicKey;
+        tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+        tx.sign(adapter.keypair);
+
+        const sig = await connection.sendRawTransaction(tx.serialize());
+        await connection.confirmTransaction(sig, "confirmed");
+
+        logExecution({
+          type: "bridge", exchange: "pacifica", symbol: "USDC", side: "deposit",
+          size: String(amountNum), status: "success", dryRun: false,
+          meta: { action: "deposit", method: "direct", signature: sig },
+        });
+
+        if (isJson()) return printJson(jsonOk({ signature: sig, amount: amountNum, method: "direct" }));
+        console.log(chalk.green(`  Deposit confirmed!`));
+        console.log(`  Amount:    $${formatUsd(amountNum)} USDC`);
+        console.log(`  Signature: ${sig}\n`);
+      } catch (err) {
+        logExecution({
+          type: "bridge", exchange: "pacifica", symbol: "USDC", side: "deposit",
+          size: String(amountNum), status: "failed", dryRun: false,
+          error: err instanceof Error ? err.message : String(err),
+          meta: { action: "deposit", method: "direct" },
+        });
+        throw err;
       }
-
-      const ix = await buildDepositInstruction(adapter.keypair.publicKey, amountNum, network);
-      const tx = new Transaction().add(ix);
-      tx.feePayer = adapter.keypair.publicKey;
-      tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-      tx.sign(adapter.keypair);
-
-      const sig = await connection.sendRawTransaction(tx.serialize());
-      await connection.confirmTransaction(sig, "confirmed");
-
-      if (isJson()) return printJson(jsonOk({ signature: sig, amount: amountNum, method: "direct" }));
-      console.log(chalk.green(`  Deposit confirmed!`));
-      console.log(`  Amount:    $${formatUsd(amountNum)} USDC`);
-      console.log(`  Signature: ${sig}\n`);
     });
 
   // ── Hyperliquid (Arbitrum — USDC transfer to Bridge2) ──
@@ -159,22 +192,38 @@ export function registerDepositCommands(
         const pk = await loadPrivateKey("hyperliquid");
         const wallet = new ethers.Wallet(pk);
 
-        const res = await fetch(`${getRelayerUrl()}/deposit/hyperliquid`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userAddress: wallet.address, amount: amountNum }),
-        });
+        try {
+          const res = await fetch(`${getRelayerUrl()}/deposit/hyperliquid`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userAddress: wallet.address, amount: amountNum }),
+          });
 
-        const result = (await res.json()) as Record<string, unknown>;
-        if (!res.ok) throw new Error(String(result.error || "Relayer failed"));
+          const result = (await res.json()) as Record<string, unknown>;
+          if (!res.ok) throw new Error(String(result.error || "Relayer failed"));
 
-        if (isJson()) return printJson(jsonOk({ ...result, method: "relay" }));
-        console.log(chalk.green(`  Deposit confirmed!`));
-        console.log(`  TX Hash: ${result.txHash}`);
-        console.log(`  Fee:     $${formatUsd(Number(result.fee))}`);
-        console.log(`  Net:     $${formatUsd(Number(result.netAmount))}`);
-        console.log(chalk.gray(`\n  Gas: FREE (relayer sponsored)\n`));
-        return;
+          logExecution({
+            type: "bridge", exchange: "hyperliquid", symbol: "USDC", side: "deposit",
+            size: String(amountNum), status: "success", dryRun: false,
+            meta: { action: "deposit", method: "relay", txHash: String(result.txHash) },
+          });
+
+          if (isJson()) return printJson(jsonOk({ ...result, method: "relay" }));
+          console.log(chalk.green(`  Deposit confirmed!`));
+          console.log(`  TX Hash: ${result.txHash}`);
+          console.log(`  Fee:     $${formatUsd(Number(result.fee))}`);
+          console.log(`  Net:     $${formatUsd(Number(result.netAmount))}`);
+          console.log(chalk.gray(`\n  Gas: FREE (relayer sponsored)\n`));
+          return;
+        } catch (err) {
+          logExecution({
+            type: "bridge", exchange: "hyperliquid", symbol: "USDC", side: "deposit",
+            size: String(amountNum), status: "failed", dryRun: false,
+            error: err instanceof Error ? err.message : String(err),
+            meta: { action: "deposit", method: "relay" },
+          });
+          throw err;
+        }
       }
 
       // Direct: USDC.transfer() to HL Bridge2
@@ -211,16 +260,32 @@ export function registerDepositCommands(
         process.exit(1);
       }
 
-      // Direct USDC transfer to HL Bridge2 (simplest method)
-      if (!isJson()) console.log(chalk.gray("  Sending USDC to Hyperliquid Bridge2..."));
-      const tx = await usdc.transfer(HL_BRIDGE, amountRaw);
-      const receipt = await tx.wait();
+      try {
+        // Direct USDC transfer to HL Bridge2 (simplest method)
+        if (!isJson()) console.log(chalk.gray("  Sending USDC to Hyperliquid Bridge2..."));
+        const tx = await usdc.transfer(HL_BRIDGE, amountRaw);
+        const receipt = await tx.wait();
 
-      if (isJson()) return printJson(jsonOk({ txHash: receipt.hash, amount: amountNum, method: "direct" }));
-      console.log(chalk.green(`  Deposit confirmed!`));
-      console.log(`  Amount:  $${formatUsd(amountNum)} USDC`);
-      console.log(`  TX Hash: ${receipt.hash}`);
-      console.log(chalk.gray(`\n  Funds appear in ~1-3 minutes.\n`));
+        logExecution({
+          type: "bridge", exchange: "hyperliquid", symbol: "USDC", side: "deposit",
+          size: String(amountNum), status: "success", dryRun: false,
+          meta: { action: "deposit", method: "direct", txHash: receipt.hash },
+        });
+
+        if (isJson()) return printJson(jsonOk({ txHash: receipt.hash, amount: amountNum, method: "direct" }));
+        console.log(chalk.green(`  Deposit confirmed!`));
+        console.log(`  Amount:  $${formatUsd(amountNum)} USDC`);
+        console.log(`  TX Hash: ${receipt.hash}`);
+        console.log(chalk.gray(`\n  Funds appear in ~1-3 minutes.\n`));
+      } catch (err) {
+        logExecution({
+          type: "bridge", exchange: "hyperliquid", symbol: "USDC", side: "deposit",
+          size: String(amountNum), status: "failed", dryRun: false,
+          error: err instanceof Error ? err.message : String(err),
+          meta: { action: "deposit", method: "direct" },
+        });
+        throw err;
+      }
     });
 
   // ── Lighter ──
@@ -282,19 +347,35 @@ export function registerDepositCommands(
 
       // Call deposit(address _to, uint8 _assetIndex, uint8 _routeType, uint256 _amount)
       if (!isJson()) console.log(chalk.gray("  Calling deposit()..."));
-      const tx = await lighter.deposit(
-        wallet.address,
-        parseInt(opts.assetId),
-        parseInt(opts.route),
-        amountRaw,
-      );
-      const receipt = await tx.wait();
+      try {
+        const tx = await lighter.deposit(
+          wallet.address,
+          parseInt(opts.assetId),
+          parseInt(opts.route),
+          amountRaw,
+        );
+        const receipt = await tx.wait();
 
-      if (isJson()) return printJson(jsonOk({ txHash: receipt.hash, amount: amountNum, chain: "ethereum", method: "direct" }));
-      console.log(chalk.green(`\n  Deposit confirmed!`));
-      console.log(`  Amount:  $${formatUsd(amountNum)} USDC`);
-      console.log(`  TX Hash: ${receipt.hash}`);
-      console.log(chalk.gray(`\n  Funds appear in your Lighter perps account shortly.\n`));
+        logExecution({
+          type: "bridge", exchange: "lighter", symbol: "USDC", side: "deposit",
+          size: String(amountNum), status: "success", dryRun: false,
+          meta: { action: "deposit", method: "ethereum", txHash: receipt.hash },
+        });
+
+        if (isJson()) return printJson(jsonOk({ txHash: receipt.hash, amount: amountNum, chain: "ethereum", method: "direct" }));
+        console.log(chalk.green(`\n  Deposit confirmed!`));
+        console.log(`  Amount:  $${formatUsd(amountNum)} USDC`);
+        console.log(`  TX Hash: ${receipt.hash}`);
+        console.log(chalk.gray(`\n  Funds appear in your Lighter perps account shortly.\n`));
+      } catch (err) {
+        logExecution({
+          type: "bridge", exchange: "lighter", symbol: "USDC", side: "deposit",
+          size: String(amountNum), status: "failed", dryRun: false,
+          error: err instanceof Error ? err.message : String(err),
+          meta: { action: "deposit", method: "ethereum" },
+        });
+        throw err;
+      }
     });
 
   // Lighter via CCTP (Arbitrum, Base, Avalanche — min 5 USDC)
@@ -363,15 +444,31 @@ export function registerDepositCommands(
 
       // 3. Transfer USDC to intent address
       if (!isJson()) console.log(chalk.gray(`  Sending USDC to intent address on ${chainInfo.name}...`));
-      const tx = await usdc.transfer(intentAddress, amountRaw);
-      const receipt = await tx.wait();
+      try {
+        const tx = await usdc.transfer(intentAddress, amountRaw);
+        const receipt = await tx.wait();
 
-      if (isJson()) return printJson(jsonOk({ txHash: receipt.hash, amount: amountNum, chain: chainKey, intentAddress, method: "cctp" }));
-      console.log(chalk.green(`\n  USDC sent to intent address!`));
-      console.log(`  Amount:  $${formatUsd(amountNum)} USDC`);
-      console.log(`  TX Hash: ${receipt.hash}`);
-      console.log(`  Chain:   ${chainInfo.name}`);
-      console.log(chalk.gray(`\n  CCTP bridging takes ~1-3 minutes. Funds will appear in Lighter automatically.\n`));
+        logExecution({
+          type: "bridge", exchange: "lighter", symbol: "USDC", side: "deposit",
+          size: String(amountNum), status: "success", dryRun: false,
+          meta: { action: "deposit", method: "cctp", chain: chainKey, txHash: receipt.hash },
+        });
+
+        if (isJson()) return printJson(jsonOk({ txHash: receipt.hash, amount: amountNum, chain: chainKey, intentAddress, method: "cctp" }));
+        console.log(chalk.green(`\n  USDC sent to intent address!`));
+        console.log(`  Amount:  $${formatUsd(amountNum)} USDC`);
+        console.log(`  TX Hash: ${receipt.hash}`);
+        console.log(`  Chain:   ${chainInfo.name}`);
+        console.log(chalk.gray(`\n  CCTP bridging takes ~1-3 minutes. Funds will appear in Lighter automatically.\n`));
+      } catch (err) {
+        logExecution({
+          type: "bridge", exchange: "lighter", symbol: "USDC", side: "deposit",
+          size: String(amountNum), status: "failed", dryRun: false,
+          error: err instanceof Error ? err.message : String(err),
+          meta: { action: "deposit", method: "cctp", chain: chainKey },
+        });
+        throw err;
+      }
     });
 
   // Lighter deposit info

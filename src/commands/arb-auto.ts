@@ -5,6 +5,7 @@ import type { ExchangeAdapter } from "../exchanges/interface.js";
 import { computeExecutableSize } from "../liquidity.js";
 import { computeAnnualSpread } from "../funding.js";
 import { scanDexArb, type DexArbPair } from "../dex-asset-map.js";
+import { logExecution } from "../execution-log.js";
 
 interface ExchangeRate {
   exchange: string;
@@ -230,8 +231,21 @@ export function registerArbAutoCommands(
                   const shortAdapter = await getAdapterForExchange(pos.shortExchange);
                   await longAdapter.marketOrder(pos.symbol, "sell", pos.size);
                   await shortAdapter.marketOrder(pos.symbol, "buy", pos.size);
+                  logExecution({
+                    type: "arb_close", exchange: `${pos.longExchange}+${pos.shortExchange}`,
+                    symbol: pos.symbol, side: "close", size: pos.size,
+                    status: "success", dryRun: false,
+                    meta: { longExchange: pos.longExchange, shortExchange: pos.shortExchange, currentSpread: currentSpread },
+                  });
                   console.log(chalk.green(`  ${now} CLOSED ${pos.symbol} — both legs`));
                 } catch (err) {
+                  logExecution({
+                    type: "arb_close", exchange: `${pos.longExchange}+${pos.shortExchange}`,
+                    symbol: pos.symbol, side: "close", size: pos.size,
+                    status: "failed", dryRun: false,
+                    error: err instanceof Error ? err.message : String(err),
+                    meta: { longExchange: pos.longExchange, shortExchange: pos.shortExchange },
+                  });
                   console.error(chalk.red(`  ${now} CLOSE FAILED ${pos.symbol}: ${err instanceof Error ? err.message : err}`));
                 }
               }
@@ -276,8 +290,21 @@ export function registerArbAutoCommands(
                     longAdapter.marketOrder(snap.symbol, "buy", sizeInAsset),
                     shortAdapter.marketOrder(snap.symbol, "sell", sizeInAsset),
                   ]);
+                  logExecution({
+                    type: "arb_entry", exchange: `${longExchange}+${shortExchange}`,
+                    symbol: snap.symbol, side: "entry", size: sizeInAsset,
+                    status: "success", dryRun: false,
+                    meta: { longExchange, shortExchange, spread: absSpread, markPrice: snap.markPrice },
+                  });
                   console.log(chalk.green(`  ${now} FILLED ${snap.symbol} — both legs @ ${sizeInAsset} units ($${sizeUsd} / $${snap.markPrice.toFixed(2)})`));
                 } catch (err) {
+                  logExecution({
+                    type: "arb_entry", exchange: `${longExchange}+${shortExchange}`,
+                    symbol: snap.symbol, side: "entry", size: sizeInAsset,
+                    status: "failed", dryRun: false,
+                    error: err instanceof Error ? err.message : String(err),
+                    meta: { longExchange, shortExchange, spread: absSpread },
+                  });
                   console.error(chalk.red(`  ${now} ENTRY FAILED ${snap.symbol}: ${err instanceof Error ? err.message : err}`));
                   continue;
                 }
@@ -742,8 +769,21 @@ export function registerArbAutoCommands(
                       longAdapter.marketOrder(pos.longSymbol, "sell", pos.size),
                       shortAdapter.marketOrder(pos.shortSymbol, "buy", pos.size),
                     ]);
+                    logExecution({
+                      type: "arb_close", exchange: `${pos.longDex}+${pos.shortDex}`,
+                      symbol: pos.underlying, side: "close", size: pos.size,
+                      status: "success", dryRun: false,
+                      meta: { longDex: pos.longDex, shortDex: pos.shortDex, reason, longSymbol: pos.longSymbol, shortSymbol: pos.shortSymbol },
+                    });
                     if (!isJson()) console.log(chalk.green(`  ${now} CLOSED ${pos.underlying} — both legs`));
                   } catch (err) {
+                    logExecution({
+                      type: "arb_close", exchange: `${pos.longDex}+${pos.shortDex}`,
+                      symbol: pos.underlying, side: "close", size: pos.size,
+                      status: "failed", dryRun: false,
+                      error: err instanceof Error ? err.message : String(err),
+                      meta: { longDex: pos.longDex, shortDex: pos.shortDex },
+                    });
                     if (!isJson()) console.error(chalk.red(`  ${now} CLOSE FAILED ${pos.underlying}: ${err instanceof Error ? err.message : err}`));
                   }
                 }
@@ -785,8 +825,21 @@ export function registerArbAutoCommands(
                       longAdapter.marketOrder(pair.long.raw, "buy", size),
                       shortAdapter.marketOrder(pair.short.raw, "sell", size),
                     ]);
+                    logExecution({
+                      type: "arb_entry", exchange: `${pair.long.dex}+${pair.short.dex}`,
+                      symbol: pair.underlying, side: "entry", size,
+                      status: "success", dryRun: false,
+                      meta: { longDex: pair.long.dex, shortDex: pair.short.dex, spread: pair.annualSpread, viability: pair.viability, avgPrice },
+                    });
                     if (!isJson()) console.log(chalk.green(`  ${now} FILLED ${pair.underlying} — both legs`));
                   } catch (err) {
+                    logExecution({
+                      type: "arb_entry", exchange: `${pair.long.dex}+${pair.short.dex}`,
+                      symbol: pair.underlying, side: "entry", size,
+                      status: "failed", dryRun: false,
+                      error: err instanceof Error ? err.message : String(err),
+                      meta: { longDex: pair.long.dex, shortDex: pair.short.dex, spread: pair.annualSpread },
+                    });
                     if (!isJson()) console.error(chalk.red(`  ${now} ENTRY FAILED ${pair.underlying}: ${err instanceof Error ? err.message : err}`));
                     continue;
                   }
