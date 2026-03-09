@@ -51,7 +51,14 @@ const CCTP_FORWARD_HOOK_DATA = "0x636374702d666f72776172640000000000000000000000
 
 /**
  * Get CCTP V2 fee for a route.
- * Uses Forwarding Service fee when available (forward=true), falls back to relay fee.
+ *
+ * Fee structure (from Circle docs):
+ * - minimumFee: in basis points (e.g. 1.3 = 0.013%). Protocol fee = amount × bps / 10000.
+ * - Standard (finality=2000): minimumFee=0 → FREE protocol fee.
+ * - Fast (finality=1000): minimumFee=0-14 bps → e.g. $0.13 per $1000 at 1.3 bps.
+ * - forwardFee: in USDC subunits (6 decimals). Covers dst gas + Circle service (~$0.20).
+ *
+ * @param amountUsdc - Transfer amount in USDC (needed to calculate bps-based fee).
  * Returns maxFee in USDC subunits (6 decimals).
  */
 async function getCctpRelayFee(
@@ -59,6 +66,7 @@ async function getCctpRelayFee(
   dstDomain: number,
   finalityThreshold: number = 2000,
   useForwarding: boolean = false,
+  amountUsdc: number = 100,
 ): Promise<{ maxFee: bigint; feeUsdc: number; forwardingAvailable: boolean }> {
   try {
     const qs = useForwarding ? "?forward=true" : "";
@@ -67,35 +75,42 @@ async function getCctpRelayFee(
       const body = await res.json();
       // Check for forwarding error response
       if (body && typeof body === "object" && "error" in body) {
-        // Forwarding not supported for this route — fall back without forwarding
-        if (useForwarding) return getCctpRelayFee(srcDomain, dstDomain, finalityThreshold, false);
+        if (useForwarding) return getCctpRelayFee(srcDomain, dstDomain, finalityThreshold, false, amountUsdc);
       }
       const schedules = body as Array<{
         finalityThreshold: number;
-        minimumFee: number;
-        forwardFee?: { low: number; med: number; high: number };
+        minimumFee: number; // basis points (e.g. 1.3 = 0.013%)
+        forwardFee?: { low: number; med: number; high: number }; // USDC subunits
       }>;
       const schedule = schedules.find(s => s.finalityThreshold === finalityThreshold) ?? schedules[0];
       if (schedule) {
-        // If forwarding fee is available, use it (covers relay + forwarding service)
+        // Protocol fee: minimumFee is in basis points → actual fee = amount × bps / 10000
+        const amountSubunits = BigInt(Math.round(amountUsdc * 1e6));
+        const bpsRounded = BigInt(Math.round(schedule.minimumFee * 100));
+        const protocolFee = (amountSubunits * bpsRounded) / 1_000_000n;
+        // Add 20% buffer per Circle docs recommendation
+        const protocolFeeBuffered = (protocolFee * 120n) / 100n;
+
         if (schedule.forwardFee) {
-          const feeUsdc = schedule.forwardFee.high / 1e6; // use high for reliability
-          const maxFeeTotal = schedule.minimumFee > 0
-            ? Math.ceil((feeUsdc + schedule.minimumFee * 1.1) * 1e6) // forward fee + protocol fee
-            : Math.ceil(feeUsdc * 1.1 * 1e6); // forward fee + 10% buffer
-          return { maxFee: BigInt(maxFeeTotal), feeUsdc: maxFeeTotal / 1e6, forwardingAvailable: true };
+          // Forwarding: protocol fee + forwarding service fee
+          const forwardFeeSubunits = BigInt(schedule.forwardFee.high);
+          const totalMaxFee = protocolFeeBuffered + forwardFeeSubunits;
+          const totalFeeUsdc = Number(totalMaxFee) / 1e6;
+          return { maxFee: totalMaxFee, feeUsdc: totalFeeUsdc, forwardingAvailable: true };
         }
-        // No forwarding — use minimumFee (relay only)
-        const feeUsdc = schedule.minimumFee > 0
-          ? Math.ceil(schedule.minimumFee * 1.1 * 100) / 100
-          : 0.01;
-        return { maxFee: BigInt(Math.round(feeUsdc * 1e6)), feeUsdc, forwardingAvailable: false };
+
+        // No forwarding — protocol fee only (or minimal for standard to incentivize relay)
+        if (protocolFeeBuffered > 0n) {
+          return { maxFee: protocolFeeBuffered, feeUsdc: Number(protocolFeeBuffered) / 1e6, forwardingAvailable: false };
+        }
+        // Standard (free): set small maxFee to incentivize relay
+        return { maxFee: 10000n, feeUsdc: 0.01, forwardingAvailable: false }; // $0.01
       }
     }
   } catch {
     // fallback
   }
-  const fallback = finalityThreshold === 1000 ? 1.50 : 0.25;
+  const fallback = finalityThreshold === 1000 ? 0.50 : 0.25;
   return { maxFee: BigInt(Math.round(fallback * 1e6)), feeUsdc: fallback, forwardingAvailable: useForwarding };
 }
 
@@ -633,7 +648,7 @@ export async function getCctpQuote(
 
   // Use Forwarding Service when dst is NOT Solana (Solana dst doesn't support forwarding)
   const canForward = dstChain !== "solana";
-  const { maxFee, feeUsdc, forwardingAvailable } = await getCctpRelayFee(srcDomain!, dstDomain!, finality, canForward);
+  const { maxFee, feeUsdc, forwardingAvailable } = await getCctpRelayFee(srcDomain!, dstDomain!, finality, canForward, amountUsdc);
 
   const estimatedTime = fast
     ? ((srcChain === "solana" || dstChain === "solana") ? 90 : 60)
@@ -972,7 +987,9 @@ async function executeCctpHyperCoreToEvm(
   };
 }
 
-// ── CCTP: EVM → HyperCore (CctpExtension batchDepositForBurnWithAuth) ──
+// ── CCTP: EVM → HyperCore ──
+// Arbitrum: CctpExtension.batchDepositForBurnWithAuth (1-TX, no approve)
+// Other EVM chains: approve + TokenMessengerV2.depositForBurnWithHook (2-TX fallback)
 
 async function executeCctpEvmToHyperCore(
   srcChain: string,
@@ -981,16 +998,13 @@ async function executeCctpEvmToHyperCore(
   recipientAddress: string,
 ): Promise<BridgeResult> {
   const { ethers } = await import("ethers");
-  const { randomBytes } = await import("crypto");
 
   const srcRpc = RPC_URLS[srcChain] ?? RPC_URLS.arbitrum;
   const srcProvider = new ethers.JsonRpcProvider(srcRpc);
   const srcWallet = new ethers.Wallet(signerKey, srcProvider);
 
   const usdcAddr = USDC_ADDRESSES[srcChain];
-  const cctpExtensionAddr = CCTP_EXTENSION[srcChain];
   if (!usdcAddr) throw new Error(`No USDC address for ${srcChain}`);
-  if (!cctpExtensionAddr) throw new Error(`CctpExtension not configured for ${srcChain}`);
 
   const srcDomain = CCTP_DOMAINS[srcChain];
   if (srcDomain === undefined) throw new Error(`No CCTP domain for ${srcChain}`);
@@ -1000,65 +1014,92 @@ async function executeCctpEvmToHyperCore(
   const fees = await getHyperCoreCctpFees(srcDomain, amountUsdc);
   const amountRaw = BigInt(Math.round(amountUsdc * 1e6));
 
-  // ── Step 1: Sign EIP-3009 ReceiveWithAuthorization ──
-  // This authorizes CctpExtension to pull USDC from the sender (no approve TX needed)
-  const authNonce = "0x" + randomBytes(32).toString("hex");
-  const validAfter = 0;
-  const validBefore = Math.floor(Date.now() / 1000) + 3600; // 1 hour
-
-  const usdcDomain = {
-    name: USDC_EIP712_NAME[srcChain] ?? "USD Coin",
-    version: USDC_EIP712_VERSION[srcChain] ?? "2",
-    chainId,
-    verifyingContract: usdcAddr,
-  };
-
-  const receiveAuthTypes = {
-    ReceiveWithAuthorization: [
-      { name: "from", type: "address" },
-      { name: "to", type: "address" },
-      { name: "value", type: "uint256" },
-      { name: "validAfter", type: "uint256" },
-      { name: "validBefore", type: "uint256" },
-      { name: "nonce", type: "bytes32" },
-    ],
-  };
-
-  const receiveAuthValue = {
-    from: srcWallet.address,
-    to: cctpExtensionAddr,
-    value: amountRaw,
-    validAfter,
-    validBefore,
-    nonce: authNonce,
-  };
-
-  const sig = await srcWallet.signTypedData(usdcDomain, receiveAuthTypes, receiveAuthValue);
-  const { v, r, s } = ethers.Signature.from(sig);
-
-  // ── Step 2: Build burn params ──
   // mintRecipient & destinationCaller = CctpForwarder (bytes32)
   const forwarderBytes32 = ethers.zeroPadValue(HYPERCORE_CCTP_FORWARDER, 32);
-
-  // hookData for HyperCore perps deposit
   const hookData = encodeHyperCoreHookData(recipientAddress, HYPERCORE_DEX_PERPS);
 
-  // Auth tuple: (value, validAfter, validBefore, nonce, v, r, s)
-  const authParams = [amountRaw, validAfter, validBefore, authNonce, v, r, s];
+  const cctpExtensionAddr = CCTP_EXTENSION[srcChain];
 
-  // Burn tuple: (amount, destinationDomain, mintRecipient, destinationCaller, maxFee, minFinalityThreshold, hookData)
-  const burnParams = [amountRaw, HYPERCORE_CCTP_DOMAIN, forwarderBytes32, forwarderBytes32, BigInt(fees.maxFee), 1000, hookData];
+  let depositTx;
+  let providerLabel: string;
 
-  // ── Step 3: Call CctpExtension.batchDepositForBurnWithAuth ──
-  const cctpExtension = new ethers.Contract(cctpExtensionAddr, [
-    "function batchDepositForBurnWithAuth(tuple(uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s) authParams, tuple(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, bytes32 destinationCaller, uint256 maxFee, uint32 minFinalityThreshold, bytes hookData) burnParams)",
-  ], srcWallet);
+  if (cctpExtensionAddr) {
+    // ── Path A: CctpExtension (Arbitrum) — single TX, no approve ──
+    const { randomBytes } = await import("crypto");
+    const authNonce = "0x" + randomBytes(32).toString("hex");
+    const validAfter = 0;
+    const validBefore = Math.floor(Date.now() / 1000) + 3600;
 
-  const depositTx = await cctpExtension.batchDepositForBurnWithAuth(authParams, burnParams);
+    const usdcDomain = {
+      name: USDC_EIP712_NAME[srcChain] ?? "USD Coin",
+      version: USDC_EIP712_VERSION[srcChain] ?? "2",
+      chainId,
+      verifyingContract: usdcAddr,
+    };
+
+    const receiveAuthTypes = {
+      ReceiveWithAuthorization: [
+        { name: "from", type: "address" },
+        { name: "to", type: "address" },
+        { name: "value", type: "uint256" },
+        { name: "validAfter", type: "uint256" },
+        { name: "validBefore", type: "uint256" },
+        { name: "nonce", type: "bytes32" },
+      ],
+    };
+
+    const receiveAuthValue = {
+      from: srcWallet.address,
+      to: cctpExtensionAddr,
+      value: amountRaw,
+      validAfter,
+      validBefore,
+      nonce: authNonce,
+    };
+
+    const sig = await srcWallet.signTypedData(usdcDomain, receiveAuthTypes, receiveAuthValue);
+    const { v, r, s } = ethers.Signature.from(sig);
+
+    const authParams = [amountRaw, validAfter, validBefore, authNonce, v, r, s];
+    const burnParams = [amountRaw, HYPERCORE_CCTP_DOMAIN, forwarderBytes32, forwarderBytes32, BigInt(fees.maxFee), 1000, hookData];
+
+    const cctpExtension = new ethers.Contract(cctpExtensionAddr, [
+      "function batchDepositForBurnWithAuth(tuple(uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s) authParams, tuple(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, bytes32 destinationCaller, uint256 maxFee, uint32 minFinalityThreshold, bytes hookData) burnParams)",
+    ], srcWallet);
+
+    depositTx = await cctpExtension.batchDepositForBurnWithAuth(authParams, burnParams);
+    providerLabel = "cctp (HyperCore via CctpExtension)";
+  } else {
+    // ── Path B: approve + depositForBurnWithHook (Base, other EVM chains) ──
+    const tokenMessengerAddr = CCTP_TOKEN_MESSENGER[srcChain];
+    if (!tokenMessengerAddr) throw new Error(`CCTP not configured for ${srcChain}`);
+
+    const usdc = new ethers.Contract(usdcAddr, [
+      "function allowance(address,address) view returns (uint256)",
+      "function approve(address,uint256) returns (bool)",
+    ], srcWallet);
+
+    const allowance = await usdc.allowance(srcWallet.address, tokenMessengerAddr);
+    if (allowance < amountRaw) {
+      const approveTx = await usdc.approve(tokenMessengerAddr, ethers.MaxUint256);
+      await approveTx.wait();
+    }
+
+    const tokenMessenger = new ethers.Contract(tokenMessengerAddr, [
+      "function depositForBurnWithHook(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken, bytes32 destinationCaller, uint256 maxFee, uint32 minFinalityThreshold, bytes hookData) returns (uint64 nonce)",
+    ], srcWallet);
+
+    depositTx = await tokenMessenger.depositForBurnWithHook(
+      amountRaw, HYPERCORE_CCTP_DOMAIN, forwarderBytes32, usdcAddr,
+      forwarderBytes32, BigInt(fees.maxFee), 1000, hookData,
+    );
+    providerLabel = "cctp (HyperCore via depositForBurnWithHook)";
+  }
+
   const receipt = await depositTx.wait();
 
   return {
-    provider: "cctp (HyperCore via CctpExtension)",
+    provider: providerLabel,
     txHash: receipt.hash,
     srcChain,
     dstChain: "hyperevm",
@@ -1114,7 +1155,7 @@ async function executeCctpEvmToEvm(
 
   // Step 2: Get fee (with forwarding — Circle handles dst mint)
   const finality = fast ? 1000 : 2000;
-  const { maxFee } = await getCctpRelayFee(srcDomain, dstDomain, finality, true);
+  const { maxFee } = await getCctpRelayFee(srcDomain, dstDomain, finality, true, amountUsdc);
 
   // Step 3: depositForBurnWithHook + Forwarding Service
   // Circle Forwarding: include forward hook data → Circle broadcasts receiveMessage on dst.
@@ -1239,7 +1280,7 @@ async function executeCctpSolanaToEvm(
   const destinationCaller = Buffer.alloc(32);
 
   const finality = fast ? 1000 : 2000;
-  const { maxFee: relayFee } = await getCctpRelayFee(CCTP_DOMAINS.solana, dstDomain, finality, true);
+  const { maxFee: relayFee } = await getCctpRelayFee(CCTP_DOMAINS.solana, dstDomain, finality, true, amountUsdc);
   const maxFeeBuf = Buffer.alloc(8);
   maxFeeBuf.writeBigUInt64LE(relayFee);
 
@@ -1353,7 +1394,7 @@ async function executeCctpEvmToSolana(
   // Step 2: Get relay fee (no forwarding — Solana dst not supported)
   const finality = fast ? 1000 : 2000;
   const srcDomain = CCTP_DOMAINS[srcChain];
-  const { maxFee: relayFee, feeUsdc } = await getCctpRelayFee(srcDomain!, solanaDomain, finality, false);
+  const { maxFee: relayFee, feeUsdc } = await getCctpRelayFee(srcDomain!, solanaDomain, finality, false, amountUsdc);
 
   // Step 3: depositForBurn — mintRecipient is the Solana ATA for the recipient
   const { PublicKey } = await import("@solana/web3.js");
