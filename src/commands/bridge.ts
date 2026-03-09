@@ -92,16 +92,29 @@ export function registerBridgeCommands(
         const name = PROVIDER_NAMES[q.provider] ?? q.provider;
         const feeStr = q.fee <= 0 ? chalk.green("FREE") : `$${formatUsd(q.fee)}`;
         const pct = ((q.fee / q.amountIn) * 100).toFixed(2);
+        const gasTag = q.gasIncluded
+          ? chalk.green("included")
+          : chalk.yellow("dst gas needed");
         return [
           (i === 0 ? chalk.green.bold(name) : chalk.white(name)) + tag,
           `$${formatUsd(q.amountOut)}`,
           `${feeStr} (${pct}%)`,
           `~${q.estimatedTime}s`,
+          gasTag,
         ];
       });
 
       console.log(chalk.cyan.bold(`  Bridge Quotes: $${formatUsd(amount)} USDC ${srcChain} → ${dstChain}\n`));
-      console.log(makeTable(["Provider", "Receive", "Fee", "ETA"], rows));
+      console.log(makeTable(["Provider", "Receive", "Fee", "ETA", "Dst Gas"], rows));
+
+      // Show gas notes per provider
+      for (const q of quotes) {
+        if (q.gasNote) {
+          const name = PROVIDER_NAMES[q.provider] ?? q.provider;
+          console.log(chalk.gray(`  ${name}: ${q.gasNote}`));
+        }
+      }
+      console.log();
       console.log(chalk.gray(`  Execute with: perp bridge send --from ${srcChain} --to ${dstChain} --amount ${opts.amount}`));
       console.log(chalk.gray(`  Pick provider: --provider cctp|relay|debridge\n`));
     });
@@ -200,15 +213,22 @@ export function registerBridgeCommands(
           const feeStr = q.fee <= 0 ? chalk.green("FREE") : `$${formatUsd(q.fee)}`;
           const pct = ((q.fee / q.amountIn) * 100).toFixed(2);
           const tag = selected ? chalk.green(" ← selected") : "";
+          const gasTag = q.gasIncluded
+            ? chalk.green("included")
+            : chalk.yellow("dst gas needed");
           return [
             (selected ? chalk.green.bold(name) : chalk.white(name)) + tag,
             `$${formatUsd(q.amountOut)}`,
             `${feeStr} (${pct}%)`,
             `~${q.estimatedTime}s`,
+            gasTag,
           ];
         });
-        console.log(makeTable(["Provider", "Receive", "Fee", "ETA"], rows));
+        console.log(makeTable(["Provider", "Receive", "Fee", "ETA", "Dst Gas"], rows));
 
+        if (!selectedQuote.gasIncluded) {
+          console.log(chalk.yellow(`  ⚠ ${selectedQuote.gasNote}`));
+        }
         console.log(`  From:     ${senderAddress}`);
         console.log(`  To:       ${recipientAddress}\n`);
       }
@@ -325,14 +345,21 @@ export function registerBridgeCommands(
           const feeStr = q.fee <= 0 ? chalk.green("FREE") : `$${formatUsd(q.fee)}`;
           const pct = ((q.fee / q.amountIn) * 100).toFixed(2);
           const tag = selected ? chalk.green(" ← selected") : "";
+          const gasTag = q.gasIncluded
+            ? chalk.green("included")
+            : chalk.yellow("dst gas needed");
           return [
             (selected ? chalk.green.bold(name) : chalk.white(name)) + tag,
             `$${formatUsd(q.amountOut)}`,
             `${feeStr} (${pct}%)`,
             `~${q.estimatedTime}s`,
+            gasTag,
           ];
         });
-        console.log(makeTable(["Provider", "Receive", "Fee", "ETA"], rows));
+        console.log(makeTable(["Provider", "Receive", "Fee", "ETA", "Dst Gas"], rows));
+        if (!selectedQuote.gasIncluded) {
+          console.log(chalk.yellow(`  ⚠ ${selectedQuote.gasNote}`));
+        }
       }
 
       if (opts.dryRun) {

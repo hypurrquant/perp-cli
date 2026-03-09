@@ -254,8 +254,10 @@ export interface BridgeQuote {
   dstChain: string;
   amountIn: number;      // USDC
   amountOut: number;      // USDC received
-  fee: number;            // total cost
+  fee: number;            // total cost (including relay/gas)
   estimatedTime: number;  // seconds
+  gasIncluded: boolean;   // true = auto-relay (no dst gas needed), false = manual (user pays dst gas)
+  gasNote?: string;       // human-readable note about gas/relay
   raw: unknown;           // raw API response for execution
 }
 
@@ -317,6 +319,8 @@ export async function getDebridgeQuote(
     amountOut,
     fee: amountUsdc - amountOut,
     estimatedTime: fulfillDelay,
+    gasIncluded: true,
+    gasNote: "DLN market maker fulfills on destination",
     raw: { quote, senderAddress, recipientAddress, amountRaw },
   };
 }
@@ -537,6 +541,8 @@ export async function getCctpQuote(
       amountOut: amountUsdc - forwardingFee,
       fee: forwardingFee,
       estimatedTime: 60, // ~1 min with fast finality
+      gasIncluded: true,
+      gasNote: "HyperCore handles forwarding",
       raw: { type: "cctp-hypercore-withdraw" },
     };
   }
@@ -557,6 +563,8 @@ export async function getCctpQuote(
       amountOut: amountUsdc - fees.totalFee,
       fee: fees.totalFee,
       estimatedTime,
+      gasIncluded: true,
+      gasNote: "CctpForwarder auto-deposits to HyperCore",
       raw: { type: "cctp-hypercore", maxFee: fees.maxFee },
     };
   }
@@ -576,6 +584,9 @@ export async function getCctpQuote(
   const dstDomain = CCTP_DOMAINS[dstChain];
   const { maxFee, feeUsdc } = await getCctpRelayFee(srcDomain!, dstDomain!, 2000);
 
+  // maxFee > 0 means Circle relayer auto-relays. $0.01 is the minimum incentive.
+  const isAutoRelay = maxFee > 0n;
+
   return {
     provider: "cctp",
     srcChain,
@@ -584,6 +595,10 @@ export async function getCctpQuote(
     amountOut: amountUsdc - feeUsdc,
     fee: feeUsdc,
     estimatedTime,
+    gasIncluded: isAutoRelay,
+    gasNote: isAutoRelay
+      ? `Auto-relay (maxFee $${feeUsdc.toFixed(2)} deducted from USDC)`
+      : "Manual — receiveMessage required on destination (dst gas needed)",
     raw: { type: "cctp", maxFee: Number(maxFee) },
   };
 }
@@ -1717,6 +1732,8 @@ export async function getRelayQuote(
     amountOut: amountOut || (amountUsdc - feeUsd),
     fee: feeUsd || (amountUsdc - amountOut),
     estimatedTime: timeEstimate,
+    gasIncluded: true,
+    gasNote: "Relay solver handles destination execution",
     raw: data,
   };
 }
