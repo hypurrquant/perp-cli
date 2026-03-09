@@ -32,6 +32,7 @@ import { registerAnalyticsCommands } from "./commands/analytics.js";
 import { registerSettingsCommands } from "./commands/settings.js";
 import { registerDexCommands } from "./commands/dex.js";
 import { registerPlanCommands } from "./commands/plan.js";
+import { registerFundingCommands } from "./commands/funding.js";
 import { loadSettings } from "./settings.js";
 
 const program = new Command();
@@ -251,6 +252,7 @@ registerAnalyticsCommands(program, getAdapterForExchange, isJson);
 registerSettingsCommands(program, isJson);
 registerDexCommands(program, getAdapter, isJson);
 registerPlanCommands(program, getAdapter, isJson);
+registerFundingCommands(program, isJson);
 
 // Agent discovery: perp api-spec — returns full CLI spec as JSON
 program

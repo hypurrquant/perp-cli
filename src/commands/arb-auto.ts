@@ -30,6 +30,9 @@ interface ArbPosition {
   size: string;
   entrySpread: number;
   entryTime: string;
+  entryMarkPrice: number;
+  accumulatedFundingUsd: number;  // estimated funding collected so far
+  lastCheckTime: number;          // unix ms of last spread check
 }
 
 const LIGHTER_URL = "https://mainnet.zklighter.elliot.ai";
@@ -263,14 +266,15 @@ export function registerArbAutoCommands(
               const absSpread = Math.abs(snap.spread);
               if (absSpread < minSpread) continue;
 
-              // Determine direction: short the high-funding exchange (get paid), long the low-funding one
-              const shortExchange = snap.pacRate > snap.hlRate ? "pacifica" : "hyperliquid";
-              const longExchange = snap.pacRate > snap.hlRate ? "hyperliquid" : "pacifica";
+              // Determine direction using all 3 exchanges: short the high-funding, long the low-funding
+              const longExchange = snap.longExch;
+              const shortExchange = snap.shortExch;
+              const rateForExch = (e: string) => e === "pacifica" ? snap.pacRate : e === "hyperliquid" ? snap.hlRate : snap.ltRate;
 
               console.log(chalk.green(
                 `  ${now} ENTER ${snap.symbol} — spread ${absSpread.toFixed(1)}%` +
-                ` | Long ${longExchange} (${(snap[longExchange === "pacifica" ? "pacRate" : "hlRate"] * 100).toFixed(4)}%)` +
-                ` | Short ${shortExchange} (${(snap[shortExchange === "pacifica" ? "pacRate" : "hlRate"] * 100).toFixed(4)}%)`
+                ` | Long ${longExchange} (${(rateForExch(longExchange) * 100).toFixed(4)}%)` +
+                ` | Short ${shortExchange} (${(rateForExch(shortExchange) * 100).toFixed(4)}%)`
               ));
 
               // Calculate size in asset units from USD and mark price
@@ -317,15 +321,39 @@ export function registerArbAutoCommands(
                 size: sizeInAsset,
                 entrySpread: absSpread,
                 entryTime: new Date().toISOString(),
+                entryMarkPrice: snap.markPrice,
+                accumulatedFundingUsd: 0,
+                lastCheckTime: Date.now(),
               });
             }
           }
 
-          // Periodic status
+          // Accumulate estimated funding income & show status
           if (openPositions.length > 0) {
+            const nowMs = Date.now();
+            for (const pos of openPositions) {
+              const current = filtered.find(s => s.symbol === pos.symbol);
+              if (!current) continue;
+              const elapsedHours = (nowMs - pos.lastCheckTime) / (1000 * 60 * 60);
+              const notional = parseFloat(pos.size) * current.markPrice;
+              // Estimate funding collected: long collects from low-rate side, short from high-rate side
+              const rateFor = (e: string) => e === "pacifica" ? current.pacRate : e === "hyperliquid" ? current.hlRate : current.ltRate;
+              const longHourly = rateFor(pos.longExchange) / (pos.longExchange === "hyperliquid" ? 1 : 8);
+              const shortHourly = rateFor(pos.shortExchange) / (pos.shortExchange === "hyperliquid" ? 1 : 8);
+              // Income = short gets paid positive funding, long pays; net = (shortRate - longRate) * notional * hours
+              const hourlyIncome = (shortHourly - longHourly) * notional;
+              pos.accumulatedFundingUsd += hourlyIncome * elapsedHours;
+              pos.lastCheckTime = nowMs;
+            }
+
+            const totalFunding = openPositions.reduce((s, p) => s + p.accumulatedFundingUsd, 0);
+            const fundingColor = totalFunding >= 0 ? chalk.green : chalk.red;
             console.log(chalk.gray(
-              `  ${now} Status: ${openPositions.length} positions — ` +
-              openPositions.map(p => `${p.symbol}(${p.entrySpread.toFixed(0)}%)`).join(", ")
+              `  ${now} Status: ${openPositions.length} positions | ` +
+              `Est. funding: ${fundingColor(`$${totalFunding.toFixed(4)}`)} — ` +
+              openPositions.map(p =>
+                `${p.symbol}(${p.entrySpread.toFixed(0)}% $${p.accumulatedFundingUsd.toFixed(3)})`
+              ).join(", ")
             ));
           }
         } catch (err) {
