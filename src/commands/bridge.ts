@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { formatUsd, makeTable, printJson, jsonOk } from "../utils.js";
+import { logExecution } from "../execution-log.js";
 import {
   getDebridgeQuote,
   executeDebridgeBridge,
@@ -162,7 +163,14 @@ export function registerBridgeCommands(
       }
 
       if (!isJson()) console.log(chalk.yellow(`  Executing via ${providerName}...\n`));
-      const result = await executeBestBridge(srcChain, dstChain, amount, signerKey, senderAddress, recipientAddress, dstSignerKey);
+      let result: Awaited<ReturnType<typeof executeBestBridge>>;
+      try {
+        result = await executeBestBridge(srcChain, dstChain, amount, signerKey, senderAddress, recipientAddress, dstSignerKey);
+        logExecution({ type: "bridge", exchange: "bridge", symbol: "USDC", side: `${srcChain}->${dstChain}`, size: String(amount), status: "success", dryRun: false, meta: { provider: result.provider, txHash: result.txHash } });
+      } catch (err) {
+        logExecution({ type: "bridge", exchange: "bridge", symbol: "USDC", side: `${srcChain}->${dstChain}`, size: String(amount), status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err) });
+        throw err;
+      }
 
       if (isJson()) return printJson(jsonOk(result));
 
@@ -245,7 +253,14 @@ export function registerBridgeCommands(
 
       if (!isJson()) console.log(chalk.yellow(`  Executing via ${providerName}...\n`));
 
-      const result = await executeBestBridge(srcChain, dstChain, amount, signerKey, senderAddress, recipientAddress, dstSignerKey);
+      let result: Awaited<ReturnType<typeof executeBestBridge>>;
+      try {
+        result = await executeBestBridge(srcChain, dstChain, amount, signerKey, senderAddress, recipientAddress, dstSignerKey);
+        logExecution({ type: "bridge", exchange: "bridge", symbol: "USDC", side: `${srcExchange}->${dstExchange}`, size: String(amount), status: "success", dryRun: false, meta: { provider: result.provider, txHash: result.txHash } });
+      } catch (err) {
+        logExecution({ type: "bridge", exchange: "bridge", symbol: "USDC", side: `${srcExchange}->${dstExchange}`, size: String(amount), status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err) });
+        throw err;
+      }
 
       if (isJson()) return printJson(jsonOk(result));
 

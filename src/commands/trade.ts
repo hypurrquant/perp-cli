@@ -205,9 +205,15 @@ export function registerTradeCommands(
     .description("Cancel a specific order")
     .action(async (symbol: string, orderId: string) => {
       const adapter = await getAdapter();
-      const result = await adapter.cancelOrder(symbol.toUpperCase(), orderId);
-      if (isJson()) return printJson(jsonOk(result));
-      console.log(chalk.green(`\n  Order ${orderId} cancelled on ${adapter.name}.\n`));
+      try {
+        const result = await adapter.cancelOrder(symbol.toUpperCase(), orderId);
+        logExecution({ type: "cancel", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "cancel", size: "0", status: "success", dryRun: false, meta: { orderId } });
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.green(`\n  Order ${orderId} cancelled on ${adapter.name}.\n`));
+      } catch (err) {
+        logExecution({ type: "cancel", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "cancel", size: "0", status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err), meta: { orderId } });
+        throw err;
+      }
     });
 
   trade
@@ -318,13 +324,20 @@ export function registerTradeCommands(
       if (s !== "buy" && s !== "sell") errorAndExit("Side must be buy or sell");
 
       const adapter = await getAdapter();
-      const result = await adapter.stopOrder(
-        symbol.toUpperCase(),
-        s as "buy" | "sell",
-        size,
-        stopPrice,
-        { limitPrice: opts.limitPrice, reduceOnly: opts.reduceOnly }
-      );
+      let result: unknown;
+      try {
+        result = await adapter.stopOrder(
+          symbol.toUpperCase(),
+          s as "buy" | "sell",
+          size,
+          stopPrice,
+          { limitPrice: opts.limitPrice, reduceOnly: opts.reduceOnly }
+        );
+        logExecution({ type: "stop_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: s, size, price: stopPrice, status: "success", dryRun: false });
+      } catch (err) {
+        logExecution({ type: "stop_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: s, size, price: stopPrice, status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err) });
+        throw err;
+      }
 
       if (isJson()) return printJson(jsonOk(result));
       console.log(chalk.green(`\n  Stop order placed on ${adapter.name}.\n`));
