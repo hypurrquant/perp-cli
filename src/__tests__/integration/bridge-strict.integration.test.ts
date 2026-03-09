@@ -38,6 +38,8 @@ import {
   getEvmUsdcBalance,
   getSolanaUsdcBalance,
   checkBridgeBalance,
+  getNativeGasBalance,
+  checkBridgeGasBalance,
   type BridgeQuote,
 } from "../../bridge-engine.js";
 
@@ -174,6 +176,58 @@ describe("Strict Bridge Integration Tests", { timeout: 120000 }, () => {
 
     it("unsupported chain balance throws", async () => {
       await expect(getEvmUsdcBalance("fakenet", evmAddress)).rejects.toThrow();
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════
+  // 3b. Native Gas Balance Checks
+  // ══════════════════════════════════════════════════════════
+
+  describe("3b. Native gas balance checks", () => {
+    it("Solana SOL balance query succeeds", async () => {
+      const balance = await getNativeGasBalance("solana", solanaAddress);
+      expect(typeof balance).toBe("number");
+      expect(balance).toBeGreaterThanOrEqual(0);
+    });
+
+    it("Arbitrum ETH balance query succeeds", async () => {
+      const balance = await getNativeGasBalance("arbitrum", evmAddress);
+      expect(typeof balance).toBe("number");
+      expect(balance).toBeGreaterThanOrEqual(0);
+    });
+
+    it("Base ETH balance query succeeds", async () => {
+      const balance = await getNativeGasBalance("base", evmAddress);
+      expect(typeof balance).toBe("number");
+      expect(balance).toBeGreaterThanOrEqual(0);
+    });
+
+    it("unsupported chain gas balance throws", async () => {
+      await expect(getNativeGasBalance("fakenet", evmAddress)).rejects.toThrow();
+    });
+
+    it("checkBridgeGasBalance: src-only check (fast mode)", async () => {
+      const result = await checkBridgeGasBalance("arbitrum", evmAddress, "base", evmAddress, false);
+      expect(typeof result.ok).toBe("boolean");
+      expect(Array.isArray(result.errors)).toBe(true);
+    });
+
+    it("checkBridgeGasBalance: src+dst check (standard mode)", async () => {
+      const result = await checkBridgeGasBalance("arbitrum", evmAddress, "base", evmAddress, true);
+      expect(typeof result.ok).toBe("boolean");
+      expect(Array.isArray(result.errors)).toBe(true);
+    });
+
+    it("checkBridgeGasBalance: returns errors array for insufficient gas", async () => {
+      // Use an address unlikely to have gas on both chains
+      const emptyAddr = "0x000000000000000000000000000000000000dEaD";
+      const result = await checkBridgeGasBalance("arbitrum", emptyAddr, "base", emptyAddr, true);
+      // Shape is correct regardless of balance
+      expect(typeof result.ok).toBe("boolean");
+      expect(Array.isArray(result.errors)).toBe(true);
+      if (!result.ok) {
+        expect(result.errors[0]).toMatch(/arbitrum|base/);
+      }
     });
   });
 

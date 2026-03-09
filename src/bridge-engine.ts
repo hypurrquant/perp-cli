@@ -137,6 +137,72 @@ export async function checkBridgeBalance(
   return { balance, sufficient: balance >= requiredAmount };
 }
 
+/**
+ * Get native gas token balance (ETH for EVM, SOL for Solana).
+ * Returns balance in human-readable units.
+ */
+export async function getNativeGasBalance(chain: string, address: string): Promise<number> {
+  if (chain === "solana") {
+    const { Connection, PublicKey, LAMPORTS_PER_SOL } = await import("@solana/web3.js");
+    const connection = new Connection(RPC_URLS.solana, "confirmed");
+    const balance = await connection.getBalance(new PublicKey(address));
+    return balance / LAMPORTS_PER_SOL;
+  }
+
+  const { ethers } = await import("ethers");
+  const rpc = RPC_URLS[chain];
+  if (!rpc) throw new Error(`No RPC for ${chain}`);
+  const provider = new ethers.JsonRpcProvider(rpc);
+  const balance = await provider.getBalance(address);
+  return Number(ethers.formatEther(balance));
+}
+
+// Minimum gas thresholds for bridge transactions
+const MIN_GAS: Record<string, { amount: number; symbol: string }> = {
+  solana:   { amount: 0.01,   symbol: "SOL" },
+  arbitrum: { amount: 0.0001, symbol: "ETH" },
+  base:     { amount: 0.0001, symbol: "ETH" },
+  hyperevm: { amount: 0.0001, symbol: "ETH" },
+};
+
+/**
+ * Check gas balance on source (and optionally destination) chains before bridging.
+ * Returns errors for any chain with insufficient gas.
+ */
+export async function checkBridgeGasBalance(
+  srcChain: string,
+  srcAddress: string,
+  dstChain: string,
+  dstAddress: string,
+  needsDstGas: boolean,
+): Promise<{ ok: boolean; errors: string[] }> {
+  const errors: string[] = [];
+
+  const srcMin = MIN_GAS[srcChain];
+  if (srcMin) {
+    const srcGas = await getNativeGasBalance(srcChain, srcAddress);
+    if (srcGas < srcMin.amount) {
+      errors.push(
+        `Source ${srcChain}: ${srcGas.toFixed(6)} ${srcMin.symbol} (need ≥${srcMin.amount} ${srcMin.symbol})`
+      );
+    }
+  }
+
+  if (needsDstGas) {
+    const dstMin = MIN_GAS[dstChain];
+    if (dstMin) {
+      const dstGas = await getNativeGasBalance(dstChain, dstAddress);
+      if (dstGas < dstMin.amount) {
+        errors.push(
+          `Destination ${dstChain}: ${dstGas.toFixed(6)} ${dstMin.symbol} (need ≥${dstMin.amount} ${dstMin.symbol})`
+        );
+      }
+    }
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
 // ── HyperCore CCTP (Solana/EVM → Hyperliquid perps via CctpForwarder) ──
 
 const HYPERCORE_CCTP_DOMAIN = 19; // HyperEVM domain in CCTP

@@ -9,6 +9,7 @@ import {
   getBestQuote,
   getAllQuotes,
   checkDebridgeStatus,
+  checkBridgeGasBalance,
   CHAIN_IDS,
   USDC_ADDRESSES,
   EXCHANGE_TO_CHAIN,
@@ -240,6 +241,21 @@ export function registerBridgeCommands(
         return;
       }
 
+      // Gas balance preflight check
+      const needsDstGas = !selectedQuote.gasIncluded;
+      const gasCheck = await checkBridgeGasBalance(srcChain, senderAddress, dstChain, recipientAddress, needsDstGas);
+      if (!gasCheck.ok) {
+        const msg = gasCheck.errors.map(e => `  ✗ ${e}`).join("\n");
+        if (isJson()) return printJson({ ok: false, error: "Insufficient gas", details: gasCheck.errors });
+        console.log(chalk.red("\n  Insufficient gas for bridge:\n"));
+        console.log(chalk.red(msg));
+        if (needsDstGas) {
+          console.log(chalk.yellow("\n  Tip: use --fast to skip destination gas (Circle auto-relays)\n"));
+        }
+        process.exitCode = 1;
+        return;
+      }
+
       const providerName = PROVIDER_NAMES[selectedQuote.provider] ?? selectedQuote.provider;
       if (!isJson()) console.log(chalk.yellow(`  Executing via ${providerName}...\n`));
 
@@ -367,6 +383,21 @@ export function registerBridgeCommands(
       if (opts.dryRun) {
         if (isJson()) return printJson(jsonOk({ quotes, selected: selectedQuote.provider }));
         console.log(chalk.yellow("  [DRY RUN] Not executed.\n"));
+        return;
+      }
+
+      // Gas balance preflight check
+      const needsDstGas = !selectedQuote.gasIncluded;
+      const gasCheck = await checkBridgeGasBalance(srcChain, senderAddress, dstChain, recipientAddress, needsDstGas);
+      if (!gasCheck.ok) {
+        const msg = gasCheck.errors.map(e => `  ✗ ${e}`).join("\n");
+        if (isJson()) return printJson({ ok: false, error: "Insufficient gas", details: gasCheck.errors });
+        console.log(chalk.red("\n  Insufficient gas for bridge:\n"));
+        console.log(chalk.red(msg));
+        if (needsDstGas) {
+          console.log(chalk.yellow("\n  Tip: use --fast to skip destination gas (Circle auto-relays)\n"));
+        }
+        process.exitCode = 1;
         return;
       }
 
