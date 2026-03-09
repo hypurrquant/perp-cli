@@ -3,7 +3,7 @@ import chalk from "chalk";
 import { formatUsd, printJson, jsonOk } from "../utils.js";
 import type { ExchangeAdapter } from "../exchanges/interface.js";
 import { computeExecutableSize } from "../liquidity.js";
-import { computeAnnualSpread } from "../funding.js";
+import { computeAnnualSpread, toHourlyRate } from "../funding.js";
 import { scanDexArb, type DexArbPair } from "../dex-asset-map.js";
 import { logExecution } from "../execution-log.js";
 
@@ -109,7 +109,8 @@ async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
     if (lt !== undefined) available.push({ exchange: "lighter", rate: lt });
     if (available.length < 2) continue;
 
-    available.sort((a, b) => a.rate - b.rate);
+    const norm = (r: ExchangeRate) => toHourlyRate(r.rate, r.exchange);
+    available.sort((a, b) => norm(a) - norm(b));
     const lowest = available[0];
     const highest = available[available.length - 1];
     const spread = computeAnnualSpread(highest.rate, highest.exchange, lowest.rate, lowest.exchange);

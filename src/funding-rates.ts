@@ -122,11 +122,15 @@ async function fetchLighterRates(): Promise<ExchangeFundingRate[]> {
     }
 
     const rates: ExchangeFundingRate[] = [];
+    const seenSymbols = new Set<string>();
     const fundingList = (fundingRes as Record<string, unknown>).funding_rates ?? [];
     for (const fr of fundingList as Array<Record<string, unknown>>) {
       const marketId = Number(fr.market_id);
       const symbol = String(fr.symbol ?? "") || idToMeta.get(marketId)?.symbol;
       if (!symbol) continue;
+      // Deduplicate: keep only the first (latest) entry per symbol
+      if (seenSymbols.has(symbol)) continue;
+      seenSymbols.add(symbol);
       const rate = Number(fr.rate ?? fr.funding_rate ?? 0);
       const hourly = toHourlyRate(rate, "lighter");
       const price = idToMeta.get(marketId)?.price ?? 0;
