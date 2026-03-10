@@ -29,11 +29,11 @@ function makeHyperliquidResponse(
 
 function makeLighterResponse(
   details: { market_id: number; symbol: string; last_trade_price: number }[],
-  fundingRates: { market_id: number; symbol?: string; rate: number }[]
+  fundingRates: { market_id: number; symbol?: string; rate: number; exchange?: string }[]
 ) {
   return {
     details: { order_book_details: details },
-    funding: { funding_rates: fundingRates },
+    funding: { funding_rates: fundingRates.map(fr => ({ exchange: "lighter", ...fr })) },
   };
 }
 
