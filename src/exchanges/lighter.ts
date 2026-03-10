@@ -29,6 +29,9 @@ export class LighterAdapter implements ExchangeAdapter {
   private _chainId: number;
   private _testnet: boolean;
   private _readOnly: boolean;
+  /** Short-lived cache to deduplicate fetchAccount calls within a poll cycle */
+  private _acctCache: { data: Record<string, unknown> | null; ts: number } | null = null;
+  private static readonly ACCT_TTL = 3000; // 3s
 
   /**
    * @param evmKey    EVM private key (0x-prefixed, 32 bytes) — for deposits & key registration
@@ -185,6 +188,10 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   private async fetchAccount(): Promise<Record<string, unknown> | null> {
+    const now = Date.now();
+    if (this._acctCache && now - this._acctCache.ts < LighterAdapter.ACCT_TTL) {
+      return this._acctCache.data;
+    }
     if (!this._address) return null;
     const res = await this.restGet("/account", {
       by: "l1_address",
@@ -193,7 +200,9 @@ export class LighterAdapter implements ExchangeAdapter {
     const acct = this._accountIndex >= 0
       ? res.accounts?.find(a => (a as Record<string, unknown>).account_index === this._accountIndex || (a as Record<string, unknown>).index === this._accountIndex)
       : res.accounts?.[0];
-    return acct ?? res.accounts?.[0] ?? null;
+    const result = acct ?? res.accounts?.[0] ?? null;
+    this._acctCache = { data: result, ts: now };
+    return result;
   }
 
   async getOrderbook(symbol: string) {

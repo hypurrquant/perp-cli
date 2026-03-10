@@ -73,6 +73,8 @@ export interface DashboardOpts {
 
 // Cached arb data (polled less frequently)
 let cachedArb: DashboardSnapshot["arb"] = { opportunities: [], dexArb: [], dexAssets: [], dexNames: [], exchangeStatus: {} };
+// Cached market data (polled with arb cycle — market metadata rarely changes)
+const cachedMarkets = new Map<string, ExchangeMarketInfo[]>();
 
 /**
  * Find an available port starting from the given port.
@@ -131,9 +133,12 @@ async function pollArbData(): Promise<DashboardSnapshot["arb"]> {
   const dexNamesSet = new Set<string>();
 
   try {
-    const { scanDexArb, fetchAllDexAssets } = await import("../dex-asset-map.js");
+    const { fetchAllDexAssets, findDexArbPairs } = await import("../dex-asset-map.js");
     const { annualizeRate } = await import("../funding/normalize.js");
-    const pairs = await scanDexArb({ minAnnualSpread: 10 });
+
+    // Single fetch — used for both arb pairs and rate comparison table
+    const allAssets = await fetchAllDexAssets();
+    const pairs = findDexArbPairs(allAssets, { minAnnualSpread: 10 });
 
     for (const p of pairs.slice(0, 15)) {
       dexArb.push({
@@ -145,9 +150,6 @@ async function pollArbData(): Promise<DashboardSnapshot["arb"]> {
         viability: p.viability,
       });
     }
-
-    // Fetch all dex assets for the rate comparison table
-    const allAssets = await fetchAllDexAssets();
     const byBase = new Map<string, typeof allAssets>();
     for (const a of allAssets) {
       dexNamesSet.add(a.dex);
@@ -185,17 +187,31 @@ async function pollArbData(): Promise<DashboardSnapshot["arb"]> {
 /**
  * Poll all exchanges and return a unified snapshot.
  */
+/** Poll market data for all exchanges (called on arb cycle, not every 5s) */
+async function pollMarkets(exchanges: DashboardExchange[]): Promise<void> {
+  await Promise.allSettled(
+    exchanges.map(async (ex) => {
+      try {
+        const markets = await ex.adapter.getMarkets();
+        cachedMarkets.set(ex.name, markets.slice(0, 10));
+      } catch {
+        // keep previous cached data
+      }
+    }),
+  );
+}
+
 async function pollSnapshot(exchanges: DashboardExchange[]): Promise<DashboardSnapshot> {
   const emptyBalance: ExchangeBalance = { equity: "0", available: "0", marginUsed: "0", unrealizedPnl: "0" };
   const results = await Promise.allSettled(
     exchanges.map(async (ex) => {
-      const [balance, positions, orders, markets] = await Promise.all([
+      // Core data only: balance + positions + orders (no markets — those poll on 30s cycle)
+      const [balance, positions, orders] = await Promise.all([
         ex.adapter.getBalance().catch(() => emptyBalance),
         ex.adapter.getPositions().catch(() => [] as ExchangePosition[]),
         ex.adapter.getOpenOrders().catch(() => [] as ExchangeOrder[]),
-        ex.adapter.getMarkets().then((m) => m.slice(0, 10)).catch(() => [] as ExchangeMarketInfo[]),
       ]);
-      return { name: ex.name, balance, positions, orders, topMarkets: markets };
+      return { name: ex.name, balance, positions, orders, topMarkets: cachedMarkets.get(ex.name) ?? [] };
     }),
   );
 
@@ -284,9 +300,12 @@ export async function startDashboard(
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let arbTimer: ReturnType<typeof setInterval> | null = null;
 
+  const hasClients = () => wss.clients.size > 0;
+
   const startPolling = () => {
-    // Account data: every 5s
+    // Account data: every 5s (only when clients connected)
     pollTimer = setInterval(async () => {
+      if (!hasClients()) return;
       try {
         const snap = await pollSnapshot(exchanges);
         broadcast(wss, { type: "snapshot", data: snap });
@@ -295,17 +314,25 @@ export async function startDashboard(
       }
     }, pollInterval);
 
-    // Arb data: every 30s (heavier API calls)
-    const pollArb = async () => {
+    // Arb + market data: every 30s (heavier API calls)
+    const pollArbAndMarkets = async () => {
       try {
-        cachedArb = await pollArbData();
-        broadcast(wss, { type: "arb", data: cachedArb });
+        const [arbResult] = await Promise.allSettled([
+          pollArbData(),
+          pollMarkets(exchanges),
+        ]);
+        if (arbResult.status === "fulfilled") {
+          cachedArb = arbResult.value;
+        }
+        if (hasClients()) {
+          broadcast(wss, { type: "arb", data: cachedArb });
+        }
       } catch {
         // ignore
       }
     };
-    pollArb(); // initial fetch
-    arbTimer = setInterval(pollArb, arbInterval);
+    pollArbAndMarkets(); // initial fetch
+    arbTimer = setInterval(pollArbAndMarkets, arbInterval);
   };
 
   // Handle abort signal

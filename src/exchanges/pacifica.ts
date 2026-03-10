@@ -24,12 +24,32 @@ export class PacificaAdapter implements ExchangeAdapter {
   readonly keypair: Keypair;
   private account: string;
   private signMessage: (msg: Uint8Array) => Promise<Uint8Array>;
+  /** Short-lived caches to deduplicate API calls within a poll cycle (3s TTL) */
+  private _pricesCache: { data: Awaited<ReturnType<PacificaClient["getPrices"]>>; ts: number } | null = null;
+  private _positionsCache: { data: Awaited<ReturnType<PacificaClient["getPositions"]>>; ts: number } | null = null;
+  private static readonly CACHE_TTL = 3000;
 
   constructor(keypair: Keypair, network: Network = "mainnet", builderCode?: string) {
     this.keypair = keypair;
     this.account = keypair.publicKey.toBase58();
     this.client = new PacificaClient({ network, builderCode });
     this.signMessage = makeSignMessage(keypair);
+  }
+
+  private async _getPrices() {
+    const now = Date.now();
+    if (this._pricesCache && now - this._pricesCache.ts < PacificaAdapter.CACHE_TTL) return this._pricesCache.data;
+    const data = await this.client.getPrices();
+    this._pricesCache = { data, ts: now };
+    return data;
+  }
+
+  private async _getPositions() {
+    const now = Date.now();
+    if (this._positionsCache && now - this._positionsCache.ts < PacificaAdapter.CACHE_TTL) return this._positionsCache.data;
+    const data = await this.client.getPositions(this.account);
+    this._positionsCache = { data, ts: now };
+    return data;
   }
 
   get publicKey(): string {
@@ -47,7 +67,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
     const [markets, prices] = await Promise.all([
       this.client.getInfo(),
-      this.client.getPrices(),
+      this._getPrices(),
     ]);
     const priceMap = new Map(prices.map((p) => [p.symbol, p]));
     return markets.map((m) => {
@@ -75,8 +95,8 @@ export class PacificaAdapter implements ExchangeAdapter {
   async getBalance(): Promise<ExchangeBalance> {
     const [info, positions, prices] = await Promise.all([
       this.client.getAccount(this.account),
-      this.client.getPositions(this.account),
-      this.client.getPrices(),
+      this._getPositions(),
+      this._getPrices(),
     ]);
     const raw = info as unknown as Record<string, unknown>;
     const priceMap = new Map(prices.map((p) => [p.symbol, Number(p.mark)]));
@@ -103,8 +123,8 @@ export class PacificaAdapter implements ExchangeAdapter {
 
   async getPositions(): Promise<ExchangePosition[]> {
     const [positions, prices] = await Promise.all([
-      this.client.getPositions(this.account),
-      this.client.getPrices(),
+      this._getPositions(),
+      this._getPrices(),
     ]);
     const priceMap = new Map(prices.map((p) => [p.symbol, p]));
     let levMap = new Map<string, number>();

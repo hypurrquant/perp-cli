@@ -20,6 +20,9 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   private _assetMapReverse: Map<number, string> = new Map();
   /** HIP-3 deployed perp dex name. Empty string = native (validator) perps. */
   private _dex: string = "";
+  /** Short-lived cache to deduplicate clearinghouseState calls within a poll cycle */
+  private _chsCache: { data: Record<string, unknown>; ts: number } | null = null;
+  private static readonly CHS_TTL = 3000; // 3s
 
   constructor(privateKey: string, testnet = false) {
     this.sdk = new Hyperliquid({
@@ -182,10 +185,21 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     };
   }
 
-  async getBalance(): Promise<ExchangeBalance> {
+  /** Cached clearinghouseState — deduplicates calls within 3s window */
+  private async _getClearinghouseState(): Promise<Record<string, unknown>> {
+    const now = Date.now();
+    if (this._chsCache && now - this._chsCache.ts < HyperliquidAdapter.CHS_TTL) {
+      return this._chsCache.data;
+    }
     const state = this._dex
       ? await this._infoPost({ type: "clearinghouseState", user: this._address, dex: this._dex }) as Record<string, unknown>
       : await this.sdk.info.perpetuals.getClearinghouseState(this._address);
+    this._chsCache = { data: state as Record<string, unknown>, ts: now };
+    return state as Record<string, unknown>;
+  }
+
+  async getBalance(): Promise<ExchangeBalance> {
+    const state = await this._getClearinghouseState();
     const s = state as Record<string, unknown>;
     const margin = (s?.marginSummary ?? {}) as Record<string, unknown>;
     const cross = (s?.crossMarginSummary ?? {}) as Record<string, unknown>;
@@ -223,9 +237,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getPositions(): Promise<ExchangePosition[]> {
-    const state = this._dex
-      ? await this._infoPost({ type: "clearinghouseState", user: this._address, dex: this._dex }) as Record<string, unknown>
-      : await this.sdk.info.perpetuals.getClearinghouseState(this._address);
+    const state = await this._getClearinghouseState();
     const positions = ((state as Record<string, unknown>)?.assetPositions ?? []) as Record<string, unknown>[];
 
     return positions
