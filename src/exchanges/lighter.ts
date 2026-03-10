@@ -736,8 +736,16 @@ export class LighterAdapter implements ExchangeAdapter {
    * Use a referral code.
    */
   async useReferralCode(code: string): Promise<unknown> {
-    // Referral codes are typically set via the web interface or REST API
-    return this.restGet("/referral/use", { code });
+    // Referral endpoint requires POST with l1_address, referral_code, and auth (form-urlencoded)
+    const auth = await this.getAuthToken();
+    const res = await fetch(`${this._baseUrl}/api/v1/referral/use`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ l1_address: this._address, referral_code: code, auth }),
+    });
+    const json = await res.json() as { code?: number; message?: string };
+    if (json.code && json.code !== 200) throw new Error(`Referral failed: ${json.message ?? JSON.stringify(json)}`);
+    return json;
   }
 
   /**
