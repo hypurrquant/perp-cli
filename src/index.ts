@@ -19,6 +19,7 @@ import { registerBridgeCommands } from "./commands/bridge.js";
 import { registerDepositCommands } from "./commands/deposit.js";
 import { registerAlertCommands } from "./commands/alert.js";
 import { registerArbAutoCommands } from "./commands/arb-auto.js";
+import { registerArbManageCommands } from "./commands/arb-manage.js";
 import { registerGapCommands } from "./commands/gap.js";
 import { registerAgentCommands } from "./commands/agent.js";
 import { registerWithdrawCommands } from "./commands/withdraw.js";
@@ -231,6 +232,7 @@ async function getHLAdapterForDex(dex: string): Promise<HyperliquidAdapter> {
 }
 
 registerArbAutoCommands(program, getAdapterForExchange, isJson, getHLAdapterForDex);
+registerArbManageCommands(program, getAdapterForExchange, isJson);
 registerGapCommands(program, isJson);
 registerAgentCommands(program, getAdapter, isJson);
 registerWithdrawCommands(program, getAdapter, isJson);
