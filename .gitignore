@@ -4,3 +4,7 @@ dist/
 .env
 .env.*
 .serena/
+.codex-discuss-session
+docs/phases/
+docs/refactoring/
+docs/archive
