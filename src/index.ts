@@ -42,7 +42,7 @@ const program = new Command();
 program
   .name("perp")
   .description("Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter)")
-  .version("0.1.0")
+  .version("0.3.1")
   .option("-e, --exchange <exchange>", "Exchange: pacifica, hyperliquid, lighter", "pacifica")
   .option("-n, --network <network>", "Network: mainnet or testnet", "mainnet")
   .option("-k, --private-key <key>", "Private key")
