@@ -41,14 +41,12 @@ export async function fetchLighterFundingRates(): Promise<LighterFundingEntry[]>
     const res = await fetch(`${LIGHTER_API_URL}/api/v1/funding-rates`);
     const json = await res.json() as Record<string, unknown>;
     const list = (json.funding_rates ?? []) as Array<Record<string, unknown>>;
-    const seen = new Set<number>();
     const entries: LighterFundingEntry[] = [];
     for (const fr of list) {
-      const mid = Number(fr.market_id);
-      if (seen.has(mid)) continue;
-      seen.add(mid);
+      // API returns rates from multiple exchanges — only use Lighter's own rates
+      if (String(fr.exchange ?? "").toLowerCase() !== "lighter") continue;
       entries.push({
-        marketId: mid,
+        marketId: Number(fr.market_id),
         symbol: String(fr.symbol ?? ""),
         rate: Number(fr.rate ?? fr.funding_rate ?? 0),
         markPrice: Number(fr.mark_price ?? 0),
@@ -86,6 +84,8 @@ export function parseLighterRaw(
   if (fundingRaw) {
     const fundingList = ((fundingRaw as Record<string, unknown>).funding_rates ?? []) as Array<Record<string, unknown>>;
     for (const fr of fundingList) {
+      // API returns rates from multiple exchanges — only use Lighter's own rates
+      if (String(fr.exchange ?? "").toLowerCase() !== "lighter") continue;
       const sym = String(fr.symbol ?? "") || idToSym.get(Number(fr.market_id)) || "";
       if (!sym || rates.has(sym)) continue;
       rates.set(sym, Number(fr.rate ?? fr.funding_rate ?? 0));
