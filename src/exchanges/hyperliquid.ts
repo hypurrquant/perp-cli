@@ -415,7 +415,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async limitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { reduceOnly?: boolean; tif?: string }) {
-    const tif = opts?.tif ?? "Gtc";
+    const tif = (opts?.tif ?? "Gtc") as import("hyperliquid").Tif;
     const reduceOnly = opts?.reduceOnly ?? false;
     if (this._dex) {
       return this._rawPlaceOrder({

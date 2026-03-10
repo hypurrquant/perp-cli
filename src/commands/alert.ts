@@ -166,19 +166,18 @@ async function fetchPositionData(
   for (const exName of ["pacifica", "hyperliquid", "lighter"]) {
     try {
       const adapter = await getAdapterFor(exName);
-      const [pos, info] = await Promise.all([
+      const [pos, bal] = await Promise.all([
         adapter.getPositions(),
-        adapter.getAccountInfo(),
+        adapter.getBalance(),
       ]);
       for (const p of pos) {
         positions.push({ exchange: exName, symbol: p.symbol, pnl: parseFloat(p.unrealizedPnl || "0"), side: p.side, size: p.size });
       }
-      const ai = info as Record<string, unknown>;
       accounts.push({
         exchange: exName,
-        equity: Number(ai.equity ?? ai.accountValue ?? 0),
-        marginUsed: Number(ai.marginUsed ?? ai.totalMarginUsed ?? 0),
-        available: Number(ai.available ?? ai.withdrawable ?? 0),
+        equity: Number(bal.equity ?? 0),
+        marginUsed: Number(bal.marginUsed ?? 0),
+        available: Number(bal.available ?? 0),
       });
     } catch { /* exchange not configured or unreachable */ }
   }
