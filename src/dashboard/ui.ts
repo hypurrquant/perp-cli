@@ -149,8 +149,12 @@ export function getUI(): string {
 
   <!-- ═══ DEX Arb Page ═══ -->
   <div class="page" id="page-dex-arb">
-    <div class="section-title">HIP-3 Cross-DEX Funding Arb</div>
-    <p style="color:var(--muted);font-size:12px;margin-bottom:12px">Funding rate arbitrage across Hyperliquid deployed DEXs (native + HIP-3)</p>
+    <div class="section-title">HIP-3 DEX Funding Rates</div>
+    <p style="color:var(--muted);font-size:12px;margin-bottom:12px">Funding rates across Hyperliquid deployed DEXs — sorted by max spread</p>
+    <div id="dex-rates-table"></div>
+
+    <div class="section-title" style="margin-top:24px">Cross-DEX Arb Opportunities</div>
+    <p style="color:var(--muted);font-size:12px;margin-bottom:12px">Best funding arb pairs across HIP-3 dexes (>10% annual spread)</p>
     <div id="dex-arb-table"></div>
   </div>
 
@@ -205,6 +209,7 @@ function connect() {
     if (msg.type === 'arb') {
       arbData = msg.data;
       renderArb();
+      renderDexRates();
       renderDexArb();
     }
   };
@@ -300,6 +305,32 @@ function renderArb() {
   </table>\`;
 }
 
+function renderDexRates() {
+  if (!arbData) { $('#dex-rates-table').innerHTML='<div class="empty-msg">Loading HIP-3 rates...</div>'; return; }
+  const assets = arbData.dexAssets || [];
+  const dexNames = arbData.dexNames || [];
+  if (!assets.length) { $('#dex-rates-table').innerHTML='<div class="empty-msg">No HIP-3 DEX data available</div>'; return; }
+  $('#dex-rates-table').innerHTML = \`<table>
+    <thead><tr><th>Asset</th><th>Spread</th>\${dexNames.map(d=>\`<th>\${d}</th>\`).join('')}</tr></thead>
+    <tbody>\${assets.map(a => {
+      const rateMap = {};
+      a.dexes.forEach(d => rateMap[d.dex] = d);
+      const rates = a.dexes.map(d=>d.annualizedPct);
+      const spread = rates.length>=2 ? Math.max(...rates)-Math.min(...rates) : 0;
+      return \`<tr>
+        <td>\${a.base}</td>
+        <td class="\${spreadClass(spread)}">\${fmt(spread,1)}%</td>
+        \${dexNames.map(dn => {
+          const d = rateMap[dn];
+          if (!d) return '<td class="rate-neutral" style="font-size:11px">-</td>';
+          const title = '$'+fmt(d.markPrice)+' | OI: $'+fmt(d.oi,0);
+          return \`<td class="rate-cell \${rateClass(d.annualizedPct)}" title="\${title}" style="font-size:11px;cursor:help">\${fmt(d.annualizedPct,1)}%</td>\`;
+        }).join('')}
+      </tr>\`;
+    }).join('')}</tbody>
+  </table>\`;
+}
+
 function renderDexArb() {
   if (!arbData) { $('#dex-arb-table').innerHTML='<div class="empty-msg">Loading DEX arb data...</div>'; return; }
   const dex = arbData.dexArb || [];
@@ -359,6 +390,7 @@ function render() {
   renderTabs(snapshot.exchanges);
   renderPanels(snapshot.exchanges);
   renderArb();
+  renderDexRates();
   renderDexArb();
   $('#last-update').textContent = new Date(snapshot.timestamp).toLocaleTimeString();
   detectEvents(snapshot);

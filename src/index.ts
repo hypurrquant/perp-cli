@@ -301,7 +301,7 @@ registerDexCommands(program, getAdapter, isJson);
 registerPlanCommands(program, getAdapter, isJson);
 registerFundingCommands(program, isJson);
 registerBacktestCommands(program, isJson);
-registerDashboardCommands(program, getAdapterForExchange, isJson);
+registerDashboardCommands(program, getAdapterForExchange, isJson, getHLAdapterForDex);
 
 // Agent discovery: perp api-spec — returns full CLI spec as JSON
 program

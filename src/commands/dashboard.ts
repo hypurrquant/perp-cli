@@ -7,6 +7,7 @@ export function registerDashboardCommands(
   program: Command,
   getAdapterForExchange: (exchange: string) => Promise<ExchangeAdapter>,
   isJson: () => boolean,
+  getHLAdapterForDex?: (dex: string) => Promise<ExchangeAdapter>,
 ) {
   program
     .command("dashboard")
@@ -14,21 +15,28 @@ export function registerDashboardCommands(
     .option("-p, --port <port>", "Port to serve dashboard on (auto-finds free port)", "3456")
     .option("--interval <ms>", "Poll interval in milliseconds", "5000")
     .option("--exchanges <list>", "Comma-separated exchanges to monitor", "pacifica,hyperliquid,lighter")
+    .option("--dex <list>", "Comma-separated HIP-3 dexes to monitor (e.g. xyz,flx,hyna)")
     .action(async (opts) => {
       const exchangeNames = (opts.exchanges as string).split(",").map((s: string) => s.trim()).filter(Boolean);
+      const dexNames = opts.dex ? (opts.dex as string).split(",").map((s: string) => s.trim()).filter(Boolean) : [];
       const port = parseInt(opts.port as string, 10);
       const interval = parseInt(opts.interval as string, 10);
 
       if (isJson()) {
-        // JSON mode: just output the URL
         const { printJson, jsonOk } = await import("../utils.js");
         const exchanges: DashboardExchange[] = [];
         for (const name of exchangeNames) {
           try {
             const adapter = await getAdapterForExchange(name);
             exchanges.push({ name, adapter });
-          } catch {
-            // skip unavailable exchanges
+          } catch { /* skip */ }
+        }
+        if (getHLAdapterForDex) {
+          for (const dex of dexNames) {
+            try {
+              const adapter = await getHLAdapterForDex(dex);
+              exchanges.push({ name: `hl:${dex}`, adapter });
+            } catch { /* skip */ }
           }
         }
         if (!exchanges.length) {
@@ -38,13 +46,12 @@ export function registerDashboardCommands(
         }
         const dashboard = await startDashboard(exchanges, { port, pollInterval: interval });
         printJson(jsonOk({ url: `http://localhost:${dashboard.port}`, port: dashboard.port, exchanges: exchanges.map((e) => e.name) }));
-        // Keep running
         await new Promise(() => {});
         return;
       }
 
       console.log(chalk.cyan.bold("\n  perp-cli Live Dashboard\n"));
-      console.log(chalk.gray(`  Initializing exchanges: ${exchangeNames.join(", ")}...\n`));
+      console.log(chalk.gray(`  Initializing exchanges: ${exchangeNames.join(", ")}${dexNames.length ? ` + HIP-3: ${dexNames.join(", ")}` : ""}...\n`));
 
       const exchanges: DashboardExchange[] = [];
       for (const name of exchangeNames) {
@@ -55,6 +62,20 @@ export function registerDashboardCommands(
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           console.log(chalk.yellow(`  ✗ ${name}: ${msg.slice(0, 80)}`));
+        }
+      }
+
+      // Initialize HIP-3 dex adapters
+      if (getHLAdapterForDex) {
+        for (const dex of dexNames) {
+          try {
+            const adapter = await getHLAdapterForDex(dex);
+            exchanges.push({ name: `hl:${dex}`, adapter });
+            console.log(chalk.green(`  ✓ hl:${dex} (HIP-3)`));
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.log(chalk.yellow(`  ✗ hl:${dex}: ${msg.slice(0, 80)}`));
+          }
         }
       }
 

@@ -33,6 +33,11 @@ export interface DexArbOpportunity {
   viability: string;
 }
 
+export interface DexAssetRow {
+  base: string;
+  dexes: { dex: string; rate: number; annualizedPct: number; markPrice: number; oi: number }[];
+}
+
 export interface DashboardSnapshot {
   timestamp: string;
   exchanges: {
@@ -53,6 +58,8 @@ export interface DashboardSnapshot {
   arb: {
     opportunities: ArbOpportunity[];
     dexArb: DexArbOpportunity[];
+    dexAssets: DexAssetRow[];
+    dexNames: string[];
     exchangeStatus: Record<string, string>;
   };
 }
@@ -65,7 +72,7 @@ export interface DashboardOpts {
 }
 
 // Cached arb data (polled less frequently)
-let cachedArb: DashboardSnapshot["arb"] = { opportunities: [], dexArb: [], exchangeStatus: {} };
+let cachedArb: DashboardSnapshot["arb"] = { opportunities: [], dexArb: [], dexAssets: [], dexNames: [], exchangeStatus: {} };
 
 /**
  * Find an available port starting from the given port.
@@ -120,8 +127,12 @@ async function pollArbData(): Promise<DashboardSnapshot["arb"]> {
     // funding rates unavailable
   }
 
+  const dexAssets: DexAssetRow[] = [];
+  const dexNamesSet = new Set<string>();
+
   try {
-    const { scanDexArb } = await import("../dex-asset-map.js");
+    const { scanDexArb, fetchAllDexAssets } = await import("../dex-asset-map.js");
+    const { annualizeRate } = await import("../funding/normalize.js");
     const pairs = await scanDexArb({ minAnnualSpread: 10 });
 
     for (const p of pairs.slice(0, 15)) {
@@ -134,11 +145,41 @@ async function pollArbData(): Promise<DashboardSnapshot["arb"]> {
         viability: p.viability,
       });
     }
+
+    // Fetch all dex assets for the rate comparison table
+    const allAssets = await fetchAllDexAssets();
+    const byBase = new Map<string, typeof allAssets>();
+    for (const a of allAssets) {
+      dexNamesSet.add(a.dex);
+      if (!byBase.has(a.base)) byBase.set(a.base, []);
+      byBase.get(a.base)!.push(a);
+    }
+
+    // Only show assets on 2+ dexes, sorted by max spread
+    for (const [base, assets] of byBase) {
+      if (assets.length < 2) continue;
+      const row: DexAssetRow = {
+        base,
+        dexes: assets.map((a) => {
+          // All dex funding rates are already per-hour, same as hyperliquid
+          const ann = annualizeRate(a.fundingRate, "hyperliquid");
+          return { dex: a.dex, rate: a.fundingRate, annualizedPct: ann, markPrice: a.markPrice, oi: a.openInterest };
+        }),
+      };
+      dexAssets.push(row);
+    }
+    // Sort by max spread across dexes
+    dexAssets.sort((a, b) => {
+      const spreadA = Math.max(...a.dexes.map((d) => d.annualizedPct)) - Math.min(...a.dexes.map((d) => d.annualizedPct));
+      const spreadB = Math.max(...b.dexes.map((d) => d.annualizedPct)) - Math.min(...b.dexes.map((d) => d.annualizedPct));
+      return spreadB - spreadA;
+    });
   } catch {
     // dex arb unavailable
   }
 
-  return { opportunities, dexArb, exchangeStatus };
+  const dexNames = [...dexNamesSet].sort();
+  return { opportunities, dexArb, dexAssets: dexAssets.slice(0, 30), dexNames, exchangeStatus };
 }
 
 /**
