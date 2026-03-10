@@ -24,7 +24,6 @@ const EXCHANGE_FUNDING_HOURS: Record<string, number> = {
 
 /**
  * Get funding period in hours for an exchange.
- * HIP-3 deployed dexes (not in the map) default to 8h.
  * Main exchanges (HL, PAC, LT) are all 1h.
  */
 export function getFundingHours(exchange: string): number {
