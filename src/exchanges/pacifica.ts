@@ -73,15 +73,31 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async getBalance(): Promise<ExchangeBalance> {
-    const info = await this.client.getAccount(this.account);
+    const [info, positions, prices] = await Promise.all([
+      this.client.getAccount(this.account),
+      this.client.getPositions(this.account),
+      this.client.getPrices(),
+    ]);
     const raw = info as unknown as Record<string, unknown>;
+    const priceMap = new Map(prices.map((p) => [p.symbol, Number(p.mark)]));
+
+    // Sum actual unrealized PnL from positions (mark vs entry)
+    let totalPnl = 0;
+    for (const p of positions) {
+      const mark = priceMap.get(p.symbol) ?? 0;
+      const entry = Number(p.entry_price);
+      const amount = Number(p.amount);
+      const side = p.side === "bid" ? "long" : "short";
+      totalPnl += side === "long"
+        ? (mark - entry) * amount
+        : (entry - mark) * amount;
+    }
+
     return {
       equity: info.account_equity,
       available: info.available_to_spend,
       marginUsed: String(raw.total_margin_used ?? raw.margin_used ?? "0"),
-      unrealizedPnl: String(
-        Number(info.account_equity) - Number(info.balance)
-      ),
+      unrealizedPnl: totalPnl.toFixed(4),
     };
   }
 
