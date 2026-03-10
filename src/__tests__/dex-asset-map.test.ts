@@ -152,22 +152,19 @@ describe("findDexArbPairs — spread calculation", () => {
     expect(pairs[0].short.dex).toBe("dexA");
   });
 
-  it("uses 8h funding period for deployed dexes, 1h for native HL", () => {
+  it("all dexes use 1h funding period (including HIP-3 deployed)", () => {
     const assets: DexAsset[] = [
-      // Native HL: 1h funding → 0.001/1h = 0.001 hourly
+      // Native HL: 1h funding
       makeAsset({ raw: "BTC", base: "BTC", dex: "hl", markPrice: 68000, fundingRate: 0.001 }),
-      // Deployed dex: 8h funding → 0.001/8h = 0.000125 hourly
+      // Deployed dex: also 1h funding (same rate = no spread)
       makeAsset({ raw: "hyna:BTC", base: "BTC", dex: "hyna", markPrice: 68010, fundingRate: 0.001 }),
     ];
 
-    const pairs = findDexArbPairs(assets);
-    expect(pairs).toHaveLength(1);
-    // Same raw rate but HL hourly = 0.001, hyna hourly = 0.000125
-    // Spread = |0.001 - 0.000125| × 8760 × 100 = 766.5%
-    expect(pairs[0].annualSpread).toBeGreaterThan(700);
-    // Long on hyna (lower hourly rate), short on HL (higher hourly rate)
-    expect(pairs[0].long.dex).toBe("hyna");
-    expect(pairs[0].short.dex).toBe("hl");
+    const pairs = findDexArbPairs(assets, { minAnnualSpread: 0 });
+    // Same rate on both → spread ≈ 0
+    if (pairs.length > 0) {
+      expect(pairs[0].annualSpread).toBeLessThan(1);
+    }
   });
 
   it("filters by minAnnualSpread", () => {

@@ -215,11 +215,9 @@ export function findDexArbPairs(
         const gapPct = Math.abs(a.markPrice - b.markPrice) / avgPrice * 100;
         if (gapPct > maxGap) continue;
 
-        // HIP-3 deployed dexes settle funding every 8h
-        const fundingHoursA = a.dex === "hl" ? 1 : 8;
-        const fundingHoursB = b.dex === "hl" ? 1 : 8;
-        const hourlyA = a.fundingRate / fundingHoursA;
-        const hourlyB = b.fundingRate / fundingHoursB;
+        // All dexes (including HIP-3 deployed) settle funding every 1h
+        const hourlyA = a.fundingRate;
+        const hourlyB = b.fundingRate;
         const annualSpread = Math.abs(hourlyA - hourlyB) * 8760 * 100;
 
         if (annualSpread < minSpread) continue;
