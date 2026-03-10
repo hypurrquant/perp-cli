@@ -12,6 +12,7 @@ perp status --json
 ## Features
 
 - **3 Exchanges** — Pacifica (Solana), Hyperliquid (HyperEVM), Lighter (Ethereum)
+- **Live Dashboard** — Real-time multi-exchange dashboard with WebSocket feeds
 - **CCTP V2 Bridge** — $0 fee USDC bridging across Solana, Arbitrum, Base (6 routes)
 - **Funding Rate Arb** — Cross-exchange funding rate arbitrage scanner + auto-executor
 - **Grid & DCA Bots** — Automated strategies with background job management
@@ -21,15 +22,24 @@ perp status --json
 ## Quick Start
 
 ```bash
-# Configure exchange keys
-export PRIVATE_KEY=<solana-base58-key>        # Pacifica
+# Interactive setup (recommended for first-time users)
+perp init
+
+# Or configure exchange keys manually
 export HL_PRIVATE_KEY=<evm-hex-key>           # Hyperliquid
+export PRIVATE_KEY=<solana-base58-key>        # Pacifica
 export LIGHTER_PRIVATE_KEY=<evm-hex-key>      # Lighter
 
-# Check status across exchanges
+# Or use wallet management
+perp wallet import evm <key>                  # Import & auto-bind to HL + Lighter
+perp wallet import solana <key>               # Import & auto-bind to Pacifica
+
+# Set default exchange (skip -e flag)
+perp settings set default-exchange hyperliquid
+
+# Check status
 perp status
-perp -e hyperliquid status
-perp -e lighter status
+perp -e pacifica status
 ```
 
 ## Commands
@@ -71,8 +81,19 @@ perp trade sl BTC 58000             # Stop-loss
 ```bash
 perp manage leverage BTC 10         # Set leverage
 perp manage margin-mode BTC cross   # Cross/isolated margin
-perp manage deposit hyperliquid 100 # Deposit USDC
-perp manage withdraw pacifica 50    # Withdraw USDC
+```
+
+### Deposit & Withdraw
+
+```bash
+perp deposit pacifica 100           # Deposit USDC into Pacifica
+perp deposit hyperliquid 100        # Deposit USDC into Hyperliquid (Arbitrum)
+perp deposit lighter ethereum 100   # Deposit via Ethereum L1
+perp deposit lighter cctp arb 100   # Deposit via CCTP (Arbitrum/Base/Avalanche)
+perp deposit lighter info           # Show all Lighter deposit routes
+perp withdraw pacifica 50           # Withdraw USDC
+perp withdraw hyperliquid 50
+perp deposit info                   # All deposit instructions
 ```
 
 ### Cross-Chain Bridge (CCTP V2)
@@ -117,6 +138,16 @@ perp stream book BTC                # Live orderbook
 perp stream trades BTC              # Live trades
 perp stream funding                 # Live funding rates
 ```
+
+### Live Dashboard
+
+```bash
+perp dashboard                      # Real-time multi-exchange dashboard
+perp dashboard --port 3457          # Custom port
+perp dashboard --exchanges hl,pac   # Specific exchanges only
+```
+
+WebSocket-based real-time monitoring: positions, orders, balances, funding rates, arb opportunities across all exchanges. Includes HIP-3 dex position tracking.
 
 ### Cross-Exchange Tools
 
@@ -213,25 +244,37 @@ perp plan execute plan.json         # Execute multi-step plan
 
 ## Configuration
 
+### Wallet Management (Recommended)
+
+```bash
+perp init                           # Interactive setup wizard
+perp wallet generate evm            # Generate new EVM wallet
+perp wallet import solana <key>     # Import existing key
+perp wallet use <name>              # Auto-bind to exchanges by type
+perp wallet list                    # List all wallets
+perp wallet balance                 # On-chain balances
+```
+
+Wallets are stored in `~/.perp/wallets.json` (file permission 0600).
+
 ### Environment Variables
 
 ```bash
-# Exchange keys
+# Exchange keys (alternative to wallet management)
 PRIVATE_KEY=                        # Default key (Solana base58 or EVM hex)
 PACIFICA_PRIVATE_KEY=               # Pacifica (Solana)
 HL_PRIVATE_KEY=                     # Hyperliquid (EVM)
 LIGHTER_PRIVATE_KEY=                # Lighter (EVM)
 LIGHTER_API_KEY=                    # Lighter API key (40-byte)
-
-# Optional
-DEBRIDGE_REFERRAL_CODE=             # deBridge referral
-HL_REFERRAL_CODE=                   # Hyperliquid referral
 ```
+
+Key resolution order: `--private-key` flag → exchange-specific env var → `PRIVATE_KEY` → wallet store → `~/.perp/<exchange>.key`
 
 ### Settings
 
 ```bash
 perp settings show                  # Current settings
+perp settings set default-exchange hyperliquid  # Set default exchange
 perp settings referrals on          # Enable referral codes
 perp settings set referralCodes.hyperliquid MYCODE
 ```
@@ -243,7 +286,7 @@ perp settings set referralCodes.hyperliquid MYCODE
 - **EVM**: `ethers` v6
 - **Exchanges**: `hyperliquid` SDK, `lighter-sdk` (WASM), `@pacifica/sdk`
 - **Bridge**: Circle CCTP V2 (Solana ↔ EVM), deBridge DLN (fallback)
-- **Testing**: Vitest (780+ tests)
+- **Testing**: Vitest (860+ tests)
 
 ## License
 

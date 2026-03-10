@@ -4,7 +4,7 @@ description: "Guide for AI agents to use perp-cli: multi-DEX perpetual futures C
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.3.0"
+  version: "0.3.2"
 ---
 
 # perp-cli Agent Guide
@@ -53,12 +53,28 @@ Connect via MCP for read-only market data + CLI command suggestions. The MCP ser
 
 ## Setup
 
-Configure exchange keys in `.env`:
+### Quick Start (Recommended)
 ```bash
+perp init                             # Interactive setup wizard
+```
+This guides you through wallet generation/import and exchange binding.
+
+### Manual Setup
+```bash
+# Option A: Wallet management (stored in ~/.perp/wallets.json)
+perp wallet import evm <key>          # Import EVM key
+perp wallet import solana <key>       # Import Solana key
+perp wallet use <name>                # Auto-bind to matching exchanges
+perp wallet use <name> hyperliquid    # Bind to specific exchange
+
+# Option B: Environment variables
 PRIVATE_KEY=<solana-base58>           # Pacifica
 HL_PRIVATE_KEY=<evm-hex>             # Hyperliquid
 LIGHTER_PRIVATE_KEY=<evm-hex-32b>    # Lighter
 LIGHTER_API_KEY=<40-byte>            # Lighter API
+
+# Set default exchange (avoid -e flag every time)
+perp settings set default-exchange hyperliquid
 ```
 
 ## Core Rules
@@ -179,6 +195,9 @@ perp --json trade pnl-track                 # real-time PnL tracker
 ```bash
 perp --json deposit pacifica <AMOUNT>
 perp --json deposit hyperliquid <AMOUNT>
+perp --json deposit lighter ethereum <AMOUNT>         # L1 direct (min 1 USDC)
+perp --json deposit lighter cctp arbitrum <AMOUNT>    # CCTP (min 5 USDC)
+perp --json deposit lighter info                      # all Lighter deposit routes
 perp --json withdraw pacifica <AMOUNT>
 perp --json withdraw hyperliquid <AMOUNT>
 perp --json deposit info                    # deposit instructions
@@ -239,6 +258,19 @@ perp --json wallet list                     # list wallets
 perp --json wallet balance                  # on-chain balance
 perp --json wallet generate solana          # generate new wallet
 perp --json wallet generate evm
+perp --json wallet import solana <KEY>      # import existing key
+perp --json wallet import evm <KEY>
+perp --json wallet use <NAME>               # auto-bind to exchanges by type
+perp --json wallet use <NAME> hyperliquid   # bind to specific exchange
+perp --json wallet rename <OLD> <NEW>
+perp --json wallet remove <NAME>
+```
+
+### Dashboard
+```bash
+perp dashboard                              # real-time multi-exchange dashboard
+perp dashboard --port 3457                  # custom port
+perp dashboard --exchanges hl,pac           # specific exchanges
 ```
 
 ### Alerts

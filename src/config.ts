@@ -1,5 +1,6 @@
 import { Keypair } from "@solana/web3.js";
 import bs58 from "bs58";
+import chalk from "chalk";
 import { resolve } from "path";
 import { existsSync, readFileSync } from "fs";
 
@@ -39,12 +40,12 @@ export async function loadPrivateKey(exchange: Exchange, pkOverride?: string): P
   }
 
   throw new Error(
-    `No private key found for ${exchange}. Provide via:\n` +
-      `  --private-key <key>\n` +
-      `  ${envMap[exchange].join(" or ")} env var\n` +
-      `  PRIVATE_KEY env var\n` +
-      `  perp wallet generate/import + perp wallet use\n` +
-      `  ~/.perp/${exchange}.key`
+    `No private key configured for ${exchange}.\n\n` +
+      `  Quick start:  ${chalk.cyan("perp init")}\n\n` +
+      `  Or manually:\n` +
+      `    perp wallet import ${exchange === "pacifica" ? "solana" : "evm"} <key>\n` +
+      `    ${envMap[exchange][0]}=<key> (env var)\n` +
+      `    --private-key <key> (per-command)`
   );
 }
 

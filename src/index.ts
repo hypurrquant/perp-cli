@@ -43,11 +43,15 @@ import { setSharedApiNetwork } from "./shared-api.js";
 
 const program = new Command();
 
+// Resolve default exchange from settings (fallback: "pacifica")
+const _settings = loadSettings();
+const _defaultExchange = _settings.defaultExchange || "pacifica";
+
 program
   .name("perp")
   .description("Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter)")
-  .version("0.3.1")
-  .option("-e, --exchange <exchange>", "Exchange: pacifica, hyperliquid, lighter", "pacifica")
+  .version("0.3.2")
+  .option("-e, --exchange <exchange>", `Exchange: pacifica, hyperliquid, lighter (default: ${_defaultExchange})`, _defaultExchange)
   .option("-n, --network <network>", "Network: mainnet or testnet", "mainnet")
   .option("-k, --private-key <key>", "Private key")
   .option("--json", "Output raw JSON (for piping)")

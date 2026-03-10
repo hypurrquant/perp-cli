@@ -16,7 +16,8 @@ export function registerSettingsCommands(program: Command, isJson: () => boolean
         if (isJson()) return printJson(jsonOk(s));
 
         console.log(chalk.cyan.bold("\n  CLI Settings\n"));
-        console.log(`  Referrals:     ${s.referrals ? chalk.green("ON") : chalk.gray("OFF (opt-in)")}`);
+        console.log(`  Default Exchange: ${s.defaultExchange ? chalk.cyan(s.defaultExchange) : chalk.gray("pacifica (built-in)")}`);
+        console.log(`  Referrals:        ${s.referrals ? chalk.green("ON") : chalk.gray("OFF (opt-in)")}`);
         console.log(chalk.white.bold("\n  Referral Codes:"));
         console.log(`    Pacifica:      ${s.referralCodes.pacifica || chalk.gray("(none)")}`);
         console.log(`    Hyperliquid:   ${s.referralCodes.hyperliquid || chalk.gray("(none)")}`);
@@ -65,7 +66,14 @@ export function registerSettingsCommands(program: Command, isJson: () => boolean
       await withJsonErrors(isJson(), async () => {
         const s = loadSettings();
 
-        if (key === "referrals") {
+        if (key === "default-exchange" || key === "defaultExchange") {
+          const valid = ["pacifica", "hyperliquid", "lighter"];
+          if (!valid.includes(value.toLowerCase())) {
+            console.error(chalk.red(`  Invalid exchange: ${value}. Use: ${valid.join(", ")}`));
+            return;
+          }
+          s.defaultExchange = value.toLowerCase();
+        } else if (key === "referrals") {
           s.referrals = value === "true" || value === "on";
         } else if (key.startsWith("referralCodes.")) {
           const exchange = key.split(".")[1] as keyof Settings["referralCodes"];
@@ -77,7 +85,7 @@ export function registerSettingsCommands(program: Command, isJson: () => boolean
           }
         } else {
           console.error(chalk.red(`  Unknown key: ${key}`));
-          console.log(chalk.gray("  Valid keys: referrals, referralCodes.pacifica, referralCodes.hyperliquid, referralCodes.lighter\n"));
+          console.log(chalk.gray("  Valid keys: default-exchange, referrals, referralCodes.pacifica, referralCodes.hyperliquid, referralCodes.lighter\n"));
           return;
         }
 

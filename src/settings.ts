@@ -5,6 +5,8 @@ const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
 const SETTINGS_FILE = resolve(PERP_DIR, "settings.json");
 
 export interface Settings {
+  /** Default exchange when -e flag is omitted */
+  defaultExchange: string;
   /** Enable referral/builder codes (default: false — opt-in only) */
   referrals: boolean;
   /** Per-exchange referral codes (used when referrals=true) */
@@ -21,6 +23,7 @@ export interface Settings {
 }
 
 const DEFAULTS: Settings = {
+  defaultExchange: "",
   referrals: false,
   referralCodes: {
     pacifica: "",
@@ -38,6 +41,7 @@ export function loadSettings(): Settings {
   try {
     const stored = JSON.parse(readFileSync(SETTINGS_FILE, "utf-8"));
     return {
+      defaultExchange: stored.defaultExchange ?? DEFAULTS.defaultExchange,
       referrals: stored.referrals ?? DEFAULTS.referrals,
       referralCodes: {
         pacifica: stored.referralCodes?.pacifica ?? DEFAULTS.referralCodes.pacifica,

@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { createInterface } from "readline";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
+import { loadSettings, saveSettings } from "../settings.js";
 
 const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
 const WALLETS_FILE = resolve(PERP_DIR, "wallets.json");
@@ -127,6 +128,17 @@ export function registerInitCommand(program: Command) {
 
         saveStore(store);
 
+        // Set default exchange if only one selected
+        const settings = loadSettings();
+        if (selected.length === 1) {
+          settings.defaultExchange = selected[0];
+          saveSettings(settings);
+        } else if (!settings.defaultExchange) {
+          const defaultEx = await askChoice(rl, "\n  Default exchange for CLI?", selected);
+          settings.defaultExchange = defaultEx;
+          saveSettings(settings);
+        }
+
         // Summary
         console.log(chalk.cyan.bold("\n  Setup Complete!\n"));
 
@@ -139,6 +151,11 @@ export function registerInitCommand(program: Command) {
               console.log(`    ${chalk.cyan(exchange.padEnd(14))} ${chalk.white.bold(walletName)} ${chalk.gray(w.address.slice(0, 10) + "...")}`);
             }
           }
+        }
+
+        const finalSettings = loadSettings();
+        if (finalSettings.defaultExchange) {
+          console.log(`  Default:  ${chalk.cyan(finalSettings.defaultExchange)} ${chalk.gray("(change: perp settings set default-exchange <name>)")}`);
         }
 
         // Next steps
