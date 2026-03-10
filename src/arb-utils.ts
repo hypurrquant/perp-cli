@@ -207,7 +207,7 @@ export function computeBasisRisk(
 
 // ── Webhook Notification System ──
 
-export type ArbNotifyEvent = "entry" | "exit" | "reversal" | "margin" | "basis";
+export type ArbNotifyEvent = "entry" | "exit" | "reversal" | "margin" | "basis" | "heartbeat";
 
 /**
  * Format a notification message for an arb event.
@@ -244,6 +244,11 @@ export function formatNotifyMessage(event: ArbNotifyEvent, data: Record<string, 
       const longExch = data.longExchange ?? "?";
       const shortExch = data.shortExchange ?? "?";
       return `BASIS RISK: ${symbol} price divergence ${divergence}% between ${longExch}/${shortExch}`;
+    }
+    case "heartbeat": {
+      const lastScan = data.lastScanTime ?? "unknown";
+      const minutesAgo = typeof data.minutesAgo === "number" ? data.minutesAgo.toFixed(0) : "?";
+      return `HEARTBEAT: No successful scan in ${minutesAgo} minutes (last: ${lastScan})`;
     }
     default:
       return `Arb event: ${event} - ${JSON.stringify(data)}`;

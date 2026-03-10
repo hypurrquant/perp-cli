@@ -58,6 +58,7 @@ interface ArbHistoryTrade {
   fundingIncome: number;
   netReturn: number;
   status: "completed" | "open" | "failed";
+  exitReason: string | null;
 }
 
 // ── Helpers ──
@@ -512,6 +513,7 @@ export function registerArbManageCommands(
           estimatedFees: totalFees,
           netPnl,
           results,
+          exitReason: "manual",
         },
       });
 
@@ -624,6 +626,7 @@ export function registerArbManageCommands(
             const exitSpread = matchingClose.meta?.currentSpread as number | null ?? null;
             const netPnl = matchingClose.meta?.netPnl as number | null ?? null;
             const upnl = matchingClose.meta?.unrealizedPnl as number | null ?? null;
+            const exitReason = matchingClose.meta?.exitReason as string | null ?? null;
 
             // Estimate funding income based on hold time and entry spread
             const avgSpread = entrySpread ? entrySpread : 0;
@@ -652,6 +655,7 @@ export function registerArbManageCommands(
               fundingIncome: estimatedFunding,
               netReturn: netPnl !== null ? Number(netPnl) : (upnl !== null ? Number(upnl) + estimatedFunding - fees : 0),
               status: matchingClose.status === "success" ? "completed" : "failed",
+              exitReason,
             });
           } else {
             // Open trade (no matching close)
@@ -671,6 +675,7 @@ export function registerArbManageCommands(
               fundingIncome: 0,
               netReturn: 0,
               status: "open",
+              exitReason: null,
             });
           }
         }
@@ -758,11 +763,12 @@ export function registerArbManageCommands(
             chalk.red(`-$${t.fees.toFixed(4)}`),
             formatPnl(t.netReturn),
             statusIcon,
+            t.exitReason ?? "-",
           ];
         });
 
         console.log(makeTable(
-          ["Symbol", "Exchanges", "Entry", "Exit", "Hold", "Spread", "Size", "Gross", "Funding", "Fees", "Net", "Status"],
+          ["Symbol", "Exchanges", "Entry", "Exit", "Hold", "Spread", "Size", "Gross", "Funding", "Fees", "Net", "Status", "Reason"],
           rows,
         ));
       }

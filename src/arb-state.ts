@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync } from "fs";
 import { resolve } from "path";
 
 const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
@@ -34,6 +34,7 @@ export interface ArbDaemonState {
   version: 1;
   lastStartTime: string;
   lastScanTime: string;
+  lastSuccessfulScanTime: string;
   positions: ArbPositionState[];
   config: {
     minSpread: number;
@@ -52,24 +53,50 @@ function ensureDir(): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
 }
 
-/** Load daemon state from disk. Returns null if no state file exists. */
+/** Load daemon state from disk. Falls back to .tmp if main file is corrupted. */
 export function loadArbState(): ArbDaemonState | null {
-  if (!existsSync(stateFilePath)) return null;
-  try {
-    const raw = readFileSync(stateFilePath, "utf-8");
-    const parsed = JSON.parse(raw);
-    if (parsed.version !== 1) return null;
-    return parsed as ArbDaemonState;
-  } catch {
-    return null;
+  const tmpPath = stateFilePath + ".tmp";
+
+  // Try main file first
+  if (existsSync(stateFilePath)) {
+    try {
+      const raw = readFileSync(stateFilePath, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed.version === 1) return parsed as ArbDaemonState;
+    } catch {
+      // Main file corrupted — try .tmp fallback
+    }
   }
+
+  // Fallback: recover from .tmp if main is missing or corrupted
+  if (existsSync(tmpPath)) {
+    try {
+      const raw = readFileSync(tmpPath, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed.version === 1) {
+        // Promote .tmp to main
+        try { renameSync(tmpPath, stateFilePath); } catch { /* best effort */ }
+        return parsed as ArbDaemonState;
+      }
+    } catch {
+      // .tmp also corrupted — give up
+    }
+  }
+
+  return null;
 }
 
-/** Save daemon state to disk (atomic write). */
+/**
+ * Save daemon state to disk using atomic write pattern.
+ * Writes to .tmp first, then renames to main file.
+ * If crash occurs mid-write, .tmp is partial but main file is intact.
+ */
 export function saveArbState(state: ArbDaemonState): void {
   ensureDir();
+  const tmpPath = stateFilePath + ".tmp";
   const json = JSON.stringify(state, null, 2);
-  writeFileSync(stateFilePath, json, { mode: 0o600 });
+  writeFileSync(tmpPath, json, { mode: 0o600 });
+  renameSync(tmpPath, stateFilePath);
 }
 
 /** Add a position to the persisted state. */
@@ -115,6 +142,7 @@ export function createInitialState(config: ArbDaemonState["config"]): ArbDaemonS
     version: 1,
     lastStartTime: new Date().toISOString(),
     lastScanTime: new Date().toISOString(),
+    lastSuccessfulScanTime: new Date().toISOString(),
     positions: [],
     config,
   };

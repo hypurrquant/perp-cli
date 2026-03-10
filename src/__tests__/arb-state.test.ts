@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { existsSync, unlinkSync, mkdirSync } from "fs";
+import { existsSync, unlinkSync, mkdirSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import {
   loadArbState,
@@ -37,14 +37,18 @@ function makePosition(overrides: Partial<ArbPositionState> = {}): ArbPositionSta
 }
 
 describe("Arb State Persistence", () => {
+  const TMP_FILE = TEST_FILE + ".tmp";
+
   beforeEach(() => {
     if (!existsSync(TEST_DIR)) mkdirSync(TEST_DIR, { recursive: true });
     if (existsSync(TEST_FILE)) unlinkSync(TEST_FILE);
+    if (existsSync(TMP_FILE)) unlinkSync(TMP_FILE);
     setStateFilePath(TEST_FILE);
   });
 
   afterEach(() => {
     if (existsSync(TEST_FILE)) unlinkSync(TEST_FILE);
+    if (existsSync(TMP_FILE)) unlinkSync(TMP_FILE);
     resetStateFilePath();
   });
 
@@ -245,15 +249,68 @@ describe("Arb State Persistence", () => {
   });
 
   it("loadArbState returns null for corrupt JSON", () => {
-    const { writeFileSync } = require("fs");
     writeFileSync(TEST_FILE, "not valid json{{{", { mode: 0o600 });
     const state = loadArbState();
     expect(state).toBeNull();
   });
 
   it("loadArbState returns null for wrong version", () => {
-    const { writeFileSync } = require("fs");
     writeFileSync(TEST_FILE, JSON.stringify({ version: 99 }), { mode: 0o600 });
+    const state = loadArbState();
+    expect(state).toBeNull();
+  });
+
+  it("saveArbState uses atomic write (no .tmp left after success)", () => {
+    const state = createInitialState({
+      minSpread: 30, closeSpread: 5, size: 100,
+      holdDays: 7, bridgeCost: 0.5, maxPositions: 5, settleStrategy: "aware",
+    });
+    saveArbState(state);
+    // Main file should exist, .tmp should NOT exist after successful save
+    expect(existsSync(TEST_FILE)).toBe(true);
+    expect(existsSync(TMP_FILE)).toBe(false);
+  });
+
+  it("loadArbState recovers from .tmp when main is corrupted", () => {
+    // Simulate: valid .tmp exists but main file is corrupted (crash mid-rename)
+    const state = createInitialState({
+      minSpread: 25, closeSpread: 3, size: 200,
+      holdDays: 5, bridgeCost: 1.0, maxPositions: 3, settleStrategy: "aware",
+    });
+    state.positions.push(makePosition({ symbol: "BTC", accumulatedFunding: 99.99 }));
+
+    // Write valid state to .tmp, corrupt data to main
+    writeFileSync(TMP_FILE, JSON.stringify(state, null, 2), { mode: 0o600 });
+    writeFileSync(TEST_FILE, "corrupted{{{partial write", { mode: 0o600 });
+
+    const recovered = loadArbState();
+    expect(recovered).not.toBeNull();
+    expect(recovered!.positions).toHaveLength(1);
+    expect(recovered!.positions[0].symbol).toBe("BTC");
+    expect(recovered!.positions[0].accumulatedFunding).toBe(99.99);
+    // After recovery, .tmp should be promoted to main
+    expect(existsSync(TEST_FILE)).toBe(true);
+  });
+
+  it("loadArbState recovers from .tmp when main is missing", () => {
+    const state = createInitialState({
+      minSpread: 30, closeSpread: 5, size: 100,
+      holdDays: 7, bridgeCost: 0.5, maxPositions: 5, settleStrategy: "aware",
+    });
+    state.positions.push(makePosition({ symbol: "SOL" }));
+
+    // Only .tmp exists (crash before rename completed)
+    writeFileSync(TMP_FILE, JSON.stringify(state, null, 2), { mode: 0o600 });
+
+    const recovered = loadArbState();
+    expect(recovered).not.toBeNull();
+    expect(recovered!.positions[0].symbol).toBe("SOL");
+  });
+
+  it("loadArbState returns null when both main and .tmp are corrupt", () => {
+    writeFileSync(TEST_FILE, "corrupt main{{{", { mode: 0o600 });
+    writeFileSync(TMP_FILE, "corrupt tmp{{{", { mode: 0o600 });
+
     const state = loadArbState();
     expect(state).toBeNull();
   });
