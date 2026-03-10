@@ -104,6 +104,12 @@ export function getUI(): string {
   .event-type.warn { color:var(--yellow); }
   .event-type.crit { color:var(--red); }
 
+  /* Dex filters */
+  .dex-filters { display:flex; gap:6px; margin:8px 0; flex-wrap:wrap; }
+  .dex-filter { padding:3px 10px; border-radius:4px; background:var(--card); border:1px solid var(--border); cursor:pointer; font-size:11px; color:var(--muted); transition:all 0.15s; }
+  .dex-filter:hover { border-color:var(--cyan); color:var(--text); }
+  .dex-filter.active { background:var(--cyan); color:var(--bg); border-color:var(--cyan); font-weight:600; }
+
   .footer { padding:16px 24px; text-align:center; font-size:11px; color:var(--muted); border-top:1px solid var(--border); margin-top:20px; }
 
   @media (max-width: 768px) {
@@ -180,6 +186,8 @@ let activeExchange = null;
 let activePage = 'portfolio';
 const MAX_EVENTS = 100;
 const events = [];
+// Dex filter: which dex prefixes to show (null = show all)
+let activeDexFilters = new Set(); // empty = show all
 
 // ── Navigation ──
 $$('.nav-tab').forEach(tab => {
@@ -241,9 +249,35 @@ function renderTabs(exchanges) {
   $$('.tab').forEach(tab => { tab.onclick=()=>{ activeExchange=tab.dataset.ex; render(); }; });
 }
 
+function getDex(symbol) {
+  // "xyz:CL" → "xyz", "BTC" → "hl"
+  return symbol.includes(':') ? symbol.split(':')[0] : 'hl';
+}
+
 function renderPanels(exchanges) {
   $('#panels').innerHTML = exchanges.map(ex => {
     const isActive = ex.name===activeExchange;
+    const isHL = ex.name === 'hyperliquid';
+
+    // For HL: detect unique dexes from positions/orders
+    let dexes = [];
+    let filteredPositions = ex.positions;
+    let filteredOrders = ex.orders;
+    if (isHL) {
+      const dexSet = new Set();
+      ex.positions.forEach(p => dexSet.add(getDex(p.symbol)));
+      ex.orders.forEach(o => dexSet.add(getDex(o.symbol)));
+      dexes = ['all', ...Array.from(dexSet).sort()];
+      if (activeDexFilters.size > 0) {
+        filteredPositions = ex.positions.filter(p => activeDexFilters.has(getDex(p.symbol)));
+        filteredOrders = ex.orders.filter(o => activeDexFilters.has(getDex(o.symbol)));
+      }
+    }
+
+    const dexFilterHtml = isHL && dexes.length > 2 ? \`<div class="dex-filters">\${dexes.map(d =>
+      \`<div class="dex-filter \${d==='all' ? (activeDexFilters.size===0?'active':'') : (activeDexFilters.has(d)?'active':'')}" data-dex="\${d}">\${d}</div>\`
+    ).join('')}</div>\` : '';
+
     return \`<div class="exchange-panel \${isActive?'active':''}" id="panel-\${ex.name}">
       <div class="balance-bar">
         <div class="balance-item"><div class="label">Equity</div><div class="val">$\${fmt(ex.balance.equity)}</div></div>
@@ -251,14 +285,40 @@ function renderPanels(exchanges) {
         <div class="balance-item"><div class="label">Margin Used</div><div class="val">$\${fmt(ex.balance.marginUsed)}</div></div>
         <div class="balance-item"><div class="label">Unrealized PnL</div><div class="val \${pnlClass(ex.balance.unrealizedPnl)}">\${pnlSign(ex.balance.unrealizedPnl)}</div></div>
       </div>
-      <div class="section-title">Positions (\${ex.positions.length})</div>
-      \${ex.positions.length?\`<table><thead><tr><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Liq</th><th>PnL</th><th>Lev</th></tr></thead><tbody>\${ex.positions.map(p=>\`<tr><td>\${p.symbol}</td><td class="side-\${p.side}">\${p.side.toUpperCase()}</td><td>\${p.size}</td><td>$\${fmt(p.entryPrice)}</td><td>$\${fmt(p.markPrice)}</td><td>\${p.liquidationPrice==='N/A'?'N/A':'$'+fmt(p.liquidationPrice)}</td><td class="\${pnlClass(p.unrealizedPnl)}">\${pnlSign(p.unrealizedPnl)}</td><td>\${p.leverage}x</td></tr>\`).join('')}</tbody></table>\`:'<div class="empty-msg">No open positions</div>'}
-      <div class="section-title">Open Orders (\${ex.orders.length})</div>
-      \${ex.orders.length?\`<table><thead><tr><th>Symbol</th><th>Side</th><th>Type</th><th>Price</th><th>Size</th><th>Filled</th><th>Status</th></tr></thead><tbody>\${ex.orders.map(o=>\`<tr><td>\${o.symbol}</td><td class="side-\${o.side}">\${o.side.toUpperCase()}</td><td>\${o.type}</td><td>$\${fmt(o.price)}</td><td>\${o.size}</td><td>\${o.filled}</td><td>\${o.status}</td></tr>\`).join('')}</tbody></table>\`:'<div class="empty-msg">No open orders</div>'}
+      <div class="section-title">Positions (\${filteredPositions.length}\${isHL && activeDexFilters.size>0 ? '/'+ex.positions.length : ''})</div>
+      \${dexFilterHtml}
+      \${filteredPositions.length?\`<table><thead><tr>\${isHL?'<th>DEX</th>':''}<th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Liq</th><th>PnL</th><th>Lev</th></tr></thead><tbody>\${filteredPositions.map(p=>{
+        const dex = getDex(p.symbol);
+        const sym = p.symbol.includes(':') ? p.symbol.split(':').slice(1).join(':') : p.symbol;
+        return \`<tr>\${isHL?\`<td style="color:var(--purple);font-size:11px">\${dex}</td>\`:''}<td>\${sym}</td><td class="side-\${p.side}">\${p.side.toUpperCase()}</td><td>\${p.size}</td><td>$\${fmt(p.entryPrice)}</td><td>$\${fmt(p.markPrice)}</td><td>\${p.liquidationPrice==='N/A'?'N/A':'$'+fmt(p.liquidationPrice)}</td><td class="\${pnlClass(p.unrealizedPnl)}">\${pnlSign(p.unrealizedPnl)}</td><td>\${p.leverage}x</td></tr>\`;
+      }).join('')}</tbody></table>\`:'<div class="empty-msg">No open positions</div>'}
+      <div class="section-title">Open Orders (\${filteredOrders.length})</div>
+      \${filteredOrders.length?\`<table><thead><tr>\${isHL?'<th>DEX</th>':''}<th>Symbol</th><th>Side</th><th>Type</th><th>Price</th><th>Size</th><th>Filled</th><th>Status</th></tr></thead><tbody>\${filteredOrders.map(o=>{
+        const dex = getDex(o.symbol);
+        const sym = o.symbol.includes(':') ? o.symbol.split(':').slice(1).join(':') : o.symbol;
+        return \`<tr>\${isHL?\`<td style="color:var(--purple);font-size:11px">\${dex}</td>\`:''}<td>\${sym}</td><td class="side-\${o.side}">\${o.side.toUpperCase()}</td><td>\${o.type}</td><td>$\${fmt(o.price)}</td><td>\${o.size}</td><td>\${o.filled}</td><td>\${o.status}</td></tr>\`;
+      }).join('')}</tbody></table>\`:'<div class="empty-msg">No open orders</div>'}
       <div class="section-title">Markets (Top 10)</div>
       \${ex.topMarkets.length?\`<table><thead><tr><th>Symbol</th><th>Mark</th><th>Index</th><th>Funding</th><th>24h Vol</th><th>OI</th><th>Max Lev</th></tr></thead><tbody>\${ex.topMarkets.map(m=>{const fr=Number(m.fundingRate);return\`<tr><td>\${m.symbol}</td><td>$\${fmt(m.markPrice)}</td><td>$\${fmt(m.indexPrice)}</td><td class="\${rateClass(fr)}">\${(fr*100).toFixed(4)}%</td><td>$\${fmt(m.volume24h,0)}</td><td>$\${fmt(m.openInterest,0)}</td><td>\${m.maxLeverage}x</td></tr>\`;}).join('')}</tbody></table>\`:'<div class="empty-msg">No market data</div>'}
     </div>\`;
   }).join('');
+
+  // Bind dex filter clicks
+  $$('.dex-filter').forEach(btn => {
+    btn.onclick = () => {
+      const dex = btn.dataset.dex;
+      if (dex === 'all') {
+        activeDexFilters.clear();
+      } else {
+        if (activeDexFilters.has(dex)) {
+          activeDexFilters.delete(dex);
+        } else {
+          activeDexFilters.add(dex);
+        }
+      }
+      render();
+    };
+  });
 }
 
 // ── Arb Rendering ──

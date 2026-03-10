@@ -215,9 +215,20 @@ async function pollSnapshot(exchanges: DashboardExchange[]): Promise<DashboardSn
     }),
   );
 
-  const exchangeData = results
+  let exchangeData = results
     .filter((r): r is PromiseFulfilledResult<DashboardSnapshot["exchanges"][0]> => r.status === "fulfilled")
     .map((r) => r.value);
+
+  // Merge hl:* dex entries into main hyperliquid (same account, shared balance)
+  const hlEntry = exchangeData.find(e => e.name === "hyperliquid");
+  if (hlEntry) {
+    const dexEntries = exchangeData.filter(e => e.name.startsWith("hl:") && e.name !== "hyperliquid");
+    for (const dex of dexEntries) {
+      hlEntry.positions.push(...dex.positions);
+      hlEntry.orders.push(...dex.orders);
+    }
+    exchangeData = exchangeData.filter(e => !e.name.startsWith("hl:") || e.name === "hyperliquid");
+  }
 
   const totals = {
     equity: 0,
