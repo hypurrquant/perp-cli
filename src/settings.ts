@@ -20,7 +20,7 @@ const DEFAULTS: Settings = {
   referralCodes: {
     pacifica: "",
     hyperliquid: "PERP_CLI",
-    lighter: "",
+    lighter: "718585MY",
   },
 };
 
