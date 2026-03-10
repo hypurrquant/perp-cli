@@ -1045,4 +1045,337 @@ export function registerTradeCommands(
       });
     });
 
+  // ── Scale-In (분할매수) ──
+
+  trade
+    .command("scale-in <symbol> <side>")
+    .description("Place multiple limit orders at different price levels to build a position gradually (분할매수)")
+    .requiredOption("--levels <levels>", "Comma-separated price:percent pairs (e.g., 65000:30,63000:30,60000:40)")
+    .option("--size-usd <usd>", "Total USD amount to deploy across all levels")
+    .option("--size <base>", "Total base amount (e.g., 0.01 BTC)")
+    .action(async (symbol: string, side: string, opts: { levels: string; sizeUsd?: string; size?: string }) => {
+      const sym = symbol.toUpperCase();
+      const s = side.toLowerCase();
+      if (s !== "buy" && s !== "sell") errorAndExit("Side must be buy or sell");
+      if (!opts.sizeUsd && !opts.size) errorAndExit("Must specify --size-usd or --size");
+
+      // Parse levels: "65000:30,63000:30,60000:40"
+      const levels = opts.levels.split(",").map(l => {
+        const [price, pct] = l.trim().split(":");
+        if (!price || !pct) errorAndExit(`Invalid level format: ${l}. Use price:percent (e.g., 65000:30)`);
+        return { price: price.trim(), pct: parseFloat(pct.trim()) };
+      });
+
+      // Validate percentages sum to 100
+      const totalPct = levels.reduce((sum, l) => sum + l.pct, 0);
+      if (Math.abs(totalPct - 100) > 0.01) {
+        errorAndExit(`Percentages must sum to 100%. Got: ${totalPct}%`);
+      }
+
+      const adapter = await getAdapter();
+
+      // Compute sizes for each level
+      let levelSizes: { price: string; size: string; pct: number }[];
+      if (opts.sizeUsd) {
+        const totalUsd = parseFloat(opts.sizeUsd);
+        levelSizes = levels.map(l => ({
+          price: l.price,
+          pct: l.pct,
+          size: (totalUsd * l.pct / 100 / parseFloat(l.price)).toString(),
+        }));
+      } else {
+        const totalBase = parseFloat(opts.size!);
+        levelSizes = levels.map(l => ({
+          price: l.price,
+          pct: l.pct,
+          size: (totalBase * l.pct / 100).toString(),
+        }));
+      }
+
+      if (dryRunGuard("scale_in", {
+        exchange: adapter.name, symbol: sym, side: s,
+        totalSizeUsd: opts.sizeUsd ?? "N/A",
+        totalSizeBase: opts.size ?? "N/A",
+        levels: levelSizes.map(l => `${l.price}@${l.pct}% (${l.size})`).join(", "),
+      })) return;
+
+      // Place limit orders at each level (NOT reduce-only — opening positions)
+      const results: Array<{ price: string; size: string; pct: number; result: unknown }> = [];
+      for (const level of levelSizes) {
+        try {
+          const result = await adapter.limitOrder(sym, s as "buy" | "sell", level.price, level.size);
+          results.push({ price: level.price, size: level.size, pct: level.pct, result });
+          logExecution({
+            type: "limit_order", exchange: adapter.name, symbol: sym,
+            side: s, size: level.size, price: level.price,
+            status: "success", dryRun: false,
+            meta: { action: "scale-in", pct: level.pct },
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logExecution({
+            type: "limit_order", exchange: adapter.name, symbol: sym,
+            side: s, size: level.size, price: level.price,
+            status: "failed", dryRun: false, error: msg,
+            meta: { action: "scale-in", pct: level.pct },
+          });
+          if (isJson()) {
+            results.push({ price: level.price, size: level.size, pct: level.pct, result: { error: msg } });
+          } else {
+            console.log(chalk.red(`  Failed: ${level.price} x ${level.size} — ${msg}`));
+          }
+        }
+      }
+
+      if (isJson()) return printJson(jsonOk({ symbol: sym, side: s, levels: results }));
+
+      console.log(chalk.green(`\n  Scale-in orders placed for ${sym} on ${adapter.name}:\n`));
+      for (const r of results) {
+        const status = (r.result as Record<string, unknown>)?.error ? chalk.red("FAILED") : chalk.green("OK");
+        console.log(`  ${status}  $${r.price} — ${r.pct}% (${r.size} ${sym})`);
+      }
+      console.log();
+    });
+
+  // ── Trailing Stop ──
+
+  trade
+    .command("trailing-stop <symbol>")
+    .description("Client-side trailing stop that monitors price and closes position when price drops by X% from peak")
+    .requiredOption("--trail <pct>", "Trail percentage (e.g., 3 = close when price drops 3% from high)")
+    .option("--interval <sec>", "Check interval in seconds", "5")
+    .option("--activation <price>", "Only start trailing after price reaches this level")
+    .option("--background", "Run in background (tmux)")
+    .action(async (symbol: string, opts: {
+      trail: string; interval: string; activation?: string; background?: boolean;
+    }) => {
+      const sym = symbol.toUpperCase();
+      const trailPct = parseFloat(opts.trail);
+      const intervalSec = parseInt(opts.interval);
+      const activationPrice = opts.activation ? parseFloat(opts.activation) : undefined;
+
+      if (isNaN(trailPct) || trailPct <= 0) errorAndExit("Trail percentage must be > 0");
+
+      const exchange = (await getAdapter()).name;
+
+      // --background → run via tmux
+      if (opts.background) {
+        const { startJob } = await import("../jobs.js");
+        const cliArgs = [
+          `-e`, exchange, sym,
+          `--trail`, opts.trail,
+          `--interval`, opts.interval,
+          ...(opts.activation ? [`--activation`, opts.activation] : []),
+        ];
+        const job = startJob({
+          strategy: "trailing-stop",
+          exchange,
+          params: { symbol: sym, trail: trailPct, interval: intervalSec, activation: activationPrice },
+          cliArgs,
+        });
+        if (isJson()) return printJson(jsonOk(job));
+        console.log(chalk.green(`\n  Trailing stop started in background.`));
+        console.log(`  ID: ${chalk.white.bold(job.id)}`);
+        console.log(`  Trail: ${trailPct}%${activationPrice ? ` | Activation: $${activationPrice}` : ""}`);
+        console.log(`  Logs: ${chalk.gray(`perp jobs logs ${job.id}`)}`);
+        console.log(`  Stop: ${chalk.gray(`perp jobs stop ${job.id}`)}\n`);
+        return;
+      }
+
+      // Foreground: run trailing stop loop
+      const adapter = await getAdapter();
+
+      // Auto-detect position side
+      const positions = await adapter.getPositions();
+      const pos = positions.find(p => symbolMatch(p.symbol, sym));
+      if (!pos) errorAndExit(`No open position for ${sym}. Open a position first.`);
+
+      const positionSide = pos.side; // "long" or "short"
+      const closeSide: "buy" | "sell" = positionSide === "long" ? "sell" : "buy";
+      const posSize = pos.size;
+
+      console.log(chalk.cyan(`\n  Trailing Stop for ${sym} (${positionSide} ${posSize})`));
+      console.log(chalk.cyan(`  Trail: ${trailPct}% | Interval: ${intervalSec}s${activationPrice ? ` | Activation: $${activationPrice}` : ""}`));
+      console.log(chalk.gray(`  Press Ctrl+C to cancel.\n`));
+
+      let peakPrice = 0;
+      let activated = !activationPrice; // if no activation price, start immediately
+      let running = true;
+
+      const cleanup = () => { running = false; };
+      process.on("SIGINT", cleanup);
+      process.on("SIGTERM", cleanup);
+
+      try {
+        while (running) {
+          const markets = await adapter.getMarkets();
+          const market = markets.find(m => symbolMatch(m.symbol, sym));
+          if (!market) {
+            console.log(chalk.yellow(`  Market data for ${sym} not found, retrying...`));
+            await new Promise(r => setTimeout(r, intervalSec * 1000));
+            continue;
+          }
+
+          const currentPrice = parseFloat(market.markPrice);
+
+          // Check activation
+          if (!activated && activationPrice) {
+            if (positionSide === "long" && currentPrice >= activationPrice) {
+              activated = true;
+              console.log(chalk.green(`  Activated at $${currentPrice.toFixed(2)} (>= $${activationPrice})`));
+            } else if (positionSide === "short" && currentPrice <= activationPrice) {
+              activated = true;
+              console.log(chalk.green(`  Activated at $${currentPrice.toFixed(2)} (<= $${activationPrice})`));
+            } else {
+              const ts = new Date().toLocaleTimeString();
+              console.log(chalk.gray(`  ${ts} | $${currentPrice.toFixed(2)} | Waiting for activation ($${activationPrice})...`));
+              await new Promise(r => setTimeout(r, intervalSec * 1000));
+              continue;
+            }
+          }
+
+          // Update peak
+          if (positionSide === "long") {
+            if (currentPrice > peakPrice) peakPrice = currentPrice;
+            const dropPct = ((peakPrice - currentPrice) / peakPrice) * 100;
+            const ts = new Date().toLocaleTimeString();
+            console.log(chalk.gray(`  ${ts} | Price: $${currentPrice.toFixed(2)} | Peak: $${peakPrice.toFixed(2)} | Drop: ${dropPct.toFixed(2)}%`));
+
+            if (dropPct >= trailPct) {
+              console.log(chalk.red(`\n  TRAILING STOP TRIGGERED! Price dropped ${dropPct.toFixed(2)}% from peak $${peakPrice.toFixed(2)}`));
+              console.log(chalk.red(`  Closing ${positionSide} ${posSize} ${sym}...\n`));
+              const result = await adapter.marketOrder(sym, closeSide, posSize);
+              logExecution({
+                type: "market_order", exchange: adapter.name, symbol: sym,
+                side: closeSide, size: posSize, status: "success", dryRun: false,
+                meta: { action: "trailing-stop", trailPct, peakPrice, triggerPrice: currentPrice },
+              });
+              if (isJson()) return printJson(jsonOk({ triggered: true, peakPrice, triggerPrice: currentPrice, dropPct, result }));
+              console.log(chalk.green(`  Position closed. Peak: $${peakPrice.toFixed(2)}, Exit: $${currentPrice.toFixed(2)}\n`));
+              return;
+            }
+          } else {
+            // Short position: track lowest price, trigger when price rises
+            if (peakPrice === 0 || currentPrice < peakPrice) peakPrice = currentPrice;
+            const risePct = ((currentPrice - peakPrice) / peakPrice) * 100;
+            const ts = new Date().toLocaleTimeString();
+            console.log(chalk.gray(`  ${ts} | Price: $${currentPrice.toFixed(2)} | Trough: $${peakPrice.toFixed(2)} | Rise: ${risePct.toFixed(2)}%`));
+
+            if (risePct >= trailPct) {
+              console.log(chalk.red(`\n  TRAILING STOP TRIGGERED! Price rose ${risePct.toFixed(2)}% from trough $${peakPrice.toFixed(2)}`));
+              console.log(chalk.red(`  Closing ${positionSide} ${posSize} ${sym}...\n`));
+              const result = await adapter.marketOrder(sym, closeSide, posSize);
+              logExecution({
+                type: "market_order", exchange: adapter.name, symbol: sym,
+                side: closeSide, size: posSize, status: "success", dryRun: false,
+                meta: { action: "trailing-stop", trailPct, troughPrice: peakPrice, triggerPrice: currentPrice },
+              });
+              if (isJson()) return printJson(jsonOk({ triggered: true, troughPrice: peakPrice, triggerPrice: currentPrice, risePct, result }));
+              console.log(chalk.green(`  Position closed. Trough: $${peakPrice.toFixed(2)}, Exit: $${currentPrice.toFixed(2)}\n`));
+              return;
+            }
+          }
+
+          await new Promise(r => setTimeout(r, intervalSec * 1000));
+        }
+      } finally {
+        process.removeListener("SIGINT", cleanup);
+        process.removeListener("SIGTERM", cleanup);
+      }
+
+      if (isJson()) return printJson(jsonOk({ triggered: false, reason: "cancelled" }));
+      console.log(chalk.yellow(`\n  Trailing stop cancelled.\n`));
+    });
+
+  // ── PnL Tracker ──
+
+  trade
+    .command("pnl-track")
+    .description("Live-monitor positions with real-time PnL updates")
+    .option("--interval <sec>", "Refresh interval in seconds", "3")
+    .option("--symbol <sym>", "Filter to a specific symbol")
+    .action(async (opts: { interval: string; symbol?: string }) => {
+      const intervalSec = parseInt(opts.interval);
+      const filterSym = opts.symbol?.toUpperCase();
+
+      const adapter = await getAdapter();
+
+      console.log(chalk.cyan(`\n  PnL Tracker | ${adapter.name} | Interval: ${intervalSec}s`));
+      if (filterSym) console.log(chalk.cyan(`  Filtering: ${filterSym}`));
+      console.log(chalk.gray(`  Press Ctrl+C to stop.\n`));
+
+      let running = true;
+      const cleanup = () => { running = false; };
+      process.on("SIGINT", cleanup);
+      process.on("SIGTERM", cleanup);
+
+      try {
+        while (running) {
+          const [positions, balance] = await Promise.all([
+            adapter.getPositions(),
+            adapter.getBalance(),
+          ]);
+
+          let filtered = positions;
+          if (filterSym) {
+            filtered = positions.filter(p => symbolMatch(p.symbol, filterSym));
+          }
+
+          // Fetch funding payments (recent) for display
+          let fundingBySymbol: Record<string, number> = {};
+          try {
+            const payments = await adapter.getFundingPayments(50);
+            for (const fp of payments) {
+              const sym = fp.symbol.toUpperCase();
+              fundingBySymbol[sym] = (fundingBySymbol[sym] || 0) + parseFloat(fp.payment);
+            }
+          } catch {
+            // funding payments may not be supported on all exchanges
+          }
+
+          console.clear();
+          console.log(chalk.cyan.bold(`\n  PnL Tracker — ${adapter.name} | ${new Date().toLocaleTimeString()}\n`));
+          console.log(`  Equity: $${formatUsd(balance.equity)} | Available: $${formatUsd(balance.available)} | Margin: $${formatUsd(balance.marginUsed)} | uPnL: $${formatUsd(balance.unrealizedPnl)}\n`);
+
+          if (filtered.length === 0) {
+            console.log(chalk.gray(`  No open positions${filterSym ? ` for ${filterSym}` : ""}.`));
+          } else {
+            const { makeTable } = await import("../utils.js");
+            const rows = filtered.map(p => {
+              const entry = parseFloat(p.entryPrice);
+              const mark = parseFloat(p.markPrice);
+              const pnl = parseFloat(p.unrealizedPnl);
+              const notional = parseFloat(p.size) * entry;
+              const pnlPct = notional > 0 ? (pnl / notional) * 100 : 0;
+              const funding = fundingBySymbol[p.symbol.toUpperCase()] || 0;
+              const pnlColor = pnl >= 0 ? chalk.green : chalk.red;
+              const pctColor = pnlPct >= 0 ? chalk.green : chalk.red;
+              return [
+                chalk.white.bold(p.symbol),
+                p.side === "long" ? chalk.green("LONG") : chalk.red("SHORT"),
+                p.size,
+                `$${formatUsd(p.entryPrice)}`,
+                `$${formatUsd(p.markPrice)}`,
+                pnlColor(`${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`),
+                pctColor(`${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%`),
+                funding !== 0 ? `$${funding.toFixed(4)}` : "-",
+              ];
+            });
+            console.log(makeTable(
+              ["Symbol", "Side", "Size", "Entry", "Mark", "PnL", "PnL%", "Funding"],
+              rows,
+            ));
+          }
+
+          console.log(chalk.gray(`\n  Refreshing every ${intervalSec}s... Press Ctrl+C to stop.`));
+          await new Promise(r => setTimeout(r, intervalSec * 1000));
+        }
+      } finally {
+        process.removeListener("SIGINT", cleanup);
+        process.removeListener("SIGTERM", cleanup);
+      }
+
+      console.log(chalk.yellow(`\n  PnL tracker stopped.\n`));
+    });
+
 }

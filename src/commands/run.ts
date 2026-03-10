@@ -6,6 +6,7 @@ import { runTWAP } from "../strategies/twap.js";
 import { runFundingArb } from "../strategies/funding-arb.js";
 import { runGrid } from "../strategies/grid.js";
 import { runDCA } from "../strategies/dca.js";
+import { runTrailingStop } from "../strategies/trailing-stop.js";
 import chalk from "chalk";
 
 export function registerRunCommands(
@@ -209,6 +210,43 @@ export function registerRunCommands(
       };
 
       const result = await runDCA(adapter, params, opts.jobId, log);
+      if (isJson()) printJson(jsonOk(result));
+
+      if (opts.jobId) {
+        updateJobState(opts.jobId, { status: "done" });
+      }
+    });
+
+  // ── Trailing Stop ──
+
+  run
+    .command("trailing-stop <symbol>")
+    .description("Run client-side trailing stop (monitors price, closes position when trail % hit)")
+    .requiredOption("--trail <pct>", "Trail percentage")
+    .option("--interval <sec>", "Check interval in seconds", "5")
+    .option("--activation <price>", "Only start trailing after price reaches this level")
+    .option("--job-id <id>", "Job ID (set automatically for background jobs)")
+    .action(async (symbol: string, opts: {
+      trail: string; interval: string; activation?: string; jobId?: string;
+    }) => {
+      const sym = symbol.toUpperCase();
+      const trailPct = parseFloat(opts.trail);
+      const intervalSec = parseInt(opts.interval);
+      const activationPrice = opts.activation ? parseFloat(opts.activation) : undefined;
+
+      const adapter = await getAdapter();
+      const log = (msg: string) => {
+        const ts = new Date().toLocaleTimeString();
+        console.log(`${chalk.gray(ts)} ${msg}`);
+      };
+
+      const result = await runTrailingStop(adapter, {
+        symbol: sym,
+        trailPct,
+        intervalSec,
+        activationPrice,
+      }, opts.jobId, log);
+
       if (isJson()) printJson(jsonOk(result));
 
       if (opts.jobId) {
