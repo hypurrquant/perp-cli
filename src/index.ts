@@ -35,7 +35,7 @@ import { registerDexCommands } from "./commands/dex.js";
 import { registerPlanCommands } from "./commands/plan.js";
 import { registerFundingCommands } from "./commands/funding.js";
 import { registerBacktestCommands } from "./commands/backtest.js";
-import { loadSettings } from "./settings.js";
+import { loadSettings, saveSettings } from "./settings.js";
 
 const program = new Command();
 
@@ -99,9 +99,20 @@ async function getAdapter(): Promise<ExchangeAdapter> {
       if (opts.dex) _hlAdapter.setDex(opts.dex);
       await _hlAdapter.init();
       const hlSettings = loadSettings();
-      if (hlSettings.referrals) {
+      if (hlSettings.referrals && !hlSettings.referralApplied.hyperliquid) {
         const hlRef = process.env.HL_REFERRAL_CODE || hlSettings.referralCodes.hyperliquid;
-        if (hlRef) _hlAdapter.autoSetReferrer(hlRef).catch(() => {});
+        if (hlRef) {
+          _hlAdapter.autoSetReferrer(hlRef).then(() => {
+            const s = loadSettings();
+            s.referralApplied.hyperliquid = true;
+            saveSettings(s);
+          }).catch(() => {
+            // Already referred or API error — mark as done either way
+            const s = loadSettings();
+            s.referralApplied.hyperliquid = true;
+            saveSettings(s);
+          });
+        }
       }
       _adapter = _hlAdapter;
       break;
@@ -112,9 +123,20 @@ async function getAdapter(): Promise<ExchangeAdapter> {
       _lighterAdapter = new LighterAdapter(pk, isTestnet);
       await _lighterAdapter.init();
       const ltSettings = loadSettings();
-      if (ltSettings.referrals) {
+      if (ltSettings.referrals && !ltSettings.referralApplied.lighter) {
         const ltRef = process.env.LIGHTER_REFERRAL_CODE || ltSettings.referralCodes.lighter;
-        if (ltRef) _lighterAdapter.useReferralCode(ltRef).catch(() => {});
+        if (ltRef) {
+          _lighterAdapter.useReferralCode(ltRef).then(() => {
+            const s = loadSettings();
+            s.referralApplied.lighter = true;
+            saveSettings(s);
+          }).catch(() => {
+            // Already referred or API error — mark as done either way
+            const s = loadSettings();
+            s.referralApplied.lighter = true;
+            saveSettings(s);
+          });
+        }
       }
       _adapter = _lighterAdapter;
       break;
@@ -193,9 +215,19 @@ async function getAdapterForExchange(exchange: string): Promise<ExchangeAdapter>
       if (opts.dex) _hlAdapter.setDex(opts.dex);
       await _hlAdapter.init();
       const s2 = loadSettings();
-      if (s2.referrals) {
+      if (s2.referrals && !s2.referralApplied.hyperliquid) {
         const hlRef = process.env.HL_REFERRAL_CODE || s2.referralCodes.hyperliquid;
-        if (hlRef) _hlAdapter.autoSetReferrer(hlRef).catch(() => {});
+        if (hlRef) {
+          _hlAdapter.autoSetReferrer(hlRef).then(() => {
+            const s = loadSettings();
+            s.referralApplied.hyperliquid = true;
+            saveSettings(s);
+          }).catch(() => {
+            const s = loadSettings();
+            s.referralApplied.hyperliquid = true;
+            saveSettings(s);
+          });
+        }
       }
       if (!_adapter) _adapter = _hlAdapter;
       return _hlAdapter;
@@ -207,9 +239,19 @@ async function getAdapterForExchange(exchange: string): Promise<ExchangeAdapter>
       _lighterAdapter = new LighterAdapter(pk, isTestnet);
       await _lighterAdapter.init();
       const s3 = loadSettings();
-      if (s3.referrals) {
+      if (s3.referrals && !s3.referralApplied.lighter) {
         const ltRef = process.env.LIGHTER_REFERRAL_CODE || s3.referralCodes.lighter;
-        if (ltRef) _lighterAdapter.useReferralCode(ltRef).catch(() => {});
+        if (ltRef) {
+          _lighterAdapter.useReferralCode(ltRef).then(() => {
+            const s = loadSettings();
+            s.referralApplied.lighter = true;
+            saveSettings(s);
+          }).catch(() => {
+            const s = loadSettings();
+            s.referralApplied.lighter = true;
+            saveSettings(s);
+          });
+        }
       }
       if (!_adapter) _adapter = _lighterAdapter;
       return _lighterAdapter;

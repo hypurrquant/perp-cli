@@ -35,6 +35,8 @@ export function registerSettingsCommands(program: Command, isJson: () => boolean
         const s = loadSettings();
         if (action === "on") {
           s.referrals = true;
+          // Reset applied flags so referrals get re-sent on next connection
+          s.referralApplied = { hyperliquid: false, lighter: false };
           saveSettings(s);
           if (isJson()) return printJson(jsonOk({ referrals: true }));
           console.log(chalk.green("\n  Referrals enabled. Codes will be sent on next connection.\n"));

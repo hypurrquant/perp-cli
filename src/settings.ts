@@ -9,9 +9,14 @@ export interface Settings {
   referrals: boolean;
   /** Per-exchange referral codes (used when referrals=true) */
   referralCodes: {
-    pacifica: string;   // builder code
+    pacifica: string;   // builder code (sent per-order, not one-time)
     hyperliquid: string;
     lighter: string;
+  };
+  /** Track which exchanges have had referral codes applied (one-time) */
+  referralApplied: {
+    hyperliquid: boolean;
+    lighter: boolean;
   };
 }
 
@@ -21,6 +26,10 @@ const DEFAULTS: Settings = {
     pacifica: "",
     hyperliquid: "PERP_CLI",
     lighter: "718585MY",
+  },
+  referralApplied: {
+    hyperliquid: false,
+    lighter: false,
   },
 };
 
@@ -34,6 +43,10 @@ export function loadSettings(): Settings {
         pacifica: stored.referralCodes?.pacifica ?? DEFAULTS.referralCodes.pacifica,
         hyperliquid: stored.referralCodes?.hyperliquid ?? DEFAULTS.referralCodes.hyperliquid,
         lighter: stored.referralCodes?.lighter ?? DEFAULTS.referralCodes.lighter,
+      },
+      referralApplied: {
+        hyperliquid: stored.referralApplied?.hyperliquid ?? DEFAULTS.referralApplied.hyperliquid,
+        lighter: stored.referralApplied?.lighter ?? DEFAULTS.referralApplied.lighter,
       },
     };
   } catch {
