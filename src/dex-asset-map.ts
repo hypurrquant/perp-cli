@@ -102,8 +102,8 @@ async function hlInfoPost(body: Record<string, unknown>): Promise<unknown> {
 /**
  * Fetch all assets from all Hyperliquid dexes (native + deployed).
  */
-export function fetchAllDexAssets(): Promise<DexAsset[]> {
-  const { withCache, TTL_MARKET } = require("./cache.js") as typeof import("./cache.js");
+export async function fetchAllDexAssets(): Promise<DexAsset[]> {
+  const { withCache, TTL_MARKET } = await import("./cache.js");
   return withCache("pub:hl:allDexAssets", TTL_MARKET, () => _fetchAllDexAssetsLive());
 }
 
