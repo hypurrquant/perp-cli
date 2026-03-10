@@ -130,7 +130,7 @@ export function registerDepositCommands(
 
       try {
         const { Connection, Transaction } = await import("@solana/web3.js");
-        const { buildDepositInstruction } = await import("@pacifica/sdk");
+        const { buildDepositInstruction } = await import("../pacifica/deposit.js");
         const network = getNetwork();
         const rpcUrl = network === "testnet" ? "https://api.devnet.solana.com" : "https://api.mainnet-beta.solana.com";
         const connection = new Connection(rpcUrl, "confirmed");

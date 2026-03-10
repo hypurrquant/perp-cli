@@ -983,7 +983,7 @@ async function executeCctpHyperCoreToEvm(
   return {
     provider: "cctp (HyperCore → EVM via sendToEvmWithData)",
     txHash: typeof result.response === "string" ? result.response
-      : (result.response as Record<string, unknown>)?.data?.hash ?? `hl-withdrawal-${timestamp}`,
+      : ((result.response as Record<string, unknown>)?.data as Record<string, unknown>)?.hash as string ?? `hl-withdrawal-${timestamp}`,
     srcChain: "hyperliquid",
     dstChain,
     amountIn: amountUsdc,
