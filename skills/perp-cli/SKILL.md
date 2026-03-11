@@ -4,7 +4,7 @@ description: "Multi-DEX perpetual futures trading CLI for Pacifica (Solana), Hyp
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.3.2"
+  version: "0.3.3"
   mcp-server: perp-cli
 ---
 

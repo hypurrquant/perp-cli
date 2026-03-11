@@ -76,7 +76,7 @@ function err(error: string, meta?: Record<string, unknown>) {
 // ── MCP Server ──
 
 const server = new McpServer(
-  { name: "perp-cli", version: "0.3.2" },
+  { name: "perp-cli", version: "0.3.3" },
   { capabilities: { tools: {}, resources: {} } },
 );
 
