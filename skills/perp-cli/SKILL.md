@@ -34,14 +34,6 @@ npm install -g perp-cli
 
 CRITICAL: Do NOT use `perp init` — it is interactive and will hang.
 
-**If user provides a private key:**
-```bash
-perp --json wallet set hl <KEY>              # Hyperliquid (aliases: hl, hyperliquid)
-perp --json wallet set pac <KEY>             # Pacifica (aliases: pac, pacifica)
-perp --json wallet set lt <KEY>              # Lighter (aliases: lt, lighter)
-perp --json wallet set hl <KEY> --default    # also set as default exchange
-```
-
 **If user needs a new wallet:**
 ```bash
 perp --json wallet generate evm              # creates EVM wallet for Hyperliquid + Lighter
@@ -49,10 +41,40 @@ perp --json wallet generate solana           # creates Solana wallet for Pacific
 # IMPORTANT: Tell user the generated address so they can fund it with USDC!
 ```
 
-**Lighter API key: FULLY AUTOMATIC — no manual setup needed.**
-When you run `wallet set lt <KEY>`, the CLI auto-generates a Lighter API key and saves it.
-Do NOT ask the user to create an API key on the Lighter website. Do NOT say Lighter requires separate setup.
-If auto-setup fails (rare, e.g. no ETH for gas): `perp --json -e lighter manage setup-api-key`
+### Hyperliquid setup
+```bash
+perp --json wallet set hl <EVM_PRIVATE_KEY>        # register EVM key → ready to trade immediately
+perp --json wallet show                            # verify
+perp --json -e hl account info                     # check balance
+```
+No extra steps. Key is saved as `HL_PRIVATE_KEY` in .env.
+
+### Pacifica setup
+```bash
+perp --json wallet set pac <SOLANA_PRIVATE_KEY>    # register Solana key → ready to trade immediately
+perp --json wallet show                            # verify
+perp --json -e pac account info                    # check balance
+```
+No extra steps. Key is saved as `PACIFICA_PRIVATE_KEY` in .env.
+
+### Lighter setup (API key auto-generated on registration)
+```bash
+perp --json wallet set lt <EVM_PRIVATE_KEY>        # register EVM key
+#    → AUTOMATICALLY generates Lighter API key via on-chain tx
+#    → Saves to .env: LIGHTER_PRIVATE_KEY, LIGHTER_API_KEY, LIGHTER_ACCOUNT_INDEX, LIGHTER_API_KEY_INDEX
+#    → No manual API key creation needed. Do NOT ask the user to visit the Lighter website.
+perp --json wallet show                            # verify
+perp --json -e lighter account info                # check balance
+```
+Same EVM key can be used for both Hyperliquid and Lighter:
+```bash
+perp --json wallet set hl <KEY>                    # same key
+perp --json wallet set lt <KEY>                    # same key, different exchange binding
+```
+If API key auto-setup fails (rare, e.g. no ETH for gas on Lighter chain):
+```bash
+perp --json -e lighter manage setup-api-key        # manual retry
+```
 
 **Verify setup (ALWAYS do this after any wallet command):**
 ```bash
