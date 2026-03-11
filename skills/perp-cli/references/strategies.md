@@ -310,6 +310,26 @@ Rules of thumb:
 - **Total margin used < 60% of total equity** — leave buffer for adverse moves
 - **Capital in transit (bridging) counts as "at risk"** — it's not available for margin
 
+### Per-Exchange Balance Constraints
+
+**CRITICAL: You can only trade with the balance available ON THAT EXCHANGE.**
+
+Each exchange holds its own separate balance. Before entering any arb:
+```bash
+perp --json -e <EX_A> account info           # check available balance on exchange A
+perp --json -e <EX_B> account info           # check available balance on exchange B
+```
+
+**Size each leg to fit the available balance on that exchange:**
+```
+Wrong:  total portfolio = $65 → 25% = $16 per leg → but Exchange A only has $10
+Right:  Exchange A has $10, Exchange B has $15 → max leg size = $10 (limited by smaller side)
+```
+
+If one exchange has insufficient balance:
+- Reduce position size to fit the smaller balance, OR
+- Bridge capital first (but account for bridge fees + time + unhedged risk during transit)
+
 ### Stop Loss for Arb Positions
 
 Even "market-neutral" arb can lose money if:

@@ -79,8 +79,15 @@ perp --json portfolio                        # unified multi-exchange view
 
 ### Trade execution (MANDATORY checklist)
 ```
+BEFORE ANY TRADE:
+0. perp --json portfolio                       → check TOTAL equity + per-exchange balances
+   - Single position notional < 25% of TOTAL equity
+   - Each exchange MUST have sufficient balance for its leg
+   - Notional ≠ margin required. Check available balance on EACH exchange.
+   - If balance is insufficient, bridge first or reduce size.
+
 1. perp --json risk status                     → check risk level (STOP if critical)
-2. perp --json -e <EX> account info            → verify balance
+2. perp --json -e <EX> account info            → verify EXCHANGE-SPECIFIC balance
 3. perp --json -e <EX> market mid <SYM>        → current price
 4. perp --json risk check --notional <$> --leverage <L> → risk pre-check
 5. perp --json -e <EX> trade check <SYM> <SIDE> <SIZE>  → trade validation
