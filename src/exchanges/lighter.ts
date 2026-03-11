@@ -100,12 +100,16 @@ export class LighterAdapter implements ExchangeAdapter {
     }
 
     // Auto-generate API key if we have PK but no API key and account exists
+    let signerReady = false;
     if (!this._apiKey && this._accountIndex >= 0) {
       try {
         const autoKeyIndex = 2; // default for auto-setup
         const { privateKey: apiKey } = await this.setupApiKey(autoKeyIndex);
         this._apiKey = apiKey;
         this._apiKeyIndex = autoKeyIndex;
+        // setupApiKey already configured the static WASM client — reuse it
+        this._signer = LighterAdapter._wasmClient!;
+        signerReady = true;
         // Save to .env for future use
         try {
           const { setEnvVar } = await import("../commands/init.js");
@@ -120,18 +124,19 @@ export class LighterAdapter implements ExchangeAdapter {
       }
     }
 
-    // Initialize signer for trading if we have an API key
-    if (this._apiKey) {
-      const { WasmSignerClient } = await import("lighter-ts-sdk");
-      this._signer = new WasmSignerClient({});
-      await this._signer.initialize();
-      await this._signer.createClient({
+    // Initialize signer for trading if we have an API key (reuse singleton WASM client)
+    if (this._apiKey && !signerReady) {
+      const client = await LighterAdapter.getWasmClient();
+      await client.createClient({
         url: this._baseUrl,
         privateKey: this._apiKey,
         chainId: this._chainId,
         apiKeyIndex: this._apiKeyIndex,
         accountIndex: this._accountIndex,
       });
+      this._signer = client;
+    }
+    if (this._apiKey) {
       this._readOnly = false;
     }
 
@@ -872,11 +877,21 @@ export class LighterAdapter implements ExchangeAdapter {
 
   private static async getWasmClient(): Promise<WasmSignerClientType> {
     if (LighterAdapter._wasmClient) return LighterAdapter._wasmClient;
-    const { WasmSignerClient } = await import("lighter-ts-sdk");
-    const client = new WasmSignerClient({});
-    await client.initialize();
-    LighterAdapter._wasmClient = client;
-    return client;
+    // Prevent Go WASM runtime from killing the process on panic
+    const origExit = process.exit;
+    process.exit = ((code?: number) => {
+      process.exit = origExit; // restore immediately
+      throw new Error(`Lighter WASM runtime exited with code ${code}`);
+    }) as typeof process.exit;
+    try {
+      const { WasmSignerClient } = await import("lighter-ts-sdk");
+      const client = new WasmSignerClient({});
+      await client.initialize();
+      LighterAdapter._wasmClient = client;
+      return client;
+    } finally {
+      process.exit = origExit;
+    }
   }
 
   /**

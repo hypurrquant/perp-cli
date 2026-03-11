@@ -8,6 +8,7 @@
  */
 
 import "dotenv/config";
+import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -75,8 +76,11 @@ function err(error: string, meta?: Record<string, unknown>) {
 
 // ── MCP Server ──
 
+const _require = createRequire(import.meta.url);
+const _pkg = _require("../package.json") as { version: string };
+
 const server = new McpServer(
-  { name: "perp-cli", version: "0.3.7" },
+  { name: "perp-cli", version: _pkg.version },
   { capabilities: { tools: {}, resources: {} } },
 );
 

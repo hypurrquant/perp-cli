@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { config } from "dotenv";
 import { resolve } from "path";
+import { createRequire } from "node:module";
 
 // Load ~/.perp/.env first (global), then CWD .env (overrides)
 config({ path: resolve(process.env.HOME || "~", ".perp", ".env") });
@@ -47,6 +48,9 @@ import { registerEnvCommands } from "./commands/env.js";
 import { loadSettings, saveSettings } from "./settings.js";
 import { setSharedApiNetwork } from "./shared-api.js";
 
+const _require = createRequire(import.meta.url);
+const _pkg = _require("../package.json") as { version: string };
+
 const program = new Command();
 
 // Resolve default exchange from settings (fallback: "pacifica")
@@ -56,7 +60,7 @@ const _defaultExchange = _settings.defaultExchange || "pacifica";
 program
   .name("perp")
   .description("Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter)")
-  .version("0.3.7")
+  .version(_pkg.version)
   .option("-e, --exchange <exchange>", `Exchange: pacifica, hyperliquid, lighter (default: ${_defaultExchange})`, _defaultExchange)
   .option("-n, --network <network>", "Network: mainnet or testnet", "mainnet")
   .option("-k, --private-key <key>", "Private key")
