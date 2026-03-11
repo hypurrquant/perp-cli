@@ -390,6 +390,7 @@ export function registerManageCommands(
       // Auto-save to .env
       setEnvVar("LIGHTER_API_KEY", privateKey);
       setEnvVar("LIGHTER_ACCOUNT_INDEX", String(adapter.accountIndex));
+      setEnvVar("LIGHTER_API_KEY_INDEX", String(keyIndex));
 
       if (isJson()) {
         return printJson(jsonOk({

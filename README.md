@@ -288,7 +288,7 @@ perp settings set referralCodes.hyperliquid MYCODE
 - **TypeScript** + Node.js (ESM)
 - **Solana**: `@solana/web3.js`, `tweetnacl`, `bs58`
 - **EVM**: `ethers` v6
-- **Exchanges**: `hyperliquid` SDK, `lighter-sdk` (WASM), `@pacifica/sdk`
+- **Exchanges**: `hyperliquid` SDK, `lighter-ts-sdk` (WASM), `@pacifica/sdk`
 - **Bridge**: Circle CCTP V2 (Solana ↔ EVM), deBridge DLN (fallback)
 - **Testing**: Vitest (860+ tests)
 

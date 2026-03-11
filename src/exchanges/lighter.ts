@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import type {
   ExchangeAdapter,
   ExchangeMarketInfo,
@@ -10,15 +9,21 @@ import type {
   ExchangeKline,
 } from "./interface.js";
 
-// Use createRequire to load the CJS build of lighter-sdk
-// (the ESM build has a broken require polyfill that fails on Node built-ins)
-const require = createRequire(import.meta.url);
-type LighterSignerClientType = import("lighter-sdk").LighterSignerClient;
+import type { WasmSignerClient as WasmSignerClientType } from "lighter-ts-sdk";
+
+interface WasmTxResponse {
+  txType: number;
+  txInfo: string;
+  txHash: string;
+  messageToSign?: string;
+  error?: string;
+}
 
 export class LighterAdapter implements ExchangeAdapter {
   readonly name = "lighter";
-  private _signer!: LighterSignerClientType;
+  private _signer!: WasmSignerClientType;
   private _accountIndex = -1;
+  private _apiKeyIndex: number;
   private _address: string;
   private _marketMap = new Map<string, number>(); // symbol → marketIndex
   private _marketDecimals = new Map<string, { size: number; price: number }>(); // symbol → decimals
@@ -40,6 +45,7 @@ export class LighterAdapter implements ExchangeAdapter {
     this._evmKey = evmKey;
     this._apiKey = opts?.apiKey || process.env.LIGHTER_API_KEY || "";
     this._accountIndexInit = opts?.accountIndex ?? parseInt(process.env.LIGHTER_ACCOUNT_INDEX || "-1");
+    this._apiKeyIndex = parseInt(process.env.LIGHTER_API_KEY_INDEX || "2");
     this._address = "";
     this._testnet = testnet;
     this._readOnly = !this._apiKey;
@@ -49,8 +55,17 @@ export class LighterAdapter implements ExchangeAdapter {
     this._chainId = testnet ? 300 : 304;
   }
 
-  get signer(): LighterSignerClientType {
-    return this._signer;
+  get signer(): { createAuthToken(deadline: number): Promise<{ authToken: string }> } & WasmSignerClientType {
+    const self = this;
+    // Compatibility wrapper: ws-feeds.ts expects createAuthToken(deadline) → { authToken }
+    return Object.create(this._signer, {
+      createAuthToken: {
+        value: async (deadline: number) => {
+          const token = await self._signer.createAuthToken(deadline, self._apiKeyIndex, self._accountIndex);
+          return { authToken: token };
+        },
+      },
+    });
   }
 
   get accountIndex(): number {
@@ -87,13 +102,16 @@ export class LighterAdapter implements ExchangeAdapter {
     // Auto-generate API key if we have PK but no API key and account exists
     if (!this._apiKey && this._accountIndex >= 0) {
       try {
-        const { privateKey: apiKey } = await this.setupApiKey();
+        const autoKeyIndex = 2; // default for auto-setup
+        const { privateKey: apiKey } = await this.setupApiKey(autoKeyIndex);
         this._apiKey = apiKey;
+        this._apiKeyIndex = autoKeyIndex;
         // Save to .env for future use
         try {
           const { setEnvVar } = await import("../commands/init.js");
           setEnvVar("LIGHTER_API_KEY", apiKey);
           setEnvVar("LIGHTER_ACCOUNT_INDEX", String(this._accountIndex));
+          setEnvVar("LIGHTER_API_KEY_INDEX", String(autoKeyIndex));
         } catch { /* non-critical — env save may fail in some contexts */ }
       } catch (e) {
         // Auto-setup failed — log the error and continue in read-only mode
@@ -104,17 +122,16 @@ export class LighterAdapter implements ExchangeAdapter {
 
     // Initialize signer for trading if we have an API key
     if (this._apiKey) {
-      const { LighterSignerClient } = require("lighter-sdk") as typeof import("lighter-sdk");
-      this._signer = new LighterSignerClient({
+      const { WasmSignerClient } = await import("lighter-ts-sdk");
+      this._signer = new WasmSignerClient({});
+      await this._signer.initialize();
+      await this._signer.createClient({
         url: this._baseUrl,
         privateKey: this._apiKey,
         chainId: this._chainId,
+        apiKeyIndex: this._apiKeyIndex,
         accountIndex: this._accountIndex,
-        apiKeyIndex: parseInt(process.env.LIGHTER_API_KEY_INDEX || "3"),
-        loaderType: "wasm",
       });
-      // Only initialize (load WASM + create client), skip checkClient which does HTTP from WASM
-      await this._signer.initialize();
       this._readOnly = false;
     }
 
@@ -283,8 +300,7 @@ export class LighterAdapter implements ExchangeAdapter {
   private async getAuthToken(): Promise<string> {
     if (this._readOnly) throw new Error("Auth requires API key");
     const deadline = Math.floor(Date.now() / 1000) + 3600;
-    const auth = await this._signer.createAuthToken(deadline) as { authToken: string };
-    return auth.authToken;
+    return this._signer.createAuthToken(deadline, this._apiKeyIndex, this._accountIndex);
   }
 
   private async restGetAuth(path: string, params: Record<string, string>): Promise<unknown> {
@@ -349,7 +365,7 @@ export class LighterAdapter implements ExchangeAdapter {
       baseAmount,
       price: Math.max(slippageTicks, 1),
       isAsk: side === "sell" ? 1 : 0,
-      type: 1, // ORDER_TYPE_MARKET
+      orderType: 1, // ORDER_TYPE_MARKET
       timeInForce: 0, // IOC (Immediate or Cancel)
       reduceOnly: 0,
       triggerPrice: 0,
@@ -370,7 +386,7 @@ export class LighterAdapter implements ExchangeAdapter {
       baseAmount,
       price: priceTicks,
       isAsk: side === "sell" ? 1 : 0,
-      type: 0, // ORDER_TYPE_LIMIT
+      orderType: 0, // ORDER_TYPE_LIMIT
       timeInForce: 1, // GTT (Good Till Time) — rests on orderbook
       reduceOnly: opts?.reduceOnly ? 1 : 0,
       triggerPrice: 0,
@@ -384,14 +400,20 @@ export class LighterAdapter implements ExchangeAdapter {
     this.ensureSigner();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
-    const signed = await this._signer.signCancelOrder(marketIndex, parseInt(orderId), nonce);
+    const signed = await this._signer.signCancelOrder({
+      marketIndex, orderIndex: parseInt(orderId), nonce,
+      apiKeyIndex: this._apiKeyIndex, accountIndex: this._accountIndex,
+    });
     return this.sendTx(signed);
   }
 
   async cancelAllOrders(_symbol?: string) {
     this.ensureSigner();
     const nonce = await this.getNextNonce();
-    const signed = await this._signer.signCancelAllOrders(0, Math.floor(Date.now() / 1000) + 86400, nonce);
+    const signed = await this._signer.signCancelAllOrders({
+      timeInForce: 0, time: Math.floor(Date.now() / 1000) + 86400, nonce,
+      apiKeyIndex: this._apiKeyIndex, accountIndex: this._accountIndex,
+    });
     return this.sendTx(signed);
   }
 
@@ -407,9 +429,11 @@ export class LighterAdapter implements ExchangeAdapter {
       price: priceTicks,
       triggerPrice: 0,
       nonce,
+      apiKeyIndex: this._apiKeyIndex,
+      accountIndex: this._accountIndex,
     });
-    if ((signed as Record<string, unknown>).error) {
-      throw new Error(`Signer: ${(signed as Record<string, unknown>).error}`);
+    if (signed.error) {
+      throw new Error(`Signer: ${signed.error}`);
     }
     return this.sendTx(signed);
   }
@@ -438,7 +462,7 @@ export class LighterAdapter implements ExchangeAdapter {
       baseAmount,
       price: Math.max(priceTicks, 1),
       isAsk: side === "sell" ? 1 : 0,
-      type: isMarket ? 1 : 0,
+      orderType: isMarket ? 1 : 0,
       timeInForce: isMarket ? 0 : 1, // IOC for market, GTT for limit
       reduceOnly: opts?.reduceOnly ? 1 : 0,
       triggerPrice: triggerTicks,
@@ -455,17 +479,23 @@ export class LighterAdapter implements ExchangeAdapter {
     // fraction = initial margin fraction in basis points: 10000/leverage
     const fraction = Math.round(10000 / leverage);
     const mode = marginMode === "isolated" ? 1 : 0;
-    const signed = await this._signer.signUpdateLeverage(marketIndex, fraction, mode, nonce);
-    if ((signed as Record<string, unknown>).error) {
-      throw new Error(`Signer: ${(signed as Record<string, unknown>).error}`);
+    const signed = await this._signer.signUpdateLeverage({
+      marketIndex, fraction, marginMode: mode, nonce,
+      apiKeyIndex: this._apiKeyIndex, accountIndex: this._accountIndex,
+    });
+    if (signed.error) {
+      throw new Error(`Signer: ${signed.error}`);
     }
     return this.sendTx(signed);
   }
 
-  async withdraw(amount: number, assetId = 2, routeType = 0): Promise<unknown> {
+  async withdraw(amount: number, assetId = 3, routeType = 0): Promise<unknown> {
     this.ensureSigner();
     const nonce = await this.getNextNonce();
-    const signed = await this._signer.signWithdraw(amount, assetId, routeType, nonce);
+    const signed = await this._signer.signWithdraw({
+      usdcAmount: amount, assetIndex: assetId, routeType, nonce,
+      apiKeyIndex: this._apiKeyIndex, accountIndex: this._accountIndex,
+    });
     return this.sendTx(signed);
   }
 
@@ -774,19 +804,26 @@ export class LighterAdapter implements ExchangeAdapter {
    * Direct REST GET helper.
    */
   private async getNextNonce(): Promise<number> {
-    const apiKeyIndex = parseInt(process.env.LIGHTER_API_KEY_INDEX || "3");
     const res = await this.restGet("/nextNonce", {
       account_index: String(this._accountIndex),
-      api_key_index: String(apiKeyIndex),
+      api_key_index: String(this._apiKeyIndex),
     }) as { nonce?: number; next_nonce?: number };
     return res.nonce ?? res.next_nonce ?? 0;
   }
 
-  private async signOrder(params: Parameters<LighterSignerClientType["signCreateOrder"]>[0]): Promise<{ txType?: number; txInfo?: string; txHash?: string }> {
+  private async signOrder(params: {
+    marketIndex: number; clientOrderIndex: number; baseAmount: number;
+    price: number; isAsk: number; orderType: number; timeInForce: number;
+    reduceOnly: number; triggerPrice: number; orderExpiry: number; nonce: number;
+  }): Promise<WasmTxResponse> {
     try {
-      const result = await this._signer.signCreateOrder(params);
-      if ((result as Record<string, unknown>).error) {
-        throw new Error(`Signer: ${(result as Record<string, unknown>).error}`);
+      const result = await this._signer.signCreateOrder({
+        ...params,
+        apiKeyIndex: this._apiKeyIndex,
+        accountIndex: this._accountIndex,
+      });
+      if (result.error) {
+        throw new Error(`Signer: ${result.error}`);
       }
       return result;
     } catch (e: unknown) {
@@ -798,7 +835,7 @@ export class LighterAdapter implements ExchangeAdapter {
     }
   }
 
-  private async sendTx(signed: { txType?: number; txInfo?: string; txHash?: string; error?: string }): Promise<unknown> {
+  private async sendTx(signed: WasmTxResponse): Promise<unknown> {
     if (signed.error) throw new Error(`Signer error: ${signed.error}`);
     if (!signed.txInfo) throw new Error("Signer returned empty txInfo");
     const res = await fetch(`${this._baseUrl}/api/v1/sendTx`, {
@@ -831,23 +868,24 @@ export class LighterAdapter implements ExchangeAdapter {
     }
   }
 
-  private static async getWasmOps() {
-    const { WasmLoader } = require("lighter-sdk") as typeof import("lighter-sdk");
-    const loader = WasmLoader.getInstance();
-    await loader.load({});
-    return loader.getOperations();
+  private static _wasmClient: WasmSignerClientType | null = null;
+
+  private static async getWasmClient(): Promise<WasmSignerClientType> {
+    if (LighterAdapter._wasmClient) return LighterAdapter._wasmClient;
+    const { WasmSignerClient } = await import("lighter-ts-sdk");
+    const client = new WasmSignerClient({});
+    await client.initialize();
+    LighterAdapter._wasmClient = client;
+    return client;
   }
 
   /**
    * Generate a new Lighter API key pair using the WASM signer.
    * Returns { privateKey, publicKey } (both 0x-prefixed, 40 bytes).
    */
-  static async generateApiKey(seed?: string): Promise<{ privateKey: string; publicKey: string }> {
-    const ops = await LighterAdapter.getWasmOps();
-    const result = (ops as unknown as Record<string, (s: string) => { privateKey: string; publicKey: string; err?: string }>)
-      .GenerateAPIKey(seed ?? `pacifica-cli-${Date.now()}-${Math.random()}`);
-    if (result.err) throw new Error(`GenerateAPIKey failed: ${result.err}`);
-    return { privateKey: result.privateKey, publicKey: result.publicKey };
+  static async generateApiKey(): Promise<{ privateKey: string; publicKey: string }> {
+    const client = await LighterAdapter.getWasmClient();
+    return client.generateAPIKey();
   }
 
   /**
@@ -865,28 +903,26 @@ export class LighterAdapter implements ExchangeAdapter {
     const nonceRes = await this.restGet("/nextNonce", {
       account_index: String(this._accountIndex),
       api_key_index: String(apiKeyIndex),
-    }) as { next_nonce?: number };
-    const nonce = nonceRes.next_nonce ?? 0;
+    }) as { nonce?: number; next_nonce?: number };
+    const nonce = nonceRes.nonce ?? nonceRes.next_nonce ?? 0;
 
     // 3. Create signer client with new key and sign ChangePubKey
-    const ops = await LighterAdapter.getWasmOps();
-    const opsAny = ops as unknown as Record<string, (...args: unknown[]) => unknown>;
-
-    // CreateClient with the new API key
-    opsAny.CreateClient(
-      this._baseUrl,
+    const client = await LighterAdapter.getWasmClient();
+    await client.createClient({
+      url: this._baseUrl,
       privateKey,
-      this._chainId,
+      chainId: this._chainId,
       apiKeyIndex,
-      this._accountIndex,
-    );
+      accountIndex: this._accountIndex,
+    });
 
     // Sign ChangePubKey
-    const signed = await (opsAny.SignChangePubKey as (
-      pubKey: string, nonce: number, apiKeyIdx: number, acctIdx: number
-    ) => Promise<{ txType?: number; txInfo?: string; txHash?: string; messageToSign?: string; error?: string }>)(
-      publicKey, nonce, apiKeyIndex, this._accountIndex
-    );
+    const signed = await client.signChangePubKey({
+      pubkey: publicKey,
+      nonce,
+      apiKeyIndex,
+      accountIndex: this._accountIndex,
+    });
 
     if (signed.error) throw new Error(`SignChangePubKey failed: ${signed.error}`);
     if (!signed.txInfo || !signed.messageToSign) {

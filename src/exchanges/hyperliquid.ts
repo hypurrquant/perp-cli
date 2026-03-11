@@ -664,17 +664,10 @@ export class HyperliquidAdapter implements ExchangeAdapter {
 
   /**
    * Update leverage for a symbol.
-   * Python SDK: update_leverage(leverage, name, is_cross)
+   * Uses SDK's built-in updateLeverage method.
    */
   async updateLeverage(symbol: string, leverage: number, isCross = true) {
-    const assetIndex = this.getAssetIndex(symbol);
-    const action = {
-      type: "updateLeverage",
-      asset: assetIndex,
-      isCross,
-      leverage,
-    };
-    return this._sendExchangeAction(action);
+    return this.sdk.exchange.updateLeverage(symbol, isCross ? "cross" : "isolated", leverage);
   }
 
   /**
@@ -682,14 +675,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * amount > 0 to add margin, amount < 0 to remove
    */
   async updateIsolatedMargin(symbol: string, amount: number) {
-    const assetIndex = this.getAssetIndex(symbol);
-    const action = {
-      type: "updateIsolatedMargin",
-      asset: assetIndex,
-      isBuy: true,
-      ntli: Math.round(amount * 1e6), // USD to 6 decimals
-    };
-    return this._sendExchangeAction(action);
+    return this.sdk.exchange.updateIsolatedMargin(symbol, amount > 0, Math.round(Math.abs(amount) * 1e6));
   }
 
   /**

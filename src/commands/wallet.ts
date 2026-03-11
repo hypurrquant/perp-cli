@@ -457,9 +457,11 @@ export function registerWalletCommands(program: Command, isJson: () => boolean) 
           const { LighterAdapter } = await import("../exchanges/lighter.js");
           const adapter = new LighterAdapter(normalized);
           await adapter.init();
-          const { privateKey: apiKey } = await adapter.setupApiKey();
+          const apiKeyIndex = 2;
+          const { privateKey: apiKey } = await adapter.setupApiKey(apiKeyIndex);
           setEnvVar("LIGHTER_API_KEY", apiKey);
           setEnvVar("LIGHTER_ACCOUNT_INDEX", String(adapter.accountIndex));
+          setEnvVar("LIGHTER_API_KEY_INDEX", String(apiKeyIndex));
           lighterApiSetup = { apiKey, accountIndex: adapter.accountIndex };
         } catch (e) {
           lighterApiSetup = { error: e instanceof Error ? e.message : String(e) };
