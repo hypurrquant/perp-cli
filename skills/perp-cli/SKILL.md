@@ -49,6 +49,11 @@ perp --json wallet generate solana           # creates Solana wallet for Pacific
 # IMPORTANT: Tell user the generated address so they can fund it with USDC!
 ```
 
+**Lighter API key: FULLY AUTOMATIC — no manual setup needed.**
+When you run `wallet set lt <KEY>`, the CLI auto-generates a Lighter API key and saves it.
+Do NOT ask the user to create an API key on the Lighter website. Do NOT say Lighter requires separate setup.
+If auto-setup fails (rare, e.g. no ETH for gas): `perp --json -e lighter manage setup-api-key`
+
 **Verify setup (ALWAYS do this after any wallet command):**
 ```bash
 perp --json wallet show
