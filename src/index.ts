@@ -56,7 +56,7 @@ const _defaultExchange = _settings.defaultExchange || "pacifica";
 program
   .name("perp")
   .description("Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter)")
-  .version("0.3.6")
+  .version("0.3.7")
   .option("-e, --exchange <exchange>", `Exchange: pacifica, hyperliquid, lighter (default: ${_defaultExchange})`, _defaultExchange)
   .option("-n, --network <network>", "Network: mainnet or testnet", "mainnet")
   .option("-k, --private-key <key>", "Private key")
@@ -411,7 +411,7 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
 
       if (!status.hasWallets && !hasEnvKey && !settings.defaultExchange) {
         // Fresh install — onboarding
-        console.log(chalk.cyan.bold("\n  Welcome to perp-cli!") + chalk.gray("  v0.3.6\n"));
+        console.log(chalk.cyan.bold("\n  Welcome to perp-cli!") + chalk.gray("  v0.3.7\n"));
         console.log("  Multi-DEX perpetual futures CLI for Pacifica, Hyperliquid, and Lighter.\n");
         console.log(`  Get started:  ${chalk.cyan("perp init")}`);
         console.log(chalk.gray(`\n  Or explore without a wallet:`));
@@ -423,7 +423,7 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
         // Configured — show status overview
         const defaultEx = settings.defaultExchange || "pacifica";
         const activeEntries = Object.entries(status.active);
-        console.log(chalk.cyan.bold("\n  perp-cli") + chalk.gray("  v0.3.6\n"));
+        console.log(chalk.cyan.bold("\n  perp-cli") + chalk.gray("  v0.3.7\n"));
         console.log(`  Default exchange: ${chalk.cyan(defaultEx)}`);
 
         if (activeEntries.length > 0) {
