@@ -255,6 +255,16 @@ Symbols are auto-resolved by the CLI. **Always use bare symbols** (e.g., `BTC`, 
 - `arb scan` returns bare symbols — pass them directly to trade/leverage commands on any exchange.
 - Do NOT manually add `-PERP` suffix — the CLI resolves this automatically.
 
+## Exchange-Specific Constraints
+
+| Exchange | Min Order (notional) | Notes |
+|----------|---------------------|-------|
+| Hyperliquid | **$10** | Rejects orders below $10 notional |
+| Pacifica | ~$1 (varies by symbol) | Lower minimums |
+| Lighter | Varies by symbol | Check market info |
+
+**`trade check` is advisory only** — it returns `valid: true/false` but does NOT block execution. The exchange itself enforces minimums and will reject with an error if the order is too small.
+
 ## Common Agent Mistakes
 
 1. **Using `perp init`** — interactive, will hang forever. Use `wallet set` instead.
@@ -264,3 +274,4 @@ Symbols are auto-resolved by the CLI. **Always use bare symbols** (e.g., `BTC`, 
 5. **Bridging without quoting** — always run `bridge quote` first to show the user fees and estimated time.
 6. **Assuming deposit is instant** — after `bridge send`, wait for `bridge status` to confirm completion before depositing to the destination exchange.
 7. **Manually adding `-PERP` suffix** — the CLI auto-resolves symbols. Just use bare names like `ICP`, `SOL`, `BTC`.
+8. **Order below exchange minimum** — Hyperliquid requires $10+ notional. Compute `size × price` before submitting.

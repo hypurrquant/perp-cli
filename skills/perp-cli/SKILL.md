@@ -5,7 +5,7 @@ allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*)"
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.3.8"
+  version: "0.3.9"
   mcp-server: perp-cli
 ---
 
@@ -113,6 +113,18 @@ BEFORE ANY TRADE:
 9. perp --json -e <EX> account positions       → verify result + check liquidation price
 ```
 
+### Exchange-specific constraints
+```
+Minimum order values (notional, enforced by exchange):
+  - Hyperliquid: $10 minimum per order
+  - Pacifica: varies by symbol (usually ~$1)
+  - Lighter: varies by symbol
+
+If your calculated size falls below the minimum, increase to meet it or skip the opportunity.
+trade check returns valid: true/false but is ADVISORY — it does NOT block execution.
+The exchange itself will reject orders below its minimum.
+```
+
 ### Arb order sizing (CRITICAL — both legs MUST match)
 ```
 For funding arb, BOTH legs must have the EXACT SAME SIZE. Size mismatch = directional exposure.
@@ -121,20 +133,19 @@ For funding arb, BOTH legs must have the EXACT SAME SIZE. Size mismatch = direct
    perp --json -e <LONG_EX> market book <SYM>    → asks (you're buying)
    perp --json -e <SHORT_EX> market book <SYM>   → bids (you're selling)
 
-2. Check market info for min order size and step size:
-   perp --json -e <LONG_EX> market info <SYM>
-   perp --json -e <SHORT_EX> market info <SYM>
+2. Compute ORDER_SIZE:
+   - fillable_long = sum of ask sizes at best 2-3 levels
+   - fillable_short = sum of bid sizes at best 2-3 levels
+   - ORDER_SIZE = min(fillable_long, fillable_short, desired_size)
+   - Must be ≥ BOTH exchanges' minimum order value (e.g. HL requires ≥$10 notional)
 
-3. Compute ORDER_SIZE = min(fillable_long, fillable_short, desired_size)
-   Round to the coarser step size. Must be ≥ both exchanges' minOrderSize.
-
-4. Execute BOTH legs with the SAME ORDER_SIZE:
+3. Execute BOTH legs with the SAME ORDER_SIZE:
    perp --json -e <LONG_EX> trade market <SYM> buy <ORDER_SIZE>
-   → verify fill
+   → verify fill via account positions
    perp --json -e <SHORT_EX> trade market <SYM> sell <ORDER_SIZE>
-   → verify fill
+   → verify fill via account positions
 
-5. Confirm matched: both positions must show identical size.
+4. Confirm matched: both positions must show identical size.
    If mismatch (partial fill), adjust the larger to match the smaller.
 ```
 See `references/strategies.md` for detailed execution strategy (chunked orders, limit orders, failure handling).
