@@ -242,6 +242,19 @@ Error case:
 
 **For non-idempotent commands:** always verify the result before retrying. Check positions or balances to confirm whether the first attempt succeeded.
 
+## Symbol Naming Across Exchanges
+
+Symbols are auto-resolved by the CLI. **Always use bare symbols** (e.g., `BTC`, `SOL`, `ICP`) — the CLI handles exchange-specific naming automatically:
+
+| Input | Hyperliquid | Pacifica | Lighter |
+|-------|-------------|----------|---------|
+| `ICP` | → `ICP-PERP` | → `ICP` | → `ICP` |
+| `BTC` | → `BTC` | → `BTC` | → `BTC` |
+| `SOL` | → `SOL` | → `SOL` | → `SOL` |
+
+- `arb scan` returns bare symbols — pass them directly to trade/leverage commands on any exchange.
+- Do NOT manually add `-PERP` suffix — the CLI resolves this automatically.
+
 ## Common Agent Mistakes
 
 1. **Using `perp init`** — interactive, will hang forever. Use `wallet set` instead.
@@ -250,3 +263,4 @@ Error case:
 4. **Retrying a trade without checking** — leads to double positions. Always check `account positions` after a trade, even if it seemed to fail.
 5. **Bridging without quoting** — always run `bridge quote` first to show the user fees and estimated time.
 6. **Assuming deposit is instant** — after `bridge send`, wait for `bridge status` to confirm completion before depositing to the destination exchange.
+7. **Manually adding `-PERP` suffix** — the CLI auto-resolves symbols. Just use bare names like `ICP`, `SOL`, `BTC`.

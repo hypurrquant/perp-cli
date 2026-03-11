@@ -66,6 +66,12 @@ perp --json -e lighter ...        # Lighter (Ethereum)
 ```
 If a default exchange is set, `-e` can be omitted.
 
+### Symbol naming
+Symbols are auto-resolved across exchanges. Use bare symbols (e.g., `BTC`, `SOL`, `ICP`) everywhere — the CLI handles exchange-specific naming:
+- **Hyperliquid**: `ICP` → `ICP-PERP` (auto-resolved, `-PERP` suffix added)
+- **Pacifica / Lighter**: bare symbols as-is
+- `arb scan` returns bare symbols — pass them directly to any exchange command.
+
 ### Common operations
 ```bash
 perp --json wallet show                      # check configured wallets
