@@ -89,11 +89,13 @@ BEFORE ANY TRADE:
 1. perp --json risk status                     → check risk level (STOP if critical)
 2. perp --json -e <EX> account info            → verify EXCHANGE-SPECIFIC balance
 3. perp --json -e <EX> market mid <SYM>        → current price
-4. perp --json risk check --notional <$> --leverage <L> → risk pre-check
-5. perp --json -e <EX> trade check <SYM> <SIDE> <SIZE>  → trade validation
-6. [Show order details + risk assessment to user, get explicit confirmation]
-7. perp --json -e <EX> trade market <SYM> <SIDE> <SIZE>  → execute
-8. perp --json -e <EX> account positions       → verify result + check liquidation price
+4. perp --json -e <EX> trade leverage <SYM> <N> --isolated → set leverage + isolated margin FIRST
+5. perp --json risk check --notional <$> --leverage <L> → risk pre-check
+6. perp --json -e <EX> trade check <SYM> <SIDE> <SIZE> --leverage <L> → trade validation
+   ⚠ trade check does NOT read exchange-set leverage. ALWAYS pass --leverage explicitly.
+7. [Show order details + risk assessment to user, get explicit confirmation]
+8. perp --json -e <EX> trade market <SYM> <SIDE> <SIZE>  → execute
+9. perp --json -e <EX> account positions       → verify result + check liquidation price
 ```
 
 ### Post-entry monitoring (MANDATORY while positions are open)

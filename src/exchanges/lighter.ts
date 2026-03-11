@@ -95,8 +95,10 @@ export class LighterAdapter implements ExchangeAdapter {
           setEnvVar("LIGHTER_API_KEY", apiKey);
           setEnvVar("LIGHTER_ACCOUNT_INDEX", String(this._accountIndex));
         } catch { /* non-critical — env save may fail in some contexts */ }
-      } catch {
-        // Auto-setup failed (no gas, network issue, etc.) — continue in read-only mode
+      } catch (e) {
+        // Auto-setup failed — log the error and continue in read-only mode
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[lighter] API key auto-setup failed: ${msg}. Trading will be read-only. Run 'perp -e lighter manage setup-api-key' to retry.`);
       }
     }
 

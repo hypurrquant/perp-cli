@@ -47,6 +47,8 @@ perp --json trade edit <SYMBOL> <ORDER_ID> <PRICE> <SIZE>
 perp --json trade cancel <SYMBOL> <ORDER_ID>
 perp --json trade cancel-all
 perp --json trade check <SYMBOL> <SIDE> <SIZE>    # pre-flight validation (no execution)
+perp --json trade check <SYM> <SIDE> <SIZE> --leverage 3  # check with specific leverage
+# NOTE: trade check does NOT read exchange-set leverage. Always pass --leverage explicitly.
 
 # Position management
 perp --json trade close <SYMBOL>            # close single position
