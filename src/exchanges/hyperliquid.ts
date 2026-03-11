@@ -107,21 +107,29 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     }
   }
 
-  getAssetIndex(symbol: string): number {
+  /**
+   * Resolve a symbol to the canonical name in the asset map.
+   * Handles: "ICP" → "ICP-PERP", "BTC-PERP" → "BTC-PERP", "km:GOOGL" → "km:GOOGL"
+   */
+  resolveSymbol(symbol: string): string {
     const sym = symbol.toUpperCase();
-    // Try exact match first (handles both "BTC" for native and "km:GOOGL" for dex)
-    let idx = this._assetMap.get(sym);
-    if (idx !== undefined) return idx;
-    // For dex: try lowercase prefix (API returns "km:GOOGL" but input may be "KM:GOOGL")
+    if (this._assetMap.has(sym)) return sym;
+    if (this._assetMap.has(`${sym}-PERP`)) return `${sym}-PERP`;
+    if (sym.endsWith("-PERP") && this._assetMap.has(sym.replace(/-PERP$/, ""))) return sym.replace(/-PERP$/, "");
     if (sym.includes(":")) {
       const [prefix, base] = sym.split(":");
-      idx = this._assetMap.get(`${prefix.toLowerCase()}:${base}`);
-      if (idx !== undefined) return idx;
-      // Try base name only (e.g., "GOOGL")
-      idx = this._assetMap.get(base);
-      if (idx !== undefined) return idx;
+      const lower = `${prefix.toLowerCase()}:${base}`;
+      if (this._assetMap.has(lower)) return lower;
+      if (this._assetMap.has(base)) return base;
     }
-    throw new Error(`Unknown symbol: ${symbol}`);
+    return sym; // return as-is, let downstream error
+  }
+
+  getAssetIndex(symbol: string): number {
+    const resolved = this.resolveSymbol(symbol);
+    const idx = this._assetMap.get(resolved);
+    if (idx !== undefined) return idx;
+    throw new Error(`Unknown asset: ${symbol}`);
   }
 
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
@@ -667,7 +675,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Uses SDK's built-in updateLeverage method.
    */
   async updateLeverage(symbol: string, leverage: number, isCross = true) {
-    return this.sdk.exchange.updateLeverage(symbol, isCross ? "cross" : "isolated", leverage);
+    return this.sdk.exchange.updateLeverage(this.resolveSymbol(symbol), isCross ? "cross" : "isolated", leverage);
   }
 
   /**
@@ -675,7 +683,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * amount > 0 to add margin, amount < 0 to remove
    */
   async updateIsolatedMargin(symbol: string, amount: number) {
-    return this.sdk.exchange.updateIsolatedMargin(symbol, amount > 0, Math.round(Math.abs(amount) * 1e6));
+    return this.sdk.exchange.updateIsolatedMargin(this.resolveSymbol(symbol), amount > 0, Math.round(Math.abs(amount) * 1e6));
   }
 
   /**
