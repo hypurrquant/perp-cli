@@ -5,7 +5,7 @@ allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*)"
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.3.10"
+  version: "0.3.12"
   mcp-server: perp-cli
 ---
 
@@ -28,6 +28,13 @@ Multi-DEX perpetual futures CLI — Pacifica (Solana), Hyperliquid (HyperEVM), L
 
 ```bash
 npm install -g perp-cli
+```
+
+**No sudo / Docker / restricted environments:**
+```bash
+npm config set prefix ~/.npm-global
+npm install -g perp-cli --prefix ~/.npm-global
+export PATH="$HOME/.npm-global/bin:$PATH"
 ```
 
 ## Step 2: Configure Wallet
