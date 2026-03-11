@@ -89,6 +89,34 @@ perp --json portfolio                        # unified multi-exchange view
 8. perp --json -e <EX> account positions       → verify result + check liquidation price
 ```
 
+### Post-entry monitoring (MANDATORY while positions are open)
+```
+Every 15 minutes:
+  perp --json risk status                      → overall risk level + violations
+  perp --json risk liquidation-distance        → % from liq price for ALL positions
+  perp --json -e <EX> account positions        → check each position P&L
+
+Every 1 hour (at funding settlement):
+  perp --json arb rates                        → is spread still profitable?
+  perp --json portfolio                        → total equity across exchanges
+  Compare both legs' unrealized P&L — they should roughly offset
+
+Exit triggers:
+  - Spread below breakeven (including fees) → show exit plan, get user approval
+  - risk status level = "critical" or canTrade = false → reduce immediately
+  - One leg closed unexpectedly → close the other leg IMMEDIATELY
+  - Target hold duration reached → re-evaluate or exit
+```
+
+### Knowing your capital (CHECK BEFORE ANY DECISION)
+```
+perp --json wallet show                        → configured wallets + addresses
+perp --json wallet balance                     → on-chain USDC (in wallet, NOT on exchange)
+perp --json -e <EX> account info               → exchange balance (available for trading)
+perp --json portfolio                          → unified view: equity, margin, P&L per exchange
+```
+**On-chain balance ≠ exchange balance.** Always check both. Capital must be deposited to exchange before trading.
+
 For full command reference, see `references/commands.md`.
 For agent-specific operations (setup flows, deposit/withdraw, order types, idempotency), see `references/agent-operations.md`.
 For autonomous strategies (funding rate arb, risk management, opportunity cost), see `references/strategies.md`.
