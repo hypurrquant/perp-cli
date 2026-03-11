@@ -885,6 +885,7 @@ export class LighterAdapter implements ExchangeAdapter {
     // Walk up to package root: dist/esm/index.js → 3 levels
     const sdkRoot = dirname(dirname(dirname(fileURLToPath(sdkEntry))));
     const wasmPath = join(sdkRoot, "wasm", "lighter-signer.wasm");
+    const wasmExecPath = join(sdkRoot, "wasm", "wasm_exec.js");
     // Prevent Go WASM runtime from killing the process on panic
     const origExit = process.exit;
     process.exit = ((code?: number) => {
@@ -893,7 +894,7 @@ export class LighterAdapter implements ExchangeAdapter {
     }) as typeof process.exit;
     try {
       const { WasmSignerClient } = await import("lighter-ts-sdk");
-      const client = new WasmSignerClient({ wasmPath });
+      const client = new WasmSignerClient({ wasmPath, wasmExecPath });
       await client.initialize();
       LighterAdapter._wasmClient = client;
       return client;
