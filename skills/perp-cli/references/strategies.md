@@ -9,7 +9,7 @@ You are not expected to follow rigid rules — use this as a decision framework 
 - Funding rates settle **every 1 hour** on all supported exchanges
 - Positive rate = longs pay shorts, negative rate = shorts pay longs
 - Rates are annualized in display but applied hourly: `hourly = annual / 8760`
-- Scan rates: `perp --json arb rates`
+- Scan opportunities: `perp --json arb scan --min 5` (shows spread, longExch, shortExch, netSpread)
 
 ### Opportunity Cost Awareness
 
@@ -56,8 +56,8 @@ During transition, you are **unhedged**. Price can move against you. Factor this
 
 ### Discovery Loop
 ```bash
-perp --json arb rates                    # compare rates across exchanges
-perp --json arb scan --min 10            # find spreads > 10 bps
+perp --json arb scan --min 5             # find spreads > 5 bps (shows longExch/shortExch/netSpread)
+# NOTE: 'arb rates' is deprecated — use 'arb scan' instead
 ```
 
 ### Decision Framework
@@ -118,7 +118,7 @@ Actual hold: 6h | Actual net: ~130 bps
 perp --json portfolio                    # unified multi-exchange view
 perp --json risk overview                # cross-exchange risk assessment
 perp --json -e <EX> account positions    # per-exchange positions
-perp --json arb rates                    # are current rates still favorable?
+perp --json arb scan --min 5             # are current rates still favorable?
 ```
 
 ### Order Execution: Sequential Leg Management
@@ -287,7 +287,7 @@ Check the output:
 #### Every hour (at funding settlement):
 ```bash
 perp --json portfolio                        # total equity across exchanges
-perp --json arb rates                        # are rates still favorable?
+perp --json arb scan --min 5                  # are rates still favorable?
 perp --json -e <EX_A> account positions      # P&L on leg A
 perp --json -e <EX_B> account positions      # P&L on leg B
 ```

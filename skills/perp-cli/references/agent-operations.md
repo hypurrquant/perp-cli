@@ -78,7 +78,7 @@ perp --json bridge send --from solana --to arbitrum --amount 500
 perp --json bridge status <orderId>     # wait for completion
 
 # 5. Verify both sides have balance, then start arb
-perp --json arb rates
+perp --json arb scan --min 5
 ```
 
 ### Lighter API Key Setup
@@ -229,7 +229,7 @@ Error case:
 - `wallet show`, `wallet balance` — read-only
 - `account info`, `account positions`, `account orders` — read-only
 - `market list`, `market mid`, `market book` — read-only
-- `arb rates`, `arb scan` — read-only
+- `arb scan` — read-only (`arb rates` is deprecated)
 - `portfolio`, `risk overview` — read-only
 - `bridge quote` — read-only
 - `bridge status` — read-only

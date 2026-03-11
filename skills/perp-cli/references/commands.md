@@ -89,11 +89,11 @@ perp --json bridge status <ORDER_ID>
 
 ## Arbitrage
 ```bash
-perp --json arb rates                       # compare funding rates across exchanges
-perp --json arb scan --min <BPS>            # find opportunities (>N bps spread)
+perp --json arb scan --min <BPS>            # find opportunities (>N bps spread) — PRIMARY command
 perp --json arb funding                     # detailed funding analysis
 perp --json arb dex                         # HIP-3 cross-dex arb (Hyperliquid)
 perp --json gap show                        # cross-exchange price gaps
+# NOTE: 'arb rates' is deprecated — use 'arb scan' instead
 ```
 
 ## Wallet Management

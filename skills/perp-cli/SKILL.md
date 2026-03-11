@@ -73,7 +73,7 @@ perp --json -e hl account info               # balance & margin
 perp --json -e hl account positions          # open positions
 perp --json -e hl market list                # available markets
 perp --json -e hl market mid BTC             # BTC mid price
-perp --json arb rates                        # cross-exchange funding rates
+perp --json arb scan --min 5                 # find funding arb opportunities (>5bps spread)
 perp --json portfolio                        # unified multi-exchange view
 ```
 
@@ -106,7 +106,7 @@ Every 15 minutes:
   perp --json -e <EX> account positions        → check each position P&L
 
 Every 1 hour (at funding settlement):
-  perp --json arb rates                        → is spread still profitable?
+  perp --json arb scan --min 5                  → is spread still profitable?
   perp --json portfolio                        → total equity across exchanges
   Compare both legs' unrealized P&L — they should roughly offset
 
