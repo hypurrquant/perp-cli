@@ -311,10 +311,10 @@ perp --json risk limits \
   --max-leverage 5 \
   --max-margin 60 \
   --max-drawdown-pct 10 \
-  --max-position-pct 25 \
+  --max-position-pct 80 \
   --max-drawdown 500 \
-  --max-position 5000 \
-  --max-exposure 20000 \
+  --max-position 50000 \
+  --max-exposure 100000 \
   --daily-loss 200 \
   --min-liq-distance 30
 ```
@@ -380,8 +380,8 @@ perp --json portfolio                        # totalEquity, marginUtilization, c
 ```
 
 Rules of thumb:
-- **Single position notional < 25% of total equity** across all exchanges
-- **Total margin used < 60% of total equity** — leave buffer for adverse moves
+- **Single position notional < 80% of that exchange's available balance**
+- **Total margin used < 80% of total equity** — leave buffer for adverse moves
 - **Capital in transit (bridging) counts as "at risk"** — it's not available for margin
 
 ### Per-Exchange Balance Constraints
