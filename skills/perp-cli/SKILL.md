@@ -37,8 +37,8 @@ Connect via MCP for read-only market data + CLI command suggestions. The MCP ser
       "command": "npx",
       "args": ["-y", "perp-cli", "mcp"],
       "env": {
-        "PRIVATE_KEY": "<solana-base58>",
-        "HL_PRIVATE_KEY": "<evm-hex>"
+        "HL_PRIVATE_KEY": "<evm-hex>",
+        "PACIFICA_PRIVATE_KEY": "<solana-base58>"
       }
     }
   }
@@ -53,29 +53,61 @@ Connect via MCP for read-only market data + CLI command suggestions. The MCP ser
 
 ## Setup
 
-### Quick Start (Recommended)
+### For AI Agents (Non-interactive, Recommended)
+```bash
+# 1. Set private key for an exchange (one command, validates + saves to ~/.perp/.env)
+perp wallet set hyperliquid <evm-hex-key>          # or alias: perp wallet set hl <key>
+perp wallet set pacifica <solana-base58-key>       # or alias: perp wallet set pac <key>
+perp wallet set lighter <evm-hex-key>              # or alias: perp wallet set lt <key>
+
+# 2. Optionally set as default exchange (skip -e flag)
+perp wallet set hl <key> --default
+
+# 3. Verify configuration
+perp --json wallet show                            # shows public addresses + source
+
+# JSON output for verification:
+# { "ok": true, "data": { "exchanges": [{ "exchange": "hyperliquid", "address": "0x..." }] } }
+```
+
+### For Humans (Interactive)
 ```bash
 perp init                             # Interactive setup wizard
 ```
-This guides you through wallet generation/import and exchange binding.
 
-### Manual Setup
+### Environment Variables (Alternative)
 ```bash
-# Option A: Wallet management (stored in ~/.perp/wallets.json)
-perp wallet import evm <key>          # Import EVM key
-perp wallet import solana <key>       # Import Solana key
-perp wallet use <name>                # Auto-bind to matching exchanges
-perp wallet use <name> hyperliquid    # Bind to specific exchange
-
-# Option B: Environment variables
-PRIVATE_KEY=<solana-base58>           # Pacifica
+# Set directly — perp-cli reads these automatically
 HL_PRIVATE_KEY=<evm-hex>             # Hyperliquid
-LIGHTER_PRIVATE_KEY=<evm-hex-32b>    # Lighter
-LIGHTER_API_KEY=<40-byte>            # Lighter API
+PACIFICA_PRIVATE_KEY=<solana-base58> # Pacifica
+LIGHTER_PRIVATE_KEY=<evm-hex>        # Lighter
 
-# Set default exchange (avoid -e flag every time)
-perp settings set default-exchange hyperliquid
+# Or use perp env for raw .env management
+perp env set LIGHTER_API_KEY <40-byte>   # non-wallet env vars
 ```
+
+### MCP Server Setup
+```json
+{
+  "mcpServers": {
+    "perp-cli": {
+      "command": "npx",
+      "args": ["-y", "perp-cli", "mcp"],
+      "env": {
+        "HL_PRIVATE_KEY": "<evm-hex-key>",
+        "PACIFICA_PRIVATE_KEY": "<solana-base58-key>"
+      }
+    }
+  }
+}
+```
+
+### Key Resolution Order
+1. `--private-key` flag (per-command)
+2. Exchange-specific env var (`HL_PRIVATE_KEY`, `PACIFICA_PRIVATE_KEY`, etc.)
+3. `PRIVATE_KEY` (generic fallback)
+4. `~/.perp/.env` file (written by `perp wallet set` or `perp init`)
+5. `~/.perp/wallets.json` (legacy)
 
 ## Core Rules
 
@@ -254,15 +286,20 @@ perp --json jobs stop <ID>                  # stop a job
 
 ### Wallet Management
 ```bash
-perp --json wallet list                     # list wallets
+# Primary: set exchange key (validates, derives address, saves to ~/.perp/.env)
+perp --json wallet set hl <KEY>             # set Hyperliquid key (alias: hyperliquid)
+perp --json wallet set pac <KEY>            # set Pacifica key (alias: pacifica)
+perp --json wallet set lt <KEY>             # set Lighter key (alias: lighter)
+perp --json wallet set hl <KEY> --default   # set key + make default exchange
+perp --json wallet show                     # show configured wallets (public addresses)
 perp --json wallet balance                  # on-chain balance
+
+# Legacy: wallets.json-based management
 perp --json wallet generate solana          # generate new wallet
 perp --json wallet generate evm
 perp --json wallet import solana <KEY>      # import existing key
 perp --json wallet import evm <KEY>
-perp --json wallet use <NAME>               # auto-bind to exchanges by type
-perp --json wallet use <NAME> hyperliquid   # bind to specific exchange
-perp --json wallet rename <OLD> <NEW>
+perp --json wallet list                     # list legacy wallets
 perp --json wallet remove <NAME>
 ```
 

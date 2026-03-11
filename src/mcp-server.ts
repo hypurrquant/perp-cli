@@ -76,7 +76,7 @@ function err(error: string, meta?: Record<string, unknown>) {
 // ── MCP Server ──
 
 const server = new McpServer(
-  { name: "perp-cli", version: "0.3.1" },
+  { name: "perp-cli", version: "0.3.2" },
   { capabilities: { tools: {}, resources: {} } },
 );
 
@@ -522,9 +522,16 @@ server.tool(
             { step: 1, command: "perp --json backtest funding-arb", description: "Backtest funding arb strategy" },
           );
         }
+      } else if (g.includes("setup") || g.includes("init") || g.includes("configure") || g.includes("connect") || g.includes("set key") || g.includes("set wallet") || g.includes("private key")) {
+        steps.push(
+          { step: 1, command: "perp --json wallet show", description: "Check if any wallets are already configured" },
+          { step: 2, command: "perp --json wallet set <exchange> <privateKey>", description: "Set private key for exchange (exchange: pacifica, hyperliquid, lighter, or aliases: hl, pac, lt)" },
+          { step: 3, command: "perp --json wallet set <exchange> <privateKey> --default", description: "Set key + make it the default exchange" },
+          { step: 4, command: "perp --json wallet show", description: "Verify wallet is configured (shows public address)" },
+        );
       } else if (g.includes("wallet") || g.includes("balance") || g.includes("on-chain")) {
         steps.push(
-          { step: 1, command: "perp --json wallet list", description: "List configured wallets" },
+          { step: 1, command: "perp --json wallet show", description: "Show configured wallets with public addresses" },
           { step: 2, command: "perp --json wallet balance", description: "Check on-chain balances" },
         );
       } else if (g.includes("risk")) {
