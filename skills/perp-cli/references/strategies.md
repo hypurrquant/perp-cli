@@ -140,50 +140,99 @@ perp --json -e <EX> account positions    # per-exchange positions
 perp --json arb scan --min 5             # are current rates still favorable?
 ```
 
-### Order Execution: Sequential Leg Management
+### Order Execution: Matched Size, Sequential Legs
 
-**NEVER close or open both legs of an arb at once with market orders.** You must manage execution carefully.
+**The #1 rule of arb execution: BOTH LEGS MUST HAVE THE EXACT SAME SIZE.** A size mismatch means you have net directional exposure — the whole point of arb is to be delta-neutral.
 
-#### Why This Matters
-Orderbooks have limited depth at each price level. A large market order will eat through multiple ticks and suffer heavy slippage. Worse, if you close one leg but fail to close the other (exchange error, rate limit, network issue), you are left with naked directional exposure.
+#### Step 1: Determine Matched Order Size
 
-#### Pre-Execution: Check Orderbook Depth
-Before executing, verify that the orderbook can absorb your size at acceptable prices on BOTH sides:
+Before placing ANY order, compute a single `ORDER_SIZE` that BOTH exchanges can fill:
+
 ```bash
-perp --json -e <EX_A> market book <SYM>    # check bids/asks depth
-perp --json -e <EX_B> market book <SYM>    # check bids/asks depth
+# 1. Check orderbook depth on BOTH sides
+perp --json -e <LONG_EX> market book <SYM>     # check asks (you're buying)
+perp --json -e <SHORT_EX> market book <SYM>     # check bids (you're selling)
+
+# 2. Find immediately fillable size at best 2-3 ticks
+#    LONG side: sum ask sizes at best 2-3 ask levels → fillable_long
+#    SHORT side: sum bid sizes at best 2-3 bid levels → fillable_short
+
+# 3. ORDER_SIZE = min(fillable_long, fillable_short, desired_size)
+#    The SMALLER side limits your matched size.
 ```
 
-Look at the size available at the best tick. If your order size exceeds what's available at the best 2-3 ticks, you MUST split the order.
+**Example:**
+```
+LONG exchange asks:  $85.00 × 0.5, $85.01 × 0.3 → fillable = 0.8
+SHORT exchange bids: $85.10 × 0.4, $85.09 × 0.2 → fillable = 0.6
+Desired size: 1.0
 
-#### Execution Strategy
-1. **Determine executable chunk size** — the largest size both orderbooks can absorb at the best tick without excessive slippage
-2. **Execute in sequential chunks:**
-   ```
-   Chunk 1: close X on Exchange A → immediately open X on Exchange B
-   Chunk 2: close X on Exchange A → immediately open X on Exchange B
-   ... repeat until full size is executed
-   ```
-3. **Verify each chunk** before proceeding to the next:
-   ```bash
-   perp --json -e <EX_A> account positions    # confirm partial close
-   perp --json -e <EX_B> account positions    # confirm partial open
-   ```
-4. **Re-check the orderbook** between chunks — liquidity may have changed
+→ ORDER_SIZE = min(0.8, 0.6, 1.0) = 0.6
+→ Both legs get exactly 0.6
+```
 
-#### Paired Execution Rule
-Each chunk must be a **matched pair**: close on one side, open on the other. Never execute multiple closes without the corresponding opens. If one leg fails:
-- STOP immediately
-- Assess your current exposure
-- Decide whether to retry the failed leg or unwind the completed leg
-- Do NOT continue with remaining chunks
+**CRITICAL: Each exchange has its own minimum order size and step size.**
+```bash
+perp --json -e <EX> market info <SYM>    # check minOrderSize, stepSize
+```
+Round `ORDER_SIZE` to the coarser step size of the two exchanges. If the matched size falls below either exchange's minimum, the arb is NOT executable at this size — reduce target or skip.
+
+#### Step 2: Execute Legs Sequentially with Same Size
+
+Once you have a single `ORDER_SIZE`, execute both legs using THAT EXACT SIZE:
+
+```bash
+# Leg 1: Open on exchange A
+perp --json -e <LONG_EX> trade market <SYM> buy <ORDER_SIZE>
+
+# Verify leg 1 filled
+perp --json -e <LONG_EX> account positions
+
+# Leg 2: Open on exchange B with SAME size
+perp --json -e <SHORT_EX> trade market <SYM> sell <ORDER_SIZE>
+
+# Verify leg 2 filled
+perp --json -e <SHORT_EX> account positions
+```
+
+**After both legs, verify sizes match:**
+```bash
+perp --json -e <LONG_EX> account positions    # size = X
+perp --json -e <SHORT_EX> account positions   # size must = X
+```
+If sizes differ (partial fill, rounding), immediately adjust the larger position to match the smaller one.
+
+#### Step 3: Split Large Orders into Matched Chunks
+
+If your desired size exceeds what the orderbooks can absorb at best ticks, split into chunks — but **every chunk must be a matched pair with identical size on both sides**:
+
+```
+Chunk 1: buy 0.3 on Exchange A → sell 0.3 on Exchange B → verify both
+Chunk 2: buy 0.3 on Exchange A → sell 0.3 on Exchange B → verify both
+... repeat until full size is executed
+```
+
+**Rules:**
+1. Re-check orderbook depth between chunks — liquidity changes
+2. Each chunk: same size on both sides, no exceptions
+3. If one leg fails → STOP immediately, do NOT continue
+4. Assess exposure: retry the failed leg, or unwind the completed leg
+5. NEVER execute multiple orders on one side without matching the other
 
 #### Using Limit Orders for Better Execution
-For non-urgent transitions, consider limit orders at the best bid/ask instead of market orders:
+For non-urgent entries, use limit orders at best bid/ask instead of market:
 ```bash
-perp --json -e <EX> trade sell <SYM> <SIZE> -p <PRICE>    # limit order
+perp --json -e <EX> trade buy <SYM> <ORDER_SIZE> -p <PRICE>    # limit order
 ```
-This avoids crossing the spread, but you risk not getting filled. Set a reasonable timeout and fall back to market if not filled.
+This avoids crossing the spread but risks not getting filled. Set a timeout and fall back to market if unfilled. **Both legs must still use the same `ORDER_SIZE`.**
+
+#### Closing Arb Positions: Same Rules Apply
+When exiting, close BOTH legs with the SAME size:
+```bash
+perp --json -e <LONG_EX> trade close <SYM>     # closes full position
+perp --json -e <SHORT_EX> trade close <SYM>     # closes full position
+```
+If positions already have mismatched sizes, close to the smaller size first, then close the remaining delta on the larger side.
 
 ### When to Exit
 - Spread compressed below your breakeven (including fees)

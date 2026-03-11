@@ -113,6 +113,32 @@ BEFORE ANY TRADE:
 9. perp --json -e <EX> account positions       → verify result + check liquidation price
 ```
 
+### Arb order sizing (CRITICAL — both legs MUST match)
+```
+For funding arb, BOTH legs must have the EXACT SAME SIZE. Size mismatch = directional exposure.
+
+1. Check orderbook depth on BOTH exchanges:
+   perp --json -e <LONG_EX> market book <SYM>    → asks (you're buying)
+   perp --json -e <SHORT_EX> market book <SYM>   → bids (you're selling)
+
+2. Check market info for min order size and step size:
+   perp --json -e <LONG_EX> market info <SYM>
+   perp --json -e <SHORT_EX> market info <SYM>
+
+3. Compute ORDER_SIZE = min(fillable_long, fillable_short, desired_size)
+   Round to the coarser step size. Must be ≥ both exchanges' minOrderSize.
+
+4. Execute BOTH legs with the SAME ORDER_SIZE:
+   perp --json -e <LONG_EX> trade market <SYM> buy <ORDER_SIZE>
+   → verify fill
+   perp --json -e <SHORT_EX> trade market <SYM> sell <ORDER_SIZE>
+   → verify fill
+
+5. Confirm matched: both positions must show identical size.
+   If mismatch (partial fill), adjust the larger to match the smaller.
+```
+See `references/strategies.md` for detailed execution strategy (chunked orders, limit orders, failure handling).
+
 ### Post-entry monitoring (MANDATORY while positions are open)
 ```
 Every 15 minutes:
