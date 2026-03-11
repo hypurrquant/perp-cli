@@ -80,13 +80,39 @@ Symbols are auto-resolved across exchanges. Use bare symbols (e.g., `BTC`, `SOL`
 ### Common operations
 ```bash
 perp --json wallet show                      # check configured wallets
-perp --json -e hl account info               # balance & margin
-perp --json -e hl account positions          # open positions
-perp --json -e hl market list                # available markets
-perp --json -e hl market mid BTC             # BTC mid price
-perp --json arb scan --min 5                 # find funding arb opportunities (>5bps spread)
 perp --json portfolio                        # unified multi-exchange view
+perp --json arb scan --min 5                 # find funding arb opportunities (>5bps spread)
 ```
+
+### Per-exchange commands (ALL 3 exchanges use the SAME commands)
+Every command below works on ALL exchanges. Just change `-e`:
+```bash
+# Account
+perp --json -e hl account info               # Hyperliquid balance & margin
+perp --json -e pac account info              # Pacifica balance & margin
+perp --json -e lighter account info          # Lighter balance & margin
+perp --json -e <EX> account positions        # open positions
+
+# Market data
+perp --json -e <EX> market list              # available markets
+perp --json -e <EX> market mid <SYM>         # mid price
+perp --json -e <EX> market book <SYM>        # orderbook depth
+
+# Trading (same syntax on ALL exchanges)
+perp --json -e <EX> trade leverage <SYM> <N> --isolated   # set leverage
+perp --json -e <EX> trade market <SYM> buy <SIZE>         # market buy
+perp --json -e <EX> trade market <SYM> sell <SIZE>        # market sell
+perp --json -e <EX> trade close <SYM>                     # close position
+perp --json -e <EX> trade check <SYM> <SIDE> <SIZE> --leverage <L>  # pre-flight
+
+# Deposit / Withdraw
+perp --json deposit hyperliquid <AMOUNT>     # deposit to HL
+perp --json deposit pacifica <AMOUNT>        # deposit to Pacifica
+perp --json deposit lighter info             # show Lighter deposit routes
+perp --json deposit lighter cctp arb <AMOUNT>  # deposit to Lighter via CCTP
+perp --json withdraw <EX> <AMOUNT>           # withdraw from exchange
+```
+**All 3 exchanges are fully operational.** Do NOT say any exchange "requires additional setup" or "is not available" — if `wallet show` shows it configured, it's ready to trade.
 
 ### Funding arb direction (CRITICAL — do NOT reverse)
 ```
