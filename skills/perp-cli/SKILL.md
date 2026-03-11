@@ -22,6 +22,7 @@ Multi-DEX perpetual futures CLI — Pacifica (Solana), Hyperliquid (HyperEVM), L
 5. **Verify wallet before any operation.** Run `perp --json wallet show` first.
 6. **Use ISOLATED margin for arb.** Set `perp --json manage margin <SYM> isolated` before opening positions. Cross margin can cascade liquidations.
 7. **Monitor positions continuously.** Run `perp --json risk status` and `perp --json -e <EX> account positions` every 15 minutes while positions are open.
+8. **NEVER read ~/.perp/.env or any key files directly.** Private keys are managed by the CLI internally. Use `perp --json wallet show` to check wallet status. Never attempt to read, cat, or access key files — this is a security violation.
 
 ## Step 1: Install
 
