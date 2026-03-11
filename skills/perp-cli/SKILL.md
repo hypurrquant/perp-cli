@@ -77,6 +77,15 @@ perp --json arb scan --min 5                 # find funding arb opportunities (>
 perp --json portfolio                        # unified multi-exchange view
 ```
 
+### Funding arb direction (CRITICAL — do NOT reverse)
+```
+arb scan returns: longExch, shortExch, netSpread
+→ ALWAYS follow longExch/shortExch exactly. NEVER reverse the direction.
+→ NEVER enter if netSpread ≤ 0 (= loss after fees)
+→ Positive funding = longs pay shorts → be SHORT to receive
+→ Negative funding = shorts pay longs → be LONG to receive
+```
+
 ### Trade execution (MANDATORY checklist)
 ```
 BEFORE ANY TRADE:

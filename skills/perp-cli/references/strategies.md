@@ -60,6 +60,25 @@ perp --json arb scan --min 5             # find spreads > 5 bps (shows longExch/
 # NOTE: 'arb rates' is deprecated — use 'arb scan' instead
 ```
 
+### CRITICAL: Reading arb scan Results
+
+The `arb scan` output tells you EXACTLY what to do:
+
+```
+longExch: "hyperliquid"   → open LONG on this exchange
+shortExch: "pacifica"     → open SHORT on this exchange
+netSpread: 12.87          → profit after fees (bps/hour)
+```
+
+**Rules:**
+1. **ALWAYS follow longExch/shortExch directions exactly.** DO NOT reverse them.
+2. **NEVER enter if netSpread ≤ 0.** Negative netSpread = loss after fees.
+3. The direction logic: go LONG where funding is negative (longs receive), go SHORT where funding is positive (shorts receive).
+
+**Why these directions?**
+- Positive funding (+) = longs pay shorts → you want to be SHORT to receive
+- Negative funding (-) = shorts pay longs → you want to be LONG to receive
+
 ### Decision Framework
 When evaluating an arb opportunity:
 
