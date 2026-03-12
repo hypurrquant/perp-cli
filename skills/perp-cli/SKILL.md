@@ -21,16 +21,23 @@ Multi-DEX perpetual futures CLI — Pacifica (Solana), Hyperliquid (HyperEVM), L
 5. **NEVER trade without user confirmation.**
 6. **NEVER read ~/.perp/.env or key files.**
 
-## Install
+## Install (run this FIRST)
 
 ```bash
-# Try global install first
-npm install -g perp-cli
+# 1. Check if perp exists and version
+perp --version 2>/dev/null
 
-# If global install fails (no permission, restricted env), use npx:
-npx -y perp-cli --json wallet show
+# 2a. If not found or outdated → try global install
+npm install -g perp-cli@latest 2>/dev/null
+
+# 2b. If global install fails (no permission) → use npx
+npx -y perp-cli@latest --json --version
 ```
-If `perp` command is not found after install, use `npx -y perp-cli` as prefix for all commands.
+
+**Determine your command prefix and use it for ALL subsequent commands:**
+- If `perp --version` works → use `perp`
+- If only npx works → use `npx -y perp-cli@latest`
+- Always append `@latest` with npx to avoid stale cache
 
 ## Wallet Setup
 
