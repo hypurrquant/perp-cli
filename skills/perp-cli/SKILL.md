@@ -24,9 +24,13 @@ Multi-DEX perpetual futures CLI — Pacifica (Solana), Hyperliquid (HyperEVM), L
 ## Install
 
 ```bash
+# Try global install first
 npm install -g perp-cli
+
+# If global install fails (no permission, restricted env), use npx:
+npx -y perp-cli --json wallet show
 ```
-No sudo: `npm install -g perp-cli --prefix ~/.npm-global && export PATH="$HOME/.npm-global/bin:$PATH"`
+If `perp` command is not found after install, use `npx -y perp-cli` as prefix for all commands.
 
 ## Wallet Setup
 

@@ -3,8 +3,11 @@
 Multi-DEX perpetual futures CLI — **Pacifica** (Solana), **Hyperliquid** (HyperEVM), **Lighter** (Ethereum).
 
 ```bash
-npm install -g perp-cli
+npm install -g perp-cli       # global install
 perp --json portfolio
+
+# Or without global install (restricted environments)
+npx -y perp-cli --json portfolio
 ```
 
 ## Features
