@@ -276,8 +276,8 @@ describe("computeAutoSize", () => {
     });
 
     const size = await computeAutoSize(longAdapter, shortAdapter, "BTC", 5.0);
-    // Default maxPositionUsd is 5000
-    expect(size).toBeLessThanOrEqual(5000);
+    // Default maxPositionUsd is 100000
+    expect(size).toBeLessThanOrEqual(100000);
   });
 });
 
