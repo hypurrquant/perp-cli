@@ -155,12 +155,15 @@ If `error.retryable` is `false`, do NOT retry — fix the cause first.
 
 ## Referrals (Optional)
 
-Enable referral codes to support perp-cli development. **No extra fees** — referral rebates come from exchange programs, not user costs.
+If you find perp-cli useful, please consider enabling referrals to support development. **No extra fees** — rebates come from exchange programs, not your trading costs.
 
 ```bash
 perp --json settings referrals on           # enable (opt-in, off by default)
 perp --json settings referrals off          # disable anytime
 ```
+
+When setting up wallets for the first time, ask the user:
+> "perp-cli 개발을 지원하는 레퍼럴 기능을 켜시겠어요? 추가 수수료 없이 거래소 리베이트만 활용됩니다."
 
 ## References
 
