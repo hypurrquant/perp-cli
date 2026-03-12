@@ -175,7 +175,7 @@ export function registerAgentCommands(
               "perp account orders --json",
               "perp account history --json",
               "perp account trades --json",
-              "perp status --json",
+              "perp portfolio --json",
             ],
             description: "Read account state: balances, positions, open orders, trade history",
           },
@@ -211,7 +211,7 @@ export function registerAgentCommands(
             category: "arbitrage",
             commands: [
               "perp arb funding --json",
-              "perp arb rates --json",
+              "perp arb scan --min 5 --json",
               "perp arb scan --json",
               "perp arb dex --json",
               "perp arb dex-monitor --min 10",
@@ -397,14 +397,12 @@ export function registerAgentCommands(
         }
       } else if (g.includes("arb") || g.includes("arbitrage") || g.includes("funding")) {
         steps.push(
-          { step: 1, command: "perp arb rates --json", description: "Compare funding rates across exchanges" },
-          { step: 2, command: "perp arb scan --json", description: "Find high-spread opportunities" },
-          { step: 3, command: "perp gap show --json", description: "Check price gaps" },
-          { step: 4, command: "perp arb auto --dry-run --min-spread 30", description: "Dry-run auto arb bot" },
+          { step: 1, command: "perp arb scan --min 5 --json", description: "Scan funding rate arbitrage opportunities" },
+          { step: 2, command: "perp arb exec <SYM> <longEx> <shortEx> <$> --leverage 2 --isolated --dry-run --json", description: "Dry-run arb execution" },
         );
       } else if (g.includes("status") || g.includes("check") || g.includes("overview")) {
         steps.push(
-          { step: 1, command: "perp status --json", description: "Full account overview" },
+          { step: 1, command: "perp portfolio --json", description: "Balances + positions + risk" },
           { step: 2, command: "perp account positions --json", description: "Detailed positions" },
           { step: 3, command: "perp account orders --json", description: "Open orders" },
         );
@@ -432,7 +430,7 @@ export function registerAgentCommands(
       } else {
         steps.push(
           { step: 1, command: "perp agent capabilities", description: "List all available capabilities" },
-          { step: 2, command: "perp status --json", description: "Check account status" },
+          { step: 2, command: "perp portfolio --json", description: "Check account status" },
         );
       }
 

@@ -417,19 +417,19 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
 
       if (!status.hasWallets && !hasEnvKey && !settings.defaultExchange) {
         // Fresh install — onboarding
-        console.log(chalk.cyan.bold("\n  Welcome to perp-cli!") + chalk.gray("  v0.3.7\n"));
+        console.log(chalk.cyan.bold("\n  Welcome to perp-cli!") + chalk.gray(`  v${_pkg.version}\n`));
         console.log("  Multi-DEX perpetual futures CLI for Pacifica, Hyperliquid, and Lighter.\n");
-        console.log(`  Get started:  ${chalk.cyan("perp init")}`);
+        console.log(`  Get started:  ${chalk.cyan("perp wallet set <exchange> <key>")}`);
         console.log(chalk.gray(`\n  Or explore without a wallet:`));
         console.log(`    ${chalk.green("perp market list")}              available markets`);
         console.log(`    ${chalk.green("perp -e hyperliquid market list")}  Hyperliquid markets`);
-        console.log(`    ${chalk.green("perp arb rates")}                funding rate comparison`);
+        console.log(`    ${chalk.green("perp arb scan")}                 funding rate arbitrage`);
         console.log(`    ${chalk.green("perp --help")}                   all commands\n`);
       } else {
         // Configured — show status overview
         const defaultEx = settings.defaultExchange || "pacifica";
         const activeEntries = Object.entries(status.active);
-        console.log(chalk.cyan.bold("\n  perp-cli") + chalk.gray("  v0.3.7\n"));
+        console.log(chalk.cyan.bold("\n  perp-cli") + chalk.gray(`  v${_pkg.version}\n`));
         console.log(`  Default exchange: ${chalk.cyan(defaultEx)}`);
 
         if (activeEntries.length > 0) {
@@ -460,10 +460,10 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
         }
 
         console.log(chalk.white.bold("\n  Quick commands:"));
-        console.log(`    ${chalk.green("perp status")}       account overview`);
+        console.log(`    ${chalk.green("perp portfolio")}     balances + positions + risk`);
         console.log(`    ${chalk.green("perp market list")}   available markets`);
+        console.log(`    ${chalk.green("perp arb scan")}      funding rate arbitrage`);
         console.log(`    ${chalk.green("perp dashboard")}     live monitoring`);
-        console.log(`    ${chalk.green("perp arb rates")}     funding rate comparison`);
         console.log(`    ${chalk.green("perp --help")}        all commands\n`);
       }
     } catch {

@@ -248,7 +248,7 @@ export function registerInitCommand(program: Command) {
         }
 
         console.log(chalk.white.bold("\n  Next steps:"));
-        console.log(`    ${chalk.green("perp status")}                     account overview`);
+        console.log(`    ${chalk.green("perp portfolio")}                  balances + positions + risk`);
         if (selected.includes("hyperliquid")) {
           console.log(`    ${chalk.green("perp deposit hyperliquid <amt>")}   deposit USDC`);
         }

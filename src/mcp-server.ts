@@ -461,7 +461,7 @@ server.tool(
         );
       } else if (g.includes("arb") || g.includes("arbitrage")) {
         steps.push(
-          { step: 1, command: "perp --json arb rates", description: "Compare funding rates across exchanges" },
+          { step: 1, command: "perp --json arb scan --min 5", description: "Scan funding rate arbitrage opportunities" },
           { step: 2, command: "perp --json arb scan", description: "Find high-spread opportunities" },
           { step: 3, command: "perp --json gap show", description: "Check cross-exchange price gaps" },
           { step: 4, command: "perp --json arb dex", description: "HIP-3 cross-dex arb opportunities (Hyperliquid)" },
@@ -923,7 +923,7 @@ server.tool(
           parameters: [],
           risks: [],
           category: "read",
-          relatedCommands: ["perp status", "perp portfolio"],
+          relatedCommands: ["perp portfolio", "perp portfolio"],
         };
       } else if (category === "arb") {
         explanation = {
@@ -941,7 +941,7 @@ server.tool(
           parameters: [],
           risks: ["auto" === sub ? "Auto-executes trades on both exchanges" : ""].filter(Boolean),
           category: sub === "auto" || sub === "close" ? "write" : "analysis",
-          relatedCommands: ["perp arb rates", "perp arb scan", "perp gap show"],
+          relatedCommands: ["perp arb scan", "perp arb scan", "perp gap show"],
         };
       } else if (category === "bridge") {
         explanation = {
@@ -1037,7 +1037,7 @@ server.tool(
           parameters: [],
           risks: [],
           category: "read",
-          relatedCommands: ["perp funding rates", "perp arb rates"],
+          relatedCommands: ["perp funding rates", "perp arb scan"],
         };
       } else if (category === "backtest") {
         explanation = {
@@ -1249,7 +1249,7 @@ server.resource(
         arb: {
           description: "Funding rate arbitrage & basis trading",
           subcommands: {
-            rates: { usage: "perp arb rates", description: "Compare funding rates" },
+            rates: { usage: "perp arb scan", description: "Compare funding rates" },
             scan: { usage: "perp arb scan --min <bps>", description: "Find arb opportunities" },
             funding: { usage: "perp arb funding", description: "Detailed funding analysis" },
             dex: { usage: "perp arb dex", description: "HIP-3 cross-dex arb" },
@@ -1388,7 +1388,7 @@ server.resource(
         deposit: { usage: "perp deposit <exchange> <amount>", description: "Deposit USDC to exchange" },
         withdraw: { usage: "perp withdraw <exchange> <amount>", description: "Withdraw USDC from exchange" },
         portfolio: { usage: "perp portfolio", description: "Cross-exchange portfolio summary" },
-        status: { usage: "perp status", description: "Full account overview" },
+        status: { usage: "perp portfolio", description: "Full account overview" },
         health: { usage: "perp health", description: "Exchange connectivity check" },
         settings: {
           description: "CLI settings",
