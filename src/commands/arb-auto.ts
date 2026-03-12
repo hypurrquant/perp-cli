@@ -329,7 +329,8 @@ export function registerArbAutoCommands(
       const bridgeCostUsd = parseFloat(opts.bridgeCost);
       const reversalExitEnabled = opts.reversalExit !== false;
       const settleAwareEnabled = opts.settleAware !== false;
-      const settleStrategy = (opts.settleStrategy || "block") as SettleStrategy;
+      // --no-settle-aware overrides --settle-strategy to "off"
+      const settleStrategy = !settleAwareEnabled ? "off" as SettleStrategy : (opts.settleStrategy || "block") as SettleStrategy;
       const maxBasisPct = parseFloat(opts.maxBasis);
       const webhookUrl = opts.notify;
       const notifyEvents: ArbNotifyEvent[] = opts.notifyEvents
