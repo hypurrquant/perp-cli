@@ -39,7 +39,7 @@ Same EVM key works for both HL and Lighter.
 ## Key Commands
 
 ```bash
-# Status (ONE call = all exchanges, balances, positions, risk)
+# Status (ONE call = balances, positions, risk level/violations/canTrade)
 perp --json portfolio
 
 # Arb workflow
@@ -50,8 +50,8 @@ perp --json arb exec <SYM> <longEx> <shortEx> <$> --leverage <N> --isolated  # e
 perp --json -e <EX> trade market <SYM> buy <SIZE>
 perp --json -e <EX> trade close <SYM>
 
-# Risk
-perp --json risk status
+# Risk (only if you need to set limits — portfolio already includes risk)
+perp --json risk limits --max-leverage 5
 ```
 
 Exchange aliases: `hl`, `pac`, `lt`. Symbols auto-resolve (`BTC`, `SOL`, `ICP`).
@@ -81,6 +81,11 @@ Exchange aliases: `hl`, `pac`, `lt`. Symbols auto-resolve (`BTC`, `SOL`, `ICP`).
 
 `arb scan` returns `longExch`, `shortExch`, `netSpread`.
 ALWAYS follow exactly. NEVER reverse. NEVER enter if `netSpread <= 0`.
+
+## Portfolio Response
+
+`portfolio` includes `risk: { level, canTrade, violations[] }` — no need for separate `risk status`.
+Check `canTrade` before any order. If `false`, do NOT trade.
 
 ## Monitoring (while positions open)
 
