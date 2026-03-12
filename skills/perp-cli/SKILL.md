@@ -15,9 +15,11 @@ Multi-DEX perpetual futures CLI — Pacifica (Solana), Hyperliquid (HyperEVM), L
 ## Rules
 
 1. **Always use `--json`** on every command.
-2. **NEVER use `perp init`** — interactive, will hang.
-3. **NEVER trade without user confirmation.**
-4. **NEVER read ~/.perp/.env or key files.**
+2. **Always use `--dry-run`** before any mutating trade (then execute without it after user confirms).
+3. **Always use `--fields`** to reduce output when you only need specific data (saves tokens).
+4. **NEVER use `perp init`** — interactive, will hang.
+5. **NEVER trade without user confirmation.**
+6. **NEVER read ~/.perp/.env or key files.**
 
 ## Install
 
@@ -55,6 +57,25 @@ perp --json risk limits --max-leverage 5
 ```
 
 Exchange aliases: `hl`, `pac`, `lt`. Symbols auto-resolve (`BTC`, `SOL`, `ICP`).
+
+## Agent Tools
+
+```bash
+# Discover all commands and parameters at runtime (don't guess — query this)
+perp --json agent schema
+
+# Pre-validate a trade before execution (checks balance, liquidity, risk limits)
+perp --json -e <EX> trade check <SYM> <SIDE> <SIZE>
+
+# Dry-run: simulate trade without executing
+perp --json --dry-run -e <EX> trade market <SYM> buy <SIZE>
+
+# Filter output to specific fields (saves tokens)
+perp --json --fields totalEquity,positions portfolio
+
+# Prevent duplicate orders with client ID
+perp --json -e <EX> trade market <SYM> buy <SIZE> --client-id <UNIQUE_ID>
+```
 
 ## Arb Workflow
 
@@ -112,8 +133,10 @@ Close both: perp --json -e <EX1> trade close <SYM> & perp --json -e <EX2> trade 
 
 Responses: `{ "ok": true, "data": {...} }` or `{ "ok": false, "error": { "code": "...", "retryable": true/false } }`
 
-Retryable (wait 5s): `RATE_LIMITED`, `EXCHANGE_UNREACHABLE`, `TIMEOUT`
-**Lighter `invalid signature`**: `perp --json -e lighter manage setup-api-key`
+- **Retryable** (wait 5s, max 3 retries): `RATE_LIMITED`, `EXCHANGE_UNREACHABLE`, `TIMEOUT`
+- **Non-retryable**: `INSUFFICIENT_BALANCE`, `SYMBOL_NOT_FOUND`, `RISK_VIOLATION` — fix the cause, don't retry
+- **Lighter `invalid signature`**: `perp --json -e lighter manage setup-api-key`
+- If `error.retryable` is `false`, do NOT retry. Report to user.
 
 ## References
 

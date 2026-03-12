@@ -65,6 +65,7 @@ program
   .option("-n, --network <network>", "Network: mainnet or testnet", "mainnet")
   .option("-k, --private-key <key>", "Private key")
   .option("--json", "Output raw JSON (for piping)")
+  .option("--fields <fields>", "Comma-separated fields to include in JSON output (e.g. totalEquity,positions)")
   .option("--dry-run", "Simulate trades without executing (log as simulated)")
   .option("--dex <name>", "HIP-3 deployed perp dex name (Hyperliquid only)")
   .configureOutput({

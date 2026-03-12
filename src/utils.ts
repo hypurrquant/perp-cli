@@ -52,8 +52,38 @@ export function makeTable(head: string[], rows: string[][]): string {
   return table.toString();
 }
 
+/** Pick only specified keys from an object (shallow). Supports nested paths via dot notation. */
+function pickFields(obj: unknown, fields: string[]): unknown {
+  if (obj == null || typeof obj !== "object") return obj;
+  const result: Record<string, unknown> = {};
+  for (const field of fields) {
+    const parts = field.split(".");
+    let src: unknown = obj;
+    for (const p of parts) {
+      if (src == null || typeof src !== "object") { src = undefined; break; }
+      src = (src as Record<string, unknown>)[p];
+    }
+    if (src !== undefined) {
+      // Set at top level for flat access
+      result[field] = src;
+    }
+  }
+  return result;
+}
+
 export function printJson(data: unknown): void {
-  console.log(JSON.stringify(data, null, 2));
+  const fieldsArg = process.argv.indexOf("--fields");
+  if (fieldsArg !== -1 && process.argv[fieldsArg + 1] && data && typeof data === "object") {
+    const fields = process.argv[fieldsArg + 1].split(",").map(f => f.trim());
+    const envelope = data as Record<string, unknown>;
+    // Apply field filter to data payload, keep ok/error/meta intact
+    if (envelope.ok && envelope.data && typeof envelope.data === "object") {
+      envelope.data = pickFields(envelope.data, fields);
+    }
+    console.log(JSON.stringify(envelope, null, 2));
+  } else {
+    console.log(JSON.stringify(data, null, 2));
+  }
 }
 
 export function errorAndExit(msg: string): never {
