@@ -4,6 +4,11 @@ import { resolve } from "path";
 const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
 const SETTINGS_FILE = resolve(PERP_DIR, "settings.json");
 
+export interface ExchangeFees {
+  taker: number;  // fraction, e.g. 0.00035 = 0.035%
+  maker: number;
+}
+
 export interface Settings {
   /** Default exchange when -e flag is omitted */
   defaultExchange: string;
@@ -20,6 +25,8 @@ export interface Settings {
     hyperliquid: boolean;
     lighter: boolean;
   };
+  /** Per-exchange fee tiers (fetched from exchange APIs) */
+  fees: Record<string, ExchangeFees>;
 }
 
 const DEFAULTS: Settings = {
@@ -34,12 +41,27 @@ const DEFAULTS: Settings = {
     hyperliquid: false,
     lighter: false,
   },
+  fees: {
+    hyperliquid: { taker: 0.00035, maker: 0.00002 },
+    pacifica: { taker: 0.00035, maker: 0.0001 },
+    lighter: { taker: 0, maker: 0 },
+  },
 };
 
 export function loadSettings(): Settings {
-  if (!existsSync(SETTINGS_FILE)) return { ...DEFAULTS, referralCodes: { ...DEFAULTS.referralCodes } };
+  if (!existsSync(SETTINGS_FILE)) return { ...DEFAULTS, referralCodes: { ...DEFAULTS.referralCodes }, fees: { ...DEFAULTS.fees } };
   try {
     const stored = JSON.parse(readFileSync(SETTINGS_FILE, "utf-8"));
+    // Merge stored fees with defaults (so new exchanges get defaults)
+    const fees: Record<string, ExchangeFees> = { ...DEFAULTS.fees };
+    if (stored.fees && typeof stored.fees === "object") {
+      for (const [ex, f] of Object.entries(stored.fees)) {
+        const fee = f as Partial<ExchangeFees>;
+        if (fee && typeof fee.taker === "number" && typeof fee.maker === "number") {
+          fees[ex] = { taker: fee.taker, maker: fee.maker };
+        }
+      }
+    }
     return {
       defaultExchange: stored.defaultExchange ?? DEFAULTS.defaultExchange,
       referrals: stored.referrals ?? DEFAULTS.referrals,
@@ -52,9 +74,10 @@ export function loadSettings(): Settings {
         hyperliquid: stored.referralApplied?.hyperliquid ?? DEFAULTS.referralApplied.hyperliquid,
         lighter: stored.referralApplied?.lighter ?? DEFAULTS.referralApplied.lighter,
       },
+      fees,
     };
   } catch {
-    return { ...DEFAULTS, referralCodes: { ...DEFAULTS.referralCodes } };
+    return { ...DEFAULTS, referralCodes: { ...DEFAULTS.referralCodes }, fees: { ...DEFAULTS.fees } };
   }
 }
 
