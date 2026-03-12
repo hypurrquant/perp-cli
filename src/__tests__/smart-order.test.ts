@@ -158,4 +158,44 @@ describe("smartOrder", () => {
     expect(result.price).toBe("102");
     expect(result.tickSize).toBe("1");
   });
+
+  it("falls back when IOC succeeds but response contains error (e.g., HL)", async () => {
+    // Hyperliquid returns success at HTTP level but embeds error in statuses
+    const hlResponse = {
+      status: "ok",
+      response: {
+        type: "order",
+        data: {
+          statuses: [{ error: "Order could not immediately match against any resting orders." }],
+        },
+      },
+    };
+    const adapter = mockAdapter({
+      limitOrder: vi.fn().mockResolvedValue(hlResponse),
+    });
+    const result = await smartOrder(adapter, "BTC", "sell", "0.1");
+
+    expect(result.method).toBe("market_fallback");
+    expect(adapter.marketOrder).toHaveBeenCalledWith("BTC", "sell", "0.1");
+  });
+
+  it("does not fallback on embedded error when fallback=false", async () => {
+    const hlResponse = {
+      status: "ok",
+      response: {
+        type: "order",
+        data: {
+          statuses: [{ error: "Order could not immediately match" }],
+        },
+      },
+    };
+    const adapter = mockAdapter({
+      limitOrder: vi.fn().mockResolvedValue(hlResponse),
+    });
+    const result = await smartOrder(adapter, "BTC", "sell", "0.1", { fallback: false });
+
+    // Without fallback, returns the IOC result as-is (caller handles error)
+    expect(result.method).toBe("limit_ioc");
+    expect(adapter.marketOrder).not.toHaveBeenCalled();
+  });
 });

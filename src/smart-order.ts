@@ -73,6 +73,27 @@ function pricePrecision(priceStr: string): number {
 }
 
 /**
+ * Check if an order response contains an embedded error (not thrown).
+ * Some exchanges (e.g., Hyperliquid) return success at HTTP level but include
+ * error statuses inside the response body.
+ */
+function hasOrderError(result: unknown): boolean {
+  if (!result || typeof result !== "object") return false;
+  const r = result as Record<string, unknown>;
+
+  // Hyperliquid: { response: { data: { statuses: [{ error: "..." }] } } }
+  const resp = r.response as Record<string, unknown> | undefined;
+  const data = resp?.data as Record<string, unknown> | undefined;
+  const statuses = data?.statuses as Record<string, unknown>[] | undefined;
+  if (Array.isArray(statuses) && statuses.length > 0 && statuses[0].error) return true;
+
+  // Generic: { ok: false } or { success: false }
+  if (r.ok === false || r.success === false) return true;
+
+  return false;
+}
+
+/**
  * Execute a smart order at best bid/ask + 1 tick.
  * Drop-in replacement for `adapter.marketOrder()`.
  */
@@ -115,6 +136,20 @@ export async function smartOrder(
       tif: "IOC",
       reduceOnly,
     });
+
+    // Check for exchange-level rejection inside a "success" response
+    // (e.g., Hyperliquid returns { status: "ok", response: { data: { statuses: [{ error: "..." }] } } })
+    if (fallback && hasOrderError(result)) {
+      const fallbackResult = await adapter.marketOrder(symbol, side, size);
+      return {
+        result: fallbackResult,
+        method: "market_fallback",
+        price: formattedPrice,
+        bestBookPrice: bestEntry[0],
+        tickSize: tick.toFixed(decimals),
+      };
+    }
+
     return {
       result,
       method: "limit_ioc",

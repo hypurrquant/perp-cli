@@ -455,26 +455,15 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const tifMap: Record<string, string> = { IOC: "Ioc", GTC: "Gtc", ALO: "Alo" };
     const tif = (tifMap[rawTif.toUpperCase()] ?? rawTif) as import("hyperliquid").Tif;
     const reduceOnly = opts?.reduceOnly ?? false;
-    let result;
-    if (this._dex) {
-      result = await this._rawPlaceOrder({
-        assetIndex: this.getAssetIndex(symbol.toUpperCase()),
-        isBuy: side === "buy",
-        price,
-        size,
-        orderType: { limit: { tif } },
-        reduceOnly,
-      });
-    } else {
-      result = await this.sdk.exchange.placeOrder({
-        coin: symbol.toUpperCase(),
-        is_buy: side === "buy",
-        sz: parseFloat(size),
-        limit_px: parseFloat(price),
-        order_type: { limit: { tif } },
-        reduce_only: reduceOnly,
-      });
-    }
+    // Use _rawPlaceOrder for both DEX and non-DEX (SDK exchange.placeOrder is unavailable)
+    const result = await this._rawPlaceOrder({
+      assetIndex: this.getAssetIndex(symbol.toUpperCase()),
+      isBuy: side === "buy",
+      price,
+      size,
+      orderType: { limit: { tif } },
+      reduceOnly,
+    });
     await this._invalidateAccountCache();
     return result;
   }
