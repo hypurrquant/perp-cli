@@ -5,7 +5,7 @@ allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*)"
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.3.19"
+  version: "0.3.20"
 ---
 
 # perp-cli Agent Guide
@@ -103,7 +103,11 @@ All string outputs are auto-sanitized (control chars stripped, prompt injection 
    → executes BOTH legs simultaneously
    → verifies positions exist after execution
    → auto-rollback if one leg fails
-5. perp --json portfolio                    → verify positions
+5. perp --json arb status                   → monitor: PnL, funding income, daily estimate, breakeven
+6. perp --json arb funding-earned           → actual funding payments received/paid + APR
+7. perp --json arb close <SYM>             → close both legs simultaneously (retry + verify)
+   → --dry-run: preview without executing
+   → --pair <longEx>:<shortEx>: specify which pair if multiple
 ```
 
 ## Position Sizing
@@ -137,10 +141,11 @@ Check `canTrade` before any order. If `false`, do NOT trade.
 ## Monitoring (while positions open)
 
 ```
-Every 15 min: perp --json portfolio
-Every 1 hour: perp --json arb scan --min 5
+Every 15 min: perp --json arb status               → PnL, daily income, breakeven analysis
+Every 1 hour: perp --json arb scan --min 5          → check if spread still profitable
+Daily:        perp --json arb funding-earned         → verify actual funding payments
 Exit if: spread < breakeven or one leg closed unexpectedly.
-Close both: perp --json -e <EX1> trade close <SYM> & perp --json -e <EX2> trade close <SYM>
+Close:        perp --json arb close <SYM>            → close both legs with retry + verification
 ```
 
 ## Error Handling

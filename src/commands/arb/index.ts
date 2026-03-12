@@ -45,6 +45,13 @@ interface ArbPairPosition {
   estimatedFees: number;
   unrealizedPnl: number;
   netPnl: number;
+  dailyFundingEstimate: number;
+  breakeven: {
+    daysToBreakeven: number | null;
+    dailyIncome: number;
+    totalCosts: number;
+    remainingToBreakeven: number;
+  };
 }
 
 interface ArbHistoryTrade {
@@ -250,6 +257,18 @@ export function registerArbManageCommands(
             const totalUpnl = longPos.unrealizedPnl + shortPos.unrealizedPnl;
             const netPnl = totalUpnl + estimatedFundingIncome - totalFees;
 
+            // Daily funding estimate from current spread
+            const dailyFundingEstimate = currentSpread
+              ? (currentSpread / 100) / 365 * avgNotional
+              : 0;
+
+            // Breakeven analysis
+            const totalCosts = totalFees; // entry+exit fees
+            const remainingToBreakeven = totalCosts - estimatedFundingIncome - totalUpnl;
+            const daysToBreakeven = dailyFundingEstimate > 0 && remainingToBreakeven > 0
+              ? remainingToBreakeven / dailyFundingEstimate
+              : remainingToBreakeven <= 0 ? 0 : null;
+
             arbPairs.push({
               symbol,
               longExchange: longPos.exchange,
@@ -280,13 +299,34 @@ export function registerArbManageCommands(
               estimatedFees: totalFees,
               unrealizedPnl: totalUpnl,
               netPnl,
+              dailyFundingEstimate,
+              breakeven: {
+                daysToBreakeven,
+                dailyIncome: dailyFundingEstimate,
+                totalCosts,
+                remainingToBreakeven: Math.max(0, remainingToBreakeven),
+              },
             });
           }
         }
       }
 
       if (isJson()) {
-        return printJson(jsonOk(arbPairs));
+        const totalNotionalJ = arbPairs.reduce((s, p) => s + (p.longPosition.notionalUsd + p.shortPosition.notionalUsd) / 2, 0);
+        const totalDailyJ = arbPairs.reduce((s, p) => s + p.dailyFundingEstimate, 0);
+        return printJson(jsonOk({
+          pairs: arbPairs,
+          aggregate: {
+            positions: arbPairs.length,
+            totalNotionalUsd: totalNotionalJ,
+            unrealizedPnl: arbPairs.reduce((s, p) => s + p.unrealizedPnl, 0),
+            estimatedFunding: arbPairs.reduce((s, p) => s + p.estimatedFundingIncome, 0),
+            estimatedFees: arbPairs.reduce((s, p) => s + p.estimatedFees, 0),
+            netPnl: arbPairs.reduce((s, p) => s + p.netPnl, 0),
+            dailyFundingEstimate: totalDailyJ,
+            annualizedApr: totalNotionalJ > 0 ? (totalDailyJ * 365 / totalNotionalJ) * 100 : 0,
+          },
+        }));
       }
 
       if (arbPairs.length === 0) {
@@ -336,13 +376,21 @@ export function registerArbManageCommands(
       const totalFunding = arbPairs.reduce((s, p) => s + p.estimatedFundingIncome, 0);
       const totalFees = arbPairs.reduce((s, p) => s + p.estimatedFees, 0);
       const totalNet = arbPairs.reduce((s, p) => s + p.netPnl, 0);
+      const totalDailyFunding = arbPairs.reduce((s, p) => s + p.dailyFundingEstimate, 0);
+      const totalNotional = arbPairs.reduce((s, p) => s + (p.longPosition.notionalUsd + p.shortPosition.notionalUsd) / 2, 0);
+      const portfolioApr = totalNotional > 0 ? (totalDailyFunding * 365 / totalNotional) * 100 : 0;
 
       console.log(chalk.white.bold("\n  Summary"));
       console.log(`    Positions:       ${arbPairs.length}`);
+      console.log(`    Total Notional:  $${formatUsd(totalNotional)}`);
       console.log(`    Unrealized PnL:  ${formatPnl(totalUpnl)}`);
       console.log(`    Est. Funding:    ${chalk.yellow(`$${totalFunding.toFixed(4)}`)}`);
       console.log(`    Est. Fees:       ${chalk.red(`-$${totalFees.toFixed(4)}`)}`);
       console.log(`    Net PnL:         ${formatPnl(totalNet)}`);
+      console.log(`    Daily Income:    ${chalk.cyan(`$${totalDailyFunding.toFixed(4)}/day`)}`);
+      if (portfolioApr > 0) {
+        console.log(`    Portfolio APR:   ${chalk.cyan(`${portfolioApr.toFixed(1)}%`)}`);
+      }
       console.log(chalk.gray(`    (Fees assume ${(TAKER_FEE * 100).toFixed(3)}% taker for entry + exit.)\n`));
     });
 
@@ -492,41 +540,73 @@ export function registerArbManageCommands(
         return;
       }
 
-      // Execute close on both exchanges
-      const results: { exchange: string; action: string; status: string; error?: string }[] = [];
+      // Execute close on both exchanges with retry
+      const MAX_RETRIES = 2;
+      const results: { exchange: string; action: string; status: string; error?: string; retries: number }[] = [];
+
+      async function closeWithRetry(
+        exchange: string,
+        rawSymbol: string,
+        side: "buy" | "sell",
+        size: number,
+        label: string,
+      ) {
+        let lastError = "";
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          try {
+            const adapter = await getAdapterForExchange(exchange);
+            await adapter.marketOrder(rawSymbol, side, String(size));
+            results.push({ exchange, action: `${side} (close ${label})`, status: "success", retries: attempt });
+            if (!isJson()) console.log(chalk.green(`  Closed ${label} on ${exchange}: ${side.toUpperCase()} ${size} ${sym}${attempt > 0 ? ` (retry ${attempt})` : ""}`));
+            return;
+          } catch (err) {
+            lastError = err instanceof Error ? err.message : String(err);
+            if (attempt < MAX_RETRIES) {
+              if (!isJson()) console.log(chalk.yellow(`  Retry ${attempt + 1}/${MAX_RETRIES} for ${label} on ${exchange}...`));
+              await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+            }
+          }
+        }
+        results.push({ exchange, action: `${side} (close ${label})`, status: "failed", error: lastError, retries: MAX_RETRIES });
+        if (!isJson()) console.error(chalk.red(`  Failed to close ${label} on ${exchange}: ${lastError}`));
+      }
 
       // Close both legs concurrently
-      const closePromises = [
-        (async () => {
-          try {
-            const adapter = await getAdapterForExchange(longPos.exchange);
-            await adapter.marketOrder(longPos.rawSymbol, "sell", String(longPos.size));
-            results.push({ exchange: longPos.exchange, action: "sell (close long)", status: "success" });
-            if (!isJson()) console.log(chalk.green(`  Closed long on ${longPos.exchange}: SELL ${longPos.size} ${sym}`));
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            results.push({ exchange: longPos.exchange, action: "sell (close long)", status: "failed", error: msg });
-            if (!isJson()) console.error(chalk.red(`  Failed to close long on ${longPos.exchange}: ${msg}`));
-          }
-        })(),
-        (async () => {
-          try {
-            const adapter = await getAdapterForExchange(shortPos.exchange);
-            await adapter.marketOrder(shortPos.rawSymbol, "buy", String(shortPos.size));
-            results.push({ exchange: shortPos.exchange, action: "buy (close short)", status: "success" });
-            if (!isJson()) console.log(chalk.green(`  Closed short on ${shortPos.exchange}: BUY ${shortPos.size} ${sym}`));
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            results.push({ exchange: shortPos.exchange, action: "buy (close short)", status: "failed", error: msg });
-            if (!isJson()) console.error(chalk.red(`  Failed to close short on ${shortPos.exchange}: ${msg}`));
-          }
-        })(),
-      ];
-
-      await Promise.all(closePromises);
+      await Promise.all([
+        closeWithRetry(longPos.exchange, longPos.rawSymbol, "sell", longPos.size, "long"),
+        closeWithRetry(shortPos.exchange, shortPos.rawSymbol, "buy", shortPos.size, "short"),
+      ]);
 
       const allSuccess = results.every(r => r.status === "success");
       const anySuccess = results.some(r => r.status === "success");
+
+      // Verify positions are actually closed
+      let verification: { exchange: string; remainingSize: number; closed: boolean }[] | undefined;
+      if (anySuccess) {
+        verification = [];
+        for (const r of results) {
+          if (r.status !== "success") continue;
+          try {
+            const adapter = await getAdapterForExchange(r.exchange);
+            const positions = await adapter.getPositions();
+            const remaining = positions.find(p =>
+              p.symbol.replace("-PERP", "").toUpperCase() === sym
+            );
+            verification.push({
+              exchange: r.exchange,
+              remainingSize: remaining ? Math.abs(Number(remaining.size)) : 0,
+              closed: !remaining || Math.abs(Number(remaining.size)) < 0.0001,
+            });
+          } catch {
+            verification.push({ exchange: r.exchange, remainingSize: -1, closed: false });
+          }
+        }
+
+        const notClosed = verification.filter(v => !v.closed);
+        if (notClosed.length > 0 && !isJson()) {
+          console.log(chalk.yellow(`\n  Warning: Position may not be fully closed on: ${notClosed.map(v => v.exchange).join(", ")}`));
+        }
+      }
 
       // Log to execution log
       const arbPairId = `${sym}:${longPos.exchange}:${shortPos.exchange}`;
@@ -561,6 +641,7 @@ export function registerArbManageCommands(
           estimatedFees: totalFees,
           netPnl,
           results,
+          verification,
         }));
       }
 
@@ -1076,5 +1157,229 @@ export function registerArbManageCommands(
       } else {
         console.log(chalk.yellow("\n  To execute, use: perp rebalance execute --auto-bridge\n"));
       }
+    });
+
+  // ── arb funding-earned ──
+
+  arb
+    .command("funding-earned")
+    .description("Actual funding payments received/paid for arb positions")
+    .option("--period <days>", "Number of days to look back", "7")
+    .option("--symbol <symbol>", "Filter by symbol")
+    .action(async (opts: { period: string; symbol?: string }) => {
+      const periodDays = parseInt(opts.period);
+      const filterSym = opts.symbol?.toUpperCase();
+
+      if (!isJson()) console.log(chalk.cyan(`\n  Fetching funding payments (last ${periodDays} days)...\n`));
+
+      // Fetch positions to identify arb pairs
+      const allPositions: { exchange: string; symbol: string; side: "long" | "short"; size: number; markPrice: number }[] = [];
+
+      for (const exName of EXCHANGES) {
+        try {
+          const adapter = await getAdapterForExchange(exName);
+          const positions = await adapter.getPositions();
+          for (const p of positions) {
+            const normalized = p.symbol.replace("-PERP", "").toUpperCase();
+            allPositions.push({
+              exchange: exName,
+              symbol: normalized,
+              side: p.side,
+              size: Math.abs(Number(p.size)),
+              markPrice: Number(p.markPrice),
+            });
+          }
+        } catch {
+          // exchange not configured
+        }
+      }
+
+      // Identify arb pairs (long on one exchange, short on another)
+      const arbPairKeys = new Set<string>();
+      const arbPairInfo = new Map<string, { longExchange: string; shortExchange: string; notionalUsd: number }>();
+      const longs = allPositions.filter(p => p.side === "long");
+      const shorts = allPositions.filter(p => p.side === "short");
+      for (const l of longs) {
+        for (const s of shorts) {
+          if (l.exchange !== s.exchange && l.symbol === s.symbol) {
+            const key = l.symbol;
+            arbPairKeys.add(key);
+            arbPairInfo.set(key, {
+              longExchange: l.exchange,
+              shortExchange: s.exchange,
+              notionalUsd: (l.size * l.markPrice + s.size * s.markPrice) / 2,
+            });
+          }
+        }
+      }
+
+      // Fetch funding payments from all configured exchanges
+      interface FundingPaymentRow {
+        time: number;
+        exchange: string;
+        symbol: string;
+        payment: number;
+      }
+
+      const allPayments: FundingPaymentRow[] = [];
+      const cutoff = Date.now() - periodDays * 24 * 60 * 60 * 1000;
+
+      for (const exName of EXCHANGES) {
+        try {
+          const adapter = await getAdapterForExchange(exName);
+          const payments = await adapter.getFundingPayments(200);
+          for (const p of payments) {
+            if (p.time < cutoff) continue;
+            const sym = p.symbol.replace("-PERP", "").toUpperCase();
+            if (filterSym && sym !== filterSym) continue;
+            allPayments.push({
+              time: p.time,
+              exchange: exName,
+              symbol: sym,
+              payment: typeof p.payment === "string" ? parseFloat(p.payment) : Number(p.payment),
+            });
+          }
+        } catch {
+          // exchange not configured or no payments
+        }
+      }
+
+      // Group by symbol, then by exchange
+      const bySymbol = new Map<string, FundingPaymentRow[]>();
+      for (const p of allPayments) {
+        if (!bySymbol.has(p.symbol)) bySymbol.set(p.symbol, []);
+        bySymbol.get(p.symbol)!.push(p);
+      }
+
+      // Build per-pair summary
+      interface FundingPairSummary {
+        symbol: string;
+        isArbPair: boolean;
+        longExchange: string | null;
+        shortExchange: string | null;
+        notionalUsd: number;
+        byExchange: { exchange: string; totalReceived: number; totalPaid: number; net: number; payments: number }[];
+        totalReceived: number;
+        totalPaid: number;
+        netEarned: number;
+        dailyAvg: number;
+        annualizedApr: number;
+        payments: number;
+      }
+
+      const pairs: FundingPairSummary[] = [];
+
+      for (const [symbol, payments] of bySymbol) {
+        const isArb = arbPairKeys.has(symbol);
+        const pairInfo = arbPairInfo.get(symbol);
+
+        // Group by exchange
+        const byEx = new Map<string, FundingPaymentRow[]>();
+        for (const p of payments) {
+          if (!byEx.has(p.exchange)) byEx.set(p.exchange, []);
+          byEx.get(p.exchange)!.push(p);
+        }
+
+        const exchangeSummaries: FundingPairSummary["byExchange"] = [];
+        let totalReceived = 0;
+        let totalPaid = 0;
+
+        for (const [exchange, exPayments] of byEx) {
+          const received = exPayments.filter(p => p.payment > 0).reduce((s, p) => s + p.payment, 0);
+          const paid = exPayments.filter(p => p.payment < 0).reduce((s, p) => s + Math.abs(p.payment), 0);
+          const net = received - paid;
+          totalReceived += received;
+          totalPaid += paid;
+          exchangeSummaries.push({ exchange, totalReceived: received, totalPaid: paid, net, payments: exPayments.length });
+        }
+
+        const netEarned = totalReceived - totalPaid;
+        const dailyAvg = periodDays > 0 ? netEarned / periodDays : 0;
+        const notionalUsd = pairInfo?.notionalUsd || 0;
+        const annualizedApr = notionalUsd > 0 ? (dailyAvg * 365 / notionalUsd) * 100 : 0;
+
+        pairs.push({
+          symbol,
+          isArbPair: isArb,
+          longExchange: pairInfo?.longExchange ?? null,
+          shortExchange: pairInfo?.shortExchange ?? null,
+          notionalUsd,
+          byExchange: exchangeSummaries,
+          totalReceived,
+          totalPaid,
+          netEarned,
+          dailyAvg,
+          annualizedApr,
+          payments: payments.length,
+        });
+      }
+
+      // Sort: arb pairs first, then by netEarned
+      pairs.sort((a, b) => {
+        if (a.isArbPair !== b.isArbPair) return a.isArbPair ? -1 : 1;
+        return b.netEarned - a.netEarned;
+      });
+
+      // Totals
+      const totals = {
+        totalReceived: pairs.reduce((s, p) => s + p.totalReceived, 0),
+        totalPaid: pairs.reduce((s, p) => s + p.totalPaid, 0),
+        netEarned: pairs.reduce((s, p) => s + p.netEarned, 0),
+        dailyAvg: pairs.reduce((s, p) => s + p.dailyAvg, 0),
+        totalNotional: pairs.filter(p => p.isArbPair).reduce((s, p) => s + p.notionalUsd, 0),
+        arbPairs: pairs.filter(p => p.isArbPair).length,
+        period: periodDays,
+      };
+
+      const totalArbNotional = totals.totalNotional;
+      const portfolioApr = totalArbNotional > 0
+        ? (totals.dailyAvg * 365 / totalArbNotional) * 100
+        : 0;
+
+      if (isJson()) {
+        return printJson(jsonOk({
+          pairs,
+          totals: { ...totals, annualizedApr: portfolioApr },
+        }));
+      }
+
+      if (pairs.length === 0) {
+        console.log(chalk.gray("  No funding payments found.\n"));
+        return;
+      }
+
+      console.log(chalk.cyan.bold("  Funding Payments Earned\n"));
+
+      const rows = pairs.map(p => {
+        const arbTag = p.isArbPair ? chalk.green("ARB") : chalk.gray("---");
+        const exchanges = p.byExchange.map(e => e.exchange.slice(0, 3).toUpperCase()).join("+");
+        return [
+          chalk.white.bold(p.symbol),
+          arbTag,
+          exchanges,
+          chalk.green(`$${p.totalReceived.toFixed(4)}`),
+          chalk.red(`-$${p.totalPaid.toFixed(4)}`),
+          formatPnl(p.netEarned),
+          `$${p.dailyAvg.toFixed(4)}/d`,
+          p.annualizedApr > 0 ? `${p.annualizedApr.toFixed(1)}%` : "-",
+          String(p.payments),
+        ];
+      });
+
+      console.log(makeTable(
+        ["Symbol", "Type", "Exchanges", "Received", "Paid", "Net", "Daily Avg", "APR", "#"],
+        rows,
+      ));
+
+      console.log(chalk.white.bold("\n  Totals"));
+      console.log(`    Period:       ${periodDays} days`);
+      console.log(`    Received:     ${chalk.green(`$${totals.totalReceived.toFixed(4)}`)}`);
+      console.log(`    Paid:         ${chalk.red(`-$${totals.totalPaid.toFixed(4)}`)}`);
+      console.log(`    Net Earned:   ${formatPnl(totals.netEarned)}`);
+      console.log(`    Daily Avg:    $${totals.dailyAvg.toFixed(4)}/day`);
+      if (portfolioApr > 0) {
+        console.log(`    Portfolio APR: ${chalk.cyan(`${portfolioApr.toFixed(1)}%`)} (on $${formatUsd(totalArbNotional)} arb notional)`);
+      }
+      console.log();
     });
 }
