@@ -13,8 +13,8 @@ perp --json portfolio
 - **Funding Rate Arb** — scan spreads + one-command dual-leg execution (`arb exec`)
 - **Portfolio** — single call returns balances, positions, risk level across all exchanges
 - **CCTP V2 Bridge** — $0 fee USDC bridging (Solana, Arbitrum, Base)
-- **AI Agent Skill** — structured JSON I/O for LLM-powered trading agents
-- **Full JSON Output** — every command supports `--json`
+- **Agent-First Design** — `--json`, `--fields`, `--ndjson`, `--dry-run`, runtime schema introspection
+- **Safety** — pre-trade validation, response sanitization, client-id deduplication
 
 ## Setup
 
@@ -73,24 +73,36 @@ npx skills add hypurrquant/perp-cli
 /install-skill hypurrquant/perp-cli
 ```
 
-The skill provides:
-- Structured JSON workflow for autonomous trading
-- `portfolio` = one call for all balances, positions, risk assessment
-- `arb exec` = one call for dual-leg arb with orderbook validation + rollback
-- Safety guardrails (user confirmation, risk checks, error handling)
-
 See [`skills/perp-cli/SKILL.md`](skills/perp-cli/SKILL.md) for the full agent guide.
 
-## JSON Output
+## Agent-First CLI Design
 
-All commands support `--json`. Responses follow a consistent envelope:
+Built following [agent-first CLI principles](https://justin.poehnelt.com/posts/rewrite-your-cli-for-ai-agents/):
 
-```json
-{ "ok": true, "data": { ... } }
-{ "ok": false, "error": { "code": "...", "message": "...", "retryable": true } }
+```bash
+# Every command returns structured JSON envelope
+perp --json portfolio
+# → { "ok": true, "data": {...}, "meta": { "timestamp": "..." } }
+
+# Runtime schema introspection (don't guess commands — query this)
+perp --json agent schema
+
+# Filter output to save tokens
+perp --json --fields totalEquity,risk portfolio
+
+# Stream large lists as NDJSON (one JSON per line)
+perp --json --ndjson -e hl market list
+
+# Pre-validate before executing
+perp --json -e hl trade check BTC buy 0.01
+perp --json --dry-run -e hl trade market BTC buy 0.01
+
+# Idempotent orders with client ID
+perp --json -e hl trade market BTC buy 0.01 --client-id my-unique-id
 ```
 
-Retryable errors: `RATE_LIMITED`, `EXCHANGE_UNREACHABLE`, `TIMEOUT`.
+All responses are auto-sanitized (control chars stripped, prompt injection patterns blocked).
+Errors include `retryable` flag — only retry when `true`.
 
 ## License
 

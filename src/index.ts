@@ -66,6 +66,7 @@ program
   .option("-k, --private-key <key>", "Private key")
   .option("--json", "Output raw JSON (for piping)")
   .option("--fields <fields>", "Comma-separated fields to include in JSON output (e.g. totalEquity,positions)")
+  .option("--ndjson", "Output newline-delimited JSON (one object per line for streaming)")
   .option("--dry-run", "Simulate trades without executing (log as simulated)")
   .option("--dex <name>", "HIP-3 deployed perp dex name (Hyperliquid only)")
   .configureOutput({

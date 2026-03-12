@@ -64,26 +64,70 @@ function pickFields(obj: unknown, fields: string[]): unknown {
       src = (src as Record<string, unknown>)[p];
     }
     if (src !== undefined) {
-      // Set at top level for flat access
       result[field] = src;
     }
   }
   return result;
 }
 
+// ── Response Sanitization ──
+// Strips control characters and potential prompt-injection patterns from all string values.
+// Applied automatically to all JSON output to prevent agent confusion from external data.
+
+const CONTROL_CHAR_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
+const PROMPT_INJECTION_RE = /(?:^|\n)\s*(?:SYSTEM:|ASSISTANT:|HUMAN:|<\/?(?:system|prompt|instruction|tool_use)>|ignore (?:previous|above|all) instructions?)/gi;
+
+function sanitizeValue(val: unknown): unknown {
+  if (typeof val === "string") {
+    let s = val.replace(CONTROL_CHAR_RE, "");
+    if (PROMPT_INJECTION_RE.test(s)) {
+      s = s.replace(PROMPT_INJECTION_RE, "[SANITIZED]");
+    }
+    return s;
+  }
+  if (Array.isArray(val)) return val.map(sanitizeValue);
+  if (val && typeof val === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(val)) {
+      out[k] = sanitizeValue(v);
+    }
+    return out;
+  }
+  return val;
+}
+
+// ── JSON Output ──
+
+const _isNdjson = () => process.argv.includes("--ndjson");
+
 export function printJson(data: unknown): void {
+  // Sanitize all string values in output
+  let output = sanitizeValue(data);
+
+  // Apply --fields filter
   const fieldsArg = process.argv.indexOf("--fields");
-  if (fieldsArg !== -1 && process.argv[fieldsArg + 1] && data && typeof data === "object") {
+  if (fieldsArg !== -1 && process.argv[fieldsArg + 1] && output && typeof output === "object") {
     const fields = process.argv[fieldsArg + 1].split(",").map(f => f.trim());
-    const envelope = data as Record<string, unknown>;
-    // Apply field filter to data payload, keep ok/error/meta intact
+    const envelope = output as Record<string, unknown>;
     if (envelope.ok && envelope.data && typeof envelope.data === "object") {
       envelope.data = pickFields(envelope.data, fields);
     }
-    console.log(JSON.stringify(envelope, null, 2));
-  } else {
-    console.log(JSON.stringify(data, null, 2));
+    output = envelope;
   }
+
+  // NDJSON mode: if data.data is an array, emit one JSON line per element
+  if (_isNdjson() && output && typeof output === "object") {
+    const envelope = output as Record<string, unknown>;
+    if (envelope.ok && Array.isArray(envelope.data)) {
+      const meta = envelope.meta;
+      for (const item of envelope.data) {
+        console.log(JSON.stringify({ ok: true, data: item, meta }));
+      }
+      return;
+    }
+  }
+
+  console.log(JSON.stringify(output, null, _isNdjson() ? undefined : 2));
 }
 
 export function errorAndExit(msg: string): never {

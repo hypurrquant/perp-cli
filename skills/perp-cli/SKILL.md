@@ -73,9 +73,14 @@ perp --json --dry-run -e <EX> trade market <SYM> buy <SIZE>
 # Filter output to specific fields (saves tokens)
 perp --json --fields totalEquity,positions portfolio
 
+# Stream large lists as NDJSON (one JSON per line, no buffering)
+perp --json --ndjson -e <EX> market list
+
 # Prevent duplicate orders with client ID
 perp --json -e <EX> trade market <SYM> buy <SIZE> --client-id <UNIQUE_ID>
 ```
+
+All string outputs are auto-sanitized (control chars stripped, prompt injection patterns blocked).
 
 ## Arb Workflow
 
