@@ -9,6 +9,7 @@ import {
   fetchLighterOrderBookDetails, fetchLighterFundingRates,
 } from "../../shared-api.js";
 import { computeBasisRisk } from "../../arb-utils.js";
+import { smartOrder } from "../../smart-order.js";
 import { fetchAllBalances, computeRebalancePlan } from "../../rebalance.js";
 import { EXCHANGE_TO_CHAIN, getBestQuote } from "../../bridge-engine.js";
 import { computeEnhancedStats, type ArbTradeForStats } from "../../arb-history-stats.js";
@@ -401,7 +402,8 @@ export function registerArbManageCommands(
     .description("Manually close an arb position on both exchanges")
     .option("--dry-run", "Show what would happen without executing")
     .option("--pair <pair>", "Specify arb pair as longExchange:shortExchange (e.g. pacifica:hyperliquid)")
-    .action(async (symbol: string, opts: { dryRun?: boolean; pair?: string }) => {
+    .option("--smart", "Smart execution: IOC limit at best bid/ask + 1 tick (reduces slippage)")
+    .action(async (symbol: string, opts: { dryRun?: boolean; pair?: string; smart?: boolean }) => {
       const sym = symbol.toUpperCase();
       const dryRun = !!opts.dryRun || process.argv.includes("--dry-run");
 
@@ -555,9 +557,13 @@ export function registerArbManageCommands(
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
           try {
             const adapter = await getAdapterForExchange(exchange);
-            await adapter.marketOrder(rawSymbol, side, String(size));
+            if (opts.smart) {
+              await smartOrder(adapter, rawSymbol, side, String(size), { reduceOnly: true });
+            } else {
+              await adapter.marketOrder(rawSymbol, side, String(size));
+            }
             results.push({ exchange, action: `${side} (close ${label})`, status: "success", retries: attempt });
-            if (!isJson()) console.log(chalk.green(`  Closed ${label} on ${exchange}: ${side.toUpperCase()} ${size} ${sym}${attempt > 0 ? ` (retry ${attempt})` : ""}`));
+            if (!isJson()) console.log(chalk.green(`  Closed ${label} on ${exchange}: ${side.toUpperCase()} ${size} ${sym}${opts.smart ? " (smart)" : ""}${attempt > 0 ? ` (retry ${attempt})` : ""}`));
             return;
           } catch (err) {
             lastError = err instanceof Error ? err.message : String(err);

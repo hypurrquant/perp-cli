@@ -396,6 +396,9 @@ export class LighterAdapter implements ExchangeAdapter {
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const { baseAmount, priceTicks } = this.toTicks(symbol, parseFloat(size), parseFloat(price));
+
+    // Map TIF string → Lighter numeric: IOC=0, GTT/GTC=1
+    const isIoc = opts?.tif?.toUpperCase() === "IOC";
     const signed = await this.signOrder({
       marketIndex,
       clientOrderIndex: 0,
@@ -403,10 +406,10 @@ export class LighterAdapter implements ExchangeAdapter {
       price: priceTicks,
       isAsk: side === "sell" ? 1 : 0,
       orderType: 0, // ORDER_TYPE_LIMIT
-      timeInForce: 1, // GTT (Good Till Time) — rests on orderbook
+      timeInForce: isIoc ? 0 : 1, // 0=IOC (immediate fill or cancel), 1=GTT (rests on book)
       reduceOnly: opts?.reduceOnly ? 1 : 0,
       triggerPrice: 0,
-      orderExpiry: -1, // DEFAULT_28_DAY_ORDER_EXPIRY (WASM auto-computes 28 days)
+      orderExpiry: isIoc ? 0 : -1, // IOC: no expiry; GTT: 28-day default
       nonce,
     });
     return this.sendTx(signed);

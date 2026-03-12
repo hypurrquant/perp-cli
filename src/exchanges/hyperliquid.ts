@@ -450,7 +450,10 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async limitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { reduceOnly?: boolean; tif?: string }) {
-    const tif = (opts?.tif ?? "Gtc") as import("hyperliquid").Tif;
+    // Normalize TIF: accept "IOC"/"GTC"/"ALO" (uppercase) or native "Ioc"/"Gtc"/"Alo"
+    const rawTif = opts?.tif ?? "Gtc";
+    const tifMap: Record<string, string> = { IOC: "Ioc", GTC: "Gtc", ALO: "Alo" };
+    const tif = (tifMap[rawTif.toUpperCase()] ?? rawTif) as import("hyperliquid").Tif;
     const reduceOnly = opts?.reduceOnly ?? false;
     let result;
     if (this._dex) {

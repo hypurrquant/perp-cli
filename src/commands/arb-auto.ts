@@ -11,6 +11,7 @@ import {
 } from "../shared-api.js";
 import { scanDexArb, type DexArbPair } from "../dex-asset-map.js";
 import { logExecution, readExecutionLog } from "../execution-log.js";
+import { smartOrder } from "../smart-order.js";
 import {
   type SettleStrategy,
   type ArbNotifyEvent,
@@ -965,8 +966,9 @@ export function registerArbAutoCommands(
     .option("--max-slippage <pct>", "Max slippage % per leg", "0.5")
     .option("--leverage <n>", "Set leverage before entry (both exchanges)")
     .option("--isolated", "Use isolated margin mode")
+    .option("--smart", "Smart execution: IOC limit at best bid/ask + 1 tick (reduces slippage)")
     .action(async (symbol: string, longExch: string, shortExch: string, sizeUsdStr: string, opts: {
-      maxSlippage: string; leverage?: string; isolated?: boolean;
+      maxSlippage: string; leverage?: string; isolated?: boolean; smart?: boolean;
     }) => {
       const sym = symbol.toUpperCase();
       const sizeUsd = parseFloat(sizeUsdStr);
@@ -1061,17 +1063,20 @@ export function registerArbAutoCommands(
       const matchedUsd = matchedBase * avgPrice;
 
       if (!isJson()) {
-        console.log(chalk.cyan(`\n  Arb Exec: ${sym}`));
+        console.log(chalk.cyan(`\n  Arb Exec: ${sym}${opts.smart ? " (smart order)" : ""}`));
         console.log(chalk.gray(`    LONG  ${longExch}: buy  ${matchedSize} (~$${(matchedBase * longCheck.avgFillPrice).toFixed(2)}, slippage ${longCheck.slippagePct.toFixed(3)}%)`));
         console.log(chalk.gray(`    SHORT ${shortExch}: sell ${matchedSize} (~$${(matchedBase * shortCheck.avgFillPrice).toFixed(2)}, slippage ${shortCheck.slippagePct.toFixed(3)}%)`));
         console.log(chalk.gray(`    Executing both legs simultaneously...\n`));
       }
 
       // 5. Execute both legs simultaneously
-      const [longResult, shortResult] = await Promise.allSettled([
-        longAdapter.marketOrder(sym, "buy", matchedSize),
-        shortAdapter.marketOrder(sym, "sell", matchedSize),
-      ]);
+      const execLong = opts.smart
+        ? smartOrder(longAdapter, sym, "buy", matchedSize).then(r => r.result)
+        : longAdapter.marketOrder(sym, "buy", matchedSize);
+      const execShort = opts.smart
+        ? smartOrder(shortAdapter, sym, "sell", matchedSize).then(r => r.result)
+        : shortAdapter.marketOrder(sym, "sell", matchedSize);
+      const [longResult, shortResult] = await Promise.allSettled([execLong, execShort]);
 
       const longOk = longResult.status === "fulfilled";
       const shortOk = shortResult.status === "fulfilled";
@@ -1135,7 +1140,11 @@ export function registerArbAutoCommands(
         let rollbackOk = false;
         for (let attempt = 1; attempt <= 2; attempt++) {
           try {
-            await filledAdapter.marketOrder(sym, rollbackAction, matchedSize);
+            if (opts.smart) {
+              await smartOrder(filledAdapter, sym, rollbackAction, matchedSize, { reduceOnly: true });
+            } else {
+              await filledAdapter.marketOrder(sym, rollbackAction, matchedSize);
+            }
             rollbackOk = true;
             break;
           } catch { /* retry */ }

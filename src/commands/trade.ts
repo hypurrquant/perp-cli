@@ -7,6 +7,7 @@ import { printJson, errorAndExit, withJsonErrors, jsonOk, jsonError, symbolMatch
 import { logExecution } from "../execution-log.js";
 import { validateTrade } from "../trade-validator.js";
 import { generateClientId, logClientId, isOrderDuplicate } from "../client-id-tracker.js";
+import { smartOrder } from "../smart-order.js";
 import chalk from "chalk";
 
 function pac(adapter: ExchangeAdapter): PacificaAdapter {
@@ -55,9 +56,10 @@ export function registerTradeCommands(
     .description("Place a market order (side: buy/sell)")
     .option("-s, --slippage <pct>", "Slippage percent", "1")
     .option("--reduce-only", "Reduce only order")
+    .option("--smart", "Smart execution: IOC limit at best bid/ask + 1 tick (reduces slippage)")
     .option("--client-id <id>", "Client order ID for idempotent tracking")
     .option("--auto-id", "Auto-generate a client order ID")
-    .action(async (symbol: string, side: string, size: string, opts: { slippage: string; reduceOnly?: boolean; clientId?: string; autoId?: boolean }) => {
+    .action(async (symbol: string, side: string, size: string, opts: { slippage: string; reduceOnly?: boolean; smart?: boolean; clientId?: string; autoId?: boolean }) => {
       const s = side.toLowerCase();
       if (s !== "buy" && s !== "sell") errorAndExit("Side must be buy or sell");
 
@@ -71,7 +73,7 @@ export function registerTradeCommands(
 
       const adapter = await getAdapter();
 
-      if (dryRunGuard("market_order", { exchange: adapter.name, symbol: symbol.toUpperCase(), side: s, size })) return;
+      if (dryRunGuard("market_order", { exchange: adapter.name, symbol: symbol.toUpperCase(), side: s, size, smart: !!opts.smart })) return;
 
       if (clientId) {
         logClientId({
@@ -83,18 +85,23 @@ export function registerTradeCommands(
 
       let result: unknown;
       try {
-        result = await adapter.marketOrder(symbol.toUpperCase(), s as "buy" | "sell", size);
+        if (opts.smart) {
+          const sr = await smartOrder(adapter, symbol.toUpperCase(), s as "buy" | "sell", size);
+          result = { ...sr.result as object, smartOrder: { method: sr.method, price: sr.price, bestBookPrice: sr.bestBookPrice, tickSize: sr.tickSize } };
+        } else {
+          result = await adapter.marketOrder(symbol.toUpperCase(), s as "buy" | "sell", size);
+        }
         logExecution({
           type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(),
           side: s, size, status: "success", dryRun: false,
-          meta: clientId ? { clientOrderId: clientId } : undefined,
+          meta: { ...(clientId ? { clientOrderId: clientId } : {}), ...(opts.smart ? { smart: true } : {}) },
         });
       } catch (err) {
         logExecution({
           type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(),
           side: s, size, status: "failed", dryRun: false,
           error: err instanceof Error ? err.message : String(err),
-          meta: clientId ? { clientOrderId: clientId } : undefined,
+          meta: { ...(clientId ? { clientOrderId: clientId } : {}), ...(opts.smart ? { smart: true } : {}) },
         });
         throw err;
       }
@@ -108,7 +115,7 @@ export function registerTradeCommands(
       }
 
       if (isJson()) return printJson(jsonOk(clientId ? { ...result as object, clientOrderId: clientId } : result));
-      console.log(chalk.green(`\n  Market ${s.toUpperCase()} ${size} ${symbol.toUpperCase()} placed on ${adapter.name}.${clientId ? ` (id: ${clientId})` : ""}\n`));
+      console.log(chalk.green(`\n  Market ${s.toUpperCase()} ${size} ${symbol.toUpperCase()} placed on ${adapter.name}.${opts.smart ? " (smart)" : ""}${clientId ? ` (id: ${clientId})` : ""}\n`));
       printJson(jsonOk(result));
     });
 
@@ -118,9 +125,10 @@ export function registerTradeCommands(
     .description("Market buy (shortcut for: trade market <symbol> buy <size>)")
     .option("-s, --slippage <pct>", "Slippage percent", "1")
     .option("--reduce-only", "Reduce only order")
+    .option("--smart", "Smart execution: IOC limit at best ask + 1 tick")
     .option("--client-id <id>", "Client order ID")
     .option("--auto-id", "Auto-generate client order ID")
-    .action(async (symbol: string, size: string, opts: { slippage: string; reduceOnly?: boolean; clientId?: string; autoId?: boolean }) => {
+    .action(async (symbol: string, size: string, opts: { slippage: string; reduceOnly?: boolean; smart?: boolean; clientId?: string; autoId?: boolean }) => {
       const clientId = opts.autoId ? generateClientId() : opts.clientId;
       if (clientId && isOrderDuplicate(clientId)) {
         if (isJson()) return printJson(jsonOk({ duplicate: true, clientOrderId: clientId, message: "Order already submitted" }));
@@ -128,17 +136,22 @@ export function registerTradeCommands(
         return;
       }
       const adapter = await getAdapter();
-      if (dryRunGuard("market_order", { exchange: adapter.name, symbol: symbol.toUpperCase(), side: "buy", size })) return;
+      if (dryRunGuard("market_order", { exchange: adapter.name, symbol: symbol.toUpperCase(), side: "buy", size, smart: !!opts.smart })) return;
       let result: unknown;
       try {
-        result = await adapter.marketOrder(symbol.toUpperCase(), "buy", size);
-        logExecution({ type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "buy", size, status: "success", dryRun: false });
+        if (opts.smart) {
+          const sr = await smartOrder(adapter, symbol.toUpperCase(), "buy", size);
+          result = { ...sr.result as object, smartOrder: { method: sr.method, price: sr.price, bestBookPrice: sr.bestBookPrice, tickSize: sr.tickSize } };
+        } else {
+          result = await adapter.marketOrder(symbol.toUpperCase(), "buy", size);
+        }
+        logExecution({ type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "buy", size, status: "success", dryRun: false, meta: opts.smart ? { smart: true } : undefined });
       } catch (err) {
         logExecution({ type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "buy", size, status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err) });
         throw err;
       }
       if (isJson()) return printJson(jsonOk(clientId ? { ...result as object, clientOrderId: clientId } : result));
-      console.log(chalk.green(`\n  Market BUY ${size} ${symbol.toUpperCase()} placed on ${adapter.name}.\n`));
+      console.log(chalk.green(`\n  Market BUY ${size} ${symbol.toUpperCase()} placed on ${adapter.name}.${opts.smart ? " (smart)" : ""}\n`));
       printJson(jsonOk(result));
     });
 
@@ -147,9 +160,10 @@ export function registerTradeCommands(
     .description("Market sell (shortcut for: trade market <symbol> sell <size>)")
     .option("-s, --slippage <pct>", "Slippage percent", "1")
     .option("--reduce-only", "Reduce only order")
+    .option("--smart", "Smart execution: IOC limit at best bid - 1 tick")
     .option("--client-id <id>", "Client order ID")
     .option("--auto-id", "Auto-generate client order ID")
-    .action(async (symbol: string, size: string, opts: { slippage: string; reduceOnly?: boolean; clientId?: string; autoId?: boolean }) => {
+    .action(async (symbol: string, size: string, opts: { slippage: string; reduceOnly?: boolean; smart?: boolean; clientId?: string; autoId?: boolean }) => {
       const clientId = opts.autoId ? generateClientId() : opts.clientId;
       if (clientId && isOrderDuplicate(clientId)) {
         if (isJson()) return printJson(jsonOk({ duplicate: true, clientOrderId: clientId, message: "Order already submitted" }));
@@ -157,17 +171,22 @@ export function registerTradeCommands(
         return;
       }
       const adapter = await getAdapter();
-      if (dryRunGuard("market_order", { exchange: adapter.name, symbol: symbol.toUpperCase(), side: "sell", size })) return;
+      if (dryRunGuard("market_order", { exchange: adapter.name, symbol: symbol.toUpperCase(), side: "sell", size, smart: !!opts.smart })) return;
       let result: unknown;
       try {
-        result = await adapter.marketOrder(symbol.toUpperCase(), "sell", size);
-        logExecution({ type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "sell", size, status: "success", dryRun: false });
+        if (opts.smart) {
+          const sr = await smartOrder(adapter, symbol.toUpperCase(), "sell", size);
+          result = { ...sr.result as object, smartOrder: { method: sr.method, price: sr.price, bestBookPrice: sr.bestBookPrice, tickSize: sr.tickSize } };
+        } else {
+          result = await adapter.marketOrder(symbol.toUpperCase(), "sell", size);
+        }
+        logExecution({ type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "sell", size, status: "success", dryRun: false, meta: opts.smart ? { smart: true } : undefined });
       } catch (err) {
         logExecution({ type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "sell", size, status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err) });
         throw err;
       }
       if (isJson()) return printJson(jsonOk(clientId ? { ...result as object, clientOrderId: clientId } : result));
-      console.log(chalk.green(`\n  Market SELL ${size} ${symbol.toUpperCase()} placed on ${adapter.name}.\n`));
+      console.log(chalk.green(`\n  Market SELL ${size} ${symbol.toUpperCase()} placed on ${adapter.name}.${opts.smart ? " (smart)" : ""}\n`));
       printJson(jsonOk(result));
     });
 
@@ -777,27 +796,34 @@ export function registerTradeCommands(
   trade
     .command("close-all")
     .description("Close all open positions (market orders on opposite side)")
-    .action(async () => {
+    .option("--smart", "Smart execution: IOC limit at best bid/ask + 1 tick")
+    .action(async (opts: { smart?: boolean }) => {
       await withJsonErrors(isJson(), async () => {
         const adapter = await getAdapter();
-        if (dryRunGuard("close_all", { exchange: adapter.name })) return;
+        if (dryRunGuard("close_all", { exchange: adapter.name, smart: !!opts.smart })) return;
         const positions = await adapter.getPositions();
         if (positions.length === 0) {
           if (isJson()) return printJson(jsonOk({ closed: 0, positions: [] }));
           console.log(chalk.yellow("\n  No open positions to close.\n"));
           return;
         }
-        if (!isJson()) console.log(chalk.cyan(`\n  Closing ${positions.length} position(s) on ${adapter.name}...\n`));
+        if (!isJson()) console.log(chalk.cyan(`\n  Closing ${positions.length} position(s) on ${adapter.name}...${opts.smart ? " (smart)" : ""}\n`));
         const results: unknown[] = [];
         for (const pos of positions) {
           const closeSide = pos.side === "long" ? "sell" : "buy";
           if (!isJson()) console.log(chalk.gray(`  ${closeSide.toUpperCase()} ${pos.size} ${pos.symbol} (closing ${pos.side})...`));
-          const result = await adapter.marketOrder(pos.symbol, closeSide as "buy" | "sell", pos.size);
+          let result: unknown;
+          if (opts.smart) {
+            const sr = await smartOrder(adapter, pos.symbol, closeSide as "buy" | "sell", pos.size, { reduceOnly: true });
+            result = { ...sr.result as object, smartOrder: { method: sr.method, price: sr.price, bestBookPrice: sr.bestBookPrice } };
+          } else {
+            result = await adapter.marketOrder(pos.symbol, closeSide as "buy" | "sell", pos.size);
+          }
           results.push(result);
           logExecution({
             type: "market_order", exchange: adapter.name, symbol: pos.symbol,
             side: closeSide, size: pos.size, status: "success", dryRun: false,
-            meta: { action: "close-all", originalSide: pos.side },
+            meta: { action: "close-all", originalSide: pos.side, smart: !!opts.smart },
           });
         }
         if (isJson()) return printJson(jsonOk({ closed: results.length, results }));
@@ -808,7 +834,8 @@ export function registerTradeCommands(
   trade
     .command("close <symbol>")
     .description("Close a specific symbol's position")
-    .action(async (symbol: string) => {
+    .option("--smart", "Smart execution: IOC limit at best bid/ask + 1 tick")
+    .action(async (symbol: string, opts: { smart?: boolean }) => {
       await withJsonErrors(isJson(), async () => {
         const sym = symbol.toUpperCase();
         const adapter = await getAdapter();
@@ -819,27 +846,34 @@ export function registerTradeCommands(
           errorAndExit(`No open position for ${sym}`);
         }
         const closeSide = pos.side === "long" ? "sell" : "buy";
-        if (dryRunGuard("close", { exchange: adapter.name, symbol: sym, side: closeSide, size: pos.size, originalSide: pos.side })) return;
-        if (!isJson()) console.log(chalk.cyan(`\n  Closing ${pos.side} ${pos.size} ${sym} on ${adapter.name}...\n`));
-        const result = await adapter.marketOrder(sym, closeSide as "buy" | "sell", pos.size);
+        if (dryRunGuard("close", { exchange: adapter.name, symbol: sym, side: closeSide, size: pos.size, originalSide: pos.side, smart: !!opts.smart })) return;
+        if (!isJson()) console.log(chalk.cyan(`\n  Closing ${pos.side} ${pos.size} ${sym} on ${adapter.name}...${opts.smart ? " (smart)" : ""}\n`));
+        let result: unknown;
+        if (opts.smart) {
+          const sr = await smartOrder(adapter, sym, closeSide as "buy" | "sell", pos.size, { reduceOnly: true });
+          result = { ...sr.result as object, smartOrder: { method: sr.method, price: sr.price, bestBookPrice: sr.bestBookPrice } };
+        } else {
+          result = await adapter.marketOrder(sym, closeSide as "buy" | "sell", pos.size);
+        }
         logExecution({
           type: "market_order", exchange: adapter.name, symbol: sym,
           side: closeSide, size: pos.size, status: "success", dryRun: false,
-          meta: { action: "close", originalSide: pos.side },
+          meta: { action: "close", originalSide: pos.side, smart: !!opts.smart },
         });
         if (isJson()) return printJson(jsonOk(result));
-        console.log(chalk.green(`\n  Closed ${pos.side} ${pos.size} ${sym} on ${adapter.name}.\n`));
+        console.log(chalk.green(`\n  Closed ${pos.side} ${pos.size} ${sym} on ${adapter.name}.${opts.smart ? " (smart)" : ""}\n`));
       });
     });
 
   trade
     .command("flatten")
     .description("Cancel all orders AND close all positions (full cleanup)")
-    .action(async () => {
+    .option("--smart", "Smart execution: IOC limit at best bid/ask + 1 tick")
+    .action(async (opts: { smart?: boolean }) => {
       await withJsonErrors(isJson(), async () => {
         const adapter = await getAdapter();
-        if (dryRunGuard("flatten", { exchange: adapter.name })) return;
-        if (!isJson()) console.log(chalk.cyan(`\n  Flattening account on ${adapter.name}...\n`));
+        if (dryRunGuard("flatten", { exchange: adapter.name, smart: !!opts.smart })) return;
+        if (!isJson()) console.log(chalk.cyan(`\n  Flattening account on ${adapter.name}...${opts.smart ? " (smart)" : ""}\n`));
 
         // Step 1: Cancel all orders
         if (!isJson()) console.log(chalk.gray("  Cancelling all open orders..."));
@@ -851,12 +885,18 @@ export function registerTradeCommands(
         for (const pos of positions) {
           const closeSide = pos.side === "long" ? "sell" : "buy";
           if (!isJson()) console.log(chalk.gray(`  ${closeSide.toUpperCase()} ${pos.size} ${pos.symbol} (closing ${pos.side})...`));
-          const result = await adapter.marketOrder(pos.symbol, closeSide as "buy" | "sell", pos.size);
+          let result: unknown;
+          if (opts.smart) {
+            const sr = await smartOrder(adapter, pos.symbol, closeSide as "buy" | "sell", pos.size, { reduceOnly: true });
+            result = sr.result;
+          } else {
+            result = await adapter.marketOrder(pos.symbol, closeSide as "buy" | "sell", pos.size);
+          }
           closeResults.push(result);
           logExecution({
             type: "market_order", exchange: adapter.name, symbol: pos.symbol,
             side: closeSide, size: pos.size, status: "success", dryRun: false,
-            meta: { action: "flatten", originalSide: pos.side },
+            meta: { action: "flatten", originalSide: pos.side, smart: !!opts.smart },
           });
         }
         if (isJson()) return printJson(jsonOk({ ordersCancelled: cancelResult, positionsClosed: closeResults.length, closeResults }));
@@ -867,7 +907,8 @@ export function registerTradeCommands(
   trade
     .command("reduce <symbol> <percent>")
     .description("Reduce a position by a percentage (e.g., perp trade reduce BTC 50)")
-    .action(async (symbol: string, percent: string) => {
+    .option("--smart", "Smart execution: IOC limit at best bid/ask + 1 tick")
+    .action(async (symbol: string, percent: string, opts: { smart?: boolean }) => {
       await withJsonErrors(isJson(), async () => {
         const sym = symbol.toUpperCase();
         const pct = parseFloat(percent);
@@ -883,16 +924,22 @@ export function registerTradeCommands(
         const fullSize = parseFloat(pos.size);
         const reduceSize = (fullSize * pct / 100).toString();
         const closeSide = pos.side === "long" ? "sell" : "buy";
-        if (dryRunGuard("reduce", { exchange: adapter.name, symbol: sym, side: closeSide, size: reduceSize, percent: pct, originalSize: pos.size })) return;
-        if (!isJson()) console.log(chalk.cyan(`\n  Reducing ${sym} ${pos.side} by ${pct}% (${reduceSize} of ${pos.size}) on ${adapter.name}...\n`));
-        const result = await adapter.marketOrder(sym, closeSide as "buy" | "sell", reduceSize);
+        if (dryRunGuard("reduce", { exchange: adapter.name, symbol: sym, side: closeSide, size: reduceSize, percent: pct, originalSize: pos.size, smart: !!opts.smart })) return;
+        if (!isJson()) console.log(chalk.cyan(`\n  Reducing ${sym} ${pos.side} by ${pct}% (${reduceSize} of ${pos.size}) on ${adapter.name}...${opts.smart ? " (smart)" : ""}\n`));
+        let result: unknown;
+        if (opts.smart) {
+          const sr = await smartOrder(adapter, sym, closeSide as "buy" | "sell", reduceSize, { reduceOnly: true });
+          result = sr.result;
+        } else {
+          result = await adapter.marketOrder(sym, closeSide as "buy" | "sell", reduceSize);
+        }
         logExecution({
           type: "market_order", exchange: adapter.name, symbol: sym,
           side: closeSide, size: reduceSize, status: "success", dryRun: false,
-          meta: { action: "reduce", percent: pct, originalSize: pos.size, originalSide: pos.side },
+          meta: { action: "reduce", percent: pct, originalSize: pos.size, originalSide: pos.side, smart: !!opts.smart },
         });
         if (isJson()) return printJson(jsonOk({ reduced: true, percent: pct, sizeReduced: reduceSize, originalSize: pos.size, result }));
-        console.log(chalk.green(`\n  Reduced ${sym} by ${pct}% (${closeSide} ${reduceSize}) on ${adapter.name}.\n`));
+        console.log(chalk.green(`\n  Reduced ${sym} by ${pct}% (${closeSide} ${reduceSize}) on ${adapter.name}.${opts.smart ? " (smart)" : ""}\n`));
       });
     });
 

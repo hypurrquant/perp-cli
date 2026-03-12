@@ -59,7 +59,9 @@ perp --json arb exec <SYM> <longEx> <shortEx> <$> --leverage <N> --isolated  # e
 
 # Single exchange trading (when not doing arb)
 perp --json -e <EX> trade market <SYM> buy <SIZE>
+perp --json -e <EX> trade market <SYM> buy <SIZE> --smart  # IOC limit at best ask + 1 tick (less slippage)
 perp --json -e <EX> trade close <SYM>
+perp --json -e <EX> trade close <SYM> --smart              # smart close at best bid/ask
 
 # Risk (only if you need to set limits — portfolio already includes risk)
 perp --json risk limits --max-leverage 5
@@ -87,6 +89,13 @@ perp --json --ndjson -e <EX> market list
 
 # Prevent duplicate orders with client ID
 perp --json -e <EX> trade market <SYM> buy <SIZE> --client-id <UNIQUE_ID>
+
+# Smart order: IOC limit at best bid/ask + 1 tick instead of raw market order
+# Fills only at top-of-book price — no multi-level sweep slippage
+perp --json -e <EX> trade market <SYM> buy <SIZE> --smart
+perp --json -e <EX> trade close <SYM> --smart
+perp --json arb exec <SYM> <longEx> <shortEx> <$> --smart   # smart arb entry
+perp --json arb close <SYM> --smart                          # smart arb close
 ```
 
 All string outputs are auto-sanitized (control chars stripped, prompt injection patterns blocked).
