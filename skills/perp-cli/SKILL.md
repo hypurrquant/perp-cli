@@ -5,7 +5,7 @@ allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*)"
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.3.17"
+  version: "0.3.18"
 ---
 
 # perp-cli Agent Guide
@@ -138,10 +138,20 @@ Close both: perp --json -e <EX1> trade close <SYM> & perp --json -e <EX2> trade 
 
 Responses: `{ "ok": true, "data": {...} }` or `{ "ok": false, "error": { "code": "...", "retryable": true/false } }`
 
-- **Retryable** (wait 5s, max 3 retries): `RATE_LIMITED`, `EXCHANGE_UNREACHABLE`, `TIMEOUT`
-- **Non-retryable**: `INSUFFICIENT_BALANCE`, `SYMBOL_NOT_FOUND`, `RISK_VIOLATION` — fix the cause, don't retry
-- **Lighter `invalid signature`**: `perp --json -e lighter manage setup-api-key`
-- If `error.retryable` is `false`, do NOT retry. Report to user.
+If `error.retryable` is `false`, do NOT retry — fix the cause first.
+
+| Error | Action |
+|-------|--------|
+| `RATE_LIMITED` | wait 5s, retry (max 3) |
+| `EXCHANGE_UNREACHABLE` | wait 10s, retry. 3x fail → skip that exchange |
+| `TIMEOUT` | wait 5s, retry (max 3) |
+| `INSUFFICIENT_BALANCE` | reduce size or bridge funds to that exchange |
+| `SYMBOL_NOT_FOUND` | `perp --json -e <EX> market list` to verify symbol |
+| `RISK_VIOLATION` | check `risk limits`, ask user to adjust if needed |
+| `SIZE_TOO_SMALL` | `perp --json -e <EX> market info <SYM>` for min order size |
+| `MARGIN_INSUFFICIENT` | reduce leverage or close existing positions |
+| `DUPLICATE_ORDER` | already submitted — check positions, don't retry |
+| Lighter `invalid signature` | check ~/.perp/.env or `perp --json -e lighter manage setup-api-key` |
 
 ## References
 
