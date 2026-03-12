@@ -10,6 +10,7 @@ import {
 } from "../../shared-api.js";
 import { computeBasisRisk } from "../../arb-utils.js";
 import { smartOrder } from "../../smart-order.js";
+import { removePosition as persistRemovePosition } from "../../arb-state.js";
 import { fetchAllBalances, computeRebalancePlan } from "../../rebalance.js";
 import { EXCHANGE_TO_CHAIN, getBestQuote } from "../../bridge-engine.js";
 import { computeEnhancedStats, type ArbTradeForStats } from "../../arb-history-stats.js";
@@ -75,8 +76,9 @@ interface ArbHistoryTrade {
 
 // ── Helpers ──
 
+import { DEFAULT_TAKER_FEE as TAKER_FEE } from "../../constants.js";
+
 const EXCHANGES = ["hyperliquid", "lighter", "pacifica"];
-const TAKER_FEE = 0.00035; // ~0.035% typical taker fee
 
 function formatDuration(ms: number): string {
   const hours = Math.floor(ms / (1000 * 60 * 60));
@@ -612,6 +614,11 @@ export function registerArbManageCommands(
         if (notClosed.length > 0 && !isJson()) {
           console.log(chalk.yellow(`\n  Warning: Position may not be fully closed on: ${notClosed.map(v => v.exchange).join(", ")}`));
         }
+      }
+
+      // Remove from persisted daemon state (so daemon doesn't try to re-close)
+      if (allSuccess) {
+        try { persistRemovePosition(sym); } catch { /* state may not exist */ }
       }
 
       // Log to execution log

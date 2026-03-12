@@ -8,7 +8,7 @@ import type { ExchangeAdapter } from "../exchanges/interface.js";
 // ── Settlement Timing Strategy ──
 
 /** Settlement schedules per exchange (UTC hours when settlement occurs) */
-const SETTLEMENT_SCHEDULES: Record<string, number[]> = {
+export const SETTLEMENT_SCHEDULES: Record<string, number[]> = {
   hyperliquid: Array.from({ length: 24 }, (_, i) => i), // every hour
   pacifica: Array.from({ length: 24 }, (_, i) => i),    // every hour
   lighter: Array.from({ length: 24 }, (_, i) => i),     // every hour
