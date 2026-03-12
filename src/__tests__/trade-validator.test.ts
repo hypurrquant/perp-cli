@@ -520,8 +520,8 @@ describe("validateTrade — estimated cost", () => {
     const cost = result.estimatedCost!;
     // margin = 6000 / 20 = 300
     expect(cost.margin).toBeCloseTo(300, 0);
-    // fee = 6000 * 0.0005 = 3
-    expect(cost.fee).toBeCloseTo(3, 1);
+    // fee = 6000 * 0.00035 = 2.1
+    expect(cost.fee).toBeCloseTo(2.1, 1);
     // slippage = 6000 * 0.001 = 6 (for market orders)
     expect(cost.slippage).toBeCloseTo(6, 1);
     // total = margin + fee + slippage
@@ -553,8 +553,8 @@ describe("validateTrade — estimated cost", () => {
     const cost = result.estimatedCost!;
     // margin = 5900 / 20 = 295
     expect(cost.margin).toBeCloseTo(295, 0);
-    // fee = 5900 * 0.0005 = 2.95
-    expect(cost.fee).toBeCloseTo(2.95, 1);
+    // fee = 5900 * 0.00035 = 2.065
+    expect(cost.fee).toBeCloseTo(2.065, 1);
   });
 });
 

@@ -331,7 +331,7 @@ describe("Fix 3-2: TAKER_FEE centralized", () => {
   it("getTakerFee returns correct fee for known exchanges", () => {
     expect(getTakerFee("hyperliquid")).toBe(0.00035);
     expect(getTakerFee("pacifica")).toBe(0.00035);
-    expect(getTakerFee("lighter")).toBe(0.00035);
+    expect(getTakerFee("lighter")).toBe(0); // Lighter has 0% fees
   });
 
   it("getTakerFee returns fallback for unknown exchange", () => {

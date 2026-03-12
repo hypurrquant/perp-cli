@@ -58,7 +58,7 @@ interface ArbPosition {
   symbol: string;
   longExchange: string;
   shortExchange: string;
-  size: string;
+  size: number;
   entrySpread: number;
   entryTime: string;
   entryMarkPrice: number;
@@ -275,6 +275,7 @@ export function registerArbAutoCommands(
     .option("--max-basis <pct>", "Max basis risk (mark price divergence %)", "3")
     .option("--notify <url>", "Webhook URL for notifications (Discord/Telegram/generic)")
     .option("--notify-events <events>", "Comma-separated events: entry,exit,reversal,margin,basis", "entry,exit,reversal,margin,basis")
+    .option("--cooldown <minutes>", "Minutes to wait before re-entering a closed symbol", "30")
     .option("--dry-run", "Simulate without executing trades")
     .option("--background", "Run in background (tmux)")
     .action(async (opts: {
@@ -284,6 +285,7 @@ export function registerArbAutoCommands(
       reversalExit?: boolean; settleAware?: boolean;
       minMargin: string;
       settleStrategy: string; maxBasis: string;
+      cooldown: string;
       notify?: string; notifyEvents: string;
       dryRun?: boolean; background?: boolean;
     }) => {
@@ -298,6 +300,7 @@ export function registerArbAutoCommands(
           `--hold-days`, opts.holdDays,
           `--bridge-cost`, opts.bridgeCost,
           `--min-margin`, opts.minMargin,
+          `--cooldown`, opts.cooldown,
           ...(opts.symbols ? [`--symbols`, opts.symbols] : []),
           ...(opts.dryRun ? [`--dry-run`] : []),
           ...(opts.reversalExit === false ? [`--no-reversal-exit`] : []),
@@ -340,9 +343,12 @@ export function registerArbAutoCommands(
       const filterSymbols = opts.symbols?.split(",").map(s => s.trim().toUpperCase());
       const dryRun = !!opts.dryRun || process.argv.includes("--dry-run");
 
+      const cooldownMinutes = parseFloat(opts.cooldown);
       const openPositions: ArbPosition[] = [];
       // Track which exchanges have low margin (block entries)
       const blockedExchanges = new Set<string>();
+      // Track close times per symbol to prevent close→re-entry loops
+      const closeCooldowns = new Map<string, number>(); // symbol → close timestamp ms
 
       // -- State Persistence: Initialize or recover --
       const daemonConfig = {
@@ -362,7 +368,7 @@ export function registerArbAutoCommands(
             symbol: persisted.symbol,
             longExchange: persisted.longExchange,
             shortExchange: persisted.shortExchange,
-            size: String(persisted.longSize),
+            size: persisted.longSize,
             entrySpread: persisted.entrySpread,
             entryTime: persisted.entryTime,
             entryMarkPrice: persisted.entryLongPrice,
@@ -409,6 +415,7 @@ export function registerArbAutoCommands(
         console.log(`  Max basis:     ${maxBasisPct}% (warn on price divergence)`);
         console.log(`  Reversal exit: ${reversalExitEnabled ? chalk.green("ON") : chalk.yellow("OFF")}`);
         console.log(`  Settle strat:  ${settleStrategy === "aggressive" ? chalk.cyan("AGGRESSIVE") : settleStrategy === "off" ? chalk.yellow("OFF") : chalk.green("BLOCK")}`);
+        console.log(`  Cooldown:      ${cooldownMinutes}m (re-entry delay after close)`);
         console.log(`  Notifications: ${webhookUrl ? chalk.green("ON") : chalk.gray("OFF")}${webhookUrl ? ` (${notifyEvents.join(",")})` : ""}`);
         console.log(`  Symbols:       ${filterSymbols?.join(", ") || "all"}`);
         console.log(`  Interval:      ${opts.interval}s`);
@@ -435,7 +442,7 @@ export function registerArbAutoCommands(
                 symbol: persisted.symbol,
                 longExchange: persisted.longExchange,
                 shortExchange: persisted.shortExchange,
-                size: String(persisted.longSize),
+                size: persisted.longSize,
                 entrySpread: persisted.entrySpread,
                 entryTime: persisted.entryTime,
                 entryMarkPrice: persisted.entryLongPrice,
@@ -528,8 +535,8 @@ export function registerArbAutoCommands(
 
                   // Close both legs simultaneously with verification
                   const [longResult, shortResult] = await Promise.allSettled([
-                    longAdapter.marketOrder(pos.symbol, "sell", pos.size),
-                    shortAdapter.marketOrder(pos.symbol, "buy", pos.size),
+                    longAdapter.marketOrder(pos.symbol, "sell", String(pos.size)),
+                    shortAdapter.marketOrder(pos.symbol, "buy", String(pos.size)),
                   ]);
 
                   const longOk = longResult.status === "fulfilled";
@@ -538,12 +545,13 @@ export function registerArbAutoCommands(
                   if (longOk && shortOk) {
                     logExecution({
                       type: "arb_close", exchange: `${pos.longExchange}+${pos.shortExchange}`,
-                      symbol: pos.symbol, side: "close", size: pos.size,
+                      symbol: pos.symbol, side: "close", size: String(pos.size),
                       status: "success", dryRun: false,
                       meta: { longExchange: pos.longExchange, shortExchange: pos.shortExchange, currentSpread, reason: closeReason, exitReason },
                     });
                     console.log(chalk.green(`  ${now} CLOSED ${pos.symbol} — both legs`));
                     persistRemovePosition(pos.symbol);
+                    closeCooldowns.set(pos.symbol, Date.now());
                     openPositions.splice(i, 1);
                     await notifyIfEnabled(webhookUrl, notifyEvents, "exit", {
                       symbol: pos.symbol, longExchange: pos.longExchange, shortExchange: pos.shortExchange,
@@ -564,7 +572,7 @@ export function registerArbAutoCommands(
                     let retryOk = false;
                     for (let attempt = 1; attempt <= 2; attempt++) {
                       try {
-                        await failedAdapter.marketOrder(pos.symbol, retryAction, pos.size);
+                        await failedAdapter.marketOrder(pos.symbol, retryAction, String(pos.size));
                         retryOk = true;
                         console.log(chalk.green(`  ${now} RETRY OK ${pos.symbol}: ${failedSide} leg closed (attempt ${attempt})`));
                         break;
@@ -576,17 +584,18 @@ export function registerArbAutoCommands(
                     if (retryOk) {
                       logExecution({
                         type: "arb_close", exchange: `${pos.longExchange}+${pos.shortExchange}`,
-                        symbol: pos.symbol, side: "close", size: pos.size,
+                        symbol: pos.symbol, side: "close", size: String(pos.size),
                         status: "success", dryRun: false,
                         meta: { longExchange: pos.longExchange, shortExchange: pos.shortExchange, currentSpread, reason: closeReason, exitReason, retried: failedSide },
                       });
                       persistRemovePosition(pos.symbol);
+                      closeCooldowns.set(pos.symbol, Date.now());
                       openPositions.splice(i, 1);
                     } else {
                       // One leg is closed, other still open — log but DON'T remove from tracking
                       logExecution({
                         type: "arb_close", exchange: `${pos.longExchange}+${pos.shortExchange}`,
-                        symbol: pos.symbol, side: "close", size: pos.size,
+                        symbol: pos.symbol, side: "close", size: String(pos.size),
                         status: "failed", dryRun: false,
                         error: `Partial close: ${failedSide} failed (${failedErr instanceof Error ? failedErr.message : String(failedErr)}). Retry failed.`,
                         meta: { longExchange: pos.longExchange, shortExchange: pos.shortExchange, reason: closeReason, exitReason, partialClose: true },
@@ -607,7 +616,7 @@ export function registerArbAutoCommands(
                     const shortErr = (shortResult as PromiseRejectedResult).reason;
                     logExecution({
                       type: "arb_close", exchange: `${pos.longExchange}+${pos.shortExchange}`,
-                      symbol: pos.symbol, side: "close", size: pos.size,
+                      symbol: pos.symbol, side: "close", size: String(pos.size),
                       status: "failed", dryRun: false,
                       error: `Both legs failed. Long: ${longErr instanceof Error ? longErr.message : String(longErr)}, Short: ${shortErr instanceof Error ? shortErr.message : String(shortErr)}`,
                       meta: { longExchange: pos.longExchange, shortExchange: pos.shortExchange, reason: closeReason, exitReason },
@@ -618,7 +627,7 @@ export function registerArbAutoCommands(
                 } catch (err) {
                   logExecution({
                     type: "arb_close", exchange: `${pos.longExchange}+${pos.shortExchange}`,
-                    symbol: pos.symbol, side: "close", size: pos.size,
+                    symbol: pos.symbol, side: "close", size: String(pos.size),
                     status: "failed", dryRun: false,
                     error: err instanceof Error ? err.message : String(err),
                     meta: { longExchange: pos.longExchange, shortExchange: pos.shortExchange, reason: closeReason, exitReason },
@@ -629,6 +638,7 @@ export function registerArbAutoCommands(
               } else {
                 // Dry run — remove from tracking
                 persistRemovePosition(pos.symbol);
+                closeCooldowns.set(pos.symbol, Date.now());
                 openPositions.splice(i, 1);
               }
             }
@@ -653,7 +663,7 @@ export function registerArbAutoCommands(
               const fRateFor = (e: string) => e === "pacifica" ? fSnap.pacRate : e === "hyperliquid" ? fSnap.hlRate : fSnap.ltRate;
               const fHlHourly = toHourlyRate(fRateFor("hyperliquid"), "hyperliquid");
               const fPacHourly = toHourlyRate(fRateFor("pacifica"), "pacifica");
-              const fNotional = parseFloat(fPos.size) * fSnap.markPrice;
+              const fNotional = fPos.size * fSnap.markPrice;
               const fEst = estimateFundingUntilSettlement(fHlHourly, fPacHourly, fNotional, hoursUntilPAC);
               console.log(chalk.gray(
                 `  ${now} ${fPos.symbol} Next PAC: ${hUTC}:00 UTC (${hoursUntilPAC.toFixed(1)}h) | ` +
@@ -727,6 +737,20 @@ export function registerArbAutoCommands(
             for (const snap of filtered) {
               if (openPositions.some(p => p.symbol === snap.symbol)) continue;
               if (openPositions.length >= maxPositions) break;
+
+              // Cooldown: skip if recently closed to prevent close→re-entry loops
+              const lastCloseMs = closeCooldowns.get(snap.symbol);
+              if (lastCloseMs && cooldownMinutes > 0) {
+                const elapsedMin = (Date.now() - lastCloseMs) / 60000;
+                if (elapsedMin < cooldownMinutes) {
+                  console.log(chalk.gray(
+                    `  ${now} SKIP ${snap.symbol}: cooldown ${(cooldownMinutes - elapsedMin).toFixed(0)}m remaining`
+                  ));
+                  continue;
+                }
+                // Cooldown expired, clean up
+                closeCooldowns.delete(snap.symbol);
+              }
 
               const grossSpread = Math.abs(snap.spread);
 
@@ -963,7 +987,7 @@ export function registerArbAutoCommands(
                 symbol: snap.symbol,
                 longExchange,
                 shortExchange,
-                size: sizeInAsset,
+                size: parseFloat(sizeInAsset),
                 entrySpread: grossSpread,
                 entryTime: posEntryTime,
                 entryMarkPrice: snap.markPrice,
@@ -998,7 +1022,7 @@ export function registerArbAutoCommands(
               const current = filtered.find(s => s.symbol === pos.symbol);
               if (!current) continue;
               const elapsedHours = (nowMs - pos.lastCheckTime) / (1000 * 60 * 60);
-              const notional = parseFloat(pos.size) * current.markPrice;
+              const notional = pos.size * current.markPrice;
               // Estimate funding collected: normalize all rates to hourly before comparing
               const rateFor = (e: string) => e === "pacifica" ? current.pacRate : e === "hyperliquid" ? current.hlRate : current.ltRate;
               const longHourly = toHourlyRate(rateFor(pos.longExchange), pos.longExchange);
@@ -1802,7 +1826,7 @@ export function registerArbAutoCommands(
                     ]);
                     logExecution({
                       type: "arb_close", exchange: `${pos.longDex}+${pos.shortDex}`,
-                      symbol: pos.underlying, side: "close", size: pos.size,
+                      symbol: pos.underlying, side: "close", size: String(pos.size),
                       status: "success", dryRun: false,
                       meta: { longDex: pos.longDex, shortDex: pos.shortDex, reason, longSymbol: pos.longSymbol, shortSymbol: pos.shortSymbol },
                     });
@@ -1810,7 +1834,7 @@ export function registerArbAutoCommands(
                   } catch (err) {
                     logExecution({
                       type: "arb_close", exchange: `${pos.longDex}+${pos.shortDex}`,
-                      symbol: pos.underlying, side: "close", size: pos.size,
+                      symbol: pos.underlying, side: "close", size: String(pos.size),
                       status: "failed", dryRun: false,
                       error: err instanceof Error ? err.message : String(err),
                       meta: { longDex: pos.longDex, shortDex: pos.shortDex },

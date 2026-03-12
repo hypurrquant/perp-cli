@@ -314,7 +314,7 @@ registerPortfolioCommands(program, getAdapterForExchange, isJson);
 registerRiskCommands(program, getAdapterForExchange, isJson);
 registerHistoryCommands(program, isJson);
 registerAnalyticsCommands(program, getAdapterForExchange, isJson);
-registerSettingsCommands(program, isJson);
+registerSettingsCommands(program, isJson, getAdapterForExchange);
 registerDexCommands(program, getAdapter, isJson);
 registerPlanCommands(program, getAdapter, isJson);
 registerFundingCommands(program, isJson);

@@ -1,5 +1,6 @@
 import type { ExchangeAdapter, ExchangeMarketInfo } from "./exchanges/interface.js";
 import { symbolMatch } from "./utils.js";
+import { DEFAULT_TAKER_FEE } from "./constants.js";
 
 export interface CheckResult {
   check: "symbol_valid" | "balance_sufficient" | "price_fresh" | "liquidity_ok" | "risk_limits" | "position_exists";
@@ -37,7 +38,7 @@ export interface TradeCheckParams {
   reduceOnly?: boolean;
 }
 
-const DEFAULT_TAKER_FEE = 0.0005;  // 0.05%
+// Use centralized DEFAULT_TAKER_FEE from constants.ts (0.035%)
 const DEFAULT_MAX_SLIPPAGE = 0.005; // 0.5%
 
 /**
