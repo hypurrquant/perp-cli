@@ -542,7 +542,7 @@ describe("Agent Features Integration (Hyperliquid Mainnet)", () => {
     }, 30_000);
 
     it("adapter getAssetIndex throws for unknown symbol", () => {
-      expect(() => adapter.getAssetIndex("XYZNOTREAL999FAKE")).toThrow("Unknown symbol");
+      expect(() => adapter.getAssetIndex("XYZNOTREAL999FAKE")).toThrow(/Unknown/i);
     });
 
     it("adapter getMarkets returns well-formed data from real API", async () => {

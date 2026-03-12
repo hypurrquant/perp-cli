@@ -989,32 +989,50 @@ export class LighterAdapter implements ExchangeAdapter {
 
     const result = await sendRes.json() as { code: number; message?: string; tx_hash?: string };
     if (result.code !== 200) {
-      // Retry once with nonce+1 if invalid nonce (pending tx or stale nonce)
+      // Retry with fresh nonce if invalid nonce (pending tx or stale nonce)
       if (result.message && /invalid nonce/i.test(result.message)) {
-        const retryNonce = nonce + 1;
-        const retrySigned = await client.signChangePubKey({
-          pubkey: publicKey, nonce: retryNonce, apiKeyIndex, accountIndex: this._accountIndex,
-        });
-        if (retrySigned.error || !retrySigned.txInfo || !retrySigned.messageToSign) {
-          throw new Error(`ChangePubKey retry failed: ${retrySigned.error ?? "incomplete response"}`);
+        const MAX_NONCE_RETRIES = 3;
+        let lastError = result.message;
+
+        for (let attempt = 1; attempt <= MAX_NONCE_RETRIES; attempt++) {
+          await new Promise(r => setTimeout(r, 500 * attempt));
+
+          // Re-fetch nonce from API (may have updated since first call)
+          const freshNonceRes = await this.restGet("/nextNonce", {
+            account_index: String(this._accountIndex),
+            api_key_index: String(apiKeyIndex),
+          }) as { nonce?: number; next_nonce?: number };
+          const freshNonce = (freshNonceRes.nonce ?? freshNonceRes.next_nonce ?? nonce) + attempt;
+
+          const retrySigned = await client.signChangePubKey({
+            pubkey: publicKey, nonce: freshNonce, apiKeyIndex, accountIndex: this._accountIndex,
+          });
+          if (retrySigned.error || !retrySigned.txInfo || !retrySigned.messageToSign) {
+            lastError = retrySigned.error ?? "incomplete response";
+            continue;
+          }
+          const retryTxInfo = JSON.parse(retrySigned.txInfo);
+          retryTxInfo.L1Sig = await wallet.signMessage(retrySigned.messageToSign);
+          const retryRes = await fetch(`${this._baseUrl}/api/v1/sendTx`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              tx_type: String(retrySigned.txType ?? 0),
+              tx_info: JSON.stringify(retryTxInfo),
+            }),
+          });
+          if (!retryRes.ok) {
+            lastError = `sendTx ${retryRes.status}: ${await retryRes.text()}`;
+            continue;
+          }
+          const retryResult = await retryRes.json() as { code: number; message?: string };
+          if (retryResult.code === 200) {
+            return { privateKey, publicKey }; // Success on retry
+          }
+          lastError = retryResult.message ?? JSON.stringify(retryResult);
+          if (!/invalid nonce/i.test(lastError)) break; // Different error, stop retrying
         }
-        const retryTxInfo = JSON.parse(retrySigned.txInfo);
-        retryTxInfo.L1Sig = await wallet.signMessage(retrySigned.messageToSign);
-        const retryRes = await fetch(`${this._baseUrl}/api/v1/sendTx`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            tx_type: String(retrySigned.txType ?? 0),
-            tx_info: JSON.stringify(retryTxInfo),
-          }),
-        });
-        if (!retryRes.ok) {
-          throw new Error(`ChangePubKey retry sendTx failed (${retryRes.status}): ${await retryRes.text()}`);
-        }
-        const retryResult = await retryRes.json() as { code: number; message?: string };
-        if (retryResult.code !== 200) {
-          throw new Error(`ChangePubKey failed after nonce retry: ${retryResult.message ?? JSON.stringify(retryResult)}`);
-        }
+        throw new Error(`ChangePubKey failed after ${MAX_NONCE_RETRIES} nonce retries: ${lastError}`);
       } else {
         throw new Error(`ChangePubKey failed: ${result.message ?? JSON.stringify(result)}`);
       }
