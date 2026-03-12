@@ -320,7 +320,7 @@ export class PacificaAdapter implements ExchangeAdapter {
     return history.slice(0, limit).map((h) => ({
       time: Number(h.created_at ?? 0),
       symbol: String(h.symbol ?? ""),
-      payment: String(h.amount ?? "0"),
+      payment: String(h.payout ?? "0"),
     }));
   }
 }
