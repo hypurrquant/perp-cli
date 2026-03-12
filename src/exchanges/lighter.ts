@@ -989,7 +989,35 @@ export class LighterAdapter implements ExchangeAdapter {
 
     const result = await sendRes.json() as { code: number; message?: string; tx_hash?: string };
     if (result.code !== 200) {
-      throw new Error(`ChangePubKey failed: ${result.message ?? JSON.stringify(result)}`);
+      // Retry once with nonce+1 if invalid nonce (pending tx or stale nonce)
+      if (result.message && /invalid nonce/i.test(result.message)) {
+        const retryNonce = nonce + 1;
+        const retrySigned = await client.signChangePubKey({
+          pubkey: publicKey, nonce: retryNonce, apiKeyIndex, accountIndex: this._accountIndex,
+        });
+        if (retrySigned.error || !retrySigned.txInfo || !retrySigned.messageToSign) {
+          throw new Error(`ChangePubKey retry failed: ${retrySigned.error ?? "incomplete response"}`);
+        }
+        const retryTxInfo = JSON.parse(retrySigned.txInfo);
+        retryTxInfo.L1Sig = await wallet.signMessage(retrySigned.messageToSign);
+        const retryRes = await fetch(`${this._baseUrl}/api/v1/sendTx`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            tx_type: String(retrySigned.txType ?? 0),
+            tx_info: JSON.stringify(retryTxInfo),
+          }),
+        });
+        if (!retryRes.ok) {
+          throw new Error(`ChangePubKey retry sendTx failed (${retryRes.status}): ${await retryRes.text()}`);
+        }
+        const retryResult = await retryRes.json() as { code: number; message?: string };
+        if (retryResult.code !== 200) {
+          throw new Error(`ChangePubKey failed after nonce retry: ${retryResult.message ?? JSON.stringify(retryResult)}`);
+        }
+      } else {
+        throw new Error(`ChangePubKey failed: ${result.message ?? JSON.stringify(result)}`);
+      }
     }
 
     return { privateKey, publicKey };
