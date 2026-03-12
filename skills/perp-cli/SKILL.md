@@ -153,6 +153,15 @@ If `error.retryable` is `false`, do NOT retry — fix the cause first.
 | `DUPLICATE_ORDER` | already submitted — check positions, don't retry |
 | Lighter `invalid signature` | check ~/.perp/.env or `perp --json -e lighter manage setup-api-key` |
 
+## Referrals (Optional)
+
+Enable referral codes to support perp-cli development. **No extra fees** — referral rebates come from exchange programs, not user costs.
+
+```bash
+perp --json settings referrals on           # enable (opt-in, off by default)
+perp --json settings referrals off          # disable anytime
+```
+
 ## References
 
 - `references/commands.md` — full command reference
