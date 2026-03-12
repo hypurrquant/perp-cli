@@ -890,10 +890,11 @@ export function registerArbAutoCommands(
     .command("scan")
     .description("Scan current funding rate spreads")
     .option("--min <pct>", "Min annual spread to show", "10")
+    .option("--top <n>", "Return only top N results (for JSON output)")
     .option("--hold-days <days>", "Expected hold period for cost calc", "7")
     .option("--bridge-cost <usd>", "One-way bridge cost in USD", "0.5")
     .option("--size <usd>", "Position size per leg ($) for cost calc", "100")
-    .action(async (opts: { min: string; holdDays: string; bridgeCost: string; size: string }) => {
+    .action(async (opts: { min: string; top?: string; holdDays: string; bridgeCost: string; size: string }) => {
       const minSpread = parseFloat(opts.min);
       const holdDays = parseFloat(opts.holdDays);
       const bridgeCostUsd = parseFloat(opts.bridgeCost);
@@ -904,12 +905,13 @@ export function registerArbAutoCommands(
       const filtered = spreads.filter(s => Math.abs(s.spread) >= minSpread);
 
       if (isJson()) {
-        const enriched = filtered.map(s => {
+        let enriched = filtered.map(s => {
           const grossSpread = Math.abs(s.spread);
           const rtCost = computeRoundTripCostPct(s.longExch, s.shortExch);
           const net = computeNetSpread(grossSpread, holdDays, rtCost, bridgeCostUsd, sizeUsd);
-          return { ...s, grossSpread, netSpread: net, estFeesPct: rtCost };
-        });
+          return { symbol: s.symbol, longExch: s.longExch, shortExch: s.shortExch, markPrice: s.markPrice, grossSpread, netSpread: net, estFeesPct: rtCost };
+        }).sort((a, b) => b.netSpread - a.netSpread);
+        if (opts.top) enriched = enriched.slice(0, parseInt(opts.top));
         return printJson(jsonOk(enriched));
       }
 
@@ -949,6 +951,226 @@ export function registerArbAutoCommands(
       console.log(chalk.gray(`  Net spread assumes ${holdDays}d hold, $${bridgeCostUsd} bridge cost, $${sizeUsd} size`));
       console.log(chalk.gray(`  * Spreads are estimates based on current rates — actual may vary`));
       console.log(chalk.gray(`  Use 'perp arb auto --min-spread ${minSpread}' to auto-trade\n`));
+    });
+
+  // ── arb exec ── (validate orderbook + simultaneous dual-leg entry)
+
+  arb
+    .command("exec")
+    .description("Execute arb: validate orderbook depth on both exchanges, then enter both legs simultaneously")
+    .argument("<symbol>", "Symbol (e.g. BTC, ETH, ICP)")
+    .argument("<longExch>", "Exchange to go LONG on (hl, pac, lighter)")
+    .argument("<shortExch>", "Exchange to go SHORT on (hl, pac, lighter)")
+    .argument("<sizeUsd>", "Position size per leg in USD")
+    .option("--max-slippage <pct>", "Max slippage % per leg", "0.5")
+    .option("--leverage <n>", "Set leverage before entry (both exchanges)")
+    .option("--isolated", "Use isolated margin mode")
+    .action(async (symbol: string, longExch: string, shortExch: string, sizeUsdStr: string, opts: {
+      maxSlippage: string; leverage?: string; isolated?: boolean;
+    }) => {
+      const sym = symbol.toUpperCase();
+      const sizeUsd = parseFloat(sizeUsdStr);
+      const maxSlippage = parseFloat(opts.maxSlippage);
+
+      // Resolve exchange aliases
+      const aliasMap: Record<string, string> = { hl: "hyperliquid", pac: "pacifica", lt: "lighter" };
+      longExch = aliasMap[longExch.toLowerCase()] || longExch.toLowerCase();
+      shortExch = aliasMap[shortExch.toLowerCase()] || shortExch.toLowerCase();
+
+      if (longExch === shortExch) {
+        if (isJson()) return printJson(jsonOk({ error: "longExch and shortExch must be different" }));
+        console.log(chalk.red("  Long and short exchange must be different."));
+        return;
+      }
+
+      const longAdapter = await getAdapterForExchange(longExch);
+      const shortAdapter = await getAdapterForExchange(shortExch);
+
+      // 1. Set leverage if requested
+      if (opts.leverage) {
+        const lev = parseInt(opts.leverage);
+        const mode = opts.isolated ? "isolated" : "cross";
+        if (!isJson()) console.log(chalk.gray(`  Setting leverage ${lev}x ${mode} on both exchanges...`));
+        const [longLev, shortLev] = await Promise.allSettled([
+          longAdapter.setLeverage(sym, lev, mode),
+          shortAdapter.setLeverage(sym, lev, mode),
+        ]);
+        if (longLev.status === "rejected") {
+          const msg = `Failed to set leverage on ${longExch}: ${longLev.reason instanceof Error ? longLev.reason.message : longLev.reason}`;
+          if (isJson()) return printJson(jsonOk({ error: msg }));
+          console.log(chalk.red(`  ${msg}`)); return;
+        }
+        if (shortLev.status === "rejected") {
+          const msg = `Failed to set leverage on ${shortExch}: ${shortLev.reason instanceof Error ? shortLev.reason.message : shortLev.reason}`;
+          if (isJson()) return printJson(jsonOk({ error: msg }));
+          console.log(chalk.red(`  ${msg}`)); return;
+        }
+      }
+
+      // 2. Fetch orderbooks simultaneously
+      if (!isJson()) console.log(chalk.gray(`  Checking orderbook depth on both exchanges...`));
+      const [longBook, shortBook] = await Promise.all([
+        longAdapter.getOrderbook(sym),
+        shortAdapter.getOrderbook(sym),
+      ]);
+
+      // 3. Validate: long side buys from asks, short side sells into bids
+      const longCheck = computeExecutableSize(longBook.asks, sizeUsd, maxSlippage);
+      const shortCheck = computeExecutableSize(shortBook.bids, sizeUsd, maxSlippage);
+
+      const validation = {
+        long: { exchange: longExch, side: "buy", depthUsd: longCheck.depthUsd, canFill: longCheck.canFillFull, slippagePct: longCheck.slippagePct, maxSizeBase: longCheck.maxSize },
+        short: { exchange: shortExch, side: "sell", depthUsd: shortCheck.depthUsd, canFill: shortCheck.canFillFull, slippagePct: shortCheck.slippagePct, maxSizeBase: shortCheck.maxSize },
+      };
+
+      if (!longCheck.canFillFull || !shortCheck.canFillFull) {
+        // Use the smaller fillable amount
+        const fillableUsd = Math.min(
+          longCheck.maxSize * longCheck.avgFillPrice,
+          shortCheck.maxSize * shortCheck.avgFillPrice,
+        );
+        const result = {
+          error: "Insufficient orderbook depth",
+          requestedUsd: sizeUsd,
+          fillableUsd: Math.round(fillableUsd * 100) / 100,
+          validation,
+        };
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.red(`\n  Insufficient depth for $${sizeUsd}:`));
+        console.log(chalk.gray(`    ${longExch} asks: $${longCheck.depthUsd.toFixed(0)} depth, ${longCheck.canFillFull ? "OK" : "NOT ENOUGH"}`));
+        console.log(chalk.gray(`    ${shortExch} bids: $${shortCheck.depthUsd.toFixed(0)} depth, ${shortCheck.canFillFull ? "OK" : "NOT ENOUGH"}`));
+        console.log(chalk.yellow(`  Max fillable: $${fillableUsd.toFixed(2)}\n`));
+        return;
+      }
+
+      // 4. Compute matched size in base asset (use the smaller side)
+      // Round down to each exchange's lot size (inferred from orderbook)
+      const inferDecimals = (levels: [string, string][]) => {
+        for (const [, s] of levels) {
+          const dot = s.indexOf(".");
+          if (dot >= 0) return s.length - dot - 1;
+        }
+        return 0;
+      };
+      const longDecimals = inferDecimals(longBook.asks);
+      const shortDecimals = inferDecimals(shortBook.bids);
+      const decimals = Math.min(longDecimals, shortDecimals);
+      const matchedBase = Math.min(longCheck.recommendedSize, shortCheck.recommendedSize);
+      const matchedSize = (Math.floor(matchedBase * 10 ** decimals) / 10 ** decimals).toFixed(decimals);
+      const avgPrice = (longCheck.avgFillPrice + shortCheck.avgFillPrice) / 2;
+      const matchedUsd = matchedBase * avgPrice;
+
+      if (!isJson()) {
+        console.log(chalk.cyan(`\n  Arb Exec: ${sym}`));
+        console.log(chalk.gray(`    LONG  ${longExch}: buy  ${matchedSize} (~$${(matchedBase * longCheck.avgFillPrice).toFixed(2)}, slippage ${longCheck.slippagePct.toFixed(3)}%)`));
+        console.log(chalk.gray(`    SHORT ${shortExch}: sell ${matchedSize} (~$${(matchedBase * shortCheck.avgFillPrice).toFixed(2)}, slippage ${shortCheck.slippagePct.toFixed(3)}%)`));
+        console.log(chalk.gray(`    Executing both legs simultaneously...\n`));
+      }
+
+      // 5. Execute both legs simultaneously
+      const [longResult, shortResult] = await Promise.allSettled([
+        longAdapter.marketOrder(sym, "buy", matchedSize),
+        shortAdapter.marketOrder(sym, "sell", matchedSize),
+      ]);
+
+      const longOk = longResult.status === "fulfilled";
+      const shortOk = shortResult.status === "fulfilled";
+
+      if (longOk && shortOk) {
+        // 6. Verify both positions actually exist (some exchanges return success but silently reject)
+        const [longPositions, shortPositions] = await Promise.all([
+          longAdapter.getPositions().catch(() => []),
+          shortAdapter.getPositions().catch(() => []),
+        ]);
+        const longPos = longPositions.find(p => p.symbol.toUpperCase().startsWith(sym));
+        const shortPos = shortPositions.find(p => p.symbol.toUpperCase().startsWith(sym));
+
+        if (!longPos && !shortPos) {
+          // Both silently rejected
+          const result = { status: "both_rejected", symbol: sym, size: matchedSize, message: "Both exchanges accepted order but no positions opened. Check min order size." };
+          if (isJson()) return printJson(jsonOk(result));
+          console.log(chalk.red(`  Both orders accepted but no positions opened. Min order size not met?\n`));
+          return;
+        }
+
+        if (!longPos || !shortPos) {
+          // One side silently rejected — close the other
+          const openSide = longPos ? "long" : "short";
+          const openAdapter = longPos ? longAdapter : shortAdapter;
+          if (!isJson()) console.log(chalk.yellow(`  ${openSide} opened but other side silently rejected — closing ${openSide}...`));
+          try { await openAdapter.marketOrder(sym, longPos ? "sell" : "buy", matchedSize); } catch { /* best effort */ }
+          const result = { status: "silent_reject", symbol: sym, openedSide: openSide, closedSide: longPos ? "short" : "long", message: "One leg silently rejected (likely min order size). Rolled back." };
+          if (isJson()) return printJson(jsonOk(result));
+          console.log(chalk.yellow(`  Rolled back ${openSide} leg. Check exchange min order sizes.\n`));
+          return;
+        }
+
+        logExecution({
+          type: "arb_entry", exchange: `${longExch}+${shortExch}`,
+          symbol: sym, side: "entry", size: matchedSize,
+          status: "success", dryRun: false,
+          meta: { longExch, shortExch, matchedUsd, longSlippage: longCheck.slippagePct, shortSlippage: shortCheck.slippagePct },
+        });
+        const result = {
+          status: "filled", symbol: sym, size: matchedSize, notionalUsd: Math.round(matchedUsd * 100) / 100,
+          long: { exchange: longExch, side: "buy", size: longPos.size, slippagePct: longCheck.slippagePct },
+          short: { exchange: shortExch, side: "sell", size: shortPos.size, slippagePct: shortCheck.slippagePct },
+        };
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.green(`  FILLED: ${sym} ${matchedSize} units (~$${matchedUsd.toFixed(2)})`));
+        console.log(chalk.green(`    LONG  ${longExch} ✓ (${longPos.size})`));
+        console.log(chalk.green(`    SHORT ${shortExch} ✓ (${shortPos.size})\n`));
+      } else if (longOk !== shortOk) {
+        // One leg failed — rollback
+        const filledSide = longOk ? "long" : "short";
+        const failedSide = longOk ? "short" : "long";
+        const filledAdapter = longOk ? longAdapter : shortAdapter;
+        const rollbackAction: "buy" | "sell" = longOk ? "sell" : "buy";
+        const failedErr = longOk
+          ? (shortResult as PromiseRejectedResult).reason
+          : (longResult as PromiseRejectedResult).reason;
+
+        if (!isJson()) console.log(chalk.yellow(`  PARTIAL: ${filledSide} OK, ${failedSide} FAILED — rolling back...`));
+
+        let rollbackOk = false;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            await filledAdapter.marketOrder(sym, rollbackAction, matchedSize);
+            rollbackOk = true;
+            break;
+          } catch { /* retry */ }
+        }
+
+        logExecution({
+          type: "arb_entry", exchange: `${longExch}+${shortExch}`,
+          symbol: sym, side: "entry", size: matchedSize,
+          status: "failed", dryRun: false,
+          error: `Partial: ${failedSide} failed (${failedErr instanceof Error ? failedErr.message : String(failedErr)}). Rollback: ${rollbackOk ? "ok" : "FAILED"}`,
+        });
+
+        const result = {
+          status: "partial_fill", symbol: sym, filledSide, failedSide,
+          failedError: failedErr instanceof Error ? failedErr.message : String(failedErr),
+          rollback: rollbackOk ? "success" : "FAILED — MANUAL CLOSE REQUIRED",
+        };
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(rollbackOk
+          ? chalk.yellow(`  Rollback OK — no open exposure.\n`)
+          : chalk.red.bold(`  ROLLBACK FAILED — ${filledSide} leg still open. Close manually!\n`));
+      } else {
+        // Both failed
+        const longErr = (longResult as PromiseRejectedResult).reason;
+        const shortErr = (shortResult as PromiseRejectedResult).reason;
+        const result = {
+          status: "both_failed", symbol: sym,
+          longError: longErr instanceof Error ? longErr.message : String(longErr),
+          shortError: shortErr instanceof Error ? shortErr.message : String(shortErr),
+        };
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.red(`  Both legs failed:`));
+        console.log(chalk.red(`    LONG:  ${result.longError}`));
+        console.log(chalk.red(`    SHORT: ${result.shortError}\n`));
+      }
     });
 
   // ── arb pnl ── (check arb position PnL)

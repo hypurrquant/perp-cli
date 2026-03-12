@@ -2,6 +2,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "../exchanges/interface.js";
 import { printJson, jsonOk, jsonError, makeTable, formatUsd, formatPnl, withJsonErrors } from "../utils.js";
+import { assessRisk, type RiskLevel, type RiskViolation } from "../risk.js";
 
 interface ExchangeSnapshot {
   exchange: string;
@@ -25,6 +26,11 @@ interface PortfolioSummary {
     marginUtilization: number;  // marginUsed / equity %
     largestPosition: { symbol: string; exchange: string; notional: number } | null;
     exchangeConcentration: { exchange: string; pct: number }[];
+  };
+  risk: {
+    level: RiskLevel;
+    canTrade: boolean;
+    violations: RiskViolation[];
   };
 }
 
@@ -102,6 +108,13 @@ function buildSummary(snapshots: ExchangeSnapshot[]): PortfolioSummary {
     }))
     .sort((a, b) => b.pct - a.pct);
 
+  // Full risk assessment (reuses same data, no extra API calls)
+  const riskBalances = snapshots
+    .filter(s => s.balance)
+    .map(s => ({ exchange: s.exchange, balance: s.balance! }));
+  const riskPositions = allPositions.map(p => ({ exchange: p.exchange, position: p }));
+  const assessment = assessRisk(riskBalances, riskPositions);
+
   return {
     totalEquity,
     totalAvailable,
@@ -115,6 +128,11 @@ function buildSummary(snapshots: ExchangeSnapshot[]): PortfolioSummary {
       marginUtilization,
       largestPosition,
       exchangeConcentration,
+    },
+    risk: {
+      level: assessment.level,
+      canTrade: assessment.canTrade,
+      violations: assessment.violations,
     },
   };
 }
@@ -202,6 +220,14 @@ export function registerPortfolioCommands(
 
         // ── Risk Metrics ──
         console.log(chalk.white.bold("\n  Risk Metrics"));
+        const levelColor = {
+          low: chalk.green,
+          medium: chalk.yellow,
+          high: chalk.red,
+          critical: chalk.bgRed.white,
+        }[summary.risk.level];
+        console.log(`  Risk Level:         ${levelColor(summary.risk.level.toUpperCase())}`);
+        console.log(`  Can Trade:          ${summary.risk.canTrade ? chalk.green("YES") : chalk.red("NO")}`);
         const mu = summary.riskMetrics.marginUtilization;
         const muColor = mu < 30 ? chalk.green : mu < 60 ? chalk.yellow : chalk.red;
         console.log(`  Margin Utilization: ${muColor(`${mu.toFixed(1)}%`)}`);
@@ -216,6 +242,13 @@ export function registerPortfolioCommands(
           for (const ec of summary.riskMetrics.exchangeConcentration) {
             const bar = "\u2588".repeat(Math.round(ec.pct / 5)) + "\u2591".repeat(20 - Math.round(ec.pct / 5));
             console.log(`    ${ec.exchange.padEnd(12)} ${bar} ${ec.pct.toFixed(1)}%`);
+          }
+        }
+        if (summary.risk.violations.length > 0) {
+          console.log(chalk.red.bold("\n  Risk Violations"));
+          for (const v of summary.risk.violations) {
+            const sevColor = { low: chalk.green, medium: chalk.yellow, high: chalk.red, critical: chalk.bgRed.white }[v.severity];
+            console.log(`    ${sevColor(v.severity.toUpperCase().padEnd(8))} ${v.message}`);
           }
         }
         console.log();

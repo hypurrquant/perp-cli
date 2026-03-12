@@ -5,7 +5,7 @@ allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*)"
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.3.14"
+  version: "0.3.16"
 ---
 
 # perp-cli Agent Guide
@@ -15,10 +15,9 @@ Multi-DEX perpetual futures CLI — Pacifica (Solana), Hyperliquid (HyperEVM), L
 ## Rules
 
 1. **Always use `--json`** on every command.
-2. **NEVER use `perp init`** — interactive, will hang. Use `wallet set` instead.
-3. **NEVER trade without user confirmation.** Show order details and wait for approval.
-4. **NEVER read ~/.perp/.env or key files.** Use `perp --json wallet show`.
-5. **Risk first.** Run `perp --json risk status` before and during any operation.
+2. **NEVER use `perp init`** — interactive, will hang.
+3. **NEVER trade without user confirmation.**
+4. **NEVER read ~/.perp/.env or key files.**
 
 ## Install
 
@@ -35,81 +34,72 @@ perp --json wallet set pac <SOLANA_KEY>   # Pacifica
 perp --json wallet set lt <EVM_KEY>       # Lighter (API key auto-generated)
 perp --json wallet show                   # verify
 ```
-Same EVM key works for both HL and Lighter. Lighter API key is created automatically on first use.
+Same EVM key works for both HL and Lighter.
 
-## Core Commands
+## Key Commands
 
 ```bash
-# Account
-perp --json -e <EX> account info          # balance, equity, margin
-perp --json -e <EX> account positions     # open positions
-perp --json portfolio                     # unified multi-exchange view
+# Status (ONE call = all exchanges, balances, positions, risk)
+perp --json portfolio
 
-# Market
-perp --json -e <EX> market list           # available markets
-perp --json -e <EX> market mid <SYM>      # mid price
-perp --json -e <EX> market book <SYM>     # orderbook
+# Arb workflow
+perp --json arb scan --min 5                                    # find opportunities
+perp --json arb exec <SYM> <longEx> <shortEx> <$> --leverage <N> --isolated  # execute
 
-# Trading
-perp --json -e <EX> trade leverage <SYM> <N> --isolated  # set BEFORE trading
+# Single exchange trading (when not doing arb)
 perp --json -e <EX> trade market <SYM> buy <SIZE>
-perp --json -e <EX> trade market <SYM> sell <SIZE>
 perp --json -e <EX> trade close <SYM>
-perp --json -e <EX> trade check <SYM> <SIDE> <SIZE> --leverage <L>
 
 # Risk
-perp --json risk status                   # risk level + violations
-perp --json risk liquidation-distance     # % from liq for all positions
-perp --json risk check --notional <$> --leverage <L>
-
-# Arb
-perp --json arb scan --min 5             # find funding arb opportunities
+perp --json risk status
 ```
 
-Exchange aliases: `hl`/`hyperliquid`, `pac`/`pacifica`, `lt`/`lighter`. Symbols auto-resolve (use bare: `BTC`, `SOL`, `ICP`).
+Exchange aliases: `hl`, `pac`, `lt`. Symbols auto-resolve (`BTC`, `SOL`, `ICP`).
 
-## Trade Execution Checklist
+## Arb Workflow
 
 ```
-1. perp --json risk status                → STOP if critical
-2. perp --json -e <EX> account info       → verify balance
-3. perp --json -e <EX> trade leverage <SYM> <N> --isolated
-4. perp --json -e <EX> trade check <SYM> <SIDE> <SIZE> --leverage <L>
-5. [Show details to user, get confirmation]
-6. perp --json -e <EX> trade market <SYM> <SIDE> <SIZE>
-7. perp --json -e <EX> account positions  → verify + check liq price
+1. perp --json portfolio                    → check balances across all exchanges
+2. perp --json arb scan --min 5             → find opportunity (longExch, shortExch, netSpread)
+3. [Show opportunity to user, get confirmation]
+4. perp --json arb exec <SYM> <longEx> <shortEx> <$> --leverage 2 --isolated
+   → validates orderbook depth on both sides
+   → rounds size to each exchange's lot size
+   → executes BOTH legs simultaneously
+   → verifies positions exist after execution
+   → auto-rollback if one leg fails
+5. perp --json portfolio                    → verify positions
 ```
 
 ## Position Sizing
 
-- Single position notional < **80%** of that exchange's available balance
-- Use ISOLATED margin for arb
-- Leverage 1-3x for arb, never exceed 5x
-- Both arb legs MUST have exact same size
+- Single position < **80%** of that exchange's available balance
+- Leverage 1-3x for arb, max 5x
+- `arb exec` auto-matches both legs to the same size
 
-## Funding Arb Direction
+## Arb Direction (CRITICAL)
 
-```
-arb scan returns: longExch, shortExch, netSpread
-→ ALWAYS follow longExch/shortExch exactly. NEVER reverse.
-→ NEVER enter if netSpread <= 0
-```
+`arb scan` returns `longExch`, `shortExch`, `netSpread`.
+ALWAYS follow exactly. NEVER reverse. NEVER enter if `netSpread <= 0`.
 
 ## Monitoring (while positions open)
 
-Every 15 min: `risk status` + `risk liquidation-distance` + `account positions`
-Every 1 hour: `arb scan --min 5` + `portfolio`
-Exit if: spread < breakeven, risk critical, one leg closed unexpectedly.
+```
+Every 15 min: perp --json portfolio
+Every 1 hour: perp --json arb scan --min 5
+Exit if: spread < breakeven or one leg closed unexpectedly.
+Close both: perp --json -e <EX1> trade close <SYM> & perp --json -e <EX2> trade close <SYM>
+```
 
 ## Error Handling
 
-All responses: `{ "ok": true, "data": {...} }` or `{ "ok": false, "error": { "code": "...", "retryable": true/false } }`
+Responses: `{ "ok": true, "data": {...} }` or `{ "ok": false, "error": { "code": "...", "retryable": true/false } }`
 
-Retryable (wait 5s, retry once): `RATE_LIMITED`, `EXCHANGE_UNREACHABLE`, `TIMEOUT`
-Not retryable: `INSUFFICIENT_BALANCE`, `MARGIN_INSUFFICIENT`, `SYMBOL_NOT_FOUND`
+Retryable (wait 5s): `RATE_LIMITED`, `EXCHANGE_UNREACHABLE`, `TIMEOUT`
+**Lighter `invalid signature`**: `perp --json -e lighter manage setup-api-key`
 
 ## References
 
 - `references/commands.md` — full command reference
-- `references/agent-operations.md` — setup flows, deposit/withdraw, idempotency
-- `references/strategies.md` — risk framework, arb strategy, opportunity cost
+- `references/agent-operations.md` — setup flows, deposit/withdraw
+- `references/strategies.md` — risk framework, arb strategy

@@ -257,17 +257,14 @@ perp --json -e <EX> account margin <SYM>     # detailed: liquidationPrice, margi
 
 **Liquidation distance is configurable by the user.** You MUST ask the user what risk tolerance they want:
 ```bash
-# Ask user: "What minimum liquidation distance do you want? (default: 30%, hard minimum: 20%)"
+# Ask user: "What minimum liquidation distance do you want? (default: 5%)"
 perp --json risk limits --min-liq-distance <USER_CHOICE>
 ```
-
-**Hard cap: 20%.** No matter what the user says, the system will NEVER allow a position to get within 20% of liquidation. This is non-negotiable and enforced at the system level. If a user tries to set it below 20%, the command will reject it.
 
 **Action rules based on `risk liquidation-distance` output:**
 - `status: "safe"` → no action needed
 - `status: "warning"` → monitor more frequently (every 5 minutes)
 - `status: "danger"` → alert user, recommend reducing position size
-- `status: "critical"` (below 20% hard cap) → REDUCE IMMEDIATELY, `canTrade` becomes `false`
 
 ### Leverage and Margin Mode
 
@@ -309,14 +306,13 @@ Limits can be set in **USD or % of equity** (when both are set, the stricter one
 ```bash
 perp --json risk limits \
   --max-leverage 5 \
-  --max-margin 60 \
-  --max-drawdown-pct 10 \
+  --max-margin 95 \
   --max-position-pct 80 \
   --max-drawdown 500 \
   --max-position 50000 \
   --max-exposure 100000 \
   --daily-loss 200 \
-  --min-liq-distance 30
+  --min-liq-distance 5
 ```
 
 **Use % limits for small portfolios.** A $65 portfolio with `--max-drawdown 500` is meaningless.
@@ -325,7 +321,7 @@ With `--max-drawdown-pct 10`, the effective limit auto-adjusts to $6.50.
 **IMPORTANT: Ask the user about their risk tolerance BEFORE setting limits.** Key questions:
 - "How much leverage are you comfortable with?" (default: 5x for arb)
 - "What's your maximum acceptable loss?" (default: $500)
-- "How close to liquidation are you willing to get?" (default: 30%, minimum: 20%)
+- "How close to liquidation are you willing to get?" (default: 5%)
 
 These limits are enforced by `perp risk check`. Always run it before trades:
 ```bash

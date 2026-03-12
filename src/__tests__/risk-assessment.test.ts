@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { assessRisk, preTradeCheck, calcLiquidationDistance, getLiquidationDistances, effectiveLimit, LIQUIDATION_DISTANCE_HARD_CAP, type RiskLimits } from "../risk.js";
+import { assessRisk, preTradeCheck, calcLiquidationDistance, getLiquidationDistances, effectiveLimit, type RiskLimits } from "../risk.js";
 import type { ExchangeBalance, ExchangePosition } from "../exchanges/interface.js";
 
 const defaultLimits: RiskLimits = {
@@ -245,13 +245,13 @@ describe("getLiquidationDistances", () => {
   it("should assign correct status based on limits", () => {
     const limits = { ...defaultLimits, minLiquidationDistance: 30 };
     const positions = [
-      { exchange: "a", position: makePosition("A", "long", 1, 100, 2, 0, "85") },   // 15% → critical (< 20% hard cap)
+      { exchange: "a", position: makePosition("A", "long", 1, 100, 2, 0, "85") },   // 15% → danger (< 30% user limit)
       { exchange: "b", position: makePosition("B", "long", 1, 100, 2, 0, "78") },   // 22% → danger (< 30% user limit)
       { exchange: "c", position: makePosition("C", "long", 1, 100, 2, 0, "65") },   // 35% → warning (< 30% * 1.5 = 45%)
       { exchange: "d", position: makePosition("D", "long", 1, 100, 2, 0, "40") },   // 60% → safe
     ];
     const distances = getLiquidationDistances(positions, limits);
-    expect(distances.find(d => d.symbol === "A")!.status).toBe("critical");
+    expect(distances.find(d => d.symbol === "A")!.status).toBe("danger");
     expect(distances.find(d => d.symbol === "B")!.status).toBe("danger");
     expect(distances.find(d => d.symbol === "C")!.status).toBe("warning");
     expect(distances.find(d => d.symbol === "D")!.status).toBe("safe");
@@ -270,26 +270,13 @@ describe("getLiquidationDistances", () => {
 });
 
 describe("Liquidation Distance in assessRisk", () => {
-  it("should add critical violation when position is below hard cap (20%)", () => {
+  it("should add violation when position is below user limit", () => {
     const balances = [{ exchange: "test", balance: makeBalance(10000, 8000, 2000, 0) }];
-    // BTC long at $100000, liq at $90000 → 10% distance (below 20% hard cap)
+    // BTC long at $100000, liq at $90000 → 10% distance (below 30% user limit)
     const positions = [{ exchange: "test", position: makePosition("BTC", "long", 0.01, 100000, 10, 0, "90000") }];
     const result = assessRisk(balances, positions, defaultLimits);
 
-    expect(result.violations.some(v => v.rule === "liquidation_distance_hard_cap")).toBe(true);
-    expect(result.level).toBe("critical");
-    expect(result.canTrade).toBe(false);
-  });
-
-  it("should add high violation when below user limit but above hard cap", () => {
-    const limits = { ...defaultLimits, minLiquidationDistance: 30 };
-    const balances = [{ exchange: "test", balance: makeBalance(10000, 8000, 2000, 0) }];
-    // BTC long at $100000, liq at $75000 → 25% distance (above 20% hard cap, below 30% user limit)
-    const positions = [{ exchange: "test", position: makePosition("BTC", "long", 0.01, 100000, 4, 0, "75000") }];
-    const result = assessRisk(balances, positions, limits);
-
     expect(result.violations.some(v => v.rule === "min_liquidation_distance")).toBe(true);
-    expect(result.violations.some(v => v.rule === "liquidation_distance_hard_cap")).toBe(false);
   });
 
   it("should not add violation when distance is above user limit", () => {
@@ -298,7 +285,6 @@ describe("Liquidation Distance in assessRisk", () => {
     const positions = [{ exchange: "test", position: makePosition("BTC", "long", 0.01, 100000, 2, 0, "50000") }];
     const result = assessRisk(balances, positions, defaultLimits);
 
-    expect(result.violations.some(v => v.rule === "liquidation_distance_hard_cap")).toBe(false);
     expect(result.violations.some(v => v.rule === "min_liquidation_distance")).toBe(false);
   });
 
@@ -331,11 +317,6 @@ describe("Liquidation Distance in assessRisk", () => {
   });
 });
 
-describe("LIQUIDATION_DISTANCE_HARD_CAP", () => {
-  it("should be 20", () => {
-    expect(LIQUIDATION_DISTANCE_HARD_CAP).toBe(20);
-  });
-});
 
 describe("Percentage-based Risk Limits", () => {
   it("effectiveLimit should return min of USD and pct-of-equity", () => {
