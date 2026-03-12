@@ -126,12 +126,16 @@ export class LighterAdapter implements ExchangeAdapter {
 
     // Initialize signer for trading if we have an API key (reuse singleton WASM client)
     if (this._apiKey && !signerReady) {
-      // Validate API key is valid hex before passing to WASM (Go hex decoder gives cryptic errors otherwise)
-      const stripped = this._apiKey.startsWith("0x") ? this._apiKey.slice(2) : this._apiKey;
-      if (!/^[0-9a-fA-F]+$/.test(stripped)) {
-        console.error(`[lighter] Invalid API key format (expected hex, got non-hex chars). Run 'perp -e lighter manage setup-api-key' to regenerate.`);
+      // Clean & validate API key before passing to WASM (Go hex decoder gives cryptic errors on non-hex)
+      let cleanKey = this._apiKey.trim().replace(/['"` \t\n\r.]/g, "");
+      if (cleanKey.startsWith("0x")) cleanKey = cleanKey.slice(2);
+      if (cleanKey.length > 0 && !/^[0-9a-fA-F]+$/.test(cleanKey)) {
+        console.error(`[lighter] API key contains invalid chars (expected hex). Check LIGHTER_API_KEY in ~/.perp/.env or run 'perp -e lighter manage setup-api-key' to regenerate.`);
+        this._apiKey = "";
+      } else if (cleanKey.length === 0) {
         this._apiKey = "";
       } else {
+        this._apiKey = cleanKey;
         const client = await LighterAdapter.getWasmClient();
         await client.createClient({
           url: this._baseUrl,
