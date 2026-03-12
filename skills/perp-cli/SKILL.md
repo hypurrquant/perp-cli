@@ -82,15 +82,17 @@ Exchange aliases: `hl`, `pac`, `lt`. Symbols auto-resolve (`BTC`, `SOL`, `ICP`).
 `arb scan` returns `longExch`, `shortExch`, `netSpread`.
 ALWAYS follow exactly. NEVER reverse. NEVER enter if `netSpread <= 0`.
 
-## Slippage & Entry/Exit Cost
+## Slippage Check (CRITICAL)
 
-`arb exec` validates orderbook depth, but **you** must account for total cost:
+`arb scan` returns `netSpread` in bps (already fee-adjusted).
+Before executing, compare against estimated slippage:
 ```
-Entry/Exit Cost ≈ (taker fee × 2 legs × 2 sides) + slippage
-Typical: ~0.08-0.15% round-trip per leg (varies by symbol/exchange)
+Slippage ≈ 2-5 bps per leg for top pairs (BTC, ETH, SOL)
+         ≈ 5-15 bps per leg for low-liquidity (altcoins)
+Total round-trip slippage = (entry + exit) × 2 legs
 ```
-**Only enter if:** `netSpread × expected_hours > entry/exit cost × 2`
-The 2x safety margin accounts for rate mean-reversion. Low-liquidity symbols have higher slippage — prefer top-volume pairs.
+**NEVER enter if:** `netSpread < total round-trip slippage`
+Example: netSpread=12 bps, estimated slippage=4 bps/leg × 4 = 16 bps → SKIP.
 
 ## Portfolio Response
 
