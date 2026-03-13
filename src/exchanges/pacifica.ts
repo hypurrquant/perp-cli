@@ -88,25 +88,16 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async getBalance(): Promise<ExchangeBalance> {
-    const [info, positions, prices] = await Promise.all([
+    const [info, positions] = await Promise.all([
       this.client.getAccount(this.account),
       this._getPositions(),
-      this._getPrices(),
     ]);
     const raw = info as unknown as Record<string, unknown>;
-    const priceMap = new Map(prices.map((p) => [p.symbol, Number(p.mark)]));
 
-    // Sum actual unrealized PnL from positions (mark vs entry)
-    let totalPnl = 0;
-    for (const p of positions) {
-      const mark = priceMap.get(p.symbol) ?? 0;
-      const entry = Number(p.entry_price);
-      const amount = Number(p.amount);
-      const side = p.side === "bid" ? "long" : "short";
-      totalPnl += side === "long"
-        ? (mark - entry) * amount
-        : (entry - mark) * amount;
-    }
+    // Use API-provided unrealized PnL from positions
+    const totalPnl = positions.reduce(
+      (sum, p) => sum + Number(p.unrealized_pnl ?? 0), 0
+    );
 
     return {
       equity: info.account_equity,
@@ -133,15 +124,8 @@ export class PacificaAdapter implements ExchangeAdapter {
     }
 
     return positions.map((p) => {
-      const mark = priceMap.get(p.symbol)?.mark ?? "0";
-      const entryPrice = Number(p.entry_price);
-      const amount = Number(p.amount);
-      const markNum = Number(mark);
+      const mark = priceMap.get(p.symbol)?.mark ?? p.mark_price ?? "0";
       const side = p.side === "bid" ? "long" : "short";
-      const pnl =
-        side === "long"
-          ? (markNum - entryPrice) * amount
-          : (entryPrice - markNum) * amount;
 
       return {
         symbol: p.symbol,
@@ -150,8 +134,8 @@ export class PacificaAdapter implements ExchangeAdapter {
         entryPrice: String(p.entry_price),
         markPrice: mark,
         liquidationPrice: String(p.liquidation_price ?? "N/A"),
-        unrealizedPnl: pnl.toFixed(4),
-        leverage: levMap.get(String(p.symbol)) ?? 1,
+        unrealizedPnl: String(p.unrealized_pnl ?? "0"),
+        leverage: p.leverage ?? levMap.get(String(p.symbol)) ?? 1,
       };
     });
   }
@@ -255,7 +239,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   async getRecentTrades(symbol: string, _limit = 20): Promise<ExchangeTrade[]> {
     const trades = await this.client.getTrades(symbol);
     return trades.slice(0, _limit).map((t) => ({
-      time: new Date(t.created_at).getTime(),
+      time: Number(t.created_at ?? 0),
       symbol,
       side: t.side === "bid" ? "buy" as const : "sell" as const,
       price: t.price,

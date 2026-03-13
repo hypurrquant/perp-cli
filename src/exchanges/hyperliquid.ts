@@ -232,10 +232,10 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         const spotState = await this.sdk.info.spot.getSpotClearinghouseState(this._address);
         const balances = spotState?.balances ?? [];
         const usdc = balances.find((b: Record<string, unknown>) => String(b.coin).startsWith("USDC"));
-        const spotTotal = Number(usdc?.total ?? 0);
+        const spotTotal = usdc?.total !== undefined ? Number(usdc.total) : NaN;
         const spotHold = Number(usdc?.hold ?? 0);
-        equity = spotTotal > 0 ? spotTotal : Number(margin.accountValue ?? cross.accountValue ?? 0);
-        available = spotTotal > 0 ? spotTotal - spotHold : Number(s?.withdrawable ?? 0);
+        equity = !isNaN(spotTotal) ? spotTotal : Number(margin.accountValue ?? cross.accountValue ?? 0);
+        available = !isNaN(spotTotal) ? spotTotal - spotHold : Number(s?.withdrawable ?? 0);
       } catch {
         // Spot API failed — fall back to perp-only values
         equity = Number(margin.accountValue ?? cross.accountValue ?? 0);
@@ -272,7 +272,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
           side: szi > 0 ? ("long" as const) : ("short" as const),
           size: String(Math.abs(szi)),
           entryPrice: String(pos.entryPx ?? "0"),
-          markPrice: String(pos.positionValue ? (Number(pos.positionValue) / Math.abs(szi)).toFixed(2) : "0"),
+          markPrice: String(pos.positionValue ? Number(pos.positionValue) / Math.abs(szi) : "0"),
           liquidationPrice: String(pos.liquidationPx ?? "N/A"),
           unrealizedPnl: String(pos.unrealizedPnl ?? "0"),
           leverage: Number((pos.leverage as { value?: number })?.value ?? 1),

@@ -309,13 +309,15 @@ export class LighterAdapter implements ExchangeAdapter {
           entryPrice: String(p.avg_entry_price || "0"),
           markPrice: String(
             posSize !== 0
-              ? (Number(p.position_value || 0) / Math.abs(posSize)).toFixed(4)
+              ? (Number(p.position_value || 0) / Math.abs(posSize)).toFixed(
+                  this._marketDecimals.get(String(p.symbol || "").toUpperCase())?.price ?? 4
+                )
               : "0"
           ),
           liquidationPrice: String(p.liquidation_price || "N/A"),
           unrealizedPnl: String(p.unrealized_pnl || "0"),
           leverage: Number(p.initial_margin_fraction || 0) > 0
-            ? Math.round(100 / Number(p.initial_margin_fraction))
+            ? Math.round(10000 / Number(p.initial_margin_fraction))
             : 1,
         };
       });
@@ -553,7 +555,8 @@ export class LighterAdapter implements ExchangeAdapter {
     return trades.map((t) => ({
       time: Number(t.timestamp ?? 0) * 1000,
       symbol,
-      side: t.is_ask ? "sell" as const : "buy" as const,
+      // /recentTrades returns is_maker_ask: maker was asking → taker bought
+      side: t.is_maker_ask ? "buy" as const : "sell" as const,
       price: String(t.price ?? "0"),
       size: String(t.base_amount ?? t.amount ?? ""),
       fee: String(t.fee ?? "0"),
