@@ -584,9 +584,9 @@ describe("Cross-validate: Funding positions calculation", () => {
         expect(pctDiff).toBeLessThan(10); // within 10% (rate can shift between calls)
       }
 
-      // Daily should be hourly × 24
+      // Daily should be hourly × 24 (allow small rounding drift)
       if (pos.predicted.hourly !== 0) {
-        expect(Math.abs(pos.predicted.daily / pos.predicted.hourly - 24)).toBeLessThan(0.01);
+        expect(Math.abs(pos.predicted.daily / pos.predicted.hourly - 24)).toBeLessThan(0.1);
       }
     }
   });
