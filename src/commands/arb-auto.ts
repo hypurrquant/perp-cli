@@ -1415,12 +1415,14 @@ export function registerArbAutoCommands(
     .option("--max-slippage <pct>", "Max slippage % per leg", "0.5")
     .option("--leverage <n>", "Set leverage on perp side before entry")
     .option("--isolated", "Use isolated margin mode on perp side")
+    .option("--dry-run", "Simulate without executing trades")
     .action(async (symbol: string, spotExch: string, perpExch: string, sizeUsdStr: string, opts: {
-      maxSlippage: string; leverage?: string; isolated?: boolean;
+      maxSlippage: string; leverage?: string; isolated?: boolean; dryRun?: boolean;
     }) => {
       const sym = symbol.toUpperCase();
       const sizeUsd = parseFloat(sizeUsdStr);
       const maxSlippage = parseFloat(opts.maxSlippage);
+      const dryRun = !!opts.dryRun || process.argv.includes("--dry-run");
 
       // Resolve exchange aliases
       const aliasMap: Record<string, string> = { hl: "hyperliquid", pac: "pacifica", lt: "lighter" };
@@ -1468,13 +1470,12 @@ export function registerArbAutoCommands(
         }
       }
 
-      // 2. Auto-transfer USDC to spot account if needed (HL may separate perp/spot balances)
+      // 2. Auto-transfer USDC to spot account if needed
       if (spotExch === "hyperliquid") {
         const hlSpot = spotAdapter as import("../exchanges/hyperliquid-spot.js").HyperliquidSpotAdapter;
         const transferAmt = Math.ceil(sizeUsd * 1.1);
         try {
           const xferResult = await hlSpot.transferUsdcToSpot(transferAmt) as { status?: string; response?: string };
-          // Unified accounts return "Action disabled" — that's OK, balances are shared
           if (xferResult?.status === "err" && xferResult.response?.includes("unified")) {
             if (!isJson()) console.log(chalk.gray(`  Unified account — no USDC transfer needed`));
           } else if (xferResult?.status !== "err") {
@@ -1483,6 +1484,19 @@ export function registerArbAutoCommands(
           }
         } catch {
           // Non-critical — may be unified account or already have balance
+        }
+      } else if (spotExch === "lighter") {
+        // Lighter requires explicit USDC transfer from perp → spot account
+        const ltSpot = spotAdapter as import("../exchanges/lighter-spot.js").LighterSpotAdapter;
+        const transferAmt = Math.ceil(sizeUsd * 1.1);
+        try {
+          const xferResult = await ltSpot.transferUsdcToSpot(transferAmt);
+          if (!isJson()) console.log(chalk.gray(`  Transferred $${transferAmt} USDC perp→spot on Lighter`));
+          await new Promise(r => setTimeout(r, 300));
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (!isJson()) console.log(chalk.yellow(`  USDC transfer warning: ${msg}`));
+          // Continue — spot order may still work if spot balance already exists
         }
       }
 
@@ -1560,7 +1574,19 @@ export function registerArbAutoCommands(
         console.log(chalk.gray(`    Executing both legs simultaneously...\n`));
       }
 
-      // 5. Execute both legs
+      // 5. Execute both legs (or return dry-run result)
+      if (dryRun) {
+        const result = {
+          status: "filled", mode: "spot-perp", symbol: sym, dryRun: true,
+          size: matchedSize, notionalUsd: Math.round(matchedUsd * 100) / 100,
+          spot: { exchange: spotExch, side: "buy", size: matchedSize },
+          perp: { exchange: perpExch, side: "sell", size: matchedSize },
+        };
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.cyan(`  [DRY-RUN] Would execute: spot buy ${matchedSize} on ${spotExch} + perp sell ${matchedSize} on ${perpExch}`));
+        return;
+      }
+
       // Same exchange (e.g. Lighter) shares nonce → must execute sequentially
       // Different exchanges → execute simultaneously for speed
       const validatePerpFill = (r: unknown) => {
@@ -1786,10 +1812,24 @@ export function registerArbAutoCommands(
         console.log(chalk.gray(`    Executing...\n`));
       }
 
-      const [spotResult, perpResult] = await Promise.allSettled([
-        spotAdapter.spotMarketOrder(spotSymbol, "sell", closeSize),
-        perpAdapter.marketOrder(sym, "buy", closeSize),
-      ]);
+      // Same exchange → sequential (nonce collision), different → parallel
+      let spotResult: PromiseSettledResult<unknown>;
+      let perpResult: PromiseSettledResult<unknown>;
+
+      if (spotExch === perpExch) {
+        // Sequential: sell spot first, then close perp
+        spotResult = await spotAdapter.spotMarketOrder(spotSymbol, "sell", closeSize)
+          .then(r => ({ status: "fulfilled" as const, value: r }))
+          .catch(e => ({ status: "rejected" as const, reason: e }));
+        perpResult = await perpAdapter.marketOrder(sym, "buy", closeSize)
+          .then(r => ({ status: "fulfilled" as const, value: r }))
+          .catch(e => ({ status: "rejected" as const, reason: e }));
+      } else {
+        [spotResult, perpResult] = await Promise.allSettled([
+          spotAdapter.spotMarketOrder(spotSymbol, "sell", closeSize),
+          perpAdapter.marketOrder(sym, "buy", closeSize),
+        ]);
+      }
 
       const spotOk = spotResult.status === "fulfilled";
       const perpOk = perpResult.status === "fulfilled";
@@ -1804,6 +1844,30 @@ export function registerArbAutoCommands(
           status: "success", dryRun: false,
           meta: { mode: "spot-perp" },
         });
+
+        // Return spot USDC proceeds back to perp account
+        if (spotExch === "lighter") {
+          try {
+            const ltSpot = spotAdapter as import("../exchanges/lighter-spot.js").LighterSpotAdapter;
+            const bals = await ltSpot.getSpotBalances();
+            const usdcBal = bals.find(b => b.token === "USDC");
+            const leftover = Number(usdcBal?.available ?? 0);
+            if (leftover > 0.01) {
+              await ltSpot.transferUsdcToPerp(leftover);
+              if (!isJson()) console.log(chalk.gray(`  Returned ~$${leftover.toFixed(2)} USDC spot→perp on Lighter`));
+            }
+          } catch { /* non-critical */ }
+        } else if (spotExch === "hyperliquid") {
+          try {
+            const hlSpot = spotAdapter as import("../exchanges/hyperliquid-spot.js").HyperliquidSpotAdapter;
+            const bals = await hlSpot.getSpotBalances();
+            const usdcBal = bals.find(b => b.token.startsWith("USDC"));
+            const leftover = Number(usdcBal?.available ?? 0);
+            if (leftover > 1) {
+              await hlSpot.transferUsdcToPerp(Math.floor(leftover));
+            }
+          } catch { /* non-critical */ }
+        }
 
         if (isJson()) return printJson(jsonOk({ status: "closed", mode: "spot-perp", symbol: sym, size: closeSize }));
         console.log(chalk.green(`  CLOSED: ${sym} ${closeSize} units`));

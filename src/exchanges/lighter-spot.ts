@@ -16,6 +16,7 @@ export class LighterSpotAdapter implements SpotAdapter {
   private _spotMarketMap = new Map<string, number>(); // "ETH/USDC" → market_id
   private _spotBaseMap = new Map<string, string>(); // "ETH" → "ETH/USDC"
   private _spotDecimals = new Map<string, { size: number; price: number }>();
+  private _spotMinSize = new Map<string, { base: number; quote: number }>(); // min order sizes
   private _initialized = false;
 
   constructor(ltAdapter: LighterAdapter) {
@@ -30,41 +31,51 @@ export class LighterSpotAdapter implements SpotAdapter {
 
   private async _loadSpotMarkets(): Promise<void> {
     try {
-      // Lighter spot markets are listed on the explorer API, identified by /USDC symbol suffix
-      const res = await fetch("https://explorer.elliot.ai/api/markets");
-      const markets = (await res.json()) as Array<{ symbol: string; market_index: number }>;
+      // Use orderBooks API with filter=spot for accurate market config
+      const res = await this._restGet("/orderBooks", { filter: "spot" }) as {
+        order_books?: Array<{
+          symbol: string;
+          market_id: number;
+          market_type: string;
+          status: string;
+          supported_size_decimals: number;
+          supported_price_decimals: number;
+          min_base_amount: string;
+          min_quote_amount: string;
+        }>;
+      };
 
-      for (const m of markets) {
-        if (!m.symbol.includes("/")) continue; // perps have no slash
-        const symbol = m.symbol.toUpperCase(); // e.g., "ETH/USDC"
-        this._spotMarketMap.set(symbol, m.market_index);
-        // Infer decimals from orderbook data (will refine on first access)
-        this._spotDecimals.set(symbol, { size: 4, price: 2 });
+      for (const ob of res.order_books ?? []) {
+        if (ob.status !== "active") continue;
+        const symbol = ob.symbol.toUpperCase(); // e.g., "ETH/USDC"
+        this._spotMarketMap.set(symbol, ob.market_id);
+        this._spotDecimals.set(symbol, {
+          size: ob.supported_size_decimals,
+          price: ob.supported_price_decimals,
+        });
+        this._spotMinSize.set(symbol, {
+          base: parseFloat(ob.min_base_amount || "0"),
+          quote: parseFloat(ob.min_quote_amount || "0"),
+        });
         const base = symbol.split("/")[0];
         if (base) this._spotBaseMap.set(base, symbol);
       }
-
-      // Refine decimals from orderbook detail if available
-      await this._refineDecimals();
     } catch (e) {
-      console.error("[lt-spot] Failed to load spot markets:", e instanceof Error ? e.message : e);
-    }
-  }
-
-  /** Fetch a spot orderbook sample to infer actual decimals */
-  private async _refineDecimals(): Promise<void> {
-    for (const [symbol, marketId] of this._spotMarketMap) {
+      // Fallback: use explorer API if orderBooks fails
       try {
-        const res = await this._restGet("/orderBookOrders", {
-          market_id: String(marketId), limit: "1",
-        }) as { asks?: Record<string, string>[]; bids?: Record<string, string>[] };
-        const sample = res.asks?.[0] ?? res.bids?.[0];
-        if (sample?.price && sample?.remaining_base_amount) {
-          const priceDec = (sample.price.split(".")[1] ?? "").length;
-          const sizeDec = (sample.remaining_base_amount.split(".")[1] ?? "").length;
-          this._spotDecimals.set(symbol, { size: sizeDec, price: priceDec });
+        const res = await fetch("https://explorer.elliot.ai/api/markets");
+        const markets = (await res.json()) as Array<{ symbol: string; market_index: number }>;
+        for (const m of markets) {
+          if (!m.symbol.includes("/")) continue;
+          const symbol = m.symbol.toUpperCase();
+          this._spotMarketMap.set(symbol, m.market_index);
+          this._spotDecimals.set(symbol, { size: 2, price: 4 });
+          const base = symbol.split("/")[0];
+          if (base) this._spotBaseMap.set(base, symbol);
         }
-      } catch { /* keep defaults */ }
+      } catch {
+        console.error("[lt-spot] Failed to load spot markets:", e instanceof Error ? e.message : e);
+      }
     }
   }
 
@@ -129,6 +140,8 @@ export class LighterSpotAdapter implements SpotAdapter {
 
   async getSpotBalances(): Promise<SpotBalance[]> {
     try {
+      await this.init();
+      const balances: SpotBalance[] = [];
       const address = this._lt.address;
       if (!address) return [];
 
@@ -138,38 +151,53 @@ export class LighterSpotAdapter implements SpotAdapter {
       }) as {
         accounts?: Array<{
           account_index: number;
-          collateral?: number;
-          available_balance?: number;
-          token_balances?: Array<{
-            token_symbol: string;
-            total: string | number;
-            available: string | number;
-            held: string | number;
+          collateral?: number | string;
+          available_balance?: number | string;
+          assets?: Array<{
+            symbol: string;
+            asset_id: number;
+            balance: string;
+            locked_balance: string;
           }>;
         }>;
       };
-
       const acct = res.accounts?.find(a => a.account_index === this._lt.accountIndex)
         ?? res.accounts?.[0];
       if (!acct) return [];
 
-      // If the API returns token_balances, use that
-      if (acct.token_balances) {
-        return acct.token_balances.map((tb) => ({
-          token: tb.token_symbol,
-          total: String(tb.total),
-          available: String(tb.available),
-          held: String(tb.held ?? 0),
-        }));
-      }
-
-      // Fallback: return USDC balance from collateral/available
-      return [{
+      // Perp USDC balance (collateral / available for perp trading)
+      balances.push({
         token: "USDC",
         total: String(acct.collateral ?? 0),
         available: String(acct.available_balance ?? 0),
         held: String(Math.max(0, Number(acct.collateral ?? 0) - Number(acct.available_balance ?? 0))),
-      }];
+      });
+
+      // Spot token balances from the assets array
+      if (acct.assets && acct.assets.length > 0) {
+        for (const asset of acct.assets) {
+          const bal = parseFloat(asset.balance || "0");
+          const locked = parseFloat(asset.locked_balance || "0");
+          if (asset.symbol === "USDC") {
+            // Add spot USDC as separate entry so caller can distinguish
+            balances.push({
+              token: "USDC_SPOT",
+              total: asset.balance,
+              available: String(bal - locked),
+              held: asset.locked_balance,
+            });
+          } else if (bal > 0) {
+            balances.push({
+              token: asset.symbol,
+              total: asset.balance,
+              available: String(bal - locked),
+              held: asset.locked_balance,
+            });
+          }
+        }
+      }
+
+      return balances;
     } catch {
       return [];
     }
@@ -182,13 +210,34 @@ export class LighterSpotAdapter implements SpotAdapter {
     if (marketId === undefined) {
       throw new Error(`Unknown Lighter spot market: ${symbol}`);
     }
-    // Delegate to the LighterAdapter's internal order flow using the spot market_id
-    // We need to get price for slippage
-    const markPrice = await this._getMarkPrice(resolved);
-    const slippagePrice = side === "buy" ? markPrice * 2 : markPrice * 0.5;
-    const dec = this._spotDecimals.get(resolved) ?? { size: 2, price: 2 };
 
-    const baseAmount = Math.round(parseFloat(size) * Math.pow(10, dec.size));
+    // Validate min order size
+    const minSize = this._spotMinSize.get(resolved);
+    const sizeNum = parseFloat(size);
+    if (minSize && sizeNum < minSize.base) {
+      throw new Error(`Size ${size} below min_base_amount ${minSize.base} for ${resolved}`);
+    }
+
+    // Use orderbook-based price with 5% slippage (like Hyperliquid spot adapter)
+    const ob = await this.getSpotOrderbook(resolved);
+    let refPrice: number;
+    if (side === "buy") {
+      if (ob.asks.length === 0) throw new Error(`No asks in ${resolved} spot orderbook`);
+      refPrice = Number(ob.asks[0][0]);
+    } else {
+      if (ob.bids.length === 0) throw new Error(`No bids in ${resolved} spot orderbook`);
+      refPrice = Number(ob.bids[0][0]);
+    }
+
+    // Validate min quote amount (size × price ≥ min_quote)
+    if (minSize && sizeNum * refPrice < minSize.quote) {
+      throw new Error(`Order value $${(sizeNum * refPrice).toFixed(2)} below min_quote_amount $${minSize.quote} for ${resolved}`);
+    }
+
+    const slippagePrice = side === "buy" ? refPrice * 1.05 : refPrice * 0.95;
+    const dec = this._spotDecimals.get(resolved) ?? { size: 2, price: 4 };
+
+    const baseAmount = Math.round(sizeNum * Math.pow(10, dec.size));
     const priceTicks = Math.round(slippagePrice * Math.pow(10, dec.price));
 
     return this._placeOrder({
@@ -209,9 +258,22 @@ export class LighterSpotAdapter implements SpotAdapter {
       throw new Error(`Unknown Lighter spot market: ${symbol}`);
     }
 
-    const dec = this._spotDecimals.get(resolved) ?? { size: 2, price: 2 };
-    const baseAmount = Math.round(parseFloat(size) * Math.pow(10, dec.size));
-    const priceTicks = Math.round(parseFloat(price) * Math.pow(10, dec.price));
+    // Validate min order size
+    const sizeNum = parseFloat(size);
+    const priceNum = parseFloat(price);
+    const minSize = this._spotMinSize.get(resolved);
+    if (minSize) {
+      if (sizeNum < minSize.base) {
+        throw new Error(`Size ${size} below min_base_amount ${minSize.base} for ${resolved}`);
+      }
+      if (sizeNum * priceNum < minSize.quote) {
+        throw new Error(`Order value $${(sizeNum * priceNum).toFixed(2)} below min_quote_amount $${minSize.quote} for ${resolved}`);
+      }
+    }
+
+    const dec = this._spotDecimals.get(resolved) ?? { size: 2, price: 4 };
+    const baseAmount = Math.round(sizeNum * Math.pow(10, dec.size));
+    const priceTicks = Math.round(priceNum * Math.pow(10, dec.price));
     const isIoc = opts?.tif?.toUpperCase() === "IOC";
 
     return this._placeOrder({
@@ -245,6 +307,86 @@ export class LighterSpotAdapter implements SpotAdapter {
     return this._sendTx(signed);
   }
 
+  /** Transfer USDC from perp account to spot account (required before spot buys) */
+  async transferUsdcToSpot(amount: number): Promise<unknown> {
+    return this._selfTransfer(amount, 0, 1); // route: Perp(0) → Spot(1)
+  }
+
+  /** Transfer USDC from spot account back to perp account */
+  async transferUsdcToPerp(amount: number): Promise<unknown> {
+    return this._selfTransfer(amount, 1, 0); // route: Spot(1) → Perp(0)
+  }
+
+  /**
+   * Internal self-transfer using raw WASM signTransfer.
+   * TS SDK's is_spot_account mapping is buggy (sets both fromRoute and toRoute
+   * to the same value), so we call the WASM module directly with explicit routes.
+   * Route types: 0 = Perp, 1 = Spot
+   */
+  private async _selfTransfer(amount: number, fromRoute: number, toRoute: number): Promise<unknown> {
+    if (this._lt.isReadOnly) throw new Error("Transfer requires API key");
+    const nonce = await this._getNextNonce();
+    const apiKeyIndex = (this._lt as unknown as { _apiKeyIndex: number })._apiKeyIndex;
+    const USDC_SCALE = 1_000_000; // 6 decimals
+    const scaledAmount = Math.floor(amount * USDC_SCALE);
+    const memo = "0x" + "00".repeat(32);
+
+    // Access the raw WASM module to bypass SDK's buggy route mapping
+    // Path: signer → WasmSignerClient → wallet (WasmSigner) → wasmModule
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const signerAny = this._lt.signer as any;
+    const wasmModule = (signerAny.wallet?.wasmModule ?? signerAny.wasmModule) as {
+      signTransfer?(
+        toAccountIndex: number, assetIndex: number,
+        fromRouteType: number, toRouteType: number,
+        amount: number, fee: number, memo: string,
+        nonce: number, apiKeyIndex: number, accountIndex: number,
+      ): { txType?: number; txInfo?: string; error?: string };
+    } | undefined;
+
+    if (wasmModule?.signTransfer) {
+      const result = wasmModule.signTransfer(
+        this._lt.accountIndex, 3, // toAccountIndex (self), assetIndex = USDC
+        fromRoute, toRoute,
+        scaledAmount, 0, memo,
+        nonce, apiKeyIndex, this._lt.accountIndex,
+      );
+      if (result.error) throw new Error(`Transfer sign error: ${result.error}`);
+      return this._sendTx({ txType: result.txType ?? 12, txInfo: result.txInfo });
+    }
+
+    // Fallback: use SDK signTransfer with explicit route_from/route_to
+    // The SDK's signTransfer internally calls wasmModule.signTransfer with 10 args
+    const signer = this._lt.signer;
+    // Try SDK's higher-level transferSameMasterAccount first (if available)
+    const client = signer as unknown as {
+      transferSameMasterAccount?(p: Record<string, unknown>): Promise<[unknown, string, string | null]>;
+      signTransfer?(p: Record<string, unknown>): Promise<{ txType?: number; txInfo?: string; error?: string }>;
+    };
+    if (client.transferSameMasterAccount) {
+      const [txInfo, txHash, err] = await client.transferSameMasterAccount({
+        toAccountIndex: this._lt.accountIndex,
+        usdcAmount: amount, // SDK scales internally
+        asset_id: 3,
+        fee: 0, memo,
+      });
+      if (err) throw new Error(`Transfer error: ${err}`);
+      return { code: 200, tx_hash: txHash };
+    }
+
+    // Last resort: SDK signTransfer
+    const signed = await (signer as unknown as {
+      signTransfer(p: Record<string, unknown>): Promise<{ txType?: number; txInfo?: string; error?: string }>;
+    }).signTransfer({
+      toAccountIndex: this._lt.accountIndex,
+      usdcAmount: scaledAmount, asset_id: 3,
+      is_spot_account: toRoute === 1,
+      fee: 0, memo, nonce, apiKeyIndex,
+      accountIndex: this._lt.accountIndex,
+    });
+    return this._sendTx(signed);
+  }
+
   /** Get the spot market ID for a symbol */
   getSpotMarketId(symbol: string): number | undefined {
     return this._spotMarketMap.get(this.resolveSymbol(symbol));
@@ -257,20 +399,6 @@ export class LighterSpotAdapter implements SpotAdapter {
   }
 
   // ── Private helpers ──
-
-  private async _getMarkPrice(resolved: string): Promise<number> {
-    const marketId = this._spotMarketMap.get(resolved);
-    if (marketId === undefined) throw new Error(`Cannot determine spot mark price for ${resolved}`);
-    try {
-      const ob = await this.getSpotOrderbook(resolved);
-      if (ob.bids.length > 0 && ob.asks.length > 0) {
-        return (Number(ob.bids[0][0]) + Number(ob.asks[0][0])) / 2;
-      }
-      throw new Error(`Empty orderbook for ${resolved}`);
-    } catch (e) {
-      throw new Error(`Cannot determine spot mark price for ${resolved}: ${e instanceof Error ? e.message : e}`);
-    }
-  }
 
   private async _placeOrder(opts: {
     marketIndex: number;
@@ -340,5 +468,12 @@ export class LighterSpotAdapter implements SpotAdapter {
     const res = await fetch(url.toString());
     if (!res.ok) throw new Error(`GET ${path} failed (${res.status}): ${await res.text()}`);
     return res.json();
+  }
+
+  private async _restGetAuth(path: string, params: Record<string, string>): Promise<unknown> {
+    if (this._lt.isReadOnly) throw new Error("Auth requires API key");
+    const auth = await (this._lt as unknown as { getAuthToken(): Promise<string> }).getAuthToken();
+    params.auth = auth;
+    return this._restGet(path, params);
   }
 }
