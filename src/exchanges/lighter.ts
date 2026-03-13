@@ -45,7 +45,7 @@ export class LighterAdapter implements ExchangeAdapter {
     this._evmKey = evmKey;
     this._apiKey = opts?.apiKey || process.env.LIGHTER_API_KEY || "";
     this._accountIndexInit = opts?.accountIndex ?? parseInt(process.env.LIGHTER_ACCOUNT_INDEX || "-1");
-    this._apiKeyIndex = parseInt(process.env.LIGHTER_API_KEY_INDEX || "2");
+    this._apiKeyIndex = parseInt(process.env.LIGHTER_API_KEY_INDEX || "4");
     this._address = "";
     this._testnet = testnet;
     this._readOnly = !this._apiKey;
@@ -103,7 +103,7 @@ export class LighterAdapter implements ExchangeAdapter {
     let signerReady = false;
     if (!this._apiKey && this._accountIndex >= 0) {
       try {
-        const autoKeyIndex = 2; // default for auto-setup
+        const autoKeyIndex = 4; // default for auto-setup (0-3 reserved by Lighter frontend)
         const { privateKey: apiKey } = await this.setupApiKey(autoKeyIndex);
         this._apiKey = apiKey;
         this._apiKeyIndex = autoKeyIndex;
@@ -955,7 +955,7 @@ export class LighterAdapter implements ExchangeAdapter {
    * Uses WASM signer to sign + ETH key for L1 signature.
    * Returns the generated key pair.
    */
-  async setupApiKey(apiKeyIndex = 2): Promise<{ privateKey: string; publicKey: string }> {
+  async setupApiKey(apiKeyIndex = 4): Promise<{ privateKey: string; publicKey: string }> {
     const { ethers } = await import("ethers");
 
     // 1. Generate key pair
