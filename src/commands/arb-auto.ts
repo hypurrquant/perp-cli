@@ -1654,13 +1654,73 @@ export function registerArbAutoCommands(
       const perpOk = perpResult.status === "fulfilled";
 
       if (spotOk && perpOk) {
-        // Log execution
-        logExecution({
-          type: "arb_entry", exchange: `spot:${spotExch}+${perpExch}`,
-          symbol: sym, side: "entry", size: matchedSize,
-          status: "success", dryRun: false,
-          meta: { mode: "spot-perp", spotExch, perpExch, matchedUsd },
-        });
+        // ── Post-execution fill verification ──
+        // Wait for exchange state to settle, then verify both legs actually filled
+        let fillVerified = true;
+        let verifyWarnings: string[] = [];
+        try {
+          await new Promise(r => setTimeout(r, 800));
+
+          // Verify spot: check base token balance appeared
+          const spotBals = await spotAdapter.getSpotBalances();
+          const baseToken = sym; // e.g. "ETH"
+          const spotTokenBal = spotBals.find(b =>
+            b.token.toUpperCase().startsWith(baseToken)
+          );
+          const spotTokenAmt = Number(spotTokenBal?.total ?? 0);
+          const expectedSize = parseFloat(matchedSize);
+
+          if (spotTokenAmt < expectedSize * 0.5) {
+            fillVerified = false;
+            verifyWarnings.push(
+              `Spot buy may not have filled: expected ~${matchedSize} ${baseToken}, found ${spotTokenAmt.toFixed(6)}`
+            );
+          }
+
+          // Verify perp: check short position exists
+          const perpPositions = await perpAdapter.getPositions();
+          const perpPos = perpPositions.find(p =>
+            p.symbol.replace("-PERP", "").toUpperCase() === sym && p.side === "short"
+          );
+          if (!perpPos) {
+            fillVerified = false;
+            verifyWarnings.push(
+              `Perp short position not found for ${sym} on ${perpExch} — fill may not have executed`
+            );
+          } else if (Number(perpPos.size) < expectedSize * 0.5) {
+            verifyWarnings.push(
+              `Perp short size ${perpPos.size} < expected ${matchedSize} — partial fill?`
+            );
+          }
+        } catch (verifyErr) {
+          // Verification check itself failed — log but don't block
+          verifyWarnings.push(`Fill verification check failed: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`);
+        }
+
+        if (verifyWarnings.length > 0 && !isJson()) {
+          for (const w of verifyWarnings) {
+            console.log(chalk.yellow(`  ⚠ ${w}`));
+          }
+        }
+
+        if (!fillVerified) {
+          // Fills couldn't be confirmed — log as unverified but still persist
+          // (rolling back based on uncertain data is worse than persisting)
+          logExecution({
+            type: "arb_entry", exchange: `spot:${spotExch}+${perpExch}`,
+            symbol: sym, side: "entry", size: matchedSize,
+            status: "unverified", dryRun: false,
+            meta: { mode: "spot-perp", spotExch, perpExch, matchedUsd, warnings: verifyWarnings },
+          });
+        } else {
+          // Log execution — verified
+          logExecution({
+            type: "arb_entry", exchange: `spot:${spotExch}+${perpExch}`,
+            symbol: sym, side: "entry", size: matchedSize,
+            status: "success", dryRun: false,
+            meta: { mode: "spot-perp", spotExch, perpExch, matchedUsd },
+          });
+        }
 
         // Persist position state
         persistAddPosition({
@@ -1698,13 +1758,19 @@ export function registerArbAutoCommands(
         }
 
         const result = {
-          status: "filled", mode: "spot-perp", symbol: sym,
+          status: fillVerified ? "filled" : "filled_unverified",
+          mode: "spot-perp", symbol: sym,
           size: matchedSize, notionalUsd: Math.round(matchedUsd * 100) / 100,
           spot: { exchange: spotExch, side: "buy", size: matchedSize },
           perp: { exchange: perpExch, side: "sell", size: matchedSize },
+          ...(verifyWarnings.length > 0 && { warnings: verifyWarnings }),
         };
         if (isJson()) return printJson(jsonOk(result));
-        console.log(chalk.green(`  FILLED: ${sym} ${matchedSize} units (~$${matchedUsd.toFixed(2)})`));
+        if (fillVerified) {
+          console.log(chalk.green(`  FILLED (verified): ${sym} ${matchedSize} units (~$${matchedUsd.toFixed(2)})`));
+        } else {
+          console.log(chalk.yellow(`  FILLED (unverified): ${sym} ${matchedSize} units (~$${matchedUsd.toFixed(2)})`));
+        }
         console.log(chalk.green(`    SPOT  ${spotExch} ✓ (bought ${matchedSize})`));
         console.log(chalk.green(`    PERP  ${perpExch} ✓ (shorted ${matchedSize})\n`));
       } else if (spotOk !== perpOk) {
@@ -1858,14 +1924,56 @@ export function registerArbAutoCommands(
       const perpOk = perpResult.status === "fulfilled";
 
       if (spotOk && perpOk) {
+        // ── Post-close fill verification ──
+        let closeVerified = true;
+        let closeWarnings: string[] = [];
+        try {
+          await new Promise(r => setTimeout(r, 800));
+
+          // Verify spot token was sold (balance should be near zero or gone)
+          const spotBals = await spotAdapter.getSpotBalances();
+          const baseToken = sym;
+          const spotTokenBal = spotBals.find(b =>
+            b.token.toUpperCase().startsWith(baseToken)
+          );
+          const remainingSpotAmt = Number(spotTokenBal?.total ?? 0);
+          const closedSize = parseFloat(closeSize);
+          if (remainingSpotAmt > closedSize * 0.5) {
+            closeVerified = false;
+            closeWarnings.push(
+              `Spot sell may not have filled: still have ${remainingSpotAmt.toFixed(6)} ${baseToken} (expected ~0)`
+            );
+          }
+
+          // Verify perp short was closed (position should be gone or reduced)
+          const perpPositionsAfter = await perpAdapter.getPositions();
+          const remainingPerpPos = perpPositionsAfter.find(p =>
+            p.symbol.replace("-PERP", "").toUpperCase() === sym && p.side === "short"
+          );
+          if (remainingPerpPos && Number(remainingPerpPos.size) > closedSize * 0.5) {
+            closeVerified = false;
+            closeWarnings.push(
+              `Perp short still open: ${remainingPerpPos.size} ${sym} on ${perpExch} (expected closed)`
+            );
+          }
+        } catch (verifyErr) {
+          closeWarnings.push(`Close verification failed: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`);
+        }
+
+        if (closeWarnings.length > 0 && !isJson()) {
+          for (const w of closeWarnings) {
+            console.log(chalk.yellow(`  ⚠ ${w}`));
+          }
+        }
+
         // Remove from state
         persistRemovePosition(sym);
 
         logExecution({
           type: "arb_close", exchange: `spot:${spotExch}+${perpExch}`,
           symbol: sym, side: "exit", size: closeSize,
-          status: "success", dryRun: false,
-          meta: { mode: "spot-perp" },
+          status: closeVerified ? "success" : "unverified", dryRun: false,
+          meta: { mode: "spot-perp", ...(closeWarnings.length > 0 && { warnings: closeWarnings }) },
         });
 
         // Return spot USDC proceeds back to perp account
@@ -1892,8 +2000,17 @@ export function registerArbAutoCommands(
           } catch { /* non-critical */ }
         }
 
-        if (isJson()) return printJson(jsonOk({ status: "closed", mode: "spot-perp", symbol: sym, size: closeSize }));
-        console.log(chalk.green(`  CLOSED: ${sym} ${closeSize} units`));
+        const closeResult = {
+          status: closeVerified ? "closed" : "closed_unverified",
+          mode: "spot-perp", symbol: sym, size: closeSize,
+          ...(closeWarnings.length > 0 && { warnings: closeWarnings }),
+        };
+        if (isJson()) return printJson(jsonOk(closeResult));
+        if (closeVerified) {
+          console.log(chalk.green(`  CLOSED (verified): ${sym} ${closeSize} units`));
+        } else {
+          console.log(chalk.yellow(`  CLOSED (unverified): ${sym} ${closeSize} units — check positions manually`));
+        }
         console.log(chalk.green(`    SPOT  ${spotExch}: sold ✓`));
         console.log(chalk.green(`    PERP  ${perpExch}: bought (closed short) ✓\n`));
       } else {
