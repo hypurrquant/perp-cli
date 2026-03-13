@@ -33,6 +33,8 @@ perp wallet show
 
 Same EVM key works for both Hyperliquid and Lighter.
 
+> **Lighter API Key Index:** Indexes 0–3 are reserved by Lighter's frontend (web/mobile). perp-cli defaults to index `4`. Override with `LIGHTER_API_KEY_INDEX` env var or `--key-index` flag on `manage setup-api-key`. Valid range: 4–254.
+
 ## Core Commands
 
 ```bash

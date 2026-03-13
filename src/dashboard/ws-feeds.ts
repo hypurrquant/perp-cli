@@ -615,7 +615,7 @@ class LighterFeed extends ExchangeWsFeed {
               liquidationPrice: String(p.liquidation_price || "N/A"),
               unrealizedPnl: String(p.unrealized_pnl ?? "0"),
               leverage: Number(p.initial_margin_fraction ?? 0) > 0
-                ? Math.round(100 / Number(p.initial_margin_fraction))
+                ? Math.round(10000 / Number(p.initial_margin_fraction))
                 : 1,
             };
           });

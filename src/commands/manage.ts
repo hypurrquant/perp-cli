@@ -369,7 +369,7 @@ export function registerManageCommands(
   manage
     .command("setup-api-key")
     .description("Generate & register a Lighter API key (required for trading)")
-    .option("--key-index <n>", "API key index (2-254, default: 2)", "2")
+    .option("--key-index <n>", "API key index (4-254, default: 4)", "4")
     .action(async (opts: { keyIndex: string }) => {
       const adapter = await getAdapter();
       const { LighterAdapter } = await import("../exchanges/lighter.js");

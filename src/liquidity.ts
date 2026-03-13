@@ -1,4 +1,5 @@
 import type { ExchangeAdapter } from "./exchanges/interface.js";
+import type { SpotAdapter } from "./exchanges/spot-interface.js";
 
 export interface LiquidityCheck {
   /** Max executable size (base) within slippage tolerance */
@@ -138,5 +139,64 @@ export async function checkArbLiquidity(
   } catch {
     log?.(`[LIQ] ${symbol}: orderbook fetch failed, skipping`);
     return { viable: false, adjustedSizeUsd: 0, longSlippage: 0, shortSlippage: 0 };
+  }
+}
+
+/**
+ * Check liquidity for a spot+perp arb pair.
+ * Spot side uses asks (for buy) or bids (for sell).
+ * Perp side uses bids (for short entry) or asks (for long entry).
+ */
+export async function checkSpotPerpLiquidity(
+  spotAdapter: SpotAdapter,
+  perpAdapter: ExchangeAdapter,
+  spotSymbol: string,
+  perpSymbol: string,
+  sizeUsd: number,
+  maxSlippagePct: number = 0.5,
+  log?: (msg: string) => void,
+): Promise<{ viable: boolean; adjustedSizeUsd: number; spotSlippage: number; perpSlippage: number }> {
+  try {
+    const [spotOB, perpOB] = await Promise.all([
+      spotAdapter.getSpotOrderbook(spotSymbol),
+      perpAdapter.getOrderbook(perpSymbol),
+    ]);
+
+    // Spot buy = consume asks; Perp short = consume bids
+    const spotCheck = computeExecutableSize(spotOB.asks, sizeUsd, maxSlippagePct);
+    const perpCheck = computeExecutableSize(perpOB.bids, sizeUsd, maxSlippagePct);
+
+    // Cross-market price gap check (spot vs perp)
+    if (spotOB.asks.length > 0 && perpOB.bids.length > 0) {
+      const bestSpotAsk = Number(spotOB.asks[0][0]);
+      const bestPerpBid = Number(perpOB.bids[0][0]);
+      const gapPct = Math.abs(bestSpotAsk - bestPerpBid) / Math.min(bestSpotAsk, bestPerpBid) * 100;
+      if (gapPct > 2) {
+        log?.(`[LIQ] spot-perp ${spotSymbol}: price gap ${gapPct.toFixed(2)}% too wide`);
+        return { viable: false, adjustedSizeUsd: 0, spotSlippage: spotCheck.slippagePct, perpSlippage: perpCheck.slippagePct };
+      }
+    }
+
+    const executableUsd = Math.min(
+      spotCheck.maxSize * spotCheck.avgFillPrice,
+      perpCheck.maxSize * perpCheck.avgFillPrice,
+    );
+
+    const minViable = sizeUsd * 0.2;
+    if (executableUsd < minViable) {
+      log?.(`[LIQ] spot-perp ${spotSymbol}: only $${executableUsd.toFixed(0)} executable (need min $${minViable.toFixed(0)})`);
+      return { viable: false, adjustedSizeUsd: 0, spotSlippage: spotCheck.slippagePct, perpSlippage: perpCheck.slippagePct };
+    }
+
+    const adjustedSizeUsd = Math.min(sizeUsd, executableUsd);
+    return {
+      viable: true,
+      adjustedSizeUsd,
+      spotSlippage: spotCheck.slippagePct,
+      perpSlippage: perpCheck.slippagePct,
+    };
+  } catch {
+    log?.(`[LIQ] spot-perp ${spotSymbol}: orderbook fetch failed`);
+    return { viable: false, adjustedSizeUsd: 0, spotSlippage: 0, perpSlippage: 0 };
   }
 }

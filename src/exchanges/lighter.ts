@@ -45,7 +45,7 @@ export class LighterAdapter implements ExchangeAdapter {
     this._evmKey = evmKey;
     this._apiKey = opts?.apiKey || process.env.LIGHTER_API_KEY || "";
     this._accountIndexInit = opts?.accountIndex ?? parseInt(process.env.LIGHTER_ACCOUNT_INDEX || "-1");
-    this._apiKeyIndex = parseInt(process.env.LIGHTER_API_KEY_INDEX || "2");
+    this._apiKeyIndex = parseInt(process.env.LIGHTER_API_KEY_INDEX || "4");
     this._address = "";
     this._testnet = testnet;
     this._readOnly = !this._apiKey;
@@ -103,7 +103,7 @@ export class LighterAdapter implements ExchangeAdapter {
     let signerReady = false;
     if (!this._apiKey && this._accountIndex >= 0) {
       try {
-        const autoKeyIndex = 2; // default for auto-setup
+        const autoKeyIndex = 4; // default for auto-setup (0-3 reserved by Lighter frontend)
         const { privateKey: apiKey } = await this.setupApiKey(autoKeyIndex);
         this._apiKey = apiKey;
         this._apiKeyIndex = autoKeyIndex;
@@ -155,25 +155,48 @@ export class LighterAdapter implements ExchangeAdapter {
     await this._refreshMarketMap();
   }
 
-  /** Populate marketMap + decimals from /orderBookDetails (safe to call multiple times) */
+  /** Populate marketMap + decimals from /orderBooks API (safe to call multiple times) */
   private async _refreshMarketMap(): Promise<void> {
     try {
-      const res = await this.restGet("/orderBookDetails", {}) as {
-        order_book_details?: Array<{
+      // Prefer /orderBooks which has supported_size_decimals / supported_price_decimals
+      const res = await this.restGet("/orderBooks", {}) as {
+        order_books?: Array<{
           symbol: string; market_id: number;
-          size_decimals?: number; price_decimals?: number;
+          supported_size_decimals: number;
+          supported_price_decimals: number;
           market_type?: string;
+          status?: string;
         }>;
       };
-      for (const d of res.order_book_details ?? []) {
-        this._marketMap.set(d.symbol.toUpperCase(), d.market_id);
-        this._marketDecimals.set(d.symbol.toUpperCase(), {
-          size: d.size_decimals ?? 0,
-          price: d.price_decimals ?? 0,
+      for (const d of res.order_books ?? []) {
+        const sym = d.symbol.toUpperCase();
+        // Skip spot markets (id ≥ 2048) — those are handled by lighter-spot.ts
+        if (d.market_id >= 2048) continue;
+        this._marketMap.set(sym, d.market_id);
+        this._marketDecimals.set(sym, {
+          size: d.supported_size_decimals,
+          price: d.supported_price_decimals,
         });
       }
     } catch {
-      // Market map will be empty, use fallback
+      // Fallback to /orderBookDetails
+      try {
+        const res = await this.restGet("/orderBookDetails", {}) as {
+          order_book_details?: Array<{
+            symbol: string; market_id: number;
+            size_decimals?: number; price_decimals?: number;
+          }>;
+        };
+        for (const d of res.order_book_details ?? []) {
+          this._marketMap.set(d.symbol.toUpperCase(), d.market_id);
+          this._marketDecimals.set(d.symbol.toUpperCase(), {
+            size: d.size_decimals ?? 0,
+            price: d.price_decimals ?? 0,
+          });
+        }
+      } catch {
+        // Both APIs failed — map stays empty, orders will fail at getMarketIndex()
+      }
     }
   }
 
@@ -199,7 +222,10 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   private toTicks(symbol: string, size: number, price: number): { baseAmount: number; priceTicks: number } {
-    const dec = this._marketDecimals.get(symbol.toUpperCase()) ?? { size: 0, price: 0 };
+    const dec = this._marketDecimals.get(symbol.toUpperCase());
+    if (!dec) {
+      throw new Error(`No market decimals loaded for ${symbol}. Market data may not be initialized.`);
+    }
     return {
       baseAmount: Math.round(size * Math.pow(10, dec.size)),
       priceTicks: Math.round(price * Math.pow(10, dec.price)),
@@ -309,13 +335,15 @@ export class LighterAdapter implements ExchangeAdapter {
           entryPrice: String(p.avg_entry_price || "0"),
           markPrice: String(
             posSize !== 0
-              ? (Number(p.position_value || 0) / Math.abs(posSize)).toFixed(4)
+              ? (Number(p.position_value || 0) / Math.abs(posSize)).toFixed(
+                  this._marketDecimals.get(String(p.symbol || "").toUpperCase())?.price ?? 4
+                )
               : "0"
           ),
           liquidationPrice: String(p.liquidation_price || "N/A"),
           unrealizedPnl: String(p.unrealized_pnl || "0"),
           leverage: Number(p.initial_margin_fraction || 0) > 0
-            ? Math.round(100 / Number(p.initial_margin_fraction))
+            ? Math.round(10000 / Number(p.initial_margin_fraction))
             : 1,
         };
       });
@@ -553,7 +581,8 @@ export class LighterAdapter implements ExchangeAdapter {
     return trades.map((t) => ({
       time: Number(t.timestamp ?? 0) * 1000,
       symbol,
-      side: t.is_ask ? "sell" as const : "buy" as const,
+      // /recentTrades returns is_maker_ask: maker was asking → taker bought
+      side: t.is_maker_ask ? "buy" as const : "sell" as const,
       price: String(t.price ?? "0"),
       size: String(t.base_amount ?? t.amount ?? ""),
       fee: String(t.fee ?? "0"),
@@ -952,7 +981,7 @@ export class LighterAdapter implements ExchangeAdapter {
    * Uses WASM signer to sign + ETH key for L1 signature.
    * Returns the generated key pair.
    */
-  async setupApiKey(apiKeyIndex = 2): Promise<{ privateKey: string; publicKey: string }> {
+  async setupApiKey(apiKeyIndex = 4): Promise<{ privateKey: string; publicKey: string }> {
     const { ethers } = await import("ethers");
 
     // 1. Generate key pair

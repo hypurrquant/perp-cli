@@ -28,6 +28,12 @@ export interface ArbPositionState {
   entryShortPrice: number;
   accumulatedFunding: number;
   lastCheckTime: string; // ISO
+  /** "perp-perp" (default) or "spot-perp" */
+  mode?: "perp-perp" | "spot-perp";
+  /** Spot leg exchange name (for spot-perp mode) */
+  spotExchange?: string;
+  /** Spot symbol, e.g. "ETH/USDC" (for spot-perp mode) */
+  spotSymbol?: string;
 }
 
 export interface ArbDaemonState {

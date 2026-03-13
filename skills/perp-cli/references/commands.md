@@ -89,7 +89,22 @@ perp --json bridge status <ORDER_ID>
 
 ## Arbitrage
 ```bash
+# Perp-Perp arb
 perp --json arb scan --min <BPS>            # find opportunities (>N bps spread) — PRIMARY command
+perp --json arb exec <SYM> <longEx> <shortEx> <$>  # execute perp-perp arb
+perp --json arb close <SYM>                 # close perp-perp arb
+perp --json arb status                      # monitor open arb positions
+perp --json arb funding-earned              # actual funding payments
+
+# Spot+Perp arb (spot funding = 0, spread = |perp funding|)
+perp --json arb scan --mode spot-perp       # scan spot+perp opportunities
+perp --json arb scan --mode all             # both perp-perp + spot-perp
+perp --json arb spot-exec <SYM> <spotEx> <perpEx> <$>  # execute spot+perp arb
+perp --json arb spot-close <SYM> --spot-exch <hl|lt>   # close spot+perp arb
+# spotEx: hl (Hyperliquid) or lt (Lighter). perpEx: hl, lt, pac.
+# HL spot uses U-tokens: BTC→UBTC, ETH→UETH, SOL→USOL (auto-resolved)
+
+# Other arb tools
 perp --json arb funding                     # detailed funding analysis
 perp --json arb dex                         # HIP-3 cross-dex arb (Hyperliquid)
 perp --json gap show                        # cross-exchange price gaps
