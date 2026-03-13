@@ -1500,6 +1500,29 @@ export function registerArbAutoCommands(
         }
       }
 
+      // 2b. Verify spot USDC balance is sufficient after transfer
+      try {
+        const spotBalances = await spotAdapter.getSpotBalances();
+        const spotUsdc = spotBalances.find(b => b.token === "USDC_SPOT" || b.token === "USDC");
+        const spotUsdcAvail = Number(spotUsdc?.available ?? 0);
+        // Also check perp balance for the perp leg
+        const perpBalance = await perpAdapter.getBalance();
+        const perpAvail = Number(perpBalance?.available ?? 0);
+
+        if (spotUsdcAvail < sizeUsd * 0.9) {
+          const msg = `Insufficient spot USDC: have $${spotUsdcAvail.toFixed(2)}, need ~$${sizeUsd}. Transfer may have failed.`;
+          if (isJson()) return printJson(jsonOk({ error: msg, spotUsdcAvail, required: sizeUsd }));
+          console.log(chalk.red(`  ${msg}`)); return;
+        }
+        if (perpAvail < sizeUsd * 0.5) {
+          const msg = `Insufficient perp balance: have $${perpAvail.toFixed(2)} available on ${perpExch}, need margin for ~$${sizeUsd}`;
+          if (isJson()) return printJson(jsonOk({ error: msg, perpAvail, required: sizeUsd }));
+          console.log(chalk.red(`  ${msg}`)); return;
+        }
+      } catch {
+        // Balance check failed — continue with execution, let order placement catch errors
+      }
+
       // 3. Fetch orderbooks simultaneously
       const spotSymbol = `${sym}/USDC`;
       if (!isJson()) console.log(chalk.gray(`  Checking orderbook depth (spot ${spotExch} + perp ${perpExch})...`));
