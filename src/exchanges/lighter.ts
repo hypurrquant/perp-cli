@@ -155,25 +155,48 @@ export class LighterAdapter implements ExchangeAdapter {
     await this._refreshMarketMap();
   }
 
-  /** Populate marketMap + decimals from /orderBookDetails (safe to call multiple times) */
+  /** Populate marketMap + decimals from /orderBooks API (safe to call multiple times) */
   private async _refreshMarketMap(): Promise<void> {
     try {
-      const res = await this.restGet("/orderBookDetails", {}) as {
-        order_book_details?: Array<{
+      // Prefer /orderBooks which has supported_size_decimals / supported_price_decimals
+      const res = await this.restGet("/orderBooks", {}) as {
+        order_books?: Array<{
           symbol: string; market_id: number;
-          size_decimals?: number; price_decimals?: number;
+          supported_size_decimals: number;
+          supported_price_decimals: number;
           market_type?: string;
+          status?: string;
         }>;
       };
-      for (const d of res.order_book_details ?? []) {
-        this._marketMap.set(d.symbol.toUpperCase(), d.market_id);
-        this._marketDecimals.set(d.symbol.toUpperCase(), {
-          size: d.size_decimals ?? 0,
-          price: d.price_decimals ?? 0,
+      for (const d of res.order_books ?? []) {
+        const sym = d.symbol.toUpperCase();
+        // Skip spot markets (id ≥ 2048) — those are handled by lighter-spot.ts
+        if (d.market_id >= 2048) continue;
+        this._marketMap.set(sym, d.market_id);
+        this._marketDecimals.set(sym, {
+          size: d.supported_size_decimals,
+          price: d.supported_price_decimals,
         });
       }
     } catch {
-      // Market map will be empty, use fallback
+      // Fallback to /orderBookDetails
+      try {
+        const res = await this.restGet("/orderBookDetails", {}) as {
+          order_book_details?: Array<{
+            symbol: string; market_id: number;
+            size_decimals?: number; price_decimals?: number;
+          }>;
+        };
+        for (const d of res.order_book_details ?? []) {
+          this._marketMap.set(d.symbol.toUpperCase(), d.market_id);
+          this._marketDecimals.set(d.symbol.toUpperCase(), {
+            size: d.size_decimals ?? 0,
+            price: d.price_decimals ?? 0,
+          });
+        }
+      } catch {
+        // Both APIs failed — map stays empty, orders will fail at getMarketIndex()
+      }
     }
   }
 
@@ -199,7 +222,10 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   private toTicks(symbol: string, size: number, price: number): { baseAmount: number; priceTicks: number } {
-    const dec = this._marketDecimals.get(symbol.toUpperCase()) ?? { size: 0, price: 0 };
+    const dec = this._marketDecimals.get(symbol.toUpperCase());
+    if (!dec) {
+      throw new Error(`No market decimals loaded for ${symbol}. Market data may not be initialized.`);
+    }
     return {
       baseAmount: Math.round(size * Math.pow(10, dec.size)),
       priceTicks: Math.round(price * Math.pow(10, dec.price)),

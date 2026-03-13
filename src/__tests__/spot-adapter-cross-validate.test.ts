@@ -816,18 +816,16 @@ describe("Cross-validate: Spot-Perp Sizing", () => {
     expect(Number(result!.size)).toBeGreaterThan(0);
     expect(result!.notional).toBeGreaterThanOrEqual(1); // pac min notional = $1
 
-    // With HL perp (1 dec), size is limited to 1 decimal
-    // $100 / $2000 = 0.05 → floor(0.05 * 10) / 10 = 0.0 → too small
-    // So with HL perp + HL spot, need higher sizeUsd
-    const hlResult = computeSpotPerpMatchedSize(500, 2000, "hyperliquid", "hyperliquid");
-    // $500 / $2000 = 0.25 → floor(0.25 * 10) / 10 = 0.2 → $400 notional
+    // With HL perp (2 dec fallback) + HL spot (2 dec), size is limited to 2 decimals
+    // $100 / $2000 = 0.05 → floor(0.05 * 100) / 100 = 0.05
+    const hlResult = computeSpotPerpMatchedSize(100, 2000, "hyperliquid", "hyperliquid");
     expect(hlResult).not.toBeNull();
     expect(Number(hlResult!.size)).toBeGreaterThan(0);
     const parts = hlResult!.size.split(".");
     const actualDecimals = parts.length > 1 ? parts[1].length : 0;
-    expect(actualDecimals).toBeLessThanOrEqual(1); // min of spot:hl(2) and hl(1) = 1
+    expect(actualDecimals).toBeLessThanOrEqual(2); // min of spot:hl(2) and hl(2) = 2
 
-    // $5 at $2000 = 0.0025 → should round down, too small for HL
+    // $5 at $2000 = 0.0025 → floor to 0.00 (2 dec) → too small for HL
     const tooSmall = computeSpotPerpMatchedSize(5, 2000, "hyperliquid", "hyperliquid");
     expect(tooSmall).toBeNull(); // Can't meet min size
 

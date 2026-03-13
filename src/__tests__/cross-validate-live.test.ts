@@ -584,9 +584,14 @@ describe("Cross-validate: Funding positions calculation", () => {
         expect(pctDiff).toBeLessThan(10); // within 10% (rate can shift between calls)
       }
 
-      // Daily should be hourly × 24 (allow small rounding drift)
+      // Daily should be hourly × 24 (use absolute diff, not ratio)
+      // JSON output rounds hourly to toFixed(6) and daily to toFixed(4),
+      // so ratio comparison fails for small values. Instead check:
+      //   |daily - hourly × 24| < rounding tolerance
+      // toFixed(4) has max rounding error of 0.00005
       if (pos.predicted.hourly !== 0) {
-        expect(Math.abs(pos.predicted.daily / pos.predicted.hourly - 24)).toBeLessThan(0.1);
+        const expectedDaily = pos.predicted.hourly * 24;
+        expect(Math.abs(pos.predicted.daily - expectedDaily)).toBeLessThan(0.0001);
       }
     }
   });

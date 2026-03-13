@@ -18,6 +18,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   private _testnet: boolean;
   private _assetMap: Map<string, number> = new Map();
   private _assetMapReverse: Map<number, string> = new Map();
+  private _szDecimalsMap: Map<string, number> = new Map(); // symbol → szDecimals
   /** HIP-3 deployed perp dex name. Empty string = native (validator) perps. */
   private _dex: string = "";
   // In-memory cache removed — using file-based cache (src/cache.ts) for cross-process dedup
@@ -96,9 +97,12 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       } else {
         const meta = await this.sdk.info.perpetuals.getMeta();
         if (meta && meta.universe) {
-          meta.universe.forEach((asset: { name: string }, idx: number) => {
+          meta.universe.forEach((asset: { name: string; szDecimals?: number }, idx: number) => {
             this._assetMap.set(asset.name, idx);
             this._assetMapReverse.set(idx, asset.name);
+            if (asset.szDecimals !== undefined) {
+              this._szDecimalsMap.set(asset.name, asset.szDecimals);
+            }
           });
         }
       }
@@ -123,6 +127,20 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       if (this._assetMap.has(base)) return base;
     }
     return sym; // return as-is, let downstream error
+  }
+
+  /** Get szDecimals for a symbol (cached from init/getMeta) */
+  getSzDecimals(symbol: string): number {
+    const resolved = this.resolveSymbol(symbol.toUpperCase());
+    return this._szDecimalsMap.get(resolved) ?? 2; // 2 is safe middle ground
+  }
+
+  /** HL official price rounding: 5 significant figures */
+  private _hlRoundPrice(px: number, szDecimals: number, maxDecimals = 6): string {
+    if (px > 100_000) return String(Math.round(px));
+    const sig5 = Number(px.toPrecision(5));
+    const priceDec = Math.max(0, maxDecimals - szDecimals);
+    return Number(sig5.toFixed(priceDec)).toString();
   }
 
   async getAssetIndex(symbol: string): Promise<number> {
@@ -329,27 +347,31 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   private async _dexMarketOrder(symbol: string, side: "buy" | "sell", size: string) {
     const assetIndex = await this.getAssetIndex(symbol.toUpperCase());
 
-    // Get current mark price from dex meta
+    // Get current mark price + szDecimals from dex meta
     const meta = await this._infoPost({
       type: "metaAndAssetCtxs",
       dex: this._dex,
-    }) as [{ universe: Record<string, unknown>[] }, Record<string, unknown>[]];
+    }) as [{ universe: Array<{ szDecimals?: number }> }, Record<string, unknown>[]];
     const ctx = (meta[1] ?? [])[assetIndex];
     const midPrice = Number(ctx?.markPx ?? 0);
     if (midPrice <= 0) throw new Error(`Cannot get price for ${symbol} on dex ${this._dex}`);
 
-    // Apply 5% slippage (same as SDK default)
+    const szDec = meta[0]?.universe?.[assetIndex]?.szDecimals ?? 2;
+
+    // HL official rounding: 5 significant figures, max 6 decimals for perps
+    const MAX_DECIMALS_PERP = 6;
     const slippage = 0.05;
     const isBuy = side === "buy";
     const slippagePrice = isBuy ? midPrice * (1 + slippage) : midPrice * (1 - slippage);
-    const decimals = midPrice.toString().split(".")[1]?.length || 0;
-    const limitPrice = slippagePrice.toFixed(Math.max(0, decimals - 1));
+    const limitPrice = slippagePrice > 100_000
+      ? String(Math.round(slippagePrice))
+      : Number(Number(slippagePrice.toPrecision(5)).toFixed(Math.max(0, MAX_DECIMALS_PERP - szDec))).toString();
 
     return this._rawPlaceOrder({
       assetIndex,
       isBuy,
       price: limitPrice,
-      size,
+      size: Number(size).toFixed(szDec),
       orderType: { limit: { tif: "Ioc" } },
       reduceOnly: false,
     });
@@ -468,12 +490,16 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const tifMap: Record<string, string> = { IOC: "Ioc", GTC: "Gtc", ALO: "Alo" };
     const tif = (tifMap[rawTif.toUpperCase()] ?? rawTif) as import("hyperliquid").Tif;
     const reduceOnly = opts?.reduceOnly ?? false;
+    // Round price/size to HL-supported decimals
+    const szDec = this.getSzDecimals(symbol);
+    const roundedPrice = this._hlRoundPrice(Number(price), szDec);
+    const roundedSize = Number(size).toFixed(szDec);
     // Use _rawPlaceOrder for both DEX and non-DEX (SDK exchange.placeOrder is unavailable)
     const result = await this._rawPlaceOrder({
       assetIndex: await this.getAssetIndex(symbol.toUpperCase()),
       isBuy: side === "buy",
-      price,
-      size,
+      price: roundedPrice,
+      size: roundedSize,
       orderType: { limit: { tif } },
       reduceOnly,
     });
@@ -767,6 +793,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     opts?: { reduceOnly?: boolean }
   ) {
     const assetIndex = await this.getAssetIndex(symbol);
+    const szDec = this.getSzDecimals(symbol);
     // Remove trailing zeros (HL API requirement)
     const trimZeros = (s: string) => {
       if (!s.includes(".")) return s;
@@ -780,8 +807,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         order: {
           a: assetIndex,
           b: newSide === "buy",
-          p: trimZeros(newPrice),
-          s: trimZeros(newSize),
+          p: trimZeros(this._hlRoundPrice(Number(newPrice), szDec)),
+          s: trimZeros(Number(newSize).toFixed(szDec)),
           r: opts?.reduceOnly ?? false,
           t: { limit: { tif: "Gtc" } },
         },

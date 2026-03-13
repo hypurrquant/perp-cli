@@ -11,6 +11,20 @@ import type { SpotAdapter, SpotMarketInfo, SpotBalance } from "./spot-interface.
 import { PERP_TO_SPOT_MAP, SPOT_PERP_TOKEN_MAP } from "./spot-interface.js";
 import type { HyperliquidAdapter } from "./hyperliquid.js";
 
+/** HL official price rounding: 5 significant figures, max 8 decimals for spot */
+function hlRoundPrice(px: number, szDecimals: number): string {
+  const MAX_DECIMALS = 8; // spot uses 8 (perp uses 6)
+  if (px > 100_000) return String(Math.round(px));
+  const sig5 = Number(px.toPrecision(5));
+  const priceDec = Math.max(0, MAX_DECIMALS - szDecimals);
+  return Number(sig5.toFixed(priceDec)).toString();
+}
+
+/** HL official size rounding */
+function hlRoundSize(sz: number, szDecimals: number): string {
+  return sz.toFixed(szDecimals);
+}
+
 export class HyperliquidSpotAdapter implements SpotAdapter {
   readonly name = "hyperliquid";
   private _hl: HyperliquidAdapter;
@@ -192,17 +206,13 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
     const isBuy = side === "buy";
     const slippagePrice = isBuy ? midPrice * (1 + slippage) : midPrice * (1 - slippage);
     const dec = this._spotDecimals.get(base);
-    const priceDec = dec?.price ?? 6;
     const szDec = dec?.size ?? 2;
-
-    // Format price — use significant figures approach
-    const limitPrice = Number(slippagePrice.toPrecision(5)).toFixed(priceDec);
 
     const result = await this._rawPlaceSpotOrder({
       assetIndex,
       isBuy,
-      price: limitPrice,
-      size: Number(size).toFixed(szDec),
+      price: hlRoundPrice(slippagePrice, szDec),
+      size: hlRoundSize(Number(size), szDec),
       orderType: { limit: { tif: "Ioc" } },
     });
 
@@ -220,11 +230,14 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
     const tifMap: Record<string, string> = { IOC: "Ioc", GTC: "Gtc", ALO: "Alo" };
     const tif = tifMap[rawTif.toUpperCase()] ?? rawTif;
 
+    const dec = this._spotDecimals.get(base);
+    const szDec = dec?.size ?? 2;
+
     return this._rawPlaceSpotOrder({
       assetIndex,
       isBuy: side === "buy",
-      price,
-      size,
+      price: hlRoundPrice(Number(price), szDec),
+      size: hlRoundSize(Number(size), szDec),
       orderType: { limit: { tif } },
     });
   }
