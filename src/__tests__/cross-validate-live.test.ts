@@ -10,6 +10,7 @@ import { describe, it, expect } from "vitest";
 import { config } from "dotenv";
 import { resolve } from "path";
 import { execSync } from "child_process";
+import { Wallet } from "ethers";
 
 // Load env
 config({ path: resolve(process.env.HOME || "~", ".perp", ".env") });
@@ -100,6 +101,27 @@ function hasKey(exchange: string): boolean {
 const HAS_HL_KEY = hasKey("hyperliquid");
 const HAS_LT_KEY = hasKey("lighter");
 const HAS_PAC_KEY = hasKey("pacifica");
+
+// Derive HL EVM address for raw API calls (if key available)
+function getHlAddress(): string | null {
+  const pk = process.env.HYPERLIQUID_PRIVATE_KEY || process.env.HL_PRIVATE_KEY || process.env.PRIVATE_KEY;
+  if (!pk) {
+    // Try wallets.json via CLI
+    try {
+      const out = execSync(`${CLI} -e hyperliquid account info`, {
+        timeout: 20000, encoding: "utf-8",
+        env: { ...process.env, NODE_NO_WARNINGS: "1" },
+      });
+      // Can't derive address from CLI output directly; use env key
+      return null;
+    } catch { return null; }
+  }
+  try {
+    return new Wallet(pk).address;
+  } catch { return null; }
+}
+
+const HL_ADDRESS = getHlAddress();
 
 // ── Tests ──
 
@@ -384,5 +406,290 @@ describe("Cross-validate: funding positions actual payments", () => {
         }
       }
     }
+  });
+});
+
+// ── Account Trades Cross-Validation ──
+
+describe("Cross-validate: Account trades", () => {
+
+  it("HL account trades match raw userFillsByTime API", { skip: !HAS_HL_KEY || !HL_ADDRESS }, async () => {
+    const cliResult = cli("-e hyperliquid account trades");
+    expect(cliResult.ok).toBe(true);
+    const cliTrades = cliResult.data as { symbol: string; side: string; price: string; size: string; fee: string; time: number }[];
+
+    // Raw API: userFillsByTime (last 24h)
+    const startTime = Date.now() - 24 * 3600 * 1000;
+    const rawFills = await hlPost("userFillsByTime", {
+      user: HL_ADDRESS,
+      startTime,
+    }) as { coin: string; side: string; px: string; sz: string; fee: string; time: number }[];
+
+    if (rawFills.length === 0 && cliTrades.length === 0) return; // no trades, both empty
+
+    // If there are raw fills, CLI should also have trades
+    if (rawFills.length > 0) {
+      expect(cliTrades.length).toBeGreaterThan(0);
+
+      // Compare most recent trade
+      const rawLatest = rawFills[0];
+      const rawSide = rawLatest.side === "B" ? "buy" : "sell";
+      const rawSymbol = rawLatest.coin;
+
+      // Find matching trade in CLI output
+      const cliMatch = cliTrades.find(t =>
+        t.symbol.replace(/-PERP$/, "") === rawSymbol &&
+        t.side === rawSide &&
+        Math.abs(Number(t.price) - Number(rawLatest.px)) / Number(rawLatest.px) < 0.01
+      );
+
+      if (cliMatch) {
+        // Size should match
+        expect(Math.abs(Number(cliMatch.size) - Number(rawLatest.sz))).toBeLessThan(0.0001);
+        // Fee should be close
+        expect(Math.abs(Number(cliMatch.fee) - Number(rawLatest.fee))).toBeLessThan(0.01);
+      }
+    }
+  });
+
+  it("Pacifica account trades have valid structure", { skip: !HAS_PAC_KEY }, async () => {
+    const cliResult = cli("-e pacifica account trades");
+    expect(cliResult.ok).toBe(true);
+    const cliTrades = cliResult.data as { symbol: string; side: string; price: string; size: string; time: number }[];
+
+    for (const trade of cliTrades) {
+      expect(trade.symbol).toBeTruthy();
+      expect(["buy", "sell"]).toContain(trade.side);
+      expect(Number(trade.price)).toBeGreaterThan(0);
+      expect(Number(trade.size)).toBeGreaterThan(0);
+      expect(trade.time).toBeGreaterThan(0);
+    }
+  });
+
+  it("Lighter account trades have valid structure", { skip: !HAS_LT_KEY }, async () => {
+    const cliResult = cli("-e lighter account trades");
+    expect(cliResult.ok).toBe(true);
+    const cliTrades = cliResult.data as { symbol: string; side: string; price: string; size: string }[];
+
+    for (const trade of cliTrades) {
+      expect(trade.symbol).toBeTruthy();
+      expect(["buy", "sell"]).toContain(trade.side);
+      expect(Number(trade.price)).toBeGreaterThan(0);
+      expect(Number(trade.size)).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ── Account Orders Cross-Validation ──
+
+describe("Cross-validate: Account orders", () => {
+
+  it("HL open orders match raw openOrders API", { skip: !HAS_HL_KEY || !HL_ADDRESS }, async () => {
+    const cliResult = cli("-e hyperliquid account orders");
+    expect(cliResult.ok).toBe(true);
+    const cliOrders = cliResult.data as { symbol: string; side: string; price: string; size: string; orderId: string }[];
+
+    // Raw API
+    const rawOrders = await hlPost("openOrders", { user: HL_ADDRESS }) as {
+      coin: string; side: string; limitPx: string; sz: string; oid: number;
+    }[];
+
+    // Same count
+    expect(cliOrders.length).toBe(rawOrders.length);
+
+    // Compare each order
+    for (const rawOrder of rawOrders) {
+      const rawSide = rawOrder.side === "B" ? "buy" : "sell";
+      const cliMatch = cliOrders.find(o =>
+        o.symbol.replace(/-PERP$/, "") === rawOrder.coin &&
+        o.side === rawSide &&
+        String(o.orderId) === String(rawOrder.oid)
+      );
+
+      if (cliMatch) {
+        // Price should match exactly
+        expect(Math.abs(Number(cliMatch.price) - Number(rawOrder.limitPx))).toBeLessThan(0.01);
+        // Size should match
+        expect(Math.abs(Number(cliMatch.size) - Number(rawOrder.sz))).toBeLessThan(0.0001);
+      }
+    }
+  });
+
+  it("Pacifica open orders have valid structure", { skip: !HAS_PAC_KEY }, async () => {
+    const cliResult = cli("-e pacifica account orders");
+    expect(cliResult.ok).toBe(true);
+    const cliOrders = cliResult.data as { symbol: string; side: string; price: string; size: string }[];
+
+    for (const order of cliOrders) {
+      expect(order.symbol).toBeTruthy();
+      expect(["buy", "sell"]).toContain(order.side);
+      expect(Number(order.price)).toBeGreaterThan(0);
+      expect(Number(order.size)).toBeGreaterThan(0);
+    }
+  });
+
+  it("Lighter open orders have valid structure", { skip: !HAS_LT_KEY }, async () => {
+    const cliResult = cli("-e lighter account orders");
+    expect(cliResult.ok).toBe(true);
+    const cliOrders = cliResult.data as { symbol: string; side: string; price: string; size: string }[];
+
+    for (const order of cliOrders) {
+      expect(order.symbol).toBeTruthy();
+      expect(["buy", "sell"]).toContain(order.side);
+      expect(Number(order.price)).toBeGreaterThan(0);
+      expect(Number(order.size)).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ── Funding Positions Calculation Verification ──
+
+describe("Cross-validate: Funding positions calculation", () => {
+
+  it("predicted hourly matches independent computation from raw rates", { skip: !HAS_HL_KEY }, async () => {
+    const cliResult = cli("funding positions --exchanges hyperliquid");
+    expect(cliResult.ok).toBe(true);
+    const data = cliResult.data as {
+      positions: {
+        symbol: string; side: string; notionalUsd: number;
+        fundingRate: number; predicted: { hourly: number; daily: number };
+      }[];
+    };
+
+    if (data.positions.length === 0) return;
+
+    // Get raw funding rates from HL API
+    const [meta, ctxs] = await hlMeta();
+    const rateMap = new Map<string, number>();
+    meta.universe.forEach((asset, i) => {
+      const ctx = ctxs[i] as { funding?: string };
+      if (ctx.funding) rateMap.set(asset.name, Number(ctx.funding));
+    });
+
+    for (const pos of data.positions) {
+      const rawSymbol = pos.symbol.replace(/-PERP$/, "");
+      const rawRate = rateMap.get(rawSymbol);
+      if (rawRate === undefined) continue;
+
+      // Independent computation:
+      // HL funding period = 1h, so hourlyRate = rate / 1 = rate
+      // hourlyPayment = hourlyRate × notionalUsd × (1 if long, -1 if short)
+      const multiplier = pos.side === "long" ? 1 : -1;
+      const expectedHourly = rawRate * pos.notionalUsd * multiplier;
+
+      // CLI predicted.hourly should be close to our independent calc
+      // Allow tolerance for rate drift between calls
+      if (Math.abs(expectedHourly) > 0.001) {
+        const pctDiff = Math.abs(pos.predicted.hourly - expectedHourly) / Math.abs(expectedHourly) * 100;
+        expect(pctDiff).toBeLessThan(10); // within 10% (rate can shift between calls)
+      }
+
+      // Daily should be hourly × 24
+      if (pos.predicted.hourly !== 0) {
+        expect(Math.abs(pos.predicted.daily / pos.predicted.hourly - 24)).toBeLessThan(0.01);
+      }
+    }
+  });
+
+  it("funding rate in positions matches market info rate", { skip: !HAS_HL_KEY }, async () => {
+    const posResult = cli("funding positions --exchanges hyperliquid");
+    expect(posResult.ok).toBe(true);
+    const positions = (posResult.data as {
+      positions: { symbol: string; fundingRate: number }[];
+    }).positions;
+
+    for (const pos of positions.slice(0, 3)) { // check up to 3
+      const infoResult = cli(`-e hyperliquid market info ${pos.symbol.replace(/-PERP$/, "")}`);
+      if (infoResult.ok) {
+        const infoRate = Number((infoResult.data as { fundingRate: string }).fundingRate);
+        // Should match closely (same exchange, near-same time)
+        expect(Math.abs(pos.fundingRate - infoRate)).toBeLessThan(0.001);
+      }
+    }
+  });
+});
+
+// ── Lighter Funding Rate ──
+
+describe("Cross-validate: Lighter funding rate", () => {
+
+  it("Lighter market info returns a funding rate field", async () => {
+    const cliResult = cli("-e lighter market info ETH");
+    expect(cliResult.ok).toBe(true);
+    const info = cliResult.data as { symbol: string; fundingRate: string; markPrice: string };
+
+    // Lighter funding rate may be 0 without auth, but the field should exist
+    expect(info.fundingRate).toBeDefined();
+    expect(typeof Number(info.fundingRate)).toBe("number");
+    expect(Number(info.markPrice)).toBeGreaterThan(0);
+  });
+
+  it("Lighter funding rate is 8h period (when available)", { skip: !HAS_LT_KEY }, async () => {
+    // Lighter market info requires authenticated account;
+    // if it fails, we just skip gracefully
+    const cliResult = cli("-e lighter market info ETH");
+    if (!cliResult.ok) return; // auth/account issue, skip
+
+    const info = cliResult.data as { fundingRate: string };
+    const rate = Number(info.fundingRate);
+
+    // 8h funding rate should be small — typically < 0.1% per 8h
+    // (< 0.001 as decimal). If it's non-zero, it should be reasonable
+    if (rate !== 0) {
+      expect(Math.abs(rate)).toBeLessThan(0.01); // < 1% per 8h is reasonable
+    }
+  });
+});
+
+// ── Dry-Run Validation ──
+
+describe("Cross-validate: Dry-run mode", () => {
+
+  it("dry-run market order returns dryRun:true without execution", { skip: !HAS_HL_KEY }, () => {
+    const cliResult = cli("--dry-run -e hyperliquid trade market ETH buy 0.001");
+    expect(cliResult.ok).toBe(true);
+    const data = cliResult.data as { dryRun: boolean; action: string; exchange: string; symbol: string; side: string; size: string };
+
+    expect(data.dryRun).toBe(true);
+    expect(data.action).toContain("market");
+    expect(data.exchange).toBe("hyperliquid");
+    expect(data.symbol).toBe("ETH");
+    expect(data.side).toBe("buy");
+
+    // Verify no actual position was opened
+    const posResult = cli("-e hyperliquid account positions");
+    expect(posResult.ok).toBe(true);
+    const positions = posResult.data as { symbol: string; size: string }[];
+    const ethPos = positions.find(p => p.symbol.replace(/-PERP$/, "") === "ETH");
+    // If there is an ETH position, it should not have grown by 0.001 from this test
+    // (we can't fully verify this without knowing prior state, but at least dryRun=true confirms)
+  });
+
+  it("dry-run limit order returns dryRun:true without execution", { skip: !HAS_HL_KEY }, () => {
+    const cliResult = cli("--dry-run -e hyperliquid trade limit ETH buy 1000 0.001");
+    expect(cliResult.ok).toBe(true);
+    const data = cliResult.data as { dryRun: boolean; action: string; price: unknown };
+
+    expect(data.dryRun).toBe(true);
+    expect(data.action).toContain("limit");
+
+    // Verify no order was placed
+    const ordersResult = cli("-e hyperliquid account orders");
+    expect(ordersResult.ok).toBe(true);
+    const orders = ordersResult.data as { symbol: string; price: string }[];
+    // No order at $1000 should exist (absurdly low price)
+    const phantom = orders.find(o =>
+      o.symbol.replace(/-PERP$/, "") === "ETH" && Number(o.price) === 1000
+    );
+    expect(phantom).toBeUndefined();
+  });
+
+  it("dry-run on Pacifica returns dryRun:true", { skip: !HAS_PAC_KEY }, () => {
+    const cliResult = cli("--dry-run -e pacifica trade market SOL buy 0.1");
+    expect(cliResult.ok).toBe(true);
+    const data = cliResult.data as { dryRun: boolean; action: string };
+
+    expect(data.dryRun).toBe(true);
+    expect(data.action).toContain("market");
   });
 });

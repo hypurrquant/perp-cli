@@ -152,6 +152,11 @@ export class LighterAdapter implements ExchangeAdapter {
     }
 
     // Build symbol → marketIndex map + decimals from orderBookDetails
+    await this._refreshMarketMap();
+  }
+
+  /** Populate marketMap + decimals from /orderBookDetails (safe to call multiple times) */
+  private async _refreshMarketMap(): Promise<void> {
     try {
       const res = await this.restGet("/orderBookDetails", {}) as {
         order_book_details?: Array<{
@@ -687,6 +692,8 @@ export class LighterAdapter implements ExchangeAdapter {
    */
   private async _getTradeHistoryRaw(limit = 100): Promise<unknown> {
     if (this._accountIndex < 0) return { trades: [] };
+    // Ensure market map is populated (init may have been rate-limited)
+    if (this._marketMap.size === 0) await this._refreshMarketMap();
     const allTrades: Record<string, unknown>[] = [];
     const entries = Array.from(this._marketMap.entries());
     const results = await Promise.allSettled(
@@ -714,6 +721,7 @@ export class LighterAdapter implements ExchangeAdapter {
    */
   private async _getPositionFundingRaw(): Promise<unknown> {
     if (this._accountIndex < 0) return { funding: [] };
+    if (this._marketMap.size === 0) await this._refreshMarketMap();
     const allFunding: Record<string, unknown>[] = [];
     const entries = Array.from(this._marketMap.entries());
     const results = await Promise.allSettled(

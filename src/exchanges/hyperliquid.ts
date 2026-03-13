@@ -285,7 +285,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     return (orders ?? []).map((o) => ({
       orderId: String(o.oid ?? ""),
       symbol: String(o.coin ?? ""),
-      side: o.side === "B" ? ("buy" as const) : ("sell" as const),
+      // SDK convertSymbolsInObject already converts "B"→"buy", "A"→"sell"
+      side: String(o.side) === "B" ? ("buy" as const) : String(o.side) === "A" ? ("sell" as const) : (o.side as "buy" | "sell"),
       price: String(o.limitPx ?? "0"),
       size: String(o.sz ?? "0"),
       filled: "0",
@@ -481,8 +482,10 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async cancelOrder(symbol: string, orderId: string) {
+    // HL SDK expects coin in "ETH-PERP" format (internal symbol convention)
+    const resolved = this.resolveSymbol(symbol);
     const result = await this.sdk.exchange.cancelOrder({
-      coin: symbol.toUpperCase(),
+      coin: resolved,
       o: parseInt(orderId),
     });
     await this._invalidateAccountCache();
@@ -492,7 +495,10 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   async cancelAllOrders(symbol?: string) {
     const orders = await this.getOpenOrders();
     const toCancel = symbol
-      ? orders.filter((o) => o.symbol.toUpperCase() === symbol.toUpperCase())
+      ? orders.filter((o) => {
+          const norm = (s: string) => s.toUpperCase().replace(/-PERP$/, "");
+          return norm(o.symbol) === norm(symbol);
+        })
       : orders;
 
     const results = [];
@@ -560,7 +566,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     return (fills ?? []).slice(0, limit).map((f: Record<string, unknown>) => ({
       orderId: String(f.oid ?? ""),
       symbol: String(f.coin ?? ""),
-      side: String(f.side) === "B" ? "buy" as const : "sell" as const,
+      // SDK convertSymbolsInObject already converts "B"→"buy", "A"→"sell"
+      side: String(f.side) === "B" ? "buy" as const : String(f.side) === "A" ? "sell" as const : (f.side as "buy" | "sell"),
       price: String(f.px ?? "0"),
       size: String(f.sz ?? ""),
       filled: String(f.sz ?? ""),
@@ -574,7 +581,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     return (fills ?? []).slice(0, limit).map((f: Record<string, unknown>) => ({
       time: Number(f.time ?? 0),
       symbol: String(f.coin ?? ""),
-      side: String(f.side) === "B" ? "buy" as const : "sell" as const,
+      // SDK convertSymbolsInObject already converts "B"→"buy", "A"→"sell"
+      side: String(f.side) === "B" ? "buy" as const : String(f.side) === "A" ? "sell" as const : (f.side as "buy" | "sell"),
       price: String(f.px ?? "0"),
       size: String(f.sz ?? ""),
       fee: String(f.fee ?? "0"),
