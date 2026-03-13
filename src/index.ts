@@ -321,7 +321,7 @@ registerMultilegCommands(program, getAdapterForExchange, isJson);
 registerSettingsCommands(program, isJson, getAdapterForExchange);
 registerDexCommands(program, getAdapter, isJson);
 registerPlanCommands(program, getAdapter, isJson);
-registerFundingCommands(program, isJson);
+registerFundingCommands(program, isJson, getAdapterForExchange);
 registerBacktestCommands(program, isJson);
 registerDashboardCommands(program, getAdapterForExchange, isJson, getHLAdapterForDex);
 registerInitCommand(program);

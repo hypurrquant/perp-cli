@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { makeTable, formatPercent, formatUsd, printJson, jsonOk } from "../utils.js";
+import { makeTable, formatPercent, formatUsd, formatPnl, printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import {
   fetchAllFundingRates,
   fetchSymbolFundingRates,
@@ -8,17 +8,21 @@ import {
   type FundingRateSnapshot,
   type SymbolFundingComparison,
 } from "../funding-rates.js";
-import { estimateHourlyFunding, annualizeHourlyRate } from "../funding.js";
+import { estimateHourlyFunding, annualizeHourlyRate, annualizeRate, toHourlyRate } from "../funding.js";
 import {
   saveFundingSnapshot,
   getHistoricalRates,
   getCompoundedAnnualReturn,
   getExchangeCompoundingHours,
 } from "../funding-history.js";
+import type { ExchangeAdapter } from "../exchanges/interface.js";
+
+const ALL_EXCHANGES = ["hyperliquid", "pacifica", "lighter"] as const;
 
 export function registerFundingCommands(
   program: Command,
   isJson: () => boolean,
+  getAdapterForExchange?: (exchange: string) => Promise<ExchangeAdapter>,
 ) {
   const funding = program.command("funding").description("Funding rate comparison across exchanges");
 
@@ -281,6 +285,200 @@ export function registerFundingCommands(
 
         await new Promise(r => setTimeout(r, intervalSec * 1000));
       }
+    });
+
+  // ── perp funding positions ── (funding impact on open positions)
+  funding
+    .command("positions")
+    .description("Show funding rate impact on your current positions")
+    .option("--exchanges <list>", "Comma-separated exchanges to check (default: all with keys)")
+    .action(async (opts: { exchanges?: string }) => {
+      if (!getAdapterForExchange) {
+        const msg = "funding positions requires adapter access";
+        if (isJson()) return printJson(jsonError("INTERNAL", msg));
+        console.log(chalk.red(`  ${msg}\n`));
+        return;
+      }
+
+      await withJsonErrors(isJson(), async () => {
+        const targetExchanges = opts.exchanges
+          ? opts.exchanges.split(",").map(s => s.trim().toLowerCase())
+          : [...ALL_EXCHANGES];
+
+        if (!isJson()) console.log(chalk.cyan("  Fetching positions and funding rates...\n"));
+
+        // Fetch positions + markets from each exchange in parallel
+        interface ExPositionWithFunding {
+          exchange: string;
+          symbol: string;
+          side: "long" | "short";
+          size: string;
+          entryPrice: string;
+          markPrice: string;
+          unrealizedPnl: string;
+          leverage: number;
+          notionalUsd: number;
+          fundingRate: number;
+          hourlyRate: number;
+          annualPct: number;
+          hourlyPayment: number;
+          dailyPayment: number;
+        }
+
+        const results: ExPositionWithFunding[] = [];
+        const exchangeErrors: Record<string, string> = {};
+
+        await Promise.all(targetExchanges.map(async (exchange) => {
+          try {
+            const adapter = await getAdapterForExchange(exchange);
+            const [positions, markets] = await Promise.all([
+              adapter.getPositions(),
+              adapter.getMarkets(),
+            ]);
+
+            if (positions.length === 0) return;
+
+            // Build symbol → funding rate map
+            const fundingMap = new Map<string, { rate: number; markPrice: number }>();
+            for (const m of markets) {
+              const sym = m.symbol.toUpperCase().replace(/-PERP$/, "");
+              fundingMap.set(sym, {
+                rate: Number(m.fundingRate) || 0,
+                markPrice: Number(m.markPrice) || 0,
+              });
+            }
+
+            for (const pos of positions) {
+              const sym = pos.symbol.toUpperCase().replace(/-PERP$/, "");
+              const fdata = fundingMap.get(sym);
+              const fundingRate = fdata?.rate ?? 0;
+              const mark = Number(pos.markPrice) || fdata?.markPrice || 0;
+              const size = Math.abs(Number(pos.size));
+              const notionalUsd = size * mark;
+              const hourlyRate = toHourlyRate(fundingRate, exchange);
+              const annualPct = annualizeRate(fundingRate, exchange);
+              const hourlyPayment = estimateHourlyFunding(fundingRate, exchange, notionalUsd, pos.side);
+              const dailyPayment = hourlyPayment * 24;
+
+              results.push({
+                exchange,
+                symbol: sym,
+                side: pos.side,
+                size: pos.size,
+                entryPrice: pos.entryPrice,
+                markPrice: pos.markPrice,
+                unrealizedPnl: pos.unrealizedPnl,
+                leverage: pos.leverage,
+                notionalUsd,
+                fundingRate,
+                hourlyRate,
+                annualPct,
+                hourlyPayment,
+                dailyPayment,
+              });
+            }
+          } catch (err) {
+            exchangeErrors[exchange] = err instanceof Error ? err.message : String(err);
+          }
+        }));
+
+        if (results.length === 0) {
+          if (isJson()) {
+            return printJson(jsonOk({
+              positions: [],
+              totals: { hourlyPayment: 0, dailyPayment: 0, notionalUsd: 0 },
+              errors: exchangeErrors,
+            }));
+          }
+          console.log(chalk.gray("  No open positions found on any exchange.\n"));
+          if (Object.keys(exchangeErrors).length > 0) {
+            for (const [ex, err] of Object.entries(exchangeErrors)) {
+              console.log(chalk.yellow(`  ${ex}: ${err}`));
+            }
+            console.log();
+          }
+          return;
+        }
+
+        // Sort: biggest daily payment impact first
+        results.sort((a, b) => Math.abs(b.dailyPayment) - Math.abs(a.dailyPayment));
+
+        const totalHourly = results.reduce((s, r) => s + r.hourlyPayment, 0);
+        const totalDaily = results.reduce((s, r) => s + r.dailyPayment, 0);
+        const totalNotional = results.reduce((s, r) => s + r.notionalUsd, 0);
+
+        if (isJson()) {
+          return printJson(jsonOk({
+            positions: results.map(r => ({
+              exchange: r.exchange,
+              symbol: r.symbol,
+              side: r.side,
+              size: r.size,
+              notionalUsd: Number(r.notionalUsd.toFixed(2)),
+              fundingRate: r.fundingRate,
+              annualPct: Number(r.annualPct.toFixed(2)),
+              hourlyPayment: Number(r.hourlyPayment.toFixed(6)),
+              dailyPayment: Number(r.dailyPayment.toFixed(4)),
+              unrealizedPnl: r.unrealizedPnl,
+            })),
+            totals: {
+              hourlyPayment: Number(totalHourly.toFixed(6)),
+              dailyPayment: Number(totalDaily.toFixed(4)),
+              notionalUsd: Number(totalNotional.toFixed(2)),
+            },
+            errors: Object.keys(exchangeErrors).length > 0 ? exchangeErrors : undefined,
+          }));
+        }
+
+        const exAbbr = (e: string) =>
+          e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e.toUpperCase();
+
+        console.log(chalk.cyan.bold("  Position Funding Impact\n"));
+
+        const rows = results.map(r => {
+          const sideColor = r.side === "long" ? chalk.green : chalk.red;
+          const rateColor = r.fundingRate > 0 ? chalk.red : r.fundingRate < 0 ? chalk.green : chalk.white;
+          // positive hourlyPayment = you pay, negative = you receive
+          const payColor = r.hourlyPayment > 0 ? chalk.red : r.hourlyPayment < 0 ? chalk.green : chalk.white;
+
+          return [
+            chalk.white.bold(exAbbr(r.exchange)),
+            chalk.white.bold(r.symbol),
+            sideColor(r.side.toUpperCase()),
+            `$${formatUsd(r.notionalUsd)}`,
+            rateColor(formatPercent(r.fundingRate)),
+            rateColor(`${r.annualPct.toFixed(1)}%`),
+            payColor(`${r.hourlyPayment >= 0 ? "-" : "+"}$${Math.abs(r.hourlyPayment).toFixed(4)}/h`),
+            payColor(`${r.dailyPayment >= 0 ? "-" : "+"}$${Math.abs(r.dailyPayment).toFixed(2)}/d`),
+            formatPnl(r.unrealizedPnl),
+          ];
+        });
+
+        console.log(makeTable(
+          ["Ex", "Symbol", "Side", "Notional", "Rate", "Annual", "Hourly $", "Daily $", "uPnL"],
+          rows,
+        ));
+
+        // Summary
+        const totalColor = totalDaily >= 0 ? chalk.red : chalk.green;
+        const totalSign = totalDaily >= 0 ? "-" : "+";
+        console.log();
+        console.log(`  Total Notional:     $${formatUsd(totalNotional)}`);
+        console.log(`  Total Hourly:       ${totalColor(`${totalSign}$${Math.abs(totalHourly).toFixed(4)}/h`)}`);
+        console.log(`  Total Daily:        ${totalColor(`${totalSign}$${Math.abs(totalDaily).toFixed(2)}/d`)}`);
+        console.log(`  Total Monthly (est):${totalColor(`${totalSign}$${Math.abs(totalDaily * 30).toFixed(2)}/mo`)}`);
+
+        if (Object.keys(exchangeErrors).length > 0) {
+          console.log();
+          for (const [ex, err] of Object.entries(exchangeErrors)) {
+            console.log(chalk.yellow(`  ${exAbbr(ex)}: ${err}`));
+          }
+        }
+
+        console.log(chalk.gray("\n  + = you receive, - = you pay"));
+        console.log(chalk.gray("  Longs pay positive funding, shorts receive positive funding."));
+        console.log(chalk.gray("  * Rates are current predictions, actual may differ.\n"));
+      });
     });
 }
 
