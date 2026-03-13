@@ -8,11 +8,13 @@ function createMockAdapter(
   name: string,
   positions: unknown[] = [],
   markets: unknown[] = [],
+  fundingPayments: unknown[] = [],
 ) {
   return {
     name,
     getPositions: vi.fn().mockResolvedValue(positions),
     getMarkets: vi.fn().mockResolvedValue(markets),
+    getFundingPayments: vi.fn().mockResolvedValue(fundingPayments),
     getBalance: vi.fn().mockResolvedValue({ equity: "1000", available: "800", marginUsed: "200", unrealizedPnl: "0" }),
     getOpenOrders: vi.fn().mockResolvedValue([]),
     getOrderbook: vi.fn().mockResolvedValue({ bids: [], asks: [] }),
@@ -24,7 +26,6 @@ function createMockAdapter(
     cancelOrder: vi.fn().mockResolvedValue(undefined),
     cancelAllOrders: vi.fn().mockResolvedValue(undefined),
     getAccountTrades: vi.fn().mockResolvedValue([]),
-    getFundingPayments: vi.fn().mockResolvedValue([]),
   };
 }
 
@@ -56,7 +57,8 @@ async function runAndCapture(program: Command, args: string[]) {
 }
 
 describe("funding positions", () => {
-  it("shows funding impact for open positions", async () => {
+  it("shows predicted and actual funding for open positions", async () => {
+    const now = Date.now();
     const adapter = createMockAdapter("hyperliquid", [
       {
         symbol: "ETH", side: "long", size: "0.5",
@@ -69,6 +71,10 @@ describe("funding positions", () => {
         fundingRate: "0.0001", volume24h: "1000000",
         openInterest: "500000", maxLeverage: 50,
       },
+    ], [
+      // Actual funding payments in last 24h
+      { time: now - 3600000, symbol: "ETH", payment: "-0.05" },  // paid
+      { time: now - 7200000, symbol: "ETH", payment: "0.03" },   // received
     ]);
 
     const program = await setupFunding(vi.fn().mockResolvedValue(adapter));
@@ -83,17 +89,28 @@ describe("funding positions", () => {
     expect(pos.side).toBe("long");
     expect(pos.fundingRate).toBe(0.0001);
     expect(pos.notionalUsd).toBe(1800); // 0.5 * 3600
-    expect(pos.hourlyPayment).toBeGreaterThan(0); // long pays positive funding
-    expect(pos.dailyPayment).toBeGreaterThan(0);
+
+    // Predicted (current rate based)
+    expect(pos.predicted.hourly).toBeGreaterThan(0); // long pays positive funding
+    expect(pos.predicted.daily).toBeGreaterThan(0);
+
+    // Actual 24h
+    expect(pos.actual24h.received).toBeCloseTo(0.03, 4);
+    expect(pos.actual24h.paid).toBeCloseTo(0.05, 4);
+    expect(pos.actual24h.net).toBeCloseTo(-0.02, 4); // net paid
   });
 
-  it("returns totals aggregated across positions", async () => {
+  it("returns totals with predicted and actual", async () => {
+    const now = Date.now();
     const adapter = createMockAdapter("hyperliquid", [
       { symbol: "ETH", side: "long", size: "1", entryPrice: "3500", markPrice: "3600", liquidationPrice: "3000", unrealizedPnl: "100", leverage: 5 },
       { symbol: "BTC", side: "short", size: "0.01", entryPrice: "95000", markPrice: "94000", liquidationPrice: "100000", unrealizedPnl: "10", leverage: 10 },
     ], [
       { symbol: "ETH", markPrice: "3600", indexPrice: "3598", fundingRate: "0.0001", volume24h: "0", openInterest: "0", maxLeverage: 50 },
       { symbol: "BTC", markPrice: "94000", indexPrice: "93900", fundingRate: "0.0002", volume24h: "0", openInterest: "0", maxLeverage: 50 },
+    ], [
+      { time: now - 1000, symbol: "ETH", payment: "0.10" },
+      { time: now - 2000, symbol: "BTC", payment: "-0.05" },
     ]);
 
     const program = await setupFunding(vi.fn().mockResolvedValue(adapter));
@@ -102,8 +119,9 @@ describe("funding positions", () => {
     expect(json.ok).toBe(true);
     expect(json.data.positions).toHaveLength(2);
     expect(json.data.totals.notionalUsd).toBeGreaterThan(0);
-    expect(json.data.totals.hourlyPayment).toBeDefined();
-    expect(json.data.totals.dailyPayment).toBeDefined();
+    expect(json.data.totals.predicted.hourly).toBeDefined();
+    expect(json.data.totals.predicted.daily).toBeDefined();
+    expect(json.data.totals.actual24h.net).toBeDefined();
   });
 
   it("returns empty positions when no open positions", async () => {
@@ -113,14 +131,17 @@ describe("funding positions", () => {
 
     expect(json.ok).toBe(true);
     expect(json.data.positions).toHaveLength(0);
-    expect(json.data.totals.hourlyPayment).toBe(0);
+    expect(json.data.totals.predicted.hourly).toBe(0);
   });
 
   it("queries multiple exchanges when no --exchanges flag", async () => {
+    const now = Date.now();
     const hlAdapter = createMockAdapter("hyperliquid", [
       { symbol: "ETH", side: "long", size: "0.5", entryPrice: "3500", markPrice: "3600", liquidationPrice: "3000", unrealizedPnl: "50", leverage: 5 },
     ], [
       { symbol: "ETH", markPrice: "3600", indexPrice: "3598", fundingRate: "0.0001", volume24h: "0", openInterest: "0", maxLeverage: 50 },
+    ], [
+      { time: now - 1000, symbol: "ETH", payment: "0.01" },
     ]);
 
     const pacAdapter = createMockAdapter("pacifica", [
@@ -166,9 +187,8 @@ describe("funding positions", () => {
     const json = await runAndCapture(program, ["funding", "positions", "--exchanges", "pacifica"]);
 
     const pos = json.data.positions[0];
-    // Short receives positive funding → hourlyPayment negative (you receive)
-    expect(pos.hourlyPayment).toBeLessThan(0);
-    expect(pos.dailyPayment).toBeLessThan(0);
+    expect(pos.predicted.hourly).toBeLessThan(0); // short receives positive funding
+    expect(pos.predicted.daily).toBeLessThan(0);
   });
 
   it("long position with negative funding receives payment", async () => {
@@ -182,7 +202,25 @@ describe("funding positions", () => {
     const json = await runAndCapture(program, ["funding", "positions", "--exchanges", "hyperliquid"]);
 
     const pos = json.data.positions[0];
-    // Long + negative funding → you receive
-    expect(pos.hourlyPayment).toBeLessThan(0);
+    expect(pos.predicted.hourly).toBeLessThan(0); // long + negative funding = receive
+  });
+
+  it("excludes funding payments older than 24h", async () => {
+    const now = Date.now();
+    const adapter = createMockAdapter("hyperliquid", [
+      { symbol: "ETH", side: "long", size: "1", entryPrice: "3500", markPrice: "3600", liquidationPrice: "3000", unrealizedPnl: "0", leverage: 5 },
+    ], [
+      { symbol: "ETH", markPrice: "3600", indexPrice: "3598", fundingRate: "0.0001", volume24h: "0", openInterest: "0", maxLeverage: 50 },
+    ], [
+      { time: now - 3600000, symbol: "ETH", payment: "0.10" },         // 1h ago — included
+      { time: now - 25 * 3600000, symbol: "ETH", payment: "99.99" },   // 25h ago — excluded
+    ]);
+
+    const program = await setupFunding(vi.fn().mockResolvedValue(adapter));
+    const json = await runAndCapture(program, ["funding", "positions", "--exchanges", "hyperliquid"]);
+
+    const pos = json.data.positions[0];
+    expect(pos.actual24h.received).toBeCloseTo(0.10, 4); // only the recent one
+    expect(pos.actual24h.net).toBeCloseTo(0.10, 4);
   });
 });

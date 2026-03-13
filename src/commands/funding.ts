@@ -307,7 +307,7 @@ export function registerFundingCommands(
 
         if (!isJson()) console.log(chalk.cyan("  Fetching positions and funding rates...\n"));
 
-        // Fetch positions + markets from each exchange in parallel
+        // Fetch positions + markets + actual funding payments from each exchange
         interface ExPositionWithFunding {
           exchange: string;
           symbol: string;
@@ -321,8 +321,11 @@ export function registerFundingCommands(
           fundingRate: number;
           hourlyRate: number;
           annualPct: number;
-          hourlyPayment: number;
-          dailyPayment: number;
+          hourlyPayment: number;  // predicted from current rate
+          dailyPayment: number;   // predicted from current rate
+          actualReceived24h: number;  // actual funding received in last 24h
+          actualPaid24h: number;      // actual funding paid in last 24h
+          actualNet24h: number;       // net actual funding last 24h
         }
 
         const results: ExPositionWithFunding[] = [];
@@ -331,9 +334,10 @@ export function registerFundingCommands(
         await Promise.all(targetExchanges.map(async (exchange) => {
           try {
             const adapter = await getAdapterForExchange(exchange);
-            const [positions, markets] = await Promise.all([
+            const [positions, markets, fundingPayments] = await Promise.all([
               adapter.getPositions(),
               adapter.getMarkets(),
+              adapter.getFundingPayments(100).catch(() => [] as { time: number; symbol: string; payment: string }[]),
             ]);
 
             if (positions.length === 0) return;
@@ -348,6 +352,20 @@ export function registerFundingCommands(
               });
             }
 
+            // Aggregate actual funding payments per symbol (last 24h)
+            const now = Date.now();
+            const dayAgo = now - 24 * 60 * 60 * 1000;
+            const actualFunding = new Map<string, { received: number; paid: number }>();
+            for (const fp of fundingPayments) {
+              if (fp.time < dayAgo) continue;
+              const sym = fp.symbol.toUpperCase().replace(/-PERP$/, "");
+              const amt = Number(fp.payment) || 0;
+              if (!actualFunding.has(sym)) actualFunding.set(sym, { received: 0, paid: 0 });
+              const entry = actualFunding.get(sym)!;
+              if (amt > 0) entry.received += amt;
+              else entry.paid += Math.abs(amt);
+            }
+
             for (const pos of positions) {
               const sym = pos.symbol.toUpperCase().replace(/-PERP$/, "");
               const fdata = fundingMap.get(sym);
@@ -359,6 +377,11 @@ export function registerFundingCommands(
               const annualPct = annualizeRate(fundingRate, exchange);
               const hourlyPayment = estimateHourlyFunding(fundingRate, exchange, notionalUsd, pos.side);
               const dailyPayment = hourlyPayment * 24;
+
+              const actual = actualFunding.get(sym);
+              const actualReceived24h = actual?.received ?? 0;
+              const actualPaid24h = actual?.paid ?? 0;
+              const actualNet24h = actualReceived24h - actualPaid24h;
 
               results.push({
                 exchange,
@@ -375,6 +398,9 @@ export function registerFundingCommands(
                 annualPct,
                 hourlyPayment,
                 dailyPayment,
+                actualReceived24h,
+                actualPaid24h,
+                actualNet24h,
               });
             }
           } catch (err) {
@@ -386,7 +412,11 @@ export function registerFundingCommands(
           if (isJson()) {
             return printJson(jsonOk({
               positions: [],
-              totals: { hourlyPayment: 0, dailyPayment: 0, notionalUsd: 0 },
+              totals: {
+                predicted: { hourly: 0, daily: 0 },
+                actual24h: { net: 0 },
+                notionalUsd: 0,
+              },
               errors: exchangeErrors,
             }));
           }
@@ -406,6 +436,7 @@ export function registerFundingCommands(
         const totalHourly = results.reduce((s, r) => s + r.hourlyPayment, 0);
         const totalDaily = results.reduce((s, r) => s + r.dailyPayment, 0);
         const totalNotional = results.reduce((s, r) => s + r.notionalUsd, 0);
+        const totalActualNet = results.reduce((s, r) => s + r.actualNet24h, 0);
 
         if (isJson()) {
           return printJson(jsonOk({
@@ -417,13 +448,25 @@ export function registerFundingCommands(
               notionalUsd: Number(r.notionalUsd.toFixed(2)),
               fundingRate: r.fundingRate,
               annualPct: Number(r.annualPct.toFixed(2)),
-              hourlyPayment: Number(r.hourlyPayment.toFixed(6)),
-              dailyPayment: Number(r.dailyPayment.toFixed(4)),
+              predicted: {
+                hourly: Number(r.hourlyPayment.toFixed(6)),
+                daily: Number(r.dailyPayment.toFixed(4)),
+              },
+              actual24h: {
+                received: Number(r.actualReceived24h.toFixed(6)),
+                paid: Number(r.actualPaid24h.toFixed(6)),
+                net: Number(r.actualNet24h.toFixed(6)),
+              },
               unrealizedPnl: r.unrealizedPnl,
             })),
             totals: {
-              hourlyPayment: Number(totalHourly.toFixed(6)),
-              dailyPayment: Number(totalDaily.toFixed(4)),
+              predicted: {
+                hourly: Number(totalHourly.toFixed(6)),
+                daily: Number(totalDaily.toFixed(4)),
+              },
+              actual24h: {
+                net: Number(totalActualNet.toFixed(6)),
+              },
               notionalUsd: Number(totalNotional.toFixed(2)),
             },
             errors: Object.keys(exchangeErrors).length > 0 ? exchangeErrors : undefined,
@@ -438,8 +481,11 @@ export function registerFundingCommands(
         const rows = results.map(r => {
           const sideColor = r.side === "long" ? chalk.green : chalk.red;
           const rateColor = r.fundingRate > 0 ? chalk.red : r.fundingRate < 0 ? chalk.green : chalk.white;
-          // positive hourlyPayment = you pay, negative = you receive
-          const payColor = r.hourlyPayment > 0 ? chalk.red : r.hourlyPayment < 0 ? chalk.green : chalk.white;
+          // actual net: positive = received, negative = paid
+          const actualColor = r.actualNet24h > 0 ? chalk.green : r.actualNet24h < 0 ? chalk.red : chalk.gray;
+          const actualStr = r.actualNet24h !== 0
+            ? actualColor(`${r.actualNet24h > 0 ? "+" : ""}$${r.actualNet24h.toFixed(4)}`)
+            : chalk.gray("-");
 
           return [
             chalk.white.bold(exAbbr(r.exchange)),
@@ -448,25 +494,24 @@ export function registerFundingCommands(
             `$${formatUsd(r.notionalUsd)}`,
             rateColor(formatPercent(r.fundingRate)),
             rateColor(`${r.annualPct.toFixed(1)}%`),
-            payColor(`${r.hourlyPayment >= 0 ? "-" : "+"}$${Math.abs(r.hourlyPayment).toFixed(4)}/h`),
-            payColor(`${r.dailyPayment >= 0 ? "-" : "+"}$${Math.abs(r.dailyPayment).toFixed(2)}/d`),
+            actualStr,
             formatPnl(r.unrealizedPnl),
           ];
         });
 
         console.log(makeTable(
-          ["Ex", "Symbol", "Side", "Notional", "Rate", "Annual", "Hourly $", "Daily $", "uPnL"],
+          ["Ex", "Symbol", "Side", "Notional", "Rate(now)", "Annual(now)", "Actual 24h", "uPnL"],
           rows,
         ));
 
         // Summary
-        const totalColor = totalDaily >= 0 ? chalk.red : chalk.green;
-        const totalSign = totalDaily >= 0 ? "-" : "+";
+        const actualNetColor = totalActualNet >= 0 ? chalk.green : chalk.red;
+        const predictColor = totalDaily >= 0 ? chalk.red : chalk.green;
+        const predictSign = totalDaily >= 0 ? "-" : "+";
         console.log();
-        console.log(`  Total Notional:     $${formatUsd(totalNotional)}`);
-        console.log(`  Total Hourly:       ${totalColor(`${totalSign}$${Math.abs(totalHourly).toFixed(4)}/h`)}`);
-        console.log(`  Total Daily:        ${totalColor(`${totalSign}$${Math.abs(totalDaily).toFixed(2)}/d`)}`);
-        console.log(`  Total Monthly (est):${totalColor(`${totalSign}$${Math.abs(totalDaily * 30).toFixed(2)}/mo`)}`);
+        console.log(`  Total Notional:      $${formatUsd(totalNotional)}`);
+        console.log(`  Actual Net (24h):    ${actualNetColor(`${totalActualNet >= 0 ? "+" : ""}$${totalActualNet.toFixed(4)}`)}`);
+        console.log(`  Predicted (now rate): ${predictColor(`${predictSign}$${Math.abs(totalDaily).toFixed(4)}/d`)}`);
 
         if (Object.keys(exchangeErrors).length > 0) {
           console.log();
@@ -475,9 +520,9 @@ export function registerFundingCommands(
           }
         }
 
-        console.log(chalk.gray("\n  + = you receive, - = you pay"));
-        console.log(chalk.gray("  Longs pay positive funding, shorts receive positive funding."));
-        console.log(chalk.gray("  * Rates are current predictions, actual may differ.\n"));
+        console.log(chalk.gray("\n  Actual 24h: real funding received/paid in the last 24 hours."));
+        console.log(chalk.gray("  Predicted: based on current rate only (changes every hour)."));
+        console.log(chalk.gray("  + = received, - = paid\n"));
       });
     });
 }
