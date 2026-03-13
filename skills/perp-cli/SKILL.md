@@ -5,7 +5,7 @@ allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*), Bas
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.4.6"
+  version: "0.4.7"
 ---
 
 # perp-cli Agent Guide
