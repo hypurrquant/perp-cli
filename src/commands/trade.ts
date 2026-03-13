@@ -253,18 +253,40 @@ export function registerTradeCommands(
     });
 
   trade
-    .command("cancel <symbol> <orderId>")
-    .description("Cancel a specific order")
-    .action(async (symbol: string, orderId: string) => {
+    .command("cancel <symbolOrOrderId> [orderId]")
+    .description("Cancel an order by orderId (auto-detects symbol), or by symbol + orderId")
+    .action(async (symbolOrOrderId: string, orderId?: string) => {
       const adapter = await getAdapter();
-      if (dryRunGuard("cancel", { exchange: adapter.name, symbol: symbol.toUpperCase(), orderId })) return;
+
+      let symbol: string;
+      let oid: string;
+
+      if (orderId) {
+        // cancel <symbol> <orderId>
+        symbol = symbolOrOrderId.toUpperCase();
+        oid = orderId;
+      } else {
+        // cancel <orderId> — look up symbol from open orders
+        oid = symbolOrOrderId;
+        const orders = await adapter.getOpenOrders();
+        const match = orders.find((o) => String(o.orderId) === oid);
+        if (!match) {
+          const err = `Order ${oid} not found in open orders`;
+          if (isJson()) return printJson(jsonOk({ cancelled: false, reason: err }));
+          console.log(chalk.yellow(`\n  ${err}\n`));
+          return;
+        }
+        symbol = match.symbol;
+      }
+
+      if (dryRunGuard("cancel", { exchange: adapter.name, symbol, orderId: oid })) return;
       try {
-        const result = await adapter.cancelOrder(symbol.toUpperCase(), orderId);
-        logExecution({ type: "cancel", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "cancel", size: "0", status: "success", dryRun: false, meta: { orderId } });
+        const result = await adapter.cancelOrder(symbol, oid);
+        logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "success", dryRun: false, meta: { orderId: oid } });
         if (isJson()) return printJson(jsonOk(result));
-        console.log(chalk.green(`\n  Order ${orderId} cancelled on ${adapter.name}.\n`));
+        console.log(chalk.green(`\n  Order ${oid} cancelled on ${adapter.name}.\n`));
       } catch (err) {
-        logExecution({ type: "cancel", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "cancel", size: "0", status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err), meta: { orderId } });
+        logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err), meta: { orderId: oid } });
         throw err;
       }
     });
