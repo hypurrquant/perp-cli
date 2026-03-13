@@ -1065,18 +1065,63 @@ export function registerArbAutoCommands(
 
   arb
     .command("scan")
-    .description("Scan current funding rate spreads")
+    .description("Scan current funding rate spreads (perp-perp or spot-perp)")
+    .option("--mode <mode>", "Scan mode: perp-perp, spot-perp, all", "perp-perp")
     .option("--min <pct>", "Min annual spread to show", "10")
     .option("--top <n>", "Return only top N results (for JSON output)")
     .option("--hold-days <days>", "Expected hold period for cost calc", "7")
     .option("--bridge-cost <usd>", "One-way bridge cost in USD", "0.5")
     .option("--size <usd>", "Position size per leg ($) for cost calc", "100")
-    .action(async (opts: { min: string; top?: string; holdDays: string; bridgeCost: string; size: string }) => {
+    .action(async (opts: { mode: string; min: string; top?: string; holdDays: string; bridgeCost: string; size: string }) => {
       const minSpread = parseFloat(opts.min);
       const holdDays = parseFloat(opts.holdDays);
       const bridgeCostUsd = parseFloat(opts.bridgeCost);
       const sizeUsd = parseFloat(opts.size);
-      if (!isJson()) console.log(chalk.cyan("\n  Scanning funding rate spreads...\n"));
+
+      // ── spot-perp mode ──
+      if (opts.mode === "spot-perp" || opts.mode === "all") {
+        if (!isJson()) console.log(chalk.cyan("\n  Scanning spot+perp funding opportunities...\n"));
+        const { fetchSpotPerpSpreads } = await import("../funding/rates.js");
+        const { spreads: spotSpreads } = await fetchSpotPerpSpreads({ minSpread });
+
+        if (isJson() && opts.mode === "spot-perp") {
+          let result = spotSpreads.map(s => ({
+            mode: "spot-perp" as const, symbol: s.symbol, perpExchange: s.perpExchange,
+            spotExchanges: s.spotExchanges, annualSpreadPct: s.annualSpreadPct,
+            perpFundingRate: s.perpFundingRate, direction: s.direction,
+            markPrice: s.bestMarkPrice, estHourlyIncomeUsd: s.estHourlyIncomeUsd,
+          }));
+          if (opts.top) result = result.slice(0, parseInt(opts.top));
+          return printJson(jsonOk(result));
+        }
+
+        if (!isJson()) {
+          if (spotSpreads.length === 0) {
+            console.log(chalk.gray(`  No spot+perp opportunities above ${minSpread}%\n`));
+          } else {
+            console.log(chalk.gray(`  ${"SYMBOL".padEnd(8)} ${"SPREAD".padEnd(8)} ${"PERP EX".padEnd(9)} ${"SPOT EX".padEnd(12)} ${"FUND".padEnd(12)} DIRECTION`));
+            for (const s of spotSpreads.slice(0, parseInt(opts.top ?? "30"))) {
+              const spreadColor = s.annualSpreadPct >= 30 ? chalk.green : chalk.yellow;
+              const dir = s.direction === "long-spot-short-perp" ? "Spot+Short" : "Sell+Long";
+              console.log(
+                `  ${chalk.white.bold(s.symbol.padEnd(8))} ` +
+                `${spreadColor(`${s.annualSpreadPct.toFixed(1)}%`.padEnd(8))} ` +
+                `${s.perpExchange.slice(0, 8).padEnd(9)} ` +
+                `${s.spotExchanges.join(",").slice(0, 11).padEnd(12)} ` +
+                `${(s.perpFundingRate * 100).toFixed(4).padEnd(12)}% ` +
+                dir
+              );
+            }
+            console.log(chalk.gray(`\n  ${spotSpreads.length} spot+perp opportunities (spot funding = 0%)`));
+          }
+        }
+
+        if (opts.mode === "spot-perp") return;
+        if (!isJson()) console.log(""); // separator
+      }
+
+      // ── perp-perp mode (default) ──
+      if (!isJson()) console.log(chalk.cyan("  Scanning perp-perp funding rate spreads...\n"));
 
       const spreads = await fetchFundingSpreads();
       const filtered = spreads.filter(s => Math.abs(s.spread) >= minSpread);
@@ -1086,14 +1131,14 @@ export function registerArbAutoCommands(
           const grossSpread = Math.abs(s.spread);
           const rtCost = computeRoundTripCostPct(s.longExch, s.shortExch);
           const net = computeNetSpread(grossSpread, holdDays, rtCost, bridgeCostUsd, sizeUsd);
-          return { symbol: s.symbol, longExch: s.longExch, shortExch: s.shortExch, markPrice: s.markPrice, grossSpread, netSpread: net, estFeesPct: rtCost };
+          return { mode: "perp-perp" as const, symbol: s.symbol, longExch: s.longExch, shortExch: s.shortExch, markPrice: s.markPrice, grossSpread, netSpread: net, estFeesPct: rtCost };
         }).sort((a, b) => b.netSpread - a.netSpread);
         if (opts.top) enriched = enriched.slice(0, parseInt(opts.top));
         return printJson(jsonOk(enriched));
       }
 
       if (filtered.length === 0) {
-        console.log(chalk.gray(`  No spreads above ${minSpread}%\n`));
+        console.log(chalk.gray(`  No perp-perp spreads above ${minSpread}%\n`));
         return;
       }
 
@@ -1355,6 +1400,424 @@ export function registerArbAutoCommands(
         console.log(chalk.red(`  Both legs failed:`));
         console.log(chalk.red(`    LONG:  ${result.longError}`));
         console.log(chalk.red(`    SHORT: ${result.shortError}\n`));
+      }
+    });
+
+  // ── arb spot-exec ── (spot+perp arb execution)
+
+  arb
+    .command("spot-exec")
+    .description("Execute spot+perp arb: buy spot + short perp simultaneously")
+    .argument("<symbol>", "Symbol (e.g. ETH, BTC)")
+    .argument("<spotExch>", "Spot exchange: hl (Hyperliquid) or lt (Lighter)")
+    .argument("<perpExch>", "Perp exchange: hl, lt, pac")
+    .argument("<sizeUsd>", "Position size per leg in USD")
+    .option("--max-slippage <pct>", "Max slippage % per leg", "0.5")
+    .option("--leverage <n>", "Set leverage on perp side before entry")
+    .option("--isolated", "Use isolated margin mode on perp side")
+    .action(async (symbol: string, spotExch: string, perpExch: string, sizeUsdStr: string, opts: {
+      maxSlippage: string; leverage?: string; isolated?: boolean;
+    }) => {
+      const sym = symbol.toUpperCase();
+      const sizeUsd = parseFloat(sizeUsdStr);
+      const maxSlippage = parseFloat(opts.maxSlippage);
+
+      // Resolve exchange aliases
+      const aliasMap: Record<string, string> = { hl: "hyperliquid", pac: "pacifica", lt: "lighter" };
+      spotExch = aliasMap[spotExch.toLowerCase()] || spotExch.toLowerCase();
+      perpExch = aliasMap[perpExch.toLowerCase()] || perpExch.toLowerCase();
+
+      // Validate spot exchange
+      if (!["hyperliquid", "lighter"].includes(spotExch)) {
+        const msg = `Spot exchange must be hl or lt (got ${spotExch}). Pacifica is perp-only.`;
+        if (isJson()) return printJson(jsonOk({ error: msg }));
+        console.log(chalk.red(`  ${msg}`));
+        return;
+      }
+
+      // Load spot adapter
+      const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+      const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");
+
+      let spotAdapter: import("../exchanges/spot-interface.js").SpotAdapter;
+      if (spotExch === "hyperliquid") {
+        const hlAdapter = await getAdapterForExchange("hyperliquid") as import("../exchanges/hyperliquid.js").HyperliquidAdapter;
+        const hlSpot = new HyperliquidSpotAdapter(hlAdapter);
+        await hlSpot.init();
+        spotAdapter = hlSpot;
+      } else {
+        const ltAdapter = await getAdapterForExchange("lighter") as import("../exchanges/lighter.js").LighterAdapter;
+        const ltSpot = new LighterSpotAdapter(ltAdapter);
+        await ltSpot.init();
+        spotAdapter = ltSpot;
+      }
+
+      const perpAdapter = await getAdapterForExchange(perpExch);
+
+      // 1. Set perp leverage if requested
+      if (opts.leverage) {
+        const lev = parseInt(opts.leverage);
+        const mode = opts.isolated ? "isolated" : "cross";
+        if (!isJson()) console.log(chalk.gray(`  Setting perp leverage ${lev}x ${mode} on ${perpExch}...`));
+        try {
+          await perpAdapter.setLeverage(sym, lev, mode);
+        } catch (e) {
+          const msg = `Failed to set leverage: ${e instanceof Error ? e.message : e}`;
+          if (isJson()) return printJson(jsonOk({ error: msg }));
+          console.log(chalk.red(`  ${msg}`)); return;
+        }
+      }
+
+      // 2. Auto-transfer USDC to spot account if needed (HL may separate perp/spot balances)
+      if (spotExch === "hyperliquid") {
+        const hlSpot = spotAdapter as import("../exchanges/hyperliquid-spot.js").HyperliquidSpotAdapter;
+        const transferAmt = Math.ceil(sizeUsd * 1.1);
+        try {
+          const xferResult = await hlSpot.transferUsdcToSpot(transferAmt) as { status?: string; response?: string };
+          // Unified accounts return "Action disabled" — that's OK, balances are shared
+          if (xferResult?.status === "err" && xferResult.response?.includes("unified")) {
+            if (!isJson()) console.log(chalk.gray(`  Unified account — no USDC transfer needed`));
+          } else if (xferResult?.status !== "err") {
+            if (!isJson()) console.log(chalk.gray(`  Transferred $${transferAmt} USDC perp→spot`));
+            await new Promise(r => setTimeout(r, 500));
+          }
+        } catch {
+          // Non-critical — may be unified account or already have balance
+        }
+      }
+
+      // 3. Fetch orderbooks simultaneously
+      const spotSymbol = `${sym}/USDC`;
+      if (!isJson()) console.log(chalk.gray(`  Checking orderbook depth (spot ${spotExch} + perp ${perpExch})...`));
+      const [spotBook, perpBook] = await Promise.all([
+        spotAdapter.getSpotOrderbook(spotSymbol),
+        perpAdapter.getOrderbook(sym),
+      ]);
+
+      // 3a. Price cross-validation: verify spot and perp are the same underlying
+      //     Prevents wrong-token trades if index mapping is incorrect
+      const spotMid = spotBook.bids.length > 0 && spotBook.asks.length > 0
+        ? (Number(spotBook.bids[0][0]) + Number(spotBook.asks[0][0])) / 2 : 0;
+      const perpMid = perpBook.bids.length > 0 && perpBook.asks.length > 0
+        ? (Number(perpBook.bids[0][0]) + Number(perpBook.asks[0][0])) / 2 : 0;
+
+      if (spotMid > 0 && perpMid > 0) {
+        const priceDeviation = Math.abs(spotMid - perpMid) / perpMid * 100;
+        if (priceDeviation > 5) {
+          const msg = `Price mismatch: spot mid $${spotMid.toFixed(4)} vs perp mid $${perpMid.toFixed(4)} (${priceDeviation.toFixed(1)}% deviation). Possible wrong token index — aborting.`;
+          if (isJson()) return printJson(jsonOk({ error: msg, spotMid, perpMid, deviationPct: priceDeviation }));
+          console.log(chalk.red(`\n  ${msg}`));
+          return;
+        }
+      } else if (spotMid === 0) {
+        const msg = `Empty spot orderbook for ${sym} — cannot verify token identity`;
+        if (isJson()) return printJson(jsonOk({ error: msg }));
+        console.log(chalk.red(`\n  ${msg}`));
+        return;
+      }
+
+      // 3b. Validate depth
+      const spotCheck = computeExecutableSize(spotBook.asks, sizeUsd, maxSlippage);
+      const perpCheck = computeExecutableSize(perpBook.bids, sizeUsd, maxSlippage);
+
+      if (!spotCheck.canFillFull || !perpCheck.canFillFull) {
+        const fillableUsd = Math.min(
+          spotCheck.maxSize * spotCheck.avgFillPrice,
+          perpCheck.maxSize * perpCheck.avgFillPrice,
+        );
+        if (isJson()) return printJson(jsonOk({
+          error: "Insufficient orderbook depth",
+          requestedUsd: sizeUsd, fillableUsd: Math.round(fillableUsd * 100) / 100,
+          spot: { exchange: spotExch, depthUsd: spotCheck.depthUsd, canFill: spotCheck.canFillFull },
+          perp: { exchange: perpExch, depthUsd: perpCheck.depthUsd, canFill: perpCheck.canFillFull },
+        }));
+        console.log(chalk.red(`\n  Insufficient depth for $${sizeUsd}:`));
+        console.log(chalk.gray(`    ${spotExch} spot asks: $${spotCheck.depthUsd.toFixed(0)}`));
+        console.log(chalk.gray(`    ${perpExch} perp bids: $${perpCheck.depthUsd.toFixed(0)}`));
+        return;
+      }
+
+      // 4. Compute matched size
+      const inferDecimals = (levels: [string, string][]) => {
+        for (const [, s] of levels) {
+          const dot = s.indexOf(".");
+          if (dot >= 0) return s.length - dot - 1;
+        }
+        return 0;
+      };
+      const spotDecimals = inferDecimals(spotBook.asks);
+      const perpDecimals = inferDecimals(perpBook.bids);
+      const decimals = Math.min(spotDecimals, perpDecimals);
+      const matchedBase = Math.min(spotCheck.recommendedSize, perpCheck.recommendedSize);
+      const matchedSize = (Math.floor(matchedBase * 10 ** decimals) / 10 ** decimals).toFixed(decimals);
+      const avgPrice = (spotCheck.avgFillPrice + perpCheck.avgFillPrice) / 2;
+      const matchedUsd = matchedBase * avgPrice;
+
+      if (!isJson()) {
+        console.log(chalk.cyan(`\n  Spot+Perp Arb: ${sym}`));
+        console.log(chalk.gray(`    SPOT  ${spotExch}: buy  ${matchedSize} (~$${(matchedBase * spotCheck.avgFillPrice).toFixed(2)})`));
+        console.log(chalk.gray(`    PERP  ${perpExch}: sell ${matchedSize} (~$${(matchedBase * perpCheck.avgFillPrice).toFixed(2)})`));
+        console.log(chalk.gray(`    Executing both legs simultaneously...\n`));
+      }
+
+      // 5. Execute both legs
+      // Same exchange (e.g. Lighter) shares nonce → must execute sequentially
+      // Different exchanges → execute simultaneously for speed
+      const validatePerpFill = (r: unknown) => {
+        const res = r as { status?: string; response?: { type?: string; data?: { statuses?: Array<Record<string, unknown>> } } };
+        const statuses = res?.response?.data?.statuses;
+        if (statuses && statuses.length > 0) {
+          const st = statuses[0];
+          if (st.error) throw new Error(`Perp sell ${sym}: ${st.error}`);
+          const filled = st.filled as { totalSz?: string } | undefined;
+          if (filled && Number(filled.totalSz ?? 0) === 0) {
+            throw new Error(`Perp sell ${sym}: 0 fill`);
+          }
+        }
+        return r;
+      };
+
+      let spotResult: PromiseSettledResult<unknown>;
+      let perpResult: PromiseSettledResult<unknown>;
+
+      if (spotExch === perpExch) {
+        // Sequential: spot first, then perp (avoids nonce collision on same exchange)
+        spotResult = await spotAdapter.spotMarketOrder(spotSymbol, "buy", matchedSize)
+          .then(r => ({ status: "fulfilled" as const, value: r }))
+          .catch(e => ({ status: "rejected" as const, reason: e }));
+        if (spotResult.status === "fulfilled") {
+          perpResult = await perpAdapter.marketOrder(sym, "sell", matchedSize)
+            .then(validatePerpFill)
+            .then(r => ({ status: "fulfilled" as const, value: r }))
+            .catch(e => ({ status: "rejected" as const, reason: e }));
+        } else {
+          perpResult = { status: "rejected" as const, reason: new Error("Skipped: spot failed") };
+        }
+      } else {
+        // Parallel: different exchanges, no nonce conflict
+        [spotResult, perpResult] = await Promise.allSettled([
+          spotAdapter.spotMarketOrder(spotSymbol, "buy", matchedSize),
+          perpAdapter.marketOrder(sym, "sell", matchedSize).then(validatePerpFill),
+        ]);
+      }
+
+      const spotOk = spotResult.status === "fulfilled";
+      const perpOk = perpResult.status === "fulfilled";
+
+      if (spotOk && perpOk) {
+        // Log execution
+        logExecution({
+          type: "arb_entry", exchange: `spot:${spotExch}+${perpExch}`,
+          symbol: sym, side: "entry", size: matchedSize,
+          status: "success", dryRun: false,
+          meta: { mode: "spot-perp", spotExch, perpExch, matchedUsd },
+        });
+
+        // Persist position state
+        persistAddPosition({
+          id: `${sym}-spot-${Date.now()}`,
+          symbol: sym,
+          longExchange: spotExch,
+          shortExchange: perpExch,
+          longSize: parseFloat(matchedSize),
+          shortSize: parseFloat(matchedSize),
+          entryTime: new Date().toISOString(),
+          entrySpread: 0, // Will be updated on next scan
+          entryLongPrice: spotCheck.avgFillPrice,
+          entryShortPrice: perpCheck.avgFillPrice,
+          accumulatedFunding: 0,
+          lastCheckTime: new Date().toISOString(),
+          mode: "spot-perp",
+          spotExchange: spotExch,
+          spotSymbol: spotSymbol,
+        });
+
+        // Return leftover USDC from spot back to perp (non-unified HL accounts)
+        if (spotExch === "hyperliquid") {
+          try {
+            const hlSpot = spotAdapter as import("../exchanges/hyperliquid-spot.js").HyperliquidSpotAdapter;
+            const bals = await hlSpot.getSpotBalances();
+            const usdcBal = bals.find(b => b.token.startsWith("USDC"));
+            const leftover = Number(usdcBal?.available ?? 0);
+            if (leftover > 1) {
+              const xfer = await hlSpot.transferUsdcToPerp(Math.floor(leftover)) as { status?: string; response?: string };
+              if (xfer?.status !== "err") {
+                if (!isJson()) console.log(chalk.gray(`  Returned ~$${Math.floor(leftover)} USDC to perp account`));
+              }
+            }
+          } catch { /* non-critical — unified accounts don't need transfer */ }
+        }
+
+        const result = {
+          status: "filled", mode: "spot-perp", symbol: sym,
+          size: matchedSize, notionalUsd: Math.round(matchedUsd * 100) / 100,
+          spot: { exchange: spotExch, side: "buy", size: matchedSize },
+          perp: { exchange: perpExch, side: "sell", size: matchedSize },
+        };
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.green(`  FILLED: ${sym} ${matchedSize} units (~$${matchedUsd.toFixed(2)})`));
+        console.log(chalk.green(`    SPOT  ${spotExch} ✓ (bought ${matchedSize})`));
+        console.log(chalk.green(`    PERP  ${perpExch} ✓ (shorted ${matchedSize})\n`));
+      } else if (spotOk !== perpOk) {
+        // One leg failed — rollback
+        const filledSide = spotOk ? "spot" : "perp";
+        const failedSide = spotOk ? "perp" : "spot";
+        const failedErr = spotOk
+          ? (perpResult as PromiseRejectedResult).reason
+          : (spotResult as PromiseRejectedResult).reason;
+        const failedErrMsg = failedErr instanceof Error ? failedErr.message : String(failedErr);
+
+        if (!isJson()) {
+          console.log(chalk.yellow(`  PARTIAL: ${filledSide} OK, ${failedSide} FAILED — rolling back...`));
+          console.log(chalk.red(`    Reason: ${failedErrMsg}`));
+        }
+
+        let rollbackOk = false;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            if (spotOk) {
+              await spotAdapter.spotMarketOrder(spotSymbol, "sell", matchedSize);
+            } else {
+              await perpAdapter.marketOrder(sym, "buy", matchedSize);
+            }
+            rollbackOk = true;
+            break;
+          } catch { /* retry */ }
+        }
+
+        logExecution({
+          type: "arb_entry", exchange: `spot:${spotExch}+${perpExch}`,
+          symbol: sym, side: "entry", size: matchedSize,
+          status: "failed", dryRun: false,
+          error: `Partial: ${failedSide} failed (${failedErrMsg}). Rollback: ${rollbackOk ? "ok" : "FAILED"}`,
+        });
+
+        const result = {
+          status: "partial_fill", mode: "spot-perp", symbol: sym,
+          filledSide, failedSide,
+          failedError: failedErrMsg,
+          rollback: rollbackOk ? "success" : "FAILED — MANUAL CLOSE REQUIRED",
+        };
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(rollbackOk
+          ? chalk.yellow(`  Rollback OK — no open exposure.\n`)
+          : chalk.red.bold(`  ROLLBACK FAILED — ${filledSide} leg still open. Close manually!\n`));
+      } else {
+        // Both failed
+        const spotErr = (spotResult as PromiseRejectedResult).reason;
+        const perpErr = (perpResult as PromiseRejectedResult).reason;
+        const result = {
+          status: "both_failed", mode: "spot-perp", symbol: sym,
+          spotError: spotErr instanceof Error ? spotErr.message : String(spotErr),
+          perpError: perpErr instanceof Error ? perpErr.message : String(perpErr),
+        };
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.red(`  Both legs failed:`));
+        console.log(chalk.red(`    SPOT:  ${result.spotError}`));
+        console.log(chalk.red(`    PERP:  ${result.perpError}\n`));
+      }
+    });
+
+  // ── arb spot-close ── (close spot+perp arb position)
+
+  arb
+    .command("spot-close")
+    .description("Close a spot+perp arb position: sell spot + buy back perp")
+    .argument("<symbol>", "Symbol (e.g. ETH)")
+    .option("--spot-exch <exchange>", "Spot exchange (hl or lt)")
+    .option("--perp-exch <exchange>", "Perp exchange (hl, lt, pac)")
+    .action(async (symbol: string, opts: { spotExch?: string; perpExch?: string }) => {
+      const sym = symbol.toUpperCase();
+
+      // Try to find the position from state
+      const state = loadArbState();
+      const pos = state?.positions.find(p =>
+        p.symbol.toUpperCase() === sym && p.mode === "spot-perp"
+      );
+
+      const aliasMap: Record<string, string> = { hl: "hyperliquid", pac: "pacifica", lt: "lighter" };
+      const spotExch = aliasMap[opts.spotExch?.toLowerCase() ?? ""] || opts.spotExch?.toLowerCase() || pos?.spotExchange || pos?.longExchange;
+      const perpExch = aliasMap[opts.perpExch?.toLowerCase() ?? ""] || opts.perpExch?.toLowerCase() || pos?.shortExchange;
+
+      if (!spotExch || !perpExch) {
+        const msg = "Cannot determine exchanges. Specify --spot-exch and --perp-exch, or ensure the position is tracked in state.";
+        if (isJson()) return printJson(jsonOk({ error: msg }));
+        console.log(chalk.red(`  ${msg}`));
+        return;
+      }
+
+      // Load adapters
+      const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+      const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");
+
+      let spotAdapter: import("../exchanges/spot-interface.js").SpotAdapter;
+      if (spotExch === "hyperliquid") {
+        const hlAdapter = await getAdapterForExchange("hyperliquid") as import("../exchanges/hyperliquid.js").HyperliquidAdapter;
+        const hlSpot = new HyperliquidSpotAdapter(hlAdapter);
+        await hlSpot.init();
+        spotAdapter = hlSpot;
+      } else {
+        const ltAdapter = await getAdapterForExchange("lighter") as import("../exchanges/lighter.js").LighterAdapter;
+        const ltSpot = new LighterSpotAdapter(ltAdapter);
+        await ltSpot.init();
+        spotAdapter = ltSpot;
+      }
+
+      const perpAdapter = await getAdapterForExchange(perpExch);
+      const spotSymbol = `${sym}/USDC`;
+
+      // Find how much to close
+      const perpPositions = await perpAdapter.getPositions();
+      const perpPos = perpPositions.find(p =>
+        p.symbol.replace("-PERP", "").toUpperCase() === sym && p.side === "short"
+      );
+
+      if (!perpPos) {
+        const msg = `No short perp position found for ${sym} on ${perpExch}`;
+        if (isJson()) return printJson(jsonOk({ error: msg }));
+        console.log(chalk.red(`  ${msg}`)); return;
+      }
+
+      const closeSize = perpPos.size;
+      if (!isJson()) {
+        console.log(chalk.cyan(`\n  Closing Spot+Perp Arb: ${sym}`));
+        console.log(chalk.gray(`    SPOT  ${spotExch}: sell ${closeSize}`));
+        console.log(chalk.gray(`    PERP  ${perpExch}: buy  ${closeSize} (close short)`));
+        console.log(chalk.gray(`    Executing...\n`));
+      }
+
+      const [spotResult, perpResult] = await Promise.allSettled([
+        spotAdapter.spotMarketOrder(spotSymbol, "sell", closeSize),
+        perpAdapter.marketOrder(sym, "buy", closeSize),
+      ]);
+
+      const spotOk = spotResult.status === "fulfilled";
+      const perpOk = perpResult.status === "fulfilled";
+
+      if (spotOk && perpOk) {
+        // Remove from state
+        persistRemovePosition(sym);
+
+        logExecution({
+          type: "arb_close", exchange: `spot:${spotExch}+${perpExch}`,
+          symbol: sym, side: "exit", size: closeSize,
+          status: "success", dryRun: false,
+          meta: { mode: "spot-perp" },
+        });
+
+        if (isJson()) return printJson(jsonOk({ status: "closed", mode: "spot-perp", symbol: sym, size: closeSize }));
+        console.log(chalk.green(`  CLOSED: ${sym} ${closeSize} units`));
+        console.log(chalk.green(`    SPOT  ${spotExch}: sold ✓`));
+        console.log(chalk.green(`    PERP  ${perpExch}: bought (closed short) ✓\n`));
+      } else {
+        const errors: string[] = [];
+        if (!spotOk) errors.push(`Spot sell failed: ${(spotResult as PromiseRejectedResult).reason}`);
+        if (!perpOk) errors.push(`Perp buy failed: ${(perpResult as PromiseRejectedResult).reason}`);
+        const result = { status: "partial_close", symbol: sym, spotOk, perpOk, errors };
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.red(`  Close partially failed:`));
+        for (const e of errors) console.log(chalk.red(`    ${e}`));
+        console.log(chalk.yellow(`  Manual intervention may be needed.\n`));
       }
     });
 

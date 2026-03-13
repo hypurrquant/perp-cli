@@ -48,12 +48,15 @@ export function computeMatchedSize(
   return { size: roundedSize.toFixed(szDecimals), notional };
 }
 
-/** Size decimal precision by exchange */
+/** Size decimal precision by exchange (perp defaults) */
 function getSizeDecimals(exchange: string): number {
   switch (exchange.toLowerCase()) {
     case "hyperliquid": return 1; // Most HL perps use 1 decimal
     case "lighter": return 2;
     case "pacifica": return 4;
+    // Spot exchanges — use more conservative defaults
+    case "spot:hyperliquid": return 2;
+    case "spot:lighter": return 2;
     default: return 2;
   }
 }
@@ -64,8 +67,29 @@ function getMinNotional(exchange: string): number {
     case "hyperliquid": return 10;
     case "lighter": return 10;
     case "pacifica": return 1;
+    case "spot:hyperliquid": return 10;
+    case "spot:lighter": return 10;
     default: return 10;
   }
+}
+
+/**
+ * Compute matched size for spot-perp arb.
+ * Uses spot exchange's size decimals for the spot leg.
+ */
+export function computeSpotPerpMatchedSize(
+  sizeUsd: number,
+  price: number,
+  spotExchange: string,
+  perpExchange: string,
+  spotSizeDecimals?: number,
+): { size: string; notional: number } | null {
+  // If explicit spot decimals provided, use them; otherwise derive from exchange
+  const spotDec = spotSizeDecimals ?? getSizeDecimals(`spot:${spotExchange}`);
+  const perpDec = getSizeDecimals(perpExchange);
+  const szDecimals = Math.min(spotDec, perpDec);
+
+  return computeMatchedSize(sizeUsd, price, `spot:${spotExchange}`, perpExchange);
 }
 
 /**
