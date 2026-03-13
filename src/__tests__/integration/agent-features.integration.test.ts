@@ -538,11 +538,11 @@ describe("Agent Features Integration (Hyperliquid Mainnet)", () => {
       expect(markets.length).toBeGreaterThan(50);
       // Verify we can look up at least one symbol using the exact format from the map
       const firstSymbol = markets[0].symbol;
-      expect(adapter.getAssetIndex(firstSymbol)).toBeGreaterThanOrEqual(0);
+      await expect(adapter.getAssetIndex(firstSymbol)).resolves.toBeGreaterThanOrEqual(0);
     }, 30_000);
 
-    it("adapter getAssetIndex throws for unknown symbol", () => {
-      expect(() => adapter.getAssetIndex("XYZNOTREAL999FAKE")).toThrow(/Unknown/i);
+    it("adapter getAssetIndex throws for unknown symbol", async () => {
+      await expect(adapter.getAssetIndex("XYZNOTREAL999FAKE")).rejects.toThrow(/Unknown/i);
     });
 
     it("adapter getMarkets returns well-formed data from real API", async () => {

@@ -184,9 +184,12 @@ export class LighterAdapter implements ExchangeAdapter {
         order_book_details?: Array<{ symbol: string; last_trade_price?: number }>;
       };
       const m = res.order_book_details?.find(d => d.symbol.toUpperCase() === symbol.toUpperCase());
-      return m?.last_trade_price ?? 0;
-    } catch {
-      return 0;
+      const price = m?.last_trade_price ?? 0;
+      if (price <= 0) throw new Error(`Cannot determine mark price for ${symbol}`);
+      return price;
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith("Cannot determine")) throw e;
+      throw new Error(`Cannot determine mark price for ${symbol}`);
     }
   }
 
@@ -426,8 +429,18 @@ export class LighterAdapter implements ExchangeAdapter {
     return this.sendTx(signed);
   }
 
-  async cancelAllOrders(_symbol?: string) {
+  async cancelAllOrders(symbol?: string) {
     this.ensureSigner();
+    if (symbol) {
+      // Cancel only orders for this symbol: fetch open orders, filter, cancel individually
+      const orders = await this.getOpenOrders();
+      const filtered = orders.filter(o => o.symbol.toUpperCase() === symbol.toUpperCase());
+      const results = [];
+      for (const o of filtered) {
+        results.push(await this.cancelOrder(o.symbol, o.orderId));
+      }
+      return results;
+    }
     const nonce = await this.getNextNonce();
     const signed = await this._signer.signCancelAllOrders({
       timeInForce: 0, time: Math.floor(Date.now() / 1000) + 86400, nonce,

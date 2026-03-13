@@ -102,8 +102,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
           });
         }
       }
-    } catch {
-      // non-critical
+    } catch (e) {
+      console.error("[hyperliquid] Failed to load asset map:", e instanceof Error ? e.message : e);
     }
   }
 
@@ -125,7 +125,11 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     return sym; // return as-is, let downstream error
   }
 
-  getAssetIndex(symbol: string): number {
+  async getAssetIndex(symbol: string): Promise<number> {
+    // Retry once if asset map is empty (e.g. init failed silently)
+    if (this._assetMap.size === 0) {
+      await this._loadAssetMap();
+    }
     const resolved = this.resolveSymbol(symbol);
     const idx = this._assetMap.get(resolved);
     if (idx !== undefined) return idx;
@@ -322,7 +326,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * and constructs + signs the order action directly.
    */
   private async _dexMarketOrder(symbol: string, side: "buy" | "sell", size: string) {
-    const assetIndex = this.getAssetIndex(symbol.toUpperCase());
+    const assetIndex = await this.getAssetIndex(symbol.toUpperCase());
 
     // Get current mark price from dex meta
     const meta = await this._infoPost({
@@ -351,17 +355,10 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   /**
-   * Place an order via raw exchange API with EIP-712 signing.
-   * This bypasses the SDK's symbolConversion and supports dex-specific orders.
+   * Sign and send any exchange action via raw EIP-712 signing.
+   * Bypasses the SDK entirely — works for order, batchModify, twapOrder, etc.
    */
-  private async _rawPlaceOrder(opts: {
-    assetIndex: number;
-    isBuy: boolean;
-    price: string;
-    size: string;
-    orderType: unknown;
-    reduceOnly: boolean;
-  }) {
+  private async _signAndSendAction(action: Record<string, unknown>): Promise<unknown> {
     const { encode } = await import("@msgpack/msgpack");
     const { ethers, keccak256 } = await import("ethers");
 
@@ -370,33 +367,6 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const baseUrl = isMainnet
       ? "https://api.hyperliquid.xyz"
       : "https://api.hyperliquid-testnet.xyz";
-
-    // Remove trailing zeros (HL API requirement)
-    const trimZeros = (s: string) => {
-      if (!s.includes(".")) return s;
-      const n = s.replace(/\.?0+$/, "");
-      return n === "-0" ? "0" : n;
-    };
-
-    const orderWire = {
-      a: opts.assetIndex,
-      b: opts.isBuy,
-      p: trimZeros(opts.price),
-      s: trimZeros(opts.size),
-      r: opts.reduceOnly,
-      t: opts.orderType,
-    };
-
-    const action: Record<string, unknown> = {
-      type: "order",
-      orders: [orderWire],
-      grouping: "na",
-    };
-
-    // Add dex field for HIP-3 deployed perps
-    if (this._dex) {
-      action.dex = this._dex;
-    }
 
     // Sign L1 action (replicates SDK's signL1Action)
     const nonce = Date.now();
@@ -449,6 +419,48 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     return result;
   }
 
+  /**
+   * Place an order via raw exchange API with EIP-712 signing.
+   * This bypasses the SDK's symbolConversion and supports dex-specific orders.
+   */
+  private async _rawPlaceOrder(opts: {
+    assetIndex: number;
+    isBuy: boolean;
+    price: string;
+    size: string;
+    orderType: unknown;
+    reduceOnly: boolean;
+  }) {
+    // Remove trailing zeros (HL API requirement)
+    const trimZeros = (s: string) => {
+      if (!s.includes(".")) return s;
+      const n = s.replace(/\.?0+$/, "");
+      return n === "-0" ? "0" : n;
+    };
+
+    const orderWire = {
+      a: opts.assetIndex,
+      b: opts.isBuy,
+      p: trimZeros(opts.price),
+      s: trimZeros(opts.size),
+      r: opts.reduceOnly,
+      t: opts.orderType,
+    };
+
+    const action: Record<string, unknown> = {
+      type: "order",
+      orders: [orderWire],
+      grouping: "na",
+    };
+
+    // Add dex field for HIP-3 deployed perps
+    if (this._dex) {
+      action.dex = this._dex;
+    }
+
+    return this._signAndSendAction(action);
+  }
+
   async limitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { reduceOnly?: boolean; tif?: string }) {
     // Normalize TIF: accept "IOC"/"GTC"/"ALO" (uppercase) or native "Ioc"/"Gtc"/"Alo"
     const rawTif = opts?.tif ?? "Gtc";
@@ -457,7 +469,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const reduceOnly = opts?.reduceOnly ?? false;
     // Use _rawPlaceOrder for both DEX and non-DEX (SDK exchange.placeOrder is unavailable)
     const result = await this._rawPlaceOrder({
-      assetIndex: this.getAssetIndex(symbol.toUpperCase()),
+      assetIndex: await this.getAssetIndex(symbol.toUpperCase()),
       isBuy: side === "buy",
       price,
       size,
@@ -498,7 +510,11 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   // ── Interface methods ──
 
   async editOrder(symbol: string, orderId: string, price: string, size: string) {
-    return this.modifyOrder(symbol, parseInt(orderId), "buy", price, size);
+    // Look up the existing order's side to preserve it (avoid flipping buy↔sell)
+    const openOrders = await this.getOpenOrders();
+    const existing = openOrders.find(o => o.orderId === orderId);
+    const side = existing?.side ?? "buy";
+    return this.modifyOrder(symbol, parseInt(orderId), side, price, size);
   }
 
   async setLeverage(symbol: string, leverage: number, marginMode: "cross" | "isolated" = "cross") {
@@ -634,7 +650,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     durationMinutes: number,
     opts?: { reduceOnly?: boolean; randomize?: boolean }
   ) {
-    const assetIndex = this.getAssetIndex(symbol);
+    const assetIndex = await this.getAssetIndex(symbol);
     const action = {
       type: "twapOrder",
       twap: {
@@ -653,7 +669,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Cancel a TWAP order.
    */
   async twapCancel(symbol: string, twapId: number) {
-    const assetIndex = this.getAssetIndex(symbol);
+    const assetIndex = await this.getAssetIndex(symbol);
     const action = {
       type: "twapCancel",
       a: assetIndex,
@@ -742,7 +758,13 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     newSize: string,
     opts?: { reduceOnly?: boolean }
   ) {
-    const assetIndex = this.getAssetIndex(symbol);
+    const assetIndex = await this.getAssetIndex(symbol);
+    // Remove trailing zeros (HL API requirement)
+    const trimZeros = (s: string) => {
+      if (!s.includes(".")) return s;
+      const n = s.replace(/\.?0+$/, "");
+      return n === "-0" ? "0" : n;
+    };
     const action = {
       type: "batchModify",
       modifies: [{
@@ -750,14 +772,14 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         order: {
           a: assetIndex,
           b: newSide === "buy",
-          p: newPrice,
-          s: newSize,
+          p: trimZeros(newPrice),
+          s: trimZeros(newSize),
           r: opts?.reduceOnly ?? false,
           t: { limit: { tif: "Gtc" } },
         },
       }],
     };
-    return this._sendExchangeAction(action);
+    return this._signAndSendAction(action);
   }
 
   /**
@@ -1010,17 +1032,12 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   private async _sendExchangeAction(action: Record<string, unknown>): Promise<unknown> {
     const exchange = this.sdk.exchange as unknown as Record<string, unknown>;
 
-    // Try using the SDK's internal _postAction if available
+    // Try using the SDK's internal postAction if available
     if (typeof exchange.postAction === "function") {
       return (exchange.postAction as (action: unknown) => Promise<unknown>)(action);
     }
 
-    // Fallback: direct POST to /exchange
-    // This requires signing which the SDK normally handles internally
-    // If we get here, the SDK doesn't expose the method we need
-    throw new Error(
-      `Hyperliquid SDK does not expose postAction(). ` +
-      `Action "${action.type}" may need a newer SDK version.`
-    );
+    // Fallback: sign and send directly (bypasses SDK)
+    return this._signAndSendAction(action);
   }
 }

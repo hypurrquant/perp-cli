@@ -197,7 +197,17 @@ export class PacificaAdapter implements ExchangeAdapter {
     );
   }
 
-  async cancelAllOrders(_symbol?: string) {
+  async cancelAllOrders(symbol?: string) {
+    if (symbol) {
+      // Cancel only orders for this symbol: fetch open orders, filter, cancel individually
+      const orders = await this.getOpenOrders();
+      const filtered = orders.filter(o => o.symbol.toUpperCase() === symbol.toUpperCase());
+      const results = [];
+      for (const o of filtered) {
+        results.push(await this.cancelOrder(o.symbol, o.orderId));
+      }
+      return results;
+    }
     return this.client.cancelAllOrders(
       { all_symbols: true, exclude_reduce_only: false },
       this.account,
@@ -250,7 +260,7 @@ export class PacificaAdapter implements ExchangeAdapter {
       side: t.side === "bid" ? "buy" as const : "sell" as const,
       price: t.price,
       size: t.amount,
-      fee: "0",
+      fee: String((t as unknown as Record<string, unknown>).fee ?? "0"),
     }));
   }
 

@@ -2,7 +2,11 @@
  * Generates a structured CLI spec from Commander's program tree.
  * Used by `perp api-spec` so agents can discover all commands programmatically.
  */
+import { createRequire } from "node:module";
 import type { Command } from "commander";
+
+const require = createRequire(import.meta.url);
+const { version: pkgVersion } = require("../package.json") as { version: string };
 
 interface ArgSpec {
   name: string;
@@ -77,7 +81,7 @@ export function getCliSpec(program: Command): CliSpec {
 
   return {
     name: "perp",
-    version: "0.1.0",
+    version: pkgVersion,
     description: "Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter)",
     globalOptions,
     commands,

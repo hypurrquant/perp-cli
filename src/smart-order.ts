@@ -54,15 +54,27 @@ function inferTickSize(levels: [string, string][]): number {
   }
 
   // Use minimum difference between adjacent price levels
+  // Determine max decimal places from the orderbook to round away float noise
+  let maxDecimals = 0;
+  for (let i = 0; i < Math.min(levels.length, 5); i++) {
+    const p = levels[i][0];
+    const d = p.includes(".") ? p.split(".")[1].length : 0;
+    if (d > maxDecimals) maxDecimals = d;
+  }
+
   let minDiff = Infinity;
   for (let i = 1; i < Math.min(levels.length, 5); i++) {
     const diff = Math.abs(Number(levels[i][0]) - Number(levels[i - 1][0]));
     if (diff > 0 && diff < minDiff) minDiff = diff;
   }
 
-  return minDiff === Infinity
-    ? Math.pow(10, -(levels[0][0].includes(".") ? levels[0][0].split(".")[1].length : 0))
-    : minDiff;
+  if (minDiff === Infinity) {
+    return Math.pow(10, -maxDecimals);
+  }
+
+  // Round to orderbook precision to eliminate floating-point noise
+  // e.g., 0.10000000000000142 → 0.1
+  return Number(minDiff.toFixed(maxDecimals));
 }
 
 /**

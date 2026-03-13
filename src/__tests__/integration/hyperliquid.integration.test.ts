@@ -36,8 +36,8 @@ describe.skipIf(SKIP)("Hyperliquid Integration (Testnet)", () => {
       expect(Number(btc!.markPrice)).toBeGreaterThan(0);
     });
 
-    it("resolves asset index for BTC", () => {
-      const idx = adapter.getAssetIndex("BTC");
+    it("resolves asset index for BTC", async () => {
+      const idx = await adapter.getAssetIndex("BTC");
       expect(typeof idx).toBe("number");
       expect(idx).toBeGreaterThanOrEqual(0);
     });

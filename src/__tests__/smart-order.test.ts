@@ -179,6 +179,22 @@ describe("smartOrder", () => {
     expect(adapter.marketOrder).toHaveBeenCalledWith("BTC", "sell", "0.1");
   });
 
+  it("rounds tick size to eliminate floating-point noise", async () => {
+    // Prices like "1.1" and "1.2" produce diff = 0.10000000000000009 in JS
+    const adapter = mockAdapter({
+      getOrderbook: vi.fn().mockResolvedValue({
+        bids: [["1.2", "10"], ["1.1", "20"], ["1.0", "15"]],
+        asks: [["1.3", "10"], ["1.4", "20"], ["1.5", "15"]],
+      }),
+    });
+    const result = await smartOrder(adapter, "TOKEN", "buy", "100");
+
+    // Tick should be exactly 0.1, not 0.10000000000000009
+    expect(result.tickSize).toBe("0.1");
+    // Price = 1.3 + 0.1 = 1.4
+    expect(result.price).toBe("1.4");
+  });
+
   it("does not fallback on embedded error when fallback=false", async () => {
     const hlResponse = {
       status: "ok",

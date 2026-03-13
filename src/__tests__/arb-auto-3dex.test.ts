@@ -371,8 +371,8 @@ describe("computeRoundTripCostPct", () => {
 
   it("uses default slippage of 0.05%", () => {
     const cost = computeRoundTripCostPct("hyperliquid", "lighter");
-    // 2 × (0.035% + 0.035%) + 2 × 0.05% = 0.24%
-    expect(cost).toBeCloseTo(0.24, 4);
+    // lighter taker fee = 0%, so: 2 × (0.035% + 0%) + 2 × 0.05% = 0.17%
+    expect(cost).toBeCloseTo(0.17, 4);
   });
 
   it("handles custom slippage", () => {
