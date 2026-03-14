@@ -114,7 +114,7 @@ async function getAdapter(): Promise<ExchangeAdapter> {
       const pacNetwork = (isTestnet ? "testnet" : "mainnet") as Network;
       const settings = loadSettings();
       const builderCode = process.env.PACIFICA_BUILDER_CODE || settings.referralCodes.pacifica || "PERPCLI";
-      _pacificaAdapter = new PacificaAdapter(keypair, pacNetwork, builderCode);
+      _pacificaAdapter = new PacificaAdapter(keypair, pacNetwork, builderCode, !!pk);
       _adapter = _pacificaAdapter;
       break;
     }
@@ -229,7 +229,7 @@ async function getAdapterForExchange(exchange: string): Promise<ExchangeAdapter>
       const pacNetwork = (isTestnet ? "testnet" : "mainnet") as Network;
       const s1 = loadSettings();
       const builderCode = process.env.PACIFICA_BUILDER_CODE || s1.referralCodes.pacifica || "PERPCLI";
-      _pacificaAdapter = new PacificaAdapter(keypair, pacNetwork, builderCode);
+      _pacificaAdapter = new PacificaAdapter(keypair, pacNetwork, builderCode, !!pk);
       if (!_adapter) _adapter = _pacificaAdapter;
       return _pacificaAdapter;
     }

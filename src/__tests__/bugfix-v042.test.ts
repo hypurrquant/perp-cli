@@ -75,6 +75,7 @@ describe("BUG 4: cancelAllOrders respects symbol filter", () => {
     const PacificaAdapter = mod.PacificaAdapter;
 
     const adapter = Object.create(PacificaAdapter.prototype);
+    adapter._hasRealKey = true;
     adapter.getOpenOrders = vi.fn().mockResolvedValue([
       { orderId: "1", symbol: "SOL", side: "buy", price: "100", size: "1", filled: "0", status: "open", type: "limit" },
       { orderId: "2", symbol: "BTC", side: "sell", price: "50000", size: "0.01", filled: "0", status: "open", type: "limit" },
@@ -95,6 +96,7 @@ describe("BUG 4: cancelAllOrders respects symbol filter", () => {
     const PacificaAdapter = mod.PacificaAdapter;
 
     const adapter = Object.create(PacificaAdapter.prototype);
+    adapter._hasRealKey = true;
     adapter.client = {
       cancelAllOrders: vi.fn().mockResolvedValue({ ok: true }),
     };

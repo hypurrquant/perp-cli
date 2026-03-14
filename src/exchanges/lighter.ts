@@ -99,7 +99,11 @@ export class LighterAdapter implements ExchangeAdapter {
       this._address = this._evmSigner.getAddress();
     }
 
-    // Fetch account index from REST API
+    // Fetch account index from REST API (skip if no address — read-only mode)
+    if (!this._address) {
+      await this._refreshMarketMap();
+      return;
+    }
     const res = await fetch(`${this._baseUrl}/api/v1/account?by=l1_address&value=${this._address}`);
     const json = await res.json() as { accounts?: { account_index: number; l1_address: string }[] };
     if (json.accounts && json.accounts.length > 0) {
@@ -156,9 +160,7 @@ export class LighterAdapter implements ExchangeAdapter {
         this._signer = client;
       }
     }
-    if (this._apiKey) {
-      this._readOnly = false;
-    }
+    this._readOnly = !this._apiKey;
 
     // Build symbol → marketIndex map + decimals from orderBookDetails
     await this._refreshMarketMap();
@@ -991,6 +993,9 @@ export class LighterAdapter implements ExchangeAdapter {
    * Returns the generated key pair.
    */
   async setupApiKey(apiKeyIndex = 4): Promise<{ privateKey: string; publicKey: string }> {
+    if (!this._evmSigner) {
+      throw new Error("No EVM private key configured. Run: perp init");
+    }
 
     // 1. Generate key pair
     const { privateKey, publicKey } = await LighterAdapter.generateApiKey();

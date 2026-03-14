@@ -17,15 +17,23 @@ export class PacificaAdapter implements ExchangeAdapter {
   readonly name = "pacifica";
   private client: PacificaClient;
   private _solanaSigner: SolanaSigner;
+  private _hasRealKey: boolean;
   private account: string;
   private signMessage: (msg: Uint8Array) => Promise<Uint8Array>;
   // In-memory caches removed — using file-based cache (src/cache.ts) for cross-process dedup
 
-  constructor(keypair: Keypair, network: Network = "mainnet", builderCode?: string) {
+  constructor(keypair: Keypair, network: Network = "mainnet", builderCode?: string, hasRealKey = true) {
     this._solanaSigner = new LocalSolanaSigner(keypair);
+    this._hasRealKey = hasRealKey;
     this.account = this._solanaSigner.getPublicKeyBase58();
     this.client = new PacificaClient({ network, builderCode });
     this.signMessage = (msg) => this._solanaSigner.signMessage(msg);
+  }
+
+  private ensureSigner(): void {
+    if (!this._hasRealKey) {
+      throw new Error("No private key configured. Run: perp init");
+    }
   }
 
   /** Inject an external Solana signer. */
@@ -168,6 +176,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string) {
+    this.ensureSigner();
     return this.client.createMarketOrder(
       { symbol, amount: size, side: side === "buy" ? "bid" : "ask", reduce_only: false, slippage_percent: "1" },
       this.account,
@@ -176,6 +185,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async limitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { reduceOnly?: boolean; tif?: string }) {
+    this.ensureSigner();
     return this.client.createLimitOrder(
       { symbol, price, amount: size, side: side === "buy" ? "bid" : "ask", reduce_only: opts?.reduceOnly ?? false, tif: (opts?.tif ?? "GTC") as import("../pacifica/types/order.js").TimeInForce },
       this.account,
@@ -184,6 +194,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async cancelOrder(symbol: string, orderId: string) {
+    this.ensureSigner();
     return this.client.cancelOrder(
       { symbol, order_id: Number(orderId) },
       this.account,
@@ -192,6 +203,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async cancelAllOrders(symbol?: string) {
+    this.ensureSigner();
     if (symbol) {
       // Cancel only orders for this symbol: fetch open orders, filter, cancel individually
       const orders = await this.getOpenOrders();
@@ -210,6 +222,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async editOrder(symbol: string, orderId: string, price: string, size: string) {
+    this.ensureSigner();
     return this.client.editOrder(
       { symbol, order_id: Number(orderId), price, amount: size },
       this.account,
@@ -218,6 +231,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async setLeverage(symbol: string, leverage: number, marginMode: "cross" | "isolated" = "cross") {
+    this.ensureSigner();
     await this.client.updateLeverage(
       { symbol, leverage },
       this.account,
@@ -234,6 +248,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async stopOrder(symbol: string, side: "buy" | "sell", size: string, triggerPrice: string, opts?: { limitPrice?: string; reduceOnly?: boolean }) {
+    this.ensureSigner();
     return this.client.createStopOrder(
       {
         symbol,

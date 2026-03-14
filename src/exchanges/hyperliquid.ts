@@ -390,7 +390,14 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Sign and send any exchange action via raw EIP-712 signing.
    * Bypasses the SDK entirely — works for order, batchModify, twapOrder, etc.
    */
+  private ensureSigner(): void {
+    if (!this._evmSigner) {
+      throw new Error("No private key configured. Run: perp init");
+    }
+  }
+
   private async _signAndSendAction(action: Record<string, unknown>): Promise<unknown> {
+    this.ensureSigner();
     const { encode } = await import("@msgpack/msgpack");
     const { ethers, keccak256 } = await import("ethers");
 
