@@ -172,28 +172,40 @@ export class LighterAdapter implements ExchangeAdapter {
 
   /** Populate marketMap + decimals from /orderBooks API (safe to call multiple times) */
   private async _refreshMarketMap(): Promise<void> {
-    try {
-      // Prefer /orderBooks which has supported_size_decimals / supported_price_decimals
-      const res = await this.restGet("/orderBooks", {}) as {
-        order_books?: Array<{
-          symbol: string; market_id: number;
-          supported_size_decimals: number;
-          supported_price_decimals: number;
-          market_type?: string;
-          status?: string;
-        }>;
-      };
-      for (const d of res.order_books ?? []) {
-        const sym = d.symbol.toUpperCase();
-        // Skip spot markets (id ≥ 2048) — those are handled by lighter-spot.ts
-        if (d.market_id >= 2048) continue;
-        this._marketMap.set(sym, d.market_id);
-        this._marketDecimals.set(sym, {
-          size: d.supported_size_decimals,
-          price: d.supported_price_decimals,
-        });
+    // Retry up to 2 times with 1s delay on failure
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        // Prefer /orderBooks which has supported_size_decimals / supported_price_decimals
+        const res = await this.restGet("/orderBooks", {}) as {
+          order_books?: Array<{
+            symbol: string; market_id: number;
+            supported_size_decimals: number;
+            supported_price_decimals: number;
+            market_type?: string;
+            status?: string;
+          }>;
+        };
+        const books = res.order_books ?? [];
+        if (books.length === 0 && attempt === 0) {
+          // Empty response (possible rate limit) — retry after delay
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+        for (const d of books) {
+          const sym = d.symbol.toUpperCase();
+          // Skip spot markets (id ≥ 2048) — those are handled by lighter-spot.ts
+          if (d.market_id >= 2048) continue;
+          this._marketMap.set(sym, d.market_id);
+          this._marketDecimals.set(sym, {
+            size: d.supported_size_decimals,
+            price: d.supported_price_decimals,
+          });
+        }
+        if (this._marketMap.size > 0) return; // success
+      } catch {
+        // /orderBooks failed — try fallback below
       }
-    } catch {
+
       // Fallback to /orderBookDetails
       try {
         const res = await this.restGet("/orderBookDetails", {}) as {
@@ -209,9 +221,13 @@ export class LighterAdapter implements ExchangeAdapter {
             price: d.price_decimals ?? 0,
           });
         }
+        if (this._marketMap.size > 0) return; // success
       } catch {
-        // Both APIs failed — map stays empty, orders will fail at getMarketIndex()
+        // Both APIs failed this attempt
       }
+
+      // Delay before retry
+      if (attempt === 0) await new Promise(r => setTimeout(r, 1000));
     }
   }
 
@@ -219,6 +235,13 @@ export class LighterAdapter implements ExchangeAdapter {
     const idx = this._marketMap.get(symbol.toUpperCase());
     if (idx === undefined) throw new Error(`Unknown Lighter market: ${symbol}`);
     return idx;
+  }
+
+  /** Ensure market map is populated; lazy-refresh if empty */
+  private async ensureMarketMap(): Promise<void> {
+    if (this._marketMap.size === 0) {
+      await this._refreshMarketMap();
+    }
   }
 
   private async getMarkPrice(symbol: string): Promise<number> {
@@ -302,6 +325,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async getOrderbook(symbol: string) {
     try {
+      await this.ensureMarketMap();
       const marketId = this.getMarketIndex(symbol);
       const res = await this.restGet("/orderBookOrders", {
         market_id: String(marketId),
@@ -419,6 +443,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string) {
     this.ensureSigner();
+    await this.ensureMarketMap();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const { baseAmount } = this.toTicks(symbol, parseFloat(size), 0);
@@ -444,6 +469,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async limitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { reduceOnly?: boolean; tif?: string }) {
     this.ensureSigner();
+    await this.ensureMarketMap();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const { baseAmount, priceTicks } = this.toTicks(symbol, parseFloat(size), parseFloat(price));
@@ -468,6 +494,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async cancelOrder(symbol: string, orderId: string) {
     this.ensureSigner();
+    await this.ensureMarketMap();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const signed = await this._signer.signCancelOrder({
@@ -499,6 +526,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async modifyOrder(symbol: string, orderId: string, price: string, size: string): Promise<unknown> {
     this.ensureSigner();
+    await this.ensureMarketMap();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const { baseAmount, priceTicks } = this.toTicks(symbol, parseFloat(size), parseFloat(price));
@@ -520,6 +548,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async stopOrder(symbol: string, side: "buy" | "sell", size: string, triggerPrice: string, opts?: { limitPrice?: string; reduceOnly?: boolean }): Promise<unknown> {
     this.ensureSigner();
+    await this.ensureMarketMap();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const { baseAmount } = this.toTicks(symbol, parseFloat(size), 0);
@@ -554,6 +583,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async updateLeverage(symbol: string, leverage: number, marginMode: "cross" | "isolated" = "cross"): Promise<unknown> {
     this.ensureSigner();
+    await this.ensureMarketMap();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     // fraction = initial margin fraction in basis points: 10000/leverage
@@ -590,6 +620,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getRecentTrades(symbol: string, limit = 20): Promise<ExchangeTrade[]> {
+    await this.ensureMarketMap();
     const marketId = this.getMarketIndex(symbol);
     const res = await this.restGet("/recentTrades", { market_id: String(marketId), limit: String(limit) }) as Record<string, unknown>;
     const trades = (res.trades ?? []) as Record<string, unknown>[];
@@ -697,6 +728,7 @@ export class LighterAdapter implements ExchangeAdapter {
    * Get candle data for a market.
    */
   async getCandles(symbol: string, resolution: string, startTime: number, endTime: number, countBack = 100): Promise<unknown> {
+    await this.ensureMarketMap();
     const marketId = this.getMarketIndex(symbol);
     return this.restGet("/candles", {
       market_id: String(marketId),
