@@ -8,6 +8,8 @@ import type {
   ExchangeFundingPayment,
   ExchangeKline,
 } from "./interface.js";
+import type { EvmSigner } from "../signer/interface.js";
+import { LocalEvmSigner } from "../signer/evm-local.js";
 
 import type { WasmSignerClient as WasmSignerClientType } from "lighter-ts-sdk";
 
@@ -34,6 +36,7 @@ export class LighterAdapter implements ExchangeAdapter {
   private _chainId: number;
   private _testnet: boolean;
   private _readOnly: boolean;
+  private _evmSigner?: EvmSigner;
   // In-memory cache removed — using file-based cache (src/cache.ts) for cross-process dedup
 
   /**
@@ -84,11 +87,17 @@ export class LighterAdapter implements ExchangeAdapter {
     return this._readOnly;
   }
 
+  /** Inject an external EVM signer. Call before init() to skip LocalEvmSigner creation. */
+  setSigner(signer: EvmSigner): void {
+    this._evmSigner = signer;
+  }
+
   async init(): Promise<void> {
-    // Resolve address and account index from EVM key via REST
-    const { ethers } = await import("ethers");
-    const wallet = new ethers.Wallet(this._evmKey);
-    this._address = wallet.address;
+    // Initialize EVM signer if not externally injected
+    if (!this._evmSigner) {
+      this._evmSigner = await LocalEvmSigner.create(this._evmKey);
+    }
+    this._address = this._evmSigner.getAddress();
 
     // Fetch account index from REST API
     const res = await fetch(`${this._baseUrl}/api/v1/account?by=l1_address&value=${this._address}`);
@@ -982,7 +991,6 @@ export class LighterAdapter implements ExchangeAdapter {
    * Returns the generated key pair.
    */
   async setupApiKey(apiKeyIndex = 4): Promise<{ privateKey: string; publicKey: string }> {
-    const { ethers } = await import("ethers");
 
     // 1. Generate key pair
     const { privateKey, publicKey } = await LighterAdapter.generateApiKey();
@@ -1017,9 +1025,8 @@ export class LighterAdapter implements ExchangeAdapter {
       throw new Error("SignChangePubKey returned incomplete response");
     }
 
-    // 4. Sign messageToSign with ETH key (EIP-191 personal_sign)
-    const wallet = new ethers.Wallet(this._evmKey);
-    const l1Sig = await wallet.signMessage(signed.messageToSign);
+    // 4. Sign messageToSign with EVM signer (EIP-191 personal_sign)
+    const l1Sig = await this._evmSigner!.signMessage(signed.messageToSign);
 
     // 5. Add L1Sig to txInfo
     const txInfo = JSON.parse(signed.txInfo);
@@ -1065,7 +1072,7 @@ export class LighterAdapter implements ExchangeAdapter {
             continue;
           }
           const retryTxInfo = JSON.parse(retrySigned.txInfo);
-          retryTxInfo.L1Sig = await wallet.signMessage(retrySigned.messageToSign);
+          retryTxInfo.L1Sig = await this._evmSigner!.signMessage(retrySigned.messageToSign);
           const retryRes = await fetch(`${this._baseUrl}/api/v1/sendTx`, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },

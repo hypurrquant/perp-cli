@@ -1,5 +1,4 @@
 import { Keypair } from "@solana/web3.js";
-import nacl from "tweetnacl";
 import { PacificaClient, type Network } from "../pacifica/index.js";
 import type {
   ExchangeAdapter,
@@ -11,26 +10,37 @@ import type {
   ExchangeFundingPayment,
   ExchangeKline,
 } from "./interface.js";
-
-function makeSignMessage(keypair: Keypair) {
-  return async (message: Uint8Array): Promise<Uint8Array> => {
-    return nacl.sign.detached(message, keypair.secretKey);
-  };
-}
+import type { SolanaSigner } from "../signer/interface.js";
+import { LocalSolanaSigner } from "../signer/solana-local.js";
 
 export class PacificaAdapter implements ExchangeAdapter {
   readonly name = "pacifica";
   private client: PacificaClient;
-  readonly keypair: Keypair;
+  private _solanaSigner: SolanaSigner;
   private account: string;
   private signMessage: (msg: Uint8Array) => Promise<Uint8Array>;
   // In-memory caches removed — using file-based cache (src/cache.ts) for cross-process dedup
 
   constructor(keypair: Keypair, network: Network = "mainnet", builderCode?: string) {
-    this.keypair = keypair;
-    this.account = keypair.publicKey.toBase58();
+    this._solanaSigner = new LocalSolanaSigner(keypair);
+    this.account = this._solanaSigner.getPublicKeyBase58();
     this.client = new PacificaClient({ network, builderCode });
-    this.signMessage = makeSignMessage(keypair);
+    this.signMessage = (msg) => this._solanaSigner.signMessage(msg);
+  }
+
+  /** Inject an external Solana signer. */
+  setSigner(signer: SolanaSigner): void {
+    this._solanaSigner = signer;
+    this.account = signer.getPublicKeyBase58();
+    this.signMessage = (msg) => this._solanaSigner.signMessage(msg);
+  }
+
+  /** Access the underlying Keypair (only available with LocalSolanaSigner). */
+  get keypair(): Keypair {
+    if (this._solanaSigner instanceof LocalSolanaSigner) {
+      return (this._solanaSigner as unknown as { _keypair: Keypair })._keypair;
+    }
+    throw new Error("keypair not available with external signer");
   }
 
   private async _getPrices() {

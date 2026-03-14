@@ -364,65 +364,7 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
   }
 
   private async _signAndSendAction(action: Record<string, unknown>): Promise<unknown> {
-    // Access the HyperliquidAdapter's private signing method via its public interface
-    // We reconstruct the signing logic here to avoid exposing private methods
-    const { encode } = await import("@msgpack/msgpack");
-    const { ethers, keccak256 } = await import("ethers");
-
-    const wallet = new ethers.Wallet((this._hl as unknown as { _privateKey: string })._privateKey);
-    const isMainnet = !this._hl.isTestnet;
-    const baseUrl = isMainnet
-      ? "https://api.hyperliquid.xyz"
-      : "https://api.hyperliquid-testnet.xyz";
-
-    const nonce = Date.now();
-    const msgPackBytes = encode(action);
-    const data = new Uint8Array(msgPackBytes.length + 9);
-    data.set(msgPackBytes);
-    const view = new DataView(data.buffer);
-    view.setBigUint64(msgPackBytes.length, BigInt(nonce), false);
-    view.setUint8(msgPackBytes.length + 8, 0);
-
-    const hash = keccak256(data);
-
-    const phantomDomain = {
-      name: "Exchange",
-      version: "1",
-      chainId: 1337,
-      verifyingContract: "0x0000000000000000000000000000000000000000",
-    };
-    const agentTypes = {
-      Agent: [
-        { name: "source", type: "string" },
-        { name: "connectionId", type: "bytes32" },
-      ],
-    };
-    const phantomAgent = {
-      source: isMainnet ? "a" : "b",
-      connectionId: hash,
-    };
-
-    const sig = await wallet.signTypedData(phantomDomain, agentTypes, phantomAgent);
-    const parsed = ethers.Signature.from(sig);
-
-    const payload = {
-      action,
-      nonce,
-      signature: { r: parsed.r, s: parsed.s, v: parsed.v },
-      vaultAddress: null,
-    };
-
-    const res = await fetch(`${baseUrl}/exchange`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const result = await res.json();
-    if (result?.status === "err") {
-      throw new Error(result.response ?? JSON.stringify(result));
-    }
-    return result;
+    return this._hl.exchangeAction(action);
   }
 
   private async _infoPost(body: Record<string, unknown>): Promise<unknown> {

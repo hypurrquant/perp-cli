@@ -9,6 +9,8 @@ import type {
   ExchangeFundingPayment,
   ExchangeKline,
 } from "./interface.js";
+import type { EvmSigner } from "../signer/interface.js";
+import { LocalEvmSigner } from "../signer/evm-local.js";
 
 export class HyperliquidAdapter implements ExchangeAdapter {
   readonly name = "hyperliquid";
@@ -16,6 +18,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   private _address: string;
   private _privateKey: string;
   private _testnet: boolean;
+  private _evmSigner?: EvmSigner;
   private _assetMap: Map<string, number> = new Map();
   private _assetMapReverse: Map<number, string> = new Map();
   private _szDecimalsMap: Map<string, number> = new Map(); // symbol → szDecimals
@@ -58,20 +61,22 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     return this._testnet;
   }
 
+  /** Inject an external EVM signer. Call before init() to skip LocalEvmSigner creation. */
+  setSigner(signer: EvmSigner): void {
+    this._evmSigner = signer;
+  }
+
   async init(): Promise<void> {
     // Suppress "WebSocket connected" noise from hyperliquid SDK
     const origLog = console.log;
     console.log = () => {};
     try { await this.sdk.connect(); } finally { console.log = origLog; }
-    // Derive address from SDK or from private key directly
-    const wallet = (this.sdk as unknown as Record<string, unknown>).wallet;
-    if (wallet && typeof wallet === "object" && "address" in (wallet as Record<string, unknown>)) {
-      this._address = String((wallet as Record<string, unknown>).address);
+
+    // Initialize EVM signer if not externally injected
+    if (!this._evmSigner) {
+      this._evmSigner = await LocalEvmSigner.create(this._privateKey);
     }
-    if (!this._address) {
-      const { ethers } = await import("ethers");
-      this._address = new ethers.Wallet(this._privateKey).address;
-    }
+    this._address = this._evmSigner.getAddress();
 
     // Build asset index map
     await this._loadAssetMap();
@@ -385,7 +390,6 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const { encode } = await import("@msgpack/msgpack");
     const { ethers, keccak256 } = await import("ethers");
 
-    const wallet = new ethers.Wallet(this._privateKey);
     const isMainnet = !this._testnet;
     const baseUrl = isMainnet
       ? "https://api.hyperliquid.xyz"
@@ -419,7 +423,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       connectionId: hash,
     };
 
-    const sig = await wallet.signTypedData(phantomDomain, agentTypes, phantomAgent);
+    const sig = await this._evmSigner!.signTypedData(phantomDomain, agentTypes, phantomAgent);
     const parsed = ethers.Signature.from(sig);
 
     const payload = {
@@ -1058,6 +1062,14 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       body: JSON.stringify(body),
     });
     return res.json();
+  }
+
+  /**
+   * Public entry point for sending signed exchange actions.
+   * Used by HyperliquidSpotAdapter to delegate signing.
+   */
+  async exchangeAction(action: Record<string, unknown>): Promise<unknown> {
+    return this._signAndSendAction(action);
   }
 
   /**
