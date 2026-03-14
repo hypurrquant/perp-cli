@@ -9,6 +9,8 @@ import type {
   ExchangeFundingPayment,
   ExchangeKline,
 } from "./interface.js";
+import type { EvmSigner } from "../signer/interface.js";
+import { LocalEvmSigner } from "../signer/evm-local.js";
 
 export class HyperliquidAdapter implements ExchangeAdapter {
   readonly name = "hyperliquid";
@@ -16,20 +18,26 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   private _address: string;
   private _privateKey: string;
   private _testnet: boolean;
+  private _evmSigner?: EvmSigner;
   private _assetMap: Map<string, number> = new Map();
   private _assetMapReverse: Map<number, string> = new Map();
+  private _szDecimalsMap: Map<string, number> = new Map(); // symbol → szDecimals
   /** HIP-3 deployed perp dex name. Empty string = native (validator) perps. */
   private _dex: string = "";
   // In-memory cache removed — using file-based cache (src/cache.ts) for cross-process dedup
 
-  constructor(privateKey: string, testnet = false) {
+  constructor(privateKey?: string, testnet = false) {
+    // Disable WebSocket in SDK — we use REST for all info calls and raw
+    // fetch for /exchange. This avoids the false "Please install ws" warning
+    // caused by the SDK's require('ws') failing in ESM context.
     this.sdk = new Hyperliquid({
       privateKey,
       testnet,
       walletAddress: undefined,
+      enableWs: false,
     });
     this._address = "";
-    this._privateKey = privateKey;
+    this._privateKey = privateKey ?? "";
     this._testnet = testnet;
   }
 
@@ -57,19 +65,21 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     return this._testnet;
   }
 
+  /** Inject an external EVM signer. Call before init() to skip LocalEvmSigner creation. */
+  setSigner(signer: EvmSigner): void {
+    this._evmSigner = signer;
+  }
+
   async init(): Promise<void> {
     // Suppress "WebSocket connected" noise from hyperliquid SDK
     const origLog = console.log;
     console.log = () => {};
     try { await this.sdk.connect(); } finally { console.log = origLog; }
-    // Derive address from SDK or from private key directly
-    const wallet = (this.sdk as unknown as Record<string, unknown>).wallet;
-    if (wallet && typeof wallet === "object" && "address" in (wallet as Record<string, unknown>)) {
-      this._address = String((wallet as Record<string, unknown>).address);
-    }
-    if (!this._address) {
-      const { ethers } = await import("ethers");
-      this._address = new ethers.Wallet(this._privateKey).address;
+
+    // Initialize EVM signer if not externally injected (skip if no key — read-only mode)
+    if (!this._evmSigner && this._privateKey) {
+      this._evmSigner = await LocalEvmSigner.create(this._privateKey);
+      this._address = this._evmSigner.getAddress();
     }
 
     // Build asset index map
@@ -96,9 +106,12 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       } else {
         const meta = await this.sdk.info.perpetuals.getMeta();
         if (meta && meta.universe) {
-          meta.universe.forEach((asset: { name: string }, idx: number) => {
+          meta.universe.forEach((asset: { name: string; szDecimals?: number }, idx: number) => {
             this._assetMap.set(asset.name, idx);
             this._assetMapReverse.set(idx, asset.name);
+            if (asset.szDecimals !== undefined) {
+              this._szDecimalsMap.set(asset.name, asset.szDecimals);
+            }
           });
         }
       }
@@ -123,6 +136,20 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       if (this._assetMap.has(base)) return base;
     }
     return sym; // return as-is, let downstream error
+  }
+
+  /** Get szDecimals for a symbol (cached from init/getMeta) */
+  getSzDecimals(symbol: string): number {
+    const resolved = this.resolveSymbol(symbol.toUpperCase());
+    return this._szDecimalsMap.get(resolved) ?? 2; // 2 is safe middle ground
+  }
+
+  /** HL official price rounding: 5 significant figures */
+  private _hlRoundPrice(px: number, szDecimals: number, maxDecimals = 6): string {
+    if (px > 100_000) return String(Math.round(px));
+    const sig5 = Number(px.toPrecision(5));
+    const priceDec = Math.max(0, maxDecimals - szDecimals);
+    return Number(sig5.toFixed(priceDec)).toString();
   }
 
   async getAssetIndex(symbol: string): Promise<number> {
@@ -195,8 +222,15 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     };
   }
 
+  private ensureAddress(): void {
+    if (!this._address) {
+      throw new Error("No private key configured — account data unavailable. Run: perp init");
+    }
+  }
+
   /** Always fetches live clearinghouseState, writes result to shared cache for dashboard */
   private async _getClearinghouseState(): Promise<Record<string, unknown>> {
+    this.ensureAddress();
     const { fetchAndCache, TTL_ACCOUNT } = await import("../cache.js");
     const key = this._dex ? `acct:hl:chs:${this._address}:${this._dex}` : `acct:hl:chs:${this._address}`;
     return fetchAndCache(key, TTL_ACCOUNT, async () => {
@@ -232,10 +266,10 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         const spotState = await this.sdk.info.spot.getSpotClearinghouseState(this._address);
         const balances = spotState?.balances ?? [];
         const usdc = balances.find((b: Record<string, unknown>) => String(b.coin).startsWith("USDC"));
-        const spotTotal = Number(usdc?.total ?? 0);
+        const spotTotal = usdc?.total !== undefined ? Number(usdc.total) : NaN;
         const spotHold = Number(usdc?.hold ?? 0);
-        equity = spotTotal > 0 ? spotTotal : Number(margin.accountValue ?? cross.accountValue ?? 0);
-        available = spotTotal > 0 ? spotTotal - spotHold : Number(s?.withdrawable ?? 0);
+        equity = !isNaN(spotTotal) ? spotTotal : Number(margin.accountValue ?? cross.accountValue ?? 0);
+        available = !isNaN(spotTotal) ? spotTotal - spotHold : Number(s?.withdrawable ?? 0);
       } catch {
         // Spot API failed — fall back to perp-only values
         equity = Number(margin.accountValue ?? cross.accountValue ?? 0);
@@ -272,7 +306,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
           side: szi > 0 ? ("long" as const) : ("short" as const),
           size: String(Math.abs(szi)),
           entryPrice: String(pos.entryPx ?? "0"),
-          markPrice: String(pos.positionValue ? (Number(pos.positionValue) / Math.abs(szi)).toFixed(2) : "0"),
+          markPrice: String(pos.positionValue ? Number(pos.positionValue) / Math.abs(szi) : "0"),
           liquidationPrice: String(pos.liquidationPx ?? "N/A"),
           unrealizedPnl: String(pos.unrealizedPnl ?? "0"),
           leverage: Number((pos.leverage as { value?: number })?.value ?? 1),
@@ -281,6 +315,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getOpenOrders(): Promise<ExchangeOrder[]> {
+    this.ensureAddress();
     const orders = await this.sdk.info.getUserOpenOrders(this._address);
     return (orders ?? []).map((o) => ({
       orderId: String(o.oid ?? ""),
@@ -300,6 +335,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string) {
+    this.ensureSigner();
     if (this._dex) {
       const r = await this._dexMarketOrder(symbol, side, size);
       await this._invalidateAccountCache();
@@ -329,27 +365,31 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   private async _dexMarketOrder(symbol: string, side: "buy" | "sell", size: string) {
     const assetIndex = await this.getAssetIndex(symbol.toUpperCase());
 
-    // Get current mark price from dex meta
+    // Get current mark price + szDecimals from dex meta
     const meta = await this._infoPost({
       type: "metaAndAssetCtxs",
       dex: this._dex,
-    }) as [{ universe: Record<string, unknown>[] }, Record<string, unknown>[]];
+    }) as [{ universe: Array<{ szDecimals?: number }> }, Record<string, unknown>[]];
     const ctx = (meta[1] ?? [])[assetIndex];
     const midPrice = Number(ctx?.markPx ?? 0);
     if (midPrice <= 0) throw new Error(`Cannot get price for ${symbol} on dex ${this._dex}`);
 
-    // Apply 5% slippage (same as SDK default)
+    const szDec = meta[0]?.universe?.[assetIndex]?.szDecimals ?? 2;
+
+    // HL official rounding: 5 significant figures, max 6 decimals for perps
+    const MAX_DECIMALS_PERP = 6;
     const slippage = 0.05;
     const isBuy = side === "buy";
     const slippagePrice = isBuy ? midPrice * (1 + slippage) : midPrice * (1 - slippage);
-    const decimals = midPrice.toString().split(".")[1]?.length || 0;
-    const limitPrice = slippagePrice.toFixed(Math.max(0, decimals - 1));
+    const limitPrice = slippagePrice > 100_000
+      ? String(Math.round(slippagePrice))
+      : Number(Number(slippagePrice.toPrecision(5)).toFixed(Math.max(0, MAX_DECIMALS_PERP - szDec))).toString();
 
     return this._rawPlaceOrder({
       assetIndex,
       isBuy,
       price: limitPrice,
-      size,
+      size: Number(size).toFixed(szDec),
       orderType: { limit: { tif: "Ioc" } },
       reduceOnly: false,
     });
@@ -359,11 +399,17 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Sign and send any exchange action via raw EIP-712 signing.
    * Bypasses the SDK entirely — works for order, batchModify, twapOrder, etc.
    */
+  private ensureSigner(): void {
+    if (!this._evmSigner) {
+      throw new Error("No private key configured. Run: perp init");
+    }
+  }
+
   private async _signAndSendAction(action: Record<string, unknown>): Promise<unknown> {
+    this.ensureSigner();
     const { encode } = await import("@msgpack/msgpack");
     const { ethers, keccak256 } = await import("ethers");
 
-    const wallet = new ethers.Wallet(this._privateKey);
     const isMainnet = !this._testnet;
     const baseUrl = isMainnet
       ? "https://api.hyperliquid.xyz"
@@ -397,7 +443,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       connectionId: hash,
     };
 
-    const sig = await wallet.signTypedData(phantomDomain, agentTypes, phantomAgent);
+    const sig = await this._evmSigner!.signTypedData(phantomDomain, agentTypes, phantomAgent);
     const parsed = ethers.Signature.from(sig);
 
     const payload = {
@@ -468,12 +514,16 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const tifMap: Record<string, string> = { IOC: "Ioc", GTC: "Gtc", ALO: "Alo" };
     const tif = (tifMap[rawTif.toUpperCase()] ?? rawTif) as import("hyperliquid").Tif;
     const reduceOnly = opts?.reduceOnly ?? false;
+    // Round price/size to HL-supported decimals
+    const szDec = this.getSzDecimals(symbol);
+    const roundedPrice = this._hlRoundPrice(Number(price), szDec);
+    const roundedSize = Number(size).toFixed(szDec);
     // Use _rawPlaceOrder for both DEX and non-DEX (SDK exchange.placeOrder is unavailable)
     const result = await this._rawPlaceOrder({
       assetIndex: await this.getAssetIndex(symbol.toUpperCase()),
       isBuy: side === "buy",
-      price,
-      size,
+      price: roundedPrice,
+      size: roundedSize,
       orderType: { limit: { tif } },
       reduceOnly,
     });
@@ -482,6 +532,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async cancelOrder(symbol: string, orderId: string) {
+    this.ensureSigner();
     // HL SDK expects coin in "ETH-PERP" format (internal symbol convention)
     const resolved = this.resolveSymbol(symbol);
     const result = await this.sdk.exchange.cancelOrder({
@@ -493,6 +544,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async cancelAllOrders(symbol?: string) {
+    this.ensureSigner();
     const orders = await this.getOpenOrders();
     const toCancel = symbol
       ? orders.filter((o) => {
@@ -562,6 +614,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getOrderHistory(limit = 30): Promise<ExchangeOrder[]> {
+    this.ensureAddress();
     const fills = await this.client.info.getUserFills(this._address);
     return (fills ?? []).slice(0, limit).map((f: Record<string, unknown>) => ({
       orderId: String(f.oid ?? ""),
@@ -577,6 +630,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getTradeHistory(limit = 30): Promise<ExchangeTrade[]> {
+    this.ensureAddress();
     const fills = await this.client.info.getUserFills(this._address);
     return (fills ?? []).slice(0, limit).map((f: Record<string, unknown>) => ({
       time: Number(f.time ?? 0),
@@ -590,6 +644,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getFundingPayments(limit = 30): Promise<ExchangeFundingPayment[]> {
+    this.ensureAddress();
     const now = Date.now();
     const history = await this.client.info.perpetuals.getUserFunding(this._address, now - 7 * 24 * 60 * 60 * 1000);
     return (history as unknown as Record<string, unknown>[] ?? []).slice(0, limit).map((h) => {
@@ -602,13 +657,13 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     });
   }
 
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string }[]> {
+  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
     const now = Date.now();
     const history = await this.client.info.perpetuals.getFundingHistory(symbol.toUpperCase(), now - 24 * 60 * 60 * 1000);
     return (history ?? []).slice(-limit).map((h) => ({
       time: Number(h.time ?? 0),
       rate: String(h.fundingRate ?? "0"),
-      price: "-",
+      price: null,
     }));
   }
 
@@ -628,6 +683,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     tpsl: "tp" | "sl",
     opts?: { isMarket?: boolean; reduceOnly?: boolean; grouping?: string }
   ) {
+    this.ensureSigner();
     const orderParams = {
       coin: symbol.toUpperCase(),
       is_buy: side === "buy",
@@ -691,6 +747,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Uses SDK's built-in updateLeverage method.
    */
   async updateLeverage(symbol: string, leverage: number, isCross = true) {
+    this.ensureSigner();
     return this.sdk.exchange.updateLeverage(this.resolveSymbol(symbol), isCross ? "cross" : "isolated", leverage);
   }
 
@@ -699,6 +756,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * amount > 0 to add margin, amount < 0 to remove
    */
   async updateIsolatedMargin(symbol: string, amount: number) {
+    this.ensureSigner();
     return this.sdk.exchange.updateIsolatedMargin(this.resolveSymbol(symbol), amount > 0, Math.round(Math.abs(amount) * 1e6));
   }
 
@@ -707,6 +765,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Python SDK: withdraw_from_bridge(amount, destination) → action type "withdraw3"
    */
   async withdraw(amount: string, destination: string) {
+    this.ensureSigner();
     try {
       return await this.sdk.exchange.initiateWithdrawal(destination, parseFloat(amount));
     } catch {
@@ -728,6 +787,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Python SDK: usd_transfer(amount, destination)
    */
   async usdTransfer(amount: number, destination: string) {
+    this.ensureSigner();
     return this.sdk.exchange.usdTransfer(destination, amount);
   }
 
@@ -767,6 +827,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     opts?: { reduceOnly?: boolean }
   ) {
     const assetIndex = await this.getAssetIndex(symbol);
+    const szDec = this.getSzDecimals(symbol);
     // Remove trailing zeros (HL API requirement)
     const trimZeros = (s: string) => {
       if (!s.includes(".")) return s;
@@ -780,8 +841,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         order: {
           a: assetIndex,
           b: newSide === "buy",
-          p: trimZeros(newPrice),
-          s: trimZeros(newSize),
+          p: trimZeros(this._hlRoundPrice(Number(newPrice), szDec)),
+          s: trimZeros(Number(newSize).toFixed(szDec)),
           r: opts?.reduceOnly ?? false,
           t: { limit: { tif: "Gtc" } },
         },
@@ -843,6 +904,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get user trade fills.
    */
   async getUserFills(startTime?: number, endTime?: number) {
+    this.ensureAddress();
     const baseUrl = this._testnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
@@ -864,6 +926,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get user portfolio analytics.
    */
   async getPortfolio() {
+    this.ensureAddress();
     const baseUrl = this._testnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
@@ -879,6 +942,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Query a specific order by OID.
    */
   async queryOrder(orderId: number) {
+    this.ensureAddress();
     const baseUrl = this._testnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
@@ -973,6 +1037,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get referral info.
    */
   async getReferralInfo() {
+    this.ensureAddress();
     return this._infoPost({ type: "referral", user: this._address });
   }
 
@@ -980,6 +1045,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get fee info.
    */
   async getUserFees() {
+    this.ensureAddress();
     return this._infoPost({ type: "userFees", user: this._address });
   }
 
@@ -987,6 +1053,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get sub-accounts.
    */
   async getSubAccounts() {
+    this.ensureAddress();
     return this._infoPost({ type: "subAccounts", user: this._address });
   }
 
@@ -994,6 +1061,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get historical orders (up to 2000).
    */
   async getHistoricalOrders() {
+    this.ensureAddress();
     return this._infoPost({ type: "historicalOrders", user: this._address });
   }
 
@@ -1001,6 +1069,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get approved builders.
    */
   async getApprovedBuilders() {
+    this.ensureAddress();
     return this._infoPost({ type: "approvedBuilders", user: this._address });
   }
 
@@ -1008,6 +1077,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get vault details.
    */
   async getVaultDetails(vaultAddress: string) {
+    this.ensureAddress();
     return this._infoPost({ type: "vaultDetails", vaultAddress, user: this._address });
   }
 
@@ -1015,6 +1085,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get delegations (staking).
    */
   async getDelegations() {
+    this.ensureAddress();
     return this._infoPost({ type: "delegations", user: this._address });
   }
 
@@ -1031,6 +1102,14 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       body: JSON.stringify(body),
     });
     return res.json();
+  }
+
+  /**
+   * Public entry point for sending signed exchange actions.
+   * Used by HyperliquidSpotAdapter to delegate signing.
+   */
+  async exchangeAction(action: Record<string, unknown>): Promise<unknown> {
+    return this._signAndSendAction(action);
   }
 
   /**

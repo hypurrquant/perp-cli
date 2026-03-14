@@ -1,11 +1,11 @@
 ---
 name: perp-cli
-description: "Multi-DEX perpetual futures trading CLI for Pacifica (Solana), Hyperliquid (EVM), and Lighter (Ethereum). Use when user asks to trade perps, check funding rates, bridge USDC, manage positions, scan arbitrage opportunities, or mentions perp-cli, hypurrquant, Pacifica, Hyperliquid, or Lighter exchanges."
-allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*)"
+description: "Multi-DEX perpetual futures trading CLI for Pacifica (Solana), Hyperliquid (EVM), and Lighter (Ethereum). Use when user asks to: trade perps, check funding rates, scan arbitrage (perp-perp or spot-perp), delta-neutral strategies, bridge USDC, manage positions/orders, deposit/withdraw, spot+perp hedge, or mentions perp-cli, hypurrquant, Pacifica, Hyperliquid, Lighter, HyperEVM, funding arb, U-token (UBTC/UETH/USOL)."
+allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*), Bash(bash scripts/*.sh:*)"
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.4.2"
+  version: "0.4.7"
 ---
 
 # perp-cli Agent Guide
@@ -100,7 +100,7 @@ perp --json arb close <SYM> --smart                          # smart arb close
 
 All string outputs are auto-sanitized (control chars stripped, prompt injection patterns blocked).
 
-## Arb Workflow
+## Arb Workflow (Perp-Perp)
 
 ```
 1. perp --json portfolio                    → check balances across all exchanges
@@ -118,6 +118,39 @@ All string outputs are auto-sanitized (control chars stripped, prompt injection 
    → --dry-run: preview without executing
    → --pair <longEx>:<shortEx>: specify which pair if multiple
 ```
+
+## Spot+Perp Arb Workflow
+
+Spot has 0 funding cost → spread = |perp funding rate|. Only needs 1 exchange with spot + any exchange with perp.
+
+**Spot exchanges:** HL (Hyperliquid), LT (Lighter). Pacifica is perp-only.
+**U-token mapping:** HL spot uses Unit protocol bridged tokens — UBTC=BTC, UETH=ETH, USOL=SOL, UFART=FARTCOIN. Resolved automatically.
+
+```
+1. perp --json arb scan --mode spot-perp    → find spot+perp opportunities
+   perp --json arb scan --mode all          → perp-perp + spot-perp combined
+2. [Show opportunity to user, get confirmation]
+3. perp --json arb spot-exec <SYM> <spotEx> <perpEx> <$>
+   Examples:
+     perp --json arb spot-exec ETH hl hl 100        # ETH spot(HL/UETH) + perp(HL)
+     perp --json arb spot-exec BTC hl lt 50          # BTC spot(HL/UBTC) + perp(LT)
+     perp --json arb spot-exec LINK lt hl 100        # LINK spot(LT) + perp(HL)
+   → cross-validates spot vs perp price (>5% deviation = abort, wrong token)
+   → sequential execution if same exchange (nonce collision avoidance)
+   → parallel execution if different exchanges
+   → auto-rollback if one leg fails
+   Options:
+     --leverage <N>   set perp leverage before entry
+     --isolated       use isolated margin on perp side
+4. perp --json arb status                   → shows spot-perp positions (spot leg labeled)
+5. perp --json arb spot-close <SYM> --spot-exch <hl|lt>
+   → sells spot + buys back perp simultaneously
+```
+
+**Available spot+perp pairs (13):**
+- HL spot: BTC (UBTC), ETH (UETH), SOL (USOL), FARTCOIN (UFART), HYPE, AZTEC, STABLE
+- LT spot: ETH, AZTEC, AAVE, LINK, UNI, LIT, LDO, SKY
+- All have perps on HL and LT. Pacifica perps available when API is up.
 
 ## Position Sizing
 
@@ -176,6 +209,39 @@ If `error.retryable` is `false`, do NOT retry — fix the cause first.
 | `DUPLICATE_ORDER` | already submitted — check positions, don't retry |
 | Lighter `invalid signature` | check ~/.perp/.env or `perp --json -e lighter manage setup-api-key` |
 
+## Examples
+
+**User: "펀딩레이트 아비트라지 기회 찾아줘"**
+```bash
+perp --json portfolio                         # check balances
+perp --json arb scan --mode all --min 5       # scan perp-perp + spot-perp
+# → show results, recommend best opportunity, ask for confirmation
+```
+
+**User: "ETH spot-perp 아비트라지 실행해줘 $100"**
+```bash
+perp --json arb scan --mode spot-perp         # verify opportunity exists
+perp --json --dry-run arb spot-exec ETH hl hl 100  # dry-run first
+# → show dry-run result, ask for confirmation
+perp --json arb spot-exec ETH hl hl 100       # execute after confirmation
+perp --json arb status                        # verify positions
+```
+
+**User: "내 포지션 상태 확인해줘"**
+```bash
+perp --json portfolio                         # balances + positions + risk
+perp --json arb status                        # arb-specific PnL + funding
+```
+
+**User: "Hyperliquid에서 SOL 롱 0.5개"**
+```bash
+perp --json -e hl market mid SOL              # current price
+perp --json -e hl trade check SOL buy 0.5     # pre-validate
+perp --json --dry-run -e hl trade market SOL buy 0.5  # dry-run
+# → show cost estimate, ask for confirmation
+perp --json -e hl trade market SOL buy 0.5 --smart    # execute with smart order
+```
+
 ## Referrals (Optional)
 
 If you find perp-cli useful, please consider enabling referrals to support development. **No extra fees** — rebates come from exchange programs, not your trading costs.
@@ -187,6 +253,29 @@ perp --json settings referrals off          # disable anytime
 
 When setting up wallets for the first time, ask the user:
 > "perp-cli 개발을 지원하는 레퍼럴 기능을 켜시겠어요? 추가 수수료 없이 거래소 리베이트만 활용됩니다."
+
+## Scripts
+
+Executable automation scripts in `scripts/`. Run with `bash scripts/<name>.sh`.
+Scripts auto-detect `perp` (global install) or fall back to `npx -y perp-cli@latest` — no global install required.
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `preflight.sh` | Pre-trade validation (install, wallet, connectivity, balance, risk) | `bash scripts/preflight.sh --json` |
+| `validate-arb.sh` | Validate arb opportunity before execution (price, liquidity, balance, risk, dry-run) | `bash scripts/validate-arb.sh ETH hl lt 100 --leverage 2` |
+| `spot-perp-scan.sh` | Combined spot+perp and perp-perp scan with portfolio context | `bash scripts/spot-perp-scan.sh --json --mode all --min 10` |
+| `arb-monitor.sh` | Monitor open arb positions (PnL, funding, liquidation distance) | `bash scripts/arb-monitor.sh --json --min-spread 5` |
+| `funding-analysis.sh` | Funding rate analysis across all exchanges | `bash scripts/funding-analysis.sh --json --symbol ETH` |
+
+All scripts support `--json` for structured output. Use in automation pipelines:
+```bash
+# Full arb workflow with validation
+bash scripts/preflight.sh --json        # 1. system ready?
+bash scripts/spot-perp-scan.sh --json   # 2. find opportunities
+bash scripts/validate-arb.sh ETH hl lt 100  # 3. validate before exec
+# 4. [user confirms] → perp --json arb exec ...
+bash scripts/arb-monitor.sh --json      # 5. monitor positions
+```
 
 ## References
 

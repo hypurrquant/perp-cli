@@ -173,7 +173,7 @@ Desired size: 1.0
 
 **CRITICAL: Each exchange has its own minimum order size and step size.**
 ```bash
-perp --json -e <EX> market info <SYM>    # check minOrderSize, stepSize
+perp --json -e <EX> market info <SYM>    # check maxLeverage, volume, openInterest
 ```
 Round `ORDER_SIZE` to the coarser step size of the two exchanges. If the matched size falls below either exchange's minimum, the arb is NOT executable at this size — reduce target or skip.
 

@@ -2,7 +2,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import type { ExchangeAdapter } from "../exchanges/interface.js";
 import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
-import { printJson, jsonOk, makeTable, formatUsd, withJsonErrors } from "../utils.js";
+import { printJson, jsonOk, jsonError, makeTable, formatUsd, withJsonErrors } from "../utils.js";
 
 export function registerDexCommands(
   program: Command,
@@ -19,6 +19,7 @@ export function registerDexCommands(
       await withJsonErrors(isJson(), async () => {
         const adapter = await getAdapter();
         if (!(adapter instanceof HyperliquidAdapter)) {
+          if (isJson()) return printJson(jsonError("INVALID_EXCHANGE", "HIP-3 dexes are only available on Hyperliquid. Use -e hyperliquid."));
           console.error(chalk.red("\n  HIP-3 dexes are only available on Hyperliquid. Use -e hyperliquid.\n"));
           return;
         }
@@ -53,6 +54,7 @@ export function registerDexCommands(
       await withJsonErrors(isJson(), async () => {
         const adapter = await getAdapter();
         if (!(adapter instanceof HyperliquidAdapter)) {
+          if (isJson()) return printJson(jsonError("INVALID_EXCHANGE", "HIP-3 dexes are only available on Hyperliquid. Use -e hyperliquid."));
           console.error(chalk.red("\n  HIP-3 dexes are only available on Hyperliquid. Use -e hyperliquid.\n"));
           return;
         }
@@ -96,6 +98,7 @@ export function registerDexCommands(
       await withJsonErrors(isJson(), async () => {
         const adapter = await getAdapter();
         if (!(adapter instanceof HyperliquidAdapter)) {
+          if (isJson()) return printJson(jsonError("INVALID_EXCHANGE", "HIP-3 dexes are only available on Hyperliquid. Use -e hyperliquid."));
           console.error(chalk.red("\n  HIP-3 dexes are only available on Hyperliquid. Use -e hyperliquid.\n"));
           return;
         }

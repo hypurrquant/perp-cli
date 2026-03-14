@@ -14,7 +14,7 @@ export interface ExecutionRecord {
   size: string;
   price?: string;
   notional?: number;
-  status: "success" | "failed" | "simulated";
+  status: "success" | "failed" | "simulated" | "unverified";
   error?: string;
   meta?: Record<string, unknown>;
   dryRun: boolean;

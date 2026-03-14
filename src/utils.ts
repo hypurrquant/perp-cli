@@ -110,7 +110,12 @@ export function printJson(data: unknown): void {
     const fields = process.argv[fieldsArg + 1].split(",").map(f => f.trim());
     const envelope = output as Record<string, unknown>;
     if (envelope.ok && envelope.data && typeof envelope.data === "object") {
-      envelope.data = pickFields(envelope.data, fields);
+      // If data is an array, apply pickFields to each element
+      if (Array.isArray(envelope.data)) {
+        envelope.data = envelope.data.map((item: unknown) => pickFields(item, fields));
+      } else {
+        envelope.data = pickFields(envelope.data, fields);
+      }
     }
     output = envelope;
   }

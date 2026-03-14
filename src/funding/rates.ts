@@ -12,6 +12,7 @@ import {
   fetchLighterOrderBookDetails, fetchLighterFundingRates as fetchLtFundingRates,
 } from "../shared-api.js";
 import { getHistoricalAverages, type HistoricalAverages } from "./history.js";
+import { SPOT_PERP_TOKEN_MAP, MAX_PRICE_DEVIATION_PCT } from "../exchanges/spot-interface.js";
 
 // ── API URLs (centralized in shared-api.ts) ──
 
@@ -229,4 +230,187 @@ export async function fetchAllFundingRates(opts?: {
 export async function fetchSymbolFundingRates(symbol: string): Promise<SymbolFundingComparison | null> {
   const snapshot = await fetchAllFundingRates({ symbols: [symbol.toUpperCase()] });
   return snapshot.symbols[0] ?? null;
+}
+
+// ── Spot+Perp Funding Spread ──
+
+export interface SpotPerpSpread {
+  symbol: string;
+  /** Perp exchange with the highest absolute funding rate */
+  perpExchange: string;
+  /** Spot exchange(s) available for the hedge leg */
+  spotExchanges: string[];
+  /** Perp funding rate (raw) */
+  perpFundingRate: number;
+  /** Perp funding hourly rate */
+  perpHourlyRate: number;
+  /** Annualized spread % (spot funding = 0, so spread = |perp annual rate|) */
+  annualSpreadPct: number;
+  /** Best mark price */
+  bestMarkPrice: number;
+  /** Direction: "long-spot-short-perp" when perp funding > 0, else "sell-spot-long-perp" */
+  direction: "long-spot-short-perp" | "sell-spot-long-perp";
+  /** Estimated hourly income for $1000 notional */
+  estHourlyIncomeUsd: number;
+}
+
+/**
+ * Fetch spot+perp funding rate spreads.
+ * Since spot has 0 funding cost, the spread is simply |perp funding rate|.
+ * Only includes symbols available on at least one spot exchange (HL or LT).
+ *
+ * Key safety checks:
+ * - U-token mapping: UBTC→BTC, UETH→ETH, USOL→SOL, UFART→FARTCOIN
+ * - Price validation: spot mid price must be within 5% of perp mark price
+ *   (filters out same-ticker-different-token issues like HIP-1 TRUMP ≠ perp TRUMP)
+ */
+export async function fetchSpotPerpSpreads(opts?: {
+  symbols?: string[];
+  minSpread?: number;
+}): Promise<{ timestamp: string; spreads: SpotPerpSpread[] }> {
+  // Fetch all perp funding rates
+  const [hlRates, ltRates, pacRates] = await Promise.all([
+    fetchHyperliquidRates(),
+    fetchLighterRates(),
+    fetchPacificaRates(),
+  ]);
+
+  // Build actual spot availability maps + spot prices for cross-validation
+  // hlSpotByPerp: perpSymbol → { spotToken, exchange }
+  const hlSpotByPerp = new Map<string, string>(); // perpSymbol → spotTokenName
+  const hlSpotPrices = new Map<string, number>();  // perpSymbol → spot mid price
+  const ltSpotSymbols = new Set<string>();
+  const ltSpotPrices = new Map<string, number>();   // symbol → spot mid price
+
+  try {
+    // HL: spotMetaAndAssetCtxs → universe + prices in one call
+    const hlMetaCtx = await fetch("https://api.hyperliquid.xyz/info", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "spotMetaAndAssetCtxs" }),
+    }).then(r => r.json()) as [
+      {
+        tokens: Array<{ name: string; index: number }>;
+        universe: Array<{ tokens: [number, number]; index: number }>;
+      },
+      Array<{ markPx?: string; midPx?: string }>,
+    ];
+    const meta = hlMetaCtx[0];
+    const ctxs = hlMetaCtx[1] ?? [];
+    const tokenNames = new Map<number, string>();
+    for (const t of meta.tokens ?? []) tokenNames.set(t.index, t.name);
+    const usdcIdx = meta.tokens?.find(t => t.name === "USDC")?.index ?? 0;
+
+    // We need to match universe entries to ctxs by index.
+    // API returns ctxs in same order as universe entries.
+    for (let i = 0; i < (meta.universe ?? []).length; i++) {
+      const u = meta.universe[i];
+      if (u.tokens[1] !== usdcIdx) continue; // only /USDC pairs
+      const base = tokenNames.get(u.tokens[0])?.toUpperCase();
+      if (!base) continue;
+
+      const ctx = ctxs[i];
+      const spotPrice = Number(ctx?.midPx ?? ctx?.markPx ?? 0);
+
+      // Map to perp symbol: UBTC→BTC, or direct if no mapping
+      const perpSymbol = SPOT_PERP_TOKEN_MAP[base] ?? base;
+      // Only keep the best-priced entry per perp symbol (prefer higher-volume)
+      if (!hlSpotByPerp.has(perpSymbol) || spotPrice > 0) {
+        hlSpotByPerp.set(perpSymbol, base);
+        if (spotPrice > 0) hlSpotPrices.set(perpSymbol, spotPrice);
+      }
+    }
+  } catch { /* non-critical */ }
+
+  try {
+    // LT: explorer API → symbols with "/"
+    const ltMarkets = await fetch("https://explorer.elliot.ai/api/markets")
+      .then(r => r.json()) as Array<{ symbol: string }>;
+    for (const m of ltMarkets) {
+      if (m.symbol.includes("/")) {
+        ltSpotSymbols.add(m.symbol.split("/")[0].toUpperCase());
+      }
+    }
+    // Fetch LT spot prices from orderbook for price validation
+    for (const sym of ltSpotSymbols) {
+      try {
+        const book = await fetch(`https://mainnet.zklighter.elliot.ai/api/v1/orderBookOrders?market_id=${
+          // We don't have market_id here, skip detailed price fetch for LT
+          // LT tokens (ETH, LINK, etc.) are direct names, low risk of mismatch
+          ""
+        }`);
+        // Skip — LT uses direct token names, not indices
+      } catch { /* skip */ }
+    }
+  } catch { /* non-critical */ }
+
+  // Merge all perp rates by symbol
+  const perpRateMap = new Map<string, ExchangeFundingRate[]>();
+  for (const r of [...hlRates, ...ltRates, ...pacRates]) {
+    if (!r.symbol) continue;
+    if (opts?.symbols && !opts.symbols.includes(r.symbol.toUpperCase())) continue;
+    const key = r.symbol.toUpperCase();
+    if (!perpRateMap.has(key)) perpRateMap.set(key, []);
+    perpRateMap.get(key)!.push(r);
+  }
+
+  const spreads: SpotPerpSpread[] = [];
+  const minSpread = opts?.minSpread ?? 0;
+
+  for (const [symbol, rates] of perpRateMap) {
+    rates.sort((a, b) => Math.abs(b.hourlyRate) - Math.abs(a.hourlyRate));
+    const bestPerp = rates[0];
+
+    // Spot exchanges: only include if symbol has a verified spot market
+    const uniqueSpot: string[] = [];
+
+    // HL spot: check U-token mapped availability
+    if (hlSpotByPerp.has(symbol)) {
+      // Price cross-validation: spot price must be close to perp mark price
+      const spotPrice = hlSpotPrices.get(symbol);
+      const perpPrice = bestPerp.markPrice;
+      if (spotPrice && perpPrice > 0) {
+        const deviation = Math.abs(spotPrice - perpPrice) / perpPrice * 100;
+        if (deviation <= MAX_PRICE_DEVIATION_PCT) {
+          uniqueSpot.push("hyperliquid");
+        }
+        // else: same ticker, different token (e.g., HIP-1 TRUMP ≠ perp TRUMP) → skip
+      } else if (spotPrice === undefined) {
+        // No price data (empty orderbook) → skip, can't verify
+      }
+    }
+
+    // LT spot: direct token names, low mismatch risk
+    if (ltSpotSymbols.has(symbol)) uniqueSpot.push("lighter");
+
+    if (uniqueSpot.length === 0) continue;
+
+    const annualSpreadPct = Math.abs(bestPerp.annualizedPct);
+    if (annualSpreadPct < minSpread) continue;
+
+    const direction = bestPerp.hourlyRate > 0
+      ? "long-spot-short-perp" as const
+      : "sell-spot-long-perp" as const;
+
+    const notional = 1000;
+    const estHourlyIncomeUsd = Math.abs(bestPerp.hourlyRate) * notional;
+
+    spreads.push({
+      symbol,
+      perpExchange: bestPerp.exchange,
+      spotExchanges: uniqueSpot,
+      perpFundingRate: bestPerp.fundingRate,
+      perpHourlyRate: bestPerp.hourlyRate,
+      annualSpreadPct,
+      bestMarkPrice: bestPerp.markPrice,
+      direction,
+      estHourlyIncomeUsd,
+    });
+  }
+
+  spreads.sort((a, b) => b.annualSpreadPct - a.annualSpreadPct);
+
+  return {
+    timestamp: new Date().toISOString(),
+    spreads,
+  };
 }

@@ -59,7 +59,15 @@ export function registerFundingCommands(
         if (allRates.length > 0) saveFundingSnapshot(allRates);
       } catch { /* non-critical */ }
 
-      if (isJson()) return printJson(jsonOk(snapshot));
+      if (isJson()) {
+        // When --ndjson or --fields is used, return the symbols array directly
+        // so each symbol gets its own line / fields can be picked per element.
+        // Otherwise return the full snapshot (includes exchangeStatus metadata).
+        if (process.argv.includes("--ndjson") || process.argv.includes("--fields")) {
+          return printJson(jsonOk(snapshot.symbols));
+        }
+        return printJson(jsonOk(snapshot));
+      }
 
       printSnapshotTable(snapshot);
       printExchangeStatus(snapshot);

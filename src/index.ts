@@ -9,7 +9,8 @@ config();
 import { Command } from "commander";
 import chalk from "chalk";
 import type { Network } from "./pacifica/index.js";
-import { loadPrivateKey, parseSolanaKeypair, type Exchange } from "./config.js";
+import { Keypair } from "@solana/web3.js";
+import { tryLoadPrivateKey, parseSolanaKeypair, type Exchange } from "./config.js";
 import { PacificaAdapter } from "./exchanges/pacifica.js";
 import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
 // LighterAdapter is lazy-imported to avoid CJS/ESM issues at startup
@@ -92,72 +93,84 @@ let _pacificaAdapter: PacificaAdapter | null = null;
 let _hlAdapter: HyperliquidAdapter | null = null;
 let _lighterAdapter: LighterAdapter | null = null;
 
+/** Map short aliases to canonical exchange names. Full names pass through. */
+function resolveExchangeAlias(name: string): string {
+  const aliases: Record<string, string> = {
+    hl: "hyperliquid",
+    lt: "lighter",
+    pac: "pacifica",
+  };
+  return aliases[name.toLowerCase()] ?? name.toLowerCase();
+}
+
 function getExchange(): Exchange {
-  return program.opts().exchange as Exchange;
+  return resolveExchangeAlias(program.opts().exchange) as Exchange;
 }
 
 async function getAdapter(): Promise<ExchangeAdapter> {
   if (_adapter) return _adapter;
 
   const opts = program.opts();
-  const exchange = opts.exchange as Exchange;
+  const exchange = resolveExchangeAlias(opts.exchange) as Exchange;
   const network = opts.network as string;
   const isTestnet = network === "testnet";
 
+  // Try to load key — null means no key configured (read-only mode)
+  const pk = await tryLoadPrivateKey(exchange, opts.privateKey);
+
   switch (exchange) {
     case "pacifica": {
-      const pk = await loadPrivateKey("pacifica", opts.privateKey);
-      const keypair = parseSolanaKeypair(pk);
+      const keypair = pk ? parseSolanaKeypair(pk) : Keypair.generate();
       const pacNetwork = (isTestnet ? "testnet" : "mainnet") as Network;
       const settings = loadSettings();
       const builderCode = process.env.PACIFICA_BUILDER_CODE || settings.referralCodes.pacifica || "PERPCLI";
-      _pacificaAdapter = new PacificaAdapter(keypair, pacNetwork, builderCode);
+      _pacificaAdapter = new PacificaAdapter(keypair, pacNetwork, builderCode, !!pk);
       _adapter = _pacificaAdapter;
       break;
     }
     case "hyperliquid": {
-      const pk = await loadPrivateKey("hyperliquid", opts.privateKey);
-      _hlAdapter = new HyperliquidAdapter(pk, isTestnet);
+      _hlAdapter = new HyperliquidAdapter(pk ?? undefined, isTestnet);
       if (opts.dex) _hlAdapter.setDex(opts.dex);
       await _hlAdapter.init();
-      const hlSettings = loadSettings();
-      if (hlSettings.referrals && !hlSettings.referralApplied.hyperliquid) {
-        const hlRef = process.env.HL_REFERRAL_CODE || hlSettings.referralCodes.hyperliquid;
-        if (hlRef) {
-          _hlAdapter.autoSetReferrer(hlRef).then(() => {
-            const s = loadSettings();
-            s.referralApplied.hyperliquid = true;
-            saveSettings(s);
-          }).catch(() => {
-            // Already referred or API error — mark as done either way
-            const s = loadSettings();
-            s.referralApplied.hyperliquid = true;
-            saveSettings(s);
-          });
+      if (pk) {
+        const hlSettings = loadSettings();
+        if (hlSettings.referrals && !hlSettings.referralApplied.hyperliquid) {
+          const hlRef = process.env.HL_REFERRAL_CODE || hlSettings.referralCodes.hyperliquid;
+          if (hlRef) {
+            _hlAdapter.autoSetReferrer(hlRef).then(() => {
+              const s = loadSettings();
+              s.referralApplied.hyperliquid = true;
+              saveSettings(s);
+            }).catch(() => {
+              const s = loadSettings();
+              s.referralApplied.hyperliquid = true;
+              saveSettings(s);
+            });
+          }
         }
       }
       _adapter = _hlAdapter;
       break;
     }
     case "lighter": {
-      const pk = await loadPrivateKey("lighter", opts.privateKey);
       const { LighterAdapter } = await import("./exchanges/lighter.js");
-      _lighterAdapter = new LighterAdapter(pk, isTestnet);
+      _lighterAdapter = new LighterAdapter(pk ?? "", isTestnet);
       await _lighterAdapter.init();
-      const ltSettings = loadSettings();
-      if (ltSettings.referrals && !ltSettings.referralApplied.lighter) {
-        const ltRef = process.env.LIGHTER_REFERRAL_CODE || ltSettings.referralCodes.lighter;
-        if (ltRef) {
-          _lighterAdapter.useReferralCode(ltRef).then(() => {
-            const s = loadSettings();
-            s.referralApplied.lighter = true;
-            saveSettings(s);
-          }).catch(() => {
-            // Already referred or API error — mark as done either way
-            const s = loadSettings();
-            s.referralApplied.lighter = true;
-            saveSettings(s);
-          });
+      if (pk) {
+        const ltSettings = loadSettings();
+        if (ltSettings.referrals && !ltSettings.referralApplied.lighter) {
+          const ltRef = process.env.LIGHTER_REFERRAL_CODE || ltSettings.referralCodes.lighter;
+          if (ltRef) {
+            _lighterAdapter.useReferralCode(ltRef).then(() => {
+              const s = loadSettings();
+              s.referralApplied.lighter = true;
+              saveSettings(s);
+            }).catch(() => {
+              const s = loadSettings();
+              s.referralApplied.lighter = true;
+              saveSettings(s);
+            });
+          }
         }
       }
       _adapter = _lighterAdapter;
@@ -177,7 +190,7 @@ function getAdapterSync(): ExchangeAdapter {
 }
 
 function isJson(): boolean {
-  return !!program.opts().json;
+  return !!program.opts().json || process.argv.includes("--ndjson");
 }
 
 function isDryRun(): boolean {
@@ -213,42 +226,44 @@ registerDepositCommands(
 registerAlertCommands(program, isJson, getAdapterForExchange);
 
 // Helper to get adapter for a specific exchange (used by arb-auto)
-async function getAdapterForExchange(exchange: string): Promise<ExchangeAdapter> {
+async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapter> {
+  const exchange = resolveExchangeAlias(rawExchange);
   const opts = program.opts();
   const network = opts.network as string;
   const isTestnet = network === "testnet";
+  const pk = await tryLoadPrivateKey(exchange as Exchange, opts.privateKey);
 
   switch (exchange) {
     case "pacifica": {
       if (_pacificaAdapter) return _pacificaAdapter;
-      const pk = await loadPrivateKey("pacifica", opts.privateKey);
-      const keypair = parseSolanaKeypair(pk);
+      const keypair = pk ? parseSolanaKeypair(pk) : Keypair.generate();
       const pacNetwork = (isTestnet ? "testnet" : "mainnet") as Network;
       const s1 = loadSettings();
       const builderCode = process.env.PACIFICA_BUILDER_CODE || s1.referralCodes.pacifica || "PERPCLI";
-      _pacificaAdapter = new PacificaAdapter(keypair, pacNetwork, builderCode);
+      _pacificaAdapter = new PacificaAdapter(keypair, pacNetwork, builderCode, !!pk);
       if (!_adapter) _adapter = _pacificaAdapter;
       return _pacificaAdapter;
     }
     case "hyperliquid": {
       if (_hlAdapter) return _hlAdapter;
-      const pk = await loadPrivateKey("hyperliquid", opts.privateKey);
-      _hlAdapter = new HyperliquidAdapter(pk, isTestnet);
+      _hlAdapter = new HyperliquidAdapter(pk ?? undefined, isTestnet);
       if (opts.dex) _hlAdapter.setDex(opts.dex);
       await _hlAdapter.init();
-      const s2 = loadSettings();
-      if (s2.referrals && !s2.referralApplied.hyperliquid) {
-        const hlRef = process.env.HL_REFERRAL_CODE || s2.referralCodes.hyperliquid;
-        if (hlRef) {
-          _hlAdapter.autoSetReferrer(hlRef).then(() => {
-            const s = loadSettings();
-            s.referralApplied.hyperliquid = true;
-            saveSettings(s);
-          }).catch(() => {
-            const s = loadSettings();
-            s.referralApplied.hyperliquid = true;
-            saveSettings(s);
-          });
+      if (pk) {
+        const s2 = loadSettings();
+        if (s2.referrals && !s2.referralApplied.hyperliquid) {
+          const hlRef = process.env.HL_REFERRAL_CODE || s2.referralCodes.hyperliquid;
+          if (hlRef) {
+            _hlAdapter.autoSetReferrer(hlRef).then(() => {
+              const s = loadSettings();
+              s.referralApplied.hyperliquid = true;
+              saveSettings(s);
+            }).catch(() => {
+              const s = loadSettings();
+              s.referralApplied.hyperliquid = true;
+              saveSettings(s);
+            });
+          }
         }
       }
       if (!_adapter) _adapter = _hlAdapter;
@@ -256,23 +271,24 @@ async function getAdapterForExchange(exchange: string): Promise<ExchangeAdapter>
     }
     case "lighter": {
       if (_lighterAdapter) return _lighterAdapter;
-      const pk = await loadPrivateKey("lighter", opts.privateKey);
       const { LighterAdapter } = await import("./exchanges/lighter.js");
-      _lighterAdapter = new LighterAdapter(pk, isTestnet);
+      _lighterAdapter = new LighterAdapter(pk ?? "", isTestnet);
       await _lighterAdapter.init();
-      const s3 = loadSettings();
-      if (s3.referrals && !s3.referralApplied.lighter) {
-        const ltRef = process.env.LIGHTER_REFERRAL_CODE || s3.referralCodes.lighter;
-        if (ltRef) {
-          _lighterAdapter.useReferralCode(ltRef).then(() => {
-            const s = loadSettings();
-            s.referralApplied.lighter = true;
-            saveSettings(s);
-          }).catch(() => {
-            const s = loadSettings();
-            s.referralApplied.lighter = true;
-            saveSettings(s);
-          });
+      if (pk) {
+        const s3 = loadSettings();
+        if (s3.referrals && !s3.referralApplied.lighter) {
+          const ltRef = process.env.LIGHTER_REFERRAL_CODE || s3.referralCodes.lighter;
+          if (ltRef) {
+            _lighterAdapter.useReferralCode(ltRef).then(() => {
+              const s = loadSettings();
+              s.referralApplied.lighter = true;
+              saveSettings(s);
+            }).catch(() => {
+              const s = loadSettings();
+              s.referralApplied.lighter = true;
+              saveSettings(s);
+            });
+          }
         }
       }
       if (!_adapter) _adapter = _lighterAdapter;
@@ -288,8 +304,8 @@ const _dexAdapters = new Map<string, HyperliquidAdapter>();
 async function getHLAdapterForDex(dex: string): Promise<HyperliquidAdapter> {
   if (_dexAdapters.has(dex)) return _dexAdapters.get(dex)!;
   const opts = program.opts();
-  const pk = await loadPrivateKey("hyperliquid", opts.privateKey);
-  const adapter = new HyperliquidAdapter(pk, opts.network === "testnet");
+  const pk = await tryLoadPrivateKey("hyperliquid", opts.privateKey);
+  const adapter = new HyperliquidAdapter(pk ?? undefined, opts.network === "testnet");
   if (dex !== "hl") adapter.setDex(dex);
   await adapter.init();
   _dexAdapters.set(dex, adapter);
@@ -346,44 +362,76 @@ program
     const json = isJson();
 
     try {
-      const [balance, positions, orders] = await Promise.all([
+      // Use allSettled to handle unfunded/404 accounts gracefully
+      const [balanceResult, positionsResult, ordersResult] = await Promise.allSettled([
         adapter.getBalance(),
         adapter.getPositions(),
         adapter.getOpenOrders(),
       ]);
 
+      const balance = balanceResult.status === "fulfilled" ? balanceResult.value : { equity: "0", available: "0", marginUsed: "0", unrealizedPnl: "0" };
+      const positions = positionsResult.status === "fulfilled" ? positionsResult.value : [];
+      const orders = ordersResult.status === "fulfilled" ? ordersResult.value : [];
+
+      // Collect errors for reporting
+      const errors: string[] = [];
+      if (balanceResult.status === "rejected") errors.push(`balance: ${balanceResult.reason instanceof Error ? balanceResult.reason.message : String(balanceResult.reason)}`);
+      if (positionsResult.status === "rejected") errors.push(`positions: ${positionsResult.reason instanceof Error ? positionsResult.reason.message : String(positionsResult.reason)}`);
+      if (ordersResult.status === "rejected") errors.push(`orders: ${ordersResult.reason instanceof Error ? ordersResult.reason.message : String(ordersResult.reason)}`);
+
+      // Detect unfunded account (all calls failed, likely 404)
+      const allFailed = errors.length === 3;
+      const isUnfunded = allFailed && errors.some(e => e.includes("404") || e.includes("not found") || e.includes("does not exist"));
+
       if (json) {
         const { jsonOk, printJson } = await import("./utils.js");
-        return printJson(jsonOk({ exchange: adapter.name, balance, positions, orders }));
+        return printJson(jsonOk({
+          exchange: adapter.name,
+          balance,
+          positions,
+          orders,
+          ...(isUnfunded ? { warning: "Account not yet initialized on this exchange. Deposit funds to get started." } : {}),
+          ...(errors.length > 0 && !isUnfunded ? { errors } : {}),
+        }));
       }
 
       console.log(chalk.cyan.bold(`\n  ${adapter.name.toUpperCase()} Account Status\n`));
-      console.log(`  Equity:      $${Number(balance.equity).toFixed(2)}`);
-      console.log(`  Available:   $${Number(balance.available).toFixed(2)}`);
-      console.log(`  Margin Used: $${Number(balance.marginUsed).toFixed(2)}`);
-      console.log(`  Positions:   ${positions.length}`);
-      console.log(`  Open Orders: ${orders.length}`);
 
-      if (positions.length > 0) {
-        console.log(chalk.cyan.bold("\n  Positions:"));
-        positions.forEach((p) => {
-          const color = p.side === "long" ? chalk.green : chalk.red;
-          const pnlNum = Number(p.unrealizedPnl);
-          const pnlColor = pnlNum >= 0 ? chalk.green : chalk.red;
-          console.log(
-            `    ${color(p.side.toUpperCase().padEnd(5))} ${chalk.white(p.symbol.padEnd(12))} ${p.size.padEnd(10)} entry: $${Number(p.entryPrice).toFixed(2)}  pnl: ${pnlColor(pnlNum >= 0 ? "+" : "")}$${pnlNum.toFixed(2)}`
-          );
-        });
-      }
+      if (isUnfunded) {
+        console.log(chalk.yellow("  Account not yet initialized on this exchange."));
+        console.log(chalk.gray("  Deposit funds to get started: perp deposit <exchange> <amount>\n"));
+      } else {
+        console.log(`  Equity:      $${Number(balance.equity).toFixed(2)}`);
+        console.log(`  Available:   $${Number(balance.available).toFixed(2)}`);
+        console.log(`  Margin Used: $${Number(balance.marginUsed).toFixed(2)}`);
+        console.log(`  Positions:   ${positions.length}`);
+        console.log(`  Open Orders: ${orders.length}`);
 
-      if (orders.length > 0) {
-        console.log(chalk.cyan.bold("\n  Open Orders:"));
-        orders.forEach((o) => {
-          const color = o.side === "buy" ? chalk.green : chalk.red;
-          console.log(
-            `    ${color(o.side.toUpperCase().padEnd(4))} ${chalk.white(o.symbol.padEnd(12))} ${o.type.padEnd(8)} $${Number(o.price).toFixed(2)} x ${o.size}`
-          );
-        });
+        if (positions.length > 0) {
+          console.log(chalk.cyan.bold("\n  Positions:"));
+          positions.forEach((p) => {
+            const color = p.side === "long" ? chalk.green : chalk.red;
+            const pnlNum = Number(p.unrealizedPnl);
+            const pnlColor = pnlNum >= 0 ? chalk.green : chalk.red;
+            console.log(
+              `    ${color(p.side.toUpperCase().padEnd(5))} ${chalk.white(p.symbol.padEnd(12))} ${p.size.padEnd(10)} entry: $${Number(p.entryPrice).toFixed(2)}  pnl: ${pnlColor(pnlNum >= 0 ? "+" : "")}$${pnlNum.toFixed(2)}`
+            );
+          });
+        }
+
+        if (orders.length > 0) {
+          console.log(chalk.cyan.bold("\n  Open Orders:"));
+          orders.forEach((o) => {
+            const color = o.side === "buy" ? chalk.green : chalk.red;
+            console.log(
+              `    ${color(o.side.toUpperCase().padEnd(4))} ${chalk.white(o.symbol.padEnd(12))} ${o.type.padEnd(8)} $${Number(o.price).toFixed(2)} x ${o.size}`
+            );
+          });
+        }
+
+        if (errors.length > 0) {
+          console.log(chalk.yellow(`\n  Warnings: ${errors.join(", ")}`));
+        }
       }
       console.log();
     } catch (err: unknown) {
@@ -406,7 +454,7 @@ program.hook("preAction", () => {
 
 // Smart landing page: `perp` with no subcommand
 const rawArgs = process.argv.slice(2);
-const hasSubcommand = rawArgs.some((a) => !a.startsWith("-") && !["pacifica", "hyperliquid", "lighter", "mainnet", "testnet"].includes(a));
+const hasSubcommand = rawArgs.some((a) => !a.startsWith("-") && !["pacifica", "hyperliquid", "lighter", "hl", "lt", "pac", "mainnet", "testnet"].includes(a));
 
 if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawArgs.includes("--help") && !rawArgs.includes("-V") && !rawArgs.includes("--version"))) {
   // No subcommand — show smart landing instead of help dump

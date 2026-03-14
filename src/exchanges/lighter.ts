@@ -8,6 +8,8 @@ import type {
   ExchangeFundingPayment,
   ExchangeKline,
 } from "./interface.js";
+import type { EvmSigner } from "../signer/interface.js";
+import { LocalEvmSigner } from "../signer/evm-local.js";
 
 import type { WasmSignerClient as WasmSignerClientType } from "lighter-ts-sdk";
 
@@ -34,6 +36,7 @@ export class LighterAdapter implements ExchangeAdapter {
   private _chainId: number;
   private _testnet: boolean;
   private _readOnly: boolean;
+  private _evmSigner?: EvmSigner;
   // In-memory cache removed — using file-based cache (src/cache.ts) for cross-process dedup
 
   /**
@@ -45,7 +48,7 @@ export class LighterAdapter implements ExchangeAdapter {
     this._evmKey = evmKey;
     this._apiKey = opts?.apiKey || process.env.LIGHTER_API_KEY || "";
     this._accountIndexInit = opts?.accountIndex ?? parseInt(process.env.LIGHTER_ACCOUNT_INDEX || "-1");
-    this._apiKeyIndex = parseInt(process.env.LIGHTER_API_KEY_INDEX || "2");
+    this._apiKeyIndex = parseInt(process.env.LIGHTER_API_KEY_INDEX || "4");
     this._address = "";
     this._testnet = testnet;
     this._readOnly = !this._apiKey;
@@ -84,13 +87,23 @@ export class LighterAdapter implements ExchangeAdapter {
     return this._readOnly;
   }
 
-  async init(): Promise<void> {
-    // Resolve address and account index from EVM key via REST
-    const { ethers } = await import("ethers");
-    const wallet = new ethers.Wallet(this._evmKey);
-    this._address = wallet.address;
+  /** Inject an external EVM signer. Call before init() to skip LocalEvmSigner creation. */
+  setSigner(signer: EvmSigner): void {
+    this._evmSigner = signer;
+  }
 
-    // Fetch account index from REST API
+  async init(): Promise<void> {
+    // Initialize EVM signer if not externally injected (skip if no key — read-only mode)
+    if (!this._evmSigner && this._evmKey) {
+      this._evmSigner = await LocalEvmSigner.create(this._evmKey);
+      this._address = this._evmSigner.getAddress();
+    }
+
+    // Fetch account index from REST API (skip if no address — read-only mode)
+    if (!this._address) {
+      await this._refreshMarketMap();
+      return;
+    }
     const res = await fetch(`${this._baseUrl}/api/v1/account?by=l1_address&value=${this._address}`);
     const json = await res.json() as { accounts?: { account_index: number; l1_address: string }[] };
     if (json.accounts && json.accounts.length > 0) {
@@ -103,7 +116,7 @@ export class LighterAdapter implements ExchangeAdapter {
     let signerReady = false;
     if (!this._apiKey && this._accountIndex >= 0) {
       try {
-        const autoKeyIndex = 2; // default for auto-setup
+        const autoKeyIndex = 4; // default for auto-setup (0-3 reserved by Lighter frontend)
         const { privateKey: apiKey } = await this.setupApiKey(autoKeyIndex);
         this._apiKey = apiKey;
         this._apiKeyIndex = autoKeyIndex;
@@ -134,6 +147,10 @@ export class LighterAdapter implements ExchangeAdapter {
         this._apiKey = "";
       } else if (cleanKey.length === 0) {
         this._apiKey = "";
+      } else if (this._accountIndex < 0) {
+        // Account lookup failed or returned no accounts — cannot initialize WASM signer
+        console.error(`[lighter] Account index not available (got ${this._accountIndex}). Trading will be read-only. Ensure the wallet has a Lighter account or set LIGHTER_ACCOUNT_INDEX.`);
+        this._apiKey = "";
       } else {
         this._apiKey = cleanKey;
         const client = await LighterAdapter.getWasmClient();
@@ -147,33 +164,70 @@ export class LighterAdapter implements ExchangeAdapter {
         this._signer = client;
       }
     }
-    if (this._apiKey) {
-      this._readOnly = false;
-    }
+    this._readOnly = !this._apiKey;
 
     // Build symbol → marketIndex map + decimals from orderBookDetails
     await this._refreshMarketMap();
   }
 
-  /** Populate marketMap + decimals from /orderBookDetails (safe to call multiple times) */
+  /** Populate marketMap + decimals from /orderBooks API (safe to call multiple times) */
   private async _refreshMarketMap(): Promise<void> {
-    try {
-      const res = await this.restGet("/orderBookDetails", {}) as {
-        order_book_details?: Array<{
-          symbol: string; market_id: number;
-          size_decimals?: number; price_decimals?: number;
-          market_type?: string;
-        }>;
-      };
-      for (const d of res.order_book_details ?? []) {
-        this._marketMap.set(d.symbol.toUpperCase(), d.market_id);
-        this._marketDecimals.set(d.symbol.toUpperCase(), {
-          size: d.size_decimals ?? 0,
-          price: d.price_decimals ?? 0,
-        });
+    // Retry up to 2 times with 1s delay on failure
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        // Prefer /orderBooks which has supported_size_decimals / supported_price_decimals
+        const res = await this.restGet("/orderBooks", {}) as {
+          order_books?: Array<{
+            symbol: string; market_id: number;
+            supported_size_decimals: number;
+            supported_price_decimals: number;
+            market_type?: string;
+            status?: string;
+          }>;
+        };
+        const books = res.order_books ?? [];
+        if (books.length === 0 && attempt === 0) {
+          // Empty response (possible rate limit) — retry after delay
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+        for (const d of books) {
+          const sym = d.symbol.toUpperCase();
+          // Skip spot markets (id ≥ 2048) — those are handled by lighter-spot.ts
+          if (d.market_id >= 2048) continue;
+          this._marketMap.set(sym, d.market_id);
+          this._marketDecimals.set(sym, {
+            size: d.supported_size_decimals,
+            price: d.supported_price_decimals,
+          });
+        }
+        if (this._marketMap.size > 0) return; // success
+      } catch {
+        // /orderBooks failed — try fallback below
       }
-    } catch {
-      // Market map will be empty, use fallback
+
+      // Fallback to /orderBookDetails
+      try {
+        const res = await this.restGet("/orderBookDetails", {}) as {
+          order_book_details?: Array<{
+            symbol: string; market_id: number;
+            size_decimals?: number; price_decimals?: number;
+          }>;
+        };
+        for (const d of res.order_book_details ?? []) {
+          this._marketMap.set(d.symbol.toUpperCase(), d.market_id);
+          this._marketDecimals.set(d.symbol.toUpperCase(), {
+            size: d.size_decimals ?? 0,
+            price: d.price_decimals ?? 0,
+          });
+        }
+        if (this._marketMap.size > 0) return; // success
+      } catch {
+        // Both APIs failed this attempt
+      }
+
+      // Delay before retry
+      if (attempt === 0) await new Promise(r => setTimeout(r, 1000));
     }
   }
 
@@ -181,6 +235,13 @@ export class LighterAdapter implements ExchangeAdapter {
     const idx = this._marketMap.get(symbol.toUpperCase());
     if (idx === undefined) throw new Error(`Unknown Lighter market: ${symbol}`);
     return idx;
+  }
+
+  /** Ensure market map is populated; lazy-refresh if empty */
+  private async ensureMarketMap(): Promise<void> {
+    if (this._marketMap.size === 0) {
+      await this._refreshMarketMap();
+    }
   }
 
   private async getMarkPrice(symbol: string): Promise<number> {
@@ -199,7 +260,10 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   private toTicks(symbol: string, size: number, price: number): { baseAmount: number; priceTicks: number } {
-    const dec = this._marketDecimals.get(symbol.toUpperCase()) ?? { size: 0, price: 0 };
+    const dec = this._marketDecimals.get(symbol.toUpperCase());
+    if (!dec) {
+      throw new Error(`No market decimals loaded for ${symbol}. Market data may not be initialized.`);
+    }
     return {
       baseAmount: Math.round(size * Math.pow(10, dec.size)),
       priceTicks: Math.round(price * Math.pow(10, dec.price)),
@@ -261,6 +325,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async getOrderbook(symbol: string) {
     try {
+      await this.ensureMarketMap();
       const marketId = this.getMarketIndex(symbol);
       const res = await this.restGet("/orderBookOrders", {
         market_id: String(marketId),
@@ -309,13 +374,15 @@ export class LighterAdapter implements ExchangeAdapter {
           entryPrice: String(p.avg_entry_price || "0"),
           markPrice: String(
             posSize !== 0
-              ? (Number(p.position_value || 0) / Math.abs(posSize)).toFixed(4)
+              ? (Number(p.position_value || 0) / Math.abs(posSize)).toFixed(
+                  this._marketDecimals.get(String(p.symbol || "").toUpperCase())?.price ?? 4
+                )
               : "0"
           ),
           liquidationPrice: String(p.liquidation_price || "N/A"),
           unrealizedPnl: String(p.unrealized_pnl || "0"),
           leverage: Number(p.initial_margin_fraction || 0) > 0
-            ? Math.round(100 / Number(p.initial_margin_fraction))
+            ? Math.round(10000 / Number(p.initial_margin_fraction))
             : 1,
         };
       });
@@ -376,6 +443,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string) {
     this.ensureSigner();
+    await this.ensureMarketMap();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const { baseAmount } = this.toTicks(symbol, parseFloat(size), 0);
@@ -401,6 +469,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async limitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { reduceOnly?: boolean; tif?: string }) {
     this.ensureSigner();
+    await this.ensureMarketMap();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const { baseAmount, priceTicks } = this.toTicks(symbol, parseFloat(size), parseFloat(price));
@@ -425,6 +494,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async cancelOrder(symbol: string, orderId: string) {
     this.ensureSigner();
+    await this.ensureMarketMap();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const signed = await this._signer.signCancelOrder({
@@ -456,6 +526,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async modifyOrder(symbol: string, orderId: string, price: string, size: string): Promise<unknown> {
     this.ensureSigner();
+    await this.ensureMarketMap();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const { baseAmount, priceTicks } = this.toTicks(symbol, parseFloat(size), parseFloat(price));
@@ -477,6 +548,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async stopOrder(symbol: string, side: "buy" | "sell", size: string, triggerPrice: string, opts?: { limitPrice?: string; reduceOnly?: boolean }): Promise<unknown> {
     this.ensureSigner();
+    await this.ensureMarketMap();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const { baseAmount } = this.toTicks(symbol, parseFloat(size), 0);
@@ -511,6 +583,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async updateLeverage(symbol: string, leverage: number, marginMode: "cross" | "isolated" = "cross"): Promise<unknown> {
     this.ensureSigner();
+    await this.ensureMarketMap();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     // fraction = initial margin fraction in basis points: 10000/leverage
@@ -547,20 +620,22 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getRecentTrades(symbol: string, limit = 20): Promise<ExchangeTrade[]> {
+    await this.ensureMarketMap();
     const marketId = this.getMarketIndex(symbol);
     const res = await this.restGet("/recentTrades", { market_id: String(marketId), limit: String(limit) }) as Record<string, unknown>;
     const trades = (res.trades ?? []) as Record<string, unknown>[];
     return trades.map((t) => ({
       time: Number(t.timestamp ?? 0) * 1000,
       symbol,
-      side: t.is_ask ? "sell" as const : "buy" as const,
+      // /recentTrades returns is_maker_ask: maker was asking → taker bought
+      side: t.is_maker_ask ? "buy" as const : "sell" as const,
       price: String(t.price ?? "0"),
       size: String(t.base_amount ?? t.amount ?? ""),
       fee: String(t.fee ?? "0"),
     }));
   }
 
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string }[]> {
+  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
     const rates = await this.getFundingRates();
     const r = rates.get(symbol.toUpperCase());
     if (!r) return [];
@@ -653,6 +728,7 @@ export class LighterAdapter implements ExchangeAdapter {
    * Get candle data for a market.
    */
   async getCandles(symbol: string, resolution: string, startTime: number, endTime: number, countBack = 100): Promise<unknown> {
+    await this.ensureMarketMap();
     const marketId = this.getMarketIndex(symbol);
     return this.restGet("/candles", {
       market_id: String(marketId),
@@ -952,8 +1028,10 @@ export class LighterAdapter implements ExchangeAdapter {
    * Uses WASM signer to sign + ETH key for L1 signature.
    * Returns the generated key pair.
    */
-  async setupApiKey(apiKeyIndex = 2): Promise<{ privateKey: string; publicKey: string }> {
-    const { ethers } = await import("ethers");
+  async setupApiKey(apiKeyIndex = 4): Promise<{ privateKey: string; publicKey: string }> {
+    if (!this._evmSigner) {
+      throw new Error("No EVM private key configured. Run: perp init");
+    }
 
     // 1. Generate key pair
     const { privateKey, publicKey } = await LighterAdapter.generateApiKey();
@@ -988,9 +1066,8 @@ export class LighterAdapter implements ExchangeAdapter {
       throw new Error("SignChangePubKey returned incomplete response");
     }
 
-    // 4. Sign messageToSign with ETH key (EIP-191 personal_sign)
-    const wallet = new ethers.Wallet(this._evmKey);
-    const l1Sig = await wallet.signMessage(signed.messageToSign);
+    // 4. Sign messageToSign with EVM signer (EIP-191 personal_sign)
+    const l1Sig = await this._evmSigner!.signMessage(signed.messageToSign);
 
     // 5. Add L1Sig to txInfo
     const txInfo = JSON.parse(signed.txInfo);
@@ -1036,7 +1113,7 @@ export class LighterAdapter implements ExchangeAdapter {
             continue;
           }
           const retryTxInfo = JSON.parse(retrySigned.txInfo);
-          retryTxInfo.L1Sig = await wallet.signMessage(retrySigned.messageToSign);
+          retryTxInfo.L1Sig = await this._evmSigner!.signMessage(retrySigned.messageToSign);
           const retryRes = await fetch(`${this._baseUrl}/api/v1/sendTx`, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
