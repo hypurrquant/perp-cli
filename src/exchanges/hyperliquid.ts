@@ -222,8 +222,15 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     };
   }
 
+  private ensureAddress(): void {
+    if (!this._address) {
+      throw new Error("No private key configured — account data unavailable. Run: perp init");
+    }
+  }
+
   /** Always fetches live clearinghouseState, writes result to shared cache for dashboard */
   private async _getClearinghouseState(): Promise<Record<string, unknown>> {
+    this.ensureAddress();
     const { fetchAndCache, TTL_ACCOUNT } = await import("../cache.js");
     const key = this._dex ? `acct:hl:chs:${this._address}:${this._dex}` : `acct:hl:chs:${this._address}`;
     return fetchAndCache(key, TTL_ACCOUNT, async () => {
@@ -308,6 +315,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getOpenOrders(): Promise<ExchangeOrder[]> {
+    this.ensureAddress();
     const orders = await this.sdk.info.getUserOpenOrders(this._address);
     return (orders ?? []).map((o) => ({
       orderId: String(o.oid ?? ""),
@@ -606,6 +614,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getOrderHistory(limit = 30): Promise<ExchangeOrder[]> {
+    this.ensureAddress();
     const fills = await this.client.info.getUserFills(this._address);
     return (fills ?? []).slice(0, limit).map((f: Record<string, unknown>) => ({
       orderId: String(f.oid ?? ""),
@@ -621,6 +630,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getTradeHistory(limit = 30): Promise<ExchangeTrade[]> {
+    this.ensureAddress();
     const fills = await this.client.info.getUserFills(this._address);
     return (fills ?? []).slice(0, limit).map((f: Record<string, unknown>) => ({
       time: Number(f.time ?? 0),
@@ -634,6 +644,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getFundingPayments(limit = 30): Promise<ExchangeFundingPayment[]> {
+    this.ensureAddress();
     const now = Date.now();
     const history = await this.client.info.perpetuals.getUserFunding(this._address, now - 7 * 24 * 60 * 60 * 1000);
     return (history as unknown as Record<string, unknown>[] ?? []).slice(0, limit).map((h) => {
@@ -672,6 +683,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     tpsl: "tp" | "sl",
     opts?: { isMarket?: boolean; reduceOnly?: boolean; grouping?: string }
   ) {
+    this.ensureSigner();
     const orderParams = {
       coin: symbol.toUpperCase(),
       is_buy: side === "buy",
@@ -892,6 +904,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get user trade fills.
    */
   async getUserFills(startTime?: number, endTime?: number) {
+    this.ensureAddress();
     const baseUrl = this._testnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
@@ -913,6 +926,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get user portfolio analytics.
    */
   async getPortfolio() {
+    this.ensureAddress();
     const baseUrl = this._testnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
@@ -928,6 +942,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Query a specific order by OID.
    */
   async queryOrder(orderId: number) {
+    this.ensureAddress();
     const baseUrl = this._testnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
@@ -1022,6 +1037,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get referral info.
    */
   async getReferralInfo() {
+    this.ensureAddress();
     return this._infoPost({ type: "referral", user: this._address });
   }
 
@@ -1029,6 +1045,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get fee info.
    */
   async getUserFees() {
+    this.ensureAddress();
     return this._infoPost({ type: "userFees", user: this._address });
   }
 
@@ -1036,6 +1053,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get sub-accounts.
    */
   async getSubAccounts() {
+    this.ensureAddress();
     return this._infoPost({ type: "subAccounts", user: this._address });
   }
 
@@ -1043,6 +1061,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get historical orders (up to 2000).
    */
   async getHistoricalOrders() {
+    this.ensureAddress();
     return this._infoPost({ type: "historicalOrders", user: this._address });
   }
 
@@ -1050,6 +1069,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get approved builders.
    */
   async getApprovedBuilders() {
+    this.ensureAddress();
     return this._infoPost({ type: "approvedBuilders", user: this._address });
   }
 
@@ -1057,6 +1077,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get vault details.
    */
   async getVaultDetails(vaultAddress: string) {
+    this.ensureAddress();
     return this._infoPost({ type: "vaultDetails", vaultAddress, user: this._address });
   }
 
@@ -1064,6 +1085,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Get delegations (staking).
    */
   async getDelegations() {
+    this.ensureAddress();
     return this._infoPost({ type: "delegations", user: this._address });
   }
 
