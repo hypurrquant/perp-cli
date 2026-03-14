@@ -327,6 +327,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string) {
+    this.ensureSigner();
     if (this._dex) {
       const r = await this._dexMarketOrder(symbol, side, size);
       await this._invalidateAccountCache();
@@ -523,6 +524,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async cancelOrder(symbol: string, orderId: string) {
+    this.ensureSigner();
     // HL SDK expects coin in "ETH-PERP" format (internal symbol convention)
     const resolved = this.resolveSymbol(symbol);
     const result = await this.sdk.exchange.cancelOrder({
@@ -534,6 +536,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async cancelAllOrders(symbol?: string) {
+    this.ensureSigner();
     const orders = await this.getOpenOrders();
     const toCancel = symbol
       ? orders.filter((o) => {
@@ -732,6 +735,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Uses SDK's built-in updateLeverage method.
    */
   async updateLeverage(symbol: string, leverage: number, isCross = true) {
+    this.ensureSigner();
     return this.sdk.exchange.updateLeverage(this.resolveSymbol(symbol), isCross ? "cross" : "isolated", leverage);
   }
 
@@ -740,6 +744,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * amount > 0 to add margin, amount < 0 to remove
    */
   async updateIsolatedMargin(symbol: string, amount: number) {
+    this.ensureSigner();
     return this.sdk.exchange.updateIsolatedMargin(this.resolveSymbol(symbol), amount > 0, Math.round(Math.abs(amount) * 1e6));
   }
 
@@ -748,6 +753,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Python SDK: withdraw_from_bridge(amount, destination) → action type "withdraw3"
    */
   async withdraw(amount: string, destination: string) {
+    this.ensureSigner();
     try {
       return await this.sdk.exchange.initiateWithdrawal(destination, parseFloat(amount));
     } catch {
@@ -769,6 +775,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Python SDK: usd_transfer(amount, destination)
    */
   async usdTransfer(amount: number, destination: string) {
+    this.ensureSigner();
     return this.sdk.exchange.usdTransfer(destination, amount);
   }
 
