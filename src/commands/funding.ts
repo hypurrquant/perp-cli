@@ -60,10 +60,10 @@ export function registerFundingCommands(
       } catch { /* non-critical */ }
 
       if (isJson()) {
-        // Return symbols array as top-level data for --fields and --ndjson compatibility.
-        // Include metadata at envelope level via the snapshot wrapper.
-        const hasFieldsOrNdjson = process.argv.includes("--fields") || process.argv.includes("--ndjson");
-        if (hasFieldsOrNdjson) {
+        // When --ndjson or --fields is used, return the symbols array directly
+        // so each symbol gets its own line / fields can be picked per element.
+        // Otherwise return the full snapshot (includes exchangeStatus metadata).
+        if (process.argv.includes("--ndjson") || process.argv.includes("--fields")) {
           return printJson(jsonOk(snapshot.symbols));
         }
         return printJson(jsonOk(snapshot));

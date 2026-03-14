@@ -289,7 +289,7 @@ function getAdapterSync(): ExchangeAdapter {
 }
 
 function isJson(): boolean {
-  return !!program.opts().json;
+  return !!program.opts().json || process.argv.includes("--ndjson");
 }
 
 function isDryRun(): boolean {
