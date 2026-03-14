@@ -7,7 +7,7 @@ All commands support `--json` for structured output. Always use `--json` when ca
 perp --json market list                    # all markets with prices, funding, volume
 perp --json market prices                  # cross-exchange price comparison
 perp --json market mid <SYMBOL>            # mid price (fast)
-perp --json market info <SYMBOL>           # tick size, min order, max leverage
+perp --json market info <SYMBOL>           # mark/index price, funding, volume, OI, max leverage
 perp --json market book <SYMBOL>           # orderbook (bids/asks)
 perp --json market trades <SYMBOL>         # recent trades
 perp --json market funding <SYMBOL>        # funding rate history

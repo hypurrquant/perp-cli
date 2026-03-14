@@ -49,13 +49,13 @@ EOF
     echo ""
     echo "--- Perp-Perp Arb ---"
     echo "$SCAN" | jq -r '
-      .data.opportunities // [] | map(select(.symbol == "'"$SYMBOL"'")) | .[] |
+      .data // [] | map(select(.symbol == "'"$SYMBOL"'")) | .[] |
       "  \(.longExch // .longExchange)→\(.shortExch // .shortExchange): \(.netSpread // .spread)bps"
     ' 2>/dev/null || echo "  (no opportunity)"
     echo ""
     echo "--- Spot+Perp Arb ---"
     echo "$SPOT_SCAN" | jq -r '
-      .data.opportunities // [] | map(select(.symbol == "'"$SYMBOL"'")) | .[] |
+      .data // [] | map(select(.symbol == "'"$SYMBOL"'")) | .[] |
       "  \(.direction): \(.annualSpreadPct // .spread)% annual"
     ' 2>/dev/null || echo "  (no opportunity)"
   fi
@@ -78,7 +78,7 @@ EOF
     echo "=== Funding Rate Overview (top $TOP) ==="
     echo ""
     echo "$SCAN" | jq -r "
-      .data.opportunities // [] | .[0:$TOP] | .[] |
+      .data // [] | .[0:$TOP] | .[] |
       \"  \(.symbol) | \(.mode // \"perp\") | \(.netSpread // .spread)bps | \(.longExch // .longExchange)→\(.shortExch // .shortExchange)\"
     " 2>/dev/null || echo "(no data)"
   fi

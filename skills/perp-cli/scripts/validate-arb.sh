@@ -53,8 +53,8 @@ else
 fi
 
 # 2. Balance check on both exchanges
-LONG_BAL=$($PERP --json -e "$LONG_EX" account info 2>/dev/null | jq -r '.data.availableBalance // .data.balance // "0"')
-SHORT_BAL=$($PERP --json -e "$SHORT_EX" account info 2>/dev/null | jq -r '.data.availableBalance // .data.balance // "0"')
+LONG_BAL=$($PERP --json -e "$LONG_EX" account info 2>/dev/null | jq -r '.data.available // .data.equity // "0"')
+SHORT_BAL=$($PERP --json -e "$SHORT_EX" account info 2>/dev/null | jq -r '.data.available // .data.equity // "0"')
 
 NEEDED=$(echo "$SIZE" | awk '{print $1}')
 if (( $(echo "$LONG_BAL < $NEEDED" | bc -l 2>/dev/null || echo 1) )); then
@@ -68,7 +68,7 @@ else
   add_result "balance_short" "true" "$SHORT_EX balance=$SHORT_BAL"
 fi
 
-# 3. Market info (min size, tick size)
+# 3. Market info (symbol availability)
 LONG_INFO=$($PERP --json -e "$LONG_EX" market info "$SYM" 2>/dev/null || echo '{"ok":false}')
 SHORT_INFO=$($PERP --json -e "$SHORT_EX" market info "$SYM" 2>/dev/null || echo '{"ok":false}')
 

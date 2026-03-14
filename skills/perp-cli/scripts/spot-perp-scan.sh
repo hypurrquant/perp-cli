@@ -69,7 +69,7 @@ else
   # Show opportunities
   echo "--- Opportunities ---"
   echo "$SCAN_RESULT" | jq -r '
-    .data.opportunities // [] | .[] |
+    .data // [] | .[] |
     "  \(.symbol) | \(.mode // "perp-perp") | spread: \(.netSpread // .spread)bps | \(.longExch // .longExchange)→\(.shortExch // .shortExchange)"
   ' 2>/dev/null || echo "  (no opportunities or parse error)"
 
