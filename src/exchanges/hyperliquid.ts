@@ -657,13 +657,13 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     });
   }
 
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string }[]> {
+  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
     const now = Date.now();
     const history = await this.client.info.perpetuals.getFundingHistory(symbol.toUpperCase(), now - 24 * 60 * 60 * 1000);
     return (history ?? []).slice(-limit).map((h) => ({
       time: Number(h.time ?? 0),
       rate: String(h.fundingRate ?? "0"),
-      price: "-",
+      price: null,
     }));
   }
 

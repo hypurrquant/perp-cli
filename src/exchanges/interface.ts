@@ -74,7 +74,7 @@ export interface ExchangeAdapter {
   getMarkets(): Promise<ExchangeMarketInfo[]>;
   getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }>;
   getRecentTrades(symbol: string, limit?: number): Promise<ExchangeTrade[]>;
-  getFundingHistory(symbol: string, limit?: number): Promise<{ time: number; rate: string; price: string }[]>;
+  getFundingHistory(symbol: string, limit?: number): Promise<{ time: number; rate: string; price: string | null }[]>;
   getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]>;
 
   // ── Account ──

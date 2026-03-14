@@ -93,15 +93,25 @@ let _pacificaAdapter: PacificaAdapter | null = null;
 let _hlAdapter: HyperliquidAdapter | null = null;
 let _lighterAdapter: LighterAdapter | null = null;
 
+/** Map short aliases to canonical exchange names. Full names pass through. */
+function resolveExchangeAlias(name: string): string {
+  const aliases: Record<string, string> = {
+    hl: "hyperliquid",
+    lt: "lighter",
+    pac: "pacifica",
+  };
+  return aliases[name.toLowerCase()] ?? name.toLowerCase();
+}
+
 function getExchange(): Exchange {
-  return program.opts().exchange as Exchange;
+  return resolveExchangeAlias(program.opts().exchange) as Exchange;
 }
 
 async function getAdapter(): Promise<ExchangeAdapter> {
   if (_adapter) return _adapter;
 
   const opts = program.opts();
-  const exchange = opts.exchange as Exchange;
+  const exchange = resolveExchangeAlias(opts.exchange) as Exchange;
   const network = opts.network as string;
   const isTestnet = network === "testnet";
 
@@ -216,7 +226,8 @@ registerDepositCommands(
 registerAlertCommands(program, isJson, getAdapterForExchange);
 
 // Helper to get adapter for a specific exchange (used by arb-auto)
-async function getAdapterForExchange(exchange: string): Promise<ExchangeAdapter> {
+async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapter> {
+  const exchange = resolveExchangeAlias(rawExchange);
   const opts = program.opts();
   const network = opts.network as string;
   const isTestnet = network === "testnet";
@@ -443,7 +454,7 @@ program.hook("preAction", () => {
 
 // Smart landing page: `perp` with no subcommand
 const rawArgs = process.argv.slice(2);
-const hasSubcommand = rawArgs.some((a) => !a.startsWith("-") && !["pacifica", "hyperliquid", "lighter", "mainnet", "testnet"].includes(a));
+const hasSubcommand = rawArgs.some((a) => !a.startsWith("-") && !["pacifica", "hyperliquid", "lighter", "hl", "lt", "pac", "mainnet", "testnet"].includes(a));
 
 if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawArgs.includes("--help") && !rawArgs.includes("-V") && !rawArgs.includes("--version"))) {
   // No subcommand — show smart landing instead of help dump

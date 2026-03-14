@@ -273,7 +273,7 @@ export class PacificaAdapter implements ExchangeAdapter {
     }));
   }
 
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string }[]> {
+  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
     const result = await this.client.getFundingHistory(symbol, { limit });
     const data = ((result as Record<string, unknown>).data ?? result) as Record<string, unknown>[];
     if (!Array.isArray(data)) return [];

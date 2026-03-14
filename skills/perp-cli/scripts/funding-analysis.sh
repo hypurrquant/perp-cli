@@ -5,6 +5,13 @@
 
 set -euo pipefail
 
+# Auto-detect perp command (supports npx fallback for agents without install permissions)
+if command -v perp &>/dev/null; then
+  PERP="perp"
+else
+  PERP="npx -y perp-cli@latest"
+fi
+
 JSON_MODE=false
 SYMBOL=""
 TOP=10
@@ -19,9 +26,9 @@ done
 
 if [[ -n "$SYMBOL" ]]; then
   # Single symbol detailed analysis
-  FUNDING=$(perp --json market funding "$SYMBOL" 2>/dev/null || echo '{"ok":false}')
-  SCAN=$(perp --json arb scan --min 0 2>/dev/null || echo '{"ok":false}')
-  SPOT_SCAN=$(perp --json arb scan --mode spot-perp --min 0 2>/dev/null || echo '{"ok":false}')
+  FUNDING=$($PERP --json market funding "$SYMBOL" 2>/dev/null || echo '{"ok":false}')
+  SCAN=$($PERP --json arb scan --min 0 2>/dev/null || echo '{"ok":false}')
+  SPOT_SCAN=$($PERP --json arb scan --mode spot-perp --min 0 2>/dev/null || echo '{"ok":false}')
 
   if $JSON_MODE; then
     cat <<EOF
@@ -54,8 +61,8 @@ EOF
   fi
 else
   # All symbols scan
-  SCAN=$(perp --json arb scan --mode all --min 0 2>/dev/null || echo '{"ok":false}')
-  FUNDING_DETAIL=$(perp --json arb funding 2>/dev/null || echo '{"ok":false}')
+  SCAN=$($PERP --json arb scan --mode all --min 0 2>/dev/null || echo '{"ok":false}')
+  FUNDING_DETAIL=$($PERP --json arb funding 2>/dev/null || echo '{"ok":false}')
 
   if $JSON_MODE; then
     cat <<EOF

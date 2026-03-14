@@ -5,6 +5,13 @@
 
 set -euo pipefail
 
+# Auto-detect perp command (supports npx fallback for agents without install permissions)
+if command -v perp &>/dev/null; then
+  PERP="perp"
+else
+  PERP="npx -y perp-cli@latest"
+fi
+
 JSON_MODE=false
 MODE="all"
 MIN_SPREAD=10
@@ -18,7 +25,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # 1. Portfolio check (ensure we have balances)
-PORTFOLIO=$(perp --json portfolio 2>/dev/null || echo '{"ok":false}')
+PORTFOLIO=$($PERP --json portfolio 2>/dev/null || echo '{"ok":false}')
 if ! echo "$PORTFOLIO" | grep -q '"ok":true'; then
   if $JSON_MODE; then
     echo '{"ok":false,"error":"Cannot fetch portfolio — check wallet setup"}'
@@ -29,10 +36,10 @@ if ! echo "$PORTFOLIO" | grep -q '"ok":true'; then
 fi
 
 # 2. Run appropriate scan
-SCAN_RESULT=$(perp --json arb scan --mode "$MODE" --min "$MIN_SPREAD" 2>/dev/null || echo '{"ok":false}')
+SCAN_RESULT=$($PERP --json arb scan --mode "$MODE" --min "$MIN_SPREAD" 2>/dev/null || echo '{"ok":false}')
 
 # 3. Get exchange health for context
-HEALTH=$(perp --json health 2>/dev/null || echo '{"ok":false}')
+HEALTH=$($PERP --json health 2>/dev/null || echo '{"ok":false}')
 
 if $JSON_MODE; then
   cat <<EOF

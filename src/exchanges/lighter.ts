@@ -147,6 +147,10 @@ export class LighterAdapter implements ExchangeAdapter {
         this._apiKey = "";
       } else if (cleanKey.length === 0) {
         this._apiKey = "";
+      } else if (this._accountIndex < 0) {
+        // Account lookup failed or returned no accounts — cannot initialize WASM signer
+        console.error(`[lighter] Account index not available (got ${this._accountIndex}). Trading will be read-only. Ensure the wallet has a Lighter account or set LIGHTER_ACCOUNT_INDEX.`);
+        this._apiKey = "";
       } else {
         this._apiKey = cleanKey;
         const client = await LighterAdapter.getWasmClient();
@@ -600,7 +604,7 @@ export class LighterAdapter implements ExchangeAdapter {
     }));
   }
 
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string }[]> {
+  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
     const rates = await this.getFundingRates();
     const r = rates.get(symbol.toUpperCase());
     if (!r) return [];

@@ -105,7 +105,7 @@ export class MockAdapter implements ExchangeAdapter {
     return [];
   }
 
-  async getFundingHistory(symbol: string, limit?: number): Promise<{ time: number; rate: string; price: string }[]> {
+  async getFundingHistory(symbol: string, limit?: number): Promise<{ time: number; rate: string; price: string | null }[]> {
     this.record("getFundingHistory", [symbol, limit]);
     return [];
   }

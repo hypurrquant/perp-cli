@@ -155,7 +155,7 @@ export function registerMarketCommands(
       const rows = history.map((h) => [
         new Date(h.time).toLocaleString(),
         formatPercent(h.rate),
-        `$${formatUsd(h.price)}`,
+        h.price != null ? `$${formatUsd(h.price)}` : chalk.gray("n/a"),
       ]);
       console.log(makeTable(["Time", "Funding Rate", "Oracle"], rows));
     });

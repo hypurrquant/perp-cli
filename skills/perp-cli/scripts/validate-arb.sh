@@ -6,6 +6,13 @@
 
 set -euo pipefail
 
+# Auto-detect perp command (supports npx fallback for agents without install permissions)
+if command -v perp &>/dev/null; then
+  PERP="perp"
+else
+  PERP="npx -y perp-cli@latest"
+fi
+
 SYM="${1:?Usage: validate-arb.sh <SYMBOL> <LONG_EX> <SHORT_EX> <SIZE_USD> [--leverage N]}"
 LONG_EX="${2:?Usage: validate-arb.sh <SYMBOL> <LONG_EX> <SHORT_EX> <SIZE_USD>}"
 SHORT_EX="${3:?Usage: validate-arb.sh <SYMBOL> <LONG_EX> <SHORT_EX> <SIZE_USD>}"
@@ -30,8 +37,8 @@ add_result() {
 }
 
 # 1. Price comparison — both exchanges must report similar prices
-LONG_PRICE=$(perp --json -e "$LONG_EX" market mid "$SYM" 2>/dev/null | jq -r '.data.mid // "0"')
-SHORT_PRICE=$(perp --json -e "$SHORT_EX" market mid "$SYM" 2>/dev/null | jq -r '.data.mid // "0"')
+LONG_PRICE=$($PERP --json -e "$LONG_EX" market mid "$SYM" 2>/dev/null | jq -r '.data.mid // "0"')
+SHORT_PRICE=$($PERP --json -e "$SHORT_EX" market mid "$SYM" 2>/dev/null | jq -r '.data.mid // "0"')
 
 if [[ "$LONG_PRICE" == "0" || "$SHORT_PRICE" == "0" ]]; then
   add_result "price" "false" "Cannot fetch price: long=$LONG_PRICE short=$SHORT_PRICE"
@@ -46,8 +53,8 @@ else
 fi
 
 # 2. Balance check on both exchanges
-LONG_BAL=$(perp --json -e "$LONG_EX" account info 2>/dev/null | jq -r '.data.availableBalance // .data.balance // "0"')
-SHORT_BAL=$(perp --json -e "$SHORT_EX" account info 2>/dev/null | jq -r '.data.availableBalance // .data.balance // "0"')
+LONG_BAL=$($PERP --json -e "$LONG_EX" account info 2>/dev/null | jq -r '.data.availableBalance // .data.balance // "0"')
+SHORT_BAL=$($PERP --json -e "$SHORT_EX" account info 2>/dev/null | jq -r '.data.availableBalance // .data.balance // "0"')
 
 NEEDED=$(echo "$SIZE" | awk '{print $1}')
 if (( $(echo "$LONG_BAL < $NEEDED" | bc -l 2>/dev/null || echo 1) )); then
@@ -62,8 +69,8 @@ else
 fi
 
 # 3. Market info (min size, tick size)
-LONG_INFO=$(perp --json -e "$LONG_EX" market info "$SYM" 2>/dev/null || echo '{"ok":false}')
-SHORT_INFO=$(perp --json -e "$SHORT_EX" market info "$SYM" 2>/dev/null || echo '{"ok":false}')
+LONG_INFO=$($PERP --json -e "$LONG_EX" market info "$SYM" 2>/dev/null || echo '{"ok":false}')
+SHORT_INFO=$($PERP --json -e "$SHORT_EX" market info "$SYM" 2>/dev/null || echo '{"ok":false}')
 
 if echo "$LONG_INFO" | grep -q '"ok":true' && echo "$SHORT_INFO" | grep -q '"ok":true'; then
   add_result "market_info" "true" "Both exchanges support $SYM"
@@ -74,7 +81,7 @@ fi
 # 4. Risk pre-check
 LEV_FLAG=""
 [[ -n "$LEVERAGE" ]] && LEV_FLAG="--leverage $LEVERAGE"
-RISK_CHECK=$(perp --json risk check --notional "$SIZE" $LEV_FLAG 2>/dev/null || echo '{"ok":false}')
+RISK_CHECK=$($PERP --json risk check --notional "$SIZE" $LEV_FLAG 2>/dev/null || echo '{"ok":false}')
 if echo "$RISK_CHECK" | grep -q '"ok":true'; then
   add_result "risk" "true" "Within risk limits"
 else
@@ -82,7 +89,7 @@ else
 fi
 
 # 5. Dry-run
-DRY_RUN=$(perp --json --dry-run arb exec "$SYM" "$LONG_EX" "$SHORT_EX" "$SIZE" $LEV_FLAG 2>/dev/null || echo '{"ok":false}')
+DRY_RUN=$($PERP --json --dry-run arb exec "$SYM" "$LONG_EX" "$SHORT_EX" "$SIZE" $LEV_FLAG 2>/dev/null || echo '{"ok":false}')
 if echo "$DRY_RUN" | grep -q '"ok":true'; then
   add_result "dry_run" "true" "Dry-run succeeded"
 else

@@ -257,6 +257,7 @@ When setting up wallets for the first time, ask the user:
 ## Scripts
 
 Executable automation scripts in `scripts/`. Run with `bash scripts/<name>.sh`.
+Scripts auto-detect `perp` (global install) or fall back to `npx -y perp-cli@latest` — no global install required.
 
 | Script | Purpose | Usage |
 |--------|---------|-------|

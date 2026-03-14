@@ -6,6 +6,13 @@
 
 set -euo pipefail
 
+# Auto-detect perp command (supports npx fallback for agents without install permissions)
+if command -v perp &>/dev/null; then
+  PERP="perp"
+else
+  PERP="npx -y perp-cli@latest"
+fi
+
 JSON_MODE=false
 MIN_SPREAD=5
 while [[ $# -gt 0 ]]; do
@@ -17,7 +24,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # 1. Get current arb status
-ARB_STATUS=$(perp --json arb status 2>/dev/null || echo '{"ok":false}')
+ARB_STATUS=$($PERP --json arb status 2>/dev/null || echo '{"ok":false}')
 if ! echo "$ARB_STATUS" | grep -q '"ok":true'; then
   if $JSON_MODE; then
     echo '{"ok":false,"error":"No arb positions or arb status unavailable"}'
@@ -28,13 +35,13 @@ if ! echo "$ARB_STATUS" | grep -q '"ok":true'; then
 fi
 
 # 2. Get current spreads
-ARB_SCAN=$(perp --json arb scan --min 0 2>/dev/null || echo '{"ok":false,"data":{"opportunities":[]}}')
+ARB_SCAN=$($PERP --json arb scan --min 0 2>/dev/null || echo '{"ok":false,"data":{"opportunities":[]}}')
 
 # 3. Get funding earned
-FUNDING=$(perp --json arb funding-earned 2>/dev/null || echo '{"ok":false}')
+FUNDING=$($PERP --json arb funding-earned 2>/dev/null || echo '{"ok":false}')
 
 # 4. Get liquidation distances
-LIQ_DIST=$(perp --json risk liquidation-distance 2>/dev/null || echo '{"ok":false}')
+LIQ_DIST=$($PERP --json risk liquidation-distance 2>/dev/null || echo '{"ok":false}')
 
 # 5. Output combined analysis
 if $JSON_MODE; then

@@ -6,6 +6,13 @@
 
 set -euo pipefail
 
+# Auto-detect perp command (supports npx fallback for agents without install permissions)
+if command -v perp &>/dev/null; then
+  PERP="perp"
+else
+  PERP="npx -y perp-cli@latest"
+fi
+
 JSON_MODE=false
 [[ "${1:-}" == "--json" ]] && JSON_MODE=true
 
@@ -19,15 +26,15 @@ add_check() {
 }
 
 # 1. perp-cli installed and version check
-if command -v perp &>/dev/null; then
-  VERSION=$(perp --version 2>/dev/null || echo "unknown")
-  add_check "install" "pass" "perp-cli $VERSION"
+VERSION=$($PERP --version 2>/dev/null || echo "unknown")
+if [[ "$VERSION" != "unknown" ]]; then
+  add_check "install" "pass" "perp-cli $VERSION ($(command -v perp &>/dev/null && echo 'global' || echo 'npx'))"
 else
-  add_check "install" "fail" "perp-cli not found — run: npm i -g perp-cli@latest"
+  add_check "install" "fail" "perp-cli not found — run: npm i -g perp-cli@latest or use npx"
 fi
 
 # 2. Wallet configured
-WALLET_OUT=$(perp --json wallet show 2>/dev/null || echo '{"ok":false}')
+WALLET_OUT=$($PERP --json wallet show 2>/dev/null || echo '{"ok":false}')
 if echo "$WALLET_OUT" | grep -q '"ok":true'; then
   add_check "wallet" "pass" "Wallet configured"
 else
@@ -35,7 +42,7 @@ else
 fi
 
 # 3. Exchange connectivity
-HEALTH_OUT=$(perp --json health 2>/dev/null || echo '{"ok":false}')
+HEALTH_OUT=$($PERP --json health 2>/dev/null || echo '{"ok":false}')
 if echo "$HEALTH_OUT" | grep -q '"ok":true'; then
   add_check "connectivity" "pass" "Exchanges reachable"
 else
@@ -43,7 +50,7 @@ else
 fi
 
 # 4. Portfolio & balances
-PORTFOLIO_OUT=$(perp --json portfolio 2>/dev/null || echo '{"ok":false}')
+PORTFOLIO_OUT=$($PERP --json portfolio 2>/dev/null || echo '{"ok":false}')
 if echo "$PORTFOLIO_OUT" | grep -q '"ok":true'; then
   add_check "portfolio" "pass" "Portfolio accessible"
 else
@@ -51,7 +58,7 @@ else
 fi
 
 # 5. Risk status
-RISK_OUT=$(perp --json risk status 2>/dev/null || echo '{"ok":false}')
+RISK_OUT=$($PERP --json risk status 2>/dev/null || echo '{"ok":false}')
 if echo "$RISK_OUT" | grep -q '"canTrade":true'; then
   add_check "risk" "pass" "Trading allowed (canTrade=true)"
 elif echo "$RISK_OUT" | grep -q '"canTrade":false'; then
