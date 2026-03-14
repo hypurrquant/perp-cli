@@ -1,8 +1,12 @@
 import { Command } from "commander";
+import { createRequire } from "node:module";
 import { printJson, jsonOk } from "../utils.js";
 import { ERROR_CODES } from "../errors.js";
 import chalk from "chalk";
 import type { ExchangeAdapter } from "../exchanges/interface.js";
+
+const _require = createRequire(import.meta.url);
+const _pkg = _require("../../package.json") as { version: string };
 
 interface ParameterSchema {
   name: string;
@@ -111,7 +115,7 @@ export function registerAgentCommands(
       }
       const envelope: SchemaEnvelope = {
         schemaVersion: "2.0",
-        cliVersion: "0.1.0",
+        cliVersion: _pkg.version,
         generatedAt: new Date().toISOString(),
         exchanges: ["pacifica", "hyperliquid", "lighter"],
         errorCodes: errorCodeDocs,
@@ -133,7 +137,7 @@ export function registerAgentCommands(
       }
       const envelope: SchemaEnvelope = {
         schemaVersion: "2.0",
-        cliVersion: "0.1.0",
+        cliVersion: _pkg.version,
         generatedAt: new Date().toISOString(),
         exchanges: ["pacifica", "hyperliquid", "lighter"],
         errorCodes: errorCodeDocs,
@@ -151,7 +155,7 @@ export function registerAgentCommands(
     .action(() => {
       printJson(jsonOk({
         name: "perp-cli",
-        version: "0.1.0",
+        version: _pkg.version,
         description: "Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter) with HIP-3 deployed dex support",
         exchanges: ["pacifica", "hyperliquid", "lighter"],
         capabilities: [
@@ -318,7 +322,7 @@ export function registerAgentCommands(
     .action(async () => {
       const results: Record<string, unknown> = {
         timestamp: new Date().toISOString(),
-        cli_version: "0.1.0",
+        cli_version: _pkg.version,
       };
 
       // Check exchange APIs

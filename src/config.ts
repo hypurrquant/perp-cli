@@ -6,6 +6,18 @@ import { existsSync, readFileSync } from "fs";
 
 export type Exchange = "pacifica" | "hyperliquid" | "lighter";
 
+/**
+ * Try to load a private key without throwing if none is found.
+ * Returns null if no key is configured.
+ */
+export async function tryLoadPrivateKey(exchange: Exchange, pkOverride?: string): Promise<string | null> {
+  try {
+    return await loadPrivateKey(exchange, pkOverride);
+  } catch {
+    return null;
+  }
+}
+
 export async function loadPrivateKey(exchange: Exchange, pkOverride?: string): Promise<string> {
   // 1. CLI flag
   if (pkOverride) return pkOverride;

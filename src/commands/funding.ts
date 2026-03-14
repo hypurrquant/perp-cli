@@ -59,7 +59,15 @@ export function registerFundingCommands(
         if (allRates.length > 0) saveFundingSnapshot(allRates);
       } catch { /* non-critical */ }
 
-      if (isJson()) return printJson(jsonOk(snapshot));
+      if (isJson()) {
+        // Return symbols array as top-level data for --fields and --ndjson compatibility.
+        // Include metadata at envelope level via the snapshot wrapper.
+        const hasFieldsOrNdjson = process.argv.includes("--fields") || process.argv.includes("--ndjson");
+        if (hasFieldsOrNdjson) {
+          return printJson(jsonOk(snapshot.symbols));
+        }
+        return printJson(jsonOk(snapshot));
+      }
 
       printSnapshotTable(snapshot);
       printExchangeStatus(snapshot);

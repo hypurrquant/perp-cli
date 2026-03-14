@@ -27,10 +27,14 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   // In-memory cache removed — using file-based cache (src/cache.ts) for cross-process dedup
 
   constructor(privateKey: string, testnet = false) {
+    // Disable WebSocket in SDK — we use REST for all info calls and raw
+    // fetch for /exchange. This avoids the false "Please install ws" warning
+    // caused by the SDK's require('ws') failing in ESM context.
     this.sdk = new Hyperliquid({
       privateKey,
       testnet,
       walletAddress: undefined,
+      enableWs: false,
     });
     this._address = "";
     this._privateKey = privateKey;

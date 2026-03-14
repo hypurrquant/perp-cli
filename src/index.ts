@@ -9,7 +9,7 @@ config();
 import { Command } from "commander";
 import chalk from "chalk";
 import type { Network } from "./pacifica/index.js";
-import { loadPrivateKey, parseSolanaKeypair, type Exchange } from "./config.js";
+import { loadPrivateKey, tryLoadPrivateKey, parseSolanaKeypair, type Exchange } from "./config.js";
 import { PacificaAdapter } from "./exchanges/pacifica.js";
 import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
 // LighterAdapter is lazy-imported to avoid CJS/ESM issues at startup
@@ -170,6 +170,118 @@ async function getAdapter(): Promise<ExchangeAdapter> {
   return _adapter;
 }
 
+/**
+ * Get an adapter for read-only operations (market data).
+ * Falls back to a keyless adapter if no private key is configured.
+ */
+async function getReadOnlyAdapter(): Promise<ExchangeAdapter> {
+  // If full adapter already initialized, reuse it
+  if (_adapter) return _adapter;
+
+  const opts = program.opts();
+  const exchange = opts.exchange as Exchange;
+  const network = opts.network as string;
+  const isTestnet = network === "testnet";
+
+  // Try loading key — if available, use full adapter
+  const pk = await tryLoadPrivateKey(exchange, opts.privateKey);
+  if (pk) return getAdapter();
+
+  // No key — create minimal read-only adapter
+  switch (exchange) {
+    case "pacifica": {
+      const { Keypair } = await import("@solana/web3.js");
+      const dummyKeypair = Keypair.generate();
+      const pacNetwork = (isTestnet ? "testnet" : "mainnet") as Network;
+      return new PacificaAdapter(dummyKeypair, pacNetwork);
+    }
+    case "hyperliquid": {
+      // SDK can be created with enableWs: false and no key for info-only calls
+      const { Hyperliquid } = await import("hyperliquid");
+      const sdk = new Hyperliquid({ testnet: isTestnet, enableWs: false });
+      // Create adapter with dummy key but don't call init() (no signing needed)
+      // Instead, create a minimal wrapper that delegates to sdk.info
+      const adapter = Object.create(HyperliquidAdapter.prototype) as HyperliquidAdapter;
+      // Use the raw SDK for read-only info calls
+      const infoAdapter = {
+        name: "hyperliquid",
+        sdk,
+        getMarkets: async () => {
+          const [meta, allMids] = await Promise.all([
+            sdk.info.perpetuals.getMetaAndAssetCtxs(),
+            sdk.info.getAllMids(),
+          ]);
+          const universe = meta[0]?.universe ?? [];
+          const ctxs = meta[1] ?? [];
+          const mids = allMids as Record<string, string>;
+          return universe.map((asset: Record<string, unknown>, i: number) => {
+            const ctx = (ctxs[i] ?? {}) as Record<string, unknown>;
+            const sym = String(asset.name);
+            return {
+              symbol: sym,
+              markPrice: String(ctx.markPx ?? mids[sym] ?? "0"),
+              indexPrice: String(ctx.oraclePx ?? "0"),
+              fundingRate: String(ctx.funding ?? "0"),
+              volume24h: String(ctx.dayNtlVlm ?? "0"),
+              openInterest: String(ctx.openInterest ?? "0"),
+              maxLeverage: Number(asset.maxLeverage ?? 50),
+            };
+          });
+        },
+        getOrderbook: async (symbol: string) => {
+          const book = await sdk.info.getL2Book(symbol.toUpperCase());
+          const levels = book?.levels ?? [[], []];
+          return {
+            bids: (levels[0] ?? []).map((l: Record<string, unknown>) => [String(l.px ?? "0"), String(l.sz ?? "0")] as [string, string]),
+            asks: (levels[1] ?? []).map((l: Record<string, unknown>) => [String(l.px ?? "0"), String(l.sz ?? "0")] as [string, string]),
+          };
+        },
+        getRecentTrades: async (symbol: string, limit = 20) => {
+          const baseUrl = isTestnet ? "https://api.hyperliquid-testnet.xyz" : "https://api.hyperliquid.xyz";
+          const res = await fetch(`${baseUrl}/info`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "recentTrades", coin: symbol.toUpperCase() }) });
+          const trades = await res.json() as Record<string, unknown>[];
+          return (trades ?? []).slice(0, limit).map((t) => ({ time: Number(t.time ?? 0), symbol: String(t.coin ?? symbol.toUpperCase()), side: String(t.side) === "B" ? "buy" as const : "sell" as const, price: String(t.px ?? "0"), size: String(t.sz ?? ""), fee: "0" }));
+        },
+        getFundingHistory: async (symbol: string, limit = 10) => {
+          const now = Date.now();
+          const history = await sdk.info.perpetuals.getFundingHistory(symbol.toUpperCase(), now - 24 * 60 * 60 * 1000);
+          return (history ?? []).slice(-limit).map((h) => ({ time: Number(h.time ?? 0), rate: String(h.fundingRate ?? "0"), price: "-" }));
+        },
+        getKlines: async (symbol: string, interval: string, startTime: number, endTime: number) => {
+          const candles = await sdk.info.getCandleSnapshot(symbol.toUpperCase(), interval, startTime, endTime);
+          return (candles ?? []).map((c) => ({ time: Number(c.t ?? 0), open: String(c.o ?? "0"), high: String(c.h ?? "0"), low: String(c.l ?? "0"), close: String(c.c ?? "0"), volume: String(c.v ?? ""), trades: Number(c.n ?? 0) }));
+        },
+        // Stubs for methods that require auth — market commands don't call these
+        getBalance: () => { throw new Error("No private key configured. Run: perp init"); },
+        getPositions: () => { throw new Error("No private key configured. Run: perp init"); },
+        getOpenOrders: () => { throw new Error("No private key configured. Run: perp init"); },
+        getOrderHistory: () => { throw new Error("No private key configured. Run: perp init"); },
+        getTradeHistory: () => { throw new Error("No private key configured. Run: perp init"); },
+        getFundingPayments: () => { throw new Error("No private key configured. Run: perp init"); },
+        marketOrder: () => { throw new Error("No private key configured. Run: perp init"); },
+        limitOrder: () => { throw new Error("No private key configured. Run: perp init"); },
+        editOrder: () => { throw new Error("No private key configured. Run: perp init"); },
+        cancelOrder: () => { throw new Error("No private key configured. Run: perp init"); },
+        cancelAllOrders: () => { throw new Error("No private key configured. Run: perp init"); },
+        setLeverage: () => { throw new Error("No private key configured. Run: perp init"); },
+        stopOrder: () => { throw new Error("No private key configured. Run: perp init"); },
+      } as unknown as ExchangeAdapter;
+      return infoAdapter;
+    }
+    case "lighter": {
+      // Lighter's market data is REST-based, no auth needed
+      const { LighterAdapter } = await import("./exchanges/lighter.js");
+      // Use a dummy key — LighterAdapter in read-only mode works without a real key for market data
+      const dummyKey = "0x0000000000000000000000000000000000000000000000000000000000000001";
+      const adapter = new LighterAdapter(dummyKey, isTestnet);
+      await adapter.init();
+      return adapter;
+    }
+    default:
+      throw new Error(`Unknown exchange: ${exchange}`);
+  }
+}
+
 // Sync wrapper for commands that need adapter (lazy init)
 function getAdapterSync(): ExchangeAdapter {
   if (!_adapter) throw new Error("Adapter not initialized");
@@ -196,7 +308,7 @@ function getHLAdapter(): HyperliquidAdapter {
 }
 
 // Register command groups with async adapter getter
-registerMarketCommands(program, getAdapter, isJson);
+registerMarketCommands(program, getReadOnlyAdapter, isJson);
 registerAccountCommands(program, getAdapter, isJson);
 registerTradeCommands(program, getAdapter, isJson, isDryRun);
 registerManageCommands(program, getAdapter, isJson, getPacificaAdapter);
@@ -346,44 +458,76 @@ program
     const json = isJson();
 
     try {
-      const [balance, positions, orders] = await Promise.all([
+      // Use allSettled to handle unfunded/404 accounts gracefully
+      const [balanceResult, positionsResult, ordersResult] = await Promise.allSettled([
         adapter.getBalance(),
         adapter.getPositions(),
         adapter.getOpenOrders(),
       ]);
 
+      const balance = balanceResult.status === "fulfilled" ? balanceResult.value : { equity: "0", available: "0", marginUsed: "0", unrealizedPnl: "0" };
+      const positions = positionsResult.status === "fulfilled" ? positionsResult.value : [];
+      const orders = ordersResult.status === "fulfilled" ? ordersResult.value : [];
+
+      // Collect errors for reporting
+      const errors: string[] = [];
+      if (balanceResult.status === "rejected") errors.push(`balance: ${balanceResult.reason instanceof Error ? balanceResult.reason.message : String(balanceResult.reason)}`);
+      if (positionsResult.status === "rejected") errors.push(`positions: ${positionsResult.reason instanceof Error ? positionsResult.reason.message : String(positionsResult.reason)}`);
+      if (ordersResult.status === "rejected") errors.push(`orders: ${ordersResult.reason instanceof Error ? ordersResult.reason.message : String(ordersResult.reason)}`);
+
+      // Detect unfunded account (all calls failed, likely 404)
+      const allFailed = errors.length === 3;
+      const isUnfunded = allFailed && errors.some(e => e.includes("404") || e.includes("not found") || e.includes("does not exist"));
+
       if (json) {
         const { jsonOk, printJson } = await import("./utils.js");
-        return printJson(jsonOk({ exchange: adapter.name, balance, positions, orders }));
+        return printJson(jsonOk({
+          exchange: adapter.name,
+          balance,
+          positions,
+          orders,
+          ...(isUnfunded ? { warning: "Account not yet initialized on this exchange. Deposit funds to get started." } : {}),
+          ...(errors.length > 0 && !isUnfunded ? { errors } : {}),
+        }));
       }
 
       console.log(chalk.cyan.bold(`\n  ${adapter.name.toUpperCase()} Account Status\n`));
-      console.log(`  Equity:      $${Number(balance.equity).toFixed(2)}`);
-      console.log(`  Available:   $${Number(balance.available).toFixed(2)}`);
-      console.log(`  Margin Used: $${Number(balance.marginUsed).toFixed(2)}`);
-      console.log(`  Positions:   ${positions.length}`);
-      console.log(`  Open Orders: ${orders.length}`);
 
-      if (positions.length > 0) {
-        console.log(chalk.cyan.bold("\n  Positions:"));
-        positions.forEach((p) => {
-          const color = p.side === "long" ? chalk.green : chalk.red;
-          const pnlNum = Number(p.unrealizedPnl);
-          const pnlColor = pnlNum >= 0 ? chalk.green : chalk.red;
-          console.log(
-            `    ${color(p.side.toUpperCase().padEnd(5))} ${chalk.white(p.symbol.padEnd(12))} ${p.size.padEnd(10)} entry: $${Number(p.entryPrice).toFixed(2)}  pnl: ${pnlColor(pnlNum >= 0 ? "+" : "")}$${pnlNum.toFixed(2)}`
-          );
-        });
-      }
+      if (isUnfunded) {
+        console.log(chalk.yellow("  Account not yet initialized on this exchange."));
+        console.log(chalk.gray("  Deposit funds to get started: perp deposit <exchange> <amount>\n"));
+      } else {
+        console.log(`  Equity:      $${Number(balance.equity).toFixed(2)}`);
+        console.log(`  Available:   $${Number(balance.available).toFixed(2)}`);
+        console.log(`  Margin Used: $${Number(balance.marginUsed).toFixed(2)}`);
+        console.log(`  Positions:   ${positions.length}`);
+        console.log(`  Open Orders: ${orders.length}`);
 
-      if (orders.length > 0) {
-        console.log(chalk.cyan.bold("\n  Open Orders:"));
-        orders.forEach((o) => {
-          const color = o.side === "buy" ? chalk.green : chalk.red;
-          console.log(
-            `    ${color(o.side.toUpperCase().padEnd(4))} ${chalk.white(o.symbol.padEnd(12))} ${o.type.padEnd(8)} $${Number(o.price).toFixed(2)} x ${o.size}`
-          );
-        });
+        if (positions.length > 0) {
+          console.log(chalk.cyan.bold("\n  Positions:"));
+          positions.forEach((p) => {
+            const color = p.side === "long" ? chalk.green : chalk.red;
+            const pnlNum = Number(p.unrealizedPnl);
+            const pnlColor = pnlNum >= 0 ? chalk.green : chalk.red;
+            console.log(
+              `    ${color(p.side.toUpperCase().padEnd(5))} ${chalk.white(p.symbol.padEnd(12))} ${p.size.padEnd(10)} entry: $${Number(p.entryPrice).toFixed(2)}  pnl: ${pnlColor(pnlNum >= 0 ? "+" : "")}$${pnlNum.toFixed(2)}`
+            );
+          });
+        }
+
+        if (orders.length > 0) {
+          console.log(chalk.cyan.bold("\n  Open Orders:"));
+          orders.forEach((o) => {
+            const color = o.side === "buy" ? chalk.green : chalk.red;
+            console.log(
+              `    ${color(o.side.toUpperCase().padEnd(4))} ${chalk.white(o.symbol.padEnd(12))} ${o.type.padEnd(8)} $${Number(o.price).toFixed(2)} x ${o.size}`
+            );
+          });
+        }
+
+        if (errors.length > 0) {
+          console.log(chalk.yellow(`\n  Warnings: ${errors.join(", ")}`));
+        }
       }
       console.log();
     } catch (err: unknown) {
