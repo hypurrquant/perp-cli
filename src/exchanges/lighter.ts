@@ -93,11 +93,11 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async init(): Promise<void> {
-    // Initialize EVM signer if not externally injected
-    if (!this._evmSigner) {
+    // Initialize EVM signer if not externally injected (skip if no key — read-only mode)
+    if (!this._evmSigner && this._evmKey) {
       this._evmSigner = await LocalEvmSigner.create(this._evmKey);
+      this._address = this._evmSigner.getAddress();
     }
-    this._address = this._evmSigner.getAddress();
 
     // Fetch account index from REST API
     const res = await fetch(`${this._baseUrl}/api/v1/account?by=l1_address&value=${this._address}`);

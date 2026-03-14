@@ -26,7 +26,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   private _dex: string = "";
   // In-memory cache removed — using file-based cache (src/cache.ts) for cross-process dedup
 
-  constructor(privateKey: string, testnet = false) {
+  constructor(privateKey?: string, testnet = false) {
     // Disable WebSocket in SDK — we use REST for all info calls and raw
     // fetch for /exchange. This avoids the false "Please install ws" warning
     // caused by the SDK's require('ws') failing in ESM context.
@@ -37,7 +37,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       enableWs: false,
     });
     this._address = "";
-    this._privateKey = privateKey;
+    this._privateKey = privateKey ?? "";
     this._testnet = testnet;
   }
 
@@ -76,11 +76,11 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     console.log = () => {};
     try { await this.sdk.connect(); } finally { console.log = origLog; }
 
-    // Initialize EVM signer if not externally injected
-    if (!this._evmSigner) {
+    // Initialize EVM signer if not externally injected (skip if no key — read-only mode)
+    if (!this._evmSigner && this._privateKey) {
       this._evmSigner = await LocalEvmSigner.create(this._privateKey);
+      this._address = this._evmSigner.getAddress();
     }
-    this._address = this._evmSigner.getAddress();
 
     // Build asset index map
     await this._loadAssetMap();
