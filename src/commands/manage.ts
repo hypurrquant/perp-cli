@@ -47,8 +47,9 @@ export function registerManageCommands(
 
   manage
     .command("withdraw <amount> <address>")
-    .description("Withdraw funds to a Solana address")
+    .description("[Deprecated] Use 'perp withdraw pacifica <amount>' instead")
     .action(async (amount: string, address: string) => {
+      console.log(chalk.yellow("\n  [Deprecated] Use 'perp withdraw pacifica <amount>' instead.\n"));
       const a = await pac();
       const result = await a.sdk.withdraw(
         { amount, dest_address: address },

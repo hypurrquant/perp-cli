@@ -74,10 +74,11 @@ export function registerArbCommands(
 
   arb
     .command("funding")
-    .description("Compare funding rates across exchanges")
+    .description("[Deprecated] Use 'perp funding rates --min-spread 5' instead.")
     .option("-s, --symbol <symbol>", "Filter by symbol")
     .option("--min-spread <pct>", "Minimum annual spread % to show", "5")
     .action(async (opts: { symbol?: string; minSpread: string }) => {
+      if (!isJson()) console.log(chalk.yellow("  [Deprecated] Use 'perp funding rates --min-spread 5' instead.\n"));
       if (!isJson()) console.log(chalk.cyan("  Fetching funding rates from all exchanges...\n"));
 
       const [pacRates, hlRates, ltRates] = await Promise.all([

@@ -10,15 +10,23 @@ export type Exchange = "pacifica" | "hyperliquid" | "lighter";
  * Try to load a private key without throwing if none is found.
  * Returns null if no key is configured.
  */
-export async function tryLoadPrivateKey(exchange: Exchange, pkOverride?: string): Promise<string | null> {
+export async function tryLoadPrivateKey(exchange: Exchange, pkOverride?: string, walletName?: string): Promise<string | null> {
   try {
-    return await loadPrivateKey(exchange, pkOverride);
+    return await loadPrivateKey(exchange, pkOverride, walletName);
   } catch {
     return null;
   }
 }
 
-export async function loadPrivateKey(exchange: Exchange, pkOverride?: string): Promise<string> {
+export async function loadPrivateKey(exchange: Exchange, pkOverride?: string, walletName?: string): Promise<string> {
+  // 0. Wallet name override (--wallet flag)
+  if (walletName) {
+    const { getWalletKeyByName } = await import("./commands/wallet.js");
+    const key = getWalletKeyByName(walletName);
+    if (!key) throw new Error(`Wallet "${walletName}" not found. Run: perp wallet list`);
+    return key;
+  }
+
   // 1. CLI flag
   if (pkOverride) return pkOverride;
 
