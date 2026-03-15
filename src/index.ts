@@ -71,6 +71,7 @@ program
   .option("--fields <fields>", "Comma-separated fields to include in JSON output (e.g. totalEquity,positions)")
   .option("--ndjson", "Output newline-delimited JSON (one object per line for streaming)")
   .option("--dry-run", "Simulate trades without executing (log as simulated)")
+  .option("-w, --wallet <name>", "Use a specific wallet by name (from 'perp wallet list')")
   .option("--dex <name>", "HIP-3 deployed perp dex name (Hyperliquid only)")
   .configureOutput({
     writeErr: (str) => {
@@ -108,15 +109,18 @@ function getExchange(): Exchange {
 }
 
 async function getAdapter(): Promise<ExchangeAdapter> {
-  if (_adapter) return _adapter;
-
   const opts = program.opts();
+  const walletName = opts.wallet as string | undefined;
+
+  // Skip cache when --wallet is specified (different wallet = different account)
+  if (!walletName && _adapter) return _adapter;
+
   const exchange = resolveExchangeAlias(opts.exchange) as Exchange;
   const network = opts.network as string;
   const isTestnet = network === "testnet";
 
   // Try to load key — null means no key configured (read-only mode)
-  const pk = await tryLoadPrivateKey(exchange, opts.privateKey);
+  const pk = await tryLoadPrivateKey(exchange, opts.privateKey, walletName);
 
   switch (exchange) {
     case "pacifica": {
@@ -231,7 +235,8 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
   const opts = program.opts();
   const network = opts.network as string;
   const isTestnet = network === "testnet";
-  const pk = await tryLoadPrivateKey(exchange as Exchange, opts.privateKey);
+  const walletName = opts.wallet as string | undefined;
+  const pk = await tryLoadPrivateKey(exchange as Exchange, opts.privateKey, walletName);
 
   switch (exchange) {
     case "pacifica": {
@@ -304,7 +309,8 @@ const _dexAdapters = new Map<string, HyperliquidAdapter>();
 async function getHLAdapterForDex(dex: string): Promise<HyperliquidAdapter> {
   if (_dexAdapters.has(dex)) return _dexAdapters.get(dex)!;
   const opts = program.opts();
-  const pk = await tryLoadPrivateKey("hyperliquid", opts.privateKey);
+  const walletName = opts.wallet as string | undefined;
+  const pk = await tryLoadPrivateKey("hyperliquid", opts.privateKey, walletName);
   const adapter = new HyperliquidAdapter(pk ?? undefined, opts.network === "testnet");
   if (dex !== "hl") adapter.setDex(dex);
   await adapter.init();
