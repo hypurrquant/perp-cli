@@ -22,7 +22,7 @@ export function registerAnalyticsCommands(
   getAdapterForExchange: (exchange: string) => Promise<ExchangeAdapter>,
   isJson: () => boolean,
 ) {
-  const analytics = program.command("analytics").description("Trading performance analytics");
+  const analytics = program.command("analytics").description("[Deprecated] Use 'perp history'. Trading performance analytics");
 
   // ── analytics summary ──
   analytics

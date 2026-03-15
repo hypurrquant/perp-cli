@@ -25,11 +25,8 @@ async function checkExchangeHealth(name: string, fn: () => Promise<unknown>): Pr
   }
 }
 
-export function registerHealthCommands(program: Command, isJson: () => boolean) {
-  program
-    .command("health")
-    .description("Check exchange API connectivity and latency")
-    .action(async () => {
+/** Run health check and return results + render. Exported for use by status --health. */
+export async function runHealthCheck(isJson: () => boolean): Promise<void> {
       const [pacPing, hlPing, ltPing] = await Promise.all([
         pingPacifica(),
         pingHyperliquid(),
@@ -77,5 +74,14 @@ export function registerHealthCommands(program: Command, isJson: () => boolean) 
 
       const overall = allOk ? chalk.green("ALL HEALTHY") : chalk.red("ISSUES DETECTED");
       console.log(`\n  Overall: ${overall}\n`);
+}
+
+export function registerHealthCommands(program: Command, isJson: () => boolean) {
+  program
+    .command("health")
+    .description("[Deprecated] Use 'perp status --health' instead")
+    .action(async () => {
+      if (!isJson()) console.log(chalk.yellow("  [Deprecated] Use 'perp status --health' instead.\n"));
+      await runHealthCheck(isJson);
     });
 }

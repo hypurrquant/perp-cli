@@ -66,7 +66,7 @@ export function registerMultilegCommands(
 ) {
   program
     .command("multi <legs...>")
-    .description("Execute multi-leg orders simultaneously (exchange:symbol:side:size)")
+    .description("[Deprecated] Use 'perp plan'. Execute multi-leg orders (exchange:symbol:side:size)")
     .option("--smart", "Use smart order (IOC limit + fallback) for each leg")
     .option("--rollback", "Auto-rollback filled legs if any leg fails", true)
     .option("--no-rollback", "Disable auto-rollback")

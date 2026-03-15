@@ -362,8 +362,13 @@ program
 // Status command
 program
   .command("status")
-  .description("Quick overview: account + positions + open orders")
-  .action(async () => {
+  .description("Quick overview: account + positions + open orders (--health for API check)")
+  .option("--health", "Check exchange API connectivity and latency")
+  .action(async (opts: { health?: boolean }) => {
+    if (opts.health) {
+      const { runHealthCheck } = await import("./commands/health.js");
+      return runHealthCheck(isJson);
+    }
     const adapter = await getAdapter();
     const json = isJson();
 

@@ -102,7 +102,7 @@ export function registerAgentCommands(
 ) {
   const agent = program
     .command("agent")
-    .description("Agent-friendly commands (structured I/O for AI agents)");
+    .description("[Deprecated] Use 'perp api-spec'. Agent-friendly commands");
 
   // ── agent schema ── dump full command tree as JSON
   agent

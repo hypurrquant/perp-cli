@@ -137,7 +137,7 @@ export function registerGapCommands(
 ) {
   const gap = program
     .command("gap")
-    .description("Cross-exchange price gap monitoring (Pacifica vs Hyperliquid vs Lighter)");
+    .description("[Deprecated] Use 'perp arb gap'. Cross-exchange price gap monitoring");
 
   // ── gap show (default) ──
 

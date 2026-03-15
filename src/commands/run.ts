@@ -15,7 +15,7 @@ export function registerRunCommands(
   getAdapterFor: (exchange: string) => Promise<ExchangeAdapter>,
   isJson: () => boolean
 ) {
-  const run = program.command("run").description("Run a strategy (foreground or as background job target)");
+  const run = program.command("run").description("[Deprecated] Use 'perp bot'. Run a strategy");
 
   run
     .command("twap <symbol> <side> <size> <duration>")
