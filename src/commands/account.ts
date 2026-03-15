@@ -18,24 +18,9 @@ export function registerAccountCommands(
   const account = program.command("account").description("Account commands");
 
   account
-    .command("info")
-    .description("Show account balance and info")
-    .action(async () => {
-      const adapter = await getAdapter();
-      const bal = await adapter.getBalance();
-      if (isJson()) return printJson(jsonOk(bal));
-
-      console.log(chalk.cyan.bold(`\n  ${adapter.name.toUpperCase()} Account Info\n`));
-      console.log(`  Equity:       $${formatUsd(bal.equity)}`);
-      console.log(`  Available:    $${formatUsd(bal.available)}`);
-      console.log(`  Margin Used:  $${formatUsd(bal.marginUsed)}`);
-      console.log(`  Unreal. PnL:  ${formatPnl(bal.unrealizedPnl)}`);
-      console.log();
-    });
-
-  account
     .command("balance")
-    .description("Full account overview: perp balance, spot holdings, and 24h funding")
+    .alias("info")
+    .description("Account overview: perp balance, spot holdings, and 24h funding")
     .action(async () => {
       const adapter = await getAdapter();
       const exName = adapter.name.toLowerCase();
