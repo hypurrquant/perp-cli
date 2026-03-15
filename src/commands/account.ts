@@ -35,17 +35,108 @@ export function registerAccountCommands(
 
   account
     .command("balance")
-    .description("Alias for 'account info' — show account balance")
+    .description("Full account overview: perp balance, spot holdings, and 24h funding")
     .action(async () => {
       const adapter = await getAdapter();
-      const bal = await adapter.getBalance();
-      if (isJson()) return printJson(jsonOk(bal));
+      const exName = adapter.name.toLowerCase();
 
-      console.log(chalk.cyan.bold(`\n  ${adapter.name.toUpperCase()} Account Balance\n`));
-      console.log(`  Equity:       $${formatUsd(bal.equity)}`);
-      console.log(`  Available:    $${formatUsd(bal.available)}`);
-      console.log(`  Margin Used:  $${formatUsd(bal.marginUsed)}`);
-      console.log(`  Unreal. PnL:  ${formatPnl(bal.unrealizedPnl)}`);
+      // Fetch perp balance + funding in parallel
+      const [bal, fundingPayments] = await Promise.all([
+        adapter.getBalance(),
+        adapter.getFundingPayments(200).catch(() => [] as { time: number; symbol: string; payment: string }[]),
+      ]);
+
+      // Spot balances (HL and LT only)
+      let spotBalances: { token: string; total: string; available: string; held: string; valueUsd?: number }[] = [];
+      try {
+        if (exName === "hyperliquid") {
+          const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+          const hlSpot = new HyperliquidSpotAdapter(adapter as HyperliquidAdapter);
+          await hlSpot.init();
+          const raw = await hlSpot.getSpotBalances();
+          // Get spot prices for USD valuation
+          const markets = await hlSpot.getSpotMarkets();
+          const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
+          spotBalances = raw
+            .filter(b => Number(b.total) > 0)
+            .map(b => ({
+              ...b,
+              valueUsd: b.token === "USDC" ? Number(b.total) : (priceMap.get(b.token.toUpperCase()) ?? 0) * Number(b.total),
+            }));
+        } else if (exName === "lighter") {
+          const { LighterAdapter } = await import("../exchanges/lighter.js");
+          const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");
+          const ltSpot = new LighterSpotAdapter(adapter as InstanceType<typeof LighterAdapter>);
+          await ltSpot.init();
+          const raw = await ltSpot.getSpotBalances();
+          const markets = await ltSpot.getSpotMarkets();
+          const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
+          spotBalances = raw
+            .filter(b => Number(b.total) > 0)
+            .map(b => ({
+              ...b,
+              valueUsd: b.token === "USDC" || b.token === "USDC_SPOT"
+                ? Number(b.total)
+                : (priceMap.get(b.token.toUpperCase()) ?? 0) * Number(b.total),
+            }));
+        }
+      } catch { /* spot not available */ }
+
+      // 24h funding summary
+      const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
+      const recent = fundingPayments.filter(f => f.time >= cutoff24h);
+      const funding24h = recent.reduce((sum, f) => sum + Number(f.payment), 0);
+
+      // Total spot value
+      const totalSpotUsd = spotBalances.reduce((s, b) => s + (b.valueUsd ?? 0), 0);
+
+      if (isJson()) {
+        return printJson(jsonOk({
+          perp: bal,
+          spot: spotBalances,
+          funding24h,
+          fundingPayments24h: recent.length,
+          totalSpotValueUsd: totalSpotUsd,
+          totalAccountValueUsd: Number(bal.equity) + totalSpotUsd,
+        }));
+      }
+
+      // ── Perp Balance ──
+      console.log(chalk.cyan.bold(`\n  ${exName.toUpperCase()} Account Balance\n`));
+      console.log(chalk.white.bold("  Perp Account"));
+      console.log(`    Equity:       $${formatUsd(bal.equity)}`);
+      console.log(`    Available:    $${formatUsd(bal.available)}`);
+      console.log(`    Margin Used:  $${formatUsd(bal.marginUsed)}`);
+      console.log(`    Unreal. PnL:  ${formatPnl(bal.unrealizedPnl)}`);
+
+      // ── Spot Holdings ──
+      if (spotBalances.length > 0) {
+        console.log(chalk.white.bold("\n  Spot Holdings"));
+        const rows = spotBalances.map(b => [
+          chalk.white.bold(b.token),
+          b.total,
+          b.available,
+          b.held !== "0" ? b.held : chalk.gray("-"),
+          b.valueUsd ? `$${formatUsd(b.valueUsd)}` : chalk.gray("-"),
+        ]);
+        console.log(makeTable(["Token", "Total", "Available", "Held", "Value"], rows));
+      } else if (exName === "hyperliquid" || exName === "lighter") {
+        console.log(chalk.gray("\n  No spot holdings.\n"));
+      }
+
+      // ── Funding 24h ──
+      console.log(chalk.white.bold("  Funding (24h)"));
+      console.log(`    Payments:     ${recent.length}`);
+      console.log(`    Total:        ${formatPnl(funding24h)}`);
+
+      // ── Total ──
+      const totalValue = Number(bal.equity) + totalSpotUsd;
+      if (totalSpotUsd > 0) {
+        console.log(chalk.white.bold("\n  Total"));
+        console.log(`    Perp Equity:  $${formatUsd(bal.equity)}`);
+        console.log(`    Spot Value:   $${formatUsd(totalSpotUsd)}`);
+        console.log(`    Total Value:  $${formatUsd(totalValue)}`);
+      }
       console.log();
     });
 

@@ -10,7 +10,9 @@ import {
 } from "../../shared-api.js";
 import { computeBasisRisk } from "../../arb-utils.js";
 import { smartOrder } from "../../smart-order.js";
-import { removePosition as persistRemovePosition } from "../../arb-state.js";
+import { removePosition as persistRemovePosition, getPositions as getArbStatePositions } from "../../arb-state.js";
+import { SPOT_PERP_TOKEN_MAP } from "../../exchanges/spot-interface.js";
+import type { SpotBalance } from "../../exchanges/spot-interface.js";
 import { fetchAllBalances, computeRebalancePlan } from "../../rebalance.js";
 import { EXCHANGE_TO_CHAIN, getBestQuote } from "../../bridge-engine.js";
 import { computeEnhancedStats, type ArbTradeForStats } from "../../arb-history-stats.js";
@@ -54,6 +56,31 @@ interface ArbPairPosition {
     totalCosts: number;
     remainingToBreakeven: number;
   };
+}
+
+interface SpotPerpPosition {
+  symbol: string;           // perp symbol, e.g. "ETH"
+  mode: "spot-perp";
+  spotExchange: string;
+  perpExchange: string;
+  spotToken: string;        // actual spot token, e.g. "UETH" on HL
+  spotAmount: number;
+  spotValueUsd: number;
+  perpSide: "short" | "long";
+  perpSize: number;
+  perpEntryPrice: number;
+  perpMarkPrice: number;
+  perpUnrealizedPnl: number;
+  perpLeverage: number;
+  perpNotionalUsd: number;
+  direction: "long-spot-short-perp" | "sell-spot-long-perp";
+  currentSpread: number | null;
+  holdDuration: string | null;
+  holdDurationMs: number | null;
+  estimatedFundingIncome: number;
+  estimatedFees: number;
+  netPnl: number;
+  dailyFundingEstimate: number;
 }
 
 interface ArbHistoryTrade {
@@ -173,7 +200,7 @@ export function registerArbManageCommands(
 
   arb
     .command("status")
-    .description("Show open arb positions with PnL breakdown")
+    .description("Show open arb positions (perp-perp + spot-perp) with PnL breakdown")
     .action(async () => {
       if (!isJson()) console.log(chalk.cyan("\n  Checking arb positions across exchanges...\n"));
 
@@ -314,77 +341,303 @@ export function registerArbManageCommands(
         }
       }
 
+      // ── Spot-Perp position detection ──
+      // Fetch spot balances from HL and LT, match with perp shorts
+      const spotPerpPositions: SpotPerpPosition[] = [];
+
+      // Build reverse map: spot token → perp symbol (UETH→ETH, UBTC→BTC, etc.)
+      const spotToPerpSymbol = (token: string): string => {
+        const upper = token.toUpperCase();
+        return SPOT_PERP_TOKEN_MAP[upper] ?? upper;
+      };
+
+      // Collect spot balances per exchange
+      const spotBalancesByExchange = new Map<string, SpotBalance[]>();
+      const SPOT_EXCHANGES = ["hyperliquid", "lighter"];
+
+      for (const exName of SPOT_EXCHANGES) {
+        try {
+          const adapter = await getAdapterForExchange(exName);
+          if (exName === "hyperliquid") {
+            const { HyperliquidSpotAdapter } = await import("../../exchanges/hyperliquid-spot.js");
+            const hlSpot = new HyperliquidSpotAdapter(adapter as import("../../exchanges/hyperliquid.js").HyperliquidAdapter);
+            await hlSpot.init();
+            const balances = await hlSpot.getSpotBalances();
+            spotBalancesByExchange.set(exName, balances.filter(b =>
+              b.token !== "USDC" && Number(b.total) > 0
+            ));
+          } else if (exName === "lighter") {
+            const { LighterSpotAdapter } = await import("../../exchanges/lighter-spot.js");
+            const ltSpot = new LighterSpotAdapter(adapter as import("../../exchanges/lighter.js").LighterAdapter);
+            await ltSpot.init();
+            const balances = await ltSpot.getSpotBalances();
+            spotBalancesByExchange.set(exName, balances.filter(b =>
+              b.token !== "USDC" && b.token !== "USDC_SPOT" && Number(b.total) > 0
+            ));
+          }
+        } catch {
+          // exchange not configured or no spot support
+        }
+      }
+
+      // Load persisted arb state for spot-perp entries
+      const persistedSpotPerp = getArbStatePositions().filter(p => p.mode === "spot-perp");
+      const persistedSymbols = new Set(persistedSpotPerp.map(p => p.symbol.toUpperCase()));
+
+      // Match: spot balance + perp short on same symbol (different or same exchange)
+      for (const [spotEx, balances] of spotBalancesByExchange) {
+        for (const bal of balances) {
+          const perpSymbol = spotToPerpSymbol(bal.token);
+          const spotAmount = Number(bal.total);
+          if (spotAmount <= 0) continue;
+
+          // Find matching perp short position (on any exchange)
+          const matchingShorts = allPositions.filter(
+            p => p.symbol === perpSymbol && p.side === "short"
+          );
+
+          for (const shortPos of matchingShorts) {
+            // Check if this short is already used by a perp-perp pair
+            const usedByPerpPerp = arbPairs.some(
+              ap => ap.symbol === perpSymbol && ap.shortExchange === shortPos.exchange
+            );
+            if (usedByPerpPerp) continue;
+
+            // Look up persisted state for hold time and entry info
+            const persisted = persistedSpotPerp.find(
+              p => p.symbol.toUpperCase() === perpSymbol
+                && p.spotExchange === spotEx
+                && p.shortExchange === shortPos.exchange
+            );
+
+            const entryTime = persisted?.entryTime ?? null;
+            const holdDurationMs = entryTime ? Date.now() - new Date(entryTime).getTime() : null;
+            const holdDuration = holdDurationMs ? formatDuration(holdDurationMs) : null;
+
+            // Get current perp funding rate for this symbol on this exchange
+            const rates = rateMap.get(perpSymbol);
+            const perpRate = rates?.find(r => r.exchange === shortPos.exchange);
+            const fundingRate = perpRate?.rate ?? 0;
+            const hourlyRate = fundingRate ? toHourlyRate(fundingRate, shortPos.exchange) : 0;
+            const annualPct = hourlyRate * 8760 * 100;
+
+            const perpNotional = shortPos.size * shortPos.markPrice;
+            const spotValueUsd = spotAmount * shortPos.markPrice; // approx using perp mark price
+
+            // Funding income: spot has 0 funding, perp short receives when rate > 0
+            let estimatedFundingIncome = 0;
+            if (holdDurationMs && hourlyRate !== 0) {
+              const holdHours = holdDurationMs / (1000 * 60 * 60);
+              // Short position: pays when rate < 0, receives when rate > 0
+              estimatedFundingIncome = Math.abs(hourlyRate) * perpNotional * holdHours;
+              if (hourlyRate < 0) estimatedFundingIncome = -estimatedFundingIncome;
+            }
+            // Add persisted accumulated funding
+            if (persisted?.accumulatedFunding) {
+              estimatedFundingIncome += persisted.accumulatedFunding;
+            }
+
+            // Fees: spot buy + spot sell + perp short entry + perp buy to close
+            const { getTakerFee } = await import("../../constants.js");
+            const spotFee = getTakerFee(spotEx);
+            const perpFee = getTakerFee(shortPos.exchange);
+            const totalFees = (spotValueUsd * spotFee * 2) + (perpNotional * perpFee * 2);
+
+            const direction = hourlyRate >= 0 ? "long-spot-short-perp" as const : "sell-spot-long-perp" as const;
+            const dailyFundingEstimate = Math.abs(hourlyRate) * perpNotional * 24;
+
+            spotPerpPositions.push({
+              symbol: perpSymbol,
+              mode: "spot-perp",
+              spotExchange: spotEx,
+              perpExchange: shortPos.exchange,
+              spotToken: bal.token,
+              spotAmount,
+              spotValueUsd,
+              perpSide: "short",
+              perpSize: shortPos.size,
+              perpEntryPrice: shortPos.entryPrice,
+              perpMarkPrice: shortPos.markPrice,
+              perpUnrealizedPnl: shortPos.unrealizedPnl,
+              perpLeverage: shortPos.leverage,
+              perpNotionalUsd: perpNotional,
+              direction,
+              currentSpread: annualPct || null,
+              holdDuration,
+              holdDurationMs,
+              estimatedFundingIncome,
+              estimatedFees: totalFees,
+              netPnl: shortPos.unrealizedPnl + estimatedFundingIncome - totalFees,
+              dailyFundingEstimate,
+            });
+          }
+        }
+      }
+
+      // Also detect persisted spot-perp entries without matching spot balance (already exited spot)
+      for (const persisted of persistedSpotPerp) {
+        const sym = persisted.symbol.toUpperCase();
+        const alreadyMatched = spotPerpPositions.some(
+          sp => sp.symbol === sym && sp.spotExchange === persisted.spotExchange
+        );
+        if (alreadyMatched) continue;
+
+        // Check if there's still a perp short for this
+        const shortPos = allPositions.find(
+          p => p.symbol === sym && p.side === "short" && p.exchange === persisted.shortExchange
+        );
+        if (!shortPos) continue; // both legs closed, skip
+
+        const holdDurationMs = Date.now() - new Date(persisted.entryTime).getTime();
+        const rates = rateMap.get(sym);
+        const perpRate = rates?.find(r => r.exchange === persisted.shortExchange);
+        const hourlyRate = perpRate ? toHourlyRate(perpRate.rate, persisted.shortExchange) : 0;
+        const perpNotional = shortPos.size * shortPos.markPrice;
+
+        spotPerpPositions.push({
+          symbol: sym,
+          mode: "spot-perp",
+          spotExchange: persisted.spotExchange ?? "unknown",
+          perpExchange: persisted.shortExchange,
+          spotToken: "?",
+          spotAmount: 0,
+          spotValueUsd: 0,
+          perpSide: "short",
+          perpSize: shortPos.size,
+          perpEntryPrice: shortPos.entryPrice,
+          perpMarkPrice: shortPos.markPrice,
+          perpUnrealizedPnl: shortPos.unrealizedPnl,
+          perpLeverage: shortPos.leverage,
+          perpNotionalUsd: perpNotional,
+          direction: hourlyRate >= 0 ? "long-spot-short-perp" : "sell-spot-long-perp",
+          currentSpread: hourlyRate ? Math.abs(hourlyRate) * 8760 * 100 : null,
+          holdDuration: formatDuration(holdDurationMs),
+          holdDurationMs,
+          estimatedFundingIncome: persisted.accumulatedFunding ?? 0,
+          estimatedFees: 0,
+          netPnl: shortPos.unrealizedPnl + (persisted.accumulatedFunding ?? 0),
+          dailyFundingEstimate: Math.abs(hourlyRate) * perpNotional * 24,
+        });
+      }
+
+      // ── JSON output ──
       if (isJson()) {
-        const totalNotionalJ = arbPairs.reduce((s, p) => s + (p.longPosition.notionalUsd + p.shortPosition.notionalUsd) / 2, 0);
-        const totalDailyJ = arbPairs.reduce((s, p) => s + p.dailyFundingEstimate, 0);
+        const totalNotionalPP = arbPairs.reduce((s, p) => s + (p.longPosition.notionalUsd + p.shortPosition.notionalUsd) / 2, 0);
+        const totalDailyPP = arbPairs.reduce((s, p) => s + p.dailyFundingEstimate, 0);
+        const totalNotionalSP = spotPerpPositions.reduce((s, p) => s + p.perpNotionalUsd, 0);
+        const totalDailySP = spotPerpPositions.reduce((s, p) => s + p.dailyFundingEstimate, 0);
+        const totalNotionalJ = totalNotionalPP + totalNotionalSP;
+        const totalDailyJ = totalDailyPP + totalDailySP;
         return printJson(jsonOk({
-          pairs: arbPairs,
+          perpPerpPairs: arbPairs,
+          spotPerpPairs: spotPerpPositions,
           aggregate: {
-            positions: arbPairs.length,
+            perpPerpCount: arbPairs.length,
+            spotPerpCount: spotPerpPositions.length,
+            totalPositions: arbPairs.length + spotPerpPositions.length,
             totalNotionalUsd: totalNotionalJ,
-            unrealizedPnl: arbPairs.reduce((s, p) => s + p.unrealizedPnl, 0),
-            estimatedFunding: arbPairs.reduce((s, p) => s + p.estimatedFundingIncome, 0),
-            estimatedFees: arbPairs.reduce((s, p) => s + p.estimatedFees, 0),
-            netPnl: arbPairs.reduce((s, p) => s + p.netPnl, 0),
+            unrealizedPnl: arbPairs.reduce((s, p) => s + p.unrealizedPnl, 0) + spotPerpPositions.reduce((s, p) => s + p.perpUnrealizedPnl, 0),
+            estimatedFunding: arbPairs.reduce((s, p) => s + p.estimatedFundingIncome, 0) + spotPerpPositions.reduce((s, p) => s + p.estimatedFundingIncome, 0),
+            estimatedFees: arbPairs.reduce((s, p) => s + p.estimatedFees, 0) + spotPerpPositions.reduce((s, p) => s + p.estimatedFees, 0),
+            netPnl: arbPairs.reduce((s, p) => s + p.netPnl, 0) + spotPerpPositions.reduce((s, p) => s + p.netPnl, 0),
             dailyFundingEstimate: totalDailyJ,
             annualizedApr: totalNotionalJ > 0 ? (totalDailyJ * 365 / totalNotionalJ) * 100 : 0,
           },
         }));
       }
 
-      if (arbPairs.length === 0) {
+      if (arbPairs.length === 0 && spotPerpPositions.length === 0) {
         console.log(chalk.gray("  No open arb positions found.\n"));
         return;
       }
 
-      console.log(chalk.cyan.bold("  Open Arb Positions\n"));
+      // ── Perp-Perp table ──
+      if (arbPairs.length > 0) {
+        console.log(chalk.cyan.bold("  Perp-Perp Arb Positions\n"));
 
-      const rows = arbPairs.map(p => {
-        const spreadStr = p.currentSpread !== null ? `${p.currentSpread.toFixed(1)}%` : "-";
-        const entrySpreadStr = p.entrySpread !== null ? `${p.entrySpread.toFixed(1)}%` : "-";
-        const holdStr = p.holdDuration ?? "-";
-        const avgNotional = (p.longPosition.notionalUsd + p.shortPosition.notionalUsd) / 2;
+        const rows = arbPairs.map(p => {
+          const spreadStr = p.currentSpread !== null ? `${p.currentSpread.toFixed(1)}%` : "-";
+          const entrySpreadStr = p.entrySpread !== null ? `${p.entrySpread.toFixed(1)}%` : "-";
+          const holdStr = p.holdDuration ?? "-";
+          const avgNotional = (p.longPosition.notionalUsd + p.shortPosition.notionalUsd) / 2;
 
-        // Compute basis risk from mark prices
-        const basis = computeBasisRisk(p.longPosition.markPrice, p.shortPosition.markPrice);
-        const basisStr = basis.divergencePct > 0
-          ? (basis.warning
-            ? chalk.red(`${basis.divergencePct.toFixed(1)}%`)
-            : chalk.gray(`${basis.divergencePct.toFixed(1)}%`))
-          : chalk.gray("-");
+          const basis = computeBasisRisk(p.longPosition.markPrice, p.shortPosition.markPrice);
+          const basisStr = basis.divergencePct > 0
+            ? (basis.warning
+              ? chalk.red(`${basis.divergencePct.toFixed(1)}%`)
+              : chalk.gray(`${basis.divergencePct.toFixed(1)}%`))
+            : chalk.gray("-");
 
-        return [
-          chalk.white.bold(p.symbol),
-          chalk.green(p.longExchange),
-          chalk.red(p.shortExchange),
-          `$${formatUsd(avgNotional)}`,
-          `$${p.longPosition.entryPrice.toFixed(2)} / $${p.shortPosition.entryPrice.toFixed(2)}`,
-          `$${p.longPosition.markPrice.toFixed(2)}`,
-          formatPnl(p.unrealizedPnl),
-          chalk.yellow(`$${p.estimatedFundingIncome.toFixed(4)}`),
-          `${entrySpreadStr} -> ${spreadStr}`,
-          basisStr,
-          holdStr,
-          formatPnl(p.netPnl),
-        ];
-      });
+          return [
+            chalk.white.bold(p.symbol),
+            chalk.green(p.longExchange),
+            chalk.red(p.shortExchange),
+            `$${formatUsd(avgNotional)}`,
+            `$${p.longPosition.entryPrice.toFixed(2)} / $${p.shortPosition.entryPrice.toFixed(2)}`,
+            `$${p.longPosition.markPrice.toFixed(2)}`,
+            formatPnl(p.unrealizedPnl),
+            chalk.yellow(`$${p.estimatedFundingIncome.toFixed(4)}`),
+            `${entrySpreadStr} -> ${spreadStr}`,
+            basisStr,
+            holdStr,
+            formatPnl(p.netPnl),
+          ];
+        });
 
-      console.log(makeTable(
-        ["Symbol", "Long", "Short", "Size", "Entry", "Mark", "uPnL", "Funding", "Spread", "Basis", "Hold", "Net PnL"],
-        rows,
-      ));
+        console.log(makeTable(
+          ["Symbol", "Long", "Short", "Size", "Entry", "Mark", "uPnL", "Funding", "Spread", "Basis", "Hold", "Net PnL"],
+          rows,
+        ));
+      }
 
-      // Summary
-      const totalUpnl = arbPairs.reduce((s, p) => s + p.unrealizedPnl, 0);
-      const totalFunding = arbPairs.reduce((s, p) => s + p.estimatedFundingIncome, 0);
-      const totalFees = arbPairs.reduce((s, p) => s + p.estimatedFees, 0);
-      const totalNet = arbPairs.reduce((s, p) => s + p.netPnl, 0);
-      const totalDailyFunding = arbPairs.reduce((s, p) => s + p.dailyFundingEstimate, 0);
-      const totalNotional = arbPairs.reduce((s, p) => s + (p.longPosition.notionalUsd + p.shortPosition.notionalUsd) / 2, 0);
+      // ── Spot-Perp table ──
+      if (spotPerpPositions.length > 0) {
+        console.log(chalk.cyan.bold("  Spot-Perp Arb Positions\n"));
+
+        const spRows = spotPerpPositions.map(sp => {
+          const spotLabel = sp.spotToken !== sp.symbol
+            ? `${sp.spotToken} (${sp.spotExchange})`
+            : sp.spotExchange;
+          const spreadStr = sp.currentSpread !== null ? `${sp.currentSpread.toFixed(1)}%` : "-";
+          return [
+            chalk.white.bold(sp.symbol),
+            chalk.green(`${sp.spotAmount.toFixed(4)} ${sp.spotToken}`),
+            spotLabel,
+            chalk.red(sp.perpExchange),
+            `$${formatUsd(sp.perpNotionalUsd)}`,
+            `$${sp.perpMarkPrice.toFixed(2)}`,
+            formatPnl(sp.perpUnrealizedPnl),
+            chalk.yellow(`$${sp.estimatedFundingIncome.toFixed(4)}`),
+            spreadStr,
+            sp.holdDuration ?? "-",
+            formatPnl(sp.netPnl),
+          ];
+        });
+
+        console.log(makeTable(
+          ["Symbol", "Spot Held", "Spot Ex", "Perp Ex", "Size", "Mark", "uPnL", "Funding", "Spread", "Hold", "Net PnL"],
+          spRows,
+        ));
+      }
+
+      // ── Combined Summary ──
+      const totalUpnl = arbPairs.reduce((s, p) => s + p.unrealizedPnl, 0)
+        + spotPerpPositions.reduce((s, p) => s + p.perpUnrealizedPnl, 0);
+      const totalFunding = arbPairs.reduce((s, p) => s + p.estimatedFundingIncome, 0)
+        + spotPerpPositions.reduce((s, p) => s + p.estimatedFundingIncome, 0);
+      const totalFees = arbPairs.reduce((s, p) => s + p.estimatedFees, 0)
+        + spotPerpPositions.reduce((s, p) => s + p.estimatedFees, 0);
+      const totalNet = arbPairs.reduce((s, p) => s + p.netPnl, 0)
+        + spotPerpPositions.reduce((s, p) => s + p.netPnl, 0);
+      const totalDailyFunding = arbPairs.reduce((s, p) => s + p.dailyFundingEstimate, 0)
+        + spotPerpPositions.reduce((s, p) => s + p.dailyFundingEstimate, 0);
+      const totalNotional = arbPairs.reduce((s, p) => s + (p.longPosition.notionalUsd + p.shortPosition.notionalUsd) / 2, 0)
+        + spotPerpPositions.reduce((s, p) => s + p.perpNotionalUsd, 0);
       const portfolioApr = totalNotional > 0 ? (totalDailyFunding * 365 / totalNotional) * 100 : 0;
 
       console.log(chalk.white.bold("\n  Summary"));
-      console.log(`    Positions:       ${arbPairs.length}`);
+      console.log(`    Perp-Perp:       ${arbPairs.length} positions`);
+      console.log(`    Spot-Perp:       ${spotPerpPositions.length} positions`);
       console.log(`    Total Notional:  $${formatUsd(totalNotional)}`);
       console.log(`    Unrealized PnL:  ${formatPnl(totalUpnl)}`);
       console.log(`    Est. Funding:    ${chalk.yellow(`$${totalFunding.toFixed(4)}`)}`);
