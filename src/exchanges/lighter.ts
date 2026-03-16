@@ -395,9 +395,13 @@ export class LighterAdapter implements ExchangeAdapter {
           ),
           liquidationPrice: String(p.liquidation_price || "N/A"),
           unrealizedPnl: String(p.unrealized_pnl || "0"),
-          leverage: Number(p.initial_margin_fraction || 0) > 0
-            ? Math.round(10000 / Number(p.initial_margin_fraction))
-            : 1,
+          // Compute actual leverage = notional / account equity (not max leverage from IMF)
+          leverage: (() => {
+            const notional = Math.abs(Number(p.position_value || 0));
+            const equity = Number(acct.total_asset_value || 0);
+            if (equity > 0 && notional > 0) return Math.round(notional / equity * 10) / 10;
+            return 1;
+          })(),
         };
       });
   }
