@@ -69,26 +69,48 @@ perp --json portfolio
 # Market data
 perp --json -e <EX> market list
 perp --json -e <EX> market book <SYM>
+perp --json -e <EX> market mid <SYM>              # fast mid-price lookup
 perp --json -e <EX> market funding <SYM>
+perp --json -e <EX> market kline <SYM> 1h          # candlestick data
+perp --json -e hl market hip3                       # list HIP-3 deployed dexes
 
 # Trading
-perp --json -e <EX> trade market <SYM> buy <SIZE>
-perp --json -e <EX> trade market <SYM> buy <SIZE> --smart      # IOC limit at best bid/ask (less slippage)
-perp --json -e <EX> trade split <SYM> buy 5000                 # orderbook-aware split (large orders)
+perp --json -e <EX> trade buy <SYM> <SIZE>          # shortcut for market buy
+perp --json -e <EX> trade sell <SYM> <SIZE>         # shortcut for market sell
+perp --json -e <EX> trade market <SYM> buy <SIZE> --smart  # IOC limit (less slippage)
+perp --json -e <EX> trade split <SYM> buy 5000      # orderbook-aware split (large orders)
 perp --json -e <EX> trade close <SYM>
+perp --json -e <EX> trade flatten                    # close ALL positions on exchange
+perp --json -e <EX> trade reduce <SYM> 50            # reduce position by 50%
+perp --json -e <EX> trade cancel <SYM>               # cancel by symbol (or orderId)
+perp --json -e <EX> trade tpsl <SYM> long            # set take-profit / stop-loss
 perp --json -e <EX> trade leverage <SYM> <N>
 
+# Account
+perp --json -e <EX> account balance
+perp --json -e <EX> account positions
+perp --json -e <EX> account pnl                      # realized + unrealized + funding
+perp --json -e <EX> account funding                  # personal funding payment history
+perp --json -e <EX> account settings                 # per-market leverage & margin mode
+
 # Funding rate arbitrage
-perp --json arb scan --min 5                                              # perp-perp opportunities
-perp --json arb scan --mode spot-perp                                     # spot+perp opportunities
-perp --json arb exec <SYM> <longEx> <shortEx> <$> --leverage 2 --isolated # execute both legs
-perp --json arb spot-exec <SYM> <spotEx> <perpEx> <$>                     # spot+perp entry
+perp --json arb scan --min 5                         # perp-perp opportunities
+perp --json arb scan --mode spot-perp                # spot+perp opportunities
+perp --json arb scan --rates                         # funding rates across all exchanges
+perp --json arb scan --basis                         # cross-exchange basis opportunities
+perp --json arb scan --gaps                          # cross-exchange price gaps
+perp --json arb scan --hip3                          # HIP-3 cross-dex funding spreads
+perp --json arb scan --live                          # continuous live monitoring
+perp --json arb exec <SYM> <longEx> <shortEx> <$>   # perp-perp dual-leg entry
+perp --json arb exec <SYM> spot:<exch> <perpEx> <$>  # spot+perp entry
+perp --json arb config                               # show arb defaults
+perp --json arb history                              # past arb trade performance (alias: log)
 
 # Funds (deposit, withdraw, transfer)
 perp --json funds deposit hyperliquid 100
 perp --json funds withdraw pacifica 50
-perp --json funds transfer 100 <ADDRESS>          # HL internal transfer
-perp --json funds info                            # all routes & limits
+perp --json funds transfer 100 <ADDRESS>             # HL internal transfer
+perp --json funds info                               # all routes & limits
 
 # Risk
 perp --json risk limits --max-leverage 5
@@ -103,7 +125,9 @@ perp --json bridge quote --from solana --to arbitrum --amount 100
 perp --json bridge send --from solana --to arbitrum --amount 100
 ```
 
-Exchange flags: `-e hyperliquid`, `-e pacifica`, `-e lighter` (aliases: `hl`, `pac`, `lt`).
+Exchange flag: `-e hyperliquid` / `-e pacifica` / `-e lighter` (aliases: `hl`, `pac`, `lt`).
+
+Global flags: `--json`, `--fields <f>`, `--ndjson`, `--dry-run`, `--dex <name>` (HIP-3), `-w, --wallet <name>`.
 
 ## AI Agent Skill
 

@@ -472,20 +472,19 @@ server.tool(
       } else if (g.includes("arb") || g.includes("arbitrage")) {
         steps.push(
           { step: 1, command: "perp --json arb scan --min 5", description: "Scan funding rate arbitrage opportunities" },
-          { step: 2, command: "perp --json arb scan", description: "Find high-spread opportunities" },
-          { step: 3, command: "perp --json gap show", description: "Check cross-exchange price gaps" },
-          { step: 4, command: "perp --json arb dex", description: "HIP-3 cross-dex arb opportunities (Hyperliquid)" },
+          { step: 2, command: "perp --json arb scan --gaps", description: "Check cross-exchange price gaps" },
+          { step: 3, command: "perp --json arb scan --hip3", description: "HIP-3 cross-dex arb opportunities (Hyperliquid)" },
         );
       } else if (g.includes("funding")) {
         const symbol = extractSymbol(g);
         if (symbol) {
           steps.push(
-            { step: 1, command: `perp --json arb rates`, description: `Funding rates across all exchanges` },
+            { step: 1, command: `perp --json arb scan --rates`, description: `Funding rates across all exchanges` },
             { step: 2, command: `perp -e ${ex} --json market funding ${symbol}`, description: `${symbol} funding history` },
           );
         } else {
           steps.push(
-            { step: 1, command: "perp --json arb rates", description: "Funding rates across all exchanges" },
+            { step: 1, command: "perp --json arb scan --rates", description: "Funding rates across all exchanges" },
             { step: 2, command: "perp --json arb scan --min 5", description: "Funding rate arb opportunities" },
           );
         }
@@ -549,32 +548,33 @@ server.tool(
         );
       } else if (g.includes("analytic") || g.includes("performance") || g.includes("pnl") || g.includes("p&l")) {
         steps.push(
-          { step: 1, command: `perp -e ${ex} --json analytics summary`, description: "Trading performance summary" },
-          { step: 2, command: `perp -e ${ex} --json analytics pnl`, description: "P&L breakdown" },
-          { step: 3, command: `perp -e ${ex} --json analytics funding`, description: "Funding payment history" },
+          { step: 1, command: `perp -e ${ex} --json history summary`, description: "Trading performance summary" },
+          { step: 2, command: `perp -e ${ex} --json history pnl`, description: "P&L breakdown" },
+          { step: 3, command: `perp -e ${ex} --json history funding`, description: "Funding payment history" },
         );
       } else if (g.includes("history") || g.includes("log") || g.includes("audit")) {
         steps.push(
           { step: 1, command: `perp -e ${ex} --json history list`, description: "Execution audit trail" },
           { step: 2, command: `perp -e ${ex} --json history stats`, description: "Execution statistics" },
         );
-      } else if (g.includes("stream") || g.includes("live") || g.includes("watch") || g.includes("realtime")) {
+      } else if (g.includes("live") || g.includes("watch") || g.includes("realtime")) {
         const symbol = extractSymbol(g);
         if (symbol) {
           steps.push(
-            { step: 1, command: `perp -e ${ex} stream book ${symbol}`, description: `Live ${symbol} orderbook` },
-            { step: 2, command: `perp -e ${ex} stream trades ${symbol}`, description: `Live ${symbol} trades` },
+            { step: 1, command: `perp -e ${ex} --json market book ${symbol}`, description: `${symbol} orderbook` },
+            { step: 2, command: `perp -e ${ex} --json market trades ${symbol}`, description: `${symbol} recent trades` },
+            { step: 3, command: `perp --json arb scan --gaps --live`, description: "Live cross-exchange price gap monitor" },
           );
         } else {
           steps.push(
-            { step: 1, command: `perp -e ${ex} stream prices`, description: "Live price stream" },
-            { step: 2, command: `perp -e ${ex} stream events`, description: "Live account events (fills, liquidations)" },
+            { step: 1, command: "perp --json arb scan --gaps --live", description: "Live cross-exchange price gap monitor" },
+            { step: 2, command: `perp -e ${ex} --json market prices`, description: "Current prices across exchanges" },
           );
         }
       } else if (g.includes("gap")) {
         steps.push(
-          { step: 1, command: "perp --json gap show", description: "Cross-exchange price gaps" },
-          { step: 2, command: "perp --json gap watch", description: "Live gap monitor" },
+          { step: 1, command: "perp --json arb scan --gaps", description: "Cross-exchange price gaps" },
+          { step: 2, command: "perp --json arb scan --gaps --live", description: "Live gap monitor" },
         );
       } else if (g.includes("rebalance")) {
         steps.push(
@@ -649,7 +649,7 @@ server.tool(
         } else {
           steps.push(
             { step: 1, command: "perp --json market prices", description: "All market prices" },
-            { step: 2, command: "perp --json gap show", description: "Cross-exchange price gaps" },
+            { step: 2, command: "perp --json arb scan --gaps", description: "Cross-exchange price gaps" },
           );
         }
       } else if (g.includes("setting") || g.includes("config") || g.includes("referral")) {
@@ -920,6 +920,8 @@ server.tool(
             history: "Shows order history (filled, cancelled, etc.)",
             trades: "Shows trade execution history with prices and fees",
             "funding-history": "Shows funding payments received/paid",
+            funding: "Shows funding payments received/paid (alias for funding-history)",
+            "twap-orders": "Shows active TWAP orders",
             pnl: "Shows profit & loss summary",
             margin: `Shows margin info for ${args[2] || "a symbol"}`,
             settings: "Shows account settings (leverage, margin mode per symbol)",
@@ -927,25 +929,25 @@ server.tool(
           parameters: [],
           risks: [],
           category: "read",
-          relatedCommands: ["perp portfolio", "perp portfolio"],
+          relatedCommands: ["perp portfolio", "perp account balance"],
         };
       } else if (category === "arb") {
         explanation = {
           command,
           description: {
-            rates: "Compares funding rates across all 3 exchanges",
-            scan: "Scans for funding rate arbitrage opportunities with the largest spreads",
-            funding: "Detailed funding rate analysis across exchanges",
-            dex: "HIP-3 cross-dex arbitrage opportunities on Hyperliquid",
+            scan: "Scans for funding rate arbitrage opportunities. Use --rates for funding rates, --gaps for price gaps, --hip3 for cross-dex arb, --positions for funding impact, --basis for basis trading",
             auto: "Auto-execute funding rate arbitrage (runs as background job)",
+            exec: "Execute an arb trade (enter paired positions on two exchanges)",
             status: "Shows current arb positions and P&L",
             close: "Closes an arb position on both exchanges",
             history: "Shows arb execution history",
+            config: "View/edit arb configuration",
+            rebalance: "Rebalance funds across exchanges for arb positions",
           }[sub] || `Arbitrage command: ${sub}`,
           parameters: [],
-          risks: ["auto" === sub ? "Auto-executes trades on both exchanges" : ""].filter(Boolean),
-          category: sub === "auto" || sub === "close" ? "write" : "analysis",
-          relatedCommands: ["perp arb scan", "perp arb scan", "perp gap show"],
+          risks: [sub === "auto" || sub === "exec" ? "Executes trades on exchanges" : ""].filter(Boolean),
+          category: sub === "auto" || sub === "close" || sub === "exec" || sub === "rebalance" ? "write" : "analysis",
+          relatedCommands: ["perp arb scan", "perp arb status", "perp arb scan --gaps"],
         };
       } else if (category === "bridge") {
         explanation = {
@@ -981,15 +983,6 @@ server.tool(
           category: "read",
           relatedCommands: ["perp account positions", "perp portfolio"],
         };
-      } else if (category === "alert") {
-        explanation = {
-          command,
-          description: { add: "Add a price, funding rate, PnL, or liquidation alert", list: "List all active alerts", remove: "Remove an alert by ID", daemon: "Start the alert monitoring daemon", test: "Send a test alert notification", config: "Configure alert notification channels (Telegram, Discord)" }[sub] || `Alert command: ${sub}`,
-          parameters: [],
-          risks: [],
-          category: "read",
-          relatedCommands: ["perp risk status", "perp risk limits"],
-        };
       } else if (category === "bot" || category === "run") {
         explanation = {
           command,
@@ -1002,29 +995,20 @@ server.tool(
       } else if (category === "history") {
         explanation = {
           command,
-          description: { summary: "Trading performance summary", pnl: "P&L breakdown by symbol and time period", funding: "Funding payment history and totals", report: "Detailed performance report", perf: "Performance breakdown (daily/weekly/summary)" }[sub] || `History: ${sub}`,
+          description: { list: "Execution audit trail", stats: "Execution statistics", positions: "Position history", summary: "Trading performance summary", pnl: "P&L breakdown by symbol and time period", funding: "Funding payment history and totals", report: "Detailed performance report", snapshot: "Portfolio snapshot", track: "Track position over time", perf: "Performance breakdown (daily/weekly/summary)", prune: "Prune old execution records" }[sub] || `History: ${sub}`,
           parameters: [],
-          risks: [],
+          risks: sub === "prune" ? ["Permanently removes old execution records"] : [],
           category: "read",
           relatedCommands: ["perp history summary", "perp history list"],
         };
       } else if (category === "wallet") {
         explanation = {
           command,
-          description: { list: "List configured wallets", balance: "Check on-chain USDC/SOL/ETH balances", generate: "Generate a new wallet keypair", use: "Set active wallet" }[sub] || `Wallet: ${sub}`,
+          description: { show: "Show configured wallets with public addresses", list: "List configured wallets", balance: "Check on-chain USDC/SOL/ETH balances", generate: "Generate a new wallet keypair", import: "Import an existing private key", set: "Set private key for an exchange", use: "Set active wallet", remove: "Remove a wallet", rename: "Rename a wallet" }[sub] || `Wallet: ${sub}`,
           parameters: [],
-          risks: sub === "generate" ? ["Store the private key securely — it cannot be recovered"] : [],
+          risks: sub === "generate" ? ["Store the private key securely — it cannot be recovered"] : sub === "remove" ? ["Wallet will be removed — ensure you have the private key backed up"] : [],
           category: "read",
-          relatedCommands: ["perp wallet list", "perp wallet balance"],
-        };
-      } else if (category === "gap") {
-        explanation = {
-          command,
-          description: { show: "Shows cross-exchange price gaps for all symbols", watch: "Live monitor for price gaps above threshold", track: "Track gap history", alert: "Alert when gaps exceed threshold" }[sub] || `Gap analysis: ${sub}`,
-          parameters: [],
-          risks: [],
-          category: "analysis",
-          relatedCommands: ["perp gap show", "perp arb scan"],
+          relatedCommands: ["perp wallet show", "perp wallet balance"],
         };
       } else if (category === "backtest") {
         explanation = {
@@ -1200,7 +1184,8 @@ server.resource(
             orders: { usage: "perp account orders", description: "Open/pending orders" },
             history: { usage: "perp account history", description: "Order history" },
             trades: { usage: "perp account trades", description: "Trade fill history" },
-            "funding-history": { usage: "perp account funding-history", description: "Funding payments" },
+            "funding-history|funding": { usage: "perp account funding-history", description: "Funding payments" },
+            "twap-orders": { usage: "perp account twap-orders", description: "Active TWAP orders" },
             pnl: { usage: "perp account pnl", description: "Profit & loss" },
             margin: { usage: "perp account margin <symbol>", description: "Position margin info" },
             settings: { usage: "perp account settings", description: "Account settings (leverage per symbol)" },
@@ -1231,19 +1216,23 @@ server.resource(
             fills: { usage: "perp trade fills [symbol]", description: "Recent fills" },
             status: { usage: "perp trade status <orderId>", description: "Check order status" },
             "pnl-track": { usage: "perp trade pnl-track", description: "Real-time PnL tracker" },
+            split: { usage: "perp trade split <symbol> <side> <usd>", description: "Split large order into depth-based slices" },
+            multi: { usage: "perp trade multi <legs...>", description: "Execute multi-leg orders (exchange:symbol:side:size)" },
+            "cancel-stop": { usage: "perp trade cancel-stop <symbol> <stopOrderId>", description: "Cancel a stop order" },
+            "cancel-twap": { usage: "perp trade cancel-twap <symbol> <twapOrderId>", description: "Cancel a TWAP order" },
           },
         },
         arb: {
           description: "Funding rate arbitrage & basis trading",
           subcommands: {
-            rates: { usage: "perp arb scan", description: "Compare funding rates" },
-            scan: { usage: "perp arb scan --min <bps>", description: "Find arb opportunities" },
-            funding: { usage: "perp arb funding", description: "Detailed funding analysis" },
-            dex: { usage: "perp arb dex", description: "HIP-3 cross-dex arb" },
-            auto: { usage: "perp arb auto --min-spread <bps>", description: "Auto-execute funding arb" },
+            scan: { usage: "perp arb scan --min <pct>", description: "Find arb opportunities (use --rates, --gaps, --hip3, --positions, --basis, --compare, --history, --live)" },
+            auto: { usage: "perp arb auto --min-spread <pct>", description: "Auto-execute funding arb" },
+            exec: { usage: "perp arb exec <symbol> <longEx> <shortEx> <size>", description: "Execute arb trade on two exchanges" },
             status: { usage: "perp arb status", description: "Current arb positions" },
             close: { usage: "perp arb close <symbol>", description: "Close arb position" },
-            history: { usage: "perp arb history", description: "Arb execution history" },
+            "history|log": { usage: "perp arb history", description: "Arb execution history" },
+            config: { usage: "perp arb config", description: "View/edit arb configuration" },
+            rebalance: { usage: "perp arb rebalance", description: "Rebalance funds across exchanges for arb" },
           },
         },
         risk: {
@@ -1267,32 +1256,48 @@ server.resource(
         bot: {
           description: "Automated trading bots",
           subcommands: {
+            start: { usage: "perp bot start <config>", description: "Start bot from config file" },
             twap: { usage: "perp bot twap <symbol> <side> <size> <duration>", description: "TWAP execution" },
             grid: { usage: "perp bot grid <symbol> --range <pct> --grids <n> --size <usd>", description: "Grid trading bot" },
             dca: { usage: "perp bot dca <symbol> <side> <amount> <interval>", description: "DCA bot" },
+            "funding-arb": { usage: "perp bot funding-arb", description: "Funding arb bot" },
             "trailing-stop": { usage: "perp bot trailing-stop <symbol>", description: "Trailing stop bot" },
             "quick-grid": { usage: "perp bot quick-grid <symbol>", description: "Quick grid bot" },
             "quick-dca": { usage: "perp bot quick-dca <symbol> <side> <amount> <interval>", description: "Quick DCA bot" },
             "quick-arb": { usage: "perp bot quick-arb", description: "Quick arb bot" },
+            "preset-list": { usage: "perp bot preset-list", description: "List available bot presets" },
+            preset: { usage: "perp bot preset <name> [symbol]", description: "Run a bot preset" },
+            example: { usage: "perp bot example", description: "Show example bot config" },
           },
         },
         wallet: {
           description: "Wallet management",
           subcommands: {
+            show: { usage: "perp wallet show", description: "Show configured wallets with public addresses" },
             list: { usage: "perp wallet list", description: "List wallets" },
-            balance: { usage: "perp wallet balance", description: "On-chain balances" },
+            balance: { usage: "perp wallet balance [name]", description: "On-chain balances" },
             generate: { usage: "perp wallet generate solana|evm", description: "Generate new wallet" },
+            import: { usage: "perp wallet import solana|evm <privateKey>", description: "Import existing private key" },
+            set: { usage: "perp wallet set <exchange> <key>", description: "Set private key for exchange" },
+            use: { usage: "perp wallet use <name> [exchange]", description: "Set active wallet" },
+            remove: { usage: "perp wallet remove <name>", description: "Remove a wallet" },
+            rename: { usage: "perp wallet rename <oldName> <newName>", description: "Rename a wallet" },
           },
         },
         history: {
           description: "Execution log, performance & audit trail",
           subcommands: {
             list: { usage: "perp history list", description: "Execution log" },
+            stats: { usage: "perp history stats", description: "Execution statistics" },
+            positions: { usage: "perp history positions", description: "Position history" },
             summary: { usage: "perp history summary", description: "Performance summary" },
             pnl: { usage: "perp history pnl", description: "P&L breakdown" },
             funding: { usage: "perp history funding", description: "Funding payment history" },
             report: { usage: "perp history report", description: "Full performance report" },
+            snapshot: { usage: "perp history snapshot", description: "Portfolio snapshot" },
+            track: { usage: "perp history track", description: "Track position over time" },
             perf: { usage: "perp history perf --period daily|weekly|summary", description: "Performance breakdown" },
+            prune: { usage: "perp history prune", description: "Prune old execution records" },
           },
         },
         backtest: {
