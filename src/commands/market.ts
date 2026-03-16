@@ -18,55 +18,57 @@ export function registerMarketCommands(
   market
     .command("list")
     .description("List all available markets")
-    .action(async () => {
+    .option("--hip3", "Include HIP-3 dex markets (Hyperliquid)")
+    .action(async (opts: { hip3?: boolean }) => {
       const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
+
+      const HEADERS = ["Symbol", "Mark", "Index", "Funding", "24h Vol", "OI", "Max Lev"];
+      const marketRow = (m: { symbol: string; markPrice: string; indexPrice: string; fundingRate: string; volume24h: string; openInterest: string; maxLeverage: number }) => [
+        chalk.white.bold(m.symbol),
+        `$${formatUsd(m.markPrice)}`,
+        `$${formatUsd(m.indexPrice)}`,
+        formatPercent(m.fundingRate),
+        `$${formatUsd(m.volume24h)}`,
+        `$${formatUsd(m.openInterest)}`,
+        String(m.maxLeverage) + "x",
+      ];
 
       // Multi-exchange mode
       if (!explicitExchange && getAdapterForExchange) {
-        const allRows: [string, string, string, string, string, string, string, string][] = [];
+        const grouped: Record<string, { symbol: string; markPrice: string; indexPrice: string; fundingRate: string; volume24h: string; openInterest: string; maxLeverage: number }[]> = {};
         const errors: Record<string, string> = {};
 
         await Promise.all(EXCHANGES.map(async (ex) => {
           try {
             const adapter = await getAdapterForExchange(ex);
-            const markets = await adapter.getMarkets();
-            for (const m of markets) {
-              allRows.push([
-                chalk.white.bold(m.symbol),
-                chalk.gray(ex.slice(0, 3).toUpperCase()),
-                `$${formatUsd(m.markPrice)}`,
-                `$${formatUsd(m.indexPrice)}`,
-                formatPercent(m.fundingRate),
-                `$${formatUsd(m.volume24h)}`,
-                `$${formatUsd(m.openInterest)}`,
-                String(m.maxLeverage) + "x",
-              ]);
+            grouped[ex] = await adapter.getMarkets();
+            // --hip3: fetch HIP-3 dex markets
+            if (opts.hip3 && ex === "hyperliquid" && adapter instanceof HyperliquidAdapter) {
+              const dexes = await adapter.listDeployedDexes();
+              await Promise.allSettled(dexes.map(async (d) => {
+                const dexAdapter = Object.create(adapter) as HyperliquidAdapter;
+                dexAdapter.setDex(d.name);
+                const markets = await dexAdapter.getMarkets();
+                if (markets.length > 0) grouped[`hip3:${d.name}`] = markets;
+              }));
             }
           } catch (err) {
             errors[ex] = err instanceof Error ? err.message : String(err);
           }
         }));
 
-        // Sort by symbol name
-        allRows.sort((a, b) => a[0].localeCompare(b[0]));
-
         if (isJson()) {
-          const grouped: Record<string, unknown[]> = {};
-          await Promise.all(EXCHANGES.map(async (ex) => {
-            try {
-              const adapter = await getAdapterForExchange(ex);
-              grouped[ex] = await adapter.getMarkets();
-            } catch { /* skip */ }
-          }));
           return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }));
         }
 
-        console.log(
-          makeTable(
-            ["Symbol", "Exch", "Mark", "Index", "Funding", "24h Vol", "OI", "Max Lev"],
-            allRows
-          )
-        );
+        // Per-exchange tables
+        for (const [ex, markets] of Object.entries(grouped)) {
+          if (markets.length === 0) continue;
+          const isHip3 = ex.startsWith("hip3:");
+          const label = isHip3 ? chalk.magenta.bold(`  HIP-3: ${ex.slice(5)}`) : chalk.cyan.bold(`  ${ex.toUpperCase()}`);
+          console.log(`\n${label} ${chalk.gray(`(${markets.length} markets)`)}`);
+          console.log(makeTable(HEADERS, markets.map(marketRow)));
+        }
         for (const [ex, msg] of Object.entries(errors)) {
           console.log(chalk.gray(`  ${ex}: ${msg}`));
         }
@@ -76,23 +78,32 @@ export function registerMarketCommands(
       // Single exchange mode
       const adapter = await getAdapter();
       const markets = await adapter.getMarkets();
-      if (isJson()) return printJson(jsonOk(markets));
 
-      const rows = markets.map((m) => [
-        chalk.white.bold(m.symbol),
-        `$${formatUsd(m.markPrice)}`,
-        `$${formatUsd(m.indexPrice)}`,
-        formatPercent(m.fundingRate),
-        `$${formatUsd(m.volume24h)}`,
-        `$${formatUsd(m.openInterest)}`,
-        String(m.maxLeverage) + "x",
-      ]);
-      console.log(
-        makeTable(
-          ["Symbol", "Mark", "Index", "Funding", "24h Vol", "OI", "Max Lev"],
-          rows
-        )
-      );
+      // --hip3: fetch HIP-3 dex markets
+      const hip3: Record<string, typeof markets> = {};
+      if (opts.hip3 && adapter instanceof HyperliquidAdapter) {
+        const dexes = await adapter.listDeployedDexes();
+        await Promise.allSettled(dexes.map(async (d) => {
+          const dexAdapter = Object.create(adapter) as HyperliquidAdapter;
+          dexAdapter.setDex(d.name);
+          const m = await dexAdapter.getMarkets();
+          if (m.length > 0) hip3[d.name] = m;
+        }));
+      }
+
+      if (isJson()) {
+        if (Object.keys(hip3).length > 0) {
+          return printJson(jsonOk({ main: markets, hip3 }));
+        }
+        return printJson(jsonOk(markets));
+      }
+
+      console.log(makeTable(HEADERS, markets.map(marketRow)));
+
+      for (const [dex, m] of Object.entries(hip3)) {
+        console.log(chalk.magenta.bold(`\n  HIP-3: ${dex}`) + chalk.gray(` (${m.length} markets)`));
+        console.log(makeTable(HEADERS, m.map(marketRow)));
+      }
     });
 
   market
@@ -100,43 +111,36 @@ export function registerMarketCommands(
     .description("Get current prices for all markets")
     .action(async () => {
       const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
+      const PRICE_HEADERS = ["Symbol", "Mark", "Index", "Funding"];
+      const priceRow = (m: { symbol: string; markPrice: string; indexPrice: string; fundingRate: string }) => [
+        chalk.white.bold(m.symbol),
+        `$${formatUsd(m.markPrice)}`,
+        `$${formatUsd(m.indexPrice)}`,
+        formatPercent(m.fundingRate),
+      ];
 
       if (!explicitExchange && getAdapterForExchange) {
-        const allRows: string[][] = [];
+        const grouped: Record<string, { symbol: string; markPrice: string; indexPrice: string; fundingRate: string }[]> = {};
         const errors: Record<string, string> = {};
 
         await Promise.all(EXCHANGES.map(async (ex) => {
           try {
             const adapter = await getAdapterForExchange(ex);
-            const markets = await adapter.getMarkets();
-            for (const m of markets) {
-              allRows.push([
-                chalk.white.bold(m.symbol),
-                chalk.gray(ex.slice(0, 3).toUpperCase()),
-                `$${formatUsd(m.markPrice)}`,
-                `$${formatUsd(m.indexPrice)}`,
-                formatPercent(m.fundingRate),
-              ]);
-            }
+            grouped[ex] = await adapter.getMarkets();
           } catch (err) {
             errors[ex] = err instanceof Error ? err.message : String(err);
           }
         }));
 
-        allRows.sort((a, b) => a[0].localeCompare(b[0]));
-
         if (isJson()) {
-          const grouped: Record<string, unknown[]> = {};
-          await Promise.all(EXCHANGES.map(async (ex) => {
-            try {
-              const adapter = await getAdapterForExchange(ex);
-              grouped[ex] = await adapter.getMarkets();
-            } catch { /* skip */ }
-          }));
           return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }));
         }
 
-        console.log(makeTable(["Symbol", "Exch", "Mark", "Index", "Funding"], allRows));
+        for (const [ex, markets] of Object.entries(grouped)) {
+          if (markets.length === 0) continue;
+          console.log(chalk.cyan.bold(`\n  ${ex.toUpperCase()}`) + chalk.gray(` (${markets.length} markets)`));
+          console.log(makeTable(PRICE_HEADERS, markets.map(priceRow)));
+        }
         for (const [ex, msg] of Object.entries(errors)) console.log(chalk.gray(`  ${ex}: ${msg}`));
         return;
       }
@@ -155,16 +159,9 @@ export function registerMarketCommands(
         ]);
         console.log(makeTable(["Symbol", "Mark", "Mid", "Oracle", "Funding"], rows));
       } else {
-        // Generic: use getMarkets as price source
         const markets = await adapter.getMarkets();
         if (isJson()) return printJson(jsonOk(markets));
-        const rows = markets.map((m) => [
-          chalk.white.bold(m.symbol),
-          `$${formatUsd(m.markPrice)}`,
-          `$${formatUsd(m.indexPrice)}`,
-          formatPercent(m.fundingRate),
-        ]);
-        console.log(makeTable(["Symbol", "Mark", "Index", "Funding"], rows));
+        console.log(makeTable(PRICE_HEADERS, markets.map(priceRow)));
       }
     });
 
