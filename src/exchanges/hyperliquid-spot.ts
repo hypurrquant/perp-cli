@@ -32,6 +32,10 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
   private _spotAssetReverse = new Map<number, string>(); // spotIndex → "ETH"
   private _spotDecimals = new Map<string, { size: number; price: number }>();
   private _initialized = false;
+  private _cachedMetaCtx: [
+    { tokens: Array<{ name: string; index: number }>; universe: Array<{ name: string; tokens: [number, number]; index: number; szDecimals?: number }> },
+    Array<Record<string, unknown>>,
+  ] | null = null;
 
   constructor(hlAdapter: HyperliquidAdapter) {
     this._hl = hlAdapter;
@@ -46,16 +50,19 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
 
   private async _loadSpotMeta(): Promise<void> {
     try {
-      const meta = await this._infoPost({ type: "spotMeta" }) as {
-        tokens?: Array<{ name: string; index: number; tokenId: string }>;
-        universe?: Array<{
-          name: string;
-          tokens: [number, number]; // [base token index, quote token index]
-          index: number;
-        }>;
-      };
+      // Single API call — spotMetaAndAssetCtxs includes all data from spotMeta
+      const metaCtx = await this._infoPost({ type: "spotMetaAndAssetCtxs" }) as [
+        {
+          tokens: Array<{ name: string; index: number; tokenId?: string }>;
+          universe: Array<{ name: string; tokens: [number, number]; index: number; szDecimals?: number }>;
+        },
+        Array<Record<string, unknown>>,
+      ];
 
-      if (!meta?.universe) return;
+      if (!metaCtx?.[0]?.universe) return;
+      this._cachedMetaCtx = metaCtx;
+
+      const meta = metaCtx[0];
 
       // Token index → name map
       const tokenNames = new Map<number, string>();
@@ -70,31 +77,14 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
         const baseToken = tokenNames.get(u.tokens[0]) ?? "";
         if (!baseToken) continue;
         const key = baseToken.toUpperCase();
-        // Prefer /USDC pairs (quote token = USDC). Skip non-USDC pairs if we already have one.
         const isUsdcPair = u.tokens[1] === usdcTokenIndex;
         if (this._spotAssetMap.has(key) && !isUsdcPair) continue;
         this._spotAssetMap.set(key, u.index);
         this._spotAssetReverse.set(u.index, key);
-      }
-
-      // Get spot decimals from metaAndAssetCtxs
-      const metaCtx = await this._infoPost({ type: "spotMetaAndAssetCtxs" }) as [
-        { universe: Array<{ name: string; tokens: [number, number]; index: number; szDecimals?: number }> },
-        Array<Record<string, unknown>>,
-      ];
-
-      if (metaCtx?.[0]?.universe) {
-        for (const u of metaCtx[0].universe) {
-          const baseToken = tokenNames.get(u.tokens[0]) ?? "";
-          if (!baseToken) continue;
-          const key = baseToken.toUpperCase();
-          const isUsdcPair = u.tokens[1] === usdcTokenIndex;
-          if (this._spotDecimals.has(key) && !isUsdcPair) continue;
-          this._spotDecimals.set(key, {
-            size: u.szDecimals ?? 2,
-            price: 6, // HL spot prices use up to 6 significant digits
-          });
-        }
+        this._spotDecimals.set(key, {
+          size: u.szDecimals ?? 2,
+          price: 6,
+        });
       }
     } catch (e) {
       console.error("[hl-spot] Failed to load spot meta:", e instanceof Error ? e.message : e);
@@ -104,18 +94,9 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
   async getSpotMarkets(): Promise<SpotMarketInfo[]> {
     await this.init();
     try {
-      const metaCtx = await this._infoPost({ type: "spotMetaAndAssetCtxs" }) as [
-        {
-          tokens: Array<{ name: string; index: number }>;
-          universe: Array<{
-            name: string;
-            tokens: [number, number];
-            index: number;
-            szDecimals?: number;
-          }>;
-        },
-        Array<Record<string, unknown>>,
-      ];
+      // Reuse cached metaCtx from init, or fetch fresh if cache expired
+      const metaCtx = this._cachedMetaCtx
+        ?? await this._infoPost({ type: "spotMetaAndAssetCtxs" }) as typeof this._cachedMetaCtx;
 
       if (!metaCtx?.[0]?.universe) return [];
 

@@ -74,7 +74,7 @@ export function registerPnlCommands(
   getAdapterForExchange: (exchange: string) => Promise<ExchangeAdapter>,
   isJson: () => boolean,
 ) {
-  const pnl = program.command("pnl").description("PnL tracker — equity tracking & performance metrics");
+  const pnl = program.command("pnl").description("Equity snapshot tracking & time-series performance (Sharpe, drawdown)");
 
   // ── pnl snapshot ──
   pnl

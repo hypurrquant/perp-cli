@@ -61,9 +61,11 @@ function extractSchema(cmd: Command, parentPath = "perp"): CommandSchema {
 
   const args: ParameterSchema[] = (cmd.registeredArguments ?? []).map((a) => {
     const desc = a.description || "";
+    // Args are always values (not flags), so infer from name/desc semantics, never "boolean"
+    const rawType = inferType(`<${a.name()}>`, desc);
     return {
       name: a.name(),
-      type: inferType(a.name(), desc),
+      type: rawType === "boolean" ? "string" : rawType,
       required: a.required,
       description: desc,
       enum: inferEnum(desc),
@@ -102,7 +104,7 @@ export function registerAgentCommands(
 ) {
   const agent = program
     .command("agent")
-    .description("Agent-friendly commands (structured I/O for AI agents)");
+    .description("Agent-friendly commands");
 
   // ── agent schema ── dump full command tree as JSON
   agent
@@ -126,10 +128,12 @@ export function registerAgentCommands(
       printJson(jsonOk(envelope));
     });
 
-  // ── Top-level schema alias ──
-  program
+  // ── Top-level schema alias (hidden) ──
+  const schemaAlias = program
     .command("schema")
-    .description("Output CLI schema as JSON (alias for agent schema)")
+    .description("Output CLI schema as JSON (alias for agent schema)");
+  (schemaAlias as any)._hidden = true;
+  schemaAlias
     .action(() => {
       const errorCodeDocs: Record<string, { status: number; retryable: boolean; description: string }> = {};
       for (const [key, val] of Object.entries(ERROR_CODES)) {

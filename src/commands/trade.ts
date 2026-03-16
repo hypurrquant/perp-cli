@@ -20,6 +20,7 @@ export function registerTradeCommands(
   getAdapter: () => Promise<ExchangeAdapter>,
   isJson: () => boolean,
   isDryRun: () => boolean = () => false,
+  getAdapterForExchange?: (exchange: string) => Promise<ExchangeAdapter>,
 ) {
   /** Guard: if --dry-run is active, log the intended action and return without executing. */
   function dryRunGuard(action: string, details: Record<string, unknown>): boolean {
@@ -35,11 +36,11 @@ export function registerTradeCommands(
       console.log();
     }
     logExecution({
-      type: action.includes("limit") ? "limit_order" : action.includes("stop") ? "stop_order" : action.includes("cancel") ? "cancel" : "market_order",
+      type: action.includes("split") ? "split_order" : action.includes("limit") ? "limit_order" : action.includes("stop") ? "stop_order" : action.includes("cancel") ? "cancel" : "market_order",
       exchange: details.exchange as string ?? "unknown",
       symbol: (details.symbol as string ?? "").toUpperCase(),
       side: details.side as string ?? "",
-      size: String(details.size ?? "0"),
+      size: String(details.size ?? details.totalUsd ?? "0"),
       price: details.price as string,
       status: "simulated",
       dryRun: true,
@@ -57,11 +58,38 @@ export function registerTradeCommands(
     .option("-s, --slippage <pct>", "Slippage percent", "1")
     .option("--reduce-only", "Reduce only order")
     .option("--smart", "Smart execution: IOC limit at best bid/ask + 1 tick (reduces slippage)")
+    .option("--split", "Use orderbook-aware split execution for large orders")
+    .option("--max-slippage <pct>", "Max slippage per split slice (%)", "0.3")
     .option("--client-id <id>", "Client order ID for idempotent tracking")
     .option("--auto-id", "Auto-generate a client order ID")
-    .action(async (symbol: string, side: string, size: string, opts: { slippage: string; reduceOnly?: boolean; smart?: boolean; clientId?: string; autoId?: boolean }) => {
+    .action(async (symbol: string, side: string, size: string, opts: { slippage: string; reduceOnly?: boolean; smart?: boolean; split?: boolean; maxSlippage?: string; clientId?: string; autoId?: boolean }) => {
       const s = side.toLowerCase();
       if (s !== "buy" && s !== "sell") errorAndExit("Side must be buy or sell");
+      const sym = symbol.toUpperCase();
+
+      // ── Split execution branch ──
+      if (opts.split) {
+        const adapter = await getAdapter();
+        if (dryRunGuard("split-order", { exchange: adapter.name, symbol: sym, side: s, size })) return;
+
+        const { runSplitOrder } = await import("../strategies/split-order.js");
+        const markets = await adapter.getMarkets();
+        const market = markets.find(m => symbolMatch(m.symbol, sym));
+        const markPrice = market ? parseFloat(market.markPrice) : 0;
+        const notionalUsd = markPrice > 0 ? parseFloat(size) * markPrice : parseFloat(size);
+
+        const result = await runSplitOrder(adapter, {
+          symbol: sym,
+          side: s as "buy" | "sell",
+          totalSizeUsd: notionalUsd,
+          maxSlippagePct: parseFloat(opts.maxSlippage ?? "0.3"),
+        }, isJson() ? () => {} : (msg) => console.log(chalk.gray(`  ${msg}`)));
+
+        if (isJson()) return printJson(jsonOk(result));
+        const statusColor = result.status === "complete" ? chalk.green : result.status === "partial" ? chalk.yellow : chalk.red;
+        console.log(`\n  ${statusColor(result.status.toUpperCase())} | ${result.slices.length} slices | $${formatUsd(result.filledUsd)} filled | slippage: ${result.totalSlippagePct.toFixed(3)}%\n`);
+        return;
+      }
 
       const clientId = opts.autoId ? generateClientId() : opts.clientId;
 
@@ -73,7 +101,7 @@ export function registerTradeCommands(
 
       const adapter = await getAdapter();
 
-      if (dryRunGuard("market_order", { exchange: adapter.name, symbol: symbol.toUpperCase(), side: s, size, smart: !!opts.smart })) return;
+      if (dryRunGuard("market_order", { exchange: adapter.name, symbol: sym, side: s, size, smart: !!opts.smart })) return;
 
       if (clientId) {
         logClientId({
@@ -188,6 +216,53 @@ export function registerTradeCommands(
       if (isJson()) return printJson(jsonOk(clientId ? { ...result as object, clientOrderId: clientId } : result));
       console.log(chalk.green(`\n  Market SELL ${size} ${symbol.toUpperCase()} placed on ${adapter.name}.${opts.smart ? " (smart)" : ""}\n`));
       printJson(jsonOk(result));
+    });
+
+  // ── Split Order (orderbook-aware) ──
+  trade
+    .command("split <symbol> <side> <usd>")
+    .description("Orderbook-aware split execution — breaks large orders into slices based on depth")
+    .option("--max-slippage <pct>", "Max slippage per slice (%)", "0.3")
+    .option("--max-slices <n>", "Max number of slices", "10")
+    .option("--delay <ms>", "Delay between slices in ms", "1000")
+    .option("--min-slice <usd>", "Minimum slice size in USD", "100")
+    .action(async (symbol: string, side: string, usd: string, opts: {
+      maxSlippage: string; maxSlices: string; delay: string; minSlice: string;
+    }) => {
+      const sym = symbol.toUpperCase();
+      const orderSide = side.toLowerCase() as "buy" | "sell";
+      const totalUsd = parseFloat(usd);
+
+      if (!["buy", "sell"].includes(orderSide)) errorAndExit("Side must be 'buy' or 'sell'");
+      if (isNaN(totalUsd) || totalUsd <= 0) errorAndExit("USD amount must be > 0");
+
+      const exchange = program.opts().exchange ?? "unknown";
+      if (dryRunGuard("split-order", { exchange, symbol: sym, side: orderSide, totalUsd, ...opts })) return;
+
+      const adapter = await getAdapter();
+      const { runSplitOrder } = await import("../strategies/split-order.js");
+
+      const result = await runSplitOrder(adapter, {
+        symbol: sym,
+        side: orderSide,
+        totalSizeUsd: totalUsd,
+        maxSlippagePct: parseFloat(opts.maxSlippage),
+        maxSlices: parseInt(opts.maxSlices),
+        delayMs: parseInt(opts.delay),
+        minSliceUsd: parseFloat(opts.minSlice),
+      }, isJson() ? () => {} : (msg) => console.log(chalk.gray(`  ${msg}`)));
+
+      if (isJson()) return printJson(jsonOk(result));
+
+      const statusColor = result.status === "complete" ? chalk.green
+        : result.status === "partial" ? chalk.yellow
+        : chalk.red;
+
+      console.log(`\n  ${statusColor(result.status.toUpperCase())} | ${result.slices.length} slices`);
+      console.log(`  Filled: $${formatUsd(result.filledUsd)} / $${formatUsd(result.requestedUsd)}`);
+      console.log(`  Avg Price: $${formatUsd(result.avgPrice)}`);
+      console.log(`  Slippage: ${result.totalSlippagePct.toFixed(3)}%`);
+      console.log(`  Runtime: ${result.runtime.toFixed(1)}s\n`);
     });
 
   trade
@@ -1232,7 +1307,7 @@ export function registerTradeCommands(
         const { startJob } = await import("../jobs.js");
         const cliArgs = [
           `-e`, exchange, sym,
-          `--trail`, opts.trail,
+          `--trail`, opts.trail!,
           `--interval`, opts.interval,
           ...(opts.activation ? [`--activation`, opts.activation] : []),
         ];
@@ -1447,4 +1522,210 @@ export function registerTradeCommands(
       console.log(chalk.yellow(`\n  PnL tracker stopped.\n`));
     });
 
+  // ── Multi-leg orders ──────────────────────────────────────────────────
+  if (getAdapterForExchange) {
+    const tradeCmd = program.commands.find(c => c.name() === "trade");
+    if (tradeCmd) {
+      registerMultiAction(tradeCmd, getAdapterForExchange, isJson);
+    }
+    // Keep deprecated top-level 'multi' alias (hidden from help)
+    registerMultiAction(program, getAdapterForExchange, isJson, true);
+  }
+}
+
+// ── Multi-leg helpers ──────────────────────────────────────────────────
+
+interface MultiLeg {
+  exchange: string;
+  symbol: string;
+  side: "buy" | "sell";
+  size: string;
+}
+
+interface MultiLegResult {
+  leg: MultiLeg;
+  status: "filled" | "failed" | "rolled_back";
+  result?: unknown;
+  error?: string;
+}
+
+function parseMultiLeg(spec: string): MultiLeg {
+  const parts = spec.split(":");
+  if (parts.length !== 4) {
+    throw new Error(`Invalid leg format "${spec}" — expected exchange:symbol:side:size`);
+  }
+  const [exchange, symbol, side, size] = parts;
+
+  // Normalize exchange aliases
+  const exMap: Record<string, string> = {
+    hl: "hyperliquid", pac: "pacifica", lit: "lighter",
+    hyperliquid: "hyperliquid", pacifica: "pacifica", lighter: "lighter",
+  };
+  const normalizedExchange = exMap[exchange.toLowerCase()];
+  if (!normalizedExchange) {
+    throw new Error(`Unknown exchange "${exchange}" in leg spec`);
+  }
+  if (side !== "buy" && side !== "sell") {
+    throw new Error(`Invalid side "${side}" — must be "buy" or "sell"`);
+  }
+  if (isNaN(Number(size)) || Number(size) <= 0) {
+    throw new Error(`Invalid size "${size}" — must be a positive number`);
+  }
+
+  return { exchange: normalizedExchange, symbol: symbol.toUpperCase(), side, size };
+}
+
+function registerMultiAction(
+  parent: Command,
+  getAdapterForExchange: (exchange: string) => Promise<ExchangeAdapter>,
+  isJson: () => boolean,
+  deprecated = false,
+) {
+  const cmd = parent
+    .command("multi <legs...>")
+    .description(deprecated ? "Use 'perp trade multi'" : "Execute multi-leg orders (exchange:symbol:side:size)");
+  if (deprecated) (cmd as any)._hidden = true;
+  cmd
+    .option("--smart", "Use smart order (IOC limit + fallback) for each leg")
+    .option("--rollback", "Auto-rollback filled legs if any leg fails", true)
+    .option("--no-rollback", "Disable auto-rollback")
+    .option("--timeout <ms>", "Per-leg timeout in milliseconds", "30000")
+    .action(async (legSpecs: string[], opts: { smart?: boolean; rollback: boolean; timeout: string }) => {
+      await withJsonErrors(isJson(), async () => {
+        // Parse legs
+        const legs = legSpecs.map(parseMultiLeg);
+
+        if (legs.length < 2) {
+          const err = "Multi-leg requires at least 2 legs";
+          if (isJson()) { printJson(jsonError("INVALID_ARGS", err)); return; }
+          throw new Error(err);
+        }
+
+        if (!isJson()) {
+          console.log(chalk.cyan.bold("Multi-Leg Order\n"));
+          for (const l of legs) {
+            const color = l.side === "buy" ? chalk.green : chalk.red;
+            console.log(`  ${l.exchange.padEnd(14)} ${color(l.side.toUpperCase())} ${l.symbol} x ${l.size}`);
+          }
+          console.log();
+        }
+
+        // Get adapters (deduplicated)
+        const adapters = new Map<string, ExchangeAdapter>();
+        for (const l of legs) {
+          if (!adapters.has(l.exchange)) {
+            adapters.set(l.exchange, await getAdapterForExchange(l.exchange));
+          }
+        }
+
+        // Execute all legs simultaneously
+        const timeoutMs = parseInt(opts.timeout);
+        const results = await Promise.allSettled(
+          legs.map(async (leg): Promise<MultiLegResult> => {
+            const adapter = adapters.get(leg.exchange)!;
+
+            const orderPromise = opts.smart
+              ? smartOrder(adapter, leg.symbol, leg.side, leg.size).then(r => r.result)
+              : adapter.marketOrder(leg.symbol, leg.side, leg.size);
+
+            // Apply timeout
+            const result = await Promise.race([
+              orderPromise,
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("Leg timeout")), timeoutMs),
+              ),
+            ]);
+
+            // Log execution
+            logExecution({
+              type: "multi_leg",
+              exchange: leg.exchange,
+              symbol: leg.symbol,
+              side: leg.side,
+              size: leg.size,
+              status: "success",
+              dryRun: false,
+              meta: { result, smart: opts.smart },
+            });
+
+            return { leg, status: "filled", result };
+          }),
+        );
+
+        // Process results
+        const legResults: MultiLegResult[] = results.map((r, i) => {
+          if (r.status === "fulfilled") return r.value;
+          return {
+            leg: legs[i],
+            status: "failed" as const,
+            error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+          };
+        });
+
+        const filled = legResults.filter(r => r.status === "filled");
+        const failed = legResults.filter(r => r.status === "failed");
+
+        // Rollback if partial fill and rollback enabled
+        if (failed.length > 0 && filled.length > 0 && opts.rollback) {
+          if (!isJson()) {
+            console.log(chalk.yellow(`\n  ${failed.length} leg(s) failed — rolling back ${filled.length} filled leg(s)...\n`));
+          }
+
+          for (const fr of filled) {
+            const adapter = adapters.get(fr.leg.exchange)!;
+            const reverseSide = fr.leg.side === "buy" ? "sell" : "buy";
+            try {
+              await adapter.marketOrder(fr.leg.symbol, reverseSide as "buy" | "sell", fr.leg.size);
+              fr.status = "rolled_back";
+
+              logExecution({
+                type: "multi_leg_rollback",
+                exchange: fr.leg.exchange,
+                symbol: fr.leg.symbol,
+                side: reverseSide,
+                size: fr.leg.size,
+                status: "success",
+                dryRun: false,
+              });
+
+              if (!isJson()) {
+                console.log(chalk.gray(`  Rolled back: ${fr.leg.exchange} ${reverseSide} ${fr.leg.symbol} x ${fr.leg.size}`));
+              }
+            } catch (err) {
+              if (!isJson()) {
+                console.log(chalk.red(`  Rollback failed: ${fr.leg.exchange} ${fr.leg.symbol} — ${err instanceof Error ? err.message : err}`));
+              }
+            }
+          }
+        }
+
+        if (isJson()) {
+          printJson(jsonOk({
+            legs: legResults.map(r => ({
+              exchange: r.leg.exchange,
+              symbol: r.leg.symbol,
+              side: r.leg.side,
+              size: r.leg.size,
+              status: r.status,
+              error: r.error,
+            })),
+            summary: {
+              total: legs.length,
+              filled: legResults.filter(r => r.status === "filled").length,
+              failed: failed.length,
+              rolledBack: legResults.filter(r => r.status === "rolled_back").length,
+            },
+          }));
+        } else {
+          console.log(chalk.cyan.bold("\nResults:\n"));
+          for (const r of legResults) {
+            const icon = r.status === "filled" ? chalk.green("OK") :
+              r.status === "rolled_back" ? chalk.yellow("ROLLBACK") :
+              chalk.red("FAIL");
+            console.log(`  ${icon} ${r.leg.exchange.padEnd(14)} ${r.leg.side} ${r.leg.symbol} x ${r.leg.size}${r.error ? ` — ${r.error}` : ""}`);
+          }
+          console.log(`\n  Total: ${legs.length}  Filled: ${filled.length}  Failed: ${failed.length}  Rolled back: ${legResults.filter(r => r.status === "rolled_back").length}`);
+        }
+      });
+    });
 }

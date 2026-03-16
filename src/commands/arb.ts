@@ -1,10 +1,27 @@
 import { Command } from "commander";
-import { makeTable, formatUsd, formatPercent, formatPnl, printJson, jsonOk } from "../utils.js";
+import { makeTable, formatUsd, formatPercent, formatPnl, printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import chalk from "chalk";
-import { annualizeRate, computeAnnualSpread, toHourlyRate } from "../funding.js";
+import { annualizeRate, computeAnnualSpread, toHourlyRate, estimateHourlyFunding, annualizeHourlyRate } from "../funding.js";
+import {
+  fetchAllFundingRates,
+  fetchSymbolFundingRates,
+  TOP_SYMBOLS,
+  type FundingRateSnapshot,
+  type SymbolFundingComparison,
+} from "../funding-rates.js";
+import {
+  saveFundingSnapshot,
+  getHistoricalRates,
+  getCompoundedAnnualReturn,
+  getExchangeCompoundingHours,
+} from "../funding-history.js";
+import type { ExchangeAdapter } from "../exchanges/interface.js";
 import {
   fetchPacificaPrices, fetchHyperliquidMeta,
   fetchLighterOrderBookDetails, fetchLighterFundingRates,
+  fetchPacificaPricesRaw, parsePacificaRaw,
+  fetchHyperliquidAllMidsRaw,
+  fetchLighterOrderBookDetailsRaw,
 } from "../shared-api.js";
 import { scanDexArb, type DexArbPair } from "../dex-asset-map.js";
 
@@ -68,13 +85,16 @@ async function fetchLighterRates(): Promise<FundingRate[]> {
 
 export function registerArbCommands(
   program: Command,
-  isJson: () => boolean
+  isJson: () => boolean,
+  getAdapterForExchange?: (exchange: string) => Promise<ExchangeAdapter>,
 ) {
   const arb = program.command("arb").description("Funding rate arbitrage & basis trading");
 
-  arb
+  const fundingCmd = arb
     .command("funding")
-    .description("[Deprecated] Use 'perp funding rates --min-spread 5' instead.")
+    .description("Use 'perp funding rates --min-spread 5'");
+  (fundingCmd as any)._hidden = true;
+  fundingCmd
     .option("-s, --symbol <symbol>", "Filter by symbol")
     .option("--min-spread <pct>", "Minimum annual spread % to show", "5")
     .action(async (opts: { symbol?: string; minSpread: string }) => {
@@ -167,73 +187,6 @@ export function registerArbCommands(
       );
 
       console.log(chalk.gray("\n  Note: All rates are hourly. Normalized before annualizing.\n"));
-    });
-
-  arb
-    .command("rates")
-    .description("[Deprecated] Use 'perp funding rates' instead. Shows all funding rates.")
-    .option("-s, --symbol <symbol>", "Filter by symbol")
-    .action(async (opts: { symbol?: string }) => {
-      if (!isJson()) {
-        console.log(chalk.yellow("\n  [Deprecated] 'perp arb rates' is deprecated. Use 'perp funding rates' instead.\n"));
-      }
-
-      // Delegate to the same data source as funding rates
-      const [pacRates, hlRates, ltRates] = await Promise.all([
-        fetchPacificaRates(),
-        fetchHyperliquidRates(),
-        fetchLighterRates(),
-      ]);
-
-      const pacMap = new Map(pacRates.map((r) => [r.symbol, r]));
-      const hlMap = new Map(hlRates.map((r) => [r.symbol, r]));
-      const ltMap = new Map(ltRates.map((r) => [r.symbol, r]));
-
-      const allSymbols = new Set([...pacMap.keys(), ...hlMap.keys(), ...ltMap.keys()]);
-      const symbols = opts.symbol
-        ? [opts.symbol.toUpperCase()]
-        : [...allSymbols].sort();
-
-      if (isJson()) {
-        const data = symbols.map((s) => ({
-          symbol: s,
-          pacifica: pacMap.get(s)?.fundingRate ?? null,
-          hyperliquid: hlMap.get(s)?.fundingRate ?? null,
-          lighter: ltMap.get(s)?.fundingRate ?? null,
-          _deprecated: "Use 'perp funding rates' instead",
-        }));
-        return printJson(jsonOk(data));
-      }
-
-      const rows = symbols
-        .filter((s) => pacMap.has(s) || hlMap.has(s) || ltMap.has(s))
-        .map((s) => {
-          const pac = pacMap.get(s);
-          const hl = hlMap.get(s);
-          const lt = ltMap.get(s);
-          const pacRate = pac ? formatPercent(pac.fundingRate) : chalk.gray("-");
-          const hlRate = hl ? formatPercent(hl.fundingRate) : chalk.gray("-");
-          const ltRate = lt ? formatPercent(lt.fundingRate) : chalk.gray("-");
-          const withEx = [
-            pac ? { rate: pac.fundingRate, ex: "pacifica" } : null,
-            hl ? { rate: hl.fundingRate, ex: "hyperliquid" } : null,
-            lt ? { rate: lt.fundingRate, ex: "lighter" } : null,
-          ].filter(Boolean) as { rate: number; ex: string }[];
-          let annDiff = 0;
-          if (withEx.length >= 2) {
-            withEx.sort((a, b) => a.rate - b.rate);
-            annDiff = computeAnnualSpread(withEx[0].rate, withEx[0].ex, withEx[withEx.length - 1].rate, withEx[withEx.length - 1].ex);
-          }
-          return [
-            chalk.white.bold(s),
-            pacRate,
-            hlRate,
-            ltRate,
-            annDiff > 5 ? chalk.yellow(`${annDiff.toFixed(1)}%`) : `${annDiff.toFixed(1)}%`,
-          ];
-        });
-
-      console.log(makeTable(["Symbol", "Pacifica", "Hyperliquid", "Lighter", "Ann. Spread"], rows));
     });
 
   arb
@@ -420,5 +373,823 @@ export function registerArbCommands(
       console.log(chalk.gray(`  Grade: ${chalk.green.bold(`A(${gradeCount.A})`)} ${chalk.green(`B(${gradeCount.B})`)} ${chalk.yellow(`C(${gradeCount.C})`)} ${chalk.red(`D(${gradeCount.D})`)}`));
       console.log(chalk.gray(`  A: OI>$1M  B: OI>$100K  C: OI>$10K  D: OI<$10K (thin — high risk)`));
       console.log(chalk.gray(`  Note: HIP-3 dexes charge 2x fees. Factor into net profitability.\n`));
+    });
+
+  // ── arb watch/track/alert ── (promoted from arb gap)
+  registerGapDirectCommands(arb, isJson);
+
+  // ── Funding subcommands (merged from funding.ts) ──
+  registerFundingSubcommands(arb, isJson, getAdapterForExchange);
+
+  // Keep deprecated 'arb gap' subgroup (hidden from help)
+  const gapSub = arb.command("gap").description("[deprecated] Use 'perp arb watch/track/alert'");
+  (gapSub as any)._hidden = true;
+  registerGapSubcommands(gapSub, isJson);
+
+  // Keep deprecated top-level 'gap' alias (hidden from help)
+  const gapAlias = program
+    .command("gap")
+    .description("Use 'perp arb watch/track/alert'");
+  (gapAlias as any)._hidden = true;
+  registerGapSubcommands(gapAlias, isJson);
+
+  // Keep deprecated top-level 'funding' alias (hidden from help)
+  const fundingAlias = program.command("funding").description("Use 'perp arb rates/compare/funding-history/funding-monitor/funding-positions'");
+  (fundingAlias as any)._hidden = true;
+  registerFundingSubcommands(fundingAlias, isJson, getAdapterForExchange);
+}
+
+// ────────────────────────────────────────────────────────
+// Gap monitoring (merged from gap.ts)
+// ────────────────────────────────────────────────────────
+
+interface PriceSnapshot {
+  symbol: string;
+  pacPrice: number | null;
+  hlPrice: number | null;
+  ltPrice: number | null;
+  maxGap: number; // absolute $ max difference across exchanges
+  maxGapPct: number; // percentage max difference
+  cheapest: string;
+  expensive: string;
+}
+
+async function fetchAllPrices(): Promise<PriceSnapshot[]> {
+  const [pacRes, hlRes, ltRes] = await Promise.all([
+    fetchPacificaPricesRaw(),
+    fetchHyperliquidAllMidsRaw(),
+    fetchLighterOrderBookDetailsRaw(),
+  ]);
+
+  const { prices: pacPrices } = parsePacificaRaw(pacRes);
+
+  const hlPrices = new Map<string, number>();
+  if (hlRes && typeof hlRes === "object" && !Array.isArray(hlRes)) {
+    for (const [symbol, price] of Object.entries(hlRes as Record<string, string>)) {
+      const p = Number(price);
+      if (p > 0) hlPrices.set(symbol, p);
+    }
+  }
+
+  const ltPrices = new Map<string, number>();
+  if (ltRes) {
+    const details = ((ltRes as Record<string, unknown>).order_book_details ?? []) as Array<Record<string, unknown>>;
+    for (const m of details) {
+      const sym = String(m.symbol ?? "").replace(/_USDC$/, "");
+      const price = Number(m.last_trade_price ?? m.mark_price ?? 0);
+      if (sym && price > 0) ltPrices.set(sym, price);
+    }
+  }
+
+  const allSymbols = new Set([...pacPrices.keys(), ...hlPrices.keys(), ...ltPrices.keys()]);
+  const snapshots: PriceSnapshot[] = [];
+
+  for (const sym of allSymbols) {
+    const pac = pacPrices.get(sym) ?? null;
+    const hl = hlPrices.get(sym) ?? null;
+    const lt = ltPrices.get(sym) ?? null;
+
+    // Need at least 2 exchanges
+    const available: { ex: string; price: number }[] = [];
+    if (pac !== null) available.push({ ex: "PAC", price: pac });
+    if (hl !== null) available.push({ ex: "HL", price: hl });
+    if (lt !== null) available.push({ ex: "LT", price: lt });
+    if (available.length < 2) continue;
+
+    available.sort((a, b) => a.price - b.price);
+    const cheapest = available[0];
+    const expensive = available[available.length - 1];
+    const maxGap = expensive.price - cheapest.price;
+    const mid = (cheapest.price + expensive.price) / 2;
+    const maxGapPct = mid > 0 ? (maxGap / mid) * 100 : 0;
+
+    snapshots.push({
+      symbol: sym,
+      pacPrice: pac,
+      hlPrice: hl,
+      ltPrice: lt,
+      maxGap,
+      maxGapPct,
+      cheapest: cheapest.ex,
+      expensive: expensive.ex,
+    });
+  }
+
+  return snapshots.sort((a, b) => b.maxGapPct - a.maxGapPct);
+}
+
+function formatGapPrice(p: number): string {
+  if (p >= 1000) return p.toFixed(2);
+  if (p >= 1) return p.toFixed(4);
+  return p.toFixed(6);
+}
+
+function printGapTable(snapshots: PriceSnapshot[], minGap: number) {
+  const filtered = snapshots.filter((s) => s.maxGapPct >= minGap);
+
+  if (filtered.length === 0) {
+    console.log(chalk.gray(`\n  No gaps above ${minGap}%\n`));
+    return;
+  }
+
+  console.log(
+    chalk.cyan.bold("\n  Symbol      Pacifica          Hyperliquid       Lighter           Gap($)      Gap(%)    Buy/Sell\n")
+  );
+
+  for (const s of filtered) {
+    const gapColor =
+      s.maxGapPct >= 0.5
+        ? chalk.red.bold
+        : s.maxGapPct >= 0.1
+          ? chalk.yellow
+          : chalk.gray;
+    const fmtP = (p: number | null) => p !== null ? `$${formatGapPrice(p).padEnd(16)}` : chalk.gray("-".padEnd(17));
+
+    console.log(
+      `  ${chalk.white.bold(s.symbol.padEnd(10))} ` +
+        `${fmtP(s.pacPrice)} ` +
+        `${fmtP(s.hlPrice)} ` +
+        `${fmtP(s.ltPrice)} ` +
+        `${gapColor("$" + s.maxGap.toFixed(4).padEnd(10))} ` +
+        `${gapColor(s.maxGapPct.toFixed(4).padEnd(8) + "%")} ` +
+        `${chalk.green(s.cheapest)}→${chalk.red(s.expensive)}`
+    );
+  }
+
+  const avgGap =
+    filtered.reduce((sum, s) => sum + s.maxGapPct, 0) / filtered.length;
+  const top = filtered[0];
+
+  console.log(
+    chalk.gray(
+      `\n  ${filtered.length} pairs | Avg gap: ${avgGap.toFixed(4)}% | Max: ${top.symbol} ${top.maxGapPct.toFixed(4)}%\n`
+    )
+  );
+}
+
+function printTrackSummary(
+  symbol: string,
+  samples: { time: string; gap: number; gapPct: number; direction: string }[]
+) {
+  if (samples.length === 0) {
+    console.log(chalk.gray("\n  No samples collected.\n"));
+    return;
+  }
+
+  const gaps = samples.map((s) => s.gapPct);
+  const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const max = Math.max(...gaps);
+  const min = Math.min(...gaps);
+  const maxSample = samples[gaps.indexOf(max)];
+
+  // Count direction frequencies
+  const dirCounts = new Map<string, number>();
+  for (const s of samples) {
+    dirCounts.set(s.direction, (dirCounts.get(s.direction) ?? 0) + 1);
+  }
+
+  console.log(chalk.cyan.bold(`\n  ${symbol} Gap Summary (${samples.length} samples)\n`));
+  console.log(`  Avg gap:    ${avg.toFixed(4)}%`);
+  console.log(`  Max gap:    ${max.toFixed(4)}% at ${maxSample.time}`);
+  console.log(`  Min gap:    ${min.toFixed(4)}%`);
+  for (const [dir, count] of [...dirCounts.entries()].sort((a, b) => b[1] - a[1])) {
+    console.log(`  ${dir.padEnd(10)} ${count} times (${((count / samples.length) * 100).toFixed(0)}%)`);
+  }
+  console.log();
+}
+
+/**
+ * Register gap-related commands directly on the arb parent (promoted from arb gap).
+ * - arb prices: snapshot of cross-exchange prices (was arb gap show)
+ * - arb watch: live monitoring (was arb gap watch)
+ * - arb track: track gap over time (was arb gap track)
+ * - arb alert: threshold alert (was arb gap alert)
+ */
+function registerGapDirectCommands(
+  arb: Command,
+  isJson: () => boolean
+) {
+  // ── arb prices (was arb gap show) ──
+  arb
+    .command("prices")
+    .description("Show current prices across all exchanges with gap analysis")
+    .option("--min <pct>", "Minimum gap % to display", "0.01")
+    .option("--symbol <sym>", "Filter by symbol (e.g. BTC, ETH)")
+    .option("--top <n>", "Show top N gaps only")
+    .action(async (opts: { min: string; symbol?: string; top?: string }) => {
+      const minGap = parseFloat(opts.min);
+      if (!isJson()) console.log(chalk.cyan("\n  Fetching prices from Pacifica, Hyperliquid & Lighter...\n"));
+
+      let snapshots = await fetchAllPrices();
+
+      if (opts.symbol) {
+        const sym = opts.symbol.toUpperCase();
+        snapshots = snapshots.filter((s) => s.symbol.includes(sym));
+      }
+
+      if (opts.top) {
+        snapshots = snapshots.slice(0, parseInt(opts.top));
+      }
+
+      if (isJson()) return printJson(jsonOk(snapshots.filter((s) => s.maxGapPct >= minGap)));
+
+      printGapTable(snapshots, minGap);
+    });
+
+  // ── arb watch (was arb gap watch) ──
+  arb
+    .command("watch")
+    .description("Live-monitor price gaps across exchanges (auto-refresh)")
+    .option("--min <pct>", "Minimum gap % to display", "0.05")
+    .option("--interval <seconds>", "Refresh interval", "5")
+    .option("--symbol <sym>", "Filter by symbol")
+    .option("--beep", "Beep on gaps above 0.5%")
+    .action(
+      async (opts: {
+        min: string;
+        interval: string;
+        symbol?: string;
+        beep?: boolean;
+      }) => {
+        const minGap = parseFloat(opts.min);
+        const intervalMs = parseInt(opts.interval) * 1000;
+        const beep = !!opts.beep;
+
+        if (!isJson()) {
+          console.log(chalk.cyan.bold("\n  Price Gap Monitor"));
+          console.log(`  Min gap:   ${minGap}%`);
+          console.log(`  Interval:  ${opts.interval}s`);
+          if (opts.symbol) console.log(`  Symbol:    ${opts.symbol.toUpperCase()}`);
+          console.log(chalk.gray("  Ctrl+C to stop\n"));
+        }
+
+        const cycle = async () => {
+          try {
+            let snapshots = await fetchAllPrices();
+
+            if (opts.symbol) {
+              const sym = opts.symbol.toUpperCase();
+              snapshots = snapshots.filter((s) => s.symbol.includes(sym));
+            }
+
+            process.stdout.write("\x1B[2J\x1B[0f");
+
+            const now = new Date().toLocaleTimeString();
+            console.log(
+              chalk.cyan.bold(`  Price Gap Monitor`) +
+                chalk.gray(`  ${now}  (refresh: ${opts.interval}s)\n`)
+            );
+
+            printGapTable(snapshots, minGap);
+
+            const bigGaps = snapshots.filter((s) => s.maxGapPct >= 0.5);
+            if (bigGaps.length > 0) {
+              console.log(
+                chalk.red.bold(
+                  `  !! ${bigGaps.length} large gap(s): ` +
+                    bigGaps
+                      .map((s) => `${s.symbol}(${s.maxGapPct.toFixed(3)}%)`)
+                      .join(", ")
+                )
+              );
+              if (beep) process.stdout.write("\x07");
+            }
+          } catch (err) {
+            console.error(
+              chalk.gray(
+                `  Error: ${err instanceof Error ? err.message : String(err)}`
+              )
+            );
+          }
+        };
+
+        await cycle();
+        setInterval(cycle, intervalMs);
+        await new Promise(() => {}); // keep alive
+      }
+    );
+
+  // ── arb track (was arb gap track) ──
+  arb
+    .command("track")
+    .description("Track a symbol's price gap over time and print stats")
+    .requiredOption("-s, --symbol <sym>", "Symbol to track (e.g. BTC)")
+    .option("--duration <minutes>", "How long to track (minutes)", "10")
+    .option("--interval <seconds>", "Sample interval", "10")
+    .action(
+      async (opts: { symbol: string; duration: string; interval: string }) => {
+        const symbol = opts.symbol.toUpperCase();
+        const durationMs = parseInt(opts.duration) * 60 * 1000;
+        const intervalMs = parseInt(opts.interval) * 1000;
+        const endTime = Date.now() + durationMs;
+
+        const samples: { time: string; gap: number; gapPct: number; direction: string }[] = [];
+
+        if (!isJson()) {
+          console.log(chalk.cyan.bold(`\n  Tracking ${symbol} price gap\n`));
+          console.log(`  Duration:  ${opts.duration} min`);
+          console.log(`  Interval:  ${opts.interval}s`);
+          console.log(chalk.gray("  Collecting samples...\n"));
+        }
+
+        const sample = async () => {
+          const snapshots = await fetchAllPrices();
+          const s = snapshots.find((x) => x.symbol === symbol);
+          if (!s) {
+            console.log(chalk.gray(`  ${new Date().toLocaleTimeString()} — ${symbol} not found on both exchanges`));
+            return;
+          }
+
+          samples.push({
+            time: new Date().toLocaleTimeString(),
+            gap: s.maxGap,
+            gapPct: s.maxGapPct,
+            direction: `${s.cheapest}→${s.expensive}`,
+          });
+
+          const gapColor = s.maxGapPct >= 0.1 ? chalk.yellow : chalk.gray;
+          const parts = [`PAC: ${s.pacPrice !== null ? "$" + formatGapPrice(s.pacPrice) : "-"}`];
+          parts.push(`HL: ${s.hlPrice !== null ? "$" + formatGapPrice(s.hlPrice) : "-"}`);
+          parts.push(`LT: ${s.ltPrice !== null ? "$" + formatGapPrice(s.ltPrice) : "-"}`);
+          console.log(
+            `  ${chalk.white(s.symbol.padEnd(6))} ` +
+              `${parts.join("  ")}  ` +
+              `${gapColor(`${s.maxGapPct.toFixed(4)}%`)}  ${s.cheapest}→${s.expensive}`
+          );
+        };
+
+        await sample();
+        const timer = setInterval(async () => {
+          if (Date.now() >= endTime) {
+            clearInterval(timer);
+            printTrackSummary(symbol, samples);
+            return;
+          }
+          await sample();
+        }, intervalMs);
+
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, durationMs + 1000);
+        });
+      }
+    );
+
+  // ── arb alert (was arb gap alert) ──
+  arb
+    .command("alert")
+    .description("Wait until a symbol's price gap exceeds a threshold, then exit")
+    .requiredOption("-s, --symbol <sym>", "Symbol to watch")
+    .requiredOption("--above <pct>", "Gap % threshold to trigger")
+    .option("--interval <seconds>", "Check interval", "5")
+    .action(
+      async (opts: { symbol: string; above: string; interval: string }) => {
+        const symbol = opts.symbol.toUpperCase();
+        const threshold = parseFloat(opts.above);
+        const intervalMs = parseInt(opts.interval) * 1000;
+
+        if (!isJson()) console.log(chalk.cyan(`\n  Waiting for ${symbol} gap > ${threshold}%...\n`));
+
+        const check = async (): Promise<boolean> => {
+          const snapshots = await fetchAllPrices();
+          const s = snapshots.find((x) => x.symbol === symbol);
+          if (!s) return false;
+
+          const now = new Date().toLocaleTimeString();
+          if (!isJson()) console.log(chalk.gray(`  ${now} ${symbol} gap: ${s.maxGapPct.toFixed(4)}%`));
+
+          if (s.maxGapPct >= threshold) {
+            if (isJson()) {
+              printJson(jsonOk(s));
+            } else {
+              console.log(
+                chalk.green.bold(
+                  `\n  TRIGGERED! ${symbol} gap: ${s.maxGapPct.toFixed(4)}% (> ${threshold}%)`
+                )
+              );
+              const lines = [];
+              if (s.pacPrice !== null) lines.push(`  Pacifica:    $${formatGapPrice(s.pacPrice)}`);
+              if (s.hlPrice !== null) lines.push(`  Hyperliquid: $${formatGapPrice(s.hlPrice)}`);
+              if (s.ltPrice !== null) lines.push(`  Lighter:     $${formatGapPrice(s.ltPrice)}`);
+              lines.push(`  Gap:         $${s.maxGap.toFixed(4)} (${s.cheapest}→${s.expensive})`);
+              console.log(lines.join("\n") + "\n");
+            }
+            return true;
+          }
+          return false;
+        };
+
+        if (await check()) return;
+
+        await new Promise<void>((resolve) => {
+          const timer = setInterval(async () => {
+            if (await check()) {
+              clearInterval(timer);
+              resolve();
+            }
+          }, intervalMs);
+        });
+      }
+    );
+}
+
+function registerGapSubcommands(
+  parent: Command,
+  isJson: () => boolean
+) {
+  const gap = parent.name() === "gap"
+    ? parent
+    : parent.command("gap").description("Cross-exchange price gap monitoring");
+
+  // ── gap show (default) ──
+
+  gap
+    .command("show", { isDefault: true })
+    .description("Show current price gaps between exchanges")
+    .option("--min <pct>", "Minimum gap % to display", "0.01")
+    .option("--symbol <sym>", "Filter by symbol (e.g. BTC, ETH)")
+    .option("--top <n>", "Show top N gaps only")
+    .action(async (opts: { min: string; symbol?: string; top?: string }) => {
+      const minGap = parseFloat(opts.min);
+      if (!isJson()) console.log(chalk.cyan("\n  Fetching prices from Pacifica, Hyperliquid & Lighter...\n"));
+
+      let snapshots = await fetchAllPrices();
+
+      if (opts.symbol) {
+        const sym = opts.symbol.toUpperCase();
+        snapshots = snapshots.filter((s) => s.symbol.includes(sym));
+      }
+
+      if (opts.top) {
+        snapshots = snapshots.slice(0, parseInt(opts.top));
+      }
+
+      if (isJson()) return printJson(jsonOk(snapshots.filter((s) => s.maxGapPct >= minGap)));
+
+      printGapTable(snapshots, minGap);
+    });
+
+  // ── gap watch ── (live monitoring)
+
+  gap
+    .command("watch")
+    .description("Live-monitor price gaps (auto-refresh)")
+    .option("--min <pct>", "Minimum gap % to display", "0.05")
+    .option("--interval <seconds>", "Refresh interval", "5")
+    .option("--symbol <sym>", "Filter by symbol")
+    .option("--beep", "Beep on gaps above 0.5%")
+    .action(
+      async (opts: {
+        min: string;
+        interval: string;
+        symbol?: string;
+        beep?: boolean;
+      }) => {
+        const minGap = parseFloat(opts.min);
+        const intervalMs = parseInt(opts.interval) * 1000;
+        const beep = !!opts.beep;
+
+        if (!isJson()) {
+          console.log(chalk.cyan.bold("\n  Price Gap Monitor"));
+          console.log(`  Min gap:   ${minGap}%`);
+          console.log(`  Interval:  ${opts.interval}s`);
+          if (opts.symbol) console.log(`  Symbol:    ${opts.symbol.toUpperCase()}`);
+          console.log(chalk.gray("  Ctrl+C to stop\n"));
+        }
+
+        const cycle = async () => {
+          try {
+            let snapshots = await fetchAllPrices();
+
+            if (opts.symbol) {
+              const sym = opts.symbol.toUpperCase();
+              snapshots = snapshots.filter((s) => s.symbol.includes(sym));
+            }
+
+            // Clear screen for live view
+            process.stdout.write("\x1B[2J\x1B[0f");
+
+            const now = new Date().toLocaleTimeString();
+            console.log(
+              chalk.cyan.bold(`  Price Gap Monitor`) +
+                chalk.gray(`  ${now}  (refresh: ${opts.interval}s)\n`)
+            );
+
+            printGapTable(snapshots, minGap);
+
+            // Alert on large gaps
+            const bigGaps = snapshots.filter((s) => s.maxGapPct >= 0.5);
+            if (bigGaps.length > 0) {
+              console.log(
+                chalk.red.bold(
+                  `  !! ${bigGaps.length} large gap(s): ` +
+                    bigGaps
+                      .map((s) => `${s.symbol}(${s.maxGapPct.toFixed(3)}%)`)
+                      .join(", ")
+                )
+              );
+              if (beep) process.stdout.write("\x07");
+            }
+          } catch (err) {
+            console.error(
+              chalk.gray(
+                `  Error: ${err instanceof Error ? err.message : String(err)}`
+              )
+            );
+          }
+        };
+
+        await cycle();
+        setInterval(cycle, intervalMs);
+        await new Promise(() => {}); // keep alive
+      }
+    );
+
+  // ── gap track ── (track gap over time for a symbol)
+
+  gap
+    .command("track")
+    .description("Track a symbol's gap over time and print stats")
+    .requiredOption("-s, --symbol <sym>", "Symbol to track (e.g. BTC)")
+    .option("--duration <minutes>", "How long to track (minutes)", "10")
+    .option("--interval <seconds>", "Sample interval", "10")
+    .action(
+      async (opts: { symbol: string; duration: string; interval: string }) => {
+        const symbol = opts.symbol.toUpperCase();
+        const durationMs = parseInt(opts.duration) * 60 * 1000;
+        const intervalMs = parseInt(opts.interval) * 1000;
+        const endTime = Date.now() + durationMs;
+
+        const samples: { time: string; gap: number; gapPct: number; direction: string }[] = [];
+
+        if (!isJson()) {
+          console.log(chalk.cyan.bold(`\n  Tracking ${symbol} price gap\n`));
+          console.log(`  Duration:  ${opts.duration} min`);
+          console.log(`  Interval:  ${opts.interval}s`);
+          console.log(chalk.gray("  Collecting samples...\n"));
+        }
+
+        const sample = async () => {
+          const snapshots = await fetchAllPrices();
+          const s = snapshots.find((x) => x.symbol === symbol);
+          if (!s) {
+            console.log(chalk.gray(`  ${new Date().toLocaleTimeString()} — ${symbol} not found on both exchanges`));
+            return;
+          }
+
+          samples.push({
+            time: new Date().toLocaleTimeString(),
+            gap: s.maxGap,
+            gapPct: s.maxGapPct,
+            direction: `${s.cheapest}→${s.expensive}`,
+          });
+
+          const gapColor = s.maxGapPct >= 0.1 ? chalk.yellow : chalk.gray;
+          const parts = [`PAC: ${s.pacPrice !== null ? "$" + formatGapPrice(s.pacPrice) : "-"}`];
+          parts.push(`HL: ${s.hlPrice !== null ? "$" + formatGapPrice(s.hlPrice) : "-"}`);
+          parts.push(`LT: ${s.ltPrice !== null ? "$" + formatGapPrice(s.ltPrice) : "-"}`);
+          console.log(
+            `  ${chalk.white(s.symbol.padEnd(6))} ` +
+              `${parts.join("  ")}  ` +
+              `${gapColor(`${s.maxGapPct.toFixed(4)}%`)}  ${s.cheapest}→${s.expensive}`
+          );
+        };
+
+        await sample();
+        const timer = setInterval(async () => {
+          if (Date.now() >= endTime) {
+            clearInterval(timer);
+            printTrackSummary(symbol, samples);
+            return;
+          }
+          await sample();
+        }, intervalMs);
+
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, durationMs + 1000);
+        });
+      }
+    );
+
+  // ── gap alert ── (one-shot: notify when gap exceeds threshold)
+
+  gap
+    .command("alert")
+    .description("Wait until a symbol's gap exceeds a threshold, then exit")
+    .requiredOption("-s, --symbol <sym>", "Symbol to watch")
+    .requiredOption("--above <pct>", "Gap % threshold to trigger")
+    .option("--interval <seconds>", "Check interval", "5")
+    .action(
+      async (opts: { symbol: string; above: string; interval: string }) => {
+        const symbol = opts.symbol.toUpperCase();
+        const threshold = parseFloat(opts.above);
+        const intervalMs = parseInt(opts.interval) * 1000;
+
+        if (!isJson()) console.log(chalk.cyan(`\n  Waiting for ${symbol} gap > ${threshold}%...\n`));
+
+        const check = async (): Promise<boolean> => {
+          const snapshots = await fetchAllPrices();
+          const s = snapshots.find((x) => x.symbol === symbol);
+          if (!s) return false;
+
+          const now = new Date().toLocaleTimeString();
+          if (!isJson()) console.log(chalk.gray(`  ${now} ${symbol} gap: ${s.maxGapPct.toFixed(4)}%`));
+
+          if (s.maxGapPct >= threshold) {
+            if (isJson()) {
+              printJson(jsonOk(s));
+            } else {
+              console.log(
+                chalk.green.bold(
+                  `\n  TRIGGERED! ${symbol} gap: ${s.maxGapPct.toFixed(4)}% (> ${threshold}%)`
+                )
+              );
+              const lines = [];
+              if (s.pacPrice !== null) lines.push(`  Pacifica:    $${formatGapPrice(s.pacPrice)}`);
+              if (s.hlPrice !== null) lines.push(`  Hyperliquid: $${formatGapPrice(s.hlPrice)}`);
+              if (s.ltPrice !== null) lines.push(`  Lighter:     $${formatGapPrice(s.ltPrice)}`);
+              lines.push(`  Gap:         $${s.maxGap.toFixed(4)} (${s.cheapest}→${s.expensive})`);
+              console.log(lines.join("\n") + "\n");
+            }
+            return true;
+          }
+          return false;
+        };
+
+        if (await check()) return;
+
+        await new Promise<void>((resolve) => {
+          const timer = setInterval(async () => {
+            if (await check()) {
+              clearInterval(timer);
+              resolve();
+            }
+          }, intervalMs);
+        });
+      }
+    );
+}
+
+// ────────────────────────────────────────────────────────
+// Funding subcommands (merged from funding.ts)
+// ────────────────────────────────────────────────────────
+
+const ALL_EXCHANGES = ["hyperliquid", "pacifica", "lighter"] as const;
+
+function formatAvgRate(rate: number | null | undefined): string {
+  if (rate == null) return chalk.gray("-");
+  const annualPct = annualizeHourlyRate(rate);
+  const color = annualPct > 0 ? chalk.red : annualPct < 0 ? chalk.green : chalk.white;
+  return color(`${annualPct.toFixed(1)}%`);
+}
+
+function printSnapshotTable(snapshot: FundingRateSnapshot): void {
+  const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+  if (snapshot.symbols.length === 0) { console.log(chalk.gray("  No funding rate data available.\n")); return; }
+  const rows = snapshot.symbols.map(s => {
+    const pacRate = s.rates.find(r => r.exchange === "pacifica");
+    const hlRate = s.rates.find(r => r.exchange === "hyperliquid");
+    const ltRate = s.rates.find(r => r.exchange === "lighter");
+    const spreadColor = s.maxSpreadAnnual >= 30 ? chalk.green : s.maxSpreadAnnual >= 10 ? chalk.yellow : chalk.white;
+    const bestRate = hlRate ?? pacRate ?? ltRate;
+    return [
+      chalk.white.bold(s.symbol), pacRate ? formatPercent(pacRate.fundingRate) : chalk.gray("-"),
+      hlRate ? formatPercent(hlRate.fundingRate) : chalk.gray("-"), ltRate ? formatPercent(ltRate.fundingRate) : chalk.gray("-"),
+      spreadColor(`${s.maxSpreadAnnual.toFixed(1)}%`),
+      s.maxSpreadAnnual >= 5 ? `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}` : chalk.gray("-"),
+      formatAvgRate(bestRate?.historicalAvg?.avg8h), formatAvgRate(bestRate?.historicalAvg?.avg24h), formatAvgRate(bestRate?.historicalAvg?.avg7d),
+    ];
+  });
+  console.log(makeTable(["Symbol", "Pacifica", "Hyperliquid", "Lighter", "Ann. Spread", "Direction", "Avg 8h", "Avg 24h", "Avg 7d"], rows));
+  console.log(chalk.gray(`\n  ${snapshot.symbols.length} symbols compared across exchanges.\n`));
+}
+
+function printFundingExchangeStatus(snapshot: FundingRateSnapshot): void {
+  const statuses = Object.entries(snapshot.exchangeStatus).map(([ex, status]) => {
+    const indicator = status === "ok" ? chalk.green("OK") : chalk.red("ERR");
+    return `${ex}: ${indicator}`;
+  });
+  console.log(chalk.gray(`  Exchange status: ${statuses.join("  ")}\n`));
+}
+
+function printDetailedComparison(comparison: SymbolFundingComparison): void {
+  const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+  console.log(chalk.cyan.bold(`  ${comparison.symbol} Funding Rate Comparison\n`));
+  console.log(`  Mark Price: $${formatUsd(comparison.bestMarkPrice)}\n`);
+  for (const r of comparison.rates) {
+    const compHours = getExchangeCompoundingHours(r.exchange);
+    const compoundedReturn = getCompoundedAnnualReturn(r.hourlyRate, compHours);
+    const color = r.fundingRate > 0 ? chalk.red : r.fundingRate < 0 ? chalk.green : chalk.white;
+    console.log(`  ${chalk.white.bold(exAbbr(r.exchange).padEnd(4))} Raw: ${color(formatPercent(r.fundingRate).padEnd(14))} Hourly: ${(r.hourlyRate * 100).toFixed(6)}%  Annual: ${r.annualizedPct.toFixed(2)}%  APY: ${(compoundedReturn * 100).toFixed(2)}%`);
+  }
+  const spreadColor = comparison.maxSpreadAnnual >= 30 ? chalk.green.bold : comparison.maxSpreadAnnual >= 10 ? chalk.yellow : chalk.white;
+  console.log(`\n  Max Spread:     ${spreadColor(`${comparison.maxSpreadAnnual.toFixed(1)}%`)} annual`);
+  console.log(`  Direction:      Long ${exAbbr(comparison.longExchange)} / Short ${exAbbr(comparison.shortExchange)}`);
+  console.log(`  Est. Income:    $${comparison.estHourlyIncomeUsd.toFixed(4)}/hr per $1K notional\n`);
+}
+
+function registerFundingSubcommands(parent: Command, isJson: () => boolean, getAdapterForExchange?: (exchange: string) => Promise<ExchangeAdapter>) {
+  parent.command("rates").description("Show funding rates across all 3 DEXs for top symbols")
+    .option("-s, --symbol <symbol>", "Filter to a specific symbol").option("--symbols <list>", "Comma-separated list of symbols")
+    .option("--all", "Show all available symbols").option("--min-spread <pct>", "Minimum annual spread % to show", "0")
+    .action(async (opts: { symbol?: string; symbols?: string; all?: boolean; minSpread: string }) => {
+      const minSpread = parseFloat(opts.minSpread);
+      let filterSymbols: string[] | undefined;
+      if (opts.symbol) filterSymbols = [opts.symbol.toUpperCase()];
+      else if (opts.symbols) filterSymbols = opts.symbols.split(",").map(s => s.trim().toUpperCase());
+      else if (!opts.all) filterSymbols = TOP_SYMBOLS;
+      if (!isJson()) console.log(chalk.cyan("  Fetching funding rates from all exchanges...\n"));
+      const snapshot = await fetchAllFundingRates({ symbols: filterSymbols, minSpread });
+      try { const allRates = snapshot.symbols.flatMap(s => s.rates); if (allRates.length > 0) saveFundingSnapshot(allRates); } catch { /* non-critical */ }
+      if (isJson()) {
+        if (process.argv.includes("--ndjson") || process.argv.includes("--fields")) return printJson(jsonOk(snapshot.symbols));
+        return printJson(jsonOk(snapshot));
+      }
+      printSnapshotTable(snapshot); printFundingExchangeStatus(snapshot);
+    });
+
+  parent.command("compare <symbol>").description("Detailed funding rate comparison for a single symbol")
+    .action(async (symbol: string) => {
+      if (!isJson()) console.log(chalk.cyan(`  Fetching funding rates for ${symbol.toUpperCase()}...\n`));
+      const comparison = await fetchSymbolFundingRates(symbol);
+      if (!comparison) { if (isJson()) return printJson(jsonOk({ symbol: symbol.toUpperCase(), available: false })); console.log(chalk.gray(`  ${symbol.toUpperCase()} not found on at least 2 exchanges.\n`)); return; }
+      if (isJson()) return printJson(jsonOk(comparison));
+      printDetailedComparison(comparison);
+    });
+
+  parent.command("funding-history").description("Show funding rate trend over time for a symbol")
+    .requiredOption("-s, --symbol <symbol>", "Symbol").option("--hours <n>", "Hours to look back", "24").option("--exchange <ex>", "Filter exchange")
+    .action(async (opts: { symbol: string; hours: string; exchange?: string }) => {
+      const symbol = opts.symbol.toUpperCase(); const hours = parseInt(opts.hours);
+      const exchanges = opts.exchange ? [opts.exchange.toLowerCase()] : ["hyperliquid", "pacifica", "lighter"];
+      const endTime = new Date(); const startTime = new Date(endTime.getTime() - hours * 3600000);
+      if (isJson()) {
+        const data: Record<string, { ts: string; rate: number; hourlyRate: number }[]> = {};
+        for (const ex of exchanges) { const rates = getHistoricalRates(symbol, ex, startTime, endTime); if (rates.length > 0) data[ex] = rates; }
+        return printJson(jsonOk({ symbol, hours, startTime: startTime.toISOString(), endTime: endTime.toISOString(), rates: data }));
+      }
+      console.log(chalk.cyan.bold(`  ${symbol} Funding Rate History (last ${hours}h)\n`));
+      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+      let hasData = false;
+      for (const ex of exchanges) {
+        const rates = getHistoricalRates(symbol, ex, startTime, endTime); if (rates.length === 0) continue; hasData = true;
+        console.log(chalk.white.bold(`  ${exAbbr(ex)} (${rates.length} snapshots):`));
+        const rows = rates.map(r => { const color = r.rate > 0 ? chalk.red : r.rate < 0 ? chalk.green : chalk.white; return [chalk.gray(new Date(r.ts).toLocaleString()), color(formatPercent(r.rate)), `${(r.hourlyRate * 100).toFixed(6)}%/h`, `${annualizeHourlyRate(r.hourlyRate).toFixed(2)}%/yr`]; });
+        console.log(makeTable(["Time", "Raw Rate", "Hourly", "Annualized"], rows)); console.log();
+      }
+      if (!hasData) console.log(chalk.gray(`  No historical data. Run 'perp arb rates' to start collecting.\n`));
+    });
+
+  parent.command("funding-monitor").description("Live-monitor funding rates with auto-refresh")
+    .option("--min <pct>", "Min annual spread", "10").option("--interval <sec>", "Refresh interval", "30").option("--top <n>", "Top N", "15").option("--symbols <list>", "Symbols to watch")
+    .action(async (opts: { min: string; interval: string; top: string; symbols?: string }) => {
+      const minSpread = parseFloat(opts.min); const intervalSec = parseInt(opts.interval); const topN = parseInt(opts.top);
+      const filterSymbols = opts.symbols?.split(",").map(s => s.trim().toUpperCase()); let cycle = 0;
+      if (!isJson()) { console.log(chalk.cyan.bold("\n  Funding Rate Monitor")); console.log(chalk.gray(`  Min: ${minSpread}% | Refresh: ${intervalSec}s | Ctrl+C to stop\n`)); }
+      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+      while (true) {
+        cycle++; const ts = new Date().toLocaleTimeString();
+        try {
+          const snapshot = await fetchAllFundingRates({ symbols: filterSymbols, minSpread }); const shown = snapshot.symbols.slice(0, topN);
+          if (isJson()) { printJson(jsonOk({ cycle, timestamp: ts, opportunities: shown })); }
+          else {
+            if (cycle > 1) process.stdout.write(`\x1b[${shown.length + 4}A\x1b[J`);
+            console.log(chalk.gray(`  ${ts} -- Cycle ${cycle} | ${shown.length} opportunities >= ${minSpread}%\n`));
+            for (const s of shown) { const dir = `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}`; const sc = s.maxSpreadAnnual >= 50 ? chalk.green.bold : s.maxSpreadAnnual >= 30 ? chalk.green : chalk.yellow; const rs = s.rates.map(r => `${exAbbr(r.exchange)}:${(r.fundingRate * 100).toFixed(4)}%`); console.log(`  ${chalk.white.bold(s.symbol.padEnd(8))} ${sc(`${s.maxSpreadAnnual.toFixed(1)}%`.padEnd(8))} ${dir.padEnd(7)} ${rs.join(" ")}`); }
+            console.log();
+          }
+        } catch (err) { if (!isJson()) console.log(chalk.red(`  ${ts} Error: ${err instanceof Error ? err.message : err}\n`)); }
+        await new Promise(r => setTimeout(r, intervalSec * 1000));
+      }
+    });
+
+  parent.command("funding-positions").description("Show funding rate impact on your current positions")
+    .option("--exchanges <list>", "Comma-separated exchanges")
+    .action(async (opts: { exchanges?: string }) => {
+      if (!getAdapterForExchange) { if (isJson()) return printJson(jsonError("INTERNAL", "requires adapter")); console.log(chalk.red("  requires adapter access\n")); return; }
+      await withJsonErrors(isJson(), async () => {
+        const targetExchanges = opts.exchanges ? opts.exchanges.split(",").map(s => s.trim().toLowerCase()) : [...ALL_EXCHANGES];
+        if (!isJson()) console.log(chalk.cyan("  Fetching positions and funding rates...\n"));
+        interface PF { exchange: string; symbol: string; side: "long"|"short"; size: string; entryPrice: string; markPrice: string; unrealizedPnl: string; leverage: number; notionalUsd: number; fundingRate: number; hourlyRate: number; annualPct: number; hourlyPayment: number; dailyPayment: number; actualReceived24h: number; actualPaid24h: number; actualNet24h: number; }
+        const results: PF[] = []; const exchangeErrors: Record<string, string> = {};
+        await Promise.all(targetExchanges.map(async (exchange) => {
+          try {
+            const adapter = await getAdapterForExchange!(exchange);
+            const [positions, markets, fp] = await Promise.all([adapter.getPositions(), adapter.getMarkets(), adapter.getFundingPayments(100).catch(() => [] as { time: number; symbol: string; payment: string }[])]);
+            if (positions.length === 0) return;
+            const fm = new Map<string, { rate: number; markPrice: number }>(); for (const m of markets) { const sym = m.symbol.toUpperCase().replace(/-PERP$/, ""); fm.set(sym, { rate: Number(m.fundingRate) || 0, markPrice: Number(m.markPrice) || 0 }); }
+            const dayAgo = Date.now() - 86400000; const af = new Map<string, { received: number; paid: number }>(); for (const f of fp) { if (f.time < dayAgo) continue; const sym = f.symbol.toUpperCase().replace(/-PERP$/, ""); const amt = Number(f.payment) || 0; if (!af.has(sym)) af.set(sym, { received: 0, paid: 0 }); const e = af.get(sym)!; if (amt > 0) e.received += amt; else e.paid += Math.abs(amt); }
+            for (const pos of positions) { const sym = pos.symbol.toUpperCase().replace(/-PERP$/, ""); const fd = fm.get(sym); const fr = fd?.rate ?? 0; const mk = Number(pos.markPrice) || fd?.markPrice || 0; const sz = Math.abs(Number(pos.size)); const nu = sz * mk; const hr = toHourlyRate(fr, exchange); const ap = annualizeRate(fr, exchange); const hp = estimateHourlyFunding(fr, exchange, nu, pos.side); const a = af.get(sym); results.push({ exchange, symbol: sym, side: pos.side, size: pos.size, entryPrice: pos.entryPrice, markPrice: pos.markPrice, unrealizedPnl: pos.unrealizedPnl, leverage: pos.leverage, notionalUsd: nu, fundingRate: fr, hourlyRate: hr, annualPct: ap, hourlyPayment: hp, dailyPayment: hp * 24, actualReceived24h: a?.received ?? 0, actualPaid24h: a?.paid ?? 0, actualNet24h: (a?.received ?? 0) - (a?.paid ?? 0) }); }
+          } catch (err) { exchangeErrors[exchange] = err instanceof Error ? err.message : String(err); }
+        }));
+        if (results.length === 0) { if (isJson()) return printJson(jsonOk({ positions: [], totals: { predicted: { hourly: 0, daily: 0 }, actual24h: { net: 0 }, notionalUsd: 0 }, errors: exchangeErrors })); console.log(chalk.gray("  No open positions.\n")); return; }
+        results.sort((a, b) => Math.abs(b.dailyPayment) - Math.abs(a.dailyPayment));
+        const tH = results.reduce((s, r) => s + r.hourlyPayment, 0); const tD = results.reduce((s, r) => s + r.dailyPayment, 0); const tN = results.reduce((s, r) => s + r.notionalUsd, 0); const tA = results.reduce((s, r) => s + r.actualNet24h, 0);
+        if (isJson()) return printJson(jsonOk({ positions: results.map(r => ({ exchange: r.exchange, symbol: r.symbol, side: r.side, size: r.size, notionalUsd: +r.notionalUsd.toFixed(2), fundingRate: r.fundingRate, annualPct: +r.annualPct.toFixed(2), predicted: { hourly: +r.hourlyPayment.toFixed(6), daily: +r.dailyPayment.toFixed(4) }, actual24h: { received: +r.actualReceived24h.toFixed(6), paid: +r.actualPaid24h.toFixed(6), net: +r.actualNet24h.toFixed(6) }, unrealizedPnl: r.unrealizedPnl })), totals: { predicted: { hourly: +tH.toFixed(6), daily: +tD.toFixed(4) }, actual24h: { net: +tA.toFixed(6) }, notionalUsd: +tN.toFixed(2) }, errors: Object.keys(exchangeErrors).length > 0 ? exchangeErrors : undefined }));
+        const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e.toUpperCase();
+        console.log(chalk.cyan.bold("  Position Funding Impact\n"));
+        const rows = results.map(r => { const sc = r.side === "long" ? chalk.green : chalk.red; const rc = r.fundingRate > 0 ? chalk.red : r.fundingRate < 0 ? chalk.green : chalk.white; const as = r.actualNet24h !== 0 ? (r.actualNet24h > 0 ? chalk.green : chalk.red)(`${r.actualNet24h > 0 ? "+" : ""}$${r.actualNet24h.toFixed(4)}`) : chalk.gray("-"); return [chalk.white.bold(exAbbr(r.exchange)), chalk.white.bold(r.symbol), sc(r.side.toUpperCase()), `$${formatUsd(r.notionalUsd)}`, rc(formatPercent(r.fundingRate)), rc(`${r.annualPct.toFixed(1)}%`), as, formatPnl(r.unrealizedPnl)]; });
+        console.log(makeTable(["Ex", "Symbol", "Side", "Notional", "Rate(now)", "Annual(now)", "Actual 24h", "uPnL"], rows));
+        console.log(`\n  Total: $${formatUsd(tN)} | Actual 24h: ${tA >= 0 ? "+" : ""}$${tA.toFixed(4)} | Predicted: ${tD >= 0 ? "-" : "+"}$${Math.abs(tD).toFixed(4)}/d\n`);
+      });
     });
 }

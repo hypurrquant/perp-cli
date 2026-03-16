@@ -27,27 +27,20 @@ import { registerBridgeCommands } from "./commands/bridge.js";
 import { registerDepositCommands } from "./commands/deposit.js";
 import { registerAlertCommands } from "./commands/alert.js";
 import { registerArbAutoCommands } from "./commands/arb-auto.js";
-import { registerArbManageCommands } from "./commands/arb-manage.js";
-import { registerGapCommands } from "./commands/gap.js";
+import { registerArbManageCommands } from "./commands/arb/index.js";
 import { registerAgentCommands } from "./commands/agent.js";
 import { registerWithdrawCommands } from "./commands/withdraw.js";
 import { registerRebalanceCommands } from "./commands/rebalance.js";
 import { registerBotCommands } from "./commands/bot.js";
-import { registerHealthCommands } from "./commands/health.js";
-import { registerPortfolioCommands } from "./commands/portfolio.js";
 import { registerRiskCommands } from "./commands/risk.js";
 import { registerHistoryCommands } from "./commands/history.js";
-import { registerAnalyticsCommands } from "./commands/analytics.js";
-import { registerPnlCommands } from "./commands/pnl.js";
-import { registerMultilegCommands } from "./commands/multileg.js";
 import { registerSettingsCommands } from "./commands/settings.js";
 import { registerDexCommands } from "./commands/dex.js";
 import { registerPlanCommands } from "./commands/plan.js";
-import { registerFundingCommands } from "./commands/funding.js";
+// funding merged into arb.ts
 import { registerBacktestCommands } from "./commands/backtest.js";
 import { registerDashboardCommands } from "./commands/dashboard.js";
 import { registerInitCommand, EXCHANGE_ENV_MAP, validateKey } from "./commands/init.js";
-import { registerEnvCommands } from "./commands/env.js";
 import { loadSettings, saveSettings } from "./settings.js";
 import { setSharedApiNetwork } from "./shared-api.js";
 
@@ -214,11 +207,11 @@ function getHLAdapter(): HyperliquidAdapter {
 
 // Register command groups with async adapter getter
 registerMarketCommands(program, getAdapter, isJson);
-registerAccountCommands(program, getAdapter, isJson);
-registerTradeCommands(program, getAdapter, isJson, isDryRun);
+registerAccountCommands(program, getAdapter, isJson, getAdapterForExchange);
+registerTradeCommands(program, getAdapter, isJson, isDryRun, getAdapterForExchange);
 registerManageCommands(program, getAdapter, isJson, getPacificaAdapter);
 registerStreamCommands(program, () => program.opts().network as Network, getExchange, getAdapter);
-registerArbCommands(program, isJson);
+registerArbCommands(program, isJson, getAdapterForExchange);
 registerWalletCommands(program, isJson);
 registerBridgeCommands(program, isJson);
 registerDepositCommands(
@@ -320,50 +313,47 @@ async function getHLAdapterForDex(dex: string): Promise<HyperliquidAdapter> {
 
 registerArbAutoCommands(program, getAdapterForExchange, isJson, getHLAdapterForDex);
 registerArbManageCommands(program, getAdapterForExchange, isJson);
-registerGapCommands(program, isJson);
 registerAgentCommands(program, getAdapter, isJson);
 registerWithdrawCommands(program, getAdapter, isJson);
 registerRebalanceCommands(program, getAdapterForExchange, isJson);
 
 // Jobs & strategies
 import { registerJobsCommands } from "./commands/jobs.js";
-import { registerRunCommands } from "./commands/run.js";
 registerJobsCommands(program, isJson);
-registerRunCommands(program, getAdapter, getAdapterForExchange, isJson);
 registerBotCommands(program, getAdapter, getAdapterForExchange, isJson);
 
 // Agent-friendly commands
-registerHealthCommands(program, isJson);
-registerPortfolioCommands(program, getAdapterForExchange, isJson);
 registerRiskCommands(program, getAdapterForExchange, isJson);
-registerHistoryCommands(program, isJson);
-registerAnalyticsCommands(program, getAdapterForExchange, isJson);
-registerPnlCommands(program, getAdapterForExchange, isJson);
-registerMultilegCommands(program, getAdapterForExchange, isJson);
+registerHistoryCommands(program, isJson, getAdapterForExchange);
 registerSettingsCommands(program, isJson, getAdapterForExchange);
 registerDexCommands(program, getAdapter, isJson);
 registerPlanCommands(program, getAdapter, isJson);
-registerFundingCommands(program, isJson, getAdapterForExchange);
+// funding merged into arb — registerFundingCommands removed
 registerBacktestCommands(program, isJson);
 registerDashboardCommands(program, getAdapterForExchange, isJson, getHLAdapterForDex);
 registerInitCommand(program);
-registerEnvCommands(program, isJson);
 
-// Agent discovery: perp api-spec — returns full CLI spec as JSON
-program
+// Agent discovery: perp api-spec — deprecated, use 'perp agent schema'
+const apiSpecCmd = program
   .command("api-spec")
-  .description("Return full CLI command spec as JSON (for agent discovery)")
+  .description("Use 'perp agent schema'")
   .action(async () => {
     const { jsonOk, printJson } = await import("./utils.js");
     const { getCliSpec } = await import("./cli-spec.js");
     printJson(jsonOk(getCliSpec(program)));
   });
+(apiSpecCmd as any)._hidden = true;
 
-// Status command
-program
+// Status command — deprecated, use 'perp portfolio' or 'perp -e <ex> account'
+const statusCmd = program
   .command("status")
-  .description("Quick overview: account + positions + open orders")
-  .action(async () => {
+  .description("Use 'perp portfolio' for cross-exchange overview")
+  .option("--health", "Check exchange API connectivity and latency")
+  .action(async (opts: { health?: boolean }) => {
+    if (opts.health) {
+      const { runHealthCheck } = await import("./commands/risk.js");
+      return runHealthCheck(isJson);
+    }
     const adapter = await getAdapter();
     const json = isJson();
 
@@ -451,6 +441,7 @@ program
       process.exit(1);
     }
   });
+(statusCmd as any)._hidden = true;
 
 // Switch shared API URLs if --network testnet is used
 program.hook("preAction", () => {

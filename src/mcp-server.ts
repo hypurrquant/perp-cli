@@ -439,6 +439,16 @@ server.tool(
           { step: 1, command: `perp -e ${ex} --json account positions`, description: "Check current position" },
           { step: 2, command: `perp -e ${ex} --json trade stop ${symbol} <side> <stopPrice> <size>`, description: "Place stop order", dangerous: true },
         );
+      } else if (g.includes("split") || g.includes("depth") || (g.includes("large") && (g.includes("order") || g.includes("buy") || g.includes("sell")))) {
+        const symbol = extractSymbol(g) || "<symbol>";
+        const amount = extractNumber(g) || "<usd>";
+        const side = g.includes("sell") || g.includes("short") ? "sell" : "buy";
+        steps.push(
+          { step: 1, command: `perp -e ${ex} --json market book ${symbol}`, description: `Check ${symbol} orderbook depth` },
+          { step: 2, command: `perp -e ${ex} --json account info`, description: "Check available balance" },
+          { step: 3, command: `perp -e ${ex} --json trade split ${symbol} ${side} ${amount}`, description: `Split ${side} $${amount} ${symbol} into depth-based slices`, dangerous: true },
+          { step: 4, command: `perp -e ${ex} --json account positions`, description: "Verify position opened" },
+        );
       } else if (g.includes("twap")) {
         const symbol = extractSymbol(g) || "<symbol>";
         const size = extractNumber(g) || "<size>";

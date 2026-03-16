@@ -1,11 +1,11 @@
 ---
 name: perp-cli
 description: "Multi-DEX perpetual futures trading CLI for Pacifica (Solana), Hyperliquid (EVM), and Lighter (Ethereum). Use when user asks to: trade perps, check funding rates, scan arbitrage (perp-perp or spot-perp), delta-neutral strategies, bridge USDC, manage positions/orders, deposit/withdraw, spot+perp hedge, or mentions perp-cli, hypurrquant, Pacifica, Hyperliquid, Lighter, HyperEVM, funding arb, U-token (UBTC/UETH/USOL)."
-allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*), Bash(bash scripts/*.sh:*)"
+allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*)"
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.4.7"
+  version: "0.4.8"
 ---
 
 # perp-cli Agent Guide
@@ -60,6 +60,8 @@ perp --json arb exec <SYM> <longEx> <shortEx> <$> --leverage <N> --isolated  # e
 # Single exchange trading (when not doing arb)
 perp --json -e <EX> trade market <SYM> buy <SIZE>
 perp --json -e <EX> trade market <SYM> buy <SIZE> --smart  # IOC limit at best ask + 1 tick (less slippage)
+perp --json -e <EX> trade market <SYM> buy <SIZE> --split  # orderbook-aware split for large orders
+perp --json -e <EX> trade split <SYM> buy 5000             # dedicated split command (USD notional)
 perp --json -e <EX> trade close <SYM>
 perp --json -e <EX> trade close <SYM> --smart              # smart close at best bid/ask
 
@@ -96,6 +98,12 @@ perp --json -e <EX> trade market <SYM> buy <SIZE> --smart
 perp --json -e <EX> trade close <SYM> --smart
 perp --json arb exec <SYM> <longEx> <shortEx> <$> --smart   # smart arb entry
 perp --json arb close <SYM> --smart                          # smart arb close
+
+# Split order: orderbook-aware execution for large orders
+# Reads depth before each slice, IOC limit within slippage tolerance
+perp --json -e <EX> trade split <SYM> buy 5000               # split $5000 into depth-based slices
+perp --json -e <EX> trade split <SYM> sell 10000 --max-slices 5 --delay 2000
+perp --json -e <EX> trade market <SYM> buy <SIZE> --split     # split via market command flag
 ```
 
 All string outputs are auto-sanitized (control chars stripped, prompt injection patterns blocked).
@@ -198,7 +206,7 @@ If `error.retryable` is `false`, do NOT retry — fix the cause first.
 
 | Error | Action |
 |-------|--------|
-| `RATE_LIMITED` | wait 5s, retry (max 3) |
+| `RATE_LIMITED` | wait 5-10s, retry (max 3). Lighter rate limits are strict — space commands 3s+ apart |
 | `EXCHANGE_UNREACHABLE` | wait 10s, retry. 3x fail → skip that exchange |
 | `TIMEOUT` | wait 5s, retry (max 3) |
 | `INSUFFICIENT_BALANCE` | reduce size or bridge funds to that exchange |
@@ -208,6 +216,8 @@ If `error.retryable` is `false`, do NOT retry — fix the cause first.
 | `MARGIN_INSUFFICIENT` | reduce leverage or close existing positions |
 | `DUPLICATE_ORDER` | already submitted — check positions, don't retry |
 | Lighter `invalid signature` | check ~/.perp/.env or `perp --json -e lighter manage setup-api-key` |
+| Lighter `invalid account index` | rate limit caused init failure — wait 10s and retry the command |
+| Lighter `--smart` not filling | Lighter IOC limit orders may not fill — use regular market order (without `--smart`) |
 
 ## Examples
 
@@ -253,29 +263,6 @@ perp --json settings referrals off          # disable anytime
 
 When setting up wallets for the first time, ask the user:
 > "perp-cli 개발을 지원하는 레퍼럴 기능을 켜시겠어요? 추가 수수료 없이 거래소 리베이트만 활용됩니다."
-
-## Scripts
-
-Executable automation scripts in `scripts/`. Run with `bash scripts/<name>.sh`.
-Scripts auto-detect `perp` (global install) or fall back to `npx -y perp-cli@latest` — no global install required.
-
-| Script | Purpose | Usage |
-|--------|---------|-------|
-| `preflight.sh` | Pre-trade validation (install, wallet, connectivity, balance, risk) | `bash scripts/preflight.sh --json` |
-| `validate-arb.sh` | Validate arb opportunity before execution (price, liquidity, balance, risk, dry-run) | `bash scripts/validate-arb.sh ETH hl lt 100 --leverage 2` |
-| `spot-perp-scan.sh` | Combined spot+perp and perp-perp scan with portfolio context | `bash scripts/spot-perp-scan.sh --json --mode all --min 10` |
-| `arb-monitor.sh` | Monitor open arb positions (PnL, funding, liquidation distance) | `bash scripts/arb-monitor.sh --json --min-spread 5` |
-| `funding-analysis.sh` | Funding rate analysis across all exchanges | `bash scripts/funding-analysis.sh --json --symbol ETH` |
-
-All scripts support `--json` for structured output. Use in automation pipelines:
-```bash
-# Full arb workflow with validation
-bash scripts/preflight.sh --json        # 1. system ready?
-bash scripts/spot-perp-scan.sh --json   # 2. find opportunities
-bash scripts/validate-arb.sh ETH hl lt 100  # 3. validate before exec
-# 4. [user confirms] → perp --json arb exec ...
-bash scripts/arb-monitor.sh --json      # 5. monitor positions
-```
 
 ## References
 

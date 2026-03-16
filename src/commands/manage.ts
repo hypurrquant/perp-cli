@@ -11,7 +11,7 @@ export function registerManageCommands(
   isJson: () => boolean,
   getPacificaAdapter: () => PacificaAdapter
 ) {
-  const manage = program.command("manage").description("Account management");
+  const manage = program.command("manage").description("Exchange account settings (margin, subaccount, API keys, builder)");
 
   // Ensure adapter is initialized before accessing PacificaAdapter
   async function pac(): Promise<PacificaAdapter> {
@@ -45,11 +45,11 @@ export function registerManageCommands(
       );
     });
 
-  manage
+  const withdrawCmd = manage
     .command("withdraw <amount> <address>")
-    .description("[Deprecated] Use 'perp withdraw pacifica <amount>' instead")
+    .description("Use 'perp withdraw pacifica <amount>'")
     .action(async (amount: string, address: string) => {
-      console.log(chalk.yellow("\n  [Deprecated] Use 'perp withdraw pacifica <amount>' instead.\n"));
+      console.log(chalk.yellow("\n  Use 'perp withdraw pacifica <amount>' instead.\n"));
       const a = await pac();
       const result = await a.sdk.withdraw(
         { amount, dest_address: address },
@@ -61,6 +61,7 @@ export function registerManageCommands(
         chalk.green(`\n  Withdrawal of $${amount} to ${address} submitted.\n`)
       );
     });
+  (withdrawCmd as any)._hidden = true;
 
   // Subaccounts
   const sub = manage.command("sub").description("Subaccount management");

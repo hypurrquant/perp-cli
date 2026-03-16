@@ -3,6 +3,65 @@ import chalk from "chalk";
 import type { ExchangeAdapter } from "../exchanges/interface.js";
 import { printJson, jsonOk, makeTable, formatUsd, withJsonErrors } from "../utils.js";
 import { loadRiskLimits, saveRiskLimits, assessRisk, getLiquidationDistances, type RiskLimits } from "../risk.js";
+import { pingPacifica, pingHyperliquid, pingLighter } from "../shared-api.js";
+
+interface HealthResult {
+  exchange: string;
+  status: "ok" | "degraded" | "down";
+  latency_ms: number;
+  error?: string;
+}
+
+/** Run health check and return results + render. Exported for use by status --health. */
+export async function runHealthCheck(isJson: () => boolean): Promise<void> {
+      const [pacPing, hlPing, ltPing] = await Promise.all([
+        pingPacifica(),
+        pingHyperliquid(),
+        pingLighter(),
+      ]);
+      const toPingResult = (name: string, p: { ok: boolean; latencyMs: number; status: number }): HealthResult => ({
+        exchange: name,
+        status: p.ok ? "ok" : "down",
+        latency_ms: p.latencyMs,
+        error: p.ok ? undefined : `HTTP ${p.status}`,
+      });
+      const checks: HealthResult[] = [
+        toPingResult("pacifica", pacPing),
+        toPingResult("hyperliquid", hlPing),
+        toPingResult("lighter", ltPing),
+      ];
+
+      const allOk = checks.every(c => c.status === "ok");
+
+      if (isJson()) {
+        return printJson(jsonOk({ healthy: allOk, exchanges: checks }));
+      }
+
+      console.log(chalk.cyan.bold("\n  Exchange Health Check\n"));
+      const rows = checks.map(c => {
+        const statusIcon = c.status === "ok"
+          ? chalk.green("OK")
+          : c.status === "degraded"
+          ? chalk.yellow("DEGRADED")
+          : chalk.red("DOWN");
+        const latency = c.latency_ms < 500
+          ? chalk.green(`${c.latency_ms}ms`)
+          : c.latency_ms < 2000
+          ? chalk.yellow(`${c.latency_ms}ms`)
+          : chalk.red(`${c.latency_ms}ms`);
+        return [
+          chalk.white.bold(c.exchange),
+          statusIcon,
+          latency,
+          c.error ? chalk.red(c.error) : chalk.gray("-"),
+        ];
+      });
+
+      console.log(makeTable(["Exchange", "Status", "Latency", "Error"], rows));
+
+      const overall = allOk ? chalk.green("ALL HEALTHY") : chalk.red("ISSUES DETECTED");
+      console.log(`\n  Overall: ${overall}\n`);
+}
 
 const EXCHANGES = ["pacifica", "hyperliquid", "lighter"] as const;
 
@@ -100,6 +159,7 @@ export function registerRiskCommands(
         } else {
           console.log(chalk.green("\n  No risk violations. All clear.\n"));
         }
+
       });
     });
 
@@ -315,4 +375,15 @@ export function registerRiskCommands(
         }
       });
     });
+
+  // ── deprecated: health (merged into risk) ──
+  const healthCmd = program
+    .command("health")
+    .description("Use 'perp status --health'")
+    .action(async () => {
+      if (!isJson()) console.log(chalk.yellow("  Use 'perp status --health' instead.\n"));
+      await runHealthCheck(isJson);
+    });
+  (healthCmd as any)._hidden = true;
+
 }
