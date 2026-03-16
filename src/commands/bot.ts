@@ -389,13 +389,8 @@ export function registerBotCommands(
       console.log(chalk.gray(`         perp bot start ~/.perp/bots/eth-grid.yaml --background\n`));
     });
 
-  // ── Legacy run subcommands (hidden under bot) ──
-  registerRunSubcommands(bot, getAdapter, getAdapterFor, isJson, true);
-
-  // ── Deprecated top-level 'run' alias (hidden from help) ──
-  const run = program.command("run").description("Use 'perp bot'");
-  (run as any)._hidden = true;
-  registerRunSubcommands(run, getAdapter, getAdapterFor, isJson, false);
+  // Strategy subcommands: twap, funding-arb, grid, dca, trailing-stop
+  registerRunSubcommands(bot, getAdapter, getAdapterFor, isJson);
 }
 
 function makeLog(): (msg: string) => void {
@@ -494,14 +489,12 @@ function registerRunSubcommands(
   getAdapter: () => Promise<ExchangeAdapter>,
   getAdapterFor: (exchange: string) => Promise<ExchangeAdapter>,
   isJson: () => boolean,
-  hideFromBot: boolean,
 ) {
   const run = parent;
 
   const twapCmd = run
     .command("twap <symbol> <side> <size> <duration>")
     .description("Run client-side TWAP (splits market orders over time)");
-  if (hideFromBot) (twapCmd as any)._hidden = true;
   twapCmd
     .option("-s, --slices <n>", "Number of slices (default: auto)")
     .option("--job-id <id>", "Job ID (set automatically for background jobs)")
@@ -610,7 +603,6 @@ function registerRunSubcommands(
   const gridCmd = run
     .command("grid <symbol>")
     .description("Run grid trading bot (places limit orders across a price range)");
-  if (hideFromBot) (gridCmd as any)._hidden = true;
   gridCmd
     .requiredOption("--upper <price>", "Upper price bound")
     .requiredOption("--lower <price>", "Lower price bound")
@@ -665,7 +657,6 @@ function registerRunSubcommands(
   const dcaCmd = run
     .command("dca <symbol> <side> <amount> <interval>")
     .description("Run DCA strategy (periodic market orders at fixed intervals)");
-  if (hideFromBot) (dcaCmd as any)._hidden = true;
   dcaCmd
     .option("--orders <n>", "Total number of orders (0 = unlimited)", "0")
     .option("--price-limit <price>", "Stop buying above / selling below this price")
@@ -709,7 +700,6 @@ function registerRunSubcommands(
   const tsCmd = run
     .command("trailing-stop <symbol>")
     .description("Run client-side trailing stop (monitors price, closes position when trail % hit)");
-  if (hideFromBot) (tsCmd as any)._hidden = true;
   tsCmd
     .requiredOption("--trail <pct>", "Trail percentage")
     .option("--interval <sec>", "Check interval in seconds", "5")

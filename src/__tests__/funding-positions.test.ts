@@ -32,10 +32,10 @@ function createMockAdapter(
 async function setupFunding(
   getAdapter: (exchange: string) => Promise<unknown>,
 ) {
-  const { registerFundingCommands } = await import("../commands/funding.js");
+  const { registerArbCommands } = await import("../commands/arb.js");
   const program = new Command();
   program.exitOverride();
-  registerFundingCommands(
+  registerArbCommands(
     program,
     () => true, // isJson
     getAdapter as (exchange: string) => Promise<import("../exchanges/interface.js").ExchangeAdapter>,
@@ -78,7 +78,7 @@ describe("funding positions", () => {
     ]);
 
     const program = await setupFunding(vi.fn().mockResolvedValue(adapter));
-    const json = await runAndCapture(program, ["funding", "positions", "--exchanges", "hyperliquid"]);
+    const json = await runAndCapture(program, ["arb", "funding-positions", "--exchanges", "hyperliquid"]);
 
     expect(json.ok).toBe(true);
     expect(json.data.positions).toHaveLength(1);
@@ -114,7 +114,7 @@ describe("funding positions", () => {
     ]);
 
     const program = await setupFunding(vi.fn().mockResolvedValue(adapter));
-    const json = await runAndCapture(program, ["funding", "positions", "--exchanges", "hyperliquid"]);
+    const json = await runAndCapture(program, ["arb", "funding-positions", "--exchanges", "hyperliquid"]);
 
     expect(json.ok).toBe(true);
     expect(json.data.positions).toHaveLength(2);
@@ -127,7 +127,7 @@ describe("funding positions", () => {
   it("returns empty positions when no open positions", async () => {
     const adapter = createMockAdapter("hyperliquid", [], []);
     const program = await setupFunding(vi.fn().mockResolvedValue(adapter));
-    const json = await runAndCapture(program, ["funding", "positions", "--exchanges", "hyperliquid"]);
+    const json = await runAndCapture(program, ["arb", "funding-positions", "--exchanges", "hyperliquid"]);
 
     expect(json.ok).toBe(true);
     expect(json.data.positions).toHaveLength(0);
@@ -157,7 +157,7 @@ describe("funding positions", () => {
     });
 
     const program = await setupFunding(getAdapter);
-    const json = await runAndCapture(program, ["funding", "positions"]);
+    const json = await runAndCapture(program, ["arb", "funding-positions"]);
 
     expect(json.ok).toBe(true);
     expect(json.data.positions.length).toBeGreaterThanOrEqual(2);
@@ -169,7 +169,7 @@ describe("funding positions", () => {
   it("reports exchange errors gracefully", async () => {
     const getAdapter = vi.fn().mockRejectedValue(new Error("No private key"));
     const program = await setupFunding(getAdapter);
-    const json = await runAndCapture(program, ["funding", "positions", "--exchanges", "hyperliquid"]);
+    const json = await runAndCapture(program, ["arb", "funding-positions", "--exchanges", "hyperliquid"]);
 
     expect(json.ok).toBe(true);
     expect(json.data.positions).toHaveLength(0);
@@ -184,7 +184,7 @@ describe("funding positions", () => {
     ]);
 
     const program = await setupFunding(vi.fn().mockResolvedValue(adapter));
-    const json = await runAndCapture(program, ["funding", "positions", "--exchanges", "pacifica"]);
+    const json = await runAndCapture(program, ["arb", "funding-positions", "--exchanges", "pacifica"]);
 
     const pos = json.data.positions[0];
     expect(pos.predicted.hourly).toBeLessThan(0); // short receives positive funding
@@ -199,7 +199,7 @@ describe("funding positions", () => {
     ]);
 
     const program = await setupFunding(vi.fn().mockResolvedValue(adapter));
-    const json = await runAndCapture(program, ["funding", "positions", "--exchanges", "hyperliquid"]);
+    const json = await runAndCapture(program, ["arb", "funding-positions", "--exchanges", "hyperliquid"]);
 
     const pos = json.data.positions[0];
     expect(pos.predicted.hourly).toBeLessThan(0); // long + negative funding = receive
@@ -217,7 +217,7 @@ describe("funding positions", () => {
     ]);
 
     const program = await setupFunding(vi.fn().mockResolvedValue(adapter));
-    const json = await runAndCapture(program, ["funding", "positions", "--exchanges", "hyperliquid"]);
+    const json = await runAndCapture(program, ["arb", "funding-positions", "--exchanges", "hyperliquid"]);
 
     const pos = json.data.positions[0];
     expect(pos.actual24h.received).toBeCloseTo(0.10, 4); // only the recent one

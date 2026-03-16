@@ -39,7 +39,7 @@ fi
 SCAN_RESULT=$($PERP --json arb scan --mode "$MODE" --min "$MIN_SPREAD" 2>/dev/null || echo '{"ok":false}')
 
 # 3. Get exchange health for context
-HEALTH=$($PERP --json health 2>/dev/null || echo '{"ok":false}')
+HEALTH=$($PERP --json agent ping 2>/dev/null || echo '{"ok":false}')
 
 if $JSON_MODE; then
   cat <<EOF

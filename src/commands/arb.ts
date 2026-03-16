@@ -23,7 +23,7 @@ import {
   fetchHyperliquidAllMidsRaw,
   fetchLighterOrderBookDetailsRaw,
 } from "../shared-api.js";
-import { scanDexArb, type DexArbPair } from "../dex-asset-map.js";
+import { scanDexArb } from "../dex-asset-map.js";
 
 interface FundingRate {
   exchange: string;
@@ -90,104 +90,10 @@ export function registerArbCommands(
 ) {
   const arb = program.command("arb").description("Funding rate arbitrage & basis trading");
 
-  const fundingCmd = arb
-    .command("funding")
-    .description("Use 'perp funding rates --min-spread 5'");
+  // Deprecated: arb funding → use 'perp arb rates'
+  const fundingCmd = arb.command("funding").description("Use 'perp arb rates'");
   (fundingCmd as any)._hidden = true;
-  fundingCmd
-    .option("-s, --symbol <symbol>", "Filter by symbol")
-    .option("--min-spread <pct>", "Minimum annual spread % to show", "5")
-    .action(async (opts: { symbol?: string; minSpread: string }) => {
-      if (!isJson()) console.log(chalk.yellow("  [Deprecated] Use 'perp funding rates --min-spread 5' instead.\n"));
-      if (!isJson()) console.log(chalk.cyan("  Fetching funding rates from all exchanges...\n"));
-
-      const [pacRates, hlRates, ltRates] = await Promise.all([
-        fetchPacificaRates(),
-        fetchHyperliquidRates(),
-        fetchLighterRates(),
-      ]);
-
-      // Build rate map by symbol
-      const rateMap = new Map<string, FundingRate[]>();
-      for (const r of [...pacRates, ...hlRates, ...ltRates]) {
-        if (opts.symbol && r.symbol.toUpperCase() !== opts.symbol.toUpperCase()) continue;
-        if (!rateMap.has(r.symbol)) rateMap.set(r.symbol, []);
-        rateMap.get(r.symbol)!.push(r);
-      }
-
-      // Find arb opportunities
-      type Opp = {
-        symbol: string;
-        longExchange: string;
-        shortExchange: string;
-        longRate: number;
-        shortRate: number;
-        spread: number;
-        annualSpread: number;
-        markPrice: number;
-      };
-      const opportunities: Opp[] = [];
-
-      for (const [symbol, rates] of rateMap.entries()) {
-        if (rates.length < 2) continue;
-
-        // Find min and max funding rate exchange (normalize to hourly for comparison)
-        rates.sort((a, b) => toHourlyRate(a.fundingRate, a.exchange) - toHourlyRate(b.fundingRate, b.exchange));
-        const lowest = rates[0];
-        const highest = rates[rates.length - 1];
-
-        if (lowest.exchange === highest.exchange) continue;
-
-        const annualSpread = computeAnnualSpread(
-          highest.fundingRate, highest.exchange,
-          lowest.fundingRate, lowest.exchange,
-        );
-
-        if (annualSpread >= parseFloat(opts.minSpread)) {
-          opportunities.push({
-            symbol,
-            longExchange: lowest.exchange,    // long where funding is lowest (you pay less / receive more)
-            shortExchange: highest.exchange,  // short where funding is highest (you receive more / pay less)
-            longRate: lowest.fundingRate,
-            shortRate: highest.fundingRate,
-            spread: toHourlyRate(highest.fundingRate, highest.exchange) - toHourlyRate(lowest.fundingRate, lowest.exchange),
-            annualSpread,
-            markPrice: highest.markPrice || lowest.markPrice,
-          });
-        }
-      }
-
-      opportunities.sort((a, b) => b.annualSpread - a.annualSpread);
-
-      if (isJson()) return printJson(jsonOk(opportunities));
-
-      if (opportunities.length === 0) {
-        console.log(chalk.gray(`  No funding arb opportunities above ${opts.minSpread}% annual spread.\n`));
-        return;
-      }
-
-      console.log(chalk.cyan.bold("  Funding Rate Arbitrage Opportunities\n"));
-      console.log(chalk.gray(`  Strategy: Long on low-funding exchange, Short on high-funding exchange\n`));
-
-      const rows = opportunities.map((o) => [
-        chalk.white.bold(o.symbol),
-        `$${formatUsd(o.markPrice)}`,
-        `${o.longExchange}`,
-        formatPercent(o.longRate),
-        `${o.shortExchange}`,
-        formatPercent(o.shortRate),
-        chalk.yellow(`${o.annualSpread.toFixed(1)}%`),
-      ]);
-
-      console.log(
-        makeTable(
-          ["Symbol", "Price", "Long On", "L.Fund", "Short On", "S.Fund", "Ann. Spread"],
-          rows
-        )
-      );
-
-      console.log(chalk.gray("\n  Note: All rates are hourly. Normalized before annualizing.\n"));
-    });
+  fundingCmd.action(() => console.log("Use 'perp arb rates --min-spread 5' instead."));
 
   arb
     .command("basis")
@@ -381,22 +287,7 @@ export function registerArbCommands(
   // ── Funding subcommands (merged from funding.ts) ──
   registerFundingSubcommands(arb, isJson, getAdapterForExchange);
 
-  // Keep deprecated 'arb gap' subgroup (hidden from help)
-  const gapSub = arb.command("gap").description("[deprecated] Use 'perp arb watch/track/alert'");
-  (gapSub as any)._hidden = true;
-  registerGapSubcommands(gapSub, isJson);
-
-  // Keep deprecated top-level 'gap' alias (hidden from help)
-  const gapAlias = program
-    .command("gap")
-    .description("Use 'perp arb watch/track/alert'");
-  (gapAlias as any)._hidden = true;
-  registerGapSubcommands(gapAlias, isJson);
-
-  // Keep deprecated top-level 'funding' alias (hidden from help)
-  const fundingAlias = program.command("funding").description("Use 'perp arb rates/compare/funding-history/funding-monitor/funding-positions'");
-  (fundingAlias as any)._hidden = true;
-  registerFundingSubcommands(fundingAlias, isJson, getAdapterForExchange);
+  // Deprecated aliases removed — use arb prices/watch/track/alert/rates directly
 }
 
 // ────────────────────────────────────────────────────────
@@ -792,242 +683,7 @@ function registerGapDirectCommands(
     );
 }
 
-function registerGapSubcommands(
-  parent: Command,
-  isJson: () => boolean
-) {
-  const gap = parent.name() === "gap"
-    ? parent
-    : parent.command("gap").description("Cross-exchange price gap monitoring");
-
-  // ── gap show (default) ──
-
-  gap
-    .command("show", { isDefault: true })
-    .description("Show current price gaps between exchanges")
-    .option("--min <pct>", "Minimum gap % to display", "0.01")
-    .option("--symbol <sym>", "Filter by symbol (e.g. BTC, ETH)")
-    .option("--top <n>", "Show top N gaps only")
-    .action(async (opts: { min: string; symbol?: string; top?: string }) => {
-      const minGap = parseFloat(opts.min);
-      if (!isJson()) console.log(chalk.cyan("\n  Fetching prices from Pacifica, Hyperliquid & Lighter...\n"));
-
-      let snapshots = await fetchAllPrices();
-
-      if (opts.symbol) {
-        const sym = opts.symbol.toUpperCase();
-        snapshots = snapshots.filter((s) => s.symbol.includes(sym));
-      }
-
-      if (opts.top) {
-        snapshots = snapshots.slice(0, parseInt(opts.top));
-      }
-
-      if (isJson()) return printJson(jsonOk(snapshots.filter((s) => s.maxGapPct >= minGap)));
-
-      printGapTable(snapshots, minGap);
-    });
-
-  // ── gap watch ── (live monitoring)
-
-  gap
-    .command("watch")
-    .description("Live-monitor price gaps (auto-refresh)")
-    .option("--min <pct>", "Minimum gap % to display", "0.05")
-    .option("--interval <seconds>", "Refresh interval", "5")
-    .option("--symbol <sym>", "Filter by symbol")
-    .option("--beep", "Beep on gaps above 0.5%")
-    .action(
-      async (opts: {
-        min: string;
-        interval: string;
-        symbol?: string;
-        beep?: boolean;
-      }) => {
-        const minGap = parseFloat(opts.min);
-        const intervalMs = parseInt(opts.interval) * 1000;
-        const beep = !!opts.beep;
-
-        if (!isJson()) {
-          console.log(chalk.cyan.bold("\n  Price Gap Monitor"));
-          console.log(`  Min gap:   ${minGap}%`);
-          console.log(`  Interval:  ${opts.interval}s`);
-          if (opts.symbol) console.log(`  Symbol:    ${opts.symbol.toUpperCase()}`);
-          console.log(chalk.gray("  Ctrl+C to stop\n"));
-        }
-
-        const cycle = async () => {
-          try {
-            let snapshots = await fetchAllPrices();
-
-            if (opts.symbol) {
-              const sym = opts.symbol.toUpperCase();
-              snapshots = snapshots.filter((s) => s.symbol.includes(sym));
-            }
-
-            // Clear screen for live view
-            process.stdout.write("\x1B[2J\x1B[0f");
-
-            const now = new Date().toLocaleTimeString();
-            console.log(
-              chalk.cyan.bold(`  Price Gap Monitor`) +
-                chalk.gray(`  ${now}  (refresh: ${opts.interval}s)\n`)
-            );
-
-            printGapTable(snapshots, minGap);
-
-            // Alert on large gaps
-            const bigGaps = snapshots.filter((s) => s.maxGapPct >= 0.5);
-            if (bigGaps.length > 0) {
-              console.log(
-                chalk.red.bold(
-                  `  !! ${bigGaps.length} large gap(s): ` +
-                    bigGaps
-                      .map((s) => `${s.symbol}(${s.maxGapPct.toFixed(3)}%)`)
-                      .join(", ")
-                )
-              );
-              if (beep) process.stdout.write("\x07");
-            }
-          } catch (err) {
-            console.error(
-              chalk.gray(
-                `  Error: ${err instanceof Error ? err.message : String(err)}`
-              )
-            );
-          }
-        };
-
-        await cycle();
-        setInterval(cycle, intervalMs);
-        await new Promise(() => {}); // keep alive
-      }
-    );
-
-  // ── gap track ── (track gap over time for a symbol)
-
-  gap
-    .command("track")
-    .description("Track a symbol's gap over time and print stats")
-    .requiredOption("-s, --symbol <sym>", "Symbol to track (e.g. BTC)")
-    .option("--duration <minutes>", "How long to track (minutes)", "10")
-    .option("--interval <seconds>", "Sample interval", "10")
-    .action(
-      async (opts: { symbol: string; duration: string; interval: string }) => {
-        const symbol = opts.symbol.toUpperCase();
-        const durationMs = parseInt(opts.duration) * 60 * 1000;
-        const intervalMs = parseInt(opts.interval) * 1000;
-        const endTime = Date.now() + durationMs;
-
-        const samples: { time: string; gap: number; gapPct: number; direction: string }[] = [];
-
-        if (!isJson()) {
-          console.log(chalk.cyan.bold(`\n  Tracking ${symbol} price gap\n`));
-          console.log(`  Duration:  ${opts.duration} min`);
-          console.log(`  Interval:  ${opts.interval}s`);
-          console.log(chalk.gray("  Collecting samples...\n"));
-        }
-
-        const sample = async () => {
-          const snapshots = await fetchAllPrices();
-          const s = snapshots.find((x) => x.symbol === symbol);
-          if (!s) {
-            console.log(chalk.gray(`  ${new Date().toLocaleTimeString()} — ${symbol} not found on both exchanges`));
-            return;
-          }
-
-          samples.push({
-            time: new Date().toLocaleTimeString(),
-            gap: s.maxGap,
-            gapPct: s.maxGapPct,
-            direction: `${s.cheapest}→${s.expensive}`,
-          });
-
-          const gapColor = s.maxGapPct >= 0.1 ? chalk.yellow : chalk.gray;
-          const parts = [`PAC: ${s.pacPrice !== null ? "$" + formatGapPrice(s.pacPrice) : "-"}`];
-          parts.push(`HL: ${s.hlPrice !== null ? "$" + formatGapPrice(s.hlPrice) : "-"}`);
-          parts.push(`LT: ${s.ltPrice !== null ? "$" + formatGapPrice(s.ltPrice) : "-"}`);
-          console.log(
-            `  ${chalk.white(s.symbol.padEnd(6))} ` +
-              `${parts.join("  ")}  ` +
-              `${gapColor(`${s.maxGapPct.toFixed(4)}%`)}  ${s.cheapest}→${s.expensive}`
-          );
-        };
-
-        await sample();
-        const timer = setInterval(async () => {
-          if (Date.now() >= endTime) {
-            clearInterval(timer);
-            printTrackSummary(symbol, samples);
-            return;
-          }
-          await sample();
-        }, intervalMs);
-
-        await new Promise<void>((resolve) => {
-          setTimeout(resolve, durationMs + 1000);
-        });
-      }
-    );
-
-  // ── gap alert ── (one-shot: notify when gap exceeds threshold)
-
-  gap
-    .command("alert")
-    .description("Wait until a symbol's gap exceeds a threshold, then exit")
-    .requiredOption("-s, --symbol <sym>", "Symbol to watch")
-    .requiredOption("--above <pct>", "Gap % threshold to trigger")
-    .option("--interval <seconds>", "Check interval", "5")
-    .action(
-      async (opts: { symbol: string; above: string; interval: string }) => {
-        const symbol = opts.symbol.toUpperCase();
-        const threshold = parseFloat(opts.above);
-        const intervalMs = parseInt(opts.interval) * 1000;
-
-        if (!isJson()) console.log(chalk.cyan(`\n  Waiting for ${symbol} gap > ${threshold}%...\n`));
-
-        const check = async (): Promise<boolean> => {
-          const snapshots = await fetchAllPrices();
-          const s = snapshots.find((x) => x.symbol === symbol);
-          if (!s) return false;
-
-          const now = new Date().toLocaleTimeString();
-          if (!isJson()) console.log(chalk.gray(`  ${now} ${symbol} gap: ${s.maxGapPct.toFixed(4)}%`));
-
-          if (s.maxGapPct >= threshold) {
-            if (isJson()) {
-              printJson(jsonOk(s));
-            } else {
-              console.log(
-                chalk.green.bold(
-                  `\n  TRIGGERED! ${symbol} gap: ${s.maxGapPct.toFixed(4)}% (> ${threshold}%)`
-                )
-              );
-              const lines = [];
-              if (s.pacPrice !== null) lines.push(`  Pacifica:    $${formatGapPrice(s.pacPrice)}`);
-              if (s.hlPrice !== null) lines.push(`  Hyperliquid: $${formatGapPrice(s.hlPrice)}`);
-              if (s.ltPrice !== null) lines.push(`  Lighter:     $${formatGapPrice(s.ltPrice)}`);
-              lines.push(`  Gap:         $${s.maxGap.toFixed(4)} (${s.cheapest}→${s.expensive})`);
-              console.log(lines.join("\n") + "\n");
-            }
-            return true;
-          }
-          return false;
-        };
-
-        if (await check()) return;
-
-        await new Promise<void>((resolve) => {
-          const timer = setInterval(async () => {
-            if (await check()) {
-              clearInterval(timer);
-              resolve();
-            }
-          }, intervalMs);
-        });
-      }
-    );
-}
+// registerGapSubcommands removed — use arb prices/watch/track/alert directly
 
 // ────────────────────────────────────────────────────────
 // Funding subcommands (merged from funding.ts)
@@ -1139,28 +795,7 @@ function registerFundingSubcommands(parent: Command, isJson: () => boolean, getA
       if (!hasData) console.log(chalk.gray(`  No historical data. Run 'perp arb rates' to start collecting.\n`));
     });
 
-  parent.command("funding-monitor").description("Live-monitor funding rates with auto-refresh")
-    .option("--min <pct>", "Min annual spread", "10").option("--interval <sec>", "Refresh interval", "30").option("--top <n>", "Top N", "15").option("--symbols <list>", "Symbols to watch")
-    .action(async (opts: { min: string; interval: string; top: string; symbols?: string }) => {
-      const minSpread = parseFloat(opts.min); const intervalSec = parseInt(opts.interval); const topN = parseInt(opts.top);
-      const filterSymbols = opts.symbols?.split(",").map(s => s.trim().toUpperCase()); let cycle = 0;
-      if (!isJson()) { console.log(chalk.cyan.bold("\n  Funding Rate Monitor")); console.log(chalk.gray(`  Min: ${minSpread}% | Refresh: ${intervalSec}s | Ctrl+C to stop\n`)); }
-      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
-      while (true) {
-        cycle++; const ts = new Date().toLocaleTimeString();
-        try {
-          const snapshot = await fetchAllFundingRates({ symbols: filterSymbols, minSpread }); const shown = snapshot.symbols.slice(0, topN);
-          if (isJson()) { printJson(jsonOk({ cycle, timestamp: ts, opportunities: shown })); }
-          else {
-            if (cycle > 1) process.stdout.write(`\x1b[${shown.length + 4}A\x1b[J`);
-            console.log(chalk.gray(`  ${ts} -- Cycle ${cycle} | ${shown.length} opportunities >= ${minSpread}%\n`));
-            for (const s of shown) { const dir = `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}`; const sc = s.maxSpreadAnnual >= 50 ? chalk.green.bold : s.maxSpreadAnnual >= 30 ? chalk.green : chalk.yellow; const rs = s.rates.map(r => `${exAbbr(r.exchange)}:${(r.fundingRate * 100).toFixed(4)}%`); console.log(`  ${chalk.white.bold(s.symbol.padEnd(8))} ${sc(`${s.maxSpreadAnnual.toFixed(1)}%`.padEnd(8))} ${dir.padEnd(7)} ${rs.join(" ")}`); }
-            console.log();
-          }
-        } catch (err) { if (!isJson()) console.log(chalk.red(`  ${ts} Error: ${err instanceof Error ? err.message : err}\n`)); }
-        await new Promise(r => setTimeout(r, intervalSec * 1000));
-      }
-    });
+  // funding-monitor removed — use 'perp arb monitor' (more features, includes liquidity data)
 
   parent.command("funding-positions").description("Show funding rate impact on your current positions")
     .option("--exchanges <list>", "Comma-separated exchanges")

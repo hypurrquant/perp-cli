@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { printJson, formatUsd, jsonOk } from "../utils.js";
 import type { ExchangeAdapter } from "../exchanges/interface.js";
 import { PacificaAdapter } from "../exchanges/pacifica.js";
+import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
 import type { Network } from "../pacifica/index.js";
 import { logExecution } from "../execution-log.js";
 
@@ -21,13 +22,19 @@ async function relayerAvailable(): Promise<boolean> {
   }
 }
 
-export function registerDepositCommands(
+export function registerFundsCommands(
   program: Command,
   getAdapter: () => Promise<ExchangeAdapter>,
   isJson: () => boolean,
   getNetwork: () => Network
 ) {
-  const deposit = program.command("deposit").description("Deposit funds into exchange accounts");
+  const funds = program.command("funds").description("Deposit, withdraw, bridge & transfer funds");
+
+  // ═══════════════════════════════════════════════════════
+  //  DEPOSIT
+  // ═══════════════════════════════════════════════════════
+
+  const deposit = funds.command("deposit").description("Deposit funds into exchange accounts");
 
   // ── Pacifica (Solana) ──
 
@@ -48,7 +55,6 @@ export function registerDepositCommands(
         if (!(adapter instanceof PacificaAdapter)) throw new Error("Requires --exchange pacifica");
 
         try {
-          // 1. Get sponsored TX from relayer
           const buildRes = await fetch(`${getRelayerUrl()}/deposit/pacifica/build`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -73,13 +79,11 @@ export function registerDepositCommands(
             console.log(`  Net:       $${formatUsd(netAmount)} to Pacifica\n`);
           }
 
-          // 2. User signs the TX
           const { Transaction } = await import("@solana/web3.js");
           const tx = Transaction.from(Buffer.from(transaction, "base64"));
           tx.partialSign(adapter.keypair);
           const signed = tx.serialize().toString("base64");
 
-          // 3. Submit via relayer
           const submitRes = await fetch(`${getRelayerUrl()}/deposit/pacifica/submit`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -141,7 +145,6 @@ export function registerDepositCommands(
           process.exit(1);
         }
 
-        // Check USDC balance before sending TX
         const { PublicKey } = await import("@solana/web3.js");
         const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
         const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
@@ -254,7 +257,6 @@ export function registerDepositCommands(
       const HL_BRIDGE = "0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7";
       const USDC_ARB = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
 
-      // Check balances
       const ethBal = await provider.getBalance(wallet.address);
       if (ethBal < ethers.parseEther("0.0001")) {
         console.error(chalk.red("  Insufficient ETH on Arbitrum for gas."));
@@ -274,7 +276,6 @@ export function registerDepositCommands(
       }
 
       try {
-        // Direct USDC transfer to HL Bridge2 (simplest method)
         if (!isJson()) console.log(chalk.gray("  Sending USDC to Hyperliquid Bridge2..."));
         const tx = await usdc.transfer(HL_BRIDGE, amountRaw);
         const receipt = await tx.wait();
@@ -305,7 +306,6 @@ export function registerDepositCommands(
 
   const lighterDeposit = deposit.command("lighter").description("Deposit USDC into Lighter");
 
-  // Lighter via Ethereum L1 (min 1 USDC)
   lighterDeposit
     .command("ethereum <amount>")
     .description("Deposit USDC via Ethereum L1 (min 1 USDC, gas: $3-10+)")
@@ -342,21 +342,18 @@ export function registerDepositCommands(
 
       const amountRaw = ethers.parseUnits(amount, 6);
 
-      // Check ETH balance for gas
       const ethBal = await provider.getBalance(wallet.address);
       if (ethBal < ethers.parseEther("0.003")) {
         console.error(chalk.red("  Insufficient ETH on Ethereum for gas. Need ~0.003 ETH ($3+)."));
         process.exit(1);
       }
 
-      // Check USDC balance
       const usdcBal = await usdc.balanceOf(wallet.address);
       if (usdcBal < amountRaw) {
         console.error(chalk.red(`  Insufficient USDC on Ethereum. Have: $${formatUsd(Number(ethers.formatUnits(usdcBal, 6)))}`));
         process.exit(1);
       }
 
-      // Approve if needed
       const allowance = await usdc.allowance(wallet.address, LIGHTER_CONTRACT);
       if (allowance < amountRaw) {
         if (!isJson()) console.log(chalk.gray("  Approving USDC for Lighter..."));
@@ -365,7 +362,6 @@ export function registerDepositCommands(
         if (!isJson()) console.log(chalk.gray("  Approved."));
       }
 
-      // Call deposit(address _to, uint8 _assetIndex, uint8 _routeType, uint256 _amount)
       if (!isJson()) console.log(chalk.gray("  Calling deposit()..."));
       try {
         const tx = await lighter.deposit(
@@ -398,7 +394,6 @@ export function registerDepositCommands(
       }
     });
 
-  // Lighter via CCTP (Arbitrum, Base, Avalanche — min 5 USDC)
   const CCTP_CHAINS: Record<string, { chainId: number; rpc: string; usdc: string; name: string }> = {
     arbitrum: { chainId: 42161, rpc: "https://arb1.arbitrum.io/rpc", usdc: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", name: "Arbitrum" },
     base:     { chainId: 8453,  rpc: "https://mainnet.base.org",    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", name: "Base" },
@@ -425,7 +420,6 @@ export function registerDepositCommands(
       const provider = new ethers.JsonRpcProvider(chainInfo.rpc);
       const wallet = new ethers.Wallet(pk, provider);
 
-      // 1. Create intent address via Lighter API
       if (!isJson()) console.log(chalk.gray("  Creating intent address..."));
       const intentRes = await fetch("https://mainnet.zklighter.elliot.ai/api/v1/createIntentAddress", {
         method: "POST",
@@ -449,7 +443,6 @@ export function registerDepositCommands(
 
       if (!isJson()) console.log(`  Intent address: ${intentAddress}`);
 
-      // 2. Check gas + USDC balance
       const gasBal = await provider.getBalance(wallet.address);
       if (gasBal < ethers.parseEther("0.00005")) {
         console.error(chalk.red(`  Insufficient gas token on ${chainInfo.name}. Need native token for gas (~$0.01).`));
@@ -468,7 +461,6 @@ export function registerDepositCommands(
         process.exit(1);
       }
 
-      // 3. Transfer USDC to intent address
       if (!isJson()) console.log(chalk.gray(`  Sending USDC to intent address on ${chainInfo.name}...`));
       try {
         const tx = await usdc.transfer(intentAddress, amountRaw);
@@ -497,7 +489,6 @@ export function registerDepositCommands(
       }
     });
 
-  // Lighter deposit info
   lighterDeposit
     .command("info")
     .description("Show Lighter deposit routes & minimums")
@@ -518,25 +509,201 @@ export function registerDepositCommands(
 
       console.log(chalk.white.bold("  Ethereum L1") + chalk.gray(" (direct)"));
       console.log(`  Min: 1 USDC  |  Gas: $3-10+`);
-      console.log(`  Command: ${chalk.green("perp deposit lighter ethereum <amount>")}`);
+      console.log(`  Command: ${chalk.green("perp funds deposit lighter ethereum <amount>")}`);
 
       console.log(chalk.white.bold("\n  Arbitrum") + chalk.gray(" (CCTP)"));
       console.log(`  Min: 5 USDC  |  Gas: ~$0.01`);
-      console.log(`  Command: ${chalk.green("perp deposit lighter cctp arbitrum <amount>")}`);
+      console.log(`  Command: ${chalk.green("perp funds deposit lighter cctp arbitrum <amount>")}`);
 
       console.log(chalk.white.bold("\n  Base") + chalk.gray(" (CCTP)"));
       console.log(`  Min: 5 USDC  |  Gas: ~$0.01`);
-      console.log(`  Command: ${chalk.green("perp deposit lighter cctp base <amount>")}`);
+      console.log(`  Command: ${chalk.green("perp funds deposit lighter cctp base <amount>")}`);
 
       console.log(chalk.white.bold("\n  Avalanche") + chalk.gray(" (CCTP)"));
       console.log(`  Min: 5 USDC  |  Gas: ~$0.01`);
-      console.log(`  Command: ${chalk.green("perp deposit lighter cctp avalanche <amount>")}`);
+      console.log(`  Command: ${chalk.green("perp funds deposit lighter cctp avalanche <amount>")}`);
       console.log();
     });
 
-  // ── CCTP Bridge ──
+  // ═══════════════════════════════════════════════════════
+  //  WITHDRAW
+  // ═══════════════════════════════════════════════════════
 
-  deposit
+  const withdraw = funds.command("withdraw").description("Withdraw funds from exchange accounts");
+
+  // ── Pacifica ──
+
+  withdraw
+    .command("pacifica <amount>")
+    .description("Withdraw USDC from Pacifica to your Solana wallet")
+    .option("--to <address>", "Destination Solana address (default: your wallet)")
+    .action(async (amount: string, opts: { to?: string }) => {
+      const amountNum = parseFloat(amount);
+      if (isNaN(amountNum) || amountNum <= 0) throw new Error("Invalid amount");
+
+      const adapter = await getAdapter();
+      if (!(adapter instanceof PacificaAdapter)) throw new Error("Requires --exchange pacifica");
+
+      const dest = opts.to || adapter.publicKey;
+
+      if (!isJson()) {
+        console.log(chalk.cyan(`\n  Withdrawing $${formatUsd(amountNum)} USDC from Pacifica...\n`));
+        console.log(`  Destination: ${dest}`);
+      }
+
+      try {
+        const result = await adapter.sdk.withdraw(
+          { amount: String(amountNum), dest_address: dest },
+          adapter.publicKey,
+          adapter.signer
+        );
+
+        logExecution({
+          type: "bridge", exchange: "pacifica", symbol: "USDC", side: "withdraw",
+          size: String(amountNum), status: "success", dryRun: false,
+          meta: { action: "withdraw", destination: dest },
+        });
+
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.green(`\n  Withdrawal submitted!`));
+        console.log(`  Amount: $${formatUsd(amountNum)} USDC`);
+        console.log(chalk.gray(`\n  Funds arrive in your Solana wallet shortly.\n`));
+      } catch (err) {
+        logExecution({
+          type: "bridge", exchange: "pacifica", symbol: "USDC", side: "withdraw",
+          size: String(amountNum), status: "failed", dryRun: false,
+          error: err instanceof Error ? err.message : String(err),
+          meta: { action: "withdraw", destination: dest },
+        });
+        throw err;
+      }
+    });
+
+  // ── Hyperliquid ──
+
+  withdraw
+    .command("hyperliquid <amount>")
+    .description("Withdraw USDC from Hyperliquid to your Arbitrum wallet")
+    .option("--to <address>", "Destination EVM address (default: your wallet)")
+    .action(async (amount: string, opts: { to?: string }) => {
+      const amountNum = parseFloat(amount);
+      if (isNaN(amountNum) || amountNum <= 0) throw new Error("Invalid amount");
+
+      const adapter = await getAdapter();
+      if (!(adapter instanceof HyperliquidAdapter)) throw new Error("Requires --exchange hyperliquid");
+
+      const dest = opts.to || adapter.address;
+
+      if (!isJson()) {
+        console.log(chalk.cyan(`\n  Withdrawing $${formatUsd(amountNum)} USDC from Hyperliquid...\n`));
+        console.log(`  Destination: ${dest}`);
+      }
+
+      const balance = await adapter.getBalance();
+      const available = Number(balance.available);
+      if (amountNum > available) {
+        console.error(chalk.red(`  Insufficient withdrawable balance. Available: $${formatUsd(available)}`));
+        process.exit(1);
+      }
+
+      try {
+        const result = await adapter.withdraw(String(amountNum), dest);
+
+        logExecution({
+          type: "bridge", exchange: "hyperliquid", symbol: "USDC", side: "withdraw",
+          size: String(amountNum), status: "success", dryRun: false,
+          meta: { action: "withdraw", destination: dest },
+        });
+
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.green(`\n  Withdrawal submitted!`));
+        console.log(`  Amount: $${formatUsd(amountNum)} USDC`);
+        console.log(chalk.gray(`\n  Processing may take a few minutes.\n`));
+      } catch (err) {
+        logExecution({
+          type: "bridge", exchange: "hyperliquid", symbol: "USDC", side: "withdraw",
+          size: String(amountNum), status: "failed", dryRun: false,
+          error: err instanceof Error ? err.message : String(err),
+          meta: { action: "withdraw", destination: dest },
+        });
+        throw err;
+      }
+    });
+
+  // ── Lighter ──
+
+  withdraw
+    .command("lighter <amount>")
+    .description("Withdraw USDC from Lighter to your Ethereum L1 wallet")
+    .option("--asset-id <id>", "Asset ID (default: 2 = USDC)", "2")
+    .option("--route <type>", "Route type: 0=perp, 1=spot (default: 0)", "0")
+    .action(async (amount: string, opts: { assetId: string; route: string }) => {
+      const amountNum = parseFloat(amount);
+      if (isNaN(amountNum) || amountNum <= 0) throw new Error("Invalid amount");
+
+      const adapter = await getAdapter();
+      const { LighterAdapter } = await import("../exchanges/lighter.js");
+      if (!(adapter instanceof LighterAdapter)) throw new Error("Requires --exchange lighter");
+
+      if (!isJson()) {
+        console.log(chalk.cyan(`\n  Withdrawing $${formatUsd(amountNum)} USDC from Lighter...\n`));
+        console.log(`  Account Index: ${adapter.accountIndex}`);
+        console.log(`  Address: ${adapter.address}`);
+      }
+
+      try {
+        const result = await adapter.withdraw(amountNum, parseInt(opts.assetId), parseInt(opts.route));
+
+        logExecution({
+          type: "bridge", exchange: "lighter", symbol: "USDC", side: "withdraw",
+          size: String(amountNum), status: "success", dryRun: false,
+          meta: { action: "withdraw" },
+        });
+
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.green(`\n  Withdrawal submitted!`));
+        console.log(`  Amount: $${formatUsd(amountNum)} USDC`);
+        console.log(chalk.gray(`\n  Standard withdrawal takes ~12 hours. Use Lighter web for fast withdrawal.\n`));
+      } catch (err) {
+        logExecution({
+          type: "bridge", exchange: "lighter", symbol: "USDC", side: "withdraw",
+          size: String(amountNum), status: "failed", dryRun: false,
+          error: err instanceof Error ? err.message : String(err),
+          meta: { action: "withdraw" },
+        });
+        throw err;
+      }
+    });
+
+  // ═══════════════════════════════════════════════════════
+  //  TRANSFER (HL internal)
+  // ═══════════════════════════════════════════════════════
+
+  funds
+    .command("transfer <amount> <destination>")
+    .description("Transfer USDC between Hyperliquid accounts (internal, instant)")
+    .action(async (amount: string, destination: string) => {
+      const amountNum = parseFloat(amount);
+      if (isNaN(amountNum) || amountNum <= 0) throw new Error("Invalid amount");
+
+      const adapter = await getAdapter();
+      if (!(adapter instanceof HyperliquidAdapter)) throw new Error("Requires --exchange hyperliquid");
+
+      if (!isJson()) console.log(chalk.cyan(`\n  Transferring $${formatUsd(amountNum)} USDC to ${destination}...\n`));
+
+      const result = await adapter.usdTransfer(amountNum, destination);
+
+      if (isJson()) return printJson(jsonOk(result));
+      console.log(chalk.green(`  Transfer complete!`));
+      console.log(`  Amount: $${formatUsd(amountNum)} USDC`);
+      console.log(`  To:     ${destination}\n`);
+    });
+
+  // ═══════════════════════════════════════════════════════
+  //  BRIDGE (CCTP)
+  // ═══════════════════════════════════════════════════════
+
+  funds
     .command("bridge")
     .description("Bridge USDC between chains via CCTP V2")
     .requiredOption("--from <chain>", "Source chain (arbitrum, ethereum)")
@@ -569,14 +736,14 @@ export function registerDepositCommands(
         console.log(`  TX Hash:      ${result.txHash}`);
         console.log(`  Message Hash: ${result.messageHash}`);
         console.log(chalk.gray(`\n  Waiting for Circle attestation (~1-3 min)...`));
-        console.log(chalk.gray(`  Check: perp deposit bridge-status --hash ${result.messageHash}\n`));
+        console.log(chalk.gray(`  Check: perp funds bridge-status --hash ${result.messageHash}\n`));
       } else {
         console.error(chalk.red("\n  CCTP bridge requires relayer server."));
         console.error(chalk.gray("  Start: cd packages/relayer && pnpm start\n"));
       }
     });
 
-  deposit
+  funds
     .command("bridge-status")
     .description("Check CCTP bridge status")
     .requiredOption("--hash <messageHash>", "Message hash from bridge TX")
@@ -591,26 +758,33 @@ export function registerDepositCommands(
       console.log();
     });
 
-  // ── Info ──
+  // ═══════════════════════════════════════════════════════
+  //  INFO (combined deposit + withdraw)
+  // ═══════════════════════════════════════════════════════
 
-  deposit
+  funds
     .command("info")
-    .description("Show deposit instructions & gas requirements")
+    .description("Show deposit & withdrawal info, routes, and limits")
     .action(async () => {
       const hasRelay = await relayerAvailable();
 
       if (isJson()) {
         return printJson(jsonOk({
           relayer: hasRelay ? getRelayerUrl() : null,
-          exchanges: {
+          deposit: {
             pacifica: { chain: "Solana", token: "USDC", min: 10, gas: "SOL ~0.005", method: "on-chain program" },
             hyperliquid: { chain: "Arbitrum", token: "USDC", min: 5, gas: "ETH ~0.0001", method: "USDC transfer to Bridge2" },
             lighter: { chain: "Ethereum L1 / Arbitrum / Base / Avalanche", token: "USDC", min: "1 (L1) or 5 (CCTP)", gas: "$3-10 (L1), ~$0.01 (CCTP)", method: "deposit() or CCTP intent" },
           },
+          withdraw: {
+            pacifica: { chain: "Solana", token: "USDC", speed: "~10s", fee: "none" },
+            hyperliquid: { chain: "Arbitrum", token: "USDC", speed: "minutes", fee: "$1" },
+            lighter: { chain: "Ethereum L1", token: "USDC", speed: "~12 hours (standard), minutes (fast)", fee: "varies" },
+          },
         }));
       }
 
-      console.log(chalk.cyan.bold("\n  Deposit Instructions\n"));
+      console.log(chalk.cyan.bold("\n  Funds — Deposit & Withdrawal Info\n"));
 
       if (hasRelay) {
         console.log(chalk.green("  ✓ Relayer available — gas-free deposits!\n"));
@@ -619,25 +793,48 @@ export function registerDepositCommands(
         console.log(chalk.gray("    Start relayer: cd packages/relayer && pnpm start\n"));
       }
 
+      // Deposit info
+      console.log(chalk.white.bold("  ── Deposit ──\n"));
+
       console.log(chalk.white.bold("  Pacifica") + chalk.gray(" (Solana)"));
       console.log(`  Token:   USDC  |  Min: $10  |  Gas: ${hasRelay ? chalk.green("FREE") : "SOL ~0.005"}`);
-      console.log(`  Command: ${chalk.green("perp deposit pacifica <amount>")}`);
+      console.log(`  Command: ${chalk.green("perp funds deposit pacifica <amount>")}`);
 
       console.log(chalk.white.bold("\n  Hyperliquid") + chalk.gray(" (Arbitrum)"));
       console.log(`  Token:   USDC  |  Min: $5   |  Gas: ${hasRelay ? chalk.green("FREE") : "ETH ~0.0001"}`);
-      console.log(`  Method:  USDC transfer to Bridge2`);
-      console.log(`  Command: ${chalk.green("perp deposit hyperliquid <amount>")}`);
+      console.log(`  Command: ${chalk.green("perp funds deposit hyperliquid <amount>")}`);
 
       console.log(chalk.white.bold("\n  Lighter") + chalk.gray(" (Ethereum L1 / CCTP)"));
       console.log(`  Token:   USDC  |  Min: 1 (L1), 5 (CCTP)`);
-      console.log(`  L1:      ${chalk.green("perp deposit lighter ethereum <amount>")} — gas $3-10+`);
-      console.log(`  CCTP:    ${chalk.green("perp deposit lighter cctp <chain> <amount>")} — gas ~$0.01`);
+      console.log(`  L1:      ${chalk.green("perp funds deposit lighter ethereum <amount>")} — gas $3-10+`);
+      console.log(`  CCTP:    ${chalk.green("perp funds deposit lighter cctp <chain> <amount>")} — gas ~$0.01`);
       console.log(`  Chains:  arbitrum, base, avalanche`);
-      console.log(`  Info:    ${chalk.green("perp deposit lighter info")}`);
+
+      // Withdraw info
+      console.log(chalk.white.bold("\n  ── Withdraw ──\n"));
+
+      console.log(chalk.white.bold("  Pacifica") + chalk.gray(" → Solana"));
+      console.log(`  Speed: ~10s  |  Fee: none`);
+      console.log(`  Command: ${chalk.green("perp funds withdraw pacifica <amount>")}`);
+
+      console.log(chalk.white.bold("\n  Hyperliquid") + chalk.gray(" → Arbitrum"));
+      console.log(`  Speed: minutes  |  Fee: ~$1`);
+      console.log(`  Command: ${chalk.green("perp -e hl funds withdraw hyperliquid <amount>")}`);
+
+      console.log(chalk.white.bold("\n  Lighter") + chalk.gray(" → Ethereum L1"));
+      console.log(`  Speed: ~12h (standard)  |  Fee: varies`);
+      console.log(`  Command: ${chalk.green("perp -e lt funds withdraw lighter <amount>")}`);
+
+      // Transfer + Bridge
+      console.log(chalk.white.bold("\n  ── Transfer & Bridge ──\n"));
+
+      console.log(chalk.white.bold("  Internal Transfer") + chalk.gray(" (Hyperliquid → Hyperliquid)"));
+      console.log(`  Speed: instant  |  Fee: none`);
+      console.log(`  Command: ${chalk.green("perp -e hl funds transfer <amount> <address>")}`);
 
       console.log(chalk.white.bold("\n  CCTP Bridge") + chalk.gray(" (Cross-chain USDC)"));
       console.log(`  Routes:  Arbitrum ↔ Ethereum ↔ Solana`);
-      console.log(`  Command: ${chalk.green("perp deposit bridge --from arbitrum --to solana --amount 100 --recipient <addr>")}`);
+      console.log(`  Command: ${chalk.green("perp funds bridge --from arbitrum --to solana --amount 100 --recipient <addr>")}`);
 
       console.log(chalk.gray("\n  Use --no-relay to skip relayer and pay gas yourself.\n"));
     });

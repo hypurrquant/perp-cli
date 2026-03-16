@@ -410,42 +410,10 @@ export function registerAccountCommands(
       console.log(makeTable(["Time", "Symbol", "Payment"], rows));
     });
 
-  account
-    .command("portfolio")
-    .description("Portfolio overview")
-    .action(async () => {
-      const adapter = await getAdapter();
-      if (adapter instanceof PacificaAdapter) {
-        const portfolio = await adapter.sdk.getPortfolio(adapter.publicKey);
-        printJson(jsonOk(portfolio));
-      } else if (adapter instanceof HyperliquidAdapter) {
-        const state = await adapter.client.info.perpetuals.getClearinghouseState(adapter.address);
-        printJson(jsonOk(state));
-      }
-    });
+  // "account portfolio" removed — use top-level "portfolio" for cross-exchange view
+  // or "account balance" for single-exchange balance
 
-  account
-    .command("balance-history")
-    .description("Balance change history")
-    .action(async () => {
-      const adapter = await getAdapter();
-      const p = pac(adapter);
-      const raw = await p.sdk.getBalanceHistory(p.publicKey);
-      if (isJson()) return printJson(jsonOk(raw));
-      const history = ((raw as Record<string, unknown>).data ?? raw) as Record<string, unknown>[];
-
-      if (!Array.isArray(history) || history.length === 0) {
-        console.log(chalk.gray("\n  No balance history.\n"));
-        return;
-      }
-      const rows = history.slice(0, 30).map((h) => [
-        new Date(Number(h.created_at ?? h.timestamp ?? 0)).toLocaleString(),
-        String(h.type ?? h.event_type ?? ""),
-        formatPnl(String(h.amount ?? h.change ?? "0")),
-        `$${formatUsd(String(h.balance ?? "0"))}`,
-      ]);
-      console.log(makeTable(["Time", "Type", "Change", "Balance"], rows));
-    });
+  // "account balance-history" removed — Pacifica-only, rarely used
 
   account
     .command("margin <symbol>")

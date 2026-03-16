@@ -1,7 +1,8 @@
 import { Command } from "commander";
 import type { ExchangeAdapter } from "../exchanges/interface.js";
 import { PacificaAdapter } from "../exchanges/pacifica.js";
-import { makeTable, formatUsd, formatPercent, printJson, jsonOk, jsonError } from "../utils.js";
+import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
+import { makeTable, formatUsd, formatPercent, printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import chalk from "chalk";
 
 export function registerMarketCommands(
@@ -246,4 +247,38 @@ export function registerMarketCommands(
         console.log(makeTable(["Time", "Open", "High", "Low", "Close", "Volume", "Trades"], rows));
       }
     );
+
+  // ── market hip3 ── (HIP-3 deployed perp dexes on Hyperliquid)
+  market
+    .command("hip3")
+    .description("List HIP-3 deployed perp dexes (Hyperliquid only)")
+    .action(async () => {
+      await withJsonErrors(isJson(), async () => {
+        const adapter = await getAdapter();
+        if (!(adapter instanceof HyperliquidAdapter)) {
+          if (isJson()) return printJson(jsonError("INVALID_EXCHANGE", "HIP-3 dexes are only available on Hyperliquid. Use -e hyperliquid."));
+          console.error(chalk.red("\n  HIP-3 dexes are only available on Hyperliquid. Use -e hyperliquid.\n"));
+          return;
+        }
+
+        const dexes = await adapter.listDeployedDexes();
+        if (isJson()) return printJson(jsonOk(dexes));
+
+        if (dexes.length === 0) {
+          console.log(chalk.gray("\n  No deployed dexes found.\n"));
+          return;
+        }
+
+        console.log(chalk.cyan.bold("\n  HIP-3 Deployed Perp DEXes\n"));
+        const rows = dexes.map(d => [
+          chalk.white.bold(d.name),
+          chalk.gray(d.deployer.slice(0, 10) + "..."),
+          String(d.assets.length),
+          d.assets.slice(0, 5).join(", ") + (d.assets.length > 5 ? ` +${d.assets.length - 5}` : ""),
+        ]);
+        console.log(makeTable(["DEX", "Deployer", "Assets", "Markets"], rows));
+        console.log(chalk.gray(`\n  Use --dex <name> to trade on a deployed dex.`));
+        console.log(chalk.gray(`  Example: perp -e hl --dex xyz market list\n`));
+      });
+    });
 }

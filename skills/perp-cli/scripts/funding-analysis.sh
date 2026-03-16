@@ -62,7 +62,7 @@ EOF
 else
   # All symbols scan
   SCAN=$($PERP --json arb scan --mode all --min 0 2>/dev/null || echo '{"ok":false}')
-  FUNDING_DETAIL=$($PERP --json arb funding 2>/dev/null || echo '{"ok":false}')
+  FUNDING_DETAIL=$($PERP --json arb rates 2>/dev/null || echo '{"ok":false}')
 
   if $JSON_MODE; then
     cat <<EOF
@@ -71,7 +71,7 @@ else
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "topN": $TOP,
   "allOpportunities": $SCAN,
-  "fundingDetail": $FUNDING_DETAIL
+  "ratesDetail": $FUNDING_DETAIL
 }
 EOF
   else

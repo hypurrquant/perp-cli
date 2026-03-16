@@ -123,27 +123,28 @@ perp --json -e hl account info           # USDC deposited on exchange
 ### Deposit to Exchange
 ```bash
 # Hyperliquid (from Arbitrum wallet)
-perp --json deposit hyperliquid 100
+perp --json funds deposit hyperliquid 100
 
 # Pacifica (from Solana wallet)
-perp --json deposit pacifica 100
+perp --json funds deposit pacifica 100
 
 # Lighter (multiple routes)
-perp --json deposit lighter info         # show all available routes
-perp --json deposit lighter cctp arb 100 # via CCTP from Arbitrum
+perp --json funds deposit lighter info         # show all available routes
+perp --json funds deposit lighter cctp arbitrum 100 # via CCTP from Arbitrum
 ```
 
 ### Withdraw from Exchange
 ```bash
-perp --json withdraw hyperliquid 100
-perp --json withdraw pacifica 100
+perp --json funds withdraw hyperliquid 100
+perp --json funds withdraw pacifica 100
+perp --json funds withdraw lighter 100
 ```
 
 ### Bridge Between Chains
 When you need to move USDC between exchanges on different chains:
 ```bash
 # 1. Withdraw from source exchange
-perp --json withdraw pacifica 500
+perp --json funds withdraw pacifica 500
 
 # 2. Quote the bridge
 perp --json bridge quote --from solana --to arbitrum --amount 500
@@ -155,7 +156,7 @@ perp --json bridge send --from solana --to arbitrum --amount 500
 perp --json bridge status <orderId>
 
 # 5. Deposit to destination exchange
-perp --json deposit hyperliquid 500
+perp --json funds deposit hyperliquid 500
 ```
 
 ## Order Types & Execution
@@ -247,7 +248,7 @@ Error case:
 - `trade market`, `trade buy`, `trade sell` — will open duplicate positions
 - `trade close` — may error if already closed, but harmless
 - `bridge send` — will send duplicate transfers
-- `deposit`, `withdraw` — will move funds twice
+- `funds deposit`, `funds withdraw` — will move funds twice
 
 **For non-idempotent commands:** always verify the result before retrying. Check positions or balances to confirm whether the first attempt succeeded.
 

@@ -12,6 +12,7 @@ perp --json market book <SYMBOL>           # orderbook (bids/asks)
 perp --json market trades <SYMBOL>         # recent trades
 perp --json market funding <SYMBOL>        # funding rate history
 perp --json market kline <SYM> <INTERVAL>  # OHLCV candles (1m,5m,15m,1h,4h,1d)
+perp --json market hip3                    # list HIP-3 deployed perp dexes (Hyperliquid only)
 ```
 
 ## Account (read-only, safe)
@@ -24,7 +25,6 @@ perp --json account trades                 # trade fill history
 perp --json account funding-history        # funding payments
 perp --json account pnl                    # profit & loss
 perp --json account margin <SYMBOL>        # position margin info
-perp --json status                         # combined: balance + positions + orders
 perp --json portfolio                      # cross-exchange unified view
 ```
 
@@ -60,8 +60,6 @@ perp --json trade leverage <SYMBOL> <N>     # set leverage
 # Advanced orders
 perp --json trade scale-tp <SYMBOL> --levels '<PRICE1>:<PCT>,<PRICE2>:<PCT>'
 perp --json trade scale-in <SYMBOL> <SIDE> --levels '<PRICE1>:<SIZE>,<PRICE2>:<SIZE>'
-perp --json trade trailing-stop <SYMBOL>    # trailing stop with callback %
-perp --json trade twap <SYMBOL> <SIDE> <SIZE> <DURATION>
 perp --json trade pnl-track                 # real-time PnL tracker
 
 # Split execution (orderbook-aware)
@@ -71,17 +69,20 @@ perp --json trade market <SYM> buy <SIZE> --split   # split via market command f
 perp --json trade market <SYM> buy <SIZE> --split --max-slippage 0.5
 ```
 
-## Deposit & Withdraw
+## Funds (Deposit, Withdraw, Transfer, Bridge)
 ```bash
-perp --json deposit pacifica <AMOUNT>
-perp --json deposit hyperliquid <AMOUNT>
-perp --json deposit lighter ethereum <AMOUNT>         # L1 direct (min 1 USDC)
-perp --json deposit lighter cctp arbitrum <AMOUNT>    # CCTP (min 5 USDC)
-perp --json deposit lighter info                      # all Lighter deposit routes
-perp --json withdraw pacifica <AMOUNT>
-perp --json withdraw hyperliquid <AMOUNT>
-perp --json deposit info                    # deposit instructions
-perp --json withdraw info                   # withdrawal instructions
+perp --json funds deposit pacifica <AMOUNT>
+perp --json funds deposit hyperliquid <AMOUNT>
+perp --json funds deposit lighter ethereum <AMOUNT>         # L1 direct (min 1 USDC)
+perp --json funds deposit lighter cctp arbitrum <AMOUNT>    # CCTP (min 5 USDC)
+perp --json funds deposit lighter info                      # all Lighter deposit routes
+perp --json funds withdraw pacifica <AMOUNT>
+perp --json funds withdraw hyperliquid <AMOUNT>
+perp --json funds withdraw lighter <AMOUNT>
+perp --json funds transfer <AMOUNT> <ADDRESS>     # HL internal transfer (instant)
+perp --json funds bridge --from <CHAIN> --to <CHAIN> --amount <AMT> --recipient <ADDR>  # CCTP bridge
+perp --json funds bridge-status --hash <HASH>     # check CCTP bridge status
+perp --json funds info                            # combined deposit & withdrawal info
 ```
 
 ## Bridge (Cross-chain USDC)
@@ -141,26 +142,23 @@ perp --json history summary                 # trading performance
 perp --json history pnl                     # P&L breakdown by exchange
 perp --json history funding                 # funding payment aggregation
 perp --json history report                  # full performance report (summary + pnl + funding)
+perp --json history perf --period daily     # daily PnL breakdown (replaces daily-pnl)
+perp --json history perf --period weekly    # weekly PnL breakdown (replaces weekly-pnl)
+perp --json history perf --period summary   # performance summary stats
 perp --json history list                    # execution audit trail
-# Deprecated: 'health' → 'agent ping'; 'analytics *' → 'history *'
 ```
 
-## Automated Strategies
+## Automated Strategies (bot)
 ```bash
-perp --json run grid <SYMBOL> --range <PCT> --grids <N> --size <USD>
-perp --json run dca <SYMBOL> <SIDE> <AMOUNT> <INTERVAL>
-perp --json run funding-arb                 # auto funding arb
+perp --json bot twap <SYMBOL> <SIDE> <SIZE> <DURATION>    # TWAP execution
+perp --json bot grid <SYMBOL> --range <PCT> --grids <N> --size <USD>
+perp --json bot dca <SYMBOL> <SIDE> <AMOUNT> <INTERVAL>
+perp --json bot trailing-stop <SYMBOL>      # trailing stop with callback %
+perp --json bot funding-arb                 # auto funding arb
 perp --json bot quick-grid <SYMBOL>         # quick grid bot
 perp --json bot quick-arb                   # quick arb bot
 perp --json jobs list                       # list running jobs
 perp --json jobs stop <ID>                  # stop a job
-```
-
-## Alerts
-```bash
-perp --json alert add                       # add price/funding/pnl/liquidation alert
-perp --json alert list                      # list active alerts
-perp --json alert remove <ID>              # remove alert
 ```
 
 ## Command Discovery

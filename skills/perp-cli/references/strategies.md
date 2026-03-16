@@ -437,15 +437,6 @@ Or use TP/SL together:
 perp --json -e <EX> trade tp-sl <SYM> --tp <PRICE> --sl <PRICE>
 ```
 
-### Monitoring Alerts
-
-Set up alerts so you get notified of dangerous conditions without polling:
-```bash
-perp --json alert add -t margin --margin-pct 70    # alert when margin usage > 70%
-perp --json alert add -t price -s BTC --below 50000 --above 80000   # price boundaries
-perp --json alert add -t funding -s ETH --spread 50  # funding spread alert
-```
-
 ### What to Track Over Time
 As you operate, build awareness of:
 - Which symbols consistently have the best funding spreads

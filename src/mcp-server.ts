@@ -480,13 +480,13 @@ server.tool(
         const symbol = extractSymbol(g);
         if (symbol) {
           steps.push(
-            { step: 1, command: `perp --json funding compare ${symbol}`, description: `Compare ${symbol} funding rates` },
+            { step: 1, command: `perp --json arb rates`, description: `Funding rates across all exchanges` },
             { step: 2, command: `perp -e ${ex} --json market funding ${symbol}`, description: `${symbol} funding history` },
           );
         } else {
           steps.push(
-            { step: 1, command: "perp --json funding rates", description: "Funding rates across all exchanges" },
-            { step: 2, command: "perp --json funding spread", description: "Funding rate spreads" },
+            { step: 1, command: "perp --json arb rates", description: "Funding rates across all exchanges" },
+            { step: 2, command: "perp --json arb scan --min 5", description: "Funding rate arb opportunities" },
           );
         }
       } else if (g.includes("bridge") || g.includes("transfer") || g.includes("cross-chain")) {
@@ -496,12 +496,6 @@ server.tool(
           { step: 2, command: `perp --json bridge quote --from <chain> --to <chain> --amount ${amount}`, description: "Get bridge quote with fees" },
           { step: 3, command: `perp --json bridge send --from <chain> --to <chain> --amount ${amount}`, description: "Execute bridge transfer", dangerous: true },
           { step: 4, command: "perp --json bridge status <orderId>", description: "Track bridge completion" },
-        );
-      } else if (g.includes("alert") || g.includes("notify") || g.includes("alarm")) {
-        steps.push(
-          { step: 1, command: "perp --json alert list", description: "List existing alerts" },
-          { step: 2, command: "perp --json alert add", description: "Add a new price/funding/pnl/liquidation alert" },
-          { step: 3, command: "perp --json alert daemon", description: "Start alert monitoring daemon" },
         );
       } else if (g.includes("grid") || g.includes("dca") || g.includes("bot")) {
         const symbol = extractSymbol(g) || "<symbol>";
@@ -594,8 +588,8 @@ server.tool(
         );
       } else if (g.includes("dex") || g.includes("hip-3") || g.includes("hip3")) {
         steps.push(
-          { step: 1, command: "perp --json dex list", description: "List HIP-3 deployed dexes" },
-          { step: 2, command: "perp --json dex markets <dexName>", description: "Show markets on a specific dex" },
+          { step: 1, command: "perp --json -e hl market hip3", description: "List HIP-3 deployed dexes" },
+          { step: 2, command: "perp --json -e hl --dex <name> market list", description: "Show markets on a specific dex" },
         );
       } else if (g.includes("plan") || g.includes("composite") || g.includes("multi-step")) {
         steps.push(
@@ -614,14 +608,14 @@ server.tool(
         const amount = extractNumber(g) || "<amount>";
         steps.push(
           { step: 1, command: "perp --json wallet balance", description: "Check wallet balance" },
-          { step: 2, command: `perp --json deposit ${ex} ${amount}`, description: `Deposit $${amount} to ${ex}`, dangerous: true },
+          { step: 2, command: `perp --json funds deposit ${ex} ${amount}`, description: `Deposit $${amount} to ${ex}`, dangerous: true },
           { step: 3, command: `perp -e ${ex} --json account info`, description: "Verify deposit arrived" },
         );
       } else if (g.includes("withdraw")) {
         const amount = extractNumber(g) || "<amount>";
         steps.push(
           { step: 1, command: `perp -e ${ex} --json account info`, description: "Check available balance" },
-          { step: 2, command: `perp --json withdraw ${ex} ${amount}`, description: `Withdraw $${amount} from ${ex}`, dangerous: true },
+          { step: 2, command: `perp --json funds withdraw ${ex} ${amount}`, description: `Withdraw $${amount} from ${ex}`, dangerous: true },
           { step: 3, command: "perp --json wallet balance", description: "Verify withdrawal received" },
         );
       } else if (g.includes("leverage")) {
@@ -667,7 +661,7 @@ server.tool(
         steps.push(
           { step: 1, command: "perp agent capabilities", description: "List all available CLI capabilities" },
           { step: 2, command: `perp -e ${ex} --json status`, description: "Check account status" },
-          { step: 3, command: "perp --json health", description: "Check exchange connectivity" },
+          { step: 3, command: "perp --json agent ping", description: "Check exchange connectivity" },
         );
       }
 
@@ -968,11 +962,12 @@ server.tool(
           category: sub === "send" || sub === "exchange" ? "write" : "read",
           relatedCommands: ["perp bridge chains", "perp bridge quote"],
         };
-      } else if (category === "deposit" || category === "withdraw") {
+      } else if (category === "funds") {
+        const sub = args[1]; // deposit or withdraw
         explanation = {
           command,
-          description: category === "deposit" ? `Deposits USDC into ${args[1] || "an exchange"} account` : `Withdraws USDC from ${args[1] || "an exchange"} account`,
-          parameters: [{ name: "amount", value: args[2] || args[1], description: "Amount in USDC" }],
+          description: sub === "deposit" ? `Deposits USDC into ${args[2] || "an exchange"} account` : sub === "withdraw" ? `Withdraws USDC from ${args[2] || "an exchange"} account` : "Funds management (deposit, withdraw, bridge, transfer)",
+          parameters: [{ name: "amount", value: args[3] || args[2], description: "Amount in USDC" }],
           risks: ["Moves real funds — verify amount before executing"],
           category: "write",
           relatedCommands: ["perp wallet balance", "perp account info"],
@@ -993,7 +988,7 @@ server.tool(
           parameters: [],
           risks: [],
           category: "read",
-          relatedCommands: ["perp alert list", "perp alert add"],
+          relatedCommands: ["perp risk status", "perp risk limits"],
         };
       } else if (category === "bot" || category === "run") {
         explanation = {
@@ -1004,23 +999,14 @@ server.tool(
           category: "write",
           relatedCommands: ["perp jobs list", "perp jobs stop"],
         };
-      } else if (category === "stream") {
+      } else if (category === "history") {
         explanation = {
           command,
-          description: `Live WebSocket stream: ${sub}. Outputs NDJSON in real-time.`,
-          parameters: args.slice(2).map((a, i) => ({ name: `arg${i}`, value: a, description: "See --help" })),
-          risks: [],
-          category: "read",
-          relatedCommands: ["perp stream prices", "perp stream events"],
-        };
-      } else if (category === "analytics") {
-        explanation = {
-          command,
-          description: { summary: "Trading performance summary", pnl: "P&L breakdown by symbol and time period", funding: "Funding payment history and totals", report: "Detailed performance report" }[sub] || `Analytics: ${sub}`,
+          description: { summary: "Trading performance summary", pnl: "P&L breakdown by symbol and time period", funding: "Funding payment history and totals", report: "Detailed performance report", perf: "Performance breakdown (daily/weekly/summary)" }[sub] || `History: ${sub}`,
           parameters: [],
           risks: [],
           category: "read",
-          relatedCommands: ["perp analytics summary", "perp history list"],
+          relatedCommands: ["perp history summary", "perp history list"],
         };
       } else if (category === "wallet") {
         explanation = {
@@ -1039,15 +1025,6 @@ server.tool(
           risks: [],
           category: "analysis",
           relatedCommands: ["perp gap show", "perp arb scan"],
-        };
-      } else if (category === "funding") {
-        explanation = {
-          command,
-          description: { rates: "Compare funding rates across exchanges", compare: "Compare a specific symbol's funding", spread: "Show funding rate spreads", history: "Funding rate history", monitor: "Live funding rate monitor" }[sub] || `Funding: ${sub}`,
-          parameters: [],
-          risks: [],
-          category: "read",
-          relatedCommands: ["perp funding rates", "perp arb scan"],
         };
       } else if (category === "backtest") {
         explanation = {
@@ -1068,7 +1045,7 @@ server.tool(
           relatedCommands: ["perp settings show"],
         };
       } else {
-        const writeCommands = new Set(["trade", "deposit", "withdraw", "manage", "rebalance"]);
+        const writeCommands = new Set(["trade", "funds", "manage", "rebalance"]);
         explanation = {
           command,
           description: `CLI command: ${command}. Run 'perp ${category} --help' for detailed usage.`,
@@ -1287,32 +1264,16 @@ server.resource(
             status: { usage: "perp bridge status <orderId>", description: "Track bridge status" },
           },
         },
-        alert: {
-          description: "Price, funding, PnL, and liquidation alerts",
-          subcommands: {
-            add: { usage: "perp alert add", description: "Add alert" },
-            list: { usage: "perp alert list", description: "List alerts" },
-            remove: { usage: "perp alert remove <id>", description: "Remove alert" },
-            daemon: { usage: "perp alert daemon", description: "Start alert monitoring" },
-          },
-        },
         bot: {
           description: "Automated trading bots",
           subcommands: {
-            start: { usage: "perp bot start <config>", description: "Start bot from config" },
+            twap: { usage: "perp bot twap <symbol> <side> <size> <duration>", description: "TWAP execution" },
+            grid: { usage: "perp bot grid <symbol> --range <pct> --grids <n> --size <usd>", description: "Grid trading bot" },
+            dca: { usage: "perp bot dca <symbol> <side> <amount> <interval>", description: "DCA bot" },
+            "trailing-stop": { usage: "perp bot trailing-stop <symbol>", description: "Trailing stop bot" },
             "quick-grid": { usage: "perp bot quick-grid <symbol>", description: "Quick grid bot" },
             "quick-dca": { usage: "perp bot quick-dca <symbol> <side> <amount> <interval>", description: "Quick DCA bot" },
             "quick-arb": { usage: "perp bot quick-arb", description: "Quick arb bot" },
-            "preset-list": { usage: "perp bot preset-list", description: "List bot presets" },
-          },
-        },
-        stream: {
-          description: "Live WebSocket streams (NDJSON output)",
-          subcommands: {
-            prices: { usage: "perp stream prices", description: "Live prices" },
-            book: { usage: "perp stream book <symbol>", description: "Live orderbook" },
-            trades: { usage: "perp stream trades <symbol>", description: "Live trades" },
-            events: { usage: "perp stream events", description: "Account events (fills, liquidations)" },
           },
         },
         wallet: {
@@ -1323,37 +1284,15 @@ server.resource(
             generate: { usage: "perp wallet generate solana|evm", description: "Generate new wallet" },
           },
         },
-        analytics: {
-          description: "Trading performance analytics",
-          subcommands: {
-            summary: { usage: "perp analytics summary", description: "Performance summary" },
-            pnl: { usage: "perp analytics pnl", description: "P&L breakdown" },
-            funding: { usage: "perp analytics funding", description: "Funding payment history" },
-            report: { usage: "perp analytics report --since <period>", description: "Detailed report" },
-          },
-        },
         history: {
-          description: "Execution log & audit trail",
+          description: "Execution log, performance & audit trail",
           subcommands: {
             list: { usage: "perp history list", description: "Execution log" },
-            stats: { usage: "perp history stats", description: "Execution statistics" },
-            positions: { usage: "perp history positions", description: "Position history" },
-          },
-        },
-        funding: {
-          description: "Funding rate comparison",
-          subcommands: {
-            rates: { usage: "perp funding rates", description: "Rates across exchanges" },
-            compare: { usage: "perp funding compare <symbol>", description: "Compare symbol's funding" },
-            spread: { usage: "perp funding spread", description: "Funding rate spreads" },
-            monitor: { usage: "perp funding monitor", description: "Live funding monitor" },
-          },
-        },
-        gap: {
-          description: "Cross-exchange price gap analysis",
-          subcommands: {
-            show: { usage: "perp gap show", description: "Current price gaps" },
-            watch: { usage: "perp gap watch --min <pct>", description: "Live gap monitor" },
+            summary: { usage: "perp history summary", description: "Performance summary" },
+            pnl: { usage: "perp history pnl", description: "P&L breakdown" },
+            funding: { usage: "perp history funding", description: "Funding payment history" },
+            report: { usage: "perp history report", description: "Full performance report" },
+            perf: { usage: "perp history perf --period daily|weekly|summary", description: "Performance breakdown" },
           },
         },
         backtest: {
@@ -1361,14 +1300,6 @@ server.resource(
           subcommands: {
             "funding-arb": { usage: "perp backtest funding-arb", description: "Backtest funding arb" },
             grid: { usage: "perp backtest grid", description: "Backtest grid strategy" },
-          },
-        },
-        dex: {
-          description: "HIP-3 deployed perp dexes (Hyperliquid)",
-          subcommands: {
-            list: { usage: "perp dex list", description: "List dexes" },
-            markets: { usage: "perp dex markets <name>", description: "Dex markets" },
-            balance: { usage: "perp dex balance <name>", description: "Dex balance" },
           },
         },
         plan: {
@@ -1395,11 +1326,20 @@ server.resource(
             logs: { usage: "perp jobs logs <id>", description: "View job logs" },
           },
         },
-        deposit: { usage: "perp deposit <exchange> <amount>", description: "Deposit USDC to exchange" },
-        withdraw: { usage: "perp withdraw <exchange> <amount>", description: "Withdraw USDC from exchange" },
+        funds: {
+          usage: "perp funds <deposit|withdraw|transfer|bridge> ...",
+          description: "Deposit, withdraw, bridge & transfer funds",
+          subcommands: {
+            "deposit <exchange> <amount>": "Deposit USDC to exchange",
+            "withdraw <exchange> <amount>": "Withdraw USDC from exchange",
+            "transfer <amount> <address>": "HL internal transfer",
+            "bridge --from <chain> --to <chain> --amount <n> --recipient <addr>": "CCTP bridge",
+            info: "Show all deposit/withdraw routes & limits",
+          },
+        },
         portfolio: { usage: "perp portfolio", description: "Cross-exchange portfolio summary" },
         status: { usage: "perp portfolio", description: "Full account overview" },
-        health: { usage: "perp health", description: "Exchange connectivity check" },
+        health: { usage: "perp agent ping", description: "Exchange connectivity check" },
         settings: {
           description: "CLI settings",
           subcommands: {

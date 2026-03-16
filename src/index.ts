@@ -20,22 +20,22 @@ import { registerMarketCommands } from "./commands/market.js";
 import { registerAccountCommands } from "./commands/account.js";
 import { registerTradeCommands } from "./commands/trade.js";
 import { registerManageCommands } from "./commands/manage.js";
-import { registerStreamCommands } from "./commands/stream.js";
+// stream commands removed — WS feeds still used by dashboard/event-stream internally
 import { registerArbCommands } from "./commands/arb.js";
 import { registerWalletCommands } from "./commands/wallet.js";
 import { registerBridgeCommands } from "./commands/bridge.js";
-import { registerDepositCommands } from "./commands/deposit.js";
-import { registerAlertCommands } from "./commands/alert.js";
+// deposit + withdraw merged into funds
+import { registerFundsCommands } from "./commands/funds.js";
+// alert commands removed
 import { registerArbAutoCommands } from "./commands/arb-auto.js";
 import { registerArbManageCommands } from "./commands/arb/index.js";
 import { registerAgentCommands } from "./commands/agent.js";
-import { registerWithdrawCommands } from "./commands/withdraw.js";
 import { registerRebalanceCommands } from "./commands/rebalance.js";
 import { registerBotCommands } from "./commands/bot.js";
 import { registerRiskCommands } from "./commands/risk.js";
 import { registerHistoryCommands } from "./commands/history.js";
 import { registerSettingsCommands } from "./commands/settings.js";
-import { registerDexCommands } from "./commands/dex.js";
+// dex commands merged into market (hip3) — use --dex flag for markets/balance
 import { registerPlanCommands } from "./commands/plan.js";
 // funding merged into arb.ts
 import { registerBacktestCommands } from "./commands/backtest.js";
@@ -210,17 +210,17 @@ registerMarketCommands(program, getAdapter, isJson);
 registerAccountCommands(program, getAdapter, isJson, getAdapterForExchange);
 registerTradeCommands(program, getAdapter, isJson, isDryRun, getAdapterForExchange);
 registerManageCommands(program, getAdapter, isJson, getPacificaAdapter);
-registerStreamCommands(program, () => program.opts().network as Network, getExchange, getAdapter);
+// stream commands removed
 registerArbCommands(program, isJson, getAdapterForExchange);
 registerWalletCommands(program, isJson);
 registerBridgeCommands(program, isJson);
-registerDepositCommands(
+registerFundsCommands(
   program,
   getAdapter,
   isJson,
   () => program.opts().network as Network
 );
-registerAlertCommands(program, isJson, getAdapterForExchange);
+// alert commands removed
 
 // Helper to get adapter for a specific exchange (used by arb-auto)
 async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapter> {
@@ -314,7 +314,7 @@ async function getHLAdapterForDex(dex: string): Promise<HyperliquidAdapter> {
 registerArbAutoCommands(program, getAdapterForExchange, isJson, getHLAdapterForDex);
 registerArbManageCommands(program, getAdapterForExchange, isJson);
 registerAgentCommands(program, getAdapter, isJson);
-registerWithdrawCommands(program, getAdapter, isJson);
+// withdraw merged into funds
 registerRebalanceCommands(program, getAdapterForExchange, isJson);
 
 // Jobs & strategies
@@ -326,7 +326,7 @@ registerBotCommands(program, getAdapter, getAdapterForExchange, isJson);
 registerRiskCommands(program, getAdapterForExchange, isJson);
 registerHistoryCommands(program, isJson, getAdapterForExchange);
 registerSettingsCommands(program, isJson, getAdapterForExchange);
-registerDexCommands(program, getAdapter, isJson);
+// dex commands removed — use 'market hip3' + --dex flag
 registerPlanCommands(program, getAdapter, isJson);
 // funding merged into arb — registerFundingCommands removed
 registerBacktestCommands(program, isJson);
@@ -344,102 +344,11 @@ const apiSpecCmd = program
   });
 (apiSpecCmd as any)._hidden = true;
 
-// Status command — deprecated, use 'perp portfolio' or 'perp -e <ex> account'
-const statusCmd = program
-  .command("status")
-  .description("Use 'perp portfolio' for cross-exchange overview")
-  .option("--health", "Check exchange API connectivity and latency")
-  .action(async (opts: { health?: boolean }) => {
-    if (opts.health) {
-      const { runHealthCheck } = await import("./commands/risk.js");
-      return runHealthCheck(isJson);
-    }
-    const adapter = await getAdapter();
-    const json = isJson();
-
-    try {
-      // Use allSettled to handle unfunded/404 accounts gracefully
-      const [balanceResult, positionsResult, ordersResult] = await Promise.allSettled([
-        adapter.getBalance(),
-        adapter.getPositions(),
-        adapter.getOpenOrders(),
-      ]);
-
-      const balance = balanceResult.status === "fulfilled" ? balanceResult.value : { equity: "0", available: "0", marginUsed: "0", unrealizedPnl: "0" };
-      const positions = positionsResult.status === "fulfilled" ? positionsResult.value : [];
-      const orders = ordersResult.status === "fulfilled" ? ordersResult.value : [];
-
-      // Collect errors for reporting
-      const errors: string[] = [];
-      if (balanceResult.status === "rejected") errors.push(`balance: ${balanceResult.reason instanceof Error ? balanceResult.reason.message : String(balanceResult.reason)}`);
-      if (positionsResult.status === "rejected") errors.push(`positions: ${positionsResult.reason instanceof Error ? positionsResult.reason.message : String(positionsResult.reason)}`);
-      if (ordersResult.status === "rejected") errors.push(`orders: ${ordersResult.reason instanceof Error ? ordersResult.reason.message : String(ordersResult.reason)}`);
-
-      // Detect unfunded account (all calls failed, likely 404)
-      const allFailed = errors.length === 3;
-      const isUnfunded = allFailed && errors.some(e => e.includes("404") || e.includes("not found") || e.includes("does not exist"));
-
-      if (json) {
-        const { jsonOk, printJson } = await import("./utils.js");
-        return printJson(jsonOk({
-          exchange: adapter.name,
-          balance,
-          positions,
-          orders,
-          ...(isUnfunded ? { warning: "Account not yet initialized on this exchange. Deposit funds to get started." } : {}),
-          ...(errors.length > 0 && !isUnfunded ? { errors } : {}),
-        }));
-      }
-
-      console.log(chalk.cyan.bold(`\n  ${adapter.name.toUpperCase()} Account Status\n`));
-
-      if (isUnfunded) {
-        console.log(chalk.yellow("  Account not yet initialized on this exchange."));
-        console.log(chalk.gray("  Deposit funds to get started: perp deposit <exchange> <amount>\n"));
-      } else {
-        console.log(`  Equity:      $${Number(balance.equity).toFixed(2)}`);
-        console.log(`  Available:   $${Number(balance.available).toFixed(2)}`);
-        console.log(`  Margin Used: $${Number(balance.marginUsed).toFixed(2)}`);
-        console.log(`  Positions:   ${positions.length}`);
-        console.log(`  Open Orders: ${orders.length}`);
-
-        if (positions.length > 0) {
-          console.log(chalk.cyan.bold("\n  Positions:"));
-          positions.forEach((p) => {
-            const color = p.side === "long" ? chalk.green : chalk.red;
-            const pnlNum = Number(p.unrealizedPnl);
-            const pnlColor = pnlNum >= 0 ? chalk.green : chalk.red;
-            console.log(
-              `    ${color(p.side.toUpperCase().padEnd(5))} ${chalk.white(p.symbol.padEnd(12))} ${p.size.padEnd(10)} entry: $${Number(p.entryPrice).toFixed(2)}  pnl: ${pnlColor(pnlNum >= 0 ? "+" : "")}$${pnlNum.toFixed(2)}`
-            );
-          });
-        }
-
-        if (orders.length > 0) {
-          console.log(chalk.cyan.bold("\n  Open Orders:"));
-          orders.forEach((o) => {
-            const color = o.side === "buy" ? chalk.green : chalk.red;
-            console.log(
-              `    ${color(o.side.toUpperCase().padEnd(4))} ${chalk.white(o.symbol.padEnd(12))} ${o.type.padEnd(8)} $${Number(o.price).toFixed(2)} x ${o.size}`
-            );
-          });
-        }
-
-        if (errors.length > 0) {
-          console.log(chalk.yellow(`\n  Warnings: ${errors.join(", ")}`));
-        }
-      }
-      console.log();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (isJson()) {
-        const { jsonError } = await import("./utils.js");
-        console.log(JSON.stringify(jsonError("COMMAND_ERROR", msg)));
-      } else {
-        console.error(chalk.red(`Error: ${msg}`));
-      }
-      process.exit(1);
-    }
+// Deprecated: perp status → use 'perp portfolio' or 'perp account'
+const statusCmd = program.command("status").description("Use 'perp portfolio'")
+  .option("--health", "Check connectivity").action(async (opts: { health?: boolean }) => {
+    if (opts.health) { const { runHealthCheck } = await import("./commands/risk.js"); return runHealthCheck(isJson); }
+    console.log("Use 'perp portfolio' or 'perp account' instead.");
   });
 (statusCmd as any)._hidden = true;
 

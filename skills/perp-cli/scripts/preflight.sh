@@ -42,7 +42,7 @@ else
 fi
 
 # 3. Exchange connectivity
-HEALTH_OUT=$($PERP --json health 2>/dev/null || echo '{"ok":false}')
+HEALTH_OUT=$($PERP --json agent ping 2>/dev/null || echo '{"ok":false}')
 if echo "$HEALTH_OUT" | grep -q '"ok":true'; then
   add_check "connectivity" "pass" "Exchanges reachable"
 else

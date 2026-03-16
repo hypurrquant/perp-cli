@@ -315,7 +315,7 @@ export function registerHistoryCommands(
     registerPnlSubcommands(history, getAdapterForExchange, isJson);
 
     // Deprecated top-level pnl alias
-    const pnlAlias = program.command("pnl").description("Use 'perp history snapshot/daily/weekly/summary-perf'");
+    const pnlAlias = program.command("pnl").description("Use 'perp history perf --period daily|weekly|summary'");
     (pnlAlias as any)._hidden = true;
     if (getAdapterForExchange) registerPnlSubcommands(pnlAlias, getAdapterForExchange, isJson);
   }
@@ -794,16 +794,22 @@ function registerPnlSubcommands(
       }
     });
 
-  // ── daily-pnl ──
+  // ── perf (unified: daily/weekly/summary) ──
   parent
-    .command("daily-pnl")
-    .description("Daily PnL breakdown")
+    .command("perf")
+    .description("Performance breakdown — daily, weekly, or summary stats")
+    .option("--period <period>", "daily, weekly, or summary", "daily")
     .option("--exchange <name>", "Single exchange filter")
-    .option("--days <n>", "Number of days to show", "14")
+    .option("--days <n>", "Number of days (daily mode)", "14")
+    .option("--weeks <n>", "Number of weeks (weekly mode)", "8")
     .option("--since <period>", "Time range (e.g. 7d, 2w, 30d)")
-    .action(async (opts: { exchange?: string; days: string; since?: string }) => {
+    .action(async (opts: { period: string; exchange?: string; days: string; weeks: string; since?: string }) => {
       await withJsonErrors(isJson(), async () => {
-        const since = parseSinceDate(opts.since) ?? new Date(Date.now() - parseInt(opts.days) * 86400000);
+        const mode = opts.period.toLowerCase();
+        const defaultSince = mode === "weekly"
+          ? new Date(Date.now() - parseInt(opts.weeks) * 7 * 86400000)
+          : new Date(Date.now() - parseInt(opts.days) * 86400000);
+        const since = parseSinceDate(opts.since) ?? defaultSince;
         const snapshots = readEquityHistory({ exchange: opts.exchange, since });
 
         if (snapshots.length === 0) {
@@ -815,113 +821,43 @@ function registerPnlSubcommands(
           return;
         }
 
-        const daily = computeDailyPnl(snapshots, opts.exchange);
-
-        if (isJson()) {
-          printJson(jsonOk({ daily }));
-        } else {
-          console.log(chalk.cyan.bold(`Daily PnL${opts.exchange ? ` (${opts.exchange})` : ""}\n`));
-          const head = ["Date", "Start", "End", "PnL", "PnL %"];
-          const rows = daily.map(d => [
-            d.date,
-            `$${formatUsd(d.startEquity)}`,
-            `$${formatUsd(d.endEquity)}`,
-            formatPnl(d.pnl),
-            `${d.pnlPct >= 0 ? "+" : ""}${d.pnlPct.toFixed(2)}%`,
-          ]);
-          console.log(makeTable(head, rows));
-        }
-      });
-    });
-
-  // ── weekly-pnl ──
-  parent
-    .command("weekly-pnl")
-    .description("Weekly PnL breakdown")
-    .option("--exchange <name>", "Single exchange filter")
-    .option("--weeks <n>", "Number of weeks to show", "8")
-    .option("--since <period>", "Time range (e.g. 4w, 8w)")
-    .action(async (opts: { exchange?: string; weeks: string; since?: string }) => {
-      await withJsonErrors(isJson(), async () => {
-        const since = parseSinceDate(opts.since) ?? new Date(Date.now() - parseInt(opts.weeks) * 7 * 86400000);
-        const snapshots = readEquityHistory({ exchange: opts.exchange, since });
-
-        if (snapshots.length === 0) {
+        if (mode === "summary") {
+          const metrics = computePnlMetrics(snapshots, opts.exchange);
           if (isJson()) {
-            printJson(jsonError("NO_DATA", "No equity snapshots found."));
+            printJson(jsonOk({ ...metrics, dailyReturns: undefined, dailyCount: metrics.dailyReturns.length }));
           } else {
-            console.log(chalk.yellow("No equity snapshots found. Run 'perp history snapshot' or 'perp history track' first."));
+            console.log(chalk.cyan.bold(`Performance Summary${opts.exchange ? ` (${opts.exchange})` : ""}\n`));
+            console.log(`  Period:          ${metrics.period.from} → ${metrics.period.to} (${metrics.period.days} days)`);
+            console.log(`  Total Return:    ${formatPnl(metrics.totalReturn)} (${metrics.totalReturnPct >= 0 ? "+" : ""}${metrics.totalReturnPct.toFixed(2)}%)`);
+            console.log(`  Peak Equity:     $${formatUsd(metrics.peakEquity)}`);
+            console.log(`  Avg Daily PnL:   ${formatPnl(metrics.avgDailyPnl)}`);
+            console.log();
+            console.log(`  Sharpe Ratio:    ${metrics.sharpeRatio >= 0 ? chalk.green(metrics.sharpeRatio.toFixed(2)) : chalk.red(metrics.sharpeRatio.toFixed(2))}`);
+            console.log(`  Max Drawdown:    ${chalk.red(`$${formatUsd(metrics.maxDrawdown)}`)} (${chalk.red(`-${metrics.maxDrawdownPct.toFixed(2)}%`)})`);
+            console.log(`  Current DD:      $${formatUsd(metrics.currentDrawdown)} (-${metrics.currentDrawdownPct.toFixed(2)}%)`);
+            console.log();
+            console.log(`  Win Days:        ${chalk.green(String(metrics.winDays))} / ${metrics.winDays + metrics.lossDays}`);
+            console.log(`  Win Rate:        ${metrics.winRate.toFixed(1)}%`);
+            if (metrics.bestDay) console.log(`  Best Day:        ${metrics.bestDay.date}  ${formatPnl(metrics.bestDay.pnl)}`);
+            if (metrics.worstDay) console.log(`  Worst Day:       ${metrics.worstDay.date}  ${formatPnl(metrics.worstDay.pnl)}`);
           }
           return;
         }
 
         const daily = computeDailyPnl(snapshots, opts.exchange);
-        const weekly = aggregateWeekly(daily);
 
-        if (isJson()) {
-          printJson(jsonOk({ weekly }));
-        } else {
+        if (mode === "weekly") {
+          const weekly = aggregateWeekly(daily);
+          if (isJson()) { printJson(jsonOk({ weekly })); return; }
           console.log(chalk.cyan.bold(`Weekly PnL${opts.exchange ? ` (${opts.exchange})` : ""}\n`));
-          const head = ["Week", "Start", "End", "PnL", "PnL %"];
-          const rows = weekly.map(w => [
-            w.date,
-            `$${formatUsd(w.startEquity)}`,
-            `$${formatUsd(w.endEquity)}`,
-            formatPnl(w.pnl),
-            `${w.pnlPct >= 0 ? "+" : ""}${w.pnlPct.toFixed(2)}%`,
-          ]);
-          console.log(makeTable(head, rows));
-        }
-      });
-    });
-
-  // ── summary-perf ──
-  parent
-    .command("summary-perf")
-    .description("Performance summary — Sharpe, drawdown, win rate")
-    .option("--exchange <name>", "Single exchange filter")
-    .option("--since <period>", "Time range (e.g. 7d, 30d, 12w)")
-    .action(async (opts: { exchange?: string; since?: string }) => {
-      await withJsonErrors(isJson(), async () => {
-        const since = parseSinceDate(opts.since);
-        const snapshots = readEquityHistory({ exchange: opts.exchange, since });
-
-        if (snapshots.length === 0) {
-          if (isJson()) {
-            printJson(jsonError("NO_DATA", "No equity snapshots found."));
-          } else {
-            console.log(chalk.yellow("No equity snapshots found. Run 'perp history snapshot' or 'perp history track' first."));
-          }
-          return;
-        }
-
-        const metrics = computePnlMetrics(snapshots, opts.exchange);
-
-        if (isJson()) {
-          printJson(jsonOk({
-            ...metrics,
-            dailyReturns: undefined, // omit large array from JSON
-            dailyCount: metrics.dailyReturns.length,
-          }));
+          const rows = weekly.map(w => [w.date, `$${formatUsd(w.startEquity)}`, `$${formatUsd(w.endEquity)}`, formatPnl(w.pnl), `${w.pnlPct >= 0 ? "+" : ""}${w.pnlPct.toFixed(2)}%`]);
+          console.log(makeTable(["Week", "Start", "End", "PnL", "PnL %"], rows));
         } else {
-          console.log(chalk.cyan.bold(`Performance Summary${opts.exchange ? ` (${opts.exchange})` : ""}\n`));
-          console.log(`  Period:          ${metrics.period.from} → ${metrics.period.to} (${metrics.period.days} days)`);
-          console.log(`  Total Return:    ${formatPnl(metrics.totalReturn)} (${metrics.totalReturnPct >= 0 ? "+" : ""}${metrics.totalReturnPct.toFixed(2)}%)`);
-          console.log(`  Peak Equity:     $${formatUsd(metrics.peakEquity)}`);
-          console.log(`  Avg Daily PnL:   ${formatPnl(metrics.avgDailyPnl)}`);
-          console.log();
-          console.log(`  Sharpe Ratio:    ${metrics.sharpeRatio >= 0 ? chalk.green(metrics.sharpeRatio.toFixed(2)) : chalk.red(metrics.sharpeRatio.toFixed(2))}`);
-          console.log(`  Max Drawdown:    ${chalk.red(`$${formatUsd(metrics.maxDrawdown)}`)} (${chalk.red(`-${metrics.maxDrawdownPct.toFixed(2)}%`)})`);
-          console.log(`  Current DD:      $${formatUsd(metrics.currentDrawdown)} (-${metrics.currentDrawdownPct.toFixed(2)}%)`);
-          console.log();
-          console.log(`  Win Days:        ${chalk.green(String(metrics.winDays))} / ${metrics.winDays + metrics.lossDays}`);
-          console.log(`  Win Rate:        ${metrics.winRate.toFixed(1)}%`);
-          if (metrics.bestDay) {
-            console.log(`  Best Day:        ${metrics.bestDay.date}  ${formatPnl(metrics.bestDay.pnl)}`);
-          }
-          if (metrics.worstDay) {
-            console.log(`  Worst Day:       ${metrics.worstDay.date}  ${formatPnl(metrics.worstDay.pnl)}`);
-          }
+          // daily (default)
+          if (isJson()) { printJson(jsonOk({ daily })); return; }
+          console.log(chalk.cyan.bold(`Daily PnL${opts.exchange ? ` (${opts.exchange})` : ""}\n`));
+          const rows = daily.map(d => [d.date, `$${formatUsd(d.startEquity)}`, `$${formatUsd(d.endEquity)}`, formatPnl(d.pnl), `${d.pnlPct >= 0 ? "+" : ""}${d.pnlPct.toFixed(2)}%`]);
+          console.log(makeTable(["Date", "Start", "End", "PnL", "PnL %"], rows));
         }
       });
     });
