@@ -35,11 +35,11 @@ export function registerTradeCommands(
       console.log();
     }
     logExecution({
-      type: action.includes("limit") ? "limit_order" : action.includes("stop") ? "stop_order" : action.includes("cancel") ? "cancel" : "market_order",
+      type: action.includes("split") ? "split_order" : action.includes("limit") ? "limit_order" : action.includes("stop") ? "stop_order" : action.includes("cancel") ? "cancel" : "market_order",
       exchange: details.exchange as string ?? "unknown",
       symbol: (details.symbol as string ?? "").toUpperCase(),
       side: details.side as string ?? "",
-      size: String(details.size ?? "0"),
+      size: String(details.size ?? details.totalUsd ?? "0"),
       price: details.price as string,
       status: "simulated",
       dryRun: true,
@@ -235,7 +235,8 @@ export function registerTradeCommands(
       if (!["buy", "sell"].includes(orderSide)) errorAndExit("Side must be 'buy' or 'sell'");
       if (isNaN(totalUsd) || totalUsd <= 0) errorAndExit("USD amount must be > 0");
 
-      if (dryRunGuard("split-order", { symbol: sym, side: orderSide, totalUsd, ...opts })) return;
+      const exchange = program.opts().exchange ?? "unknown";
+      if (dryRunGuard("split-order", { exchange, symbol: sym, side: orderSide, totalUsd, ...opts })) return;
 
       const adapter = await getAdapter();
       const { runSplitOrder } = await import("../strategies/split-order.js");

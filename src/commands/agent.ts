@@ -61,9 +61,11 @@ function extractSchema(cmd: Command, parentPath = "perp"): CommandSchema {
 
   const args: ParameterSchema[] = (cmd.registeredArguments ?? []).map((a) => {
     const desc = a.description || "";
+    // Args are always values (not flags), so infer from name/desc semantics, never "boolean"
+    const rawType = inferType(`<${a.name()}>`, desc);
     return {
       name: a.name(),
-      type: inferType(a.name(), desc),
+      type: rawType === "boolean" ? "string" : rawType,
       required: a.required,
       description: desc,
       enum: inferEnum(desc),
