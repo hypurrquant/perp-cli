@@ -798,6 +798,7 @@ export function registerAccountCommands(
 
   account
     .command("funding-history")
+    .alias("funding")
     .description("Personal funding payment history")
     .action(async () => {
       const adapter = await getAdapter();
@@ -1059,7 +1060,7 @@ export function registerAccountCommands(
   if (getAdapterForExchange) {
     program
       .command("portfolio")
-      .description("Cross-exchange portfolio overview (all exchanges at once)")
+      .description("Cross-exchange portfolio overview with risk metrics")
       .option("--exchange <exchanges>", "Comma-separated exchanges to include (default: all)")
       .action(async (opts: { exchange?: string }) => {
         await withJsonErrors(isJson(), async () => {

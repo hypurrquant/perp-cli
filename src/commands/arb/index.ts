@@ -1093,6 +1093,7 @@ export function registerArbManageCommands(
 
   arb
     .command("history")
+    .alias("log")
     .description("Past arb trade performance and statistics")
     .option("--period <days>", "Number of days to look back", "30")
     .action(async (opts: { period: string }) => {
@@ -1388,6 +1389,32 @@ export function registerArbManageCommands(
     });
 
   // ── arb rebalance ──
+
+  arb
+    .command("config")
+    .description("Show arb configuration defaults (use 'arb auto --help' for all options)")
+    .action(async () => {
+      if (isJson()) {
+        return printJson(jsonOk({
+          minSpread: 30, closeSpread: 5, size: 100, holdDays: 7,
+          bridgeCost: 0, interval: 60, cooldown: 30, minMargin: 30,
+          settleStrategy: "block", maxLegs: 5,
+        }));
+      }
+      console.log(chalk.cyan.bold("\n  Arb Auto Defaults\n"));
+      console.log(`  Min Spread:       30% annual`);
+      console.log(`  Close Spread:     5% annual`);
+      console.log(`  Size:             $100 per leg`);
+      console.log(`  Hold Days:        7d (for cost amortization)`);
+      console.log(`  Bridge Cost:      $0`);
+      console.log(`  Check Interval:   60s`);
+      console.log(`  Cooldown:         30min (after closing a symbol)`);
+      console.log(`  Min Margin:       30%`);
+      console.log(`  Settle Strategy:  block`);
+      console.log(`  Max Legs:         5`);
+      console.log(chalk.gray(`\n  Override with 'perp arb auto --min-spread 20 --size 50 ...'\n`));
+      console.log(chalk.gray(`  Run 'perp arb auto --help' for all options.\n`));
+    });
 
   arb
     .command("rebalance")
