@@ -178,7 +178,7 @@ export function registerAgentCommands(
           {
             category: "account",
             commands: [
-              "perp account info --json",
+              "perp account balance --json",
               "perp account positions --json",
               "perp account orders --json",
               "perp account history --json",
@@ -387,7 +387,7 @@ export function registerAgentCommands(
         const size = extractNumber(g) || "0.01";
         steps.push(
           { step: 1, command: `perp market book ${symbol} --json`, description: `Check ${symbol} orderbook` },
-          { step: 2, command: `perp account info --json`, description: "Check available balance" },
+          { step: 2, command: `perp account balance --json`, description: "Check available balance" },
           { step: 3, command: `perp trade market ${symbol} buy ${size} --json`, description: `Buy ${size} ${symbol}` },
           { step: 4, command: `perp account positions --json`, description: "Verify position opened" },
         );
@@ -396,7 +396,7 @@ export function registerAgentCommands(
         const size = extractNumber(g) || "0.01";
         steps.push(
           { step: 1, command: `perp market book ${symbol} --json`, description: `Check ${symbol} orderbook` },
-          { step: 2, command: `perp account info --json`, description: "Check available balance" },
+          { step: 2, command: `perp account balance --json`, description: "Check available balance" },
           { step: 3, command: `perp trade market ${symbol} sell ${size} --json`, description: `Sell ${size} ${symbol}` },
           { step: 4, command: `perp account positions --json`, description: "Verify position opened" },
         );
@@ -427,7 +427,7 @@ export function registerAgentCommands(
         steps.push(
           { step: 1, command: "perp wallet balance --json", description: "Check wallet balance" },
           { step: 2, command: `perp deposit pacifica ${amount} --json`, description: `Deposit $${amount} to Pacifica` },
-          { step: 3, command: "perp account info --json", description: "Verify deposit arrived" },
+          { step: 3, command: "perp account balance --json", description: "Verify deposit arrived" },
         );
       } else if (g.includes("price") || g.includes("market")) {
         const symbol = extractSymbol(g);

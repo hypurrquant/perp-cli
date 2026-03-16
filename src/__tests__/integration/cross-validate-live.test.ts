@@ -80,7 +80,7 @@ async function pacPrices(): Promise<PacRawPrice[]> {
 
 function hasKey(exchange: string): boolean {
   try {
-    const out = execSync(`${CLI} -e ${exchange} account info`, {
+    const out = execSync(`${CLI} -e ${exchange} account balance`, {
       timeout: 20000,
       encoding: "utf-8",
       env: { ...process.env, NODE_NO_WARNINGS: "1" },
@@ -108,7 +108,7 @@ function getHlAddress(): string | null {
   if (!pk) {
     // Try wallets.json via CLI
     try {
-      const out = execSync(`${CLI} -e hyperliquid account info`, {
+      const out = execSync(`${CLI} -e hyperliquid account balance`, {
         timeout: 20000, encoding: "utf-8",
         env: { ...process.env, NODE_NO_WARNINGS: "1" },
       });
@@ -202,7 +202,7 @@ describe("Cross-validate: Hyperliquid", () => {
   });
 
   it("account balance fields are present", { skip: !HAS_HL_KEY }, async () => {
-    const cliResult = cli("-e hyperliquid account info");
+    const cliResult = cli("-e hyperliquid account balance");
     expect(cliResult.ok).toBe(true);
     const balance = cliResult.data as { equity: string; available: string; marginUsed: string };
     expect(Number(balance.equity)).toBeGreaterThanOrEqual(0);
@@ -356,7 +356,7 @@ describe("Cross-validate: Pacifica", () => {
   });
 
   it("account balance fields are present", { skip: !HAS_PAC_KEY }, async () => {
-    const cliResult = cli("-e pacifica account info");
+    const cliResult = cli("-e pacifica account balance");
     expect(cliResult.ok).toBe(true);
     const balance = cliResult.data as { equity: string; available: string };
     expect(Number(balance.equity)).toBeGreaterThanOrEqual(0);

@@ -164,6 +164,7 @@ export function registerAccountCommands(
     fundingPayments24h: number;
     totalSpotValueUsd: number;
     totalAccountValueUsd: number;
+    unifiedAccount: boolean;  // HL unified: perp equity already includes spot USDC
   }
 
   async function fetchExchangeBalance(
@@ -215,10 +216,25 @@ export function registerAccountCommands(
       }
     } catch { /* spot not available */ }
 
+    // HL unified account: perp equity already includes spot USDC balance.
+    // Detect by checking if adapter is HL without a dex override.
+    const isUnified = name === "hyperliquid" && !(adapter as HyperliquidAdapter).dex;
+
     const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
     const recent = fundingPayments.filter(f => f.time >= cutoff24h);
     const funding24h = recent.reduce((sum, f) => sum + Number(f.payment), 0);
     const totalSpotUsd = spotBalances.reduce((s, b) => s + (b.valueUsd ?? 0), 0);
+
+    // For unified accounts, equity already contains USDC spot value.
+    // Only add non-USDC spot token values to avoid double-counting.
+    const nonUsdcSpotUsd = isUnified
+      ? spotBalances
+          .filter(b => {
+            const tk = b.token.replace(/-SPOT$/i, "").toUpperCase();
+            return tk !== "USDC";
+          })
+          .reduce((s, b) => s + (b.valueUsd ?? 0), 0)
+      : totalSpotUsd;
 
     return {
       exchange: name,
@@ -227,21 +243,30 @@ export function registerAccountCommands(
       funding24h,
       fundingPayments24h: recent.length,
       totalSpotValueUsd: totalSpotUsd,
-      totalAccountValueUsd: Number(bal.equity) + totalSpotUsd,
+      totalAccountValueUsd: Number(bal.equity) + nonUsdcSpotUsd,
+      unifiedAccount: isUnified,
     };
   }
 
   function printSingleBalance(exName: string, r: ExBalanceResult) {
-    console.log(chalk.cyan.bold(`\n  ${exName.toUpperCase()} Account Balance\n`));
-    console.log(chalk.white.bold("  Perp Account"));
+    console.log(chalk.cyan.bold(`\n  ${exName.toUpperCase()} Account Balance`));
+    if (r.unifiedAccount) console.log(chalk.gray("  (Unified account — perp & spot share single balance)\n"));
+    else console.log();
+
+    console.log(chalk.white.bold(r.unifiedAccount ? "  Account" : "  Perp Account"));
     console.log(`    Equity:       $${formatUsd(r.perp.equity)}`);
     console.log(`    Available:    $${formatUsd(r.perp.available)}`);
     console.log(`    Margin Used:  $${formatUsd(r.perp.marginUsed)}`);
     console.log(`    Unreal. PnL:  ${formatPnl(r.perp.unrealizedPnl)}`);
 
-    if (r.spot.length > 0) {
+    // For unified, show non-USDC spot holdings (USDC is already in equity)
+    const displaySpot = r.unifiedAccount
+      ? r.spot.filter(b => b.token.replace(/-SPOT$/i, "").toUpperCase() !== "USDC")
+      : r.spot;
+
+    if (displaySpot.length > 0) {
       console.log(chalk.white.bold("\n  Spot Holdings"));
-      const rows = r.spot.map(b => [
+      const rows = displaySpot.map(b => [
         chalk.white.bold(b.token),
         b.total,
         b.available,
@@ -255,17 +280,18 @@ export function registerAccountCommands(
     console.log(`    Payments:     ${r.fundingPayments24h}`);
     console.log(`    Total:        ${formatPnl(r.funding24h)}`);
 
-    if (r.totalSpotValueUsd > 0) {
+    // Only show Total breakdown when there are non-USDC spot tokens adding value
+    const nonUsdcSpotValue = displaySpot.reduce((s, b) => s + (b.valueUsd ?? 0), 0);
+    if (nonUsdcSpotValue > 0) {
       console.log(chalk.white.bold("\n  Total"));
-      console.log(`    Perp Equity:  $${formatUsd(r.perp.equity)}`);
-      console.log(`    Spot Value:   $${formatUsd(r.totalSpotValueUsd)}`);
+      console.log(`    Equity:       $${formatUsd(r.perp.equity)}`);
+      console.log(`    Spot (other): $${formatUsd(nonUsdcSpotValue)}`);
       console.log(`    Total Value:  $${formatUsd(r.totalAccountValueUsd)}`);
     }
   }
 
   account
     .command("balance")
-    .alias("info")
     .description("Account overview: perp balance, spot holdings, and 24h funding")
     .action(async () => {
       // Detect if user explicitly set -e (single exchange mode)
@@ -303,18 +329,33 @@ export function registerAccountCommands(
         console.log(chalk.cyan.bold("\n  All Exchanges — Account Balance\n"));
 
         // Summary table
-        const balRows = results.map(r => [
-          chalk.white.bold(r.exchange),
-          `$${formatUsd(r.perp.equity)}`,
-          `$${formatUsd(r.perp.available)}`,
-          `$${formatUsd(r.perp.marginUsed)}`,
-          r.totalSpotValueUsd > 0 ? `$${formatUsd(r.totalSpotValueUsd)}` : chalk.gray("-"),
-          formatPnl(r.funding24h),
-          `$${formatUsd(r.totalAccountValueUsd)}`,
-        ]);
+        // For unified accounts, Spot column shows non-USDC only (USDC already in Equity)
+        const balRows = results.map(r => {
+          const nonUsdcSpot = r.unifiedAccount
+            ? r.spot
+                .filter(b => b.token.replace(/-SPOT$/i, "").toUpperCase() !== "USDC")
+                .reduce((s, b) => s + (b.valueUsd ?? 0), 0)
+            : r.totalSpotValueUsd;
+          return [
+            chalk.white.bold(r.exchange) + (r.unifiedAccount ? chalk.gray(" ★") : ""),
+            `$${formatUsd(r.perp.equity)}`,
+            `$${formatUsd(r.perp.available)}`,
+            `$${formatUsd(r.perp.marginUsed)}`,
+            nonUsdcSpot > 0 ? `$${formatUsd(nonUsdcSpot)}` : chalk.gray("-"),
+            formatPnl(r.funding24h),
+            `$${formatUsd(r.totalAccountValueUsd)}`,
+          ];
+        });
 
         const grandEquity = results.reduce((s, r) => s + Number(r.perp.equity), 0);
-        const grandSpot = results.reduce((s, r) => s + r.totalSpotValueUsd, 0);
+        const grandSpot = results.reduce((s, r) => {
+          if (r.unifiedAccount) {
+            return s + r.spot
+              .filter(b => b.token.replace(/-SPOT$/i, "").toUpperCase() !== "USDC")
+              .reduce((ss, b) => ss + (b.valueUsd ?? 0), 0);
+          }
+          return s + r.totalSpotValueUsd;
+        }, 0);
         const grandFunding = results.reduce((s, r) => s + r.funding24h, 0);
         const grandTotal = results.reduce((s, r) => s + r.totalAccountValueUsd, 0);
 
@@ -330,11 +371,18 @@ export function registerAccountCommands(
 
         console.log(makeTable(["Exchange", "Equity", "Available", "Margin", "Spot", "Funding 24h", "Total"], balRows));
 
-        // Spot details per exchange
+        if (results.some(r => r.unifiedAccount)) {
+          console.log(chalk.gray("  ★ Unified account — Equity includes spot USDC, Spot shows non-USDC tokens only\n"));
+        }
+
+        // Spot details per exchange (for unified, skip USDC as it's in equity)
         for (const r of results) {
-          if (r.spot.length > 0) {
+          const displaySpot = r.unifiedAccount
+            ? r.spot.filter(b => b.token.replace(/-SPOT$/i, "").toUpperCase() !== "USDC")
+            : r.spot;
+          if (displaySpot.length > 0) {
             console.log(chalk.white.bold(`  ${r.exchange.toUpperCase()} Spot Holdings`));
-            const rows = r.spot.map(b => [
+            const rows = displaySpot.map(b => [
               chalk.white.bold(b.token),
               b.total,
               b.valueUsd ? `$${formatUsd(b.valueUsd)}` : chalk.gray("-"),
@@ -367,6 +415,56 @@ export function registerAccountCommands(
     .command("positions")
     .description("Show open positions")
     .action(async () => {
+      const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
+
+      if (!explicitExchange && getAdapterForExchange) {
+        const allRows: string[][] = [];
+        const errors: Record<string, string> = {};
+
+        await Promise.all(EXCHANGES.map(async (ex) => {
+          try {
+            const adapter = await getAdapterForExchange(ex);
+            const positions = await adapter.getPositions();
+            for (const p of positions) {
+              allRows.push([
+                chalk.white.bold(p.symbol),
+                chalk.gray(ex.slice(0, 3).toUpperCase()),
+                p.side === "long" ? chalk.green("LONG") : chalk.red("SHORT"),
+                p.size,
+                `$${formatUsd(p.entryPrice)}`,
+                `$${formatUsd(p.markPrice)}`,
+                p.liquidationPrice === "N/A" ? chalk.gray("N/A") : `$${formatUsd(p.liquidationPrice)}`,
+                formatPnl(p.unrealizedPnl),
+                `${p.leverage}x`,
+              ]);
+            }
+          } catch (err) {
+            errors[ex] = err instanceof Error ? err.message : String(err);
+          }
+        }));
+
+        if (isJson()) {
+          const grouped: Record<string, ExchangePosition[]> = {};
+          await Promise.all(EXCHANGES.map(async (ex) => {
+            try {
+              const adapter = await getAdapterForExchange(ex);
+              grouped[ex] = await adapter.getPositions();
+            } catch { /* skip */ }
+          }));
+          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }));
+        }
+
+        if (allRows.length === 0) {
+          console.log(chalk.gray("\n  No open positions across all exchanges.\n"));
+          for (const [ex, msg] of Object.entries(errors)) console.log(chalk.gray(`  ${ex}: ${msg}`));
+          return;
+        }
+
+        console.log(makeTable(["Symbol", "Exch", "Side", "Size", "Entry", "Mark", "Liq", "PnL", "Lev"], allRows));
+        for (const [ex, msg] of Object.entries(errors)) console.log(chalk.gray(`  ${ex}: ${msg}`));
+        return;
+      }
+
       const adapter = await getAdapter();
       const positions = await adapter.getPositions();
       if (isJson()) return printJson(jsonOk(positions));
@@ -395,6 +493,56 @@ export function registerAccountCommands(
     .command("orders")
     .description("Show open orders")
     .action(async () => {
+      const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
+
+      if (!explicitExchange && getAdapterForExchange) {
+        const allRows: string[][] = [];
+        const errors: Record<string, string> = {};
+
+        await Promise.all(EXCHANGES.map(async (ex) => {
+          try {
+            const adapter = await getAdapterForExchange(ex);
+            const orders = await adapter.getOpenOrders();
+            for (const o of orders) {
+              allRows.push([
+                o.orderId,
+                chalk.white.bold(o.symbol),
+                chalk.gray(ex.slice(0, 3).toUpperCase()),
+                o.side === "buy" ? chalk.green("BUY") : chalk.red("SELL"),
+                o.type,
+                `$${formatUsd(o.price)}`,
+                o.size,
+                o.filled,
+                o.status,
+              ]);
+            }
+          } catch (err) {
+            errors[ex] = err instanceof Error ? err.message : String(err);
+          }
+        }));
+
+        if (isJson()) {
+          const grouped: Record<string, unknown[]> = {};
+          await Promise.all(EXCHANGES.map(async (ex) => {
+            try {
+              const adapter = await getAdapterForExchange(ex);
+              grouped[ex] = await adapter.getOpenOrders();
+            } catch { /* skip */ }
+          }));
+          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }));
+        }
+
+        if (allRows.length === 0) {
+          console.log(chalk.gray("\n  No open orders across all exchanges.\n"));
+          for (const [ex, msg] of Object.entries(errors)) console.log(chalk.gray(`  ${ex}: ${msg}`));
+          return;
+        }
+
+        console.log(makeTable(["ID", "Symbol", "Exch", "Side", "Type", "Price", "Size", "Filled", "Status"], allRows));
+        for (const [ex, msg] of Object.entries(errors)) console.log(chalk.gray(`  ${ex}: ${msg}`));
+        return;
+      }
+
       const adapter = await getAdapter();
       const orders = await adapter.getOpenOrders();
       if (isJson()) return printJson(jsonOk(orders));

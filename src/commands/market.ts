@@ -5,10 +5,13 @@ import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
 import { makeTable, formatUsd, formatPercent, printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import chalk from "chalk";
 
+const EXCHANGES = ["pacifica", "hyperliquid", "lighter"] as const;
+
 export function registerMarketCommands(
   program: Command,
   getAdapter: () => Promise<ExchangeAdapter>,
-  isJson: () => boolean
+  isJson: () => boolean,
+  getAdapterForExchange?: (exchange: string) => Promise<ExchangeAdapter>,
 ) {
   const market = program.command("market").description("Market data commands");
 
@@ -16,6 +19,61 @@ export function registerMarketCommands(
     .command("list")
     .description("List all available markets")
     .action(async () => {
+      const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
+
+      // Multi-exchange mode
+      if (!explicitExchange && getAdapterForExchange) {
+        const allRows: [string, string, string, string, string, string, string, string][] = [];
+        const errors: Record<string, string> = {};
+
+        await Promise.all(EXCHANGES.map(async (ex) => {
+          try {
+            const adapter = await getAdapterForExchange(ex);
+            const markets = await adapter.getMarkets();
+            for (const m of markets) {
+              allRows.push([
+                chalk.white.bold(m.symbol),
+                chalk.gray(ex.slice(0, 3).toUpperCase()),
+                `$${formatUsd(m.markPrice)}`,
+                `$${formatUsd(m.indexPrice)}`,
+                formatPercent(m.fundingRate),
+                `$${formatUsd(m.volume24h)}`,
+                `$${formatUsd(m.openInterest)}`,
+                String(m.maxLeverage) + "x",
+              ]);
+            }
+          } catch (err) {
+            errors[ex] = err instanceof Error ? err.message : String(err);
+          }
+        }));
+
+        // Sort by symbol name
+        allRows.sort((a, b) => a[0].localeCompare(b[0]));
+
+        if (isJson()) {
+          const grouped: Record<string, unknown[]> = {};
+          await Promise.all(EXCHANGES.map(async (ex) => {
+            try {
+              const adapter = await getAdapterForExchange(ex);
+              grouped[ex] = await adapter.getMarkets();
+            } catch { /* skip */ }
+          }));
+          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }));
+        }
+
+        console.log(
+          makeTable(
+            ["Symbol", "Exch", "Mark", "Index", "Funding", "24h Vol", "OI", "Max Lev"],
+            allRows
+          )
+        );
+        for (const [ex, msg] of Object.entries(errors)) {
+          console.log(chalk.gray(`  ${ex}: ${msg}`));
+        }
+        return;
+      }
+
+      // Single exchange mode
       const adapter = await getAdapter();
       const markets = await adapter.getMarkets();
       if (isJson()) return printJson(jsonOk(markets));
@@ -41,6 +99,48 @@ export function registerMarketCommands(
     .command("prices")
     .description("Get current prices for all markets")
     .action(async () => {
+      const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
+
+      if (!explicitExchange && getAdapterForExchange) {
+        const allRows: string[][] = [];
+        const errors: Record<string, string> = {};
+
+        await Promise.all(EXCHANGES.map(async (ex) => {
+          try {
+            const adapter = await getAdapterForExchange(ex);
+            const markets = await adapter.getMarkets();
+            for (const m of markets) {
+              allRows.push([
+                chalk.white.bold(m.symbol),
+                chalk.gray(ex.slice(0, 3).toUpperCase()),
+                `$${formatUsd(m.markPrice)}`,
+                `$${formatUsd(m.indexPrice)}`,
+                formatPercent(m.fundingRate),
+              ]);
+            }
+          } catch (err) {
+            errors[ex] = err instanceof Error ? err.message : String(err);
+          }
+        }));
+
+        allRows.sort((a, b) => a[0].localeCompare(b[0]));
+
+        if (isJson()) {
+          const grouped: Record<string, unknown[]> = {};
+          await Promise.all(EXCHANGES.map(async (ex) => {
+            try {
+              const adapter = await getAdapterForExchange(ex);
+              grouped[ex] = await adapter.getMarkets();
+            } catch { /* skip */ }
+          }));
+          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }));
+        }
+
+        console.log(makeTable(["Symbol", "Exch", "Mark", "Index", "Funding"], allRows));
+        for (const [ex, msg] of Object.entries(errors)) console.log(chalk.gray(`  ${ex}: ${msg}`));
+        return;
+      }
+
       const adapter = await getAdapter();
 
       if (adapter instanceof PacificaAdapter) {

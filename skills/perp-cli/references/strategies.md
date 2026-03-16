@@ -405,8 +405,8 @@ Rules of thumb:
 
 Each exchange holds its own separate balance. Before entering any arb:
 ```bash
-perp --json -e <EX_A> account info           # check available balance on exchange A
-perp --json -e <EX_B> account info           # check available balance on exchange B
+perp --json -e <EX_A> account balance           # check available balance on exchange A
+perp --json -e <EX_B> account balance           # check available balance on exchange B
 ```
 
 **Size each leg to fit the available balance on that exchange:**

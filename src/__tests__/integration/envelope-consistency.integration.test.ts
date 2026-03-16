@@ -179,9 +179,9 @@ describe("JSON Envelope Consistency", { timeout: 30000 }, () => {
       expect(data.asks).toBeDefined();
     });
 
-    it("account info: success envelope with balance", () => {
-      const { stdout } = runCliSafe("--json -e hyperliquid account info");
-      const env = validateEnvelope(stdout, "account info");
+    it("account balance: success envelope with balance", () => {
+      const { stdout } = runCliSafe("--json -e hyperliquid account balance");
+      const env = validateEnvelope(stdout, "account balance");
       expect(env.ok).toBe(true);
       const data = env.data as Record<string, unknown>;
       expect(data.equity).toBeDefined();

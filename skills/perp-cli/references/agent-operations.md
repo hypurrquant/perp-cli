@@ -17,7 +17,7 @@ perp --json wallet generate evm             # generate EVM wallet
 perp --json wallet generate solana          # generate Solana wallet
 perp --json wallet show                     # check configured wallets
 perp --json wallet balance                  # on-chain USDC balances
-perp --json -e <EX> account info            # exchange account info
+perp --json -e <EX> account balance            # exchange account balance
 perp --json -e <EX> account positions       # open positions
 perp --json -e <EX> market list             # available markets
 perp --json -e <EX> trade market ...        # execute trade
@@ -46,7 +46,7 @@ perp --json wallet show
 # → check "ok": true and address appears
 
 # 4. Check balance
-perp --json -e hl account info
+perp --json -e hl account balance
 # → if balance is 0, tell user to deposit USDC
 
 # 5. Ready to trade
@@ -68,8 +68,8 @@ perp --json wallet show
 # → should show both exchanges with addresses
 
 # 3. Check balances on both
-perp --json -e hl account info
-perp --json -e pac account info
+perp --json -e hl account balance
+perp --json -e pac account balance
 
 # 4. If one side needs funding, bridge USDC
 perp --json bridge quote --from solana --to arbitrum --amount 500
@@ -115,7 +115,7 @@ Aliases for exchange names:
 ### Check On-Chain vs Exchange Balance
 ```bash
 perp --json wallet balance               # on-chain USDC in your wallet
-perp --json -e hl account info           # USDC deposited on exchange
+perp --json -e hl account balance           # USDC deposited on exchange
 ```
 
 **On-chain balance ≠ exchange balance.** USDC in your wallet must be deposited to the exchange before trading.
@@ -237,7 +237,7 @@ Error case:
 
 ### Safe to retry (idempotent):
 - `wallet show`, `wallet balance` — read-only
-- `account info`, `account positions`, `account orders` — read-only
+- `account balance`, `account positions`, `account orders` — read-only
 - `market list`, `market mid`, `market book` — read-only
 - `arb scan` — read-only (`arb rates` is deprecated)
 - `portfolio`, `risk overview` — read-only
@@ -279,7 +279,7 @@ Symbols are auto-resolved by the CLI. **Always use bare symbols** (e.g., `BTC`, 
 
 1. **Using `perp init`** — interactive, will hang forever. Use `wallet set` instead.
 2. **Forgetting `--json`** — output becomes unparseable human text.
-3. **Trading with zero balance** — check `account info` first, tell user to deposit.
+3. **Trading with zero balance** — check `account balance` first, tell user to deposit.
 4. **Retrying a trade without checking** — leads to double positions. Always check `account positions` after a trade, even if it seemed to fail.
 5. **Bridging without quoting** — always run `bridge quote` first to show the user fees and estimated time.
 6. **Assuming deposit is instant** — after `bridge send`, wait for `bridge status` to confirm completion before depositing to the destination exchange.

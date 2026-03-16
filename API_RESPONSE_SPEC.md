@@ -144,7 +144,7 @@ interface Kline {
 ### Account
 
 ```typescript
-// perp --json account info
+// perp --json account balance
 // perp --json account balance
 interface Balance {
   equity: string;          // total account value
@@ -420,7 +420,7 @@ const markets = perp<MarketInfo[]>(["market", "list"]);
 
 ```bash
 # Get equity
-perp --json account info | jq -r '.data.equity'
+perp --json account balance | jq -r '.data.equity'
 
 # List profitable positions
 perp --json account positions | jq '.data[] | select(.unrealizedPnl | tonumber > 0)'

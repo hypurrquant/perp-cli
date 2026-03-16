@@ -53,8 +53,8 @@ else
 fi
 
 # 2. Balance check on both exchanges
-LONG_BAL=$($PERP --json -e "$LONG_EX" account info 2>/dev/null | jq -r '.data.available // .data.equity // "0"')
-SHORT_BAL=$($PERP --json -e "$SHORT_EX" account info 2>/dev/null | jq -r '.data.available // .data.equity // "0"')
+LONG_BAL=$($PERP --json -e "$LONG_EX" account balance 2>/dev/null | jq -r '.data.available // .data.equity // "0"')
+SHORT_BAL=$($PERP --json -e "$SHORT_EX" account balance 2>/dev/null | jq -r '.data.available // .data.equity // "0"')
 
 NEEDED=$(echo "$SIZE" | awk '{print $1}')
 if (( $(echo "$LONG_BAL < $NEEDED" | bc -l 2>/dev/null || echo 1) )); then

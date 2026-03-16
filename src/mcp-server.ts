@@ -2,7 +2,7 @@
 /**
  * MCP (Model Context Protocol) server for perp-cli.
  *
- * Read-only advisor mode: provides market data, account info, and CLI command suggestions.
+ * Read-only advisor mode: provides market data, account balance, and CLI command suggestions.
  * Does NOT execute trades directly — instead suggests CLI commands for the user to run.
  * Adapters are created lazily from environment variables.
  */
@@ -360,7 +360,7 @@ server.tool(
         const size = extractNumber(g) || "<size>";
         steps.push(
           { step: 1, command: `perp -e ${ex} --json market book ${symbol}`, description: `Check ${symbol} orderbook and liquidity` },
-          { step: 2, command: `perp -e ${ex} --json account info`, description: "Check available balance and margin" },
+          { step: 2, command: `perp -e ${ex} --json account balance`, description: "Check available balance and margin" },
           { step: 3, command: `perp -e ${ex} --json trade check ${symbol} buy ${size}`, description: "Pre-flight validation (dry run)" },
           { step: 4, command: `perp -e ${ex} --json trade market ${symbol} buy ${size}`, description: `Buy ${size} ${symbol} at market`, dangerous: true },
           { step: 5, command: `perp -e ${ex} --json account positions`, description: "Verify position opened" },
@@ -370,7 +370,7 @@ server.tool(
         const size = extractNumber(g) || "<size>";
         steps.push(
           { step: 1, command: `perp -e ${ex} --json market book ${symbol}`, description: `Check ${symbol} orderbook and liquidity` },
-          { step: 2, command: `perp -e ${ex} --json account info`, description: "Check available balance and margin" },
+          { step: 2, command: `perp -e ${ex} --json account balance`, description: "Check available balance and margin" },
           { step: 3, command: `perp -e ${ex} --json trade check ${symbol} sell ${size}`, description: "Pre-flight validation (dry run)" },
           { step: 4, command: `perp -e ${ex} --json trade market ${symbol} sell ${size}`, description: `Sell ${size} ${symbol} at market`, dangerous: true },
           { step: 5, command: `perp -e ${ex} --json account positions`, description: "Verify position opened" },
@@ -381,7 +381,7 @@ server.tool(
         const side = g.includes("sell") || g.includes("short") ? "sell" : "buy";
         steps.push(
           { step: 1, command: `perp -e ${ex} --json market book ${symbol}`, description: `Check ${symbol} orderbook for price levels` },
-          { step: 2, command: `perp -e ${ex} --json account info`, description: "Check available balance" },
+          { step: 2, command: `perp -e ${ex} --json account balance`, description: "Check available balance" },
           { step: 3, command: `perp -e ${ex} --json trade limit ${symbol} ${side} <price> ${size}`, description: `Place limit ${side} order`, dangerous: true },
           { step: 4, command: `perp -e ${ex} --json account orders`, description: "Verify order placed" },
         );
@@ -416,7 +416,7 @@ server.tool(
         const side = g.includes("sell") || g.includes("short") ? "sell" : "buy";
         steps.push(
           { step: 1, command: `perp -e ${ex} --json market book ${symbol}`, description: "Check current prices" },
-          { step: 2, command: `perp -e ${ex} --json account info`, description: "Check available balance" },
+          { step: 2, command: `perp -e ${ex} --json account balance`, description: "Check available balance" },
           { step: 3, command: `perp -e ${ex} --json trade scale-in ${symbol} ${side} --levels '<price1>:<size>,<price2>:<size>'`, description: "Place scaled entry orders at multiple levels", dangerous: true },
         );
       } else if (g.includes("tpsl") || g.includes("tp/sl") || g.includes("tp sl") || (g.includes("take profit") && g.includes("stop loss"))) {
@@ -445,7 +445,7 @@ server.tool(
         const side = g.includes("sell") || g.includes("short") ? "sell" : "buy";
         steps.push(
           { step: 1, command: `perp -e ${ex} --json market book ${symbol}`, description: `Check ${symbol} orderbook depth` },
-          { step: 2, command: `perp -e ${ex} --json account info`, description: "Check available balance" },
+          { step: 2, command: `perp -e ${ex} --json account balance`, description: "Check available balance" },
           { step: 3, command: `perp -e ${ex} --json trade split ${symbol} ${side} ${amount}`, description: `Split ${side} $${amount} ${symbol} into depth-based slices`, dangerous: true },
           { step: 4, command: `perp -e ${ex} --json account positions`, description: "Verify position opened" },
         );
@@ -454,7 +454,7 @@ server.tool(
         const size = extractNumber(g) || "<size>";
         const side = g.includes("sell") || g.includes("short") ? "sell" : "buy";
         steps.push(
-          { step: 1, command: `perp -e ${ex} --json account info`, description: "Check available balance" },
+          { step: 1, command: `perp -e ${ex} --json account balance`, description: "Check available balance" },
           { step: 2, command: `perp -e ${ex} --json trade twap ${symbol} ${side} ${size} <duration>`, description: `TWAP ${side} ${size} ${symbol} over duration`, dangerous: true },
         );
       } else if (g.includes("reduce")) {
@@ -509,7 +509,7 @@ server.tool(
           const amount = extractNumber(g) || "<amount>";
           const side = g.includes("sell") || g.includes("short") ? "sell" : "buy";
           steps.push(
-            { step: 1, command: `perp -e ${ex} --json account info`, description: "Check available balance" },
+            { step: 1, command: `perp -e ${ex} --json account balance`, description: "Check available balance" },
             { step: 2, command: `perp -e ${ex} --json bot quick-dca ${symbol} ${side} ${amount} <interval>`, description: "Start DCA bot", dangerous: true },
             { step: 3, command: "perp --json jobs list", description: "Verify bot is running" },
           );
@@ -609,12 +609,12 @@ server.tool(
         steps.push(
           { step: 1, command: "perp --json wallet balance", description: "Check wallet balance" },
           { step: 2, command: `perp --json funds deposit ${ex} ${amount}`, description: `Deposit $${amount} to ${ex}`, dangerous: true },
-          { step: 3, command: `perp -e ${ex} --json account info`, description: "Verify deposit arrived" },
+          { step: 3, command: `perp -e ${ex} --json account balance`, description: "Verify deposit arrived" },
         );
       } else if (g.includes("withdraw")) {
         const amount = extractNumber(g) || "<amount>";
         steps.push(
-          { step: 1, command: `perp -e ${ex} --json account info`, description: "Check available balance" },
+          { step: 1, command: `perp -e ${ex} --json account balance`, description: "Check available balance" },
           { step: 2, command: `perp --json funds withdraw ${ex} ${amount}`, description: `Withdraw $${amount} from ${ex}`, dangerous: true },
           { step: 3, command: "perp --json wallet balance", description: "Verify withdrawal received" },
         );
@@ -748,7 +748,7 @@ server.tool(
           relatedCommands: [
             `perp trade check ${symbol} ${side} ${sizeOrPrice || "<size>"}`,
             `perp market book ${symbol}`,
-            `perp account info`,
+            `perp account balance`,
           ],
         };
       } else if (category === "trade" && sub === "close") {
@@ -816,7 +816,7 @@ server.tool(
             ? ["Places multiple reduce-only limit orders", "Total percentage should not exceed 100%"]
             : ["Places multiple limit orders — total size uses margin", "Review available balance before placing"],
           category: "write",
-          relatedCommands: isTP ? ["perp account positions", "perp trade tpsl"] : ["perp account info", "perp market book"],
+          relatedCommands: isTP ? ["perp account positions", "perp trade tpsl"] : ["perp account balance", "perp market book"],
         };
       } else if (category === "trade" && sub === "twap") {
         explanation = {
@@ -830,7 +830,7 @@ server.tool(
           ],
           risks: ["Executes real trades over time — total size will be filled", "Market may move during execution"],
           category: "write",
-          relatedCommands: ["perp account info", "perp trade cancel-twap"],
+          relatedCommands: ["perp account balance", "perp trade cancel-twap"],
         };
       } else if (category === "trade" && (sub === "trailing-stop" || sub === "pnl-track")) {
         explanation = {
@@ -970,7 +970,7 @@ server.tool(
           parameters: [{ name: "amount", value: args[3] || args[2], description: "Amount in USDC" }],
           risks: ["Moves real funds — verify amount before executing"],
           category: "write",
-          relatedCommands: ["perp wallet balance", "perp account info"],
+          relatedCommands: ["perp wallet balance", "perp account balance"],
         };
       } else if (category === "risk") {
         explanation = {
@@ -1195,7 +1195,7 @@ server.resource(
         account: {
           description: "Account data (read-only)",
           subcommands: {
-            info: { usage: "perp account info", description: "Balance, equity, margin, PnL" },
+            info: { usage: "perp account balance", description: "Balance, equity, margin, PnL" },
             positions: { usage: "perp account positions", description: "Open positions" },
             orders: { usage: "perp account orders", description: "Open/pending orders" },
             history: { usage: "perp account history", description: "Order history" },
