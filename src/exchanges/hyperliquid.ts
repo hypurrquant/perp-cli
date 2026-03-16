@@ -466,6 +466,36 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     }
   }
 
+  /**
+   * Normalize trailing zeros from price ('p') and size ('s') string fields
+   * in an action object, recursively. Matches the SDK's normalizeTrailingZeros.
+   *
+   * The HL validator normalizes these fields before hashing; if we hash without
+   * normalizing, the recovered signer address won't match → "User or API Wallet
+   * does not exist" error.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private static _normalizeAction(obj: any): any {
+    if (!obj || typeof obj !== "object") return obj;
+    if (Array.isArray(obj)) {
+      return obj.map(item => HyperliquidAdapter._normalizeAction(item));
+    }
+    const result = { ...obj };
+    for (const key in result) {
+      if (!Object.prototype.hasOwnProperty.call(result, key)) continue;
+      const value = result[key];
+      if (value && typeof value === "object") {
+        result[key] = HyperliquidAdapter._normalizeAction(value);
+      } else if ((key === "p" || key === "s") && typeof value === "string") {
+        let v = value;
+        if (v.includes(".")) v = v.replace(/\.?0+$/, "");
+        if (v === "-0") v = "0";
+        result[key] = v;
+      }
+    }
+    return result;
+  }
+
   private async _signAndSendAction(action: Record<string, unknown>): Promise<unknown> {
     this.ensureSigner();
     const { encode } = await import("@msgpack/msgpack");
@@ -476,9 +506,14 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       ? "https://api.hyperliquid.xyz"
       : "https://api.hyperliquid-testnet.xyz";
 
+    // Normalize trailing zeros from 'p' and 's' fields before hashing.
+    // The HL validator does the same; without this, the hash differs and the
+    // recovered signer address is wrong → "User or API Wallet does not exist".
+    const normalizedAction = HyperliquidAdapter._normalizeAction(action);
+
     // Sign L1 action (replicates SDK's signL1Action)
     const nonce = Date.now();
-    const msgPackBytes = encode(action);
+    const msgPackBytes = encode(normalizedAction);
     const data = new Uint8Array(msgPackBytes.length + 9); // +8 nonce +1 vault flag
     data.set(msgPackBytes);
     const view = new DataView(data.buffer);
@@ -787,8 +822,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       r: opts?.reduceOnly ?? true,
       t: {
         trigger: {
-          triggerPx: trimZeros(roundedTrigger),
           isMarket: opts?.isMarket ?? true,
+          triggerPx: trimZeros(roundedTrigger),
           tpsl,
         },
       },

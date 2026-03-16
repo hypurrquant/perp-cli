@@ -336,8 +336,10 @@ export async function handleBasisScan(isJson: () => boolean, opts: { minBasis: s
   if (!isJson()) console.log(chalk.cyan("  Fetching prices for basis calculation...\n"));
   const [pacRates, hlRates, ltRates] = await Promise.all([fetchPacificaRates(), fetchHyperliquidRates(), fetchLighterRates()]);
   const exchangePrices = new Map<string, Map<string, number>>();
+  const filterSymbol = opts.symbol?.toUpperCase();
   for (const r of [...pacRates, ...hlRates, ...ltRates]) {
     if (r.markPrice <= 0) continue;
+    if (filterSymbol && r.symbol.toUpperCase() !== filterSymbol) continue;
     if (!exchangePrices.has(r.symbol)) exchangePrices.set(r.symbol, new Map());
     exchangePrices.get(r.symbol)!.set(r.exchange, r.markPrice);
   }

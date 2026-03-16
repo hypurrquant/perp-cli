@@ -675,7 +675,7 @@ export class LighterAdapter implements ExchangeAdapter {
       // /recentTrades returns is_maker_ask: maker was asking → taker bought
       side: t.is_maker_ask ? "buy" as const : "sell" as const,
       price: String(t.price ?? "0"),
-      size: String(t.base_amount ?? t.amount ?? ""),
+      size: String(t.size ?? t.base_amount ?? t.amount ?? ""),
       fee: String(t.fee ?? "0"),
     }));
   }

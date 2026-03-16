@@ -329,20 +329,33 @@ export function registerTradeCommands(
 
   trade
     .command("cancel <symbolOrOrderId> [orderId]")
-    .description("Cancel an order by orderId (auto-detects symbol), or by symbol + orderId")
+    .description("Cancel order(s) — by orderId, by symbol + orderId, or by symbol name (cancels all orders for that symbol)")
     .action(async (symbolOrOrderId: string, orderId?: string) => {
       const adapter = await getAdapter();
 
-      let symbol: string;
-      let oid: string;
-
       if (orderId) {
         // cancel <symbol> <orderId>
-        symbol = symbolOrOrderId.toUpperCase();
-        oid = orderId;
-      } else {
+        const symbol = symbolOrOrderId.toUpperCase();
+        const oid = orderId;
+        if (dryRunGuard("cancel", { exchange: adapter.name, symbol, orderId: oid })) return;
+        try {
+          const result = await adapter.cancelOrder(symbol, oid);
+          logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "success", dryRun: false, meta: { orderId: oid } });
+          if (isJson()) return printJson(jsonOk(result));
+          console.log(chalk.green(`\n  Order ${oid} cancelled on ${adapter.name}.\n`));
+        } catch (err) {
+          logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err), meta: { orderId: oid } });
+          throw err;
+        }
+        return;
+      }
+
+      // Single argument — is it an orderId (numeric) or a symbol name?
+      const isNumeric = /^\d+$/.test(symbolOrOrderId);
+
+      if (isNumeric) {
         // cancel <orderId> — look up symbol from open orders
-        oid = symbolOrOrderId;
+        const oid = symbolOrOrderId;
         const orders = await adapter.getOpenOrders();
         const match = orders.find((o) => String(o.orderId) === oid);
         if (!match) {
@@ -351,18 +364,38 @@ export function registerTradeCommands(
           console.log(chalk.yellow(`\n  ${err}\n`));
           return;
         }
-        symbol = match.symbol;
-      }
-
-      if (dryRunGuard("cancel", { exchange: adapter.name, symbol, orderId: oid })) return;
-      try {
-        const result = await adapter.cancelOrder(symbol, oid);
-        logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "success", dryRun: false, meta: { orderId: oid } });
-        if (isJson()) return printJson(jsonOk(result));
-        console.log(chalk.green(`\n  Order ${oid} cancelled on ${adapter.name}.\n`));
-      } catch (err) {
-        logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err), meta: { orderId: oid } });
-        throw err;
+        const symbol = match.symbol;
+        if (dryRunGuard("cancel", { exchange: adapter.name, symbol, orderId: oid })) return;
+        try {
+          const result = await adapter.cancelOrder(symbol, oid);
+          logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "success", dryRun: false, meta: { orderId: oid } });
+          if (isJson()) return printJson(jsonOk(result));
+          console.log(chalk.green(`\n  Order ${oid} cancelled on ${adapter.name}.\n`));
+        } catch (err) {
+          logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err), meta: { orderId: oid } });
+          throw err;
+        }
+      } else {
+        // cancel <symbol> — cancel all open orders for this symbol
+        const symbol = symbolOrOrderId.toUpperCase();
+        const orders = await adapter.getOpenOrders();
+        const matching = orders.filter((o) => symbolMatch(o.symbol, symbol));
+        if (matching.length === 0) {
+          const err = `No open orders found for ${symbol}`;
+          if (isJson()) return printJson(jsonOk({ cancelled: false, symbol, reason: err }));
+          console.log(chalk.yellow(`\n  ${err}\n`));
+          return;
+        }
+        if (dryRunGuard("cancel_by_symbol", { exchange: adapter.name, symbol, count: matching.length })) return;
+        try {
+          const result = await adapter.cancelAllOrders(symbol);
+          logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "success", dryRun: false, meta: { bySymbol: true, count: matching.length } });
+          if (isJson()) return printJson(jsonOk({ cancelled: true, symbol, count: matching.length, result }));
+          console.log(chalk.green(`\n  ${matching.length} order(s) for ${symbol} cancelled on ${adapter.name}.\n`));
+        } catch (err) {
+          logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err), meta: { bySymbol: true } });
+          throw err;
+        }
       }
     });
 

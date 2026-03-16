@@ -142,7 +142,7 @@ function buildSummary(snapshots: ExchangeSnapshot[]): PortfolioSummary {
 }
 
 function pac(adapter: ExchangeAdapter): PacificaAdapter {
-  if (!(adapter instanceof PacificaAdapter)) throw new Error("This command requires --exchange pacifica");
+  if (!(adapter instanceof PacificaAdapter)) throw new Error("Market settings are only available on Pacifica.");
   return adapter;
 }
 
