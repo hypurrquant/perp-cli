@@ -320,7 +320,14 @@ export function registerAccountCommands(
             exchanges: results,
             errors: Object.keys(errors).length > 0 ? errors : undefined,
             totalEquity: results.reduce((s, r) => s + Number(r.perp.equity), 0),
-            totalSpotValueUsd: results.reduce((s, r) => s + r.totalSpotValueUsd, 0),
+            totalSpotValueUsd: results.reduce((s, r) => {
+              if (r.unifiedAccount) {
+                return s + r.spot
+                  .filter(b => b.token.replace(/-SPOT$/i, "").toUpperCase() !== "USDC")
+                  .reduce((ss, b) => ss + (b.valueUsd ?? 0), 0);
+              }
+              return s + r.totalSpotValueUsd;
+            }, 0),
             totalAccountValueUsd: grandTotal,
             totalFunding24h: results.reduce((s, r) => s + r.funding24h, 0),
           }));

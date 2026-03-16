@@ -316,6 +316,24 @@ export class HyperliquidAdapter implements ExchangeAdapter {
 
   async getOpenOrders(): Promise<ExchangeOrder[]> {
     this.ensureAddress();
+
+    if (this._dex) {
+      // HIP-3 dex: use frontendOpenOrders with dex parameter
+      const orders = await this._infoPost({
+        type: "frontendOpenOrders", user: this._address, dex: this._dex,
+      }) as Record<string, unknown>[];
+      return (orders ?? []).map((o) => ({
+        orderId: String(o.oid ?? ""),
+        symbol: String(o.coin ?? ""),
+        side: String(o.side) === "B" ? ("buy" as const) : String(o.side) === "A" ? ("sell" as const) : (String(o.side).toLowerCase() as "buy" | "sell"),
+        price: String(o.limitPx ?? "0"),
+        size: String(o.sz ?? "0"),
+        filled: "0",
+        status: "open",
+        type: "limit",
+      }));
+    }
+
     const orders = await this.sdk.info.getUserOpenOrders(this._address);
     return (orders ?? []).map((o) => ({
       orderId: String(o.oid ?? ""),
