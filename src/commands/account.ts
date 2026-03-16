@@ -607,7 +607,7 @@ export function registerAccountCommands(
       const settings = await p.sdk.getAccountSettings(p.publicKey);
       if (isJson()) return printJson(jsonOk(settings));
 
-      if (settings.length === 0) {
+      if (!Array.isArray(settings) || settings.length === 0) {
         console.log(chalk.gray("\n  No market settings configured.\n"));
         return;
       }
