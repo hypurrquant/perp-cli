@@ -1840,21 +1840,34 @@ export function registerArbAutoCommands(
         }
       }
 
-      // 2b. Verify spot USDC balance is sufficient after transfer
+      // 2b. Verify balance is sufficient after transfer
       try {
-        const spotBalances = await spotAdapter.getSpotBalances();
-        const spotUsdc = spotBalances.find(b => b.token === "USDC_SPOT" || b.token === "USDC");
-        const spotUsdcAvail = Number(spotUsdc?.available ?? 0);
-        // Also check perp balance for the perp leg
+        // HL unified account: perp equity IS spot balance (shared)
+        const isUnified = spotExch === "hyperliquid";
+        let spotUsdcAvail: number;
+        if (isUnified) {
+          // Unified account: perp adapter's available balance = spot purchasing power
+          const hlBalance = await perpAdapter.getBalance();
+          spotUsdcAvail = Number(hlBalance?.available ?? 0);
+        } else {
+          const spotBalances = await spotAdapter.getSpotBalances();
+          const spotUsdc = spotBalances.find(b => b.token === "USDC_SPOT" || b.token === "USDC");
+          spotUsdcAvail = Number(spotUsdc?.available ?? 0);
+        }
+        // Check perp balance (for perp leg margin)
         const perpBalance = await perpAdapter.getBalance();
         const perpAvail = Number(perpBalance?.available ?? 0);
 
-        if (spotUsdcAvail < sizeUsd * 0.9) {
-          const msg = `Insufficient spot USDC: have $${spotUsdcAvail.toFixed(2)}, need ~$${sizeUsd}. Transfer may have failed.`;
-          if (isJson()) return printJson(jsonOk({ error: msg, spotUsdcAvail, required: sizeUsd }));
+        // For unified accounts (same exchange), total needed = spotSize + perpMargin from same pool
+        const totalNeeded = spotExch === perpExch ? sizeUsd * 1.5 : sizeUsd;
+        const checkBalance = spotExch === perpExch ? spotUsdcAvail : spotUsdcAvail;
+
+        if (checkBalance < totalNeeded * 0.9) {
+          const msg = `Insufficient balance: have $${spotUsdcAvail.toFixed(2)}, need ~$${totalNeeded.toFixed(0)} (spot + perp margin)`;
+          if (isJson()) return printJson(jsonOk({ error: msg, spotUsdcAvail, required: totalNeeded }));
           console.log(chalk.red(`  ${msg}`)); return;
         }
-        if (perpAvail < sizeUsd * 0.5) {
+        if (spotExch !== perpExch && perpAvail < sizeUsd * 0.5) {
           const msg = `Insufficient perp balance: have $${perpAvail.toFixed(2)} available on ${perpExch}, need margin for ~$${sizeUsd}`;
           if (isJson()) return printJson(jsonOk({ error: msg, perpAvail, required: sizeUsd }));
           console.log(chalk.red(`  ${msg}`)); return;

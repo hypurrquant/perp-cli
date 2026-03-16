@@ -134,12 +134,11 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
 
   async getSpotOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
     await this.init();
-    const { spotIndex } = this._resolveBase(symbol);
-    // HL spot L2 book uses the universe name, which is like "ETH/USDC" internally
-    // But the API takes coin=<name>, where name is from spotMeta universe
+    const { base } = this._resolveBase(symbol);
+    // HL spot L2 book uses "BASE/USDC" as coin name
     const book = await this._infoPost({
       type: "l2Book",
-      coin: `@${spotIndex}`,
+      coin: `${base}/USDC`,
     }) as { levels?: [[Record<string, string>], [Record<string, string>]] };
 
     const levels = book?.levels ?? [[], []];
