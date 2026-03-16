@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "../exchanges/interface.js";
+import type { ExchangeAdapter, ExchangeBalance, ExchangePosition, ExchangeOrder } from "../exchanges/interface.js";
 import { PacificaAdapter } from "../exchanges/pacifica.js";
 import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk, jsonError, symbolMatch, withJsonErrors } from "../utils.js";
@@ -418,10 +418,33 @@ export function registerAccountCommands(
       console.log();
     });
 
+  // ── HIP-3 dex helper: fetch data from all deployed dexes in parallel ──
+
+  async function fetchHip3Data<T>(
+    hlAdapter: HyperliquidAdapter,
+    fetcher: (dexAdapter: HyperliquidAdapter) => Promise<T[]>,
+  ): Promise<{ dex: string; items: T[] }[]> {
+    const dexes = await hlAdapter.listDeployedDexes();
+    const results = await Promise.allSettled(
+      dexes.map(async (d) => {
+        // Clone adapter with dex set
+        const dexAdapter = Object.create(hlAdapter) as HyperliquidAdapter;
+        dexAdapter.setDex(d.name);
+        const items = await fetcher(dexAdapter);
+        return { dex: d.name, items };
+      }),
+    );
+    return results
+      .filter((r): r is PromiseFulfilledResult<{ dex: string; items: T[] }> => r.status === "fulfilled")
+      .map(r => r.value)
+      .filter(r => r.items.length > 0);
+  }
+
   account
     .command("positions")
     .description("Show open positions")
-    .action(async () => {
+    .option("--hip3", "Include HIP-3 dex positions (Hyperliquid)")
+    .action(async (opts: { hip3?: boolean }) => {
       const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
 
       if (!explicitExchange && getAdapterForExchange) {
@@ -445,6 +468,25 @@ export function registerAccountCommands(
                 `${p.leverage}x`,
               ]);
             }
+            // --hip3: fetch HIP-3 dex positions for HL
+            if (opts.hip3 && ex === "hyperliquid" && adapter instanceof HyperliquidAdapter) {
+              const hip3 = await fetchHip3Data(adapter, a => a.getPositions());
+              for (const { dex, items } of hip3) {
+                for (const p of items) {
+                  allRows.push([
+                    chalk.white.bold(p.symbol),
+                    chalk.magenta(dex),
+                    p.side === "long" ? chalk.green("LONG") : chalk.red("SHORT"),
+                    p.size,
+                    `$${formatUsd(p.entryPrice)}`,
+                    `$${formatUsd(p.markPrice)}`,
+                    p.liquidationPrice === "N/A" ? chalk.gray("N/A") : `$${formatUsd(p.liquidationPrice)}`,
+                    formatPnl(p.unrealizedPnl),
+                    `${p.leverage}x`,
+                  ]);
+                }
+              }
+            }
           } catch (err) {
             errors[ex] = err instanceof Error ? err.message : String(err);
           }
@@ -456,6 +498,10 @@ export function registerAccountCommands(
             try {
               const adapter = await getAdapterForExchange(ex);
               grouped[ex] = await adapter.getPositions();
+              if (opts.hip3 && ex === "hyperliquid" && adapter instanceof HyperliquidAdapter) {
+                const hip3 = await fetchHip3Data(adapter, a => a.getPositions());
+                for (const { dex, items } of hip3) grouped[`hip3:${dex}`] = items;
+              }
             } catch { /* skip */ }
           }));
           return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }));
@@ -472,11 +518,26 @@ export function registerAccountCommands(
         return;
       }
 
+      // Single exchange mode
       const adapter = await getAdapter();
       const positions = await adapter.getPositions();
-      if (isJson()) return printJson(jsonOk(positions));
 
-      if (positions.length === 0) {
+      // --hip3: append HIP-3 dex positions
+      const hip3Positions: { dex: string; items: ExchangePosition[] }[] = [];
+      if (opts.hip3 && adapter instanceof HyperliquidAdapter) {
+        hip3Positions.push(...await fetchHip3Data(adapter, a => a.getPositions()));
+      }
+
+      if (isJson()) {
+        if (hip3Positions.length > 0) {
+          const hip3Map: Record<string, ExchangePosition[]> = {};
+          for (const { dex, items } of hip3Positions) hip3Map[dex] = items;
+          return printJson(jsonOk({ main: positions, hip3: hip3Map }));
+        }
+        return printJson(jsonOk(positions));
+      }
+
+      if (positions.length === 0 && hip3Positions.length === 0) {
         console.log(chalk.gray("\n  No open positions.\n"));
         return;
       }
@@ -491,15 +552,31 @@ export function registerAccountCommands(
         formatPnl(p.unrealizedPnl),
         `${p.leverage}x`,
       ]);
-      console.log(
-        makeTable(["Symbol", "Side", "Size", "Entry", "Mark", "Liq", "PnL", "Lev"], rows)
-      );
+      if (rows.length > 0) {
+        console.log(makeTable(["Symbol", "Side", "Size", "Entry", "Mark", "Liq", "PnL", "Lev"], rows));
+      }
+
+      for (const { dex, items } of hip3Positions) {
+        console.log(chalk.magenta.bold(`\n  HIP-3: ${dex}`));
+        const dexRows = items.map((p) => [
+          chalk.white.bold(p.symbol),
+          p.side === "long" ? chalk.green("LONG") : chalk.red("SHORT"),
+          p.size,
+          `$${formatUsd(p.entryPrice)}`,
+          `$${formatUsd(p.markPrice)}`,
+          p.liquidationPrice === "N/A" ? chalk.gray("N/A") : `$${formatUsd(p.liquidationPrice)}`,
+          formatPnl(p.unrealizedPnl),
+          `${p.leverage}x`,
+        ]);
+        console.log(makeTable(["Symbol", "Side", "Size", "Entry", "Mark", "Liq", "PnL", "Lev"], dexRows));
+      }
     });
 
   account
     .command("orders")
     .description("Show open orders")
-    .action(async () => {
+    .option("--hip3", "Include HIP-3 dex orders (Hyperliquid)")
+    .action(async (opts: { hip3?: boolean }) => {
       const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
 
       if (!explicitExchange && getAdapterForExchange) {
@@ -523,6 +600,25 @@ export function registerAccountCommands(
                 o.status,
               ]);
             }
+            // --hip3: fetch HIP-3 dex orders for HL
+            if (opts.hip3 && ex === "hyperliquid" && adapter instanceof HyperliquidAdapter) {
+              const hip3 = await fetchHip3Data(adapter, a => a.getOpenOrders());
+              for (const { dex, items } of hip3) {
+                for (const o of items) {
+                  allRows.push([
+                    o.orderId,
+                    chalk.white.bold(o.symbol),
+                    chalk.magenta(dex),
+                    o.side === "buy" ? chalk.green("BUY") : chalk.red("SELL"),
+                    o.type,
+                    `$${formatUsd(o.price)}`,
+                    o.size,
+                    o.filled,
+                    o.status,
+                  ]);
+                }
+              }
+            }
           } catch (err) {
             errors[ex] = err instanceof Error ? err.message : String(err);
           }
@@ -534,6 +630,10 @@ export function registerAccountCommands(
             try {
               const adapter = await getAdapterForExchange(ex);
               grouped[ex] = await adapter.getOpenOrders();
+              if (opts.hip3 && ex === "hyperliquid" && adapter instanceof HyperliquidAdapter) {
+                const hip3 = await fetchHip3Data(adapter, a => a.getOpenOrders());
+                for (const { dex, items } of hip3) grouped[`hip3:${dex}`] = items;
+              }
             } catch { /* skip */ }
           }));
           return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }));
@@ -550,28 +650,60 @@ export function registerAccountCommands(
         return;
       }
 
+      // Single exchange mode
       const adapter = await getAdapter();
       const orders = await adapter.getOpenOrders();
-      if (isJson()) return printJson(jsonOk(orders));
 
-      if (orders.length === 0) {
+      // --hip3: append HIP-3 dex orders
+      const hip3Orders: { dex: string; items: ExchangeOrder[] }[] = [];
+      if (opts.hip3 && adapter instanceof HyperliquidAdapter) {
+        hip3Orders.push(...await fetchHip3Data(adapter, a => a.getOpenOrders()));
+      }
+
+      if (isJson()) {
+        if (hip3Orders.length > 0) {
+          const hip3Map: Record<string, ExchangeOrder[]> = {};
+          for (const { dex, items } of hip3Orders) hip3Map[dex] = items;
+          return printJson(jsonOk({ main: orders, hip3: hip3Map }));
+        }
+        return printJson(jsonOk(orders));
+      }
+
+      if (orders.length === 0 && hip3Orders.length === 0) {
         console.log(chalk.gray("\n  No open orders.\n"));
         return;
       }
 
-      const rows = orders.map((o) => [
-        o.orderId,
-        chalk.white.bold(o.symbol),
-        o.side === "buy" ? chalk.green("BUY") : chalk.red("SELL"),
-        o.type,
-        `$${formatUsd(o.price)}`,
-        o.size,
-        o.filled,
-        o.status,
-      ]);
-      console.log(
-        makeTable(["ID", "Symbol", "Side", "Type", "Price", "Size", "Filled", "Status"], rows)
-      );
+      if (orders.length > 0) {
+        const rows = orders.map((o) => [
+          o.orderId,
+          chalk.white.bold(o.symbol),
+          o.side === "buy" ? chalk.green("BUY") : chalk.red("SELL"),
+          o.type,
+          `$${formatUsd(o.price)}`,
+          o.size,
+          o.filled,
+          o.status,
+        ]);
+        console.log(
+          makeTable(["ID", "Symbol", "Side", "Type", "Price", "Size", "Filled", "Status"], rows)
+        );
+      }
+
+      for (const { dex, items } of hip3Orders) {
+        console.log(chalk.magenta.bold(`\n  HIP-3: ${dex}`));
+        const dexRows = items.map((o) => [
+          o.orderId,
+          chalk.white.bold(o.symbol),
+          o.side === "buy" ? chalk.green("BUY") : chalk.red("SELL"),
+          o.type,
+          `$${formatUsd(o.price)}`,
+          o.size,
+          o.filled,
+          o.status,
+        ]);
+        console.log(makeTable(["ID", "Symbol", "Side", "Type", "Price", "Size", "Filled", "Status"], dexRows));
+      }
     });
 
   account
