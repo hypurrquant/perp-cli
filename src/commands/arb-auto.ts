@@ -1077,20 +1077,31 @@ export function registerArbAutoCommands(
       const holdDays = parseFloat(opts.holdDays);
       const bridgeCostUsd = parseFloat(opts.bridgeCost);
       const sizeUsd = parseFloat(opts.size);
+      let spotSpreads: Awaited<ReturnType<typeof import("../funding/rates.js").fetchSpotPerpSpreads>>["spreads"] = [];
 
       // ── spot-perp mode ──
       if (opts.mode === "spot-perp" || opts.mode === "all") {
         if (!isJson()) console.log(chalk.cyan("\n  Scanning spot+perp funding opportunities...\n"));
         const { fetchSpotPerpSpreads } = await import("../funding/rates.js");
-        const { spreads: spotSpreads } = await fetchSpotPerpSpreads({ minSpread });
+        ({ spreads: spotSpreads } = await fetchSpotPerpSpreads({ minSpread }));
 
         if (isJson() && opts.mode === "spot-perp") {
-          let result = spotSpreads.map(s => ({
-            mode: "spot-perp" as const, symbol: s.symbol, perpExchange: s.perpExchange,
-            spotExchanges: s.spotExchanges, annualSpreadPct: s.annualSpreadPct,
-            perpFundingRate: s.perpFundingRate, direction: s.direction,
-            markPrice: s.bestMarkPrice, estHourlyIncomeUsd: s.estHourlyIncomeUsd,
-          }));
+          let result = spotSpreads.map(s => {
+            // Use best spot exchange for fee calc; spot+perp same legs as perp-perp cost model
+            const spotEx = s.spotExchanges[0] || "lighter";
+            const rtCost = computeRoundTripCostPct(spotEx, s.perpExchange);
+            // Same-exchange spot+perp → no bridge cost
+            const effectiveBridgeCost = s.spotExchanges.includes(s.perpExchange) ? 0 : bridgeCostUsd;
+            const netSpread = computeNetSpread(s.annualSpreadPct, holdDays, rtCost, effectiveBridgeCost, sizeUsd);
+            return {
+              mode: "spot-perp" as const, symbol: s.symbol, perpExchange: s.perpExchange,
+              spotExchanges: s.spotExchanges, grossSpreadPct: s.annualSpreadPct,
+              netSpreadPct: netSpread, estFeesPct: rtCost,
+              perpFundingRate: s.perpFundingRate, direction: s.direction,
+              markPrice: s.bestMarkPrice, estHourlyIncomeUsd: s.estHourlyIncomeUsd,
+              breakEvenDays: rtCost > 0 ? Math.ceil(rtCost / (s.annualSpreadPct / 365)) : 0,
+            };
+          }).sort((a, b) => b.netSpreadPct - a.netSpreadPct);
           if (opts.top) result = result.slice(0, parseInt(opts.top));
           return printJson(jsonOk(result));
         }
@@ -1099,20 +1110,30 @@ export function registerArbAutoCommands(
           if (spotSpreads.length === 0) {
             console.log(chalk.gray(`  No spot+perp opportunities above ${minSpread}%\n`));
           } else {
-            console.log(chalk.gray(`  ${"SYMBOL".padEnd(8)} ${"SPREAD".padEnd(8)} ${"PERP EX".padEnd(9)} ${"SPOT EX".padEnd(12)} ${"FUND".padEnd(12)} DIRECTION`));
+            console.log(chalk.gray(`  ${"SYMBOL".padEnd(8)} ${"GROSS".padEnd(8)} ${"NET".padEnd(8)} ${"FEES".padEnd(7)} ${"BE".padEnd(5)} ${"PERP".padEnd(5)} ${"SPOT".padEnd(8)} DIRECTION`));
             for (const s of spotSpreads.slice(0, parseInt(opts.top ?? "30"))) {
-              const spreadColor = s.annualSpreadPct >= 30 ? chalk.green : chalk.yellow;
+              const spotEx = s.spotExchanges[0] || "lighter";
+              const rtCost = computeRoundTripCostPct(spotEx, s.perpExchange);
+              const effectiveBridgeCost = s.spotExchanges.includes(s.perpExchange) ? 0 : bridgeCostUsd;
+              const netSpread = computeNetSpread(s.annualSpreadPct, holdDays, rtCost, effectiveBridgeCost, sizeUsd);
+              const breakEvenDays = rtCost > 0 ? Math.ceil(rtCost / (s.annualSpreadPct / 365)) : 0;
+              const grossColor = s.annualSpreadPct >= 30 ? chalk.green : chalk.yellow;
+              const netColor = netSpread >= 20 ? chalk.green : netSpread >= 0 ? chalk.yellow : chalk.red;
               const dir = s.direction === "long-spot-short-perp" ? "Spot+Short" : "Sell+Long";
+              const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
               console.log(
                 `  ${chalk.white.bold(s.symbol.padEnd(8))} ` +
-                `${spreadColor(`${s.annualSpreadPct.toFixed(1)}%`.padEnd(8))} ` +
-                `${s.perpExchange.slice(0, 8).padEnd(9)} ` +
-                `${s.spotExchanges.join(",").slice(0, 11).padEnd(12)} ` +
-                `${(s.perpFundingRate * 100).toFixed(4).padEnd(12)}% ` +
+                `${grossColor(`${s.annualSpreadPct.toFixed(1)}%`.padEnd(8))} ` +
+                `${netColor(`${netSpread.toFixed(1)}%`.padEnd(8))} ` +
+                `${chalk.gray(`${rtCost.toFixed(2)}%`.padEnd(7))} ` +
+                `${chalk.gray(`${breakEvenDays}d`.padEnd(5))} ` +
+                `${exAbbr(s.perpExchange).padEnd(5)} ` +
+                `${s.spotExchanges.map(exAbbr).join(",").padEnd(8)} ` +
                 dir
               );
             }
             console.log(chalk.gray(`\n  ${spotSpreads.length} spot+perp opportunities (spot funding = 0%)`));
+            console.log(chalk.gray(`  Net spread assumes ${holdDays}d hold, $${bridgeCostUsd} bridge, $${sizeUsd} size. BE = break-even days`));
           }
         }
 
@@ -1127,14 +1148,29 @@ export function registerArbAutoCommands(
       const filtered = spreads.filter(s => Math.abs(s.spread) >= minSpread);
 
       if (isJson()) {
-        let enriched = filtered.map(s => {
+        const perpPerp: Record<string, unknown>[] = filtered.map(s => {
           const grossSpread = Math.abs(s.spread);
           const rtCost = computeRoundTripCostPct(s.longExch, s.shortExch);
           const net = computeNetSpread(grossSpread, holdDays, rtCost, bridgeCostUsd, sizeUsd);
           return { mode: "perp-perp" as const, symbol: s.symbol, longExch: s.longExch, shortExch: s.shortExch, markPrice: s.markPrice, grossSpread, netSpread: net, estFeesPct: rtCost };
-        }).sort((a, b) => b.netSpread - a.netSpread);
-        if (opts.top) enriched = enriched.slice(0, parseInt(opts.top));
-        return printJson(jsonOk(enriched));
+        });
+        // Merge spot-perp results if "all" mode
+        const spotPerp: Record<string, unknown>[] = (opts.mode === "all" && spotSpreads) ? spotSpreads.map(s => {
+          const spotEx = s.spotExchanges[0] || "lighter";
+          const rtCost = computeRoundTripCostPct(spotEx, s.perpExchange);
+          const effectiveBridgeCost = s.spotExchanges.includes(s.perpExchange) ? 0 : bridgeCostUsd;
+          const net = computeNetSpread(s.annualSpreadPct, holdDays, rtCost, effectiveBridgeCost, sizeUsd);
+          return {
+            mode: "spot-perp" as const, symbol: s.symbol, perpExchange: s.perpExchange,
+            spotExchanges: s.spotExchanges, grossSpread: s.annualSpreadPct,
+            netSpread: net, estFeesPct: rtCost,
+            perpFundingRate: s.perpFundingRate, direction: s.direction,
+            markPrice: s.bestMarkPrice, breakEvenDays: rtCost > 0 ? Math.ceil(rtCost / (s.annualSpreadPct / 365)) : 0,
+          };
+        }) : [];
+        let combined = [...perpPerp, ...spotPerp].sort((a, b) => (b.netSpread as number) - (a.netSpread as number));
+        if (opts.top) combined = combined.slice(0, parseInt(opts.top));
+        return printJson(jsonOk(combined));
       }
 
       if (filtered.length === 0) {
