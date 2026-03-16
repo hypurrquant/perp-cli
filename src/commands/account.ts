@@ -735,15 +735,37 @@ export function registerAccountCommands(
     .description("Show per-market account settings (leverage, margin mode)")
     .action(async () => {
       const adapter = await getAdapter();
-      const p = pac(adapter);
-      const settings = await p.sdk.getAccountSettings(p.publicKey);
-      if (isJson()) return printJson(jsonOk(settings));
 
-      if (!Array.isArray(settings) || settings.length === 0) {
-        console.log(chalk.gray("\n  No market settings configured.\n"));
+      // Pacifica: use dedicated SDK endpoint
+      if (adapter instanceof PacificaAdapter) {
+        const settings = await adapter.sdk.getAccountSettings(adapter.publicKey);
+        if (isJson()) return printJson(jsonOk(settings));
+        if (!Array.isArray(settings) || settings.length === 0) {
+          console.log(chalk.gray("\n  No market settings configured.\n"));
+          return;
+        }
+        const rows = settings.map((s) => [
+          chalk.white.bold(s.symbol),
+          s.margin_mode,
+          `${s.leverage}x`,
+        ]);
+        console.log(makeTable(["Symbol", "Margin Mode", "Leverage"], rows));
         return;
       }
 
+      // HL / Lighter: derive settings from open positions
+      const positions = await adapter.getPositions();
+      if (positions.length === 0) {
+        if (isJson()) return printJson(jsonOk([]));
+        console.log(chalk.gray("\n  No open positions — settings shown per active position.\n"));
+        return;
+      }
+      const settings = positions.map(p => ({
+        symbol: p.symbol,
+        leverage: p.leverage,
+        margin_mode: "cross" as string, // HL/Lighter default to cross
+      }));
+      if (isJson()) return printJson(jsonOk(settings));
       const rows = settings.map((s) => [
         chalk.white.bold(s.symbol),
         s.margin_mode,
