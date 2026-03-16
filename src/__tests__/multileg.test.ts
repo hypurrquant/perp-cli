@@ -20,13 +20,17 @@ function createMockAdapter(overrides: Record<string, unknown> = {}) {
 async function setupMultileg(
   getAdapter: (exchange: string) => Promise<unknown>,
 ) {
-  const { registerMultilegCommands } = await import("../commands/multileg.js");
+  const { registerTradeCommands } = await import("../commands/trade.js");
   const program = new Command();
   program.exitOverride();
-  registerMultilegCommands(
+  // registerTradeCommands registers 'trade multi' subcommand and deprecated top-level 'multi'
+  registerTradeCommands(
     program,
-    getAdapter as (exchange: string) => Promise<import("../exchanges/interface.js").ExchangeAdapter>,
+    // getAdapter (single-exchange) — not used by multi-leg, but required by signature
+    (async () => getAdapter("hyperliquid")) as () => Promise<import("../exchanges/interface.js").ExchangeAdapter>,
     () => true, // isJson
+    () => false, // isDryRun
+    getAdapter as (exchange: string) => Promise<import("../exchanges/interface.js").ExchangeAdapter>,
   );
   return program;
 }
