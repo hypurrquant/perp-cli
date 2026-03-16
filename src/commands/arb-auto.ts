@@ -1131,7 +1131,12 @@ export function registerArbAutoCommands(
           const grossSpread = Math.abs(s.spread);
           const rtCost = computeRoundTripCostPct(s.longExch, s.shortExch);
           const net = computeNetSpread(grossSpread, holdDays, rtCost, bridgeCostUsd, sizeUsd);
-          return { mode: "perp-perp" as const, symbol: s.symbol, longExch: s.longExch, shortExch: s.shortExch, markPrice: s.markPrice, grossSpread, netSpread: net, estFeesPct: rtCost };
+          // Compute price gap between long and short exchanges
+          const longPrice = s.longExch === "pacifica" ? s.pacMarkPrice : s.longExch === "hyperliquid" ? s.hlMarkPrice : s.ltMarkPrice;
+          const shortPrice = s.shortExch === "pacifica" ? s.pacMarkPrice : s.shortExch === "hyperliquid" ? s.hlMarkPrice : s.ltMarkPrice;
+          const mid = (longPrice + shortPrice) / 2;
+          const priceGapPct = mid > 0 ? Math.abs(longPrice - shortPrice) / mid * 100 : 0;
+          return { mode: "perp-perp" as const, symbol: s.symbol, longExch: s.longExch, shortExch: s.shortExch, markPrice: s.markPrice, grossSpread, netSpread: net, estFeesPct: rtCost, priceGapPct: Math.round(priceGapPct * 10000) / 10000 };
         }).sort((a, b) => b.netSpread - a.netSpread);
         if (opts.top) enriched = enriched.slice(0, parseInt(opts.top));
         return printJson(jsonOk(enriched));
@@ -1144,7 +1149,7 @@ export function registerArbAutoCommands(
 
       // Header
       console.log(
-        chalk.gray(`  ${"SYMBOL".padEnd(8)} ${"GROSS".padEnd(8)} ${"NET".padEnd(8)} ${"FEES".padEnd(7)} ${"DIR".padEnd(7)} RATES`)
+        chalk.gray(`  ${"SYMBOL".padEnd(8)} ${"GROSS".padEnd(8)} ${"NET".padEnd(8)} ${"FEES".padEnd(7)} ${"GAP".padEnd(8)} ${"DIR".padEnd(7)} RATES`)
       );
 
       for (const s of filtered) {
@@ -1155,6 +1160,12 @@ export function registerArbAutoCommands(
         const netSpread = computeNetSpread(grossSpread, holdDays, rtCost, bridgeCostUsd, sizeUsd);
         const grossColor = grossSpread >= 30 ? chalk.green : chalk.yellow;
         const netColor = netSpread >= 20 ? chalk.green : netSpread >= 0 ? chalk.yellow : chalk.red;
+        // Price gap between long/short exchanges
+        const longPrice = s.longExch === "pacifica" ? s.pacMarkPrice : s.longExch === "hyperliquid" ? s.hlMarkPrice : s.ltMarkPrice;
+        const shortPrice = s.shortExch === "pacifica" ? s.pacMarkPrice : s.shortExch === "hyperliquid" ? s.hlMarkPrice : s.ltMarkPrice;
+        const mid = (longPrice + shortPrice) / 2;
+        const priceGapPct = mid > 0 ? Math.abs(longPrice - shortPrice) / mid * 100 : 0;
+        const gapColor = priceGapPct >= 0.5 ? chalk.red : priceGapPct >= 0.1 ? chalk.yellow : chalk.gray;
         const rates: string[] = [];
         if (s.pacRate) rates.push(`PAC:${(s.pacRate * 100).toFixed(4)}%`);
         if (s.hlRate) rates.push(`HL:${(s.hlRate * 100).toFixed(4)}%`);
@@ -1164,6 +1175,7 @@ export function registerArbAutoCommands(
           `${grossColor(`${grossSpread.toFixed(1)}%`.padEnd(8))} ` +
           `${netColor(`${netSpread.toFixed(1)}%`.padEnd(8))} ` +
           `${chalk.gray(`${rtCost.toFixed(2)}%`.padEnd(7))} ` +
+          `${gapColor(`${priceGapPct.toFixed(3)}%`.padEnd(8))} ` +
           `${direction.padEnd(7)} ` +
           rates.join(" ")
         );

@@ -429,13 +429,18 @@ export function registerArbCommands(
       console.log(chalk.gray(`  Note: HIP-3 dexes charge 2x fees. Factor into net profitability.\n`));
     });
 
-  // ── arb gap ── (cross-exchange price gap monitoring)
-  registerGapSubcommands(arb, isJson);
+  // ── arb watch/track/alert ── (promoted from arb gap)
+  registerGapDirectCommands(arb, isJson);
+
+  // Keep deprecated 'arb gap' subgroup (hidden from help)
+  const gapSub = arb.command("gap").description("[deprecated] Use 'perp arb watch/track/alert'");
+  (gapSub as any)._hidden = true;
+  registerGapSubcommands(gapSub, isJson);
 
   // Keep deprecated top-level 'gap' alias (hidden from help)
   const gapAlias = program
     .command("gap")
-    .description("Use 'perp arb gap'");
+    .description("Use 'perp arb watch/track/alert'");
   (gapAlias as any)._hidden = true;
   registerGapSubcommands(gapAlias, isJson);
 }
@@ -597,6 +602,240 @@ function printTrackSummary(
     console.log(`  ${dir.padEnd(10)} ${count} times (${((count / samples.length) * 100).toFixed(0)}%)`);
   }
   console.log();
+}
+
+/**
+ * Register gap-related commands directly on the arb parent (promoted from arb gap).
+ * - arb prices: snapshot of cross-exchange prices (was arb gap show)
+ * - arb watch: live monitoring (was arb gap watch)
+ * - arb track: track gap over time (was arb gap track)
+ * - arb alert: threshold alert (was arb gap alert)
+ */
+function registerGapDirectCommands(
+  arb: Command,
+  isJson: () => boolean
+) {
+  // ── arb prices (was arb gap show) ──
+  arb
+    .command("prices")
+    .description("Show current prices across all exchanges with gap analysis")
+    .option("--min <pct>", "Minimum gap % to display", "0.01")
+    .option("--symbol <sym>", "Filter by symbol (e.g. BTC, ETH)")
+    .option("--top <n>", "Show top N gaps only")
+    .action(async (opts: { min: string; symbol?: string; top?: string }) => {
+      const minGap = parseFloat(opts.min);
+      if (!isJson()) console.log(chalk.cyan("\n  Fetching prices from Pacifica, Hyperliquid & Lighter...\n"));
+
+      let snapshots = await fetchAllPrices();
+
+      if (opts.symbol) {
+        const sym = opts.symbol.toUpperCase();
+        snapshots = snapshots.filter((s) => s.symbol.includes(sym));
+      }
+
+      if (opts.top) {
+        snapshots = snapshots.slice(0, parseInt(opts.top));
+      }
+
+      if (isJson()) return printJson(jsonOk(snapshots.filter((s) => s.maxGapPct >= minGap)));
+
+      printGapTable(snapshots, minGap);
+    });
+
+  // ── arb watch (was arb gap watch) ──
+  arb
+    .command("watch")
+    .description("Live-monitor price gaps across exchanges (auto-refresh)")
+    .option("--min <pct>", "Minimum gap % to display", "0.05")
+    .option("--interval <seconds>", "Refresh interval", "5")
+    .option("--symbol <sym>", "Filter by symbol")
+    .option("--beep", "Beep on gaps above 0.5%")
+    .action(
+      async (opts: {
+        min: string;
+        interval: string;
+        symbol?: string;
+        beep?: boolean;
+      }) => {
+        const minGap = parseFloat(opts.min);
+        const intervalMs = parseInt(opts.interval) * 1000;
+        const beep = !!opts.beep;
+
+        if (!isJson()) {
+          console.log(chalk.cyan.bold("\n  Price Gap Monitor"));
+          console.log(`  Min gap:   ${minGap}%`);
+          console.log(`  Interval:  ${opts.interval}s`);
+          if (opts.symbol) console.log(`  Symbol:    ${opts.symbol.toUpperCase()}`);
+          console.log(chalk.gray("  Ctrl+C to stop\n"));
+        }
+
+        const cycle = async () => {
+          try {
+            let snapshots = await fetchAllPrices();
+
+            if (opts.symbol) {
+              const sym = opts.symbol.toUpperCase();
+              snapshots = snapshots.filter((s) => s.symbol.includes(sym));
+            }
+
+            process.stdout.write("\x1B[2J\x1B[0f");
+
+            const now = new Date().toLocaleTimeString();
+            console.log(
+              chalk.cyan.bold(`  Price Gap Monitor`) +
+                chalk.gray(`  ${now}  (refresh: ${opts.interval}s)\n`)
+            );
+
+            printGapTable(snapshots, minGap);
+
+            const bigGaps = snapshots.filter((s) => s.maxGapPct >= 0.5);
+            if (bigGaps.length > 0) {
+              console.log(
+                chalk.red.bold(
+                  `  !! ${bigGaps.length} large gap(s): ` +
+                    bigGaps
+                      .map((s) => `${s.symbol}(${s.maxGapPct.toFixed(3)}%)`)
+                      .join(", ")
+                )
+              );
+              if (beep) process.stdout.write("\x07");
+            }
+          } catch (err) {
+            console.error(
+              chalk.gray(
+                `  Error: ${err instanceof Error ? err.message : String(err)}`
+              )
+            );
+          }
+        };
+
+        await cycle();
+        setInterval(cycle, intervalMs);
+        await new Promise(() => {}); // keep alive
+      }
+    );
+
+  // ── arb track (was arb gap track) ──
+  arb
+    .command("track")
+    .description("Track a symbol's price gap over time and print stats")
+    .requiredOption("-s, --symbol <sym>", "Symbol to track (e.g. BTC)")
+    .option("--duration <minutes>", "How long to track (minutes)", "10")
+    .option("--interval <seconds>", "Sample interval", "10")
+    .action(
+      async (opts: { symbol: string; duration: string; interval: string }) => {
+        const symbol = opts.symbol.toUpperCase();
+        const durationMs = parseInt(opts.duration) * 60 * 1000;
+        const intervalMs = parseInt(opts.interval) * 1000;
+        const endTime = Date.now() + durationMs;
+
+        const samples: { time: string; gap: number; gapPct: number; direction: string }[] = [];
+
+        if (!isJson()) {
+          console.log(chalk.cyan.bold(`\n  Tracking ${symbol} price gap\n`));
+          console.log(`  Duration:  ${opts.duration} min`);
+          console.log(`  Interval:  ${opts.interval}s`);
+          console.log(chalk.gray("  Collecting samples...\n"));
+        }
+
+        const sample = async () => {
+          const snapshots = await fetchAllPrices();
+          const s = snapshots.find((x) => x.symbol === symbol);
+          if (!s) {
+            console.log(chalk.gray(`  ${new Date().toLocaleTimeString()} — ${symbol} not found on both exchanges`));
+            return;
+          }
+
+          samples.push({
+            time: new Date().toLocaleTimeString(),
+            gap: s.maxGap,
+            gapPct: s.maxGapPct,
+            direction: `${s.cheapest}→${s.expensive}`,
+          });
+
+          const gapColor = s.maxGapPct >= 0.1 ? chalk.yellow : chalk.gray;
+          const parts = [`PAC: ${s.pacPrice !== null ? "$" + formatGapPrice(s.pacPrice) : "-"}`];
+          parts.push(`HL: ${s.hlPrice !== null ? "$" + formatGapPrice(s.hlPrice) : "-"}`);
+          parts.push(`LT: ${s.ltPrice !== null ? "$" + formatGapPrice(s.ltPrice) : "-"}`);
+          console.log(
+            `  ${chalk.white(s.symbol.padEnd(6))} ` +
+              `${parts.join("  ")}  ` +
+              `${gapColor(`${s.maxGapPct.toFixed(4)}%`)}  ${s.cheapest}→${s.expensive}`
+          );
+        };
+
+        await sample();
+        const timer = setInterval(async () => {
+          if (Date.now() >= endTime) {
+            clearInterval(timer);
+            printTrackSummary(symbol, samples);
+            return;
+          }
+          await sample();
+        }, intervalMs);
+
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, durationMs + 1000);
+        });
+      }
+    );
+
+  // ── arb alert (was arb gap alert) ──
+  arb
+    .command("alert")
+    .description("Wait until a symbol's price gap exceeds a threshold, then exit")
+    .requiredOption("-s, --symbol <sym>", "Symbol to watch")
+    .requiredOption("--above <pct>", "Gap % threshold to trigger")
+    .option("--interval <seconds>", "Check interval", "5")
+    .action(
+      async (opts: { symbol: string; above: string; interval: string }) => {
+        const symbol = opts.symbol.toUpperCase();
+        const threshold = parseFloat(opts.above);
+        const intervalMs = parseInt(opts.interval) * 1000;
+
+        if (!isJson()) console.log(chalk.cyan(`\n  Waiting for ${symbol} gap > ${threshold}%...\n`));
+
+        const check = async (): Promise<boolean> => {
+          const snapshots = await fetchAllPrices();
+          const s = snapshots.find((x) => x.symbol === symbol);
+          if (!s) return false;
+
+          const now = new Date().toLocaleTimeString();
+          if (!isJson()) console.log(chalk.gray(`  ${now} ${symbol} gap: ${s.maxGapPct.toFixed(4)}%`));
+
+          if (s.maxGapPct >= threshold) {
+            if (isJson()) {
+              printJson(jsonOk(s));
+            } else {
+              console.log(
+                chalk.green.bold(
+                  `\n  TRIGGERED! ${symbol} gap: ${s.maxGapPct.toFixed(4)}% (> ${threshold}%)`
+                )
+              );
+              const lines = [];
+              if (s.pacPrice !== null) lines.push(`  Pacifica:    $${formatGapPrice(s.pacPrice)}`);
+              if (s.hlPrice !== null) lines.push(`  Hyperliquid: $${formatGapPrice(s.hlPrice)}`);
+              if (s.ltPrice !== null) lines.push(`  Lighter:     $${formatGapPrice(s.ltPrice)}`);
+              lines.push(`  Gap:         $${s.maxGap.toFixed(4)} (${s.cheapest}→${s.expensive})`);
+              console.log(lines.join("\n") + "\n");
+            }
+            return true;
+          }
+          return false;
+        };
+
+        if (await check()) return;
+
+        await new Promise<void>((resolve) => {
+          const timer = setInterval(async () => {
+            if (await check()) {
+              clearInterval(timer);
+              resolve();
+            }
+          }, intervalMs);
+        });
+      }
+    );
 }
 
 function registerGapSubcommands(
