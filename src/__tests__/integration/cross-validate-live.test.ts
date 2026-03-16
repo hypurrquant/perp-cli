@@ -388,8 +388,8 @@ describe("Cross-validate: funding positions actual payments", () => {
 
     const positions = (cliResult.data as { positions: { symbol: string; actual24h: { net: number } }[] }).positions;
 
-    // Also get raw funding payments via arb funding-earned for comparison
-    const arbResult = cli("-e hyperliquid arb funding-earned");
+    // Also get raw funding payments via arb status --funding for comparison
+    const arbResult = cli("-e hyperliquid arb status --funding");
     if (arbResult.ok) {
       const pairs = (arbResult.data as { pairs: { symbol: string; byExchange: { exchange: string; net: number }[] }[] }).pairs;
 

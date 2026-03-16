@@ -10,7 +10,7 @@ import {
 } from "../../shared-api.js";
 import { computeBasisRisk } from "../../arb-utils.js";
 import { smartOrder } from "../../smart-order.js";
-import { removePosition as persistRemovePosition, getPositions as getArbStatePositions } from "../../arb-state.js";
+import { removePosition as persistRemovePosition, getPositions as getArbStatePositions, loadArbState } from "../../arb-state.js";
 import { SPOT_PERP_TOKEN_MAP } from "../../exchanges/spot-interface.js";
 import type { SpotBalance } from "../../exchanges/spot-interface.js";
 import { fetchAllBalances, computeRebalancePlan } from "../../rebalance.js";
@@ -200,8 +200,10 @@ export function registerArbManageCommands(
 
   arb
     .command("status")
-    .description("Show open arb positions (perp-perp + spot-perp) with PnL breakdown")
-    .action(async () => {
+    .description("Show open arb positions with PnL breakdown + actual funding earned")
+    .option("--period <days>", "Funding lookback period in days", "7")
+    .option("--symbol <symbol>", "Filter funding data by symbol")
+    .action(async (opts: { period: string; symbol?: string }) => {
       if (!isJson()) console.log(chalk.cyan("\n  Checking arb positions across exchanges...\n"));
 
       // Fetch positions from all exchanges
@@ -648,6 +650,9 @@ export function registerArbManageCommands(
         console.log(`    Portfolio APR:   ${chalk.cyan(`${portfolioApr.toFixed(1)}%`)}`);
       }
       console.log(chalk.gray(`    (Fees assume ${(TAKER_FEE * 100).toFixed(3)}% taker for entry + exit.)\n`));
+
+      // Always show actual funding payments earned
+      await printFundingEarned(getAdapterForExchange, isJson, { period: opts.period, symbol: opts.symbol });
     });
 
   // ── arb close ──
@@ -658,9 +663,173 @@ export function registerArbManageCommands(
     .option("--dry-run", "Show what would happen without executing")
     .option("--pair <pair>", "Specify arb pair as longExchange:shortExchange (e.g. pacifica:hyperliquid)")
     .option("--smart", "Smart execution: IOC limit at best bid/ask + 1 tick (reduces slippage)")
-    .action(async (symbol: string, opts: { dryRun?: boolean; pair?: string; smart?: boolean }) => {
+    .option("--spot-exch <exchange>", "Override spot exchange for spot-perp close (hl or lt)")
+    .option("--perp-exch <exchange>", "Override perp exchange for spot-perp close")
+    .action(async (symbol: string, opts: { dryRun?: boolean; pair?: string; smart?: boolean; spotExch?: string; perpExch?: string }) => {
       const sym = symbol.toUpperCase();
       const dryRun = !!opts.dryRun || process.argv.includes("--dry-run");
+
+      // Check if this is a spot-perp position (auto-detect from arb state)
+      const arbState = loadArbState();
+      const statePos = arbState?.positions?.find(p => p.symbol.toUpperCase() === sym && p.mode === "spot-perp");
+      if (statePos) {
+        // ── Inline spot-perp close logic ──
+        const aliasMap: Record<string, string> = { hl: "hyperliquid", pac: "pacifica", lt: "lighter" };
+        const spotExch = aliasMap[opts.spotExch?.toLowerCase() ?? ""] || opts.spotExch?.toLowerCase() || statePos.spotExchange || statePos.longExchange;
+        const perpExch = aliasMap[opts.perpExch?.toLowerCase() ?? ""] || opts.perpExch?.toLowerCase() || statePos.shortExchange;
+
+        if (!spotExch || !perpExch) {
+          const msg = "Cannot determine exchanges. Specify --spot-exch and --perp-exch, or ensure the position is tracked in state.";
+          if (isJson()) return printJson(jsonOk({ error: msg }));
+          console.log(chalk.red(`  ${msg}`));
+          return;
+        }
+
+        // Load spot adapter
+        const { HyperliquidSpotAdapter } = await import("../../exchanges/hyperliquid-spot.js");
+        const { LighterSpotAdapter } = await import("../../exchanges/lighter-spot.js");
+        let spotAdapter: import("../../exchanges/spot-interface.js").SpotAdapter;
+        if (spotExch === "hyperliquid") {
+          const hlAdapter = await getAdapterForExchange("hyperliquid") as import("../../exchanges/hyperliquid.js").HyperliquidAdapter;
+          const hlSpot = new HyperliquidSpotAdapter(hlAdapter);
+          await hlSpot.init();
+          spotAdapter = hlSpot;
+        } else {
+          const ltAdapter = await getAdapterForExchange("lighter") as import("../../exchanges/lighter.js").LighterAdapter;
+          const ltSpot = new LighterSpotAdapter(ltAdapter);
+          await ltSpot.init();
+          spotAdapter = ltSpot;
+        }
+
+        const perpAdapter = await getAdapterForExchange(perpExch);
+        const spotSymbol = `${sym}/USDC`;
+
+        // Find how much to close
+        const perpPositions = await perpAdapter.getPositions();
+        const perpPos = perpPositions.find(p =>
+          p.symbol.replace("-PERP", "").toUpperCase() === sym && p.side === "short"
+        );
+        if (!perpPos) {
+          const msg = `No short perp position found for ${sym} on ${perpExch}`;
+          if (isJson()) return printJson(jsonOk({ error: msg }));
+          console.log(chalk.red(`  ${msg}`)); return;
+        }
+
+        const closeSize = perpPos.size;
+        if (!isJson()) {
+          console.log(chalk.cyan(`\n  Closing Spot+Perp Arb: ${sym}`));
+          console.log(chalk.gray(`    SPOT  ${spotExch}: sell ${closeSize}`));
+          console.log(chalk.gray(`    PERP  ${perpExch}: buy  ${closeSize} (close short)`));
+          console.log(chalk.gray(`    Executing...\n`));
+        }
+
+        // Same exchange -> sequential (nonce collision), different -> parallel
+        let spotResult: PromiseSettledResult<unknown>;
+        let perpResult: PromiseSettledResult<unknown>;
+        if (spotExch === perpExch) {
+          spotResult = await spotAdapter.spotMarketOrder(spotSymbol, "sell", closeSize)
+            .then(r => ({ status: "fulfilled" as const, value: r }))
+            .catch(e => ({ status: "rejected" as const, reason: e }));
+          perpResult = await perpAdapter.marketOrder(sym, "buy", closeSize)
+            .then(r => ({ status: "fulfilled" as const, value: r }))
+            .catch(e => ({ status: "rejected" as const, reason: e }));
+        } else {
+          [spotResult, perpResult] = await Promise.allSettled([
+            spotAdapter.spotMarketOrder(spotSymbol, "sell", closeSize),
+            perpAdapter.marketOrder(sym, "buy", closeSize),
+          ]);
+        }
+
+        const spotOk = spotResult.status === "fulfilled";
+        const perpOk = perpResult.status === "fulfilled";
+
+        if (spotOk && perpOk) {
+          // Post-close fill verification
+          let closeVerified = true;
+          const closeWarnings: string[] = [];
+          try {
+            await new Promise(r => setTimeout(r, 800));
+            const spotBals = await spotAdapter.getSpotBalances();
+            const spotTokenBal = spotBals.find(b => b.token.toUpperCase().startsWith(sym));
+            const remainingSpotAmt = Number(spotTokenBal?.total ?? 0);
+            const closedSize = parseFloat(closeSize);
+            if (remainingSpotAmt > closedSize * 0.5) {
+              closeVerified = false;
+              closeWarnings.push(`Spot sell may not have filled: still have ${remainingSpotAmt.toFixed(6)} ${sym} (expected ~0)`);
+            }
+            const perpPositionsAfter = await perpAdapter.getPositions();
+            const remainingPerpPos = perpPositionsAfter.find(p =>
+              p.symbol.replace("-PERP", "").toUpperCase() === sym && p.side === "short"
+            );
+            if (remainingPerpPos && Number(remainingPerpPos.size) > closedSize * 0.5) {
+              closeVerified = false;
+              closeWarnings.push(`Perp short still open: ${remainingPerpPos.size} ${sym} on ${perpExch} (expected closed)`);
+            }
+          } catch (verifyErr) {
+            closeWarnings.push(`Close verification failed: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`);
+          }
+
+          if (closeWarnings.length > 0 && !isJson()) {
+            for (const w of closeWarnings) console.log(chalk.yellow(`  Warning: ${w}`));
+          }
+
+          persistRemovePosition(sym);
+          logExecution({
+            type: "arb_close", exchange: `spot:${spotExch}+${perpExch}`,
+            symbol: sym, side: "exit", size: closeSize,
+            status: closeVerified ? "success" : "unverified", dryRun: false,
+            meta: { mode: "spot-perp", ...(closeWarnings.length > 0 && { warnings: closeWarnings }) },
+          });
+
+          // Return spot USDC proceeds back to perp account
+          if (spotExch === "lighter") {
+            try {
+              const ltSpot = spotAdapter as import("../../exchanges/lighter-spot.js").LighterSpotAdapter;
+              const bals = await ltSpot.getSpotBalances();
+              const usdcBal = bals.find(b => b.token === "USDC");
+              const leftover = Number(usdcBal?.available ?? 0);
+              if (leftover > 0.01) {
+                await ltSpot.transferUsdcToPerp(leftover);
+                if (!isJson()) console.log(chalk.gray(`  Returned ~$${leftover.toFixed(2)} USDC spot->perp on Lighter`));
+              }
+            } catch { /* non-critical */ }
+          } else if (spotExch === "hyperliquid") {
+            try {
+              const hlSpot = spotAdapter as import("../../exchanges/hyperliquid-spot.js").HyperliquidSpotAdapter;
+              const bals = await hlSpot.getSpotBalances();
+              const usdcBal = bals.find(b => b.token.startsWith("USDC"));
+              const leftover = Number(usdcBal?.available ?? 0);
+              if (leftover > 1) await hlSpot.transferUsdcToPerp(Math.floor(leftover));
+            } catch { /* non-critical */ }
+          }
+
+          const closeResult = {
+            status: closeVerified ? "closed" : "closed_unverified",
+            mode: "spot-perp", symbol: sym, size: closeSize,
+            ...(closeWarnings.length > 0 && { warnings: closeWarnings }),
+          };
+          if (isJson()) return printJson(jsonOk(closeResult));
+          if (closeVerified) {
+            console.log(chalk.green(`  CLOSED (verified): ${sym} ${closeSize} units`));
+          } else {
+            console.log(chalk.yellow(`  CLOSED (unverified): ${sym} ${closeSize} units -- check positions manually`));
+          }
+          console.log(chalk.green(`    SPOT  ${spotExch}: sold`));
+          console.log(chalk.green(`    PERP  ${perpExch}: bought (closed short)\n`));
+        } else {
+          const errors: string[] = [];
+          if (!spotOk) errors.push(`Spot sell failed: ${(spotResult as PromiseRejectedResult).reason}`);
+          if (!perpOk) errors.push(`Perp buy failed: ${(perpResult as PromiseRejectedResult).reason}`);
+          const result = { status: "partial_close", symbol: sym, spotOk, perpOk, errors };
+          if (isJson()) return printJson(jsonOk(result));
+          console.log(chalk.red(`  Close partially failed:`));
+          for (const e of errors) console.log(chalk.red(`    ${e}`));
+          console.log(chalk.yellow(`  Manual intervention may be needed.\n`));
+        }
+        return;
+      }
+
+      // ── Perp-perp close logic (original) ──
 
       if (!isJson()) {
         console.log(chalk.cyan(`\n  Closing arb position for ${sym}...\n`));
@@ -1425,227 +1594,229 @@ export function registerArbManageCommands(
       }
     });
 
-  // ── arb funding-earned ──
+  // ── printFundingEarned helper (used by arb status --funding) ──
 
-  arb
-    .command("funding-earned")
-    .description("Actual funding payments received/paid for arb positions")
-    .option("--period <days>", "Number of days to look back", "7")
-    .option("--symbol <symbol>", "Filter by symbol")
-    .action(async (opts: { period: string; symbol?: string }) => {
-      const periodDays = parseInt(opts.period);
-      const filterSym = opts.symbol?.toUpperCase();
+  async function printFundingEarned(
+    getAdapter: (exchange: string) => Promise<ExchangeAdapter>,
+    isJsonFn: () => boolean,
+    opts: { period: string; symbol?: string },
+  ): Promise<void> {
+    const periodDays = parseInt(opts.period);
+    const filterSym = opts.symbol?.toUpperCase();
 
-      if (!isJson()) console.log(chalk.cyan(`\n  Fetching funding payments (last ${periodDays} days)...\n`));
+    if (!isJsonFn()) console.log(chalk.cyan(`\n  Fetching funding payments (last ${periodDays} days)...\n`));
 
-      // Fetch positions to identify arb pairs
-      const allPositions: { exchange: string; symbol: string; side: "long" | "short"; size: number; markPrice: number }[] = [];
+    // Fetch positions to identify arb pairs
+    const fundingPositions: { exchange: string; symbol: string; side: "long" | "short"; size: number; markPrice: number }[] = [];
 
-      for (const exName of EXCHANGES) {
-        try {
-          const adapter = await getAdapterForExchange(exName);
-          const positions = await adapter.getPositions();
-          for (const p of positions) {
-            const normalized = p.symbol.replace("-PERP", "").toUpperCase();
-            allPositions.push({
-              exchange: exName,
-              symbol: normalized,
-              side: p.side,
-              size: Math.abs(Number(p.size)),
-              markPrice: Number(p.markPrice),
-            });
-          }
-        } catch {
-          // exchange not configured
+    for (const exName of EXCHANGES) {
+      try {
+        const adapter = await getAdapter(exName);
+        const positions = await adapter.getPositions();
+        for (const p of positions) {
+          const normalized = p.symbol.replace("-PERP", "").toUpperCase();
+          fundingPositions.push({
+            exchange: exName,
+            symbol: normalized,
+            side: p.side,
+            size: Math.abs(Number(p.size)),
+            markPrice: Number(p.markPrice),
+          });
+        }
+      } catch {
+        // exchange not configured
+      }
+    }
+
+    // Identify arb pairs (long on one exchange, short on another)
+    const arbPairKeys = new Set<string>();
+    const arbPairInfo = new Map<string, { longExchange: string; shortExchange: string; notionalUsd: number }>();
+    const fLongs = fundingPositions.filter(p => p.side === "long");
+    const fShorts = fundingPositions.filter(p => p.side === "short");
+    for (const l of fLongs) {
+      for (const s of fShorts) {
+        if (l.exchange !== s.exchange && l.symbol === s.symbol) {
+          const key = l.symbol;
+          arbPairKeys.add(key);
+          arbPairInfo.set(key, {
+            longExchange: l.exchange,
+            shortExchange: s.exchange,
+            notionalUsd: (l.size * l.markPrice + s.size * s.markPrice) / 2,
+          });
         }
       }
+    }
 
-      // Identify arb pairs (long on one exchange, short on another)
-      const arbPairKeys = new Set<string>();
-      const arbPairInfo = new Map<string, { longExchange: string; shortExchange: string; notionalUsd: number }>();
-      const longs = allPositions.filter(p => p.side === "long");
-      const shorts = allPositions.filter(p => p.side === "short");
-      for (const l of longs) {
-        for (const s of shorts) {
-          if (l.exchange !== s.exchange && l.symbol === s.symbol) {
-            const key = l.symbol;
-            arbPairKeys.add(key);
-            arbPairInfo.set(key, {
-              longExchange: l.exchange,
-              shortExchange: s.exchange,
-              notionalUsd: (l.size * l.markPrice + s.size * s.markPrice) / 2,
-            });
-          }
-        }
-      }
+    // Fetch funding payments from all configured exchanges
+    interface FundingPaymentRow {
+      time: number;
+      exchange: string;
+      symbol: string;
+      payment: number;
+    }
 
-      // Fetch funding payments from all configured exchanges
-      interface FundingPaymentRow {
-        time: number;
-        exchange: string;
-        symbol: string;
-        payment: number;
-      }
+    const allPayments: FundingPaymentRow[] = [];
+    const cutoff = Date.now() - periodDays * 24 * 60 * 60 * 1000;
 
-      const allPayments: FundingPaymentRow[] = [];
-      const cutoff = Date.now() - periodDays * 24 * 60 * 60 * 1000;
-
-      for (const exName of EXCHANGES) {
-        try {
-          const adapter = await getAdapterForExchange(exName);
-          const payments = await adapter.getFundingPayments(200);
-          for (const p of payments) {
-            if (p.time < cutoff) continue;
-            const sym = p.symbol.replace("-PERP", "").toUpperCase();
-            if (filterSym && sym !== filterSym) continue;
-            allPayments.push({
-              time: p.time,
-              exchange: exName,
-              symbol: sym,
-              payment: typeof p.payment === "string" ? parseFloat(p.payment) : Number(p.payment),
-            });
-          }
-        } catch {
-          // exchange not configured or no payments
-        }
-      }
-
-      // Group by symbol, then by exchange
-      const bySymbol = new Map<string, FundingPaymentRow[]>();
-      for (const p of allPayments) {
-        if (!bySymbol.has(p.symbol)) bySymbol.set(p.symbol, []);
-        bySymbol.get(p.symbol)!.push(p);
-      }
-
-      // Build per-pair summary
-      interface FundingPairSummary {
-        symbol: string;
-        isArbPair: boolean;
-        longExchange: string | null;
-        shortExchange: string | null;
-        notionalUsd: number;
-        byExchange: { exchange: string; totalReceived: number; totalPaid: number; net: number; payments: number }[];
-        totalReceived: number;
-        totalPaid: number;
-        netEarned: number;
-        dailyAvg: number;
-        annualizedApr: number;
-        payments: number;
-      }
-
-      const pairs: FundingPairSummary[] = [];
-
-      for (const [symbol, payments] of bySymbol) {
-        const isArb = arbPairKeys.has(symbol);
-        const pairInfo = arbPairInfo.get(symbol);
-
-        // Group by exchange
-        const byEx = new Map<string, FundingPaymentRow[]>();
+    for (const exName of EXCHANGES) {
+      try {
+        const adapter = await getAdapter(exName);
+        const payments = await adapter.getFundingPayments(200);
         for (const p of payments) {
-          if (!byEx.has(p.exchange)) byEx.set(p.exchange, []);
-          byEx.get(p.exchange)!.push(p);
+          if (p.time < cutoff) continue;
+          const sym = p.symbol.replace("-PERP", "").toUpperCase();
+          if (filterSym && sym !== filterSym) continue;
+          allPayments.push({
+            time: p.time,
+            exchange: exName,
+            symbol: sym,
+            payment: typeof p.payment === "string" ? parseFloat(p.payment) : Number(p.payment),
+          });
         }
+      } catch {
+        // exchange not configured or no payments
+      }
+    }
 
-        const exchangeSummaries: FundingPairSummary["byExchange"] = [];
-        let totalReceived = 0;
-        let totalPaid = 0;
+    // Group by symbol, then by exchange
+    const bySymbol = new Map<string, FundingPaymentRow[]>();
+    for (const p of allPayments) {
+      if (!bySymbol.has(p.symbol)) bySymbol.set(p.symbol, []);
+      bySymbol.get(p.symbol)!.push(p);
+    }
 
-        for (const [exchange, exPayments] of byEx) {
-          const received = exPayments.filter(p => p.payment > 0).reduce((s, p) => s + p.payment, 0);
-          const paid = exPayments.filter(p => p.payment < 0).reduce((s, p) => s + Math.abs(p.payment), 0);
-          const net = received - paid;
-          totalReceived += received;
-          totalPaid += paid;
-          exchangeSummaries.push({ exchange, totalReceived: received, totalPaid: paid, net, payments: exPayments.length });
-        }
+    // Build per-pair summary
+    interface FundingPairSummary {
+      symbol: string;
+      isArbPair: boolean;
+      longExchange: string | null;
+      shortExchange: string | null;
+      notionalUsd: number;
+      byExchange: { exchange: string; totalReceived: number; totalPaid: number; net: number; payments: number }[];
+      totalReceived: number;
+      totalPaid: number;
+      netEarned: number;
+      dailyAvg: number;
+      annualizedApr: number;
+      payments: number;
+    }
 
-        const netEarned = totalReceived - totalPaid;
-        const dailyAvg = periodDays > 0 ? netEarned / periodDays : 0;
-        const notionalUsd = pairInfo?.notionalUsd || 0;
-        const annualizedApr = notionalUsd > 0 ? (dailyAvg * 365 / notionalUsd) * 100 : 0;
+    const pairs: FundingPairSummary[] = [];
 
-        pairs.push({
-          symbol,
-          isArbPair: isArb,
-          longExchange: pairInfo?.longExchange ?? null,
-          shortExchange: pairInfo?.shortExchange ?? null,
-          notionalUsd,
-          byExchange: exchangeSummaries,
-          totalReceived,
-          totalPaid,
-          netEarned,
-          dailyAvg,
-          annualizedApr,
-          payments: payments.length,
-        });
+    for (const [symbol, payments] of bySymbol) {
+      const isArb = arbPairKeys.has(symbol);
+      const pairInfo = arbPairInfo.get(symbol);
+
+      // Group by exchange
+      const byEx = new Map<string, FundingPaymentRow[]>();
+      for (const p of payments) {
+        if (!byEx.has(p.exchange)) byEx.set(p.exchange, []);
+        byEx.get(p.exchange)!.push(p);
       }
 
-      // Sort: arb pairs first, then by netEarned
-      pairs.sort((a, b) => {
-        if (a.isArbPair !== b.isArbPair) return a.isArbPair ? -1 : 1;
-        return b.netEarned - a.netEarned;
+      const exchangeSummaries: FundingPairSummary["byExchange"] = [];
+      let totalReceived = 0;
+      let totalPaid = 0;
+
+      for (const [exchange, exPayments] of byEx) {
+        const received = exPayments.filter(p => p.payment > 0).reduce((s, p) => s + p.payment, 0);
+        const paid = exPayments.filter(p => p.payment < 0).reduce((s, p) => s + Math.abs(p.payment), 0);
+        const net = received - paid;
+        totalReceived += received;
+        totalPaid += paid;
+        exchangeSummaries.push({ exchange, totalReceived: received, totalPaid: paid, net, payments: exPayments.length });
+      }
+
+      const netEarned = totalReceived - totalPaid;
+      const dailyAvg = periodDays > 0 ? netEarned / periodDays : 0;
+      const notionalUsd = pairInfo?.notionalUsd || 0;
+      const annualizedApr = notionalUsd > 0 ? (dailyAvg * 365 / notionalUsd) * 100 : 0;
+
+      pairs.push({
+        symbol,
+        isArbPair: isArb,
+        longExchange: pairInfo?.longExchange ?? null,
+        shortExchange: pairInfo?.shortExchange ?? null,
+        notionalUsd,
+        byExchange: exchangeSummaries,
+        totalReceived,
+        totalPaid,
+        netEarned,
+        dailyAvg,
+        annualizedApr,
+        payments: payments.length,
       });
+    }
 
-      // Totals
-      const totals = {
-        totalReceived: pairs.reduce((s, p) => s + p.totalReceived, 0),
-        totalPaid: pairs.reduce((s, p) => s + p.totalPaid, 0),
-        netEarned: pairs.reduce((s, p) => s + p.netEarned, 0),
-        dailyAvg: pairs.reduce((s, p) => s + p.dailyAvg, 0),
-        totalNotional: pairs.filter(p => p.isArbPair).reduce((s, p) => s + p.notionalUsd, 0),
-        arbPairs: pairs.filter(p => p.isArbPair).length,
-        period: periodDays,
-      };
+    // Sort: arb pairs first, then by netEarned
+    pairs.sort((a, b) => {
+      if (a.isArbPair !== b.isArbPair) return a.isArbPair ? -1 : 1;
+      return b.netEarned - a.netEarned;
+    });
 
-      const totalArbNotional = totals.totalNotional;
-      const portfolioApr = totalArbNotional > 0
-        ? (totals.dailyAvg * 365 / totalArbNotional) * 100
-        : 0;
+    // Totals
+    const totals = {
+      totalReceived: pairs.reduce((s, p) => s + p.totalReceived, 0),
+      totalPaid: pairs.reduce((s, p) => s + p.totalPaid, 0),
+      netEarned: pairs.reduce((s, p) => s + p.netEarned, 0),
+      dailyAvg: pairs.reduce((s, p) => s + p.dailyAvg, 0),
+      totalNotional: pairs.filter(p => p.isArbPair).reduce((s, p) => s + p.notionalUsd, 0),
+      arbPairs: pairs.filter(p => p.isArbPair).length,
+      period: periodDays,
+    };
 
-      if (isJson()) {
-        return printJson(jsonOk({
+    const totalArbNotional = totals.totalNotional;
+    const portfolioApr = totalArbNotional > 0
+      ? (totals.dailyAvg * 365 / totalArbNotional) * 100
+      : 0;
+
+    if (isJsonFn()) {
+      printJson(jsonOk({
+        fundingEarned: {
           pairs,
           totals: { ...totals, annualizedApr: portfolioApr },
-        }));
-      }
+        },
+      }));
+      return;
+    }
 
-      if (pairs.length === 0) {
-        console.log(chalk.gray("  No funding payments found.\n"));
-        return;
-      }
+    if (pairs.length === 0) {
+      console.log(chalk.gray("  No funding payments found.\n"));
+      return;
+    }
 
-      console.log(chalk.cyan.bold("  Funding Payments Earned\n"));
+    console.log(chalk.cyan.bold("  Funding Payments Earned\n"));
 
-      const rows = pairs.map(p => {
-        const arbTag = p.isArbPair ? chalk.green("ARB") : chalk.gray("---");
-        const exchanges = p.byExchange.map(e => e.exchange.slice(0, 3).toUpperCase()).join("+");
-        return [
-          chalk.white.bold(p.symbol),
-          arbTag,
-          exchanges,
-          chalk.green(`$${p.totalReceived.toFixed(4)}`),
-          chalk.red(`-$${p.totalPaid.toFixed(4)}`),
-          formatPnl(p.netEarned),
-          `$${p.dailyAvg.toFixed(4)}/d`,
-          p.annualizedApr > 0 ? `${p.annualizedApr.toFixed(1)}%` : "-",
-          String(p.payments),
-        ];
-      });
-
-      console.log(makeTable(
-        ["Symbol", "Type", "Exchanges", "Received", "Paid", "Net", "Daily Avg", "APR", "#"],
-        rows,
-      ));
-
-      console.log(chalk.white.bold("\n  Totals"));
-      console.log(`    Period:       ${periodDays} days`);
-      console.log(`    Received:     ${chalk.green(`$${totals.totalReceived.toFixed(4)}`)}`);
-      console.log(`    Paid:         ${chalk.red(`-$${totals.totalPaid.toFixed(4)}`)}`);
-      console.log(`    Net Earned:   ${formatPnl(totals.netEarned)}`);
-      console.log(`    Daily Avg:    $${totals.dailyAvg.toFixed(4)}/day`);
-      if (portfolioApr > 0) {
-        console.log(`    Portfolio APR: ${chalk.cyan(`${portfolioApr.toFixed(1)}%`)} (on $${formatUsd(totalArbNotional)} arb notional)`);
-      }
-      console.log();
+    const rows = pairs.map(p => {
+      const arbTag = p.isArbPair ? chalk.green("ARB") : chalk.gray("---");
+      const exchanges = p.byExchange.map(e => e.exchange.slice(0, 3).toUpperCase()).join("+");
+      return [
+        chalk.white.bold(p.symbol),
+        arbTag,
+        exchanges,
+        chalk.green(`$${p.totalReceived.toFixed(4)}`),
+        chalk.red(`-$${p.totalPaid.toFixed(4)}`),
+        formatPnl(p.netEarned),
+        `$${p.dailyAvg.toFixed(4)}/d`,
+        p.annualizedApr > 0 ? `${p.annualizedApr.toFixed(1)}%` : "-",
+        String(p.payments),
+      ];
     });
+
+    console.log(makeTable(
+      ["Symbol", "Type", "Exchanges", "Received", "Paid", "Net", "Daily Avg", "APR", "#"],
+      rows,
+    ));
+
+    console.log(chalk.white.bold("\n  Totals"));
+    console.log(`    Period:       ${periodDays} days`);
+    console.log(`    Received:     ${chalk.green(`$${totals.totalReceived.toFixed(4)}`)}`);
+    console.log(`    Paid:         ${chalk.red(`-$${totals.totalPaid.toFixed(4)}`)}`);
+    console.log(`    Net Earned:   ${formatPnl(totals.netEarned)}`);
+    console.log(`    Daily Avg:    $${totals.dailyAvg.toFixed(4)}/day`);
+    if (portfolioApr > 0) {
+      console.log(`    Portfolio APR: ${chalk.cyan(`${portfolioApr.toFixed(1)}%`)} (on $${formatUsd(totalArbNotional)} arb notional)`);
+    }
+    console.log();
+  }
 }

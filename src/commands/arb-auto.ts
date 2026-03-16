@@ -34,6 +34,10 @@ import {
   createInitialState,
   type ArbPositionState,
 } from "../arb-state.js";
+import {
+  handleRates, handleBasisScan, handleDexScan,
+  handleCompare, handleFundingHistory, handleFundingPositions,
+} from "./arb.js";
 
 interface ExchangeRate {
   exchange: string;
@@ -244,6 +248,15 @@ async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
   return snapshots.sort((a, b) => Math.abs(b.spread) - Math.abs(a.spread));
 }
 
+
+// Module-level holder for spot-close handler -- assigned inside registerArbAutoCommands.
+export let handleSpotClose: ((
+  sym: string,
+  opts: { spotExch?: string; perpExch?: string },
+  getAdapterForExchange: (exchange: string) => Promise<import("../exchanges/interface.js").ExchangeAdapter>,
+  isJson: () => boolean,
+) => Promise<void>) | undefined;
+
 export function registerArbAutoCommands(
   program: Command,
   getAdapterForExchange: (exchange: string) => Promise<ExchangeAdapter>,
@@ -257,7 +270,7 @@ export function registerArbAutoCommands(
 
   arb
     .command("auto")
-    .description("Auto-execute funding rate arbitrage (daemon)")
+    .description("Auto-execute funding rate arbitrage (daemon). Use --hip3 for HIP-3 cross-dex mode.")
     .option("--min-spread <pct>", "Min annual spread to enter (%)", "30")
     .option("--close-spread <pct>", "Close when spread drops below (%)", "5")
     .option("--size <usd>", "Position size per leg ($)", "100")
@@ -278,6 +291,9 @@ export function registerArbAutoCommands(
     .option("--cooldown <minutes>", "Minutes to wait before re-entering a closed symbol", "30")
     .option("--dry-run", "Simulate without executing trades")
     .option("--background", "Run in background (tmux)")
+    .option("--hip3", "Run HIP-3 cross-dex auto arb instead of perp-perp")
+    .option("--min-oi <usd>", "Min OI (USD) to enter (hip3 mode)", "50000")
+    .option("--min-grade <grade>", "Min viability grade: A, B, C, D (hip3 mode)", "C")
     .action(async (opts: {
       minSpread: string; closeSpread: string; size: string; minSize: string;
       maxPositions: string; symbols?: string; interval: string;
@@ -288,7 +304,21 @@ export function registerArbAutoCommands(
       cooldown: string;
       notify?: string; notifyEvents: string;
       dryRun?: boolean; background?: boolean;
+      hip3?: boolean; minOi: string; minGrade: string;
     }) => {
+      // Route to HIP-3 dex-auto logic if --hip3 flag is set
+      if (opts.hip3) {
+        return handleDexAuto({
+          minSpread: opts.minSpread,
+          closeSpread: opts.closeSpread,
+          size: opts.size,
+          maxPositions: opts.maxPositions,
+          minOi: opts.minOi,
+          minGrade: opts.minGrade,
+          interval: opts.interval,
+          dryRun: opts.dryRun,
+        });
+      }
       if (opts.background) {
         const { startJob } = await import("../jobs.js");
         const cliArgs = [
@@ -1065,14 +1095,42 @@ export function registerArbAutoCommands(
 
   arb
     .command("scan")
-    .description("Scan current funding rate spreads (perp-perp or spot-perp)")
+    .description("Scan funding spreads, rates, basis, HIP-3, or positions (default: perp-perp spreads)")
     .option("--mode <mode>", "Scan mode: perp-perp, spot-perp, all", "perp-perp")
     .option("--min <pct>", "Min annual spread to show", "10")
     .option("--top <n>", "Return only top N results (for JSON output)")
     .option("--hold-days <days>", "Expected hold period for cost calc", "7")
     .option("--bridge-cost <usd>", "One-way bridge cost in USD", "0.5")
     .option("--size <usd>", "Position size per leg ($) for cost calc", "100")
-    .action(async (opts: { mode: string; min: string; top?: string; holdDays: string; bridgeCost: string; size: string }) => {
+    .option("--rates", "Show funding rates across all exchanges")
+    .option("--basis", "Scan cross-exchange basis opportunities")
+    .option("--hip3", "Scan HIP-3 cross-dex funding spreads")
+    .option("--compare <symbol>", "Compare funding rates for a specific symbol")
+    .option("--history", "Show funding rate history")
+    .option("--positions", "Show position funding impact")
+    .option("-s, --symbol <sym>", "Filter/track symbol")
+    .option("--symbols <list>", "Comma-separated list of symbols")
+    .option("--all", "Include all symbols (not just top)")
+    .option("--hours <n>", "Hours of history to show", "24")
+    .option("--exchange <ex>", "Filter by exchange")
+    .option("--max-gap <pct>", "Max price gap % (hip3 mode)")
+    .option("--include-native", "Include native HL perps (hip3 mode)", true)
+    .option("--no-include-native", "Exclude native HL perps (hip3 mode)")
+    .action(async (opts: {
+      mode: string; min: string; top?: string; holdDays: string; bridgeCost: string; size: string;
+      rates?: boolean; basis?: boolean; hip3?: boolean; compare?: string;
+      history?: boolean; positions?: boolean;
+      symbol?: string; symbols?: string; all?: boolean;
+      hours: string; exchange?: string; maxGap?: string; includeNative: boolean;
+    }) => {
+      // Route to specialized handlers
+      if (opts.compare) return handleCompare(isJson, opts.compare);
+      if (opts.rates) return handleRates(isJson, { symbol: opts.symbol, symbols: opts.symbols, all: opts.all, minSpread: opts.min });
+      if (opts.basis) return handleBasisScan(isJson, { minBasis: opts.min });
+      if (opts.hip3) return handleDexScan(isJson, { minSpread: opts.min, maxGap: opts.maxGap || "5", includeNative: opts.includeNative !== false, top: opts.top || "20" });
+      if (opts.history) return handleFundingHistory(isJson, { symbol: opts.symbol || "ETH", hours: opts.hours || "24", exchange: opts.exchange });
+      if (opts.positions) return handleFundingPositions(isJson, getAdapterForExchange, { exchanges: opts.exchange });
+      // Default: existing scan logic continues below
       const minSpread = parseFloat(opts.min);
       const holdDays = parseFloat(opts.holdDays);
       const bridgeCostUsd = parseFloat(opts.bridgeCost);
@@ -1227,18 +1285,24 @@ export function registerArbAutoCommands(
 
   arb
     .command("exec")
-    .description("Execute arb: validate orderbook depth on both exchanges, then enter both legs simultaneously")
+    .description("Execute arb: validate orderbook depth, then enter both legs simultaneously. Use spot:<exch> for spot+perp mode.")
     .argument("<symbol>", "Symbol (e.g. BTC, ETH, ICP)")
-    .argument("<longExch>", "Exchange to go LONG on (hl, pac, lighter)")
+    .argument("<longExch>", "Exchange to go LONG on (hl, pac, lighter, or spot:hl / spot:lt for spot+perp)")
     .argument("<shortExch>", "Exchange to go SHORT on (hl, pac, lighter)")
     .argument("<sizeUsd>", "Position size per leg in USD")
     .option("--max-slippage <pct>", "Max slippage % per leg", "0.5")
     .option("--leverage <n>", "Set leverage before entry (both exchanges)")
     .option("--isolated", "Use isolated margin mode")
     .option("--smart", "Smart execution: IOC limit at best bid/ask + 1 tick (reduces slippage)")
+    .option("--dry-run", "Simulate without executing trades")
     .action(async (symbol: string, longExch: string, shortExch: string, sizeUsdStr: string, opts: {
-      maxSlippage: string; leverage?: string; isolated?: boolean; smart?: boolean;
+      maxSlippage: string; leverage?: string; isolated?: boolean; smart?: boolean; dryRun?: boolean;
     }) => {
+      // Detect spot: prefix -> route to spot-exec logic
+      if (longExch.startsWith("spot:")) {
+        const spotExch = longExch.slice(5); // extract "hl" from "spot:hl"
+        return handleSpotExec(symbol, spotExch, shortExch, sizeUsdStr, opts);
+      }
       const sym = symbol.toUpperCase();
       const sizeUsd = parseFloat(sizeUsdStr);
       const maxSlippage = parseFloat(opts.maxSlippage);
@@ -1451,22 +1515,11 @@ export function registerArbAutoCommands(
       }
     });
 
-  // ── arb spot-exec ── (spot+perp arb execution)
+  // ── spot-exec logic (called from exec when longExch starts with "spot:") ──
 
-  arb
-    .command("spot-exec")
-    .description("Execute spot+perp arb: buy spot + short perp simultaneously")
-    .argument("<symbol>", "Symbol (e.g. ETH, BTC)")
-    .argument("<spotExch>", "Spot exchange: hl (Hyperliquid) or lt (Lighter)")
-    .argument("<perpExch>", "Perp exchange: hl, lt, pac")
-    .argument("<sizeUsd>", "Position size per leg in USD")
-    .option("--max-slippage <pct>", "Max slippage % per leg", "0.5")
-    .option("--leverage <n>", "Set leverage on perp side before entry")
-    .option("--isolated", "Use isolated margin mode on perp side")
-    .option("--dry-run", "Simulate without executing trades")
-    .action(async (symbol: string, spotExch: string, perpExch: string, sizeUsdStr: string, opts: {
-      maxSlippage: string; leverage?: string; isolated?: boolean; dryRun?: boolean;
-    }) => {
+  async function handleSpotExec(symbol: string, spotExch: string, perpExch: string, sizeUsdStr: string, opts: {
+    maxSlippage: string; leverage?: string; isolated?: boolean; dryRun?: boolean;
+  }) {
       const sym = symbol.toUpperCase();
       const sizeUsd = parseFloat(sizeUsdStr);
       const maxSlippage = parseFloat(opts.maxSlippage);
@@ -1879,18 +1932,11 @@ export function registerArbAutoCommands(
         console.log(chalk.red(`    SPOT:  ${result.spotError}`));
         console.log(chalk.red(`    PERP:  ${result.perpError}\n`));
       }
-    });
+  }
 
-  // ── arb spot-close ── (close spot+perp arb position)
-
-  arb
-    .command("spot-close")
-    .description("Close a spot+perp arb position: sell spot + buy back perp")
-    .argument("<symbol>", "Symbol (e.g. ETH)")
-    .option("--spot-exch <exchange>", "Spot exchange (hl or lt)")
-    .option("--perp-exch <exchange>", "Perp exchange (hl, lt, pac)")
-    .action(async (symbol: string, opts: { spotExch?: string; perpExch?: string }) => {
-      const sym = symbol.toUpperCase();
+  // ── Expose spot-close handler for consolidated "arb close" in arb/index.ts ──
+  handleSpotClose = async (sym_arg, opts_arg, getAdapter, isJsonFn) => {
+      const sym = sym_arg.toUpperCase();
 
       // Try to find the position from state
       const state = loadArbState();
@@ -1899,12 +1945,12 @@ export function registerArbAutoCommands(
       );
 
       const aliasMap: Record<string, string> = { hl: "hyperliquid", pac: "pacifica", lt: "lighter" };
-      const spotExch = aliasMap[opts.spotExch?.toLowerCase() ?? ""] || opts.spotExch?.toLowerCase() || pos?.spotExchange || pos?.longExchange;
-      const perpExch = aliasMap[opts.perpExch?.toLowerCase() ?? ""] || opts.perpExch?.toLowerCase() || pos?.shortExchange;
+      const spotExch = aliasMap[opts_arg.spotExch?.toLowerCase() ?? ""] || opts_arg.spotExch?.toLowerCase() || pos?.spotExchange || pos?.longExchange;
+      const perpExch = aliasMap[opts_arg.perpExch?.toLowerCase() ?? ""] || opts_arg.perpExch?.toLowerCase() || pos?.shortExchange;
 
       if (!spotExch || !perpExch) {
         const msg = "Cannot determine exchanges. Specify --spot-exch and --perp-exch, or ensure the position is tracked in state.";
-        if (isJson()) return printJson(jsonOk({ error: msg }));
+        if (isJsonFn()) return printJson(jsonOk({ error: msg }));
         console.log(chalk.red(`  ${msg}`));
         return;
       }
@@ -1915,18 +1961,18 @@ export function registerArbAutoCommands(
 
       let spotAdapter: import("../exchanges/spot-interface.js").SpotAdapter;
       if (spotExch === "hyperliquid") {
-        const hlAdapter = await getAdapterForExchange("hyperliquid") as import("../exchanges/hyperliquid.js").HyperliquidAdapter;
+        const hlAdapter = await getAdapter("hyperliquid") as import("../exchanges/hyperliquid.js").HyperliquidAdapter;
         const hlSpot = new HyperliquidSpotAdapter(hlAdapter);
         await hlSpot.init();
         spotAdapter = hlSpot;
       } else {
-        const ltAdapter = await getAdapterForExchange("lighter") as import("../exchanges/lighter.js").LighterAdapter;
+        const ltAdapter = await getAdapter("lighter") as import("../exchanges/lighter.js").LighterAdapter;
         const ltSpot = new LighterSpotAdapter(ltAdapter);
         await ltSpot.init();
         spotAdapter = ltSpot;
       }
 
-      const perpAdapter = await getAdapterForExchange(perpExch);
+      const perpAdapter = await getAdapter(perpExch);
       const spotSymbol = `${sym}/USDC`;
 
       // Find how much to close
@@ -1937,12 +1983,12 @@ export function registerArbAutoCommands(
 
       if (!perpPos) {
         const msg = `No short perp position found for ${sym} on ${perpExch}`;
-        if (isJson()) return printJson(jsonOk({ error: msg }));
+        if (isJsonFn()) return printJson(jsonOk({ error: msg }));
         console.log(chalk.red(`  ${msg}`)); return;
       }
 
       const closeSize = perpPos.size;
-      if (!isJson()) {
+      if (!isJsonFn()) {
         console.log(chalk.cyan(`\n  Closing Spot+Perp Arb: ${sym}`));
         console.log(chalk.gray(`    SPOT  ${spotExch}: sell ${closeSize}`));
         console.log(chalk.gray(`    PERP  ${perpExch}: buy  ${closeSize} (close short)`));
@@ -2033,7 +2079,7 @@ export function registerArbAutoCommands(
             const leftover = Number(usdcBal?.available ?? 0);
             if (leftover > 0.01) {
               await ltSpot.transferUsdcToPerp(leftover);
-              if (!isJson()) console.log(chalk.gray(`  Returned ~$${leftover.toFixed(2)} USDC spot→perp on Lighter`));
+              if (!isJsonFn()) console.log(chalk.gray(`  Returned ~$${leftover.toFixed(2)} USDC spot→perp on Lighter`));
             }
           } catch { /* non-critical */ }
         } else if (spotExch === "hyperliquid") {
@@ -2053,7 +2099,7 @@ export function registerArbAutoCommands(
           mode: "spot-perp", symbol: sym, size: closeSize,
           ...(closeWarnings.length > 0 && { warnings: closeWarnings }),
         };
-        if (isJson()) return printJson(jsonOk(closeResult));
+        if (isJsonFn()) return printJson(jsonOk(closeResult));
         if (closeVerified) {
           console.log(chalk.green(`  CLOSED (verified): ${sym} ${closeSize} units`));
         } else {
@@ -2066,19 +2112,16 @@ export function registerArbAutoCommands(
         if (!spotOk) errors.push(`Spot sell failed: ${(spotResult as PromiseRejectedResult).reason}`);
         if (!perpOk) errors.push(`Perp buy failed: ${(perpResult as PromiseRejectedResult).reason}`);
         const result = { status: "partial_close", symbol: sym, spotOk, perpOk, errors };
-        if (isJson()) return printJson(jsonOk(result));
+        if (isJsonFn()) return printJson(jsonOk(result));
         console.log(chalk.red(`  Close partially failed:`));
         for (const e of errors) console.log(chalk.red(`    ${e}`));
         console.log(chalk.yellow(`  Manual intervention may be needed.\n`));
       }
-    });
+    };
 
-  // ── arb pnl ── (check arb position PnL)
+  // ── arb pnl logic (extracted as inner function, no command registration) ──
 
-  arb
-    .command("pnl")
-    .description("Check PnL of current arb positions across exchanges")
-    .action(async () => {
+  async function _handleArbPnl() {
       if (!isJson()) console.log(chalk.cyan("\n  Checking arb positions...\n"));
 
       const exchangeNames = ["hyperliquid", "lighter", "pacifica"];
@@ -2251,13 +2294,13 @@ export function registerArbAutoCommands(
       console.log(`    Net (if closed now): ${netColor(`$${netPnl.toFixed(4)}`)}`);
       console.log(chalk.gray(`    (Fees assume ${(TAKER_FEE * 100).toFixed(3)}% taker. Actual may vary.)`));
       console.log(chalk.gray(`    * Net includes actual settled funding where available.\n`));
-    });
+  }
 
   // ── arb monitor ── (live monitoring with liquidity)
 
   arb
     .command("monitor")
-    .description("Live-monitor funding spreads with liquidity data")
+    .description("Live-monitor funding spreads with liquidity data (--hip3 for HIP-3 cross-dex)")
     .option("--min <pct>", "Min annual spread to show", "20")
     .option("--interval <sec>", "Refresh interval in seconds", "60")
     .option("--top <n>", "Show top N opportunities", "15")
@@ -2265,7 +2308,14 @@ export function registerArbAutoCommands(
     .option("--hold-days <days>", "Expected hold period for net spread calc", "7")
     .option("--bridge-cost <usd>", "One-way bridge cost in USD", "0.5")
     .option("--size <usd>", "Position size per leg ($) for cost calc", "100")
-    .action(async (opts: { min: string; interval: string; top: string; checkLiquidity?: boolean; holdDays: string; bridgeCost: string; size: string }) => {
+    .option("--hip3", "Monitor HIP-3 cross-dex arb opportunities instead of perp spreads")
+    .option("--include-native", "Include native HL perps (hip3 mode)", true)
+    .option("--no-include-native", "Exclude native HL perps (hip3 mode)")
+    .action(async (opts: { min: string; interval: string; top: string; checkLiquidity?: boolean; holdDays: string; bridgeCost: string; size: string; hip3?: boolean; includeNative: boolean }) => {
+      // Route to dex-monitor logic if --hip3 flag is set
+      if (opts.hip3) {
+        return handleDexMonitor(opts);
+      }
       const minSpread = parseFloat(opts.min);
       const intervalSec = parseInt(opts.interval);
       const topN = parseInt(opts.top);
@@ -2371,17 +2421,9 @@ export function registerArbAutoCommands(
       }
     });
 
-  // ── arb dex-monitor ── (live HIP-3 cross-dex monitoring)
+  // ── dex-monitor logic (accessed via 'arb monitor --hip3') ──
 
-  arb
-    .command("dex-monitor")
-    .description("Live-monitor HIP-3 cross-dex funding arb opportunities")
-    .option("--min <pct>", "Min annual spread to show", "10")
-    .option("--interval <sec>", "Refresh interval in seconds", "60")
-    .option("--top <n>", "Show top N opportunities", "20")
-    .option("--include-native", "Include native HL perps", true)
-    .option("--no-include-native", "Exclude native HL perps")
-    .action(async (opts: { min: string; interval: string; top: string; includeNative: boolean }) => {
+  async function handleDexMonitor(opts: { min: string; interval: string; top: string; includeNative: boolean }) {
       const minSpread = parseFloat(opts.min);
       const intervalSec = parseInt(opts.interval);
       const topN = parseInt(opts.top);
@@ -2447,26 +2489,19 @@ export function registerArbAutoCommands(
 
         await new Promise(r => setTimeout(r, intervalSec * 1000));
       }
-    });
-  // ── arb dex-auto ── (HIP-3 cross-dex auto arb)
+  }
 
-  if (getHLAdapterForDex) {
-    arb
-      .command("dex-auto")
-      .description("Auto-execute HIP-3 cross-dex funding arb (long low-funding, short high-funding)")
-      .option("--min-spread <pct>", "Min annual spread to enter (%)", "30")
-      .option("--close-spread <pct>", "Close when spread drops below (%)", "5")
-      .option("--size <usd>", "Position size per leg ($)", "100")
-      .option("--max-positions <n>", "Max simultaneous arb positions", "5")
-      .option("--min-oi <usd>", "Min OI (USD) to enter", "50000")
-      .option("--min-grade <grade>", "Min viability grade: A, B, C, D", "C")
-      .option("--interval <seconds>", "Check interval", "120")
-      .option("--dry-run", "Simulate without executing trades")
-      .action(async (opts: {
-        minSpread: string; closeSpread: string; size: string;
-        maxPositions: string; minOi: string; minGrade: string;
-        interval: string; dryRun?: boolean;
-      }) => {
+  // ── dex-auto logic (accessed via 'arb auto --hip3') ── (HIP-3 cross-dex auto arb)
+
+  async function handleDexAuto(opts: {
+    minSpread: string; closeSpread: string; size: string;
+    maxPositions: string; minOi: string; minGrade: string;
+    interval: string; dryRun?: boolean;
+  }) {
+    if (!getHLAdapterForDex) {
+      console.log(chalk.red("  HIP-3 dex adapter not available."));
+      return;
+    }
         const minSpread = parseFloat(opts.minSpread);
         const closeSpread = parseFloat(opts.closeSpread);
         const sizeUsd = parseFloat(opts.size);
@@ -2653,8 +2688,25 @@ export function registerArbAutoCommands(
         await cycle();
         setInterval(cycle, intervalMs);
         await new Promise(() => {}); // keep alive
-      });
   }
+
+  // Expose inner handlers for external use
+  handleArbPnlRef = _handleArbPnl;
+}
+
+
+// Module-level exported references (assigned inside registerArbAutoCommands)
+export let handleArbPnlRef: (() => Promise<void>) | undefined;
+
+/**
+ * Exported wrapper for handleArbPnl.
+ */
+export async function handleArbPnl(
+  getAdapterForExchange: (exchange: string) => Promise<import("../exchanges/interface.js").ExchangeAdapter>,
+  isJson: () => boolean,
+): Promise<void> {
+  if (handleArbPnlRef) return handleArbPnlRef();
+  throw new Error("handleArbPnl not initialized -- call registerArbAutoCommands first");
 }
 
 // ── Orderbook helpers for monitor ──
