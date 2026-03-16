@@ -170,30 +170,15 @@ export class LighterSpotAdapter implements SpotAdapter {
         ?? res.accounts?.[0];
       if (!acct) return [];
 
-      // Perp USDC balance (collateral / available for perp trading)
-      balances.push({
-        token: "USDC",
-        total: String(acct.collateral ?? 0),
-        available: String(acct.available_balance ?? 0),
-        held: String(Math.max(0, Number(acct.collateral ?? 0) - Number(acct.available_balance ?? 0))),
-      });
-
-      // Spot token balances from the assets array
+      // Spot token balances from the assets array only.
+      // Perp USDC (collateral) is already reported by getBalance() — don't duplicate here.
       if (acct.assets && acct.assets.length > 0) {
         for (const asset of acct.assets) {
           const bal = parseFloat(asset.balance || "0");
           const locked = parseFloat(asset.locked_balance || "0");
-          if (asset.symbol === "USDC") {
-            // Add spot USDC as separate entry so caller can distinguish
+          if (bal > 0) {
             balances.push({
-              token: "USDC_SPOT",
-              total: asset.balance,
-              available: String(bal - locked),
-              held: asset.locked_balance,
-            });
-          } else if (bal > 0) {
-            balances.push({
-              token: asset.symbol,
+              token: asset.symbol === "USDC" ? "USDC_SPOT" : asset.symbol,
               total: asset.balance,
               available: String(bal - locked),
               held: asset.locked_balance,
