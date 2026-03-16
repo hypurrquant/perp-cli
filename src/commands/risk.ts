@@ -100,6 +100,7 @@ export function registerRiskCommands(
         } else {
           console.log(chalk.green("\n  No risk violations. All clear.\n"));
         }
+
       });
     });
 
@@ -315,4 +316,5 @@ export function registerRiskCommands(
         }
       });
     });
+
 }

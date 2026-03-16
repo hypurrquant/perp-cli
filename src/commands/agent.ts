@@ -102,7 +102,7 @@ export function registerAgentCommands(
 ) {
   const agent = program
     .command("agent")
-    .description("[Deprecated] Use 'perp api-spec'. Agent-friendly commands");
+    .description("Agent-friendly commands");
 
   // ── agent schema ── dump full command tree as JSON
   agent
@@ -126,10 +126,12 @@ export function registerAgentCommands(
       printJson(jsonOk(envelope));
     });
 
-  // ── Top-level schema alias ──
-  program
+  // ── Top-level schema alias (hidden) ──
+  const schemaAlias = program
     .command("schema")
-    .description("Output CLI schema as JSON (alias for agent schema)")
+    .description("Output CLI schema as JSON (alias for agent schema)");
+  (schemaAlias as any)._hidden = true;
+  schemaAlias
     .action(() => {
       const errorCodeDocs: Record<string, { status: number; retryable: boolean; description: string }> = {};
       for (const [key, val] of Object.entries(ERROR_CODES)) {

@@ -57,11 +57,38 @@ export function registerTradeCommands(
     .option("-s, --slippage <pct>", "Slippage percent", "1")
     .option("--reduce-only", "Reduce only order")
     .option("--smart", "Smart execution: IOC limit at best bid/ask + 1 tick (reduces slippage)")
+    .option("--split", "Use orderbook-aware split execution for large orders")
+    .option("--max-slippage <pct>", "Max slippage per split slice (%)", "0.3")
     .option("--client-id <id>", "Client order ID for idempotent tracking")
     .option("--auto-id", "Auto-generate a client order ID")
-    .action(async (symbol: string, side: string, size: string, opts: { slippage: string; reduceOnly?: boolean; smart?: boolean; clientId?: string; autoId?: boolean }) => {
+    .action(async (symbol: string, side: string, size: string, opts: { slippage: string; reduceOnly?: boolean; smart?: boolean; split?: boolean; maxSlippage?: string; clientId?: string; autoId?: boolean }) => {
       const s = side.toLowerCase();
       if (s !== "buy" && s !== "sell") errorAndExit("Side must be buy or sell");
+      const sym = symbol.toUpperCase();
+
+      // ── Split execution branch ──
+      if (opts.split) {
+        const adapter = await getAdapter();
+        if (dryRunGuard("split-order", { exchange: adapter.name, symbol: sym, side: s, size })) return;
+
+        const { runSplitOrder } = await import("../strategies/split-order.js");
+        const markets = await adapter.getMarkets();
+        const market = markets.find(m => symbolMatch(m.symbol, sym));
+        const markPrice = market ? parseFloat(market.markPrice) : 0;
+        const notionalUsd = markPrice > 0 ? parseFloat(size) * markPrice : parseFloat(size);
+
+        const result = await runSplitOrder(adapter, {
+          symbol: sym,
+          side: s as "buy" | "sell",
+          totalSizeUsd: notionalUsd,
+          maxSlippagePct: parseFloat(opts.maxSlippage ?? "0.3"),
+        }, isJson() ? () => {} : (msg) => console.log(chalk.gray(`  ${msg}`)));
+
+        if (isJson()) return printJson(jsonOk(result));
+        const statusColor = result.status === "complete" ? chalk.green : result.status === "partial" ? chalk.yellow : chalk.red;
+        console.log(`\n  ${statusColor(result.status.toUpperCase())} | ${result.slices.length} slices | $${formatUsd(result.filledUsd)} filled | slippage: ${result.totalSlippagePct.toFixed(3)}%\n`);
+        return;
+      }
 
       const clientId = opts.autoId ? generateClientId() : opts.clientId;
 
@@ -73,7 +100,7 @@ export function registerTradeCommands(
 
       const adapter = await getAdapter();
 
-      if (dryRunGuard("market_order", { exchange: adapter.name, symbol: symbol.toUpperCase(), side: s, size, smart: !!opts.smart })) return;
+      if (dryRunGuard("market_order", { exchange: adapter.name, symbol: sym, side: s, size, smart: !!opts.smart })) return;
 
       if (clientId) {
         logClientId({
@@ -188,6 +215,52 @@ export function registerTradeCommands(
       if (isJson()) return printJson(jsonOk(clientId ? { ...result as object, clientOrderId: clientId } : result));
       console.log(chalk.green(`\n  Market SELL ${size} ${symbol.toUpperCase()} placed on ${adapter.name}.${opts.smart ? " (smart)" : ""}\n`));
       printJson(jsonOk(result));
+    });
+
+  // ── Split Order (orderbook-aware) ──
+  trade
+    .command("split <symbol> <side> <usd>")
+    .description("Orderbook-aware split execution — breaks large orders into slices based on depth")
+    .option("--max-slippage <pct>", "Max slippage per slice (%)", "0.3")
+    .option("--max-slices <n>", "Max number of slices", "10")
+    .option("--delay <ms>", "Delay between slices in ms", "1000")
+    .option("--min-slice <usd>", "Minimum slice size in USD", "100")
+    .action(async (symbol: string, side: string, usd: string, opts: {
+      maxSlippage: string; maxSlices: string; delay: string; minSlice: string;
+    }) => {
+      const sym = symbol.toUpperCase();
+      const orderSide = side.toLowerCase() as "buy" | "sell";
+      const totalUsd = parseFloat(usd);
+
+      if (!["buy", "sell"].includes(orderSide)) errorAndExit("Side must be 'buy' or 'sell'");
+      if (isNaN(totalUsd) || totalUsd <= 0) errorAndExit("USD amount must be > 0");
+
+      if (dryRunGuard("split-order", { symbol: sym, side: orderSide, totalUsd, ...opts })) return;
+
+      const adapter = await getAdapter();
+      const { runSplitOrder } = await import("../strategies/split-order.js");
+
+      const result = await runSplitOrder(adapter, {
+        symbol: sym,
+        side: orderSide,
+        totalSizeUsd: totalUsd,
+        maxSlippagePct: parseFloat(opts.maxSlippage),
+        maxSlices: parseInt(opts.maxSlices),
+        delayMs: parseInt(opts.delay),
+        minSliceUsd: parseFloat(opts.minSlice),
+      }, isJson() ? () => {} : (msg) => console.log(chalk.gray(`  ${msg}`)));
+
+      if (isJson()) return printJson(jsonOk(result));
+
+      const statusColor = result.status === "complete" ? chalk.green
+        : result.status === "partial" ? chalk.yellow
+        : chalk.red;
+
+      console.log(`\n  ${statusColor(result.status.toUpperCase())} | ${result.slices.length} slices`);
+      console.log(`  Filled: $${formatUsd(result.filledUsd)} / $${formatUsd(result.requestedUsd)}`);
+      console.log(`  Avg Price: $${formatUsd(result.avgPrice)}`);
+      console.log(`  Slippage: ${result.totalSlippagePct.toFixed(3)}%`);
+      console.log(`  Runtime: ${result.runtime.toFixed(1)}s\n`);
     });
 
   trade
@@ -1232,7 +1305,7 @@ export function registerTradeCommands(
         const { startJob } = await import("../jobs.js");
         const cliArgs = [
           `-e`, exchange, sym,
-          `--trail`, opts.trail,
+          `--trail`, opts.trail!,
           `--interval`, opts.interval,
           ...(opts.activation ? [`--activation`, opts.activation] : []),
         ];

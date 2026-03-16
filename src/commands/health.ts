@@ -77,11 +77,12 @@ export async function runHealthCheck(isJson: () => boolean): Promise<void> {
 }
 
 export function registerHealthCommands(program: Command, isJson: () => boolean) {
-  program
+  const cmd = program
     .command("health")
-    .description("[Deprecated] Use 'perp status --health' instead")
+    .description("Use 'perp status --health'")
     .action(async () => {
-      if (!isJson()) console.log(chalk.yellow("  [Deprecated] Use 'perp status --health' instead.\n"));
+      if (!isJson()) console.log(chalk.yellow("  Use 'perp status --health' instead.\n"));
       await runHealthCheck(isJson);
     });
+  (cmd as any)._hidden = true;
 }

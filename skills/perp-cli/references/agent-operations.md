@@ -168,6 +168,15 @@ perp --json -e hl trade buy BTC 0.01              # shorthand
 perp --json -e hl trade sell BTC 0.01             # shorthand
 ```
 
+### Split Orders (orderbook-aware, for large orders)
+```bash
+perp --json -e hl trade split BTC buy 5000        # split $5000 into depth-based slices
+perp --json -e hl trade split BTC sell 10000 --max-slippage 0.5 --max-slices 5
+perp --json -e hl trade market BTC buy 0.5 --split   # split via market command flag
+```
+Returns `{ slices[], filledUsd, avgPrice, totalSlippagePct, status }`.
+Status: `complete` (all filled), `partial` (some filled), `failed` (none filled).
+
 ### Limit Orders (execute at specific price)
 ```bash
 perp --json -e hl trade buy BTC 0.01 -p 60000    # buy at $60,000

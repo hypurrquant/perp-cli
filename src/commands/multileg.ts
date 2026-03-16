@@ -64,9 +64,27 @@ export function registerMultilegCommands(
   getAdapterForExchange: (exchange: string) => Promise<ExchangeAdapter>,
   isJson: () => boolean,
 ) {
-  program
+  // Register under 'trade multi' (primary location)
+  const tradeCmd = program.commands.find(c => c.name() === "trade");
+  if (tradeCmd) {
+    registerMultiAction(tradeCmd, getAdapterForExchange, isJson);
+  }
+
+  // Keep deprecated top-level 'multi' alias (hidden from help)
+  registerMultiAction(program, getAdapterForExchange, isJson, true);
+}
+
+function registerMultiAction(
+  parent: Command,
+  getAdapterForExchange: (exchange: string) => Promise<ExchangeAdapter>,
+  isJson: () => boolean,
+  deprecated = false,
+) {
+  const cmd = parent
     .command("multi <legs...>")
-    .description("[Deprecated] Use 'perp plan'. Execute multi-leg orders (exchange:symbol:side:size)")
+    .description(deprecated ? "Use 'perp trade multi'" : "Execute multi-leg orders (exchange:symbol:side:size)");
+  if (deprecated) (cmd as any)._hidden = true;
+  cmd
     .option("--smart", "Use smart order (IOC limit + fallback) for each leg")
     .option("--rollback", "Auto-rollback filled legs if any leg fails", true)
     .option("--no-rollback", "Disable auto-rollback")

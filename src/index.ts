@@ -329,8 +329,8 @@ registerRebalanceCommands(program, getAdapterForExchange, isJson);
 import { registerJobsCommands } from "./commands/jobs.js";
 import { registerRunCommands } from "./commands/run.js";
 registerJobsCommands(program, isJson);
-registerRunCommands(program, getAdapter, getAdapterForExchange, isJson);
 registerBotCommands(program, getAdapter, getAdapterForExchange, isJson);
+registerRunCommands(program, getAdapter, getAdapterForExchange, isJson);
 
 // Agent-friendly commands
 registerHealthCommands(program, isJson);

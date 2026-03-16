@@ -63,6 +63,12 @@ perp --json trade scale-in <SYMBOL> <SIDE> --levels '<PRICE1>:<SIZE>,<PRICE2>:<S
 perp --json trade trailing-stop <SYMBOL>    # trailing stop with callback %
 perp --json trade twap <SYMBOL> <SIDE> <SIZE> <DURATION>
 perp --json trade pnl-track                 # real-time PnL tracker
+
+# Split execution (orderbook-aware)
+perp --json trade split <SYMBOL> <buy|sell> <USD>   # split large order into depth-based slices
+perp --json trade split <SYM> buy 5000 --max-slippage 0.5 --max-slices 5 --delay 2000 --min-slice 200
+perp --json trade market <SYM> buy <SIZE> --split   # split via market command flag
+perp --json trade market <SYM> buy <SIZE> --split --max-slippage 0.5
 ```
 
 ## Deposit & Withdraw

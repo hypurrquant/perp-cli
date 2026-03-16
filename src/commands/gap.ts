@@ -135,9 +135,27 @@ export function registerGapCommands(
   program: Command,
   isJson: () => boolean
 ) {
+  // Register under 'arb gap' (primary location)
+  const arbCmd = program.commands.find(c => c.name() === "arb");
+  if (arbCmd) {
+    registerGapSubcommands(arbCmd, isJson);
+  }
+
+  // Keep deprecated top-level 'gap' alias (hidden from help)
   const gap = program
     .command("gap")
-    .description("[Deprecated] Use 'perp arb gap'. Cross-exchange price gap monitoring");
+    .description("Use 'perp arb gap'");
+  (gap as any)._hidden = true;
+  registerGapSubcommands(gap, isJson);
+}
+
+function registerGapSubcommands(
+  parent: Command,
+  isJson: () => boolean
+) {
+  const gap = parent.name() === "gap"
+    ? parent
+    : parent.command("gap").description("Cross-exchange price gap monitoring");
 
   // ── gap show (default) ──
 

@@ -68,13 +68,15 @@ async function fetchLighterRates(): Promise<FundingRate[]> {
 
 export function registerArbCommands(
   program: Command,
-  isJson: () => boolean
+  isJson: () => boolean,
 ) {
   const arb = program.command("arb").description("Funding rate arbitrage & basis trading");
 
-  arb
+  const fundingCmd = arb
     .command("funding")
-    .description("[Deprecated] Use 'perp funding rates --min-spread 5' instead.")
+    .description("Use 'perp funding rates --min-spread 5'");
+  (fundingCmd as any)._hidden = true;
+  fundingCmd
     .option("-s, --symbol <symbol>", "Filter by symbol")
     .option("--min-spread <pct>", "Minimum annual spread % to show", "5")
     .action(async (opts: { symbol?: string; minSpread: string }) => {
@@ -169,13 +171,15 @@ export function registerArbCommands(
       console.log(chalk.gray("\n  Note: All rates are hourly. Normalized before annualizing.\n"));
     });
 
-  arb
+  const ratesCmd = arb
     .command("rates")
-    .description("[Deprecated] Use 'perp funding rates' instead. Shows all funding rates.")
+    .description("Use 'perp funding rates'");
+  (ratesCmd as any)._hidden = true;
+  ratesCmd
     .option("-s, --symbol <symbol>", "Filter by symbol")
     .action(async (opts: { symbol?: string }) => {
       if (!isJson()) {
-        console.log(chalk.yellow("\n  [Deprecated] 'perp arb rates' is deprecated. Use 'perp funding rates' instead.\n"));
+        console.log(chalk.yellow("\n  Use 'perp funding rates' instead.\n"));
       }
 
       // Delegate to the same data source as funding rates
@@ -421,4 +425,5 @@ export function registerArbCommands(
       console.log(chalk.gray(`  A: OI>$1M  B: OI>$100K  C: OI>$10K  D: OI<$10K (thin — high risk)`));
       console.log(chalk.gray(`  Note: HIP-3 dexes charge 2x fees. Factor into net profitability.\n`));
     });
+
 }

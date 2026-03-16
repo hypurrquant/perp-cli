@@ -82,10 +82,10 @@ export function registerHistoryCommands(program: Command, isJson: () => boolean)
       });
     });
 
-  // ── history stats ──
-  history
+  // ── history stats (hidden alias for 'history summary') ──
+  const statsCmd = history
     .command("stats")
-    .description("Execution statistics summary")
+    .description("Use 'history summary'")
     .option("--since <date>", "Stats since date (ISO or relative: 24h, 7d, 30d)")
     .action(async (opts: { since?: string }) => {
       await withJsonErrors(isJson(), async () => {
@@ -132,6 +132,7 @@ export function registerHistoryCommands(program: Command, isJson: () => boolean)
         console.log();
       });
     });
+  (statsCmd as any)._hidden = true;
 
   // ── history positions ──
   history
@@ -272,4 +273,5 @@ export function registerHistoryCommands(program: Command, isJson: () => boolean)
       }
       console.log(chalk.green(`\n  Pruned ${pruned} old records (keeping last ${opts.keepDays} days).\n`));
     });
+
 }

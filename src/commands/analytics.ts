@@ -22,10 +22,25 @@ export function registerAnalyticsCommands(
   getAdapterForExchange: (exchange: string) => Promise<ExchangeAdapter>,
   isJson: () => boolean,
 ) {
-  const analytics = program.command("analytics").description("[Deprecated] Use 'perp history'. Trading performance analytics");
+  // Register under 'history' (primary location)
+  const historyCmd = program.commands.find(c => c.name() === "history");
+  if (historyCmd) {
+    registerAnalyticsSubcommands(historyCmd, getAdapterForExchange, isJson);
+  }
 
+  // Keep deprecated top-level 'analytics' alias (hidden from help)
+  const analytics = program.command("analytics").description("Use 'perp history'");
+  (analytics as any)._hidden = true;
+  registerAnalyticsSubcommands(analytics, getAdapterForExchange, isJson);
+}
+
+function registerAnalyticsSubcommands(
+  parent: Command,
+  getAdapterForExchange: (exchange: string) => Promise<ExchangeAdapter>,
+  isJson: () => boolean,
+) {
   // ── analytics summary ──
-  analytics
+  parent
     .command("summary")
     .description("Execution log summary statistics")
     .option("--since <period>", "Period: 24h, 7d, 30d, or ISO date")
@@ -76,9 +91,9 @@ export function registerAnalyticsCommands(
     });
 
   // ── analytics pnl ──
-  analytics
+  parent
     .command("pnl")
-    .description("Realized P&L from exchange trade history")
+    .description("Realized P&L from exchange trade history (volume & fees by symbol/exchange)")
     .option("-e, --exchange <exchanges>", "Comma-separated exchanges")
     .option("--since <period>", "Period: 24h, 7d, 30d")
     .option("-n, --limit <n>", "Trade history limit per exchange", "100")
@@ -191,9 +206,9 @@ export function registerAnalyticsCommands(
     });
 
   // ── analytics funding ──
-  analytics
+  parent
     .command("funding")
-    .description("Funding payment history across exchanges")
+    .description("Funding payment aggregation across exchanges (net by symbol/exchange)")
     .option("-e, --exchange <exchanges>", "Comma-separated exchanges")
     .option("-s, --symbol <symbol>", "Filter by symbol")
     .option("-n, --limit <n>", "Funding history limit per exchange", "50")
@@ -272,7 +287,7 @@ export function registerAnalyticsCommands(
     });
 
   // ── analytics report ──
-  analytics
+  parent
     .command("report")
     .description("Full performance report (summary + pnl + funding)")
     .option("-e, --exchange <exchanges>", "Comma-separated exchanges")

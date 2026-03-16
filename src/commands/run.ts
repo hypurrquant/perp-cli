@@ -15,11 +15,32 @@ export function registerRunCommands(
   getAdapterFor: (exchange: string) => Promise<ExchangeAdapter>,
   isJson: () => boolean
 ) {
-  const run = program.command("run").description("[Deprecated] Use 'perp bot'. Run a strategy");
+  // Register under 'bot' (primary location)
+  const botCmd = program.commands.find(c => c.name() === "bot");
+  if (botCmd) {
+    registerRunSubcommands(botCmd, getAdapter, getAdapterFor, isJson);
+  }
 
-  run
+  // Keep deprecated top-level 'run' alias (hidden from help)
+  const run = program.command("run").description("Use 'perp bot'");
+  (run as any)._hidden = true;
+  registerRunSubcommands(run, getAdapter, getAdapterFor, isJson);
+}
+
+function registerRunSubcommands(
+  parent: Command,
+  getAdapter: () => Promise<ExchangeAdapter>,
+  getAdapterFor: (exchange: string) => Promise<ExchangeAdapter>,
+  isJson: () => boolean
+) {
+  const run = parent;
+  const hideFromBot = parent.name() === "bot"; // hide duplicates when under bot
+
+  const twapCmd = run
     .command("twap <symbol> <side> <size> <duration>")
-    .description("Run client-side TWAP (splits market orders over time)")
+    .description("Run client-side TWAP (splits market orders over time)");
+  if (hideFromBot) (twapCmd as any)._hidden = true;
+  twapCmd
     .option("-s, --slices <n>", "Number of slices (default: auto)")
     .option("--job-id <id>", "Job ID (set automatically for background jobs)")
     .action(async (symbol: string, side: string, size: string, duration: string, opts: { slices?: string; jobId?: string }) => {
@@ -124,9 +145,11 @@ export function registerRunCommands(
 
   // ── Grid Bot ──
 
-  run
+  const gridCmd = run
     .command("grid <symbol>")
-    .description("Run grid trading bot (places limit orders across a price range)")
+    .description("Run grid trading bot (places limit orders across a price range)");
+  if (hideFromBot) (gridCmd as any)._hidden = true;
+  gridCmd
     .requiredOption("--upper <price>", "Upper price bound")
     .requiredOption("--lower <price>", "Lower price bound")
     .option("--grids <n>", "Number of grid lines", "10")
@@ -177,9 +200,11 @@ export function registerRunCommands(
 
   // ── DCA (Dollar Cost Averaging) ──
 
-  run
+  const dcaCmd = run
     .command("dca <symbol> <side> <amount> <interval>")
-    .description("Run DCA strategy (periodic market orders at fixed intervals)")
+    .description("Run DCA strategy (periodic market orders at fixed intervals)");
+  if (hideFromBot) (dcaCmd as any)._hidden = true;
+  dcaCmd
     .option("--orders <n>", "Total number of orders (0 = unlimited)", "0")
     .option("--price-limit <price>", "Stop buying above / selling below this price")
     .option("--max-runtime <sec>", "Max runtime in seconds (0 = forever)", "0")
@@ -219,9 +244,11 @@ export function registerRunCommands(
 
   // ── Trailing Stop ──
 
-  run
+  const tsCmd = run
     .command("trailing-stop <symbol>")
-    .description("Run client-side trailing stop (monitors price, closes position when trail % hit)")
+    .description("Run client-side trailing stop (monitors price, closes position when trail % hit)");
+  if (hideFromBot) (tsCmd as any)._hidden = true;
+  tsCmd
     .requiredOption("--trail <pct>", "Trail percentage")
     .option("--interval <sec>", "Check interval in seconds", "5")
     .option("--activation <price>", "Only start trailing after price reaches this level")

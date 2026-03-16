@@ -48,6 +48,8 @@ perp --json -e <EX> market funding <SYM>
 
 # Trading
 perp --json -e <EX> trade market <SYM> buy <SIZE>
+perp --json -e <EX> trade market <SYM> buy <SIZE> --smart      # IOC limit at best bid/ask (less slippage)
+perp --json -e <EX> trade split <SYM> buy 5000                 # orderbook-aware split (large orders)
 perp --json -e <EX> trade close <SYM>
 perp --json -e <EX> trade leverage <SYM> <N>
 

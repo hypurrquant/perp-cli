@@ -5,7 +5,7 @@ allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*), Bas
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.4.7"
+  version: "0.4.8"
 ---
 
 # perp-cli Agent Guide
@@ -60,6 +60,8 @@ perp --json arb exec <SYM> <longEx> <shortEx> <$> --leverage <N> --isolated  # e
 # Single exchange trading (when not doing arb)
 perp --json -e <EX> trade market <SYM> buy <SIZE>
 perp --json -e <EX> trade market <SYM> buy <SIZE> --smart  # IOC limit at best ask + 1 tick (less slippage)
+perp --json -e <EX> trade market <SYM> buy <SIZE> --split  # orderbook-aware split for large orders
+perp --json -e <EX> trade split <SYM> buy 5000             # dedicated split command (USD notional)
 perp --json -e <EX> trade close <SYM>
 perp --json -e <EX> trade close <SYM> --smart              # smart close at best bid/ask
 
@@ -96,6 +98,12 @@ perp --json -e <EX> trade market <SYM> buy <SIZE> --smart
 perp --json -e <EX> trade close <SYM> --smart
 perp --json arb exec <SYM> <longEx> <shortEx> <$> --smart   # smart arb entry
 perp --json arb close <SYM> --smart                          # smart arb close
+
+# Split order: orderbook-aware execution for large orders
+# Reads depth before each slice, IOC limit within slippage tolerance
+perp --json -e <EX> trade split <SYM> buy 5000               # split $5000 into depth-based slices
+perp --json -e <EX> trade split <SYM> sell 10000 --max-slices 5 --delay 2000
+perp --json -e <EX> trade market <SYM> buy <SIZE> --split     # split via market command flag
 ```
 
 All string outputs are auto-sanitized (control chars stripped, prompt injection patterns blocked).

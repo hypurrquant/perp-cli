@@ -144,7 +144,7 @@ export function registerPortfolioCommands(
 ) {
   program
     .command("portfolio")
-    .description("[Deprecated] Use 'perp status'. Cross-exchange portfolio overview")
+    .description("Cross-exchange portfolio overview (all exchanges at once)")
     .option("--exchange <exchanges>", "Comma-separated exchanges to include (default: all)")
     .action(async (opts: { exchange?: string }) => {
       await withJsonErrors(isJson(), async () => {

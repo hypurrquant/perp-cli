@@ -202,19 +202,38 @@ perp --json -e <SHORT_EX> account positions   # size must = X
 ```
 If sizes differ (partial fill, rounding), immediately adjust the larger position to match the smaller one.
 
-#### Step 3: Split Large Orders into Matched Chunks
+#### Step 3: Split Large Orders with `trade split`
 
-If your desired size exceeds what the orderbooks can absorb at best ticks, split into chunks — but **every chunk must be a matched pair with identical size on both sides**:
+For large orders, use the built-in orderbook-aware split execution instead of manual chunking:
+
+```bash
+# Single exchange: split $5000 buy into depth-based slices
+perp --json -e <EX> trade split <SYM> buy 5000
+
+# With options
+perp --json -e <EX> trade split <SYM> buy 5000 --max-slippage 0.5 --max-slices 5 --delay 2000
+
+# Or use --split flag on market command
+perp --json -e <EX> trade market <SYM> buy <SIZE> --split
+```
+
+How it works:
+1. Fetches fresh orderbook before each slice
+2. Walks levels via `computeExecutableSize` to find fillable amount at target slippage
+3. Places IOC limit at worst acceptable price within slippage tolerance
+4. Waits for book to refresh, repeats until target filled or max slices reached
+
+**For arb, both legs must still match.** Use `trade split` on each side independently with the same total USD, then verify sizes match:
 
 ```
-Chunk 1: buy 0.3 on Exchange A → sell 0.3 on Exchange B → verify both
-Chunk 2: buy 0.3 on Exchange A → sell 0.3 on Exchange B → verify both
-... repeat until full size is executed
+Leg A: perp --json -e <LONG_EX> trade split <SYM> buy 5000
+Leg B: perp --json -e <SHORT_EX> trade split <SYM> sell 5000
+→ Verify positions, adjust if sizes differ
 ```
 
 **Rules:**
-1. Re-check orderbook depth between chunks — liquidity changes
-2. Each chunk: same size on both sides, no exceptions
+1. Each chunk re-checks orderbook depth — liquidity changes between slices
+2. For arb: same total USD on both sides, verify matched sizes after execution
 3. If one leg fails → STOP immediately, do NOT continue
 4. Assess exposure: retry the failed leg, or unwind the completed leg
 5. NEVER execute multiple orders on one side without matching the other
