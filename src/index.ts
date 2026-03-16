@@ -34,11 +34,10 @@ import { registerRebalanceCommands } from "./commands/rebalance.js";
 import { registerBotCommands } from "./commands/bot.js";
 import { registerRiskCommands } from "./commands/risk.js";
 import { registerHistoryCommands } from "./commands/history.js";
-import { registerPnlCommands } from "./commands/pnl.js";
 import { registerSettingsCommands } from "./commands/settings.js";
 import { registerDexCommands } from "./commands/dex.js";
 import { registerPlanCommands } from "./commands/plan.js";
-import { registerFundingCommands } from "./commands/funding.js";
+// funding merged into arb.ts
 import { registerBacktestCommands } from "./commands/backtest.js";
 import { registerDashboardCommands } from "./commands/dashboard.js";
 import { registerInitCommand, EXCHANGE_ENV_MAP, validateKey } from "./commands/init.js";
@@ -212,7 +211,7 @@ registerAccountCommands(program, getAdapter, isJson, getAdapterForExchange);
 registerTradeCommands(program, getAdapter, isJson, isDryRun, getAdapterForExchange);
 registerManageCommands(program, getAdapter, isJson, getPacificaAdapter);
 registerStreamCommands(program, () => program.opts().network as Network, getExchange, getAdapter);
-registerArbCommands(program, isJson);
+registerArbCommands(program, isJson, getAdapterForExchange);
 registerWalletCommands(program, isJson);
 registerBridgeCommands(program, isJson);
 registerDepositCommands(
@@ -326,29 +325,29 @@ registerBotCommands(program, getAdapter, getAdapterForExchange, isJson);
 // Agent-friendly commands
 registerRiskCommands(program, getAdapterForExchange, isJson);
 registerHistoryCommands(program, isJson, getAdapterForExchange);
-registerPnlCommands(program, getAdapterForExchange, isJson);
 registerSettingsCommands(program, isJson, getAdapterForExchange);
 registerDexCommands(program, getAdapter, isJson);
 registerPlanCommands(program, getAdapter, isJson);
-registerFundingCommands(program, isJson, getAdapterForExchange);
+// funding merged into arb — registerFundingCommands removed
 registerBacktestCommands(program, isJson);
 registerDashboardCommands(program, getAdapterForExchange, isJson, getHLAdapterForDex);
 registerInitCommand(program);
 
-// Agent discovery: perp api-spec — returns full CLI spec as JSON
-program
+// Agent discovery: perp api-spec — deprecated, use 'perp agent schema'
+const apiSpecCmd = program
   .command("api-spec")
-  .description("Return full CLI command spec as JSON (for agent discovery)")
+  .description("Use 'perp agent schema'")
   .action(async () => {
     const { jsonOk, printJson } = await import("./utils.js");
     const { getCliSpec } = await import("./cli-spec.js");
     printJson(jsonOk(getCliSpec(program)));
   });
+(apiSpecCmd as any)._hidden = true;
 
-// Status command
-program
+// Status command — deprecated, use 'perp portfolio' or 'perp -e <ex> account'
+const statusCmd = program
   .command("status")
-  .description("Quick overview: account + positions + open orders (--health for API check)")
+  .description("Use 'perp portfolio' for cross-exchange overview")
   .option("--health", "Check exchange API connectivity and latency")
   .action(async (opts: { health?: boolean }) => {
     if (opts.health) {
@@ -442,6 +441,7 @@ program
       process.exit(1);
     }
   });
+(statusCmd as any)._hidden = true;
 
 // Switch shared API URLs if --network testnet is used
 program.hook("preAction", () => {
