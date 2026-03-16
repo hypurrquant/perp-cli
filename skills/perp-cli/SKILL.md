@@ -206,7 +206,7 @@ If `error.retryable` is `false`, do NOT retry — fix the cause first.
 
 | Error | Action |
 |-------|--------|
-| `RATE_LIMITED` | wait 5s, retry (max 3) |
+| `RATE_LIMITED` | wait 5-10s, retry (max 3). Lighter rate limits are strict — space commands 3s+ apart |
 | `EXCHANGE_UNREACHABLE` | wait 10s, retry. 3x fail → skip that exchange |
 | `TIMEOUT` | wait 5s, retry (max 3) |
 | `INSUFFICIENT_BALANCE` | reduce size or bridge funds to that exchange |
@@ -216,6 +216,8 @@ If `error.retryable` is `false`, do NOT retry — fix the cause first.
 | `MARGIN_INSUFFICIENT` | reduce leverage or close existing positions |
 | `DUPLICATE_ORDER` | already submitted — check positions, don't retry |
 | Lighter `invalid signature` | check ~/.perp/.env or `perp --json -e lighter manage setup-api-key` |
+| Lighter `invalid account index` | rate limit caused init failure — wait 10s and retry the command |
+| Lighter `--smart` not filling | Lighter IOC limit orders may not fill — use regular market order (without `--smart`) |
 
 ## Examples
 

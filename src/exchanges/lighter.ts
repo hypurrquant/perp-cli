@@ -104,12 +104,24 @@ export class LighterAdapter implements ExchangeAdapter {
       await this._refreshMarketMap();
       return;
     }
-    const res = await fetch(`${this._baseUrl}/api/v1/account?by=l1_address&value=${this._address}`);
-    const json = await res.json() as { accounts?: { account_index: number; l1_address: string }[] };
-    if (json.accounts && json.accounts.length > 0) {
-      this._accountIndex = this._accountIndexInit >= 0
-        ? this._accountIndexInit
-        : json.accounts[0].account_index;
+    // Retry account lookup on 429 (rate limit) — critical for _accountIndex
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(`${this._baseUrl}/api/v1/account?by=l1_address&value=${this._address}`);
+        if (res.status === 429 && attempt < 2) {
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        const json = await res.json() as { accounts?: { account_index: number; l1_address: string }[] };
+        if (json.accounts && json.accounts.length > 0) {
+          this._accountIndex = this._accountIndexInit >= 0
+            ? this._accountIndexInit
+            : json.accounts[0].account_index;
+        }
+        break;
+      } catch {
+        if (attempt < 2) { await new Promise(r => setTimeout(r, 1000)); continue; }
+      }
     }
 
     // Auto-generate API key if we have PK but no API key and account exists
@@ -408,16 +420,27 @@ export class LighterAdapter implements ExchangeAdapter {
       const totalOrders = Number((acct as Record<string, unknown>)?.total_order_count ?? 0);
       if (totalOrders === 0) return [];
 
-      // Query each market in parallel (accountActiveOrders requires auth + market_id)
+      // Only query markets that have open orders (avoids 156-market fan-out)
+      const activeMarketIds = new Set<number>();
+      for (const p of (acct?.positions as unknown as Record<string, unknown>[]) ?? []) {
+        if (Number(p.open_order_count ?? 0) > 0 || Number(p.pending_order_count ?? 0) > 0) {
+          activeMarketIds.add(Number(p.market_id));
+        }
+      }
+      if (activeMarketIds.size === 0) return [];
+
+      const reverseMap = new Map<number, string>();
+      for (const [sym, id] of this._marketMap) reverseMap.set(id, sym);
+
       const allOrders: ExchangeOrder[] = [];
-      const entries = Array.from(this._marketMap.entries());
       const results = await Promise.allSettled(
-        entries.map(([sym, marketId]) =>
-          this.restGetAuth("/accountActiveOrders", {
+        Array.from(activeMarketIds).map((marketId) => {
+          const sym = reverseMap.get(marketId) ?? `Market-${marketId}`;
+          return this.restGetAuth("/accountActiveOrders", {
             account_index: String(this._accountIndex),
             market_id: String(marketId),
-          }).then(res => ({ sym, orders: ((res as Record<string, unknown>).orders ?? []) as Array<Record<string, unknown>> }))
-        )
+          }).then(res => ({ sym, orders: ((res as Record<string, unknown>).orders ?? []) as Array<Record<string, unknown>> }));
+        })
       );
 
       for (const r of results) {
@@ -798,18 +821,37 @@ export class LighterAdapter implements ExchangeAdapter {
   private async _getPositionFundingRaw(): Promise<unknown> {
     if (this._accountIndex < 0) return { funding: [] };
     if (this._marketMap.size === 0) await this._refreshMarketMap();
+
+    // Only query markets where the account has/had positions (avoids 156-market fan-out)
+    const acct = await this.fetchAccount();
+    const activeMarketIds = new Set<number>();
+    if (acct) {
+      for (const p of (acct.positions as unknown as Record<string, unknown>[]) ?? []) {
+        const pos = Number(p.position || 0);
+        const rpnl = Number(p.realized_pnl || 0);
+        if (pos !== 0 || rpnl !== 0) {
+          activeMarketIds.add(Number(p.market_id));
+        }
+      }
+    }
+    if (activeMarketIds.size === 0) return { funding: [] };
+
+    // Resolve market_id → symbol from marketMap
+    const reverseMap = new Map<number, string>();
+    for (const [sym, id] of this._marketMap) reverseMap.set(id, sym);
+
     const allFunding: Record<string, unknown>[] = [];
-    const entries = Array.from(this._marketMap.entries());
     const results = await Promise.allSettled(
-      entries.map(([sym, marketId]) =>
-        this.restGetAuth("/positionFunding", {
+      Array.from(activeMarketIds).map((marketId) => {
+        const sym = reverseMap.get(marketId) ?? `Market-${marketId}`;
+        return this.restGetAuth("/positionFunding", {
           account_index: String(this._accountIndex),
           market_id: String(marketId),
         }).then((res) => {
           const items = ((res as Record<string, unknown>).funding ?? (res as Record<string, unknown>).data ?? []) as Record<string, unknown>[];
           return items.map((f) => ({ ...f, symbol: f.symbol ?? sym }));
-        })
-      )
+        });
+      })
     );
     for (const r of results) {
       if (r.status === "fulfilled") allFunding.push(...r.value);

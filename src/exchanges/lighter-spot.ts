@@ -94,27 +94,32 @@ export class LighterSpotAdapter implements SpotAdapter {
 
   async getSpotMarkets(): Promise<SpotMarketInfo[]> {
     await this.init();
-    const markets: SpotMarketInfo[] = [];
-    for (const [symbol, marketId] of this._spotMarketMap) {
+    const entries = Array.from(this._spotMarketMap.entries());
+
+    // Fetch all orderbooks in parallel (instead of sequential per-market)
+    const obResults = await Promise.allSettled(
+      entries.map(([symbol]) =>
+        this.getSpotOrderbook(symbol).then(ob => {
+          if (ob.bids.length > 0 && ob.asks.length > 0) {
+            return String((Number(ob.bids[0][0]) + Number(ob.asks[0][0])) / 2);
+          }
+          return "0";
+        })
+      )
+    );
+
+    return entries.map(([symbol], i) => {
       const parts = symbol.split("/");
       const base = parts[0] ?? "";
       const quote = parts[1] ?? "USDC";
       const dec = this._spotDecimals.get(symbol) ?? { size: 4, price: 2 };
-      // Get mark price from orderbook mid
-      let markPrice = "0";
-      try {
-        const ob = await this.getSpotOrderbook(symbol);
-        if (ob.bids.length > 0 && ob.asks.length > 0) {
-          markPrice = String((Number(ob.bids[0][0]) + Number(ob.asks[0][0])) / 2);
-        }
-      } catch { /* skip */ }
-      markets.push({
+      const markPrice = obResults[i].status === "fulfilled" ? obResults[i].value : "0";
+      return {
         symbol, baseToken: base, quoteToken: quote,
         markPrice, volume24h: "0",
         sizeDecimals: dec.size, priceDecimals: dec.price,
-      });
-    }
-    return markets;
+      };
+    });
   }
 
   async getSpotOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
