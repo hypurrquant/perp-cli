@@ -173,7 +173,11 @@ export function registerMarketCommands(
       const markets = await adapter.getMarkets();
       const sym = symbol.toUpperCase();
       const m = markets.find(
-        (mk) => mk.symbol === sym || mk.symbol === `${sym}-PERP` || mk.symbol.replace(/-PERP$/, "") === sym
+        (mk) => {
+          const s = mk.symbol.toUpperCase();
+          return s === sym || s === `${sym}-PERP` || s.replace(/-PERP$/, "") === sym
+            || s.split(":").pop() === sym; // HIP-3: "km:US500" matches "US500"
+        }
       );
       if (!m) {
         if (isJson()) return printJson(jsonError("SYMBOL_NOT_FOUND", `Market ${sym} not found`));
@@ -205,15 +209,46 @@ export function registerMarketCommands(
       const asks = book.asks.slice(0, depth).reverse();
       const bids = book.bids.slice(0, depth);
 
+      // Compute spread
+      const bestBid = bids[0] ? Number(bids[0][0]) : 0;
+      const bestAsk = asks[asks.length - 1] ? Number(asks[asks.length - 1][0]) : 0;
+      const midPrice = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : bestBid || bestAsk;
+      const spreadAbs = bestBid && bestAsk ? bestAsk - bestBid : 0;
+      const spreadPct = midPrice > 0 ? (spreadAbs / midPrice) * 100 : 0;
+
+      // Compute cumulative sizes + max for bar scaling
+      let askCum = 0;
+      const askCums = asks.map(([, a]) => { askCum += Number(a); return askCum; });
+      let bidCum = 0;
+      const bidCums = bids.map(([, a]) => { bidCum += Number(a); return bidCum; });
+      const maxCum = Math.max(askCums[askCums.length - 1] || 0, bidCums[bidCums.length - 1] || 0);
+      const BAR_WIDTH = 20;
+      const bar = (cum: number) => {
+        const len = maxCum > 0 ? Math.round((cum / maxCum) * BAR_WIDTH) : 0;
+        return "█".repeat(len);
+      };
+
       console.log(chalk.cyan.bold(`\n  Orderbook: ${symbol.toUpperCase()} (${adapter.name})\n`));
-      console.log(chalk.gray("  Price          Size"));
-      console.log(chalk.gray("  ─────────────────────"));
-      asks.forEach(([p, a]) => {
-        console.log(chalk.red(`  ${formatUsd(p).padStart(12)}  ${a}`));
+      console.log(chalk.gray("  Price          Size          Cum$              Depth"));
+      console.log(chalk.gray("  " + "─".repeat(60)));
+      asks.forEach(([p, a], i) => {
+        const cumUsd = askCums[i] * (Number(p));
+        console.log(
+          chalk.red(`  ${formatUsd(p).padStart(12)}  ${String(a).padEnd(12)}  $${formatUsd(cumUsd).padEnd(14)}`) +
+          chalk.red.dim(bar(askCums[i]))
+        );
       });
-      console.log(chalk.gray("  ─── spread ───"));
-      bids.forEach(([p, a]) => {
-        console.log(chalk.green(`  ${formatUsd(p).padStart(12)}  ${a}`));
+      // Spread line
+      const spreadStr = spreadAbs > 0
+        ? `$${formatUsd(spreadAbs)} (${spreadPct.toFixed(3)}%)`
+        : "─";
+      console.log(chalk.gray(`  ${"─".repeat(16)} spread: ${spreadStr} ${"─".repeat(10)}`));
+      bids.forEach(([p, a], i) => {
+        const cumUsd = bidCums[i] * (Number(p));
+        console.log(
+          chalk.green(`  ${formatUsd(p).padStart(12)}  ${String(a).padEnd(12)}  $${formatUsd(cumUsd).padEnd(14)}`) +
+          chalk.green.dim(bar(bidCums[i]))
+        );
       });
       console.log();
     });

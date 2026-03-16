@@ -90,17 +90,40 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   private async _loadAssetMap(): Promise<void> {
     try {
       if (this._dex) {
-        // HIP-3 deployed dex: use raw info POST with dex param
-        const meta = await this._infoPost({ type: "meta", dex: this._dex }) as { universe?: { name: string }[] };
+        // HIP-3 deployed dex: asset indices use global offset scheme
+        // offset = 110000 + dexListIndex * 10000 (per Python SDK convention)
+        const [meta, dexList] = await Promise.all([
+          this._infoPost({ type: "meta", dex: this._dex }) as Promise<{ universe?: { name: string; szDecimals?: number }[] }>,
+          this._infoPost({ type: "perpDexs" }) as Promise<({ name: string } | null)[]>,
+        ]);
+
+        // Find this dex's position in the list (index 0 is native/null)
+        let dexOffset = 0;
+        for (let i = 1; i < dexList.length; i++) {
+          if (dexList[i]?.name === this._dex) {
+            dexOffset = 110000 + (i - 1) * 10000;
+            break;
+          }
+        }
+        if (dexOffset === 0) {
+          console.error(`[hyperliquid] Dex "${this._dex}" not found in perpDexs list`);
+        }
+
         if (meta?.universe) {
           meta.universe.forEach((asset, idx) => {
+            const globalIdx = dexOffset + idx;
             // Store both with and without dex prefix for flexible lookup
             // API returns "km:GOOGL" but callers may use "GOOGL" or "KM:GOOGL"
             const fullName = asset.name; // e.g., "km:GOOGL"
             const baseName = fullName.includes(":") ? fullName.split(":").pop()! : fullName;
-            this._assetMap.set(fullName, idx);
-            this._assetMap.set(baseName, idx);
-            this._assetMapReverse.set(idx, fullName);
+            this._assetMap.set(fullName, globalIdx);
+            this._assetMap.set(baseName, globalIdx);
+            this._assetMapReverse.set(globalIdx, fullName);
+            // Cache szDecimals for dex assets (critical for order sizing)
+            if (asset.szDecimals !== undefined) {
+              this._szDecimalsMap.set(fullName, asset.szDecimals);
+              this._szDecimalsMap.set(baseName, asset.szDecimals);
+            }
           });
         }
       } else {
@@ -183,8 +206,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       mids = allMids as Record<string, string>;
     }
 
-    // Rebuild asset map if empty
-    if (this._assetMap.size === 0) {
+    // Rebuild asset map if empty (fallback — normally populated by init/_loadAssetMap)
+    if (this._assetMap.size === 0 && !this._dex) {
       universe.forEach((asset, i) => {
         const sym = String(asset.name);
         this._assetMap.set(sym, i);
@@ -208,8 +231,25 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getOrderbook(symbol: string) {
-    const book = await this.sdk.info.getL2Book(symbol.toUpperCase());
-    const levels = book?.levels ?? [[], []];
+    let levels: Record<string, unknown>[][];
+
+    if (this._dex) {
+      // HIP-3 dex: SDK's getL2Book() doesn't support dex parameter
+      // Resolve symbol to full dex-prefixed name (e.g. "US500" → "km:US500")
+      const resolved = this.resolveSymbol(symbol.toUpperCase());
+      // Ensure dex prefix is present (API requires it)
+      const coin = resolved.includes(":") ? resolved : `${this._dex}:${resolved}`;
+      const book = await this._infoPost({
+        type: "l2Book",
+        coin,
+        dex: this._dex,
+      }) as { levels?: Record<string, unknown>[][] };
+      levels = book?.levels ?? [[], []];
+    } else {
+      const book = await this.sdk.info.getL2Book(symbol.toUpperCase());
+      levels = book?.levels ?? [[], []];
+    }
+
     return {
       bids: (levels[0] ?? []).map((l: Record<string, unknown>) => [
         String(l.px ?? "0"),
@@ -382,17 +422,20 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    */
   private async _dexMarketOrder(symbol: string, side: "buy" | "sell", size: string) {
     const assetIndex = await this.getAssetIndex(symbol.toUpperCase());
+    const szDec = this.getSzDecimals(symbol);
 
-    // Get current mark price + szDecimals from dex meta
+    // Get current mark price from dex meta (lookup by coin name, not array index)
+    const resolved = this.resolveSymbol(symbol.toUpperCase());
+    const coin = resolved.includes(":") ? resolved : `${this._dex}:${resolved}`;
     const meta = await this._infoPost({
       type: "metaAndAssetCtxs",
       dex: this._dex,
-    }) as [{ universe: Array<{ szDecimals?: number }> }, Record<string, unknown>[]];
-    const ctx = (meta[1] ?? [])[assetIndex];
+    }) as [{ universe: Array<{ name: string }> }, Record<string, unknown>[]];
+    // Find local index by matching coin name in universe
+    const localIdx = meta[0]?.universe?.findIndex(a => a.name === coin) ?? -1;
+    const ctx = localIdx >= 0 ? (meta[1] ?? [])[localIdx] : undefined;
     const midPrice = Number(ctx?.markPx ?? 0);
     if (midPrice <= 0) throw new Error(`Cannot get price for ${symbol} on dex ${this._dex}`);
-
-    const szDec = meta[0]?.universe?.[assetIndex]?.szDecimals ?? 2;
 
     // HL official rounding: 5 significant figures, max 6 decimals for perps
     const MAX_DECIMALS_PERP = 6;
@@ -477,9 +520,15 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       body: JSON.stringify(payload),
     });
 
-    const result = await res.json();
+    const text = await res.text();
+    let result: Record<string, unknown>;
+    try {
+      result = JSON.parse(text);
+    } catch {
+      throw new Error(`HL exchange API error (${res.status}): ${text.slice(0, 200)}`);
+    }
     if (result?.status === "err") {
-      throw new Error(result.response ?? JSON.stringify(result));
+      throw new Error(result.response as string ?? JSON.stringify(result));
     }
     return result;
   }
@@ -517,11 +566,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       orders: [orderWire],
       grouping: "na",
     };
-
-    // Add dex field for HIP-3 deployed perps
-    if (this._dex) {
-      action.dex = this._dex;
-    }
+    // No "dex" field needed — the global asset index (110000+) encodes the dex
 
     return this._signAndSendAction(action);
   }
@@ -551,6 +596,16 @@ export class HyperliquidAdapter implements ExchangeAdapter {
 
   async cancelOrder(symbol: string, orderId: string) {
     this.ensureSigner();
+    if (this._dex) {
+      // HIP-3 dex: use raw cancel action with global asset index
+      const assetIndex = await this.getAssetIndex(symbol.toUpperCase());
+      const result = await this._signAndSendAction({
+        type: "cancel",
+        cancels: [{ a: assetIndex, o: parseInt(orderId) }],
+      });
+      await this._invalidateAccountCache();
+      return result;
+    }
     // HL SDK expects coin in "ETH-PERP" format (internal symbol convention)
     const resolved = this.resolveSymbol(symbol);
     const result = await this.sdk.exchange.cancelOrder({
@@ -566,19 +621,29 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const orders = await this.getOpenOrders();
     const toCancel = symbol
       ? orders.filter((o) => {
-          const norm = (s: string) => s.toUpperCase().replace(/-PERP$/, "");
+          const norm = (s: string) => s.toUpperCase().replace(/-PERP$/, "").replace(/^[^:]+:/, "");
           return norm(o.symbol) === norm(symbol);
         })
       : orders;
 
     const results = [];
     for (const o of toCancel) {
-      results.push(
-        await this.sdk.exchange.cancelOrder({
-          coin: o.symbol,
-          o: parseInt(o.orderId),
-        })
-      );
+      if (this._dex) {
+        const assetIndex = await this.getAssetIndex(o.symbol);
+        results.push(
+          await this._signAndSendAction({
+            type: "cancel",
+            cancels: [{ a: assetIndex, o: parseInt(o.orderId) }],
+          })
+        );
+      } else {
+        results.push(
+          await this.sdk.exchange.cancelOrder({
+            coin: o.symbol,
+            o: parseInt(o.orderId),
+          })
+        );
+      }
     }
     return results;
   }
@@ -702,22 +767,40 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     opts?: { isMarket?: boolean; reduceOnly?: boolean; grouping?: string }
   ) {
     this.ensureSigner();
-    const orderParams = {
-      coin: symbol.toUpperCase(),
-      is_buy: side === "buy",
-      sz: parseFloat(size),
-      limit_px: parseFloat(triggerPrice),
-      order_type: {
+    const assetIndex = await this.getAssetIndex(symbol.toUpperCase());
+    const szDec = this.getSzDecimals(symbol);
+    const roundedSize = Number(size).toFixed(szDec);
+    const roundedTrigger = this._hlRoundPrice(Number(triggerPrice), szDec);
+
+    // Remove trailing zeros (HL API requirement)
+    const trimZeros = (s: string) => {
+      if (!s.includes(".")) return s;
+      const n = s.replace(/\.?0+$/, "");
+      return n === "-0" ? "0" : n;
+    };
+
+    const orderWire = {
+      a: assetIndex,
+      b: side === "buy",
+      p: trimZeros(roundedTrigger),
+      s: trimZeros(roundedSize),
+      r: opts?.reduceOnly ?? true,
+      t: {
         trigger: {
-          triggerPx: triggerPrice,
+          triggerPx: trimZeros(roundedTrigger),
           isMarket: opts?.isMarket ?? true,
           tpsl,
         },
       },
-      reduce_only: opts?.reduceOnly ?? true,
+    };
+
+    const action: Record<string, unknown> = {
+      type: "order",
+      orders: [orderWire],
       grouping: opts?.grouping ?? "positionTpsl",
     };
-    return (this.sdk.exchange as unknown as { placeOrder: (p: unknown) => Promise<unknown> }).placeOrder(orderParams);
+
+    return this._signAndSendAction(action);
   }
 
   /**

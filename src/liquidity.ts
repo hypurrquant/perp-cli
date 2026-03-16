@@ -68,13 +68,16 @@ export function computeExecutableSize(
   const slippagePct = bestPrice > 0 ? ((avgFillPrice - bestPrice) / bestPrice) * 100 : 0;
   const canFillFull = filledNotional >= requestedSizeUsd * 0.95; // 95% fill = close enough
 
+  // 10% safety buffer — avoid filling at the very edge of liquidity
+  const bufferedSize = filledSize * 0.9;
+
   return {
     maxSize: filledSize,
     avgFillPrice,
     slippagePct: Math.abs(slippagePct),
     depthUsd: totalDepthUsd,
     canFillFull,
-    recommendedSize: filledSize,
+    recommendedSize: bufferedSize,
   };
 }
 

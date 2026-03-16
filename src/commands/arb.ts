@@ -90,18 +90,15 @@ export function registerArbCommands(
 ) {
   const arb = program.command("arb").description("Funding rate arbitrage & basis trading");
 
-  // basis, dex, rates, compare, funding-history, funding-positions
+  // basis, dex, rates, compare, funding-history, funding-positions, gaps, live monitor
   // → consolidated into 'arb scan' (in arb-auto.ts) with routing options
-
-  // ── arb watch (prices + live monitor + track + alert) ──
-  registerGapDirectCommands(arb, isJson);
 }
 
 // ────────────────────────────────────────────────────────
 // Gap monitoring (merged from gap.ts)
 // ────────────────────────────────────────────────────────
 
-interface PriceSnapshot {
+export interface PriceSnapshot {
   symbol: string;
   pacPrice: number | null;
   hlPrice: number | null;
@@ -112,7 +109,7 @@ interface PriceSnapshot {
   expensive: string;
 }
 
-async function fetchAllPrices(): Promise<PriceSnapshot[]> {
+export async function fetchAllPrices(): Promise<PriceSnapshot[]> {
   const [pacRes, hlRes, ltRes] = await Promise.all([
     fetchPacificaPricesRaw(),
     fetchHyperliquidAllMidsRaw(),
@@ -176,13 +173,13 @@ async function fetchAllPrices(): Promise<PriceSnapshot[]> {
   return snapshots.sort((a, b) => b.maxGapPct - a.maxGapPct);
 }
 
-function formatGapPrice(p: number): string {
+export function formatGapPrice(p: number): string {
   if (p >= 1000) return p.toFixed(2);
   if (p >= 1) return p.toFixed(4);
   return p.toFixed(6);
 }
 
-function printGapTable(snapshots: PriceSnapshot[], minGap: number) {
+export function printGapTable(snapshots: PriceSnapshot[], minGap: number) {
   const filtered = snapshots.filter((s) => s.maxGapPct >= minGap);
 
   if (filtered.length === 0) {
@@ -225,7 +222,7 @@ function printGapTable(snapshots: PriceSnapshot[], minGap: number) {
   );
 }
 
-function printTrackSummary(
+export function printTrackSummary(
   symbol: string,
   samples: { time: string; gap: number; gapPct: number; direction: string }[]
 ) {
@@ -255,148 +252,6 @@ function printTrackSummary(
   }
   console.log();
 }
-
-/**
- * Unified watch command: prices + live watch + track + alert in one.
- * - Default (no flags): live watch mode (refreshes continuously)
- * - --once: snapshot mode (print prices and exit)
- * - --track -s SYM --duration M: track gap over time
- * - --alert -s SYM --above PCT: wait until gap exceeds threshold
- */
-function registerGapDirectCommands(
-  arb: Command,
-  isJson: () => boolean
-) {
-  arb
-    .command("watch")
-    .description("Monitor price gaps across exchanges (live watch, --once for snapshot, --track, --alert)")
-    .option("--min <pct>", "Minimum gap % to display", "0.05")
-    .option("--interval <seconds>", "Refresh interval", "5")
-    .option("--symbol <sym>", "Filter by symbol (e.g. BTC, ETH)")
-    .option("-s <sym>", "Alias for --symbol")
-    .option("--top <n>", "Show top N gaps only")
-    .option("--beep", "Beep on gaps above 0.5%")
-    .option("--once", "Snapshot mode: print prices and exit (was 'arb prices')")
-    .option("--track", "Track a symbol over time and print stats (was 'arb track')")
-    .option("--duration <minutes>", "How long to track (minutes, with --track)", "10")
-    .option("--alert", "Wait until gap exceeds --above threshold, then exit (was 'arb alert')")
-    .option("--above <pct>", "Gap % threshold to trigger (with --alert)")
-    .action(async (opts: {
-      min: string; interval: string; symbol?: string; s?: string;
-      top?: string; beep?: boolean; once?: boolean;
-      track?: boolean; duration: string;
-      alert?: boolean; above?: string;
-    }) => {
-      const sym = (opts.symbol ?? opts.s)?.toUpperCase();
-      const minGap = parseFloat(opts.min);
-      const intervalMs = parseInt(opts.interval) * 1000;
-
-      // ── alert mode ──
-      if (opts.alert) {
-        if (!sym) { console.log(chalk.red("  --alert requires --symbol or -s")); return; }
-        const threshold = parseFloat(opts.above ?? "0.5");
-        if (!isJson()) console.log(chalk.cyan(`\n  Waiting for ${sym} gap > ${threshold}%...\n`));
-
-        const check = async (): Promise<boolean> => {
-          const snapshots = await fetchAllPrices();
-          const s = snapshots.find((x) => x.symbol === sym);
-          if (!s) return false;
-          const now = new Date().toLocaleTimeString();
-          if (!isJson()) console.log(chalk.gray(`  ${now} ${sym} gap: ${s.maxGapPct.toFixed(4)}%`));
-          if (s.maxGapPct >= threshold) {
-            if (isJson()) { printJson(jsonOk(s)); }
-            else {
-              console.log(chalk.green.bold(`\n  TRIGGERED! ${sym} gap: ${s.maxGapPct.toFixed(4)}% (> ${threshold}%)`));
-              const lines: string[] = [];
-              if (s.pacPrice !== null) lines.push(`  Pacifica:    $${formatGapPrice(s.pacPrice)}`);
-              if (s.hlPrice !== null) lines.push(`  Hyperliquid: $${formatGapPrice(s.hlPrice)}`);
-              if (s.ltPrice !== null) lines.push(`  Lighter:     $${formatGapPrice(s.ltPrice)}`);
-              lines.push(`  Gap:         $${s.maxGap.toFixed(4)} (${s.cheapest}→${s.expensive})`);
-              console.log(lines.join("\n") + "\n");
-            }
-            return true;
-          }
-          return false;
-        };
-        if (await check()) return;
-        await new Promise<void>((resolve) => {
-          const timer = setInterval(async () => { if (await check()) { clearInterval(timer); resolve(); } }, intervalMs);
-        });
-        return;
-      }
-
-      // ── track mode ──
-      if (opts.track) {
-        if (!sym) { console.log(chalk.red("  --track requires --symbol or -s")); return; }
-        const durationMs = parseInt(opts.duration) * 60 * 1000;
-        const endTime = Date.now() + durationMs;
-        const samples: { time: string; gap: number; gapPct: number; direction: string }[] = [];
-        if (!isJson()) {
-          console.log(chalk.cyan.bold(`\n  Tracking ${sym} price gap\n`));
-          console.log(`  Duration:  ${opts.duration} min`);
-          console.log(`  Interval:  ${opts.interval}s`);
-          console.log(chalk.gray("  Collecting samples...\n"));
-        }
-        const sample = async () => {
-          const snapshots = await fetchAllPrices();
-          const s = snapshots.find((x) => x.symbol === sym);
-          if (!s) { console.log(chalk.gray(`  ${new Date().toLocaleTimeString()} — ${sym} not found on both exchanges`)); return; }
-          samples.push({ time: new Date().toLocaleTimeString(), gap: s.maxGap, gapPct: s.maxGapPct, direction: `${s.cheapest}→${s.expensive}` });
-          const gapColor = s.maxGapPct >= 0.1 ? chalk.yellow : chalk.gray;
-          const parts = [`PAC: ${s.pacPrice !== null ? "$" + formatGapPrice(s.pacPrice) : "-"}`];
-          parts.push(`HL: ${s.hlPrice !== null ? "$" + formatGapPrice(s.hlPrice) : "-"}`);
-          parts.push(`LT: ${s.ltPrice !== null ? "$" + formatGapPrice(s.ltPrice) : "-"}`);
-          console.log(`  ${chalk.white(s.symbol.padEnd(6))} ${parts.join("  ")}  ${gapColor(`${s.maxGapPct.toFixed(4)}%`)}  ${s.cheapest}→${s.expensive}`);
-        };
-        await sample();
-        const timer = setInterval(async () => { if (Date.now() >= endTime) { clearInterval(timer); printTrackSummary(sym, samples); return; } await sample(); }, intervalMs);
-        await new Promise<void>((resolve) => { setTimeout(resolve, durationMs + 1000); });
-        return;
-      }
-
-      // ── once mode (was "prices") ──
-      if (opts.once) {
-        if (!isJson()) console.log(chalk.cyan("\n  Fetching prices from Pacifica, Hyperliquid & Lighter...\n"));
-        let snapshots = await fetchAllPrices();
-        if (sym) snapshots = snapshots.filter((s) => s.symbol.includes(sym));
-        if (opts.top) snapshots = snapshots.slice(0, parseInt(opts.top));
-        if (isJson()) return printJson(jsonOk(snapshots.filter((s) => s.maxGapPct >= minGap)));
-        printGapTable(snapshots, minGap);
-        return;
-      }
-
-      // ── default: live watch mode ──
-      const beep = !!opts.beep;
-      if (!isJson()) {
-        console.log(chalk.cyan.bold("\n  Price Gap Monitor"));
-        console.log(`  Min gap:   ${minGap}%`);
-        console.log(`  Interval:  ${opts.interval}s`);
-        if (sym) console.log(`  Symbol:    ${sym}`);
-        console.log(chalk.gray("  Ctrl+C to stop\n"));
-      }
-      const cycle = async () => {
-        try {
-          let snapshots = await fetchAllPrices();
-          if (sym) snapshots = snapshots.filter((s) => s.symbol.includes(sym));
-          process.stdout.write("\x1B[2J\x1B[0f");
-          const now = new Date().toLocaleTimeString();
-          console.log(chalk.cyan.bold(`  Price Gap Monitor`) + chalk.gray(`  ${now}  (refresh: ${opts.interval}s)\n`));
-          printGapTable(snapshots, minGap);
-          const bigGaps = snapshots.filter((s) => s.maxGapPct >= 0.5);
-          if (bigGaps.length > 0) {
-            console.log(chalk.red.bold(`  !! ${bigGaps.length} large gap(s): ` + bigGaps.map((s) => `${s.symbol}(${s.maxGapPct.toFixed(3)}%)`).join(", ")));
-            if (beep) process.stdout.write("\x07");
-          }
-        } catch (err) {
-          console.error(chalk.gray(`  Error: ${err instanceof Error ? err.message : String(err)}`));
-        }
-      };
-      await cycle();
-      setInterval(cycle, intervalMs);
-      await new Promise(() => {}); // keep alive
-    });
-}
-
 
 // ────────────────────────────────────────────────────────
 // Funding subcommands (merged from funding.ts)
@@ -477,7 +332,7 @@ export async function handleRates(isJson: () => boolean, opts: { symbol?: string
   printSnapshotTable(snapshot); printFundingExchangeStatus(snapshot);
 }
 
-export async function handleBasisScan(isJson: () => boolean, opts: { minBasis: string }): Promise<void> {
+export async function handleBasisScan(isJson: () => boolean, opts: { minBasis: string; symbol?: string }): Promise<void> {
   if (!isJson()) console.log(chalk.cyan("  Fetching prices for basis calculation...\n"));
   const [pacRates, hlRates, ltRates] = await Promise.all([fetchPacificaRates(), fetchHyperliquidRates(), fetchLighterRates()]);
   const exchangePrices = new Map<string, Map<string, number>>();

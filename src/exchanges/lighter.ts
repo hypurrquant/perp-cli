@@ -276,10 +276,25 @@ export class LighterAdapter implements ExchangeAdapter {
     if (!dec) {
       throw new Error(`No market decimals loaded for ${symbol}. Market data may not be initialized.`);
     }
-    return {
-      baseAmount: Math.round(size * Math.pow(10, dec.size)),
-      priceTicks: Math.round(price * Math.pow(10, dec.price)),
-    };
+    const baseAmount = Math.round(size * Math.pow(10, dec.size));
+    const priceTicks = Math.round(price * Math.pow(10, dec.price));
+
+    // Validate: size too small for this market's precision → baseAmount rounds to 0
+    if (size > 0 && baseAmount <= 0) {
+      const minSize = 1 / Math.pow(10, dec.size);
+      throw new Error(
+        `Order size ${size} too small for ${symbol} (sizeDecimals=${dec.size}, min=${minSize}). ` +
+        `Increase size or use a different market.`
+      );
+    }
+    if (price > 0 && priceTicks <= 0) {
+      const minPrice = 1 / Math.pow(10, dec.price);
+      throw new Error(
+        `Order price ${price} too small for ${symbol} (priceDecimals=${dec.price}, min=${minPrice}).`
+      );
+    }
+
+    return { baseAmount, priceTicks };
   }
 
   async getMarkets(): Promise<ExchangeMarketInfo[]> {

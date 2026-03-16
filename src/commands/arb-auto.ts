@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { formatUsd, printJson, jsonOk } from "../utils.js";
+import { formatUsd, printJson, jsonOk, makeTable } from "../utils.js";
 import type { ExchangeAdapter } from "../exchanges/interface.js";
 import { computeExecutableSize } from "../liquidity.js";
 import { computeAnnualSpread, toHourlyRate } from "../funding.js";
@@ -37,6 +37,8 @@ import {
 import {
   handleRates, handleBasisScan, handleDexScan,
   handleCompare, handleFundingHistory, handleFundingPositions,
+  fetchAllPrices, printGapTable, printTrackSummary, formatGapPrice,
+  type PriceSnapshot,
 } from "./arb.js";
 
 interface ExchangeRate {
@@ -279,7 +281,7 @@ export function registerArbAutoCommands(
     .option("--symbols <list>", "Comma-separated symbols to monitor (default: all)")
     .option("--interval <seconds>", "Check interval", "60")
     .option("--hold-days <days>", "Expected hold period for cost amortization", "7")
-    .option("--bridge-cost <usd>", "One-way bridge cost in USD", "0.5")
+    .option("--bridge-cost <usd>", "One-way bridge cost in USD", "0")
     .option("--no-reversal-exit", "Disable emergency exit on spread reversal")
     .option("--settle-aware", "Avoid entries near funding settlement (default: true)")
     .option("--no-settle-aware", "Disable settlement timing awareness")
@@ -1095,18 +1097,18 @@ export function registerArbAutoCommands(
 
   arb
     .command("scan")
-    .description("Scan funding spreads, rates, basis, HIP-3, or positions (default: perp-perp spreads)")
-    .option("--mode <mode>", "Scan mode: perp-perp, spot-perp, all", "perp-perp")
+    .description("Scan funding spreads, rates, basis, gaps, HIP-3, or positions (--live for continuous monitoring)")
+    .option("--mode <mode>", "Scan mode: all, perp-perp, spot-perp", "all")
     .option("--min <pct>", "Min annual spread to show", "10")
     .option("--top <n>", "Return only top N results (for JSON output)")
     .option("--hold-days <days>", "Expected hold period for cost calc", "7")
-    .option("--bridge-cost <usd>", "One-way bridge cost in USD", "0.5")
+    .option("--bridge-cost <usd>", "One-way bridge cost in USD", "0")
     .option("--size <usd>", "Position size per leg ($) for cost calc", "100")
     .option("--rates", "Show funding rates across all exchanges")
-    .option("--basis", "Scan cross-exchange basis opportunities")
+    .option("--basis [symbol]", "Scan cross-exchange basis opportunities (optionally for a specific symbol)")
     .option("--hip3", "Scan HIP-3 cross-dex funding spreads")
     .option("--compare <symbol>", "Compare funding rates for a specific symbol")
-    .option("--history", "Show funding rate history")
+    .option("--history [symbol]", "Show funding rate history (optionally for a specific symbol)")
     .option("--positions", "Show position funding impact")
     .option("-s, --symbol <sym>", "Filter/track symbol")
     .option("--symbols <list>", "Comma-separated list of symbols")
@@ -1116,19 +1118,195 @@ export function registerArbAutoCommands(
     .option("--max-gap <pct>", "Max price gap % (hip3 mode)")
     .option("--include-native", "Include native HL perps (hip3 mode)", true)
     .option("--no-include-native", "Exclude native HL perps (hip3 mode)")
+    .option("--gaps", "Show cross-exchange price gaps")
+    .option("--live", "Continuous live monitoring (auto-refresh)")
+    .option("--track", "Track a symbol's price gap over time (requires -s)")
+    .option("--alert <pct>", "Alert when price gap exceeds threshold % (requires -s)")
+    .option("--interval <seconds>", "Refresh interval for --live mode", "60")
+    .option("--duration <minutes>", "Track duration in minutes (with --track)", "10")
+    .option("--beep", "Beep on large gaps (with --gaps)")
+    .option("--check-liquidity", "Check orderbook depth in live mode (slower)")
     .action(async (opts: {
       mode: string; min: string; top?: string; holdDays: string; bridgeCost: string; size: string;
-      rates?: boolean; basis?: boolean; hip3?: boolean; compare?: string;
-      history?: boolean; positions?: boolean;
+      rates?: boolean; basis?: boolean | string; hip3?: boolean; compare?: string;
+      history?: boolean | string; positions?: boolean;
       symbol?: string; symbols?: string; all?: boolean;
       hours: string; exchange?: string; maxGap?: string; includeNative: boolean;
+      gaps?: boolean; live?: boolean; track?: boolean; alert?: string;
+      interval: string; duration: string; beep?: boolean; checkLiquidity?: boolean;
     }) => {
+      // ── Price gap modes ──
+      if (opts.gaps || opts.track || opts.alert) {
+        const sym = opts.symbol?.toUpperCase();
+        const minGap = parseFloat(opts.min);
+        const intervalMs = parseInt(opts.interval) * 1000;
+
+        // Alert mode
+        if (opts.alert) {
+          if (!sym) { console.log(chalk.red("  --alert requires --symbol or -s")); return; }
+          const threshold = parseFloat(opts.alert);
+          if (!isJson()) console.log(chalk.cyan(`\n  Waiting for ${sym} gap > ${threshold}%...\n`));
+          const check = async (): Promise<boolean> => {
+            const snapshots = await fetchAllPrices();
+            const s = snapshots.find((x) => x.symbol === sym);
+            if (!s) return false;
+            const now = new Date().toLocaleTimeString();
+            if (!isJson()) console.log(chalk.gray(`  ${now} ${sym} gap: ${s.maxGapPct.toFixed(4)}%`));
+            if (s.maxGapPct >= threshold) {
+              if (isJson()) { printJson(jsonOk(s)); }
+              else {
+                console.log(chalk.green.bold(`\n  TRIGGERED! ${sym} gap: ${s.maxGapPct.toFixed(4)}% (> ${threshold}%)`));
+                const lines: string[] = [];
+                if (s.pacPrice !== null) lines.push(`  Pacifica:    $${formatGapPrice(s.pacPrice)}`);
+                if (s.hlPrice !== null) lines.push(`  Hyperliquid: $${formatGapPrice(s.hlPrice)}`);
+                if (s.ltPrice !== null) lines.push(`  Lighter:     $${formatGapPrice(s.ltPrice)}`);
+                lines.push(`  Gap:         $${s.maxGap.toFixed(4)} (${s.cheapest}→${s.expensive})`);
+                console.log(lines.join("\n") + "\n");
+              }
+              return true;
+            }
+            return false;
+          };
+          if (await check()) return;
+          await new Promise<void>((resolve) => {
+            const timer = setInterval(async () => { if (await check()) { clearInterval(timer); resolve(); } }, intervalMs);
+          });
+          return;
+        }
+
+        // Track mode
+        if (opts.track) {
+          if (!sym) { console.log(chalk.red("  --track requires --symbol or -s")); return; }
+          const durationMs = parseInt(opts.duration) * 60 * 1000;
+          const endTime = Date.now() + durationMs;
+          const samples: { time: string; gap: number; gapPct: number; direction: string }[] = [];
+          if (!isJson()) {
+            console.log(chalk.cyan.bold(`\n  Tracking ${sym} price gap\n`));
+            console.log(`  Duration:  ${opts.duration} min`);
+            console.log(`  Interval:  ${opts.interval}s`);
+            console.log(chalk.gray("  Collecting samples...\n"));
+          }
+          const sample = async () => {
+            const snapshots = await fetchAllPrices();
+            const s = snapshots.find((x) => x.symbol === sym);
+            if (!s) { console.log(chalk.gray(`  ${new Date().toLocaleTimeString()} — ${sym} not found on both exchanges`)); return; }
+            samples.push({ time: new Date().toLocaleTimeString(), gap: s.maxGap, gapPct: s.maxGapPct, direction: `${s.cheapest}→${s.expensive}` });
+            const gapColor = s.maxGapPct >= 0.1 ? chalk.yellow : chalk.gray;
+            const parts = [`PAC: ${s.pacPrice !== null ? "$" + formatGapPrice(s.pacPrice) : "-"}`];
+            parts.push(`HL: ${s.hlPrice !== null ? "$" + formatGapPrice(s.hlPrice) : "-"}`);
+            parts.push(`LT: ${s.ltPrice !== null ? "$" + formatGapPrice(s.ltPrice) : "-"}`);
+            console.log(`  ${chalk.white(s.symbol.padEnd(6))} ${parts.join("  ")}  ${gapColor(`${s.maxGapPct.toFixed(4)}%`)}  ${s.cheapest}→${s.expensive}`);
+          };
+          await sample();
+          const timer = setInterval(async () => { if (Date.now() >= endTime) { clearInterval(timer); printTrackSummary(sym, samples); return; } await sample(); }, intervalMs);
+          await new Promise<void>((resolve) => { setTimeout(resolve, durationMs + 1000); });
+          return;
+        }
+
+        // Gaps snapshot (default for --gaps without --live)
+        if (!isJson()) console.log(chalk.cyan("\n  Fetching prices from Pacifica, Hyperliquid & Lighter...\n"));
+        let snapshots = await fetchAllPrices();
+        if (sym) snapshots = snapshots.filter((s) => s.symbol.includes(sym));
+        if (opts.top) snapshots = snapshots.slice(0, parseInt(opts.top));
+        if (isJson()) return printJson(jsonOk(snapshots.filter((s) => s.maxGapPct >= minGap)));
+        printGapTable(snapshots, minGap);
+        return;
+      }
+
+      // ── Live monitoring mode ──
+      if (opts.live) {
+        // If --hip3, route to dex monitor
+        if (opts.hip3) {
+          return handleDexMonitor({ ...opts, top: opts.top ?? "15" });
+        }
+
+        // Perp-perp live funding spread monitor
+        const minSpread = parseFloat(opts.min);
+        const intervalSec = parseInt(opts.interval);
+        const topN = parseInt(opts.top ?? "15");
+        const checkLiq = opts.checkLiquidity ?? false;
+        const holdDays = parseFloat(opts.holdDays);
+        const bridgeCostUsd = parseFloat(opts.bridgeCost);
+        const sizeUsd = parseFloat(opts.size);
+        let cycle = 0;
+
+        if (!isJson()) {
+          console.log(chalk.cyan.bold("\n  Funding Arb Monitor"));
+          console.log(chalk.gray(`  Min spread: ${minSpread}% | Refresh: ${intervalSec}s | Top: ${topN}`));
+          console.log(chalk.gray(`  Net spread: ${holdDays}d hold, $${bridgeCostUsd} bridge, $${sizeUsd} size`));
+          if (checkLiq) console.log(chalk.gray(`  Liquidity check: ON`));
+          console.log(chalk.gray(`  Press Ctrl+C to stop\n`));
+        }
+
+        const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+
+        while (true) {
+          cycle++;
+          const ts = new Date().toLocaleTimeString();
+          try {
+            const spreads = await fetchFundingSpreads();
+            const filtered = spreads.filter(s => Math.abs(s.spread) >= minSpread).slice(0, topN);
+            if (cycle > 1) {
+              const linesToClear = filtered.length + 4;
+              process.stdout.write(`\x1b[${linesToClear}A\x1b[J`);
+            }
+            console.log(chalk.gray(`  ${ts} — Cycle ${cycle} | ${filtered.length} opportunities >= ${minSpread}%\n`));
+            if (filtered.length === 0) {
+              console.log(chalk.gray(`  No opportunities found.\n`));
+            } else {
+              const liqData = new Map<string, { hlDepth: number; ltDepth: number; gap: string }>();
+              if (checkLiq && filtered.length > 0) {
+                const topCheck = filtered.slice(0, 5);
+                await Promise.allSettled(topCheck.map(async (s) => {
+                  try {
+                    const [hlOB, ltOB] = await Promise.all([fetchHLOrderbook(s.symbol), fetchLighterOrderbook(s.symbol)]);
+                    const hlDepth = hlOB.reduce((sum, l) => sum + l[0] * l[1], 0);
+                    const ltDepth = ltOB.reduce((sum, l) => sum + l[0] * l[1], 0);
+                    const hlBest = hlOB[0]?.[0] ?? 0;
+                    const ltBest = ltOB[0]?.[0] ?? 0;
+                    const gap = hlBest && ltBest ? (Math.abs(hlBest - ltBest) / Math.min(hlBest, ltBest) * 100).toFixed(3) : "?";
+                    liqData.set(s.symbol, { hlDepth: Math.round(hlDepth), ltDepth: Math.round(ltDepth), gap });
+                  } catch { /* skip */ }
+                }));
+              }
+              for (const s of filtered) {
+                const direction = `${exAbbr(s.shortExch)}>${exAbbr(s.longExch)}`;
+                const grossSpread = Math.abs(s.spread);
+                const rtCost = computeRoundTripCostPct(s.longExch, s.shortExch);
+                const netSpread = computeNetSpread(grossSpread, holdDays, rtCost, bridgeCostUsd, sizeUsd);
+                const grossColor = grossSpread >= 50 ? chalk.green.bold : grossSpread >= 30 ? chalk.green : chalk.yellow;
+                const netColor = netSpread >= 20 ? chalk.green : netSpread >= 0 ? chalk.yellow : chalk.red;
+                const rates: string[] = [];
+                if (s.pacRate) rates.push(`PAC:${(s.pacRate * 100).toFixed(4)}%`);
+                if (s.hlRate) rates.push(`HL:${(s.hlRate * 100).toFixed(4)}%`);
+                if (s.ltRate) rates.push(`LT:${(s.ltRate * 100).toFixed(4)}%`);
+                let liqInfo = "";
+                const ld = liqData.get(s.symbol);
+                if (ld) liqInfo = chalk.gray(` | depth: HL $${ld.hlDepth.toLocaleString()} LT $${ld.ltDepth.toLocaleString()} gap:${ld.gap}%`);
+                console.log(
+                  `  ${chalk.white.bold(s.symbol.padEnd(8))} ` +
+                  `${grossColor(`${grossSpread.toFixed(1)}%`.padEnd(8))} ` +
+                  `${netColor(`net:${netSpread.toFixed(1)}%`.padEnd(12))} ` +
+                  `${direction.padEnd(7)} ` +
+                  rates.join(" ") + liqInfo
+                );
+              }
+              console.log(chalk.gray(`  * Net spreads are predicted estimates (${holdDays}d hold, $${bridgeCostUsd} bridge)`));
+              console.log();
+            }
+          } catch (err) {
+            console.log(chalk.red(`  ${ts} Error: ${err instanceof Error ? err.message : err}\n`));
+          }
+          await new Promise(r => setTimeout(r, intervalSec * 1000));
+        }
+      }
+
       // Route to specialized handlers
       if (opts.compare) return handleCompare(isJson, opts.compare);
       if (opts.rates) return handleRates(isJson, { symbol: opts.symbol, symbols: opts.symbols, all: opts.all, minSpread: opts.min });
-      if (opts.basis) return handleBasisScan(isJson, { minBasis: opts.min });
+      if (opts.basis) return handleBasisScan(isJson, { minBasis: opts.min, symbol: typeof opts.basis === "string" ? opts.basis : opts.symbol });
       if (opts.hip3) return handleDexScan(isJson, { minSpread: opts.min, maxGap: opts.maxGap || "5", includeNative: opts.includeNative !== false, top: opts.top || "20" });
-      if (opts.history) return handleFundingHistory(isJson, { symbol: opts.symbol || "ETH", hours: opts.hours || "24", exchange: opts.exchange });
+      if (opts.history) return handleFundingHistory(isJson, { symbol: (typeof opts.history === "string" ? opts.history : opts.symbol) || "ETH", hours: opts.hours || "24", exchange: opts.exchange });
       if (opts.positions) return handleFundingPositions(isJson, getAdapterForExchange, { exchanges: opts.exchange });
       // Default: existing scan logic continues below
       const minSpread = parseFloat(opts.min);
@@ -1168,29 +1346,29 @@ export function registerArbAutoCommands(
           if (spotSpreads.length === 0) {
             console.log(chalk.gray(`  No spot+perp opportunities above ${minSpread}%\n`));
           } else {
-            console.log(chalk.gray(`  ${"SYMBOL".padEnd(8)} ${"GROSS".padEnd(8)} ${"NET".padEnd(8)} ${"FEES".padEnd(7)} ${"BE".padEnd(5)} ${"PERP".padEnd(5)} ${"SPOT".padEnd(8)} DIRECTION`));
-            for (const s of spotSpreads.slice(0, parseInt(opts.top ?? "30"))) {
+            const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+            const rows = spotSpreads.slice(0, parseInt(opts.top ?? "30")).map(s => {
               const spotEx = s.spotExchanges[0] || "lighter";
               const rtCost = computeRoundTripCostPct(spotEx, s.perpExchange);
               const effectiveBridgeCost = s.spotExchanges.includes(s.perpExchange) ? 0 : bridgeCostUsd;
               const netSpread = computeNetSpread(s.annualSpreadPct, holdDays, rtCost, effectiveBridgeCost, sizeUsd);
               const breakEvenDays = rtCost > 0 ? Math.ceil(rtCost / (s.annualSpreadPct / 365)) : 0;
-              const grossColor = s.annualSpreadPct >= 30 ? chalk.green : chalk.yellow;
+              const grossColor = s.annualSpreadPct >= 50 ? chalk.green.bold : s.annualSpreadPct >= 30 ? chalk.green : chalk.yellow;
               const netColor = netSpread >= 20 ? chalk.green : netSpread >= 0 ? chalk.yellow : chalk.red;
               const dir = s.direction === "long-spot-short-perp" ? "Spot+Short" : "Sell+Long";
-              const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
-              console.log(
-                `  ${chalk.white.bold(s.symbol.padEnd(8))} ` +
-                `${grossColor(`${s.annualSpreadPct.toFixed(1)}%`.padEnd(8))} ` +
-                `${netColor(`${netSpread.toFixed(1)}%`.padEnd(8))} ` +
-                `${chalk.gray(`${rtCost.toFixed(2)}%`.padEnd(7))} ` +
-                `${chalk.gray(`${breakEvenDays}d`.padEnd(5))} ` +
-                `${exAbbr(s.perpExchange).padEnd(5)} ` +
-                `${s.spotExchanges.map(exAbbr).join(",").padEnd(8)} ` +
-                dir
-              );
-            }
-            console.log(chalk.gray(`\n  ${spotSpreads.length} spot+perp opportunities (spot funding = 0%)`));
+              return [
+                chalk.white.bold(s.symbol),
+                grossColor(`${s.annualSpreadPct.toFixed(1)}%`),
+                netColor(`${netSpread.toFixed(1)}%`),
+                chalk.gray(`${rtCost.toFixed(2)}%`),
+                chalk.gray(`${breakEvenDays}d`),
+                exAbbr(s.perpExchange),
+                s.spotExchanges.map(exAbbr).join(","),
+                dir,
+              ];
+            });
+            console.log(makeTable(["Symbol", "Gross", "Net", "Fees", "BE", "Perp", "Spot", "Direction"], rows));
+            console.log(chalk.gray(`  ${spotSpreads.length} spot+perp opportunities (spot funding = 0%)`));
             console.log(chalk.gray(`  Net spread assumes ${holdDays}d hold, $${bridgeCostUsd} bridge, $${sizeUsd} size. BE = break-even days`));
           }
         }
@@ -1241,20 +1419,14 @@ export function registerArbAutoCommands(
         return;
       }
 
-      // Header
-      console.log(
-        chalk.gray(`  ${"SYMBOL".padEnd(8)} ${"GROSS".padEnd(8)} ${"NET".padEnd(8)} ${"FEES".padEnd(7)} ${"GAP".padEnd(8)} ${"DIR".padEnd(7)} RATES`)
-      );
-
-      for (const s of filtered) {
-        const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+      const rows = filtered.map(s => {
         const direction = `${exAbbr(s.shortExch)}>${exAbbr(s.longExch)}`;
         const grossSpread = Math.abs(s.spread);
         const rtCost = computeRoundTripCostPct(s.longExch, s.shortExch);
         const netSpread = computeNetSpread(grossSpread, holdDays, rtCost, bridgeCostUsd, sizeUsd);
-        const grossColor = grossSpread >= 30 ? chalk.green : chalk.yellow;
+        const grossColor = grossSpread >= 50 ? chalk.green.bold : grossSpread >= 30 ? chalk.green : chalk.yellow;
         const netColor = netSpread >= 20 ? chalk.green : netSpread >= 0 ? chalk.yellow : chalk.red;
-        // Price gap between long/short exchanges
         const longPrice = s.longExch === "pacifica" ? s.pacMarkPrice : s.longExch === "hyperliquid" ? s.hlMarkPrice : s.ltMarkPrice;
         const shortPrice = s.shortExch === "pacifica" ? s.pacMarkPrice : s.shortExch === "hyperliquid" ? s.hlMarkPrice : s.ltMarkPrice;
         const mid = (longPrice + shortPrice) / 2;
@@ -1264,18 +1436,18 @@ export function registerArbAutoCommands(
         if (s.pacRate) rates.push(`PAC:${(s.pacRate * 100).toFixed(4)}%`);
         if (s.hlRate) rates.push(`HL:${(s.hlRate * 100).toFixed(4)}%`);
         if (s.ltRate) rates.push(`LT:${(s.ltRate * 100).toFixed(4)}%`);
-        console.log(
-          `  ${chalk.white.bold(s.symbol.padEnd(8))} ` +
-          `${grossColor(`${grossSpread.toFixed(1)}%`.padEnd(8))} ` +
-          `${netColor(`${netSpread.toFixed(1)}%`.padEnd(8))} ` +
-          `${chalk.gray(`${rtCost.toFixed(2)}%`.padEnd(7))} ` +
-          `${gapColor(`${priceGapPct.toFixed(3)}%`.padEnd(8))} ` +
-          `${direction.padEnd(7)} ` +
-          rates.join(" ")
-        );
-      }
-
-      console.log(chalk.gray(`\n  ${filtered.length} opportunities above ${minSpread}% gross annual spread`));
+        return [
+          chalk.white.bold(s.symbol),
+          grossColor(`${grossSpread.toFixed(1)}%`),
+          netColor(`${netSpread.toFixed(1)}%`),
+          chalk.gray(`${rtCost.toFixed(2)}%`),
+          gapColor(`${priceGapPct.toFixed(3)}%`),
+          direction,
+          rates.join(" "),
+        ];
+      });
+      console.log(makeTable(["Symbol", "Gross", "Net", "Fees", "Gap", "Dir", "Rates"], rows));
+      console.log(chalk.gray(`  ${filtered.length} opportunities above ${minSpread}% gross annual spread`));
       console.log(chalk.gray(`  Net spread assumes ${holdDays}d hold, $${bridgeCostUsd} bridge cost, $${sizeUsd} size`));
       console.log(chalk.gray(`  * Spreads are estimates based on current rates — actual may vary`));
       console.log(chalk.gray(`  Use 'perp arb auto --min-spread ${minSpread}' to auto-trade\n`));
@@ -1295,8 +1467,9 @@ export function registerArbAutoCommands(
     .option("--isolated", "Use isolated margin mode")
     .option("--smart", "Smart execution: IOC limit at best bid/ask + 1 tick (reduces slippage)")
     .option("--dry-run", "Simulate without executing trades")
+    .option("--reconcile", "Auto-adjust leg sizes to match after execution (trim larger side)")
     .action(async (symbol: string, longExch: string, shortExch: string, sizeUsdStr: string, opts: {
-      maxSlippage: string; leverage?: string; isolated?: boolean; smart?: boolean; dryRun?: boolean;
+      maxSlippage: string; leverage?: string; isolated?: boolean; smart?: boolean; dryRun?: boolean; reconcile?: boolean;
     }) => {
       // Detect spot: prefix -> route to spot-exec logic
       if (longExch.startsWith("spot:")) {
@@ -1306,6 +1479,7 @@ export function registerArbAutoCommands(
       const sym = symbol.toUpperCase();
       const sizeUsd = parseFloat(sizeUsdStr);
       const maxSlippage = parseFloat(opts.maxSlippage);
+      const dryRun = !!opts.dryRun || process.argv.includes("--dry-run");
 
       // Resolve exchange aliases
       const aliasMap: Record<string, string> = { hl: "hyperliquid", pac: "pacifica", lt: "lighter" };
@@ -1396,11 +1570,25 @@ export function registerArbAutoCommands(
       const matchedUsd = matchedBase * avgPrice;
 
       if (!isJson()) {
-        console.log(chalk.cyan(`\n  Arb Exec: ${sym}${opts.smart ? " (smart order)" : ""}`));
+        console.log(chalk.cyan(`\n  Arb Exec: ${sym}${opts.smart ? " (smart order)" : ""}${dryRun ? " [DRY RUN]" : ""}`));
         console.log(chalk.gray(`    LONG  ${longExch}: buy  ${matchedSize} (~$${(matchedBase * longCheck.avgFillPrice).toFixed(2)}, slippage ${longCheck.slippagePct.toFixed(3)}%)`));
         console.log(chalk.gray(`    SHORT ${shortExch}: sell ${matchedSize} (~$${(matchedBase * shortCheck.avgFillPrice).toFixed(2)}, slippage ${shortCheck.slippagePct.toFixed(3)}%)`));
-        console.log(chalk.gray(`    Executing both legs simultaneously...\n`));
       }
+
+      // 4b. Dry-run: return simulated result without executing
+      if (dryRun) {
+        const result = {
+          status: "filled", symbol: sym, dryRun: true,
+          size: matchedSize, notionalUsd: Math.round(matchedUsd * 100) / 100,
+          long: { exchange: longExch, side: "buy", size: matchedSize, slippagePct: longCheck.slippagePct },
+          short: { exchange: shortExch, side: "sell", size: matchedSize, slippagePct: shortCheck.slippagePct },
+        };
+        if (isJson()) return printJson(jsonOk(result));
+        console.log(chalk.yellow(`\n    [DRY RUN] Would execute: long ${matchedSize} on ${longExch} + short ${matchedSize} on ${shortExch} (~$${matchedUsd.toFixed(2)})\n`));
+        return;
+      }
+
+      if (!isJson()) console.log(chalk.gray(`    Executing both legs simultaneously...\n`));
 
       // 5. Execute both legs simultaneously
       const execLong = opts.smart
@@ -1443,21 +1631,72 @@ export function registerArbAutoCommands(
           return;
         }
 
+        // 7. Verify fill sizes match expected
+        const expectedSize = parseFloat(matchedSize);
+        const longFilled = Number(longPos.size);
+        const shortFilled = Number(shortPos.size);
+        const fillWarnings: string[] = [];
+        if (longFilled < expectedSize * 0.5) fillWarnings.push(`Long fill ${longPos.size} < expected ${matchedSize} — partial fill?`);
+        if (shortFilled < expectedSize * 0.5) fillWarnings.push(`Short fill ${shortPos.size} < expected ${matchedSize} — partial fill?`);
+        // Size mismatch between legs
+        const sizeDiffPct = Math.abs(longFilled - shortFilled) / Math.max(longFilled, shortFilled) * 100;
+        if (sizeDiffPct > 5) fillWarnings.push(`Leg size mismatch: long ${longPos.size} vs short ${shortPos.size} (${sizeDiffPct.toFixed(1)}% diff)`);
+
+        // 8. Reconcile — trim larger leg to match smaller
+        let reconciled = false;
+        let reconciledSize = "";
+        if (opts.reconcile && sizeDiffPct > 1 && longFilled > 0 && shortFilled > 0) {
+          const targetSize = Math.min(longFilled, shortFilled);
+          const trimSide: "long" | "short" = longFilled > shortFilled ? "long" : "short";
+          const trimAdapter = trimSide === "long" ? longAdapter : shortAdapter;
+          const trimAction: "buy" | "sell" = trimSide === "long" ? "sell" : "buy"; // reduce long = sell, reduce short = buy
+          const excess = Math.abs(longFilled - shortFilled);
+          const trimDecimals = matchedSize.includes(".") ? matchedSize.split(".")[1].length : 0;
+          const excessStr = excess.toFixed(trimDecimals);
+
+          if (!isJson()) console.log(chalk.cyan(`    Reconciling: ${trimSide} has ${excess.toFixed(trimDecimals)} excess → trimming...`));
+          try {
+            if (opts.smart) {
+              await smartOrder(trimAdapter, sym, trimAction, excessStr, { reduceOnly: true });
+            } else {
+              await trimAdapter.marketOrder(sym, trimAction, excessStr);
+            }
+            reconciled = true;
+            reconciledSize = targetSize.toFixed(trimDecimals);
+            fillWarnings.length = 0; // clear mismatch warnings
+            if (!isJson()) console.log(chalk.green(`    Reconciled: both legs now ~${reconciledSize} units`));
+          } catch (reconErr) {
+            const msg = reconErr instanceof Error ? reconErr.message : String(reconErr);
+            fillWarnings.push(`Reconcile failed (${trimSide} trim): ${msg}`);
+            if (!isJson()) console.log(chalk.yellow(`    Reconcile failed: ${msg}`));
+          }
+        }
+
+        const fillStatus = fillWarnings.length > 0 ? "filled_unverified" : "filled";
+        const finalSize = reconciled ? reconciledSize : matchedSize;
+
         logExecution({
           type: "arb_entry", exchange: `${longExch}+${shortExch}`,
-          symbol: sym, side: "entry", size: matchedSize,
-          status: "success", dryRun: false,
-          meta: { longExch, shortExch, matchedUsd, longSlippage: longCheck.slippagePct, shortSlippage: shortCheck.slippagePct },
+          symbol: sym, side: "entry", size: finalSize,
+          status: fillWarnings.length > 0 ? "unverified" : "success", dryRun: false,
+          meta: { longExch, shortExch, matchedUsd, longSlippage: longCheck.slippagePct, shortSlippage: shortCheck.slippagePct, reconciled, ...(fillWarnings.length > 0 && { warnings: fillWarnings }) },
         });
         const result = {
-          status: "filled", symbol: sym, size: matchedSize, notionalUsd: Math.round(matchedUsd * 100) / 100,
-          long: { exchange: longExch, side: "buy", size: longPos.size, slippagePct: longCheck.slippagePct },
-          short: { exchange: shortExch, side: "sell", size: shortPos.size, slippagePct: shortCheck.slippagePct },
+          status: fillStatus, symbol: sym, size: finalSize, notionalUsd: Math.round(matchedUsd * 100) / 100,
+          long: { exchange: longExch, side: "buy", size: reconciled ? reconciledSize : longPos.size, slippagePct: longCheck.slippagePct },
+          short: { exchange: shortExch, side: "sell", size: reconciled ? reconciledSize : shortPos.size, slippagePct: shortCheck.slippagePct },
+          ...(reconciled && { reconciled: true }),
+          ...(fillWarnings.length > 0 && { warnings: fillWarnings }),
         };
         if (isJson()) return printJson(jsonOk(result));
-        console.log(chalk.green(`  FILLED: ${sym} ${matchedSize} units (~$${matchedUsd.toFixed(2)})`));
-        console.log(chalk.green(`    LONG  ${longExch} ✓ (${longPos.size})`));
-        console.log(chalk.green(`    SHORT ${shortExch} ✓ (${shortPos.size})\n`));
+        if (fillWarnings.length > 0) {
+          console.log(chalk.yellow(`  FILLED (unverified): ${sym} ${finalSize} units (~$${matchedUsd.toFixed(2)})`));
+          for (const w of fillWarnings) console.log(chalk.yellow(`    ⚠ ${w}`));
+        } else {
+          console.log(chalk.green(`  FILLED${reconciled ? " (reconciled)" : ""}: ${sym} ${finalSize} units (~$${matchedUsd.toFixed(2)})`));
+        }
+        console.log(chalk.green(`    LONG  ${longExch} ✓ (${reconciled ? reconciledSize : longPos.size})`));
+        console.log(chalk.green(`    SHORT ${shortExch} ✓ (${reconciled ? reconciledSize : shortPos.size})\n`));
       } else if (longOk !== shortOk) {
         // One leg failed — rollback
         const filledSide = longOk ? "long" : "short";
@@ -2296,132 +2535,7 @@ export function registerArbAutoCommands(
       console.log(chalk.gray(`    * Net includes actual settled funding where available.\n`));
   }
 
-  // ── arb monitor ── (live monitoring with liquidity)
-
-  arb
-    .command("monitor")
-    .description("Live-monitor funding spreads with liquidity data (--hip3 for HIP-3 cross-dex)")
-    .option("--min <pct>", "Min annual spread to show", "20")
-    .option("--interval <sec>", "Refresh interval in seconds", "60")
-    .option("--top <n>", "Show top N opportunities", "15")
-    .option("--check-liquidity", "Check orderbook depth (slower)")
-    .option("--hold-days <days>", "Expected hold period for net spread calc", "7")
-    .option("--bridge-cost <usd>", "One-way bridge cost in USD", "0.5")
-    .option("--size <usd>", "Position size per leg ($) for cost calc", "100")
-    .option("--hip3", "Monitor HIP-3 cross-dex arb opportunities instead of perp spreads")
-    .option("--include-native", "Include native HL perps (hip3 mode)", true)
-    .option("--no-include-native", "Exclude native HL perps (hip3 mode)")
-    .action(async (opts: { min: string; interval: string; top: string; checkLiquidity?: boolean; holdDays: string; bridgeCost: string; size: string; hip3?: boolean; includeNative: boolean }) => {
-      // Route to dex-monitor logic if --hip3 flag is set
-      if (opts.hip3) {
-        return handleDexMonitor(opts);
-      }
-      const minSpread = parseFloat(opts.min);
-      const intervalSec = parseInt(opts.interval);
-      const topN = parseInt(opts.top);
-      const checkLiq = opts.checkLiquidity ?? false;
-      const holdDays = parseFloat(opts.holdDays);
-      const bridgeCostUsd = parseFloat(opts.bridgeCost);
-      const sizeUsd = parseFloat(opts.size);
-      let cycle = 0;
-
-      if (!isJson()) {
-        console.log(chalk.cyan.bold("\n  Funding Arb Monitor"));
-        console.log(chalk.gray(`  Min spread: ${minSpread}% | Refresh: ${intervalSec}s | Top: ${topN}`));
-        console.log(chalk.gray(`  Net spread: ${holdDays}d hold, $${bridgeCostUsd} bridge, $${sizeUsd} size`));
-        if (checkLiq) console.log(chalk.gray(`  Liquidity check: ON`));
-        console.log(chalk.gray(`  Press Ctrl+C to stop\n`));
-      }
-
-      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
-
-      while (true) {
-        cycle++;
-        const ts = new Date().toLocaleTimeString();
-
-        try {
-          const spreads = await fetchFundingSpreads();
-          const filtered = spreads
-            .filter(s => Math.abs(s.spread) >= minSpread)
-            .slice(0, topN);
-
-          // Clear previous output (move cursor up)
-          if (cycle > 1) {
-            const linesToClear = filtered.length + 4;
-            process.stdout.write(`\x1b[${linesToClear}A\x1b[J`);
-          }
-
-          console.log(chalk.gray(`  ${ts} — Cycle ${cycle} | ${filtered.length} opportunities >= ${minSpread}%\n`));
-
-          if (filtered.length === 0) {
-            console.log(chalk.gray(`  No opportunities found.\n`));
-          } else {
-            // Optionally check liquidity for top entries
-            const liqData = new Map<string, { hlDepth: number; ltDepth: number; gap: string }>();
-
-            if (checkLiq && filtered.length > 0) {
-              const topCheck = filtered.slice(0, 5); // check liquidity for top 5 only
-              await Promise.allSettled(topCheck.map(async (s) => {
-                try {
-                  const [hlOB, ltOB] = await Promise.all([
-                    fetchHLOrderbook(s.symbol),
-                    fetchLighterOrderbook(s.symbol),
-                  ]);
-                  const hlDepth = hlOB.reduce((sum, l) => sum + l[0] * l[1], 0);
-                  const ltDepth = ltOB.reduce((sum, l) => sum + l[0] * l[1], 0);
-                  // Price gap between best ask (buy side) and best bid (sell side)
-                  const hlBest = hlOB[0]?.[0] ?? 0;
-                  const ltBest = ltOB[0]?.[0] ?? 0;
-                  const gap = hlBest && ltBest
-                    ? (Math.abs(hlBest - ltBest) / Math.min(hlBest, ltBest) * 100).toFixed(3)
-                    : "?";
-                  liqData.set(s.symbol, { hlDepth: Math.round(hlDepth), ltDepth: Math.round(ltDepth), gap });
-                } catch { /* skip */ }
-              }));
-            }
-
-            for (const s of filtered) {
-              const direction = `${exAbbr(s.shortExch)}>${exAbbr(s.longExch)}`;
-              const grossSpread = Math.abs(s.spread);
-              const rtCost = computeRoundTripCostPct(s.longExch, s.shortExch);
-              const netSpread = computeNetSpread(grossSpread, holdDays, rtCost, bridgeCostUsd, sizeUsd);
-              const grossColor = grossSpread >= 50 ? chalk.green.bold
-                : grossSpread >= 30 ? chalk.green
-                : chalk.yellow;
-              const netColor = netSpread >= 20 ? chalk.green : netSpread >= 0 ? chalk.yellow : chalk.red;
-
-              const rates: string[] = [];
-              if (s.pacRate) rates.push(`PAC:${(s.pacRate * 100).toFixed(4)}%`);
-              if (s.hlRate) rates.push(`HL:${(s.hlRate * 100).toFixed(4)}%`);
-              if (s.ltRate) rates.push(`LT:${(s.ltRate * 100).toFixed(4)}%`);
-
-              let liqInfo = "";
-              const ld = liqData.get(s.symbol);
-              if (ld) {
-                liqInfo = chalk.gray(` | depth: HL $${ld.hlDepth.toLocaleString()} LT $${ld.ltDepth.toLocaleString()} gap:${ld.gap}%`);
-              }
-
-              console.log(
-                `  ${chalk.white.bold(s.symbol.padEnd(8))} ` +
-                `${grossColor(`${grossSpread.toFixed(1)}%`.padEnd(8))} ` +
-                `${netColor(`net:${netSpread.toFixed(1)}%`.padEnd(12))} ` +
-                `${direction.padEnd(7)} ` +
-                rates.join(" ") +
-                liqInfo
-              );
-            }
-            console.log(chalk.gray(`  * Net spreads are predicted estimates (${holdDays}d hold, $${bridgeCostUsd} bridge)`));
-            console.log();
-          }
-        } catch (err) {
-          console.log(chalk.red(`  ${ts} Error: ${err instanceof Error ? err.message : err}\n`));
-        }
-
-        await new Promise(r => setTimeout(r, intervalSec * 1000));
-      }
-    });
-
-  // ── dex-monitor logic (accessed via 'arb monitor --hip3') ──
+  // ── dex-monitor logic (accessed via 'arb scan --live --hip3') ──
 
   async function handleDexMonitor(opts: { min: string; interval: string; top: string; includeNative: boolean }) {
       const minSpread = parseFloat(opts.min);
