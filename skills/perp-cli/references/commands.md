@@ -16,7 +16,7 @@ perp --json market kline <SYM> <INTERVAL>  # OHLCV candles (1m,5m,15m,1h,4h,1d)
 
 ## Account (read-only, safe)
 ```bash
-perp --json account info                   # balance, equity, margin, PnL
+perp --json account balance                # perp balance + spot holdings + 24h funding (alias: account info)
 perp --json account positions              # open positions
 perp --json account orders                 # open/pending orders
 perp --json account history                # order history
@@ -111,10 +111,10 @@ perp --json arb spot-close <SYM> --spot-exch <hl|lt>   # close spot+perp arb
 # HL spot uses U-tokens: BTC→UBTC, ETH→UETH, SOL→USOL (auto-resolved)
 
 # Other arb tools
-perp --json arb funding                     # detailed funding analysis
+perp --json arb rates                       # funding rates across all DEXs (detailed)
+perp --json arb prices                      # cross-exchange price gaps
 perp --json arb dex                         # HIP-3 cross-dex arb (Hyperliquid)
-perp --json gap show                        # cross-exchange price gaps
-# NOTE: 'arb rates' is deprecated — use 'arb scan' instead
+# Deprecated: 'gap show' → use 'arb prices'; 'funding rates/spread' → use 'arb rates/scan'
 ```
 
 ## Wallet Management
@@ -136,10 +136,13 @@ perp --json risk liquidation-distance       # % distance from liquidation for AL
 perp --json risk limits                     # view current risk limits
 perp --json risk limits --min-liq-distance 30 --max-leverage 5  # set risk limits
 perp --json risk check --notional 1000 --leverage 3  # pre-trade risk check
-perp --json health                          # exchange connectivity & latency
-perp --json analytics summary              # trading performance
-perp --json analytics pnl                   # P&L breakdown
+perp --json agent ping                      # exchange connectivity & latency
+perp --json history summary                 # trading performance
+perp --json history pnl                     # P&L breakdown by exchange
+perp --json history funding                 # funding payment aggregation
+perp --json history report                  # full performance report (summary + pnl + funding)
 perp --json history list                    # execution audit trail
+# Deprecated: 'health' → 'agent ping'; 'analytics *' → 'history *'
 ```
 
 ## Automated Strategies

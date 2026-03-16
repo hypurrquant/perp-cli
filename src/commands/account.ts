@@ -179,12 +179,17 @@ export function registerAccountCommands(
           // Get spot prices for USD valuation
           const markets = await hlSpot.getSpotMarkets();
           const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
+          // HL spot API returns token names with -SPOT suffix (e.g., "HYPE-SPOT", "USDC-SPOT")
+          const stripSuffix = (t: string) => t.replace(/-SPOT$/i, "").toUpperCase();
           spotBalances = raw
             .filter(b => Number(b.total) > 0)
-            .map(b => ({
-              ...b,
-              valueUsd: b.token === "USDC" ? Number(b.total) : (priceMap.get(b.token.toUpperCase()) ?? 0) * Number(b.total),
-            }));
+            .map(b => {
+              const base = stripSuffix(b.token);
+              return {
+                ...b,
+                valueUsd: base === "USDC" ? Number(b.total) : (priceMap.get(base) ?? 0) * Number(b.total),
+              };
+            });
         } else if (exName === "lighter") {
           const { LighterAdapter } = await import("../exchanges/lighter.js");
           const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");

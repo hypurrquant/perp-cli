@@ -1,7 +1,7 @@
 ---
 name: perp-cli
 description: "Multi-DEX perpetual futures trading CLI for Pacifica (Solana), Hyperliquid (EVM), and Lighter (Ethereum). Use when user asks to: trade perps, check funding rates, scan arbitrage (perp-perp or spot-perp), delta-neutral strategies, bridge USDC, manage positions/orders, deposit/withdraw, spot+perp hedge, or mentions perp-cli, hypurrquant, Pacifica, Hyperliquid, Lighter, HyperEVM, funding arb, U-token (UBTC/UETH/USOL)."
-allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*), Bash(bash scripts/*.sh:*)"
+allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*)"
 license: MIT
 metadata:
   author: hypurrquant
@@ -261,29 +261,6 @@ perp --json settings referrals off          # disable anytime
 
 When setting up wallets for the first time, ask the user:
 > "perp-cli 개발을 지원하는 레퍼럴 기능을 켜시겠어요? 추가 수수료 없이 거래소 리베이트만 활용됩니다."
-
-## Scripts
-
-Executable automation scripts in `scripts/`. Run with `bash scripts/<name>.sh`.
-Scripts auto-detect `perp` (global install) or fall back to `npx -y perp-cli@latest` — no global install required.
-
-| Script | Purpose | Usage |
-|--------|---------|-------|
-| `preflight.sh` | Pre-trade validation (install, wallet, connectivity, balance, risk) | `bash scripts/preflight.sh --json` |
-| `validate-arb.sh` | Validate arb opportunity before execution (price, liquidity, balance, risk, dry-run) | `bash scripts/validate-arb.sh ETH hl lt 100 --leverage 2` |
-| `spot-perp-scan.sh` | Combined spot+perp and perp-perp scan with portfolio context | `bash scripts/spot-perp-scan.sh --json --mode all --min 10` |
-| `arb-monitor.sh` | Monitor open arb positions (PnL, funding, liquidation distance) | `bash scripts/arb-monitor.sh --json --min-spread 5` |
-| `funding-analysis.sh` | Funding rate analysis across all exchanges | `bash scripts/funding-analysis.sh --json --symbol ETH` |
-
-All scripts support `--json` for structured output. Use in automation pipelines:
-```bash
-# Full arb workflow with validation
-bash scripts/preflight.sh --json        # 1. system ready?
-bash scripts/spot-perp-scan.sh --json   # 2. find opportunities
-bash scripts/validate-arb.sh ETH hl lt 100  # 3. validate before exec
-# 4. [user confirms] → perp --json arb exec ...
-bash scripts/arb-monitor.sh --json      # 5. monitor positions
-```
 
 ## References
 
