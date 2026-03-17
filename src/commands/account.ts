@@ -1134,6 +1134,61 @@ export function registerAccountCommands(
             console.log(chalk.gray("\n  No open positions.\n"));
           }
 
+          // ── Spot Holdings ──
+          const spotRows: string[][] = [];
+          for (const exName of exchanges) {
+            try {
+              const adapter = await getAdapterForExchange(exName);
+              if (exName === "hyperliquid") {
+                const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+                const hlSpot = new HyperliquidSpotAdapter(adapter as HyperliquidAdapter);
+                await hlSpot.init();
+                const bals = await hlSpot.getSpotBalances();
+                const markets = await hlSpot.getSpotMarkets();
+                const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
+                for (const b of bals) {
+                  const base = b.token.replace(/-SPOT$/i, "").toUpperCase();
+                  if (base === "USDC" || Number(b.total) <= 0) continue;
+                  const price = priceMap.get(base) ?? 0;
+                  const value = price * Number(b.total);
+                  if (value < 1) continue; // skip dust
+                  spotRows.push([
+                    chalk.white.bold(base),
+                    chalk.gray("hyperliquid"),
+                    b.total,
+                    `$${formatUsd(price)}`,
+                    `$${formatUsd(value)}`,
+                  ]);
+                }
+              } else if (exName === "lighter") {
+                const { LighterAdapter } = await import("../exchanges/lighter.js");
+                const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");
+                const ltSpot = new LighterSpotAdapter(adapter as InstanceType<typeof LighterAdapter>);
+                await ltSpot.init();
+                const bals = await ltSpot.getSpotBalances();
+                const markets = await ltSpot.getSpotMarkets();
+                const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
+                for (const b of bals) {
+                  if (b.token === "USDC" || b.token === "USDC_SPOT" || Number(b.total) <= 0) continue;
+                  const price = priceMap.get(b.token.toUpperCase()) ?? 0;
+                  const value = price * Number(b.total);
+                  if (value < 1) continue;
+                  spotRows.push([
+                    chalk.white.bold(b.token),
+                    chalk.gray("lighter"),
+                    b.total,
+                    `$${formatUsd(price)}`,
+                    `$${formatUsd(value)}`,
+                  ]);
+                }
+              }
+            } catch { /* spot not available */ }
+          }
+          if (spotRows.length > 0) {
+            console.log(chalk.white.bold("\n  Spot Holdings"));
+            console.log(makeTable(["Token", "Exchange", "Amount", "Price", "Value"], spotRows));
+          }
+
           // ── Risk Metrics ──
           console.log(chalk.white.bold("\n  Risk Metrics"));
           const levelColor = {

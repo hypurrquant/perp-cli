@@ -17,7 +17,9 @@ export class LighterSpotAdapter implements SpotAdapter {
   private _spotBaseMap = new Map<string, string>(); // "ETH" → "ETH/USDC"
   private _spotDecimals = new Map<string, { size: number; price: number }>();
   private _spotMinSize = new Map<string, { base: number; quote: number }>(); // min order sizes
+  private _spotPrices = new Map<string, string>(); // "ETH/USDC" → markPrice (from init)
   private _initialized = false;
+  private _clientOrderCounter = 0;
 
   constructor(ltAdapter: LighterAdapter) {
     this._lt = ltAdapter;
@@ -42,6 +44,9 @@ export class LighterSpotAdapter implements SpotAdapter {
           supported_price_decimals: number;
           min_base_amount: string;
           min_quote_amount: string;
+          best_ask_price?: string;
+          best_bid_price?: string;
+          mark_price?: string;
         }>;
       };
 
@@ -57,6 +62,10 @@ export class LighterSpotAdapter implements SpotAdapter {
           base: parseFloat(ob.min_base_amount || "0"),
           quote: parseFloat(ob.min_quote_amount || "0"),
         });
+        // Cache price from orderBooks response (avoids N separate orderbook calls in getSpotMarkets)
+        const price = ob.mark_price ?? (ob.best_ask_price && ob.best_bid_price
+          ? String((parseFloat(ob.best_ask_price) + parseFloat(ob.best_bid_price)) / 2) : "0");
+        if (price !== "0") this._spotPrices.set(symbol, price);
         const base = symbol.split("/")[0];
         if (base) this._spotBaseMap.set(base, symbol);
       }
@@ -96,27 +105,30 @@ export class LighterSpotAdapter implements SpotAdapter {
     await this.init();
     const entries = Array.from(this._spotMarketMap.entries());
 
-    // Fetch all orderbooks in parallel (instead of sequential per-market)
-    const obResults = await Promise.allSettled(
-      entries.map(([symbol]) =>
-        this.getSpotOrderbook(symbol).then(ob => {
-          if (ob.bids.length > 0 && ob.asks.length > 0) {
-            return String((Number(ob.bids[0][0]) + Number(ob.asks[0][0])) / 2);
-          }
-          return "0";
-        })
-      )
-    );
+    // Use prices cached from init's /orderBooks response (0 extra API calls).
+    // Only fetch individual orderbooks if no cached price available.
+    const missingPrices = entries.filter(([sym]) => !this._spotPrices.has(sym));
+    if (missingPrices.length > 0) {
+      const results = await Promise.allSettled(
+        missingPrices.map(([symbol]) =>
+          this.getSpotOrderbook(symbol).then(ob => {
+            if (ob.bids.length > 0 && ob.asks.length > 0) {
+              this._spotPrices.set(symbol, String((Number(ob.bids[0][0]) + Number(ob.asks[0][0])) / 2));
+            }
+          })
+        )
+      );
+      void results; // consume
+    }
 
-    return entries.map(([symbol], i) => {
+    return entries.map(([symbol]) => {
       const parts = symbol.split("/");
       const base = parts[0] ?? "";
       const quote = parts[1] ?? "USDC";
       const dec = this._spotDecimals.get(symbol) ?? { size: 4, price: 2 };
-      const markPrice = obResults[i].status === "fulfilled" ? obResults[i].value : "0";
       return {
         symbol, baseToken: base, quoteToken: quote,
-        markPrice, volume24h: "0",
+        markPrice: this._spotPrices.get(symbol) ?? "0", volume24h: "0",
         sizeDecimals: dec.size, priceDecimals: dec.price,
       };
     });
@@ -146,44 +158,36 @@ export class LighterSpotAdapter implements SpotAdapter {
   async getSpotBalances(): Promise<SpotBalance[]> {
     try {
       await this.init();
-      const balances: SpotBalance[] = [];
       const address = this._lt.address;
       if (!address) return [];
 
-      const res = await this._restGet("/account", {
-        by: "l1_address",
-        value: address,
-      }) as {
-        accounts?: Array<{
-          account_index: number;
-          collateral?: number | string;
-          available_balance?: number | string;
-          assets?: Array<{
-            symbol: string;
-            asset_id: number;
-            balance: string;
-            locked_balance: string;
-          }>;
-        }>;
-      };
-      const acct = res.accounts?.find(a => a.account_index === this._lt.accountIndex)
-        ?? res.accounts?.[0];
+      // Reuse cached account data (shared with LighterAdapter.fetchAccount() — saves 1 API call)
+      const { withCache, TTL_ACCOUNT } = await import("../cache.js");
+      const acct = await withCache(`acct:lt:account:${address}`, TTL_ACCOUNT, async () => {
+        const res = await this._restGet("/account", {
+          by: "l1_address",
+          value: address,
+        }) as { accounts?: Array<Record<string, unknown>> };
+        const found = res.accounts?.find(a => a.account_index === this._lt.accountIndex)
+          ?? res.accounts?.[0];
+        return found ?? null;
+      }) as Record<string, unknown> | null;
       if (!acct) return [];
 
+      const balances: SpotBalance[] = [];
       // Spot token balances from the assets array only.
       // Perp USDC (collateral) is already reported by getBalance() — don't duplicate here.
-      if (acct.assets && acct.assets.length > 0) {
-        for (const asset of acct.assets) {
-          const bal = parseFloat(asset.balance || "0");
-          const locked = parseFloat(asset.locked_balance || "0");
-          if (bal > 0) {
-            balances.push({
-              token: asset.symbol === "USDC" ? "USDC_SPOT" : asset.symbol,
-              total: asset.balance,
-              available: String(bal - locked),
-              held: asset.locked_balance,
-            });
-          }
+      const assets = (acct.assets ?? []) as Array<{ symbol: string; asset_id: number; balance: string; locked_balance: string }>;
+      for (const asset of assets) {
+        const bal = parseFloat(asset.balance || "0");
+        const locked = parseFloat(asset.locked_balance || "0");
+        if (bal > 0) {
+          balances.push({
+            token: asset.symbol === "USDC" ? "USDC_SPOT" : asset.symbol,
+            total: asset.balance,
+            available: String(bal - locked),
+            held: asset.locked_balance,
+          });
         }
       }
 
@@ -284,14 +288,39 @@ export class LighterSpotAdapter implements SpotAdapter {
       throw new Error(`Unknown Lighter spot market: ${symbol}`);
     }
 
-    // Access signer through the adapter
+    // Lighter order IDs can exceed Number.MAX_SAFE_INTEGER (2^53-1).
+    // The WASM signer only accepts JS number, so large IDs lose precision
+    // and the cancel silently targets the wrong order.
+    // Fall back to cancelAll for the market when the ID is unsafe.
+    const idNum = Number(orderId);
+    if (!Number.isSafeInteger(idNum)) {
+      return this.spotCancelAllOrders(symbol);
+    }
+
     const signer = this._lt.signer;
     const nonce = await this._getNextNonce();
     const signed = await signer.signCancelOrder({
       marketIndex: marketId,
-      orderIndex: parseInt(orderId),
+      orderIndex: idNum,
       nonce,
       apiKeyIndex: (this._lt as unknown as { _apiKeyIndex: number })._apiKeyIndex,
+      accountIndex: this._lt.accountIndex,
+    });
+    return this._sendTx(signed);
+  }
+
+  /** Cancel all orders across all markets (spot + perp) */
+  async spotCancelAllOrders(_symbol?: string): Promise<unknown> {
+    if (this._lt.isReadOnly) throw new Error("Cancel requires API key");
+    const signer = this._lt.signer;
+    const nonce = await this._getNextNonce();
+    const apiKeyIndex = (this._lt as unknown as { _apiKeyIndex: number })._apiKeyIndex;
+    // time must be in milliseconds, in the future
+    const signed = await signer.signCancelAllOrders({
+      timeInForce: 1,
+      time: Date.now() + 3600_000,
+      nonce,
+      apiKeyIndex,
       accountIndex: this._lt.accountIndex,
     });
     return this._sendTx(signed);
@@ -404,9 +433,13 @@ export class LighterSpotAdapter implements SpotAdapter {
     const nonce = await this._getNextNonce();
     const signer = this._lt.signer;
     const apiKeyIndex = (this._lt as unknown as { _apiKeyIndex: number })._apiKeyIndex;
+    // Use a unique clientOrderIndex (uint48, max 2^48-1 ≈ 281 trillion).
+    // This value is used for cancel operations instead of the exchange-assigned
+    // order_id which can exceed Number.MAX_SAFE_INTEGER.
+    const clientOrderIndex = this._nextClientOrderIndex();
     const signed = await signer.signCreateOrder({
       marketIndex: opts.marketIndex,
-      clientOrderIndex: 0,
+      clientOrderIndex,
       baseAmount: opts.baseAmount,
       price: opts.price,
       isAsk: opts.isAsk,
@@ -423,6 +456,14 @@ export class LighterSpotAdapter implements SpotAdapter {
       throw new Error(`Signer: ${(signed as { error: string }).error}`);
     }
     return this._sendTx(signed);
+  }
+
+  /** Generate a unique client order index (uint48). Uses timestamp + counter. */
+  private _nextClientOrderIndex(): number {
+    // Timestamp in seconds gives ~10 digits. Add counter for uniqueness within same second.
+    // uint48 max = 281_474_976_710_655. Date.now()/1000 ≈ 1.7 trillion (fits).
+    const base = Math.floor(Date.now() / 1000) % 281_474_976_710_000;
+    return base + (this._clientOrderCounter++ % 655);
   }
 
   private async _getNextNonce(): Promise<number> {

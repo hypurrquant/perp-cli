@@ -74,10 +74,14 @@ describe("Cross-validate: Hyperliquid Spot Adapter", () => {
     expect(rawMeta).toBeTruthy();
     expect(rawMeta[0]?.universe?.length).toBeGreaterThan(0);
 
-    // Build token name map
+    // Build token name + szDecimals map (szDecimals lives on tokens, NOT universe)
     const tokenNames = new Map<number, string>();
+    const tokenSzDec = new Map<number, number>();
     for (const t of rawMeta[0].tokens) {
       tokenNames.set(t.index, t.name);
+      if ((t as Record<string, unknown>).szDecimals !== undefined) {
+        tokenSzDec.set(t.index, (t as Record<string, unknown>).szDecimals as number);
+      }
     }
 
     // Build spot market list from raw API
@@ -87,13 +91,13 @@ describe("Cross-validate: Hyperliquid Spot Adapter", () => {
       return {
         baseToken,
         markPrice: Number((ctx as Record<string, unknown>).markPx ?? (ctx as Record<string, unknown>).midPx ?? 0),
-        szDecimals: u.szDecimals ?? 2,
+        szDecimals: tokenSzDec.get(u.tokens[0]) ?? 2,
       };
     }).filter(m => m.baseToken);
 
     // Adapter
-    const { HyperliquidAdapter } = await import("../exchanges/hyperliquid.js");
-    const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+    const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
+    const { HyperliquidSpotAdapter } = await import("../../exchanges/hyperliquid-spot.js");
 
     // We can test without private key for read-only operations
     // Use a dummy key if none available
@@ -167,8 +171,8 @@ describe("Cross-validate: Hyperliquid Spot Adapter", () => {
     // Adapter
     const pk = process.env.HYPERLIQUID_PRIVATE_KEY || process.env.HL_PRIVATE_KEY || process.env.PRIVATE_KEY
       || "0x0000000000000000000000000000000000000000000000000000000000000001";
-    const { HyperliquidAdapter } = await import("../exchanges/hyperliquid.js");
-    const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+    const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
+    const { HyperliquidSpotAdapter } = await import("../../exchanges/hyperliquid-spot.js");
     const hlAdapter = new HyperliquidAdapter(pk);
     await hlAdapter.init();
     const spotAdapter = new HyperliquidSpotAdapter(hlAdapter);
@@ -215,8 +219,8 @@ describe("Cross-validate: Hyperliquid Spot Adapter", () => {
     };
 
     // Adapter
-    const { HyperliquidAdapter } = await import("../exchanges/hyperliquid.js");
-    const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+    const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
+    const { HyperliquidSpotAdapter } = await import("../../exchanges/hyperliquid-spot.js");
     const hlAdapter = new HyperliquidAdapter(pk);
     await hlAdapter.init();
     const spotAdapter = new HyperliquidSpotAdapter(hlAdapter);
@@ -251,16 +255,16 @@ describe("Cross-validate: Hyperliquid Spot Adapter", () => {
 // ── Lighter Spot Tests (shared adapter to avoid rate limits) ──
 
 describe("Cross-validate: Lighter Spot Adapter", () => {
-  let ltAdapter: Awaited<ReturnType<typeof import("../exchanges/lighter.js")>>["LighterAdapter"]["prototype"] | null = null;
-  let spotAdapter: Awaited<ReturnType<typeof import("../exchanges/lighter-spot.js")>>["LighterSpotAdapter"]["prototype"] | null = null;
+  let ltAdapter: Awaited<ReturnType<typeof import("../../exchanges/lighter.js")>>["LighterAdapter"]["prototype"] | null = null;
+  let spotAdapter: Awaited<ReturnType<typeof import("../../exchanges/lighter-spot.js")>>["LighterSpotAdapter"]["prototype"] | null = null;
   let ltInitFailed = false;
 
   beforeAll(async () => {
     if (!HAS_LT_KEY) return;
     try {
       const pk = process.env.LIGHTER_PRIVATE_KEY || process.env.LT_PRIVATE_KEY;
-      const { LighterAdapter } = await import("../exchanges/lighter.js");
-      const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");
+      const { LighterAdapter } = await import("../../exchanges/lighter.js");
+      const { LighterSpotAdapter } = await import("../../exchanges/lighter-spot.js");
       ltAdapter = new LighterAdapter(pk!);
       await ltAdapter.init();
       spotAdapter = new LighterSpotAdapter(ltAdapter);
@@ -321,9 +325,9 @@ describe("Cross-validate: Lighter Spot Adapter", () => {
 describe("Cross-validate: Token Index Verification", () => {
 
   it("HL spot U-token indices map to correct prices (UBTC→BTC, UETH→ETH, USOL→SOL)", async () => {
-    const { SPOT_PERP_TOKEN_MAP } = await import("../exchanges/spot-interface.js");
-    const { HyperliquidAdapter } = await import("../exchanges/hyperliquid.js");
-    const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+    const { SPOT_PERP_TOKEN_MAP } = await import("../../exchanges/spot-interface.js");
+    const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
+    const { HyperliquidSpotAdapter } = await import("../../exchanges/hyperliquid-spot.js");
 
     const pk = process.env.HYPERLIQUID_PRIVATE_KEY || process.env.HL_PRIVATE_KEY || process.env.PRIVATE_KEY
       || "0x0000000000000000000000000000000000000000000000000000000000000001";
@@ -381,8 +385,8 @@ describe("Cross-validate: Token Index Verification", () => {
 
     const pk = process.env.HYPERLIQUID_PRIVATE_KEY || process.env.HL_PRIVATE_KEY || process.env.PRIVATE_KEY
       || "0x0000000000000000000000000000000000000000000000000000000000000001";
-    const { HyperliquidAdapter } = await import("../exchanges/hyperliquid.js");
-    const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+    const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
+    const { HyperliquidSpotAdapter } = await import("../../exchanges/hyperliquid-spot.js");
     const hlAdapter = new HyperliquidAdapter(pk);
     await hlAdapter.init();
     const spotAdapter = new HyperliquidSpotAdapter(hlAdapter);
@@ -422,7 +426,7 @@ describe("Cross-validate: Token Index Verification", () => {
     // Verify that getAssetIndex() returns indices that match the raw API
     const pk = process.env.HYPERLIQUID_PRIVATE_KEY || process.env.HL_PRIVATE_KEY || process.env.PRIVATE_KEY
       || "0x0000000000000000000000000000000000000000000000000000000000000001";
-    const { HyperliquidAdapter } = await import("../exchanges/hyperliquid.js");
+    const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
     const hlAdapter = new HyperliquidAdapter(pk);
     await hlAdapter.init();
 
@@ -476,7 +480,7 @@ describe("Cross-validate: Token Index Verification", () => {
 
     // Adapter — reuse via CLI to avoid init rate limits
     const pk = process.env.LIGHTER_PRIVATE_KEY || process.env.LT_PRIVATE_KEY;
-    const { LighterAdapter } = await import("../exchanges/lighter.js");
+    const { LighterAdapter } = await import("../../exchanges/lighter.js");
     let ltAdapterLocal: InstanceType<typeof LighterAdapter>;
     try {
       ltAdapterLocal = new LighterAdapter(pk!);
@@ -506,8 +510,8 @@ describe("Cross-validate: Token Index Verification", () => {
     const rawSpotMarkets = explorerMarkets.filter(m => m.symbol.includes("/"));
 
     const pk = process.env.LIGHTER_PRIVATE_KEY || process.env.LT_PRIVATE_KEY;
-    const { LighterAdapter } = await import("../exchanges/lighter.js");
-    const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");
+    const { LighterAdapter } = await import("../../exchanges/lighter.js");
+    const { LighterSpotAdapter } = await import("../../exchanges/lighter-spot.js");
     let ltAdapterLocal: InstanceType<typeof LighterAdapter>;
     let spotAdapterLocal: InstanceType<typeof LighterSpotAdapter>;
     try {
@@ -538,7 +542,7 @@ describe("Cross-validate: Token Index Verification", () => {
   });
 
   it("fetchSpotPerpSpreads excludes price-mismatched tokens (HIP-1 TRUMP etc.)", async () => {
-    const { fetchSpotPerpSpreads } = await import("../funding/rates.js");
+    const { fetchSpotPerpSpreads } = await import("../../funding/rates.js");
     const { spreads } = await fetchSpotPerpSpreads();
 
     // TRUMP, BERA, MON, PUMP should NOT appear (HIP-1 tokens with different prices)
@@ -587,7 +591,7 @@ describe("Cross-validate: Spot-Perp Spread Calculation", () => {
     const expectedAnnualPct = Math.abs(ethFunding) * 8760 * 100;
 
     // Now use our fetchSpotPerpSpreads function
-    const { fetchSpotPerpSpreads } = await import("../funding/rates.js");
+    const { fetchSpotPerpSpreads } = await import("../../funding/rates.js");
     const { spreads } = await fetchSpotPerpSpreads({ symbols: ["ETH"] });
 
     // Find ETH spread
@@ -631,7 +635,7 @@ describe("Cross-validate: Spot-Perp Spread Calculation", () => {
 
   it("all spot-perp spreads have annualSpreadPct >= minSpread", async () => {
     const minSpread = 5;
-    const { fetchSpotPerpSpreads } = await import("../funding/rates.js");
+    const { fetchSpotPerpSpreads } = await import("../../funding/rates.js");
     const { spreads } = await fetchSpotPerpSpreads({ minSpread });
 
     for (const s of spreads) {
@@ -643,7 +647,7 @@ describe("Cross-validate: Spot-Perp Spread Calculation", () => {
   });
 
   it("spot-perp spread is sorted by annualSpreadPct descending", async () => {
-    const { fetchSpotPerpSpreads } = await import("../funding/rates.js");
+    const { fetchSpotPerpSpreads } = await import("../../funding/rates.js");
     const { spreads } = await fetchSpotPerpSpreads();
 
     for (let i = 1; i < spreads.length; i++) {
@@ -659,7 +663,7 @@ describe("Cross-validate: Arb State backward compatibility", () => {
   it("existing state without mode field defaults to perp-perp", async () => {
     const { writeFileSync, mkdirSync, existsSync, unlinkSync } = await import("fs");
     const { resolve: pathResolve } = await import("path");
-    const { loadArbState, saveArbState, setStateFilePath, resetStateFilePath } = await import("../arb/state.js");
+    const { loadArbState, saveArbState, setStateFilePath, resetStateFilePath } = await import("../../arb/state.js");
 
     // Create a temp state file with old format (no mode field)
     const tmpDir = pathResolve(process.env.HOME || "~", ".perp", "test-tmp");
@@ -743,8 +747,8 @@ describe("Cross-validate: Arb State backward compatibility", () => {
 describe("Cross-validate: Spot-Perp Cost Model", () => {
 
   it("round-trip cost calculation is correct for spot+perp", async () => {
-    const { computeRoundTripCostPct, computeNetSpread } = await import("../commands/arb-auto.js");
-    const { getTakerFee } = await import("../constants.js");
+    const { computeRoundTripCostPct, computeNetSpread } = await import("../../commands/arb-auto.js");
+    const { getTakerFee } = await import("../../constants.js");
 
     // Spot+Perp: fee on spot side + fee on perp side (entry + exit = 4 taker fills)
     const spotExch = "hyperliquid";
@@ -780,7 +784,7 @@ describe("Cross-validate: Spot-Perp Cost Model", () => {
   });
 
   it("spot+perp spread has 0 funding cost on spot leg", async () => {
-    const { estimateHourlyFunding } = await import("../funding/normalize.js");
+    const { estimateHourlyFunding } = await import("../../funding/normalize.js");
 
     // Spot funding = 0 (by definition, no funding on spot)
     // So for a spot+perp arb, only the perp side contributes funding income
@@ -808,7 +812,7 @@ describe("Cross-validate: Spot-Perp Cost Model", () => {
 describe("Cross-validate: Spot-Perp Sizing", () => {
 
   it("computeSpotPerpMatchedSize respects spot decimals", async () => {
-    const { computeSpotPerpMatchedSize } = await import("../arb/sizing.js");
+    const { computeSpotPerpMatchedSize } = await import("../../arb/sizing.js");
 
     // $100 at $2000/ETH with explicit 4 spot decimals (ETH spot supports it)
     const result = computeSpotPerpMatchedSize(100, 2000, "hyperliquid", "pacifica", 4);
@@ -841,7 +845,7 @@ describe("Cross-validate: Spot-Perp Sizing", () => {
 describe("Cross-validate: Spot-Perp Liquidity", () => {
 
   it("checkSpotPerpLiquidity validates orderbook depth", async () => {
-    const { computeExecutableSize } = await import("../liquidity.js");
+    const { computeExecutableSize } = await import("../../liquidity.js");
 
     // Simulated spot orderbook (asks for buy side)
     const spotAsks: [string, string][] = [

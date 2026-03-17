@@ -31,9 +31,10 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
   private _spotAssetMap = new Map<string, number>(); // "ETH" → spotIndex (not +10000)
   private _spotAssetReverse = new Map<number, string>(); // spotIndex → "ETH"
   private _spotDecimals = new Map<string, { size: number; price: number }>();
+  private _spotCanonical = new Map<string, boolean>(); // "PURR" → true, "UBTC" → false
   private _initialized = false;
   private _cachedMetaCtx: [
-    { tokens: Array<{ name: string; index: number }>; universe: Array<{ name: string; tokens: [number, number]; index: number; szDecimals?: number }> },
+    { tokens: Array<{ name: string; index: number; szDecimals?: number }>; universe: Array<{ name: string; tokens: [number, number]; index: number; isCanonical?: boolean }> },
     Array<Record<string, unknown>>,
   ] | null = null;
 
@@ -53,8 +54,8 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
       // Single API call — spotMetaAndAssetCtxs includes all data from spotMeta
       const metaCtx = await this._infoPost({ type: "spotMetaAndAssetCtxs" }) as [
         {
-          tokens: Array<{ name: string; index: number; tokenId?: string }>;
-          universe: Array<{ name: string; tokens: [number, number]; index: number; szDecimals?: number }>;
+          tokens: Array<{ name: string; index: number; szDecimals?: number; tokenId?: string }>;
+          universe: Array<{ name: string; tokens: [number, number]; index: number; isCanonical?: boolean }>;
         },
         Array<Record<string, unknown>>,
       ];
@@ -64,27 +65,35 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
 
       const meta = metaCtx[0];
 
-      // Token index → name map
+      // Token index → name + szDecimals map (szDecimals lives on tokens, not universe)
       const tokenNames = new Map<number, string>();
+      const tokenSzDecimals = new Map<number, number>();
       for (const t of meta.tokens ?? []) {
         tokenNames.set(t.index, t.name);
+        if (t.szDecimals !== undefined) tokenSzDecimals.set(t.index, t.szDecimals);
       }
 
       // Find USDC token index for filtering
       const usdcTokenIndex = meta.tokens?.find(t => t.name === "USDC")?.index ?? 0;
 
+      // HIP-1 meme tokens with low liquidity / unreliable orderbooks — skip for spot trading
+      const SPOT_EXCLUDE = new Set(["TRUMP", "PEPE", "HFUN"]);
+
       for (const u of meta.universe) {
-        const baseToken = tokenNames.get(u.tokens[0]) ?? "";
+        const baseTokenIndex = u.tokens[0];
+        const baseToken = tokenNames.get(baseTokenIndex) ?? "";
         if (!baseToken) continue;
         const key = baseToken.toUpperCase();
+        if (SPOT_EXCLUDE.has(key)) continue;
         const isUsdcPair = u.tokens[1] === usdcTokenIndex;
         if (this._spotAssetMap.has(key) && !isUsdcPair) continue;
         this._spotAssetMap.set(key, u.index);
         this._spotAssetReverse.set(u.index, key);
         this._spotDecimals.set(key, {
-          size: u.szDecimals ?? 2,
+          size: tokenSzDecimals.get(baseTokenIndex) ?? 2,
           price: 6,
         });
+        this._spotCanonical.set(key, u.isCanonical === true);
       }
     } catch (e) {
       console.error("[hl-spot] Failed to load spot meta:", e instanceof Error ? e.message : e);
@@ -101,8 +110,10 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
       if (!metaCtx?.[0]?.universe) return [];
 
       const tokenNames = new Map<number, string>();
+      const tokenSzDec = new Map<number, number>();
       for (const t of metaCtx[0].tokens ?? []) {
         tokenNames.set(t.index, t.name);
+        if (t.szDecimals !== undefined) tokenSzDec.set(t.index, t.szDecimals);
       }
 
       const ctxs = metaCtx[1] ?? [];
@@ -121,7 +132,7 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
           quoteToken,
           markPrice: String(ctx.markPx ?? ctx.midPx ?? "0"),
           volume24h: String(ctx.dayNtlVlm ?? "0"),
-          sizeDecimals: u.szDecimals ?? 2,
+          sizeDecimals: tokenSzDec.get(u.tokens[0]) ?? 2,
           priceDecimals: 6,
         });
       }
@@ -134,11 +145,13 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
 
   async getSpotOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
     await this.init();
-    const { base } = this._resolveBase(symbol);
-    // HL spot L2 book uses "BASE/USDC" as coin name
+    const { base, spotIndex } = this._resolveBase(symbol);
+    // Canonical tokens (e.g. PURR) use "BASE/USDC", non-canonical (e.g. UBTC) use "@index"
+    const isCanonical = this._spotCanonical.get(base) ?? false;
+    const coin = isCanonical ? `${base}/USDC` : `@${spotIndex}`;
     const book = await this._infoPost({
       type: "l2Book",
-      coin: `${base}/USDC`,
+      coin,
     }) as { levels?: [[Record<string, string>], [Record<string, string>]] };
 
     const levels = book?.levels ?? [[], []];
@@ -156,9 +169,10 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
 
   async getSpotBalances(): Promise<SpotBalance[]> {
     try {
-      const state = await this._hl.client.info.spot.getSpotClearinghouseState(this._hl.address);
-      const balances = state?.balances ?? [];
-      return balances.map((b: Record<string, unknown>) => ({
+      // Reuse cached spot clearinghouse state (shared with getBalance() — saves 1 API call)
+      const state = await this._hl._getSpotClearinghouseState();
+      const balances = (state?.balances ?? []) as Record<string, unknown>[];
+      return balances.map((b) => ({
         token: String(b.coin ?? ""),
         total: String(b.total ?? "0"),
         available: String(Number(b.total ?? 0) - Number(b.hold ?? 0)),

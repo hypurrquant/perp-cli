@@ -107,16 +107,26 @@ export class PacificaAdapter implements ExchangeAdapter {
 
   async getBalance(): Promise<ExchangeBalance> {
     if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp init");
-    const [info, positions] = await Promise.all([
+    const [info, positions, prices] = await Promise.all([
       this.client.getAccount(this.account),
       this._getPositions(),
+      this._getPrices(),
     ]);
     const raw = info as unknown as Record<string, unknown>;
+    const priceMap = new Map(prices.map((p) => [p.symbol, p]));
 
-    // Use API-provided unrealized PnL from positions
-    const totalPnl = positions.reduce(
-      (sum, p) => sum + Number(p.unrealized_pnl ?? 0), 0
-    );
+    // API often returns unrealized_pnl=0 — compute from price delta when needed
+    let totalPnl = 0;
+    for (const p of positions) {
+      let upnl = Number(p.unrealized_pnl ?? 0);
+      if (upnl === 0 && Number(p.amount) > 0) {
+        const mark = Number(priceMap.get(p.symbol)?.mark ?? p.mark_price ?? 0);
+        const entry = Number(p.entry_price);
+        const dir = p.side === "bid" ? 1 : -1;
+        if (mark > 0 && entry > 0) upnl = (mark - entry) * Number(p.amount) * dir;
+      }
+      totalPnl += upnl;
+    }
 
     return {
       equity: info.account_equity,
@@ -146,6 +156,16 @@ export class PacificaAdapter implements ExchangeAdapter {
     return positions.map((p) => {
       const mark = priceMap.get(p.symbol)?.mark ?? p.mark_price ?? "0";
       const side = p.side === "bid" ? "long" : "short";
+      const size = Number(p.amount);
+      const entry = Number(p.entry_price);
+      const markNum = Number(mark);
+
+      // API often returns unrealized_pnl=0 — compute from price delta when needed
+      let upnl = Number(p.unrealized_pnl ?? 0);
+      if (upnl === 0 && size > 0 && entry > 0 && markNum > 0) {
+        const dir = side === "long" ? 1 : -1;
+        upnl = (markNum - entry) * size * dir;
+      }
 
       return {
         symbol: p.symbol,
@@ -154,7 +174,7 @@ export class PacificaAdapter implements ExchangeAdapter {
         entryPrice: String(p.entry_price),
         markPrice: mark,
         liquidationPrice: String(p.liquidation_price ?? "N/A"),
-        unrealizedPnl: String(p.unrealized_pnl ?? "0"),
+        unrealizedPnl: upnl.toFixed(4),
         leverage: p.leverage ?? levMap.get(String(p.symbol)) ?? 1,
       };
     });

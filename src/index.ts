@@ -344,13 +344,287 @@ const apiSpecCmd = program
   });
 (apiSpecCmd as any)._hidden = true;
 
-// Deprecated: perp status → use 'perp portfolio' or 'perp account'
-const statusCmd = program.command("status").description("Use 'perp portfolio'")
-  .option("--health", "Check connectivity").action(async (opts: { health?: boolean }) => {
+// Unified dashboard: balances + positions + top arb opportunities
+program.command("status")
+  .description("Unified dashboard: balances, positions, and top arb opportunities")
+  .option("--health", "Check connectivity only")
+  .action(async (opts: { health?: boolean }) => {
     if (opts.health) { const { runHealthCheck } = await import("./commands/risk.js"); return runHealthCheck(isJson); }
-    console.log("Use 'perp portfolio' or 'perp account' instead.");
+    const json = isJson();
+    const { formatUsd, formatPnl, makeTable, printJson, jsonOk, withJsonErrors } = await import("./utils.js");
+    const { fetchAllFundingRates, TOP_SYMBOLS } = await import("./funding-rates.js");
+    const { saveFundingSnapshot, getHistoricalRates } = await import("./funding-history.js");
+
+    await withJsonErrors(json, async () => {
+      const EX_LIST = ["pacifica", "hyperliquid", "lighter"] as const;
+      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+
+      // Fetch balances + positions + spot balances + arb scan in parallel
+      type SpotHolding = { token: string; total: string; available: string; held: string; valueUsd: number };
+      const snapshotPromises = EX_LIST.map(async (ex) => {
+        try {
+          const adapter = await getAdapterForExchange(ex);
+          const [balance, positions, orders] = await Promise.all([
+            adapter.getBalance(), adapter.getPositions(), adapter.getOpenOrders(),
+          ]);
+          // Fetch spot balances for HL and LT (Pacifica is perp-only)
+          let spotHoldings: SpotHolding[] = [];
+          let isUnified = false;
+          try {
+            if (ex === "hyperliquid") {
+              const { HyperliquidSpotAdapter } = await import("./exchanges/hyperliquid-spot.js");
+              const hlSpot = new HyperliquidSpotAdapter(adapter as HyperliquidAdapter);
+              await hlSpot.init();
+              const [raw, markets] = await Promise.all([hlSpot.getSpotBalances(), hlSpot.getSpotMarkets()]);
+              const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
+              const strip = (t: string) => t.replace(/-SPOT$/i, "").toUpperCase();
+              spotHoldings = raw.filter(b => Number(b.total) > 0).map(b => {
+                const base = strip(b.token);
+                return { ...b, valueUsd: base === "USDC" ? Number(b.total) : (priceMap.get(base) ?? 0) * Number(b.total) };
+              });
+              isUnified = !(adapter as HyperliquidAdapter).dex;
+            } else if (ex === "lighter") {
+              const { LighterAdapter } = await import("./exchanges/lighter.js");
+              const { LighterSpotAdapter } = await import("./exchanges/lighter-spot.js");
+              const ltSpot = new LighterSpotAdapter(adapter as InstanceType<typeof LighterAdapter>);
+              await ltSpot.init();
+              const [raw, markets] = await Promise.all([ltSpot.getSpotBalances(), ltSpot.getSpotMarkets()]);
+              const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
+              spotHoldings = raw.filter(b => Number(b.total) > 0).map(b => ({
+                ...b,
+                valueUsd: b.token === "USDC" || b.token === "USDC_SPOT" ? Number(b.total) : (priceMap.get(b.token.toUpperCase()) ?? 0) * Number(b.total),
+              }));
+            }
+          } catch { /* spot not available */ }
+          return { exchange: ex, connected: true, balance, positions, openOrders: orders.length, spotHoldings, isUnified, error: undefined as string | undefined };
+        } catch (err) {
+          return { exchange: ex, connected: false, balance: null as null, positions: [] as never[], openOrders: 0, spotHoldings: [] as SpotHolding[], isUnified: false, error: err instanceof Error ? err.message : String(err) };
+        }
+      });
+
+      const arbPromise = fetchAllFundingRates({ symbols: TOP_SYMBOLS, minSpread: 0 }).catch(() => null);
+      const [snapshots, arbSnapshot] = await Promise.all([Promise.all(snapshotPromises), arbPromise]);
+
+      // Save funding snapshot for sparkline history
+      if (arbSnapshot) {
+        try { const allRates = arbSnapshot.symbols.flatMap(s => s.rates); if (allRates.length > 0) saveFundingSnapshot(allRates); } catch { /* */ }
+      }
+
+      // Build totals (include non-USDC spot value for unified accounts)
+      let totalEquity = 0;
+      let totalSpotValue = 0;
+      type PosWithEx = { symbol: string; exchange: string; side: string; size: string; entryPrice: string; markPrice: string; unrealizedPnl: string; leverage: number };
+      const allPositions: PosWithEx[] = [];
+      const allSpotHoldings: (SpotHolding & { exchange: string })[] = [];
+      for (const s of snapshots) {
+        if (s.balance) totalEquity += Number(s.balance.equity);
+        for (const p of s.positions) allPositions.push({ ...p, exchange: s.exchange });
+        // For unified accounts (HL), USDC is already in perp equity — only add non-USDC spot
+        const displaySpot = s.isUnified
+          ? s.spotHoldings.filter(b => b.token.replace(/-SPOT$/i, "").toUpperCase() !== "USDC")
+          : s.spotHoldings;
+        const spotVal = displaySpot.reduce((sum, b) => sum + b.valueUsd, 0);
+        totalSpotValue += spotVal;
+        totalEquity += spotVal;
+        for (const b of displaySpot) allSpotHoldings.push({ ...b, exchange: s.exchange });
+      }
+
+      // Top arb
+      const topArb = arbSnapshot
+        ? arbSnapshot.symbols.filter(s => s.maxSpreadAnnual >= 5).sort((a, b) => b.maxSpreadAnnual - a.maxSpreadAnnual).slice(0, 5)
+        : [];
+
+      // Risk
+      const marginUsed = snapshots.reduce((s, x) => s + (x.balance ? Number(x.balance.marginUsed) : 0), 0);
+      const marginPct = totalEquity > 0 ? (marginUsed / totalEquity) * 100 : 0;
+      const riskLevel = marginPct < 30 ? "LOW" : marginPct < 60 ? "MEDIUM" : "HIGH";
+
+      if (json) {
+        const now = new Date();
+        const h24 = new Date(now.getTime() - 24 * 3600_000);
+        return printJson(jsonOk({
+          version: _pkg.version,
+          totalEquity,
+          riskLevel,
+          exchanges: snapshots.map(s => ({
+            name: s.exchange, connected: s.connected,
+            equity: s.balance ? Number(s.balance.equity) : 0,
+            available: s.balance ? Number(s.balance.available) : 0,
+            spotHoldings: s.spotHoldings.filter(b => Number(b.total) > 0).map(b => ({
+              token: b.token, total: b.total, available: b.available, valueUsd: b.valueUsd,
+            })),
+          })),
+          totalSpotValue,
+          positions: allPositions,
+          topArbOpportunities: await (async () => {
+            const { getHistoricalAverages: getAvgs } = await import("./funding-history.js");
+            const syms = topArb.map(a => a.symbol);
+            const avgs = syms.length > 0 ? getAvgs(syms, ["hyperliquid", "pacifica", "lighter"]) : new Map();
+            return topArb.map(a => {
+              const bestEx = a.rates.find(r => r.exchange === "hyperliquid")?.exchange ?? a.rates[0]?.exchange ?? "hyperliquid";
+              const avg = avgs.get(`${a.symbol}:${bestEx}`);
+              return {
+                symbol: a.symbol, spreadAnnual: a.maxSpreadAnnual,
+                direction: `${exAbbr(a.shortExchange)}>${exAbbr(a.longExchange)}`,
+                avg24h: avg?.avg24h != null ? Math.abs(avg.avg24h) * 8760 * 100 : null,
+                avg7d: avg?.avg7d != null ? Math.abs(avg.avg7d) * 8760 * 100 : null,
+                rateHistory: getHistoricalRates(a.symbol, bestEx, h24, now).map(h => ({ ts: h.ts, hourlyRate: h.hourlyRate })),
+              };
+            });
+          })(),
+        }));
+      }
+
+      // ── Terminal UI ──
+      console.log(chalk.cyan.bold(`\n  perp-cli v${_pkg.version}`) + chalk.gray(` — ${snapshots.filter(s => s.connected).length} exchanges connected\n`));
+
+      // Balance bars + Top Arb side by side
+      const now = new Date();
+      const h24 = new Date(now.getTime() - 24 * 3600_000);
+
+      // Left column: Balances (perp + spot per exchange)
+      // Compute per-exchange totals: perp equity + non-USDC spot (unified) or all spot
+      const exTotals = snapshots.map(s => {
+        if (!s.connected || !s.balance) return { total: 0, margin: 0, equity: 0 };
+        const equity = Number(s.balance.equity);
+        const margin = Number(s.balance.marginUsed);
+        const displaySpot = s.isUnified
+          ? s.spotHoldings.filter(b => b.token.replace(/-SPOT$/i, "").toUpperCase() !== "USDC")
+          : s.spotHoldings;
+        const spotVal = displaySpot.reduce((sum, b) => sum + b.valueUsd, 0);
+        return { total: equity + spotVal, margin, equity };
+      });
+
+      const balLines: string[] = [];
+      balLines.push(chalk.white.bold(" Balances"));
+      for (let i = 0; i < snapshots.length; i++) {
+        const s = snapshots[i];
+        if (!s.connected) { balLines.push(` ${chalk.gray(exAbbr(s.exchange).padEnd(4))} ${chalk.red("disconnected")}`); continue; }
+        const { total, margin, equity } = exTotals[i];
+        const usagePct = equity > 0 ? (margin / equity) * 100 : 0;
+        const barFull = Math.min(20, Math.round(usagePct / 5));
+        const usageColor = usagePct < 30 ? chalk.green : usagePct < 60 ? chalk.yellow : chalk.red;
+        const bar = usageColor("\u2588".repeat(barFull)) + chalk.gray("\u2591".repeat(20 - barFull));
+        balLines.push(` ${chalk.white.bold(exAbbr(s.exchange).padEnd(4))} $${formatUsd(total).padEnd(9)} ${bar} ${usagePct.toFixed(0)}% used`);
+      }
+      // Spot holdings (non-USDC tokens with value)
+      const displaySpotHoldings = allSpotHoldings.filter(b => {
+        const tk = b.token.replace(/[-_]SPOT$/i, "").toUpperCase();
+        return tk !== "USDC";
+      });
+      if (displaySpotHoldings.length > 0) {
+        balLines.push("");
+        balLines.push(chalk.white.bold(" Spot Holdings"));
+        for (const b of displaySpotHoldings) {
+          const token = b.token.replace(/-SPOT$/i, "");
+          const ex = exAbbr(b.exchange);
+          balLines.push(` ${chalk.gray(ex.padEnd(4))} ${chalk.white.bold(token.padEnd(6))} ${b.total.padEnd(12)} ${chalk.gray(`$${formatUsd(b.valueUsd)}`)}`);
+        }
+      }
+
+      const riskColor = riskLevel === "LOW" ? chalk.green : riskLevel === "MEDIUM" ? chalk.yellow : chalk.red;
+      balLines.push(` ${"─".repeat(44)}`);
+      balLines.push(` ${chalk.cyan.bold("Total")} ${chalk.cyan.bold(`$${formatUsd(totalEquity)}`.padEnd(9))}    Risk: ${riskColor(riskLevel)}`);
+
+      // Right column: Top Arb Opportunities (with 24h/7d averages from local history — 0 API calls)
+      const { getHistoricalAverages } = await import("./funding-history.js");
+      const arbSymbols = topArb.map(a => a.symbol);
+      const arbExchanges = ["hyperliquid", "pacifica", "lighter"];
+      const histAvgs = arbSymbols.length > 0 ? getHistoricalAverages(arbSymbols, arbExchanges) : new Map();
+
+      const arbLines: string[] = [];
+      arbLines.push(chalk.white.bold(" Top Arb Opportunities"));
+      if (topArb.length > 0) {
+        //          SYMBOL   SPREAD   24h   TREND     7d     DIR
+        arbLines.push(chalk.gray(" " + "".padEnd(8) + "now".padEnd(9) + "24h".padEnd(7) + "".padEnd(9) + "7d".padEnd(7)));
+        for (const a of topArb) {
+          const spreadColor = a.maxSpreadAnnual >= 100 ? chalk.green.bold : a.maxSpreadAnnual >= 30 ? chalk.green : chalk.yellow;
+          const dir = `${exAbbr(a.shortExchange)}>${exAbbr(a.longExchange)}`;
+          const bestEx = a.rates.find(r => r.exchange === "hyperliquid")?.exchange ?? a.rates[0]?.exchange ?? "hyperliquid";
+
+          // 24h trend arrow
+          const history = getHistoricalRates(a.symbol, bestEx, h24, now);
+          let trend = "";
+          if (history.length >= 2) {
+            const oldAnn = Math.abs(history[0].hourlyRate) * 8760 * 100;
+            const newAnn = Math.abs(history[history.length - 1].hourlyRate) * 8760 * 100;
+            const delta = newAnn - oldAnn;
+            const abs = Math.abs(delta);
+            trend = abs < 1 ? chalk.gray(`\u2500${abs.toFixed(0)}%`)
+              : delta > 0 ? chalk.red(`\u25B2+${abs.toFixed(0)}%`)
+              : chalk.green(`\u25BC-${abs.toFixed(0)}%`);
+          }
+
+          // 24h and 7d averages (annualized from hourly)
+          const avg = histAvgs.get(`${a.symbol}:${bestEx}`);
+          const avg24h = avg?.avg24h != null ? `${(Math.abs(avg.avg24h) * 8760 * 100).toFixed(0)}%` : "-";
+          const avg7d = avg?.avg7d != null ? `${(Math.abs(avg.avg7d) * 8760 * 100).toFixed(0)}%` : "-";
+
+          arbLines.push(` ${chalk.white.bold(a.symbol.padEnd(8))} ${spreadColor(`${a.maxSpreadAnnual.toFixed(1)}%`.padEnd(9))}${chalk.gray(avg24h.padEnd(7))}${trend.padEnd(9)}${chalk.gray(avg7d.padEnd(7))}${chalk.gray(dir)}`);
+        }
+      } else {
+        arbLines.push(chalk.gray(" No opportunities above 5%"));
+      }
+
+      // Print layout — side-by-side if terminal is wide enough, else stacked
+      const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, "");
+      const termW = process.stdout.columns || 80;
+      const SIDE_BY_SIDE_MIN = 100; // 2 indent + 1 + 46 + 1 + 48 + 1
+
+      if (termW >= SIDE_BY_SIDE_MIN) {
+        const LEFT_W = 46;
+        const RIGHT_W = 48;
+        const maxLines = Math.max(balLines.length, arbLines.length);
+        console.log(`  ${"┌"}${"─".repeat(LEFT_W)}${"┬"}${"─".repeat(RIGHT_W)}${"┐"}`);
+        for (let i = 0; i < maxLines; i++) {
+          const left = balLines[i] ?? "";
+          const right = arbLines[i] ?? "";
+          const leftPad = LEFT_W - stripAnsi(left).length;
+          const rightPad = RIGHT_W - stripAnsi(right).length;
+          console.log(`  \u2502${left}${" ".repeat(Math.max(0, leftPad))}\u2502${right}${" ".repeat(Math.max(0, rightPad))}\u2502`);
+        }
+        console.log(`  ${"└"}${"─".repeat(LEFT_W)}${"┴"}${"─".repeat(RIGHT_W)}${"┘"}`);
+      } else {
+        // Stacked layout for narrow terminals
+        const boxW = Math.min(termW - 4, 74); // 2 indent + 2 borders
+        const printBox = (lines: string[]) => {
+          console.log(`  ${"┌"}${"─".repeat(boxW)}${"┐"}`);
+          for (const line of lines) {
+            const pad = boxW - stripAnsi(line).length;
+            console.log(`  \u2502${line}${" ".repeat(Math.max(0, pad))}\u2502`);
+          }
+          console.log(`  ${"└"}${"─".repeat(boxW)}${"┘"}`);
+        };
+        printBox(balLines);
+        console.log();
+        printBox(arbLines);
+      }
+
+      // Positions
+      if (allPositions.length > 0) {
+        console.log(chalk.white.bold("\n  Positions"));
+        const posRows = allPositions.map(p => {
+          const sideColor = p.side === "long" ? chalk.green : chalk.red;
+          const notional = Math.abs(Number(p.size) * Number(p.markPrice));
+          const levStr = p.leverage > 0 ? `${p.leverage}x` : "-";
+          const warn = p.leverage >= 5 ? chalk.red(" \u26A0") : "";
+          return [
+            chalk.white.bold(p.symbol.replace("-PERP", "")),
+            chalk.gray(exAbbr(p.exchange)),
+            sideColor(p.side.toUpperCase()),
+            p.size,
+            `$${formatUsd(p.entryPrice)}\u2192$${formatUsd(p.markPrice)}`,
+            formatPnl(p.unrealizedPnl),
+            `$${formatUsd(notional)}`,
+            levStr + warn,
+          ];
+        });
+        console.log(makeTable(["Symbol", "Ex", "Side", "Size", "Entry\u2192Mark", "uPnL", "Notional", "Lev"], posRows));
+      } else {
+        console.log(chalk.gray("\n  No open positions.\n"));
+      }
+    });
   });
-(statusCmd as any)._hidden = true;
 
 // Switch shared API URLs if --network testnet is used
 program.hook("preAction", () => {

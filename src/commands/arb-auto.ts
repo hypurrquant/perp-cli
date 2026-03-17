@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { formatUsd, printJson, jsonOk, makeTable } from "../utils.js";
 import type { ExchangeAdapter } from "../exchanges/interface.js";
 import { computeExecutableSize } from "../liquidity.js";
+import { computeMatchedSize, computeSpotPerpMatchedSize } from "../arb/sizing.js";
 import { computeAnnualSpread, toHourlyRate } from "../funding.js";
 import {
   fetchPacificaPricesRaw, parsePacificaRaw,
@@ -1553,7 +1554,7 @@ export function registerArbAutoCommands(
       }
 
       // 4. Compute matched size in base asset (use the smaller side)
-      // Round down to each exchange's lot size (inferred from orderbook)
+      // Uses computeMatchedSize which enforces exchange min order values
       const inferDecimals = (levels: [string, string][]) => {
         for (const [, s] of levels) {
           const dot = s.indexOf(".");
@@ -1563,11 +1564,25 @@ export function registerArbAutoCommands(
       };
       const longDecimals = inferDecimals(longBook.asks);
       const shortDecimals = inferDecimals(shortBook.bids);
-      const decimals = Math.min(longDecimals, shortDecimals);
       const matchedBase = Math.min(longCheck.recommendedSize, shortCheck.recommendedSize);
-      const matchedSize = (Math.floor(matchedBase * 10 ** decimals) / 10 ** decimals).toFixed(decimals);
       const avgPrice = (longCheck.avgFillPrice + shortCheck.avgFillPrice) / 2;
-      const matchedUsd = matchedBase * avgPrice;
+      const matchedUsdRaw = matchedBase * avgPrice;
+
+      const sizing = computeMatchedSize(
+        matchedUsdRaw,
+        avgPrice,
+        longExch,
+        shortExch,
+        { longSizeDecimals: longDecimals, shortSizeDecimals: shortDecimals },
+      );
+      if (!sizing) {
+        const msg = `Order too small: $${matchedUsdRaw.toFixed(2)} below exchange minimum. Request a larger size.`;
+        if (isJson()) return printJson(jsonOk({ error: msg, computedUsd: matchedUsdRaw }));
+        console.log(chalk.red(`\n  ${msg}`));
+        return;
+      }
+      const matchedSize = sizing.size;
+      const matchedUsd = sizing.notional;
 
       if (!isJson()) {
         console.log(chalk.cyan(`\n  Arb Exec: ${sym}${opts.smart ? " (smart order)" : ""}${dryRun ? " [DRY RUN]" : ""}`));
@@ -1927,7 +1942,8 @@ export function registerArbAutoCommands(
         return;
       }
 
-      // 4. Compute matched size
+      // 4. Compute matched size (with min order value enforcement)
+      const avgPrice = (spotCheck.avgFillPrice + perpCheck.avgFillPrice) / 2;
       const inferDecimals = (levels: [string, string][]) => {
         for (const [, s] of levels) {
           const dot = s.indexOf(".");
@@ -1936,12 +1952,26 @@ export function registerArbAutoCommands(
         return 0;
       };
       const spotDecimals = inferDecimals(spotBook.asks);
-      const perpDecimals = inferDecimals(perpBook.bids);
-      const decimals = Math.min(spotDecimals, perpDecimals);
       const matchedBase = Math.min(spotCheck.recommendedSize, perpCheck.recommendedSize);
-      const matchedSize = (Math.floor(matchedBase * 10 ** decimals) / 10 ** decimals).toFixed(decimals);
-      const avgPrice = (spotCheck.avgFillPrice + perpCheck.avgFillPrice) / 2;
-      const matchedUsd = matchedBase * avgPrice;
+      const matchedUsdRaw = matchedBase * avgPrice;
+
+      // Use computeSpotPerpMatchedSize which enforces exchange min order values
+      // (e.g. HL $10 min) — rounds UP if floor would drop below minimum
+      const sizing = computeSpotPerpMatchedSize(
+        matchedUsdRaw,
+        avgPrice,
+        spotExch,
+        perpExch,
+        spotDecimals,
+      );
+      if (!sizing) {
+        const msg = `Order too small: $${matchedUsdRaw.toFixed(2)} below exchange minimum. Request a larger size.`;
+        if (isJson()) return printJson(jsonOk({ error: msg, computedUsd: matchedUsdRaw }));
+        console.log(chalk.red(`\n  ${msg}`));
+        return;
+      }
+      const matchedSize = sizing.size;
+      const matchedUsd = sizing.notional;
 
       if (!isJson()) {
         console.log(chalk.cyan(`\n  Spot+Perp Arb: ${sym}`));

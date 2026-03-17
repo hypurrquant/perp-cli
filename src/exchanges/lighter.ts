@@ -29,6 +29,7 @@ export class LighterAdapter implements ExchangeAdapter {
   private _address: string;
   private _marketMap = new Map<string, number>(); // symbol → marketIndex
   private _marketDecimals = new Map<string, { size: number; price: number }>(); // symbol → decimals
+  private _clientOrderCounter = 0;
   private _evmKey: string;
   private _apiKey: string;
   private _accountIndexInit: number;
@@ -104,23 +105,26 @@ export class LighterAdapter implements ExchangeAdapter {
       await this._refreshMarketMap();
       return;
     }
-    // Retry account lookup on 429 (rate limit) — critical for _accountIndex
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const res = await fetch(`${this._baseUrl}/api/v1/account?by=l1_address&value=${this._address}`);
-        if (res.status === 429 && attempt < 2) {
-          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
-          continue;
+    // If accountIndex is already known (from env/opts), skip API lookup entirely
+    if (this._accountIndexInit >= 0) {
+      this._accountIndex = this._accountIndexInit;
+    } else {
+      // Retry account lookup on 429 (rate limit) — critical for _accountIndex
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const res = await fetch(`${this._baseUrl}/api/v1/account?by=l1_address&value=${this._address}`);
+          if (res.status === 429 && attempt < 2) {
+            await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+            continue;
+          }
+          const json = await res.json() as { accounts?: { account_index: number; l1_address: string }[] };
+          if (json.accounts && json.accounts.length > 0) {
+            this._accountIndex = json.accounts[0].account_index;
+          }
+          break;
+        } catch {
+          if (attempt < 2) { await new Promise(r => setTimeout(r, 2000)); continue; }
         }
-        const json = await res.json() as { accounts?: { account_index: number; l1_address: string }[] };
-        if (json.accounts && json.accounts.length > 0) {
-          this._accountIndex = this._accountIndexInit >= 0
-            ? this._accountIndexInit
-            : json.accounts[0].account_index;
-        }
-        break;
-      } catch {
-        if (attempt < 2) { await new Promise(r => setTimeout(r, 1000)); continue; }
       }
     }
 
@@ -498,7 +502,7 @@ export class LighterAdapter implements ExchangeAdapter {
     const { priceTicks: slippageTicks } = this.toTicks(symbol, 0, slippagePrice);
     const signed = await this.signOrder({
       marketIndex,
-      clientOrderIndex: 0,
+      clientOrderIndex: this.nextClientOrderIndex(),
       baseAmount,
       price: Math.max(slippageTicks, 1),
       isAsk: side === "sell" ? 1 : 0,
@@ -523,7 +527,7 @@ export class LighterAdapter implements ExchangeAdapter {
     const isIoc = opts?.tif?.toUpperCase() === "IOC";
     const signed = await this.signOrder({
       marketIndex,
-      clientOrderIndex: 0,
+      clientOrderIndex: this.nextClientOrderIndex(),
       baseAmount,
       price: priceTicks,
       isAsk: side === "sell" ? 1 : 0,
@@ -537,19 +541,28 @@ export class LighterAdapter implements ExchangeAdapter {
     return this.sendTx(signed);
   }
 
-  async cancelOrder(symbol: string, orderId: string) {
+  async cancelOrder(symbol: string, orderId: string): Promise<unknown> {
     this.ensureSigner();
     await this.ensureMarketMap();
+
+    // Lighter order IDs can exceed Number.MAX_SAFE_INTEGER (2^53-1).
+    // The WASM signer only accepts JS number, so large IDs lose precision.
+    // Fall back to cancelAllOrders when the ID is unsafe.
+    const idNum = Number(orderId);
+    if (!Number.isSafeInteger(idNum)) {
+      return this.cancelAllOrders(symbol);
+    }
+
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const signed = await this._signer.signCancelOrder({
-      marketIndex, orderIndex: parseInt(orderId), nonce,
+      marketIndex, orderIndex: idNum, nonce,
       apiKeyIndex: this._apiKeyIndex, accountIndex: this._accountIndex,
     });
     return this.sendTx(signed);
   }
 
-  async cancelAllOrders(symbol?: string) {
+  async cancelAllOrders(symbol?: string): Promise<unknown> {
     this.ensureSigner();
     if (symbol) {
       // Cancel only orders for this symbol: fetch open orders, filter, cancel individually
@@ -563,7 +576,7 @@ export class LighterAdapter implements ExchangeAdapter {
     }
     const nonce = await this.getNextNonce();
     const signed = await this._signer.signCancelAllOrders({
-      timeInForce: 0, time: Math.floor(Date.now() / 1000) + 86400, nonce,
+      timeInForce: 1, time: Date.now() + 3600_000, nonce,
       apiKeyIndex: this._apiKeyIndex, accountIndex: this._accountIndex,
     });
     return this.sendTx(signed);
@@ -575,9 +588,13 @@ export class LighterAdapter implements ExchangeAdapter {
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const { baseAmount, priceTicks } = this.toTicks(symbol, parseFloat(size), parseFloat(price));
+    const idNum = Number(orderId);
+    if (!Number.isSafeInteger(idNum)) {
+      throw new Error(`Order ID ${orderId} exceeds MAX_SAFE_INTEGER — cancel and re-place instead`);
+    }
     const signed = await this._signer.signModifyOrder({
       marketIndex,
-      index: parseInt(orderId),
+      index: idNum,
       baseAmount,
       price: priceTicks,
       triggerPrice: 0,
@@ -612,7 +629,7 @@ export class LighterAdapter implements ExchangeAdapter {
 
     const signed = await this.signOrder({
       marketIndex,
-      clientOrderIndex: 0,
+      clientOrderIndex: this.nextClientOrderIndex(),
       baseAmount,
       price: Math.max(priceTicks, 1),
       isAsk: side === "sell" ? 1 : 0,
@@ -1040,6 +1057,12 @@ export class LighterAdapter implements ExchangeAdapter {
     const res = await fetch(url.toString());
     if (!res.ok) throw new Error(`GET ${path} failed (${res.status}): ${await res.text()}`);
     return res.json();
+  }
+
+  /** Generate a unique client order index (uint48). */
+  private nextClientOrderIndex(): number {
+    const base = Math.floor(Date.now() / 1000) % 281_474_976_710_000;
+    return base + (this._clientOrderCounter++ % 655);
   }
 
   private ensureSigner(): void {

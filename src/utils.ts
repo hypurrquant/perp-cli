@@ -96,6 +96,39 @@ function sanitizeValue(val: unknown): unknown {
   return val;
 }
 
+// ── Sparkline ──
+
+// Density-based shading — renders consistently across all terminal fonts
+// (height-based ▁▂▃▄▅▆▇█ looks identical in many monospace fonts)
+const SPARK_CHARS = [" ", "░", "▒", "▓", "█"];
+
+/** Render a sparkline from numeric values. Returns unicode bar chart string. */
+export function sparkline(values: number[], width?: number): string {
+  if (values.length === 0) return "";
+  const data = width && values.length > width ? downsample(values, width) : values;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min;
+  if (range === 0) return SPARK_CHARS[2].repeat(data.length);
+  return data.map(v => {
+    const idx = Math.round(((v - min) / range) * (SPARK_CHARS.length - 1));
+    return SPARK_CHARS[idx];
+  }).join("");
+}
+
+function downsample(values: number[], targetLen: number): number[] {
+  const bucketSize = values.length / targetLen;
+  const result: number[] = [];
+  for (let i = 0; i < targetLen; i++) {
+    const start = Math.floor(i * bucketSize);
+    const end = Math.floor((i + 1) * bucketSize);
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += values[j];
+    result.push(sum / (end - start));
+  }
+  return result;
+}
+
 // ── JSON Output ──
 
 const _isNdjson = () => process.argv.includes("--ndjson");

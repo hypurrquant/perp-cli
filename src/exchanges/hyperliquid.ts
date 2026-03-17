@@ -281,6 +281,15 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     });
   }
 
+  /** Cached spot clearinghouse state — shared between getBalance() and HyperliquidSpotAdapter */
+  async _getSpotClearinghouseState(): Promise<Record<string, unknown>> {
+    this.ensureAddress();
+    const { withCache, TTL_ACCOUNT } = await import("../cache.js");
+    return withCache(`acct:hl:spot_chs:${this._address}`, TTL_ACCOUNT, async () => {
+      return await this.sdk.info.spot.getSpotClearinghouseState(this._address) as unknown as Record<string, unknown>;
+    });
+  }
+
   async getBalance(): Promise<ExchangeBalance> {
     const state = await this._getClearinghouseState();
     const s = state as Record<string, unknown>;
@@ -303,9 +312,9 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       // Unified account: spot USDC total IS the true equity (includes perp margin as "hold").
       // perp accountValue is a subset — adding both double-counts.
       try {
-        const spotState = await this.sdk.info.spot.getSpotClearinghouseState(this._address);
-        const balances = spotState?.balances ?? [];
-        const usdc = balances.find((b: Record<string, unknown>) => String(b.coin).startsWith("USDC"));
+        const spotState = await this._getSpotClearinghouseState();
+        const balances = (spotState?.balances ?? []) as Record<string, unknown>[];
+        const usdc = balances.find((b) => String(b.coin).startsWith("USDC"));
         const spotTotal = usdc?.total !== undefined ? Number(usdc.total) : NaN;
         const spotHold = Number(usdc?.hold ?? 0);
         equity = !isNaN(spotTotal) ? spotTotal : Number(margin.accountValue ?? cross.accountValue ?? 0);

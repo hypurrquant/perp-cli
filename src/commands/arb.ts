@@ -269,21 +269,50 @@ function formatAvgRate(rate: number | null | undefined): string {
 function printSnapshotTable(snapshot: FundingRateSnapshot): void {
   const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
   if (snapshot.symbols.length === 0) { console.log(chalk.gray("  No funding rate data available.\n")); return; }
+
+  // Build 24h trend: arrow + change in annualized spread
+  const now = new Date();
+  const h24ago = new Date(now.getTime() - 24 * 3600_000);
+  const trendMap = new Map<string, string>(); // symbol → "▲+12.3%" or "▼-5.1%"
+  for (const s of snapshot.symbols) {
+    const bestEx = s.rates.find(r => r.exchange === "hyperliquid")?.exchange
+      ?? s.rates.find(r => r.exchange === "pacifica")?.exchange
+      ?? s.rates[0]?.exchange ?? "hyperliquid";
+    const history = getHistoricalRates(s.symbol, bestEx, h24ago, now);
+    if (history.length >= 2) {
+      const oldRate = history[0].hourlyRate;
+      const newRate = history[history.length - 1].hourlyRate;
+      // Change in annualized rate (hourly × 8760)
+      const oldAnn = Math.abs(oldRate) * 8760 * 100;
+      const newAnn = Math.abs(newRate) * 8760 * 100;
+      const delta = newAnn - oldAnn;
+      const absDelta = Math.abs(delta);
+      if (absDelta < 1) {
+        trendMap.set(s.symbol, chalk.gray(`\u2500 ${absDelta.toFixed(1)}%`));  // ─ stable
+      } else if (delta > 0) {
+        trendMap.set(s.symbol, chalk.red(`\u25B2+${absDelta.toFixed(1)}%`));   // ▲ rising
+      } else {
+        trendMap.set(s.symbol, chalk.green(`\u25BC-${absDelta.toFixed(1)}%`)); // ▼ falling
+      }
+    }
+  }
+
   const rows = snapshot.symbols.map(s => {
     const pacRate = s.rates.find(r => r.exchange === "pacifica");
     const hlRate = s.rates.find(r => r.exchange === "hyperliquid");
     const ltRate = s.rates.find(r => r.exchange === "lighter");
     const spreadColor = s.maxSpreadAnnual >= 30 ? chalk.green : s.maxSpreadAnnual >= 10 ? chalk.yellow : chalk.white;
     const bestRate = hlRate ?? pacRate ?? ltRate;
+    const trend = trendMap.get(s.symbol) ?? chalk.gray("-");
     return [
       chalk.white.bold(s.symbol), pacRate ? formatPercent(pacRate.fundingRate) : chalk.gray("-"),
       hlRate ? formatPercent(hlRate.fundingRate) : chalk.gray("-"), ltRate ? formatPercent(ltRate.fundingRate) : chalk.gray("-"),
-      spreadColor(`${s.maxSpreadAnnual.toFixed(1)}%`),
+      spreadColor(`${s.maxSpreadAnnual.toFixed(1)}%`), trend,
       s.maxSpreadAnnual >= 5 ? `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}` : chalk.gray("-"),
       formatAvgRate(bestRate?.historicalAvg?.avg8h), formatAvgRate(bestRate?.historicalAvg?.avg24h), formatAvgRate(bestRate?.historicalAvg?.avg7d),
     ];
   });
-  console.log(makeTable(["Symbol", "Pacifica", "Hyperliquid", "Lighter", "Ann. Spread", "Direction", "Avg 8h", "Avg 24h", "Avg 7d"], rows));
+  console.log(makeTable(["Symbol", "Pacifica", "Hyperliquid", "Lighter", "Spread", "24h", "Direction", "Avg 8h", "Avg 24h", "Avg 7d"], rows));
   console.log(chalk.gray(`\n  ${snapshot.symbols.length} symbols compared across exchanges.\n`));
 }
 
@@ -326,8 +355,18 @@ export async function handleRates(isJson: () => boolean, opts: { symbol?: string
   const snapshot = await fetchAllFundingRates({ symbols: filterSymbols, minSpread });
   try { const allRates = snapshot.symbols.flatMap(s => s.rates); if (allRates.length > 0) saveFundingSnapshot(allRates); } catch { /* non-critical */ }
   if (isJson()) {
-    if (process.argv.includes("--ndjson") || process.argv.includes("--fields")) return printJson(jsonOk(snapshot.symbols));
-    return printJson(jsonOk(snapshot));
+    // Enrich with 24h rate history for each symbol
+    const now = new Date();
+    const h24ago = new Date(now.getTime() - 24 * 3600_000);
+    const enriched = snapshot.symbols.map(s => {
+      const bestEx = s.rates.find(r => r.exchange === "hyperliquid")?.exchange
+        ?? s.rates.find(r => r.exchange === "pacifica")?.exchange
+        ?? s.rates[0]?.exchange ?? "hyperliquid";
+      const history = getHistoricalRates(s.symbol, bestEx, h24ago, now);
+      return { ...s, rateHistory: history.map(h => ({ ts: h.ts, hourlyRate: h.hourlyRate })) };
+    });
+    if (process.argv.includes("--ndjson") || process.argv.includes("--fields")) return printJson(jsonOk(enriched));
+    return printJson(jsonOk({ ...snapshot, symbols: enriched }));
   }
   printSnapshotTable(snapshot); printFundingExchangeStatus(snapshot);
 }

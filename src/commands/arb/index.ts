@@ -347,9 +347,10 @@ export function registerArbManageCommands(
       // Fetch spot balances from HL and LT, match with perp shorts
       const spotPerpPositions: SpotPerpPosition[] = [];
 
-      // Build reverse map: spot token → perp symbol (UETH→ETH, UBTC→BTC, etc.)
+      // Build reverse map: spot token → perp symbol (UETH→ETH, UBTC→BTC, PURR-SPOT→PURR, etc.)
       const spotToPerpSymbol = (token: string): string => {
-        const upper = token.toUpperCase();
+        // Strip "-SPOT" suffix that HL SDK appends to spot token names
+        const upper = token.replace(/-SPOT$/i, "").toUpperCase();
         return SPOT_PERP_TOKEN_MAP[upper] ?? upper;
       };
 
@@ -365,9 +366,10 @@ export function registerArbManageCommands(
             const hlSpot = new HyperliquidSpotAdapter(adapter as import("../../exchanges/hyperliquid.js").HyperliquidAdapter);
             await hlSpot.init();
             const balances = await hlSpot.getSpotBalances();
-            spotBalancesByExchange.set(exName, balances.filter(b =>
-              b.token !== "USDC" && Number(b.total) > 0
-            ));
+            spotBalancesByExchange.set(exName, balances.filter(b => {
+              const base = b.token.replace(/-SPOT$/i, "").toUpperCase();
+              return base !== "USDC" && Number(b.total) > 0;
+            }));
           } else if (exName === "lighter") {
             const { LighterSpotAdapter } = await import("../../exchanges/lighter-spot.js");
             const ltSpot = new LighterSpotAdapter(adapter as import("../../exchanges/lighter.js").LighterAdapter);
@@ -397,6 +399,10 @@ export function registerArbManageCommands(
           const matchingShorts = allPositions.filter(
             p => p.symbol === perpSymbol && p.side === "short"
           );
+
+          // Skip dust balances (< $1 at perp mark price)
+          const refPrice = matchingShorts[0]?.markPrice ?? 0;
+          if (refPrice > 0 && spotAmount * refPrice < 1) continue;
 
           for (const shortPos of matchingShorts) {
             // Check if this short is already used by a perp-perp pair
@@ -453,7 +459,7 @@ export function registerArbManageCommands(
               mode: "spot-perp",
               spotExchange: spotEx,
               perpExchange: shortPos.exchange,
-              spotToken: bal.token,
+              spotToken: bal.token.replace(/-SPOT$/i, ""),
               spotAmount,
               spotValueUsd,
               perpSide: "short",
