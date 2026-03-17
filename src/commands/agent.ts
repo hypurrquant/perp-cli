@@ -258,8 +258,10 @@ export function registerAgentCommands(
             category: "analytics",
             commands: [
               "perp analytics summary --json",
-              "perp analytics pnl --json",
-              "perp analytics funding --json",
+              "perp analytics pnl --period 30d --json",
+              "perp analytics funding --period 30d --json",
+              "perp analytics funding --period 7d --daily --json",
+              "perp analytics compare --json",
               "perp portfolio --json",
               "perp health --json",
               "perp history list --json",

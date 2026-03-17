@@ -3,6 +3,7 @@ import chalk from "chalk";
 import type { ExchangeAdapter } from "../exchanges/interface.js";
 import { printJson, jsonOk, jsonError, makeTable, formatUsd, formatPnl, withJsonErrors } from "../utils.js";
 import { readExecutionLog, getExecutionStats, pruneExecutionLog } from "../execution-log.js";
+import { loadArbState } from "../arb/state.js";
 import { readPositionHistory, getPositionStats } from "../position-history.js";
 import {
   saveEquitySnapshot,
@@ -24,6 +25,16 @@ function parseSince(since?: string): string | undefined {
     return new Date(Date.now() - parseInt(num) * ms).toISOString();
   }
   return since;
+}
+
+/** Parse period string (7d, 30d, 90d) to milliseconds. Returns undefined for "all" or missing. */
+function parsePeriodMs(period?: string): number | undefined {
+  if (!period || period === "all") return undefined;
+  const match = period.match(/^(\d+)(h|d|w|m)$/);
+  if (!match) return undefined;
+  const [, num, unit] = match;
+  const ms = { h: 3600000, d: 86400000, w: 604800000, m: 2592000000 }[unit] ?? 86400000;
+  return parseInt(num) * ms;
 }
 
 export function registerHistoryCommands(
@@ -381,114 +392,138 @@ function registerAnalyticsSubcommands(
   // ── analytics pnl ──
   parent
     .command("pnl")
-    .description("Realized P&L from exchange trade history (volume & fees by symbol/exchange)")
+    .description("P&L analysis — trades, fees, funding income with daily breakdown")
     .option("-e, --exchange <exchanges>", "Comma-separated exchanges")
-    .option("--since <period>", "Period: 24h, 7d, 30d")
-    .option("-n, --limit <n>", "Trade history limit per exchange", "100")
-    .action(async (opts: { exchange?: string; since?: string; limit: string }) => {
+    .option("--period <duration>", "Time period: 7d, 30d, 90d, all (default: all)")
+    .option("--since <period>", "Alias for --period")
+    .option("-n, --limit <n>", "History limit per exchange", "200")
+    .action(async (opts: { exchange?: string; period?: string; since?: string; limit: string }) => {
       await withJsonErrors(isJson(), async () => {
         const exchanges = opts.exchange
           ? opts.exchange.split(",").map(e => e.trim())
           : [...EXCHANGES];
 
+        const period = opts.period ?? opts.since;
+        const periodMs = parsePeriodMs(period);
+        const sinceMs = periodMs ? Date.now() - periodMs : 0;
         const limit = parseInt(opts.limit);
-        const sinceMs = opts.since ? new Date(parseSince(opts.since)!).getTime() : 0;
 
-        interface TradeWithExchange {
-          exchange: string;
-          symbol: string;
-          side: string;
-          price: number;
-          size: number;
-          fee: number;
-          time: number;
-        }
+        interface TradeEntry { exchange: string; symbol: string; side: string; price: number; size: number; fee: number; time: number }
+        interface FundingEntry { exchange: string; symbol: string; payment: number; time: number }
 
-        const allTrades: TradeWithExchange[] = [];
+        const allTrades: TradeEntry[] = [];
+        const allFunding: FundingEntry[] = [];
 
+        // Fetch trades + funding in parallel from all exchanges
         await Promise.allSettled(
           exchanges.map(async (ex) => {
             try {
               const adapter = await getAdapterForExchange(ex);
-              const trades = await adapter.getTradeHistory(limit);
+              const [trades, funding] = await Promise.all([
+                adapter.getTradeHistory(limit),
+                adapter.getFundingPayments(limit),
+              ]);
               for (const t of trades) {
                 if (sinceMs && t.time < sinceMs) continue;
-                allTrades.push({
-                  exchange: ex,
-                  symbol: t.symbol,
-                  side: t.side,
-                  price: Number(t.price),
-                  size: Number(t.size),
-                  fee: Number(t.fee),
-                  time: t.time,
-                });
+                allTrades.push({ exchange: ex, symbol: t.symbol, side: t.side, price: Number(t.price), size: Number(t.size), fee: Number(t.fee), time: t.time });
+              }
+              for (const f of funding) {
+                if (sinceMs && f.time < sinceMs) continue;
+                allFunding.push({ exchange: ex, symbol: f.symbol, payment: Number(f.payment), time: f.time });
               }
             } catch { /* skip unavailable exchanges */ }
           }),
         );
 
-        // Aggregate by symbol
-        const bySymbol = new Map<string, { volume: number; fees: number; trades: number }>();
-        const byExchange = new Map<string, { volume: number; fees: number; trades: number }>();
+        // Aggregate by exchange
+        const byExchange = new Map<string, { trades: number; volume: number; fees: number; funding: number }>();
         let totalVolume = 0;
         let totalFees = 0;
+        let totalFunding = 0;
 
         for (const t of allTrades) {
           const notional = t.price * t.size;
           totalVolume += notional;
           totalFees += t.fee;
-
-          const sym = bySymbol.get(t.symbol) ?? { volume: 0, fees: 0, trades: 0 };
-          sym.volume += notional;
-          sym.fees += t.fee;
-          sym.trades++;
-          bySymbol.set(t.symbol, sym);
-
-          const ex = byExchange.get(t.exchange) ?? { volume: 0, fees: 0, trades: 0 };
+          const ex = byExchange.get(t.exchange) ?? { trades: 0, volume: 0, fees: 0, funding: 0 };
+          ex.trades++;
           ex.volume += notional;
           ex.fees += t.fee;
-          ex.trades++;
           byExchange.set(t.exchange, ex);
         }
 
+        for (const f of allFunding) {
+          totalFunding += f.payment;
+          const ex = byExchange.get(f.exchange) ?? { trades: 0, volume: 0, fees: 0, funding: 0 };
+          ex.funding += f.payment;
+          byExchange.set(f.exchange, ex);
+        }
+
+        const netPnl = totalFunding - totalFees;
+
+        // Daily PnL breakdown (fees + funding combined)
+        const dailyMap = new Map<string, { fees: number; funding: number }>();
+        for (const t of allTrades) {
+          const day = new Date(t.time).toISOString().slice(0, 10);
+          const d = dailyMap.get(day) ?? { fees: 0, funding: 0 };
+          d.fees += t.fee;
+          dailyMap.set(day, d);
+        }
+        for (const f of allFunding) {
+          const day = new Date(f.time).toISOString().slice(0, 10);
+          const d = dailyMap.get(day) ?? { fees: 0, funding: 0 };
+          d.funding += f.payment;
+          dailyMap.set(day, d);
+        }
+
+        const daily = [...dailyMap.entries()]
+          .sort()
+          .map(([date, d]) => ({ date, fees: d.fees, funding: d.funding, net: d.funding - d.fees }));
+
         const result = {
+          period: period ?? "all",
           totalTrades: allTrades.length,
           totalVolume,
           totalFees,
-          netAfterFees: -totalFees, // realized PnL would need entry/exit matching; fees are definite cost
-          bySymbol: Object.fromEntries(bySymbol),
-          byExchange: Object.fromEntries(byExchange),
+          totalFunding,
+          netPnl,
+          byExchange: Object.fromEntries(
+            [...byExchange.entries()].map(([ex, d]) => [ex, { ...d, netPnl: d.funding - d.fees }]),
+          ),
+          daily,
         };
 
         if (isJson()) return printJson(jsonOk(result));
 
-        console.log(chalk.cyan.bold(`\n  Realized Trading P&L ${opts.since ? `(${opts.since})` : ""}\n`));
+        // ── Terminal output ──
+        console.log(chalk.cyan.bold(`\n  P&L Report${period ? ` (${period})` : ""}\n`));
         console.log(`  Total Trades:    ${allTrades.length}`);
         console.log(`  Total Volume:    $${formatUsd(totalVolume)}`);
-        console.log(`  Total Fees:      ${chalk.red(`-$${formatUsd(totalFees)}`)}`);
-
-        if (bySymbol.size > 0) {
-          console.log(chalk.white.bold("\n  By Symbol:"));
-          const symRows = [...bySymbol.entries()]
-            .sort((a, b) => b[1].volume - a[1].volume)
-            .map(([sym, d]) => [
-              chalk.white.bold(sym),
-              String(d.trades),
-              `$${formatUsd(d.volume)}`,
-              chalk.red(`-$${formatUsd(d.fees)}`),
-            ]);
-          console.log(makeTable(["Symbol", "Trades", "Volume", "Fees"], symRows));
-        }
+        console.log(`  Trading Fees:    ${chalk.red(`-$${formatUsd(totalFees)}`)}`);
+        console.log(`  Funding Income:  ${formatPnl(totalFunding)}`);
+        console.log(`  Net P&L:         ${formatPnl(netPnl)}`);
 
         if (byExchange.size > 0) {
-          console.log(chalk.white.bold("  By Exchange:"));
-          const exRows = [...byExchange.entries()].map(([ex, d]) => [
+          console.log(chalk.white.bold("\n  By Exchange:"));
+          const rows = [...byExchange.entries()].map(([ex, d]) => [
             chalk.white.bold(ex),
             String(d.trades),
             `$${formatUsd(d.volume)}`,
             chalk.red(`-$${formatUsd(d.fees)}`),
+            formatPnl(d.funding),
+            formatPnl(d.funding - d.fees),
           ]);
-          console.log(makeTable(["Exchange", "Trades", "Volume", "Fees"], exRows));
+          console.log(makeTable(["Exchange", "Trades", "Volume", "Fees", "Funding", "Net P&L"], rows));
+        }
+
+        if (daily.length > 0) {
+          console.log(chalk.white.bold("  Daily P&L:"));
+          let cumulative = 0;
+          const rows = daily.map(d => {
+            cumulative += d.net;
+            return [d.date, chalk.red(`-$${formatUsd(d.fees)}`), formatPnl(d.funding), formatPnl(d.net), formatPnl(cumulative)];
+          });
+          console.log(makeTable(["Date", "Fees", "Funding", "Net", "Cumulative"], rows));
         }
       });
     });
@@ -496,80 +531,174 @@ function registerAnalyticsSubcommands(
   // ── analytics funding ──
   parent
     .command("funding")
-    .description("Funding payment aggregation across exchanges (net by symbol/exchange)")
+    .description("Funding income analysis — cumulative, daily, per-arb-position breakdown")
     .option("-e, --exchange <exchanges>", "Comma-separated exchanges")
     .option("-s, --symbol <symbol>", "Filter by symbol")
-    .option("-n, --limit <n>", "Funding history limit per exchange", "50")
-    .action(async (opts: { exchange?: string; symbol?: string; limit: string }) => {
+    .option("--period <duration>", "Time period: 7d, 30d, 90d, all (default: all)")
+    .option("--daily", "Show daily funding breakdown")
+    .option("-n, --limit <n>", "Funding history limit per exchange", "200")
+    .action(async (opts: { exchange?: string; symbol?: string; period?: string; daily?: boolean; limit: string }) => {
       await withJsonErrors(isJson(), async () => {
         const exchanges = opts.exchange
           ? opts.exchange.split(",").map(e => e.trim())
           : [...EXCHANGES];
 
-        interface FundingEntry {
-          exchange: string;
-          symbol: string;
-          payment: number;
-          time: number;
-        }
+        const periodMs = parsePeriodMs(opts.period);
+        const sinceMs = periodMs ? Date.now() - periodMs : 0;
 
+        interface FundingEntry { exchange: string; symbol: string; payment: number; time: number }
         const allFunding: FundingEntry[] = [];
+
+        // Fetch funding payments and current positions in parallel
+        const positionNotionals = new Map<string, number>();
 
         await Promise.allSettled(
           exchanges.map(async (ex) => {
             try {
               const adapter = await getAdapterForExchange(ex);
-              const payments = await adapter.getFundingPayments(parseInt(opts.limit));
+              const [payments, positions] = await Promise.all([
+                adapter.getFundingPayments(parseInt(opts.limit)),
+                adapter.getPositions(),
+              ]);
               for (const p of payments) {
+                if (sinceMs && p.time < sinceMs) continue;
                 if (opts.symbol && !p.symbol.toUpperCase().includes(opts.symbol.toUpperCase())) continue;
-                allFunding.push({
-                  exchange: ex,
-                  symbol: p.symbol,
-                  payment: Number(p.payment),
-                  time: p.time,
-                });
+                allFunding.push({ exchange: ex, symbol: p.symbol, payment: Number(p.payment), time: p.time });
               }
-            } catch { /* skip */ }
+              for (const p of positions) {
+                if (Number(p.size) > 0) {
+                  positionNotionals.set(`${ex}:${p.symbol}`, Math.abs(Number(p.size) * Number(p.markPrice)));
+                }
+              }
+            } catch { /* skip unavailable exchanges */ }
           }),
         );
 
-        // Aggregate
-        const bySymbol = new Map<string, number>();
+        allFunding.sort((a, b) => a.time - b.time);
+
+        // Aggregate by exchange×symbol
+        const byExSym = new Map<string, { exchange: string; symbol: string; total: number; count: number }>();
         const byExchange = new Map<string, number>();
         let totalFunding = 0;
 
         for (const f of allFunding) {
           totalFunding += f.payment;
-          bySymbol.set(f.symbol, (bySymbol.get(f.symbol) ?? 0) + f.payment);
+          const key = `${f.exchange}:${f.symbol}`;
+          const entry = byExSym.get(key) ?? { exchange: f.exchange, symbol: f.symbol, total: 0, count: 0 };
+          entry.total += f.payment;
+          entry.count++;
+          byExSym.set(key, entry);
           byExchange.set(f.exchange, (byExchange.get(f.exchange) ?? 0) + f.payment);
         }
 
+        // Period days for annualized rate
+        const periodDays = periodMs
+          ? periodMs / 86400000
+          : allFunding.length > 1
+            ? (allFunding[allFunding.length - 1].time - allFunding[0].time) / 86400000
+            : 1;
+
+        // Match funding to arb positions
+        const arbState = loadArbState();
+        const arbPositions = arbState?.positions ?? [];
+        const arbFunding = new Map<string, { longFunding: number; shortFunding: number }>();
+        for (const pos of arbPositions) {
+          arbFunding.set(pos.symbol, { longFunding: 0, shortFunding: 0 });
+        }
+        for (const f of allFunding) {
+          const arbEntry = arbFunding.get(f.symbol);
+          if (!arbEntry) continue;
+          const pos = arbPositions.find(p => p.symbol === f.symbol)!;
+          if (f.exchange === pos.longExchange) arbEntry.longFunding += f.payment;
+          else if (f.exchange === pos.shortExchange) arbEntry.shortFunding += f.payment;
+        }
+
+        // Daily breakdown
+        const dailyMap = new Map<string, number>();
+        for (const f of allFunding) {
+          const day = new Date(f.time).toISOString().slice(0, 10);
+          dailyMap.set(day, (dailyMap.get(day) ?? 0) + f.payment);
+        }
+
+        // Build result
+        const exSymRows = [...byExSym.values()].sort((a, b) => b.total - a.total).map(e => {
+          const notional = positionNotionals.get(`${e.exchange}:${e.symbol}`);
+          const annRate = notional && notional > 0 && periodDays > 0
+            ? (e.total / Math.max(1, periodDays)) * 365 / notional * 100
+            : null;
+          return { exchange: e.exchange, symbol: e.symbol, total: e.total, count: e.count, annualizedRate: annRate };
+        });
+
+        const arbRows = arbPositions
+          .map(pos => {
+            const af = arbFunding.get(pos.symbol);
+            if (!af || (af.longFunding === 0 && af.shortFunding === 0)) return null;
+            return {
+              symbol: pos.symbol,
+              mode: pos.mode ?? "perp-perp",
+              longExchange: pos.longExchange,
+              shortExchange: pos.shortExchange,
+              netFunding: af.longFunding + af.shortFunding,
+              longFunding: af.longFunding,
+              shortFunding: af.shortFunding,
+              daysSinceEntry: Math.max(1, Math.round((Date.now() - new Date(pos.entryTime).getTime()) / 86400000)),
+            };
+          })
+          .filter((r): r is NonNullable<typeof r> => r !== null);
+
+        const daily = [...dailyMap.entries()].sort().map(([date, amount]) => ({ date, amount }));
+
         const result = {
-          totalPayments: allFunding.length,
+          period: opts.period ?? "all",
+          periodDays: Math.max(1, Math.round(periodDays)),
           totalFunding,
-          bySymbol: Object.fromEntries(bySymbol),
+          totalPayments: allFunding.length,
+          byExchangeSymbol: exSymRows,
           byExchange: Object.fromEntries(byExchange),
+          arbPositions: arbRows,
+          ...(opts.daily ? { daily } : {}),
         };
 
         if (isJson()) return printJson(jsonOk(result));
 
-        console.log(chalk.cyan.bold("\n  Funding Payment Summary\n"));
+        // ── Terminal output ──
+        console.log(chalk.cyan.bold(`\n  Funding Income Report${opts.period ? ` (${opts.period})` : ""}\n`));
         console.log(`  Total Payments:  ${allFunding.length}`);
         console.log(`  Net Funding:     ${formatPnl(totalFunding)}`);
+        console.log(`  Period:          ~${Math.round(periodDays)} days`);
 
-        if (bySymbol.size > 0) {
-          console.log(chalk.white.bold("\n  By Symbol:"));
-          const rows = [...bySymbol.entries()]
-            .sort((a, b) => b[1] - a[1])
-            .map(([sym, amt]) => [chalk.white.bold(sym), formatPnl(amt)]);
-          console.log(makeTable(["Symbol", "Net Funding"], rows));
+        if (exSymRows.length > 0) {
+          console.log(chalk.white.bold("\n  By Exchange × Symbol:"));
+          const rows = exSymRows.map(e => [
+            chalk.white.bold(e.exchange),
+            e.symbol,
+            formatPnl(e.total),
+            String(e.count),
+            e.annualizedRate !== null ? `${e.annualizedRate >= 0 ? "+" : ""}${e.annualizedRate.toFixed(1)}%` : chalk.gray("—"),
+          ]);
+          console.log(makeTable(["Exchange", "Symbol", "Total", "Payments", "Ann.Rate"], rows));
         }
 
-        if (byExchange.size > 0) {
-          console.log(chalk.white.bold("  By Exchange:"));
-          const rows = [...byExchange.entries()]
-            .map(([ex, amt]) => [chalk.white.bold(ex), formatPnl(amt)]);
-          console.log(makeTable(["Exchange", "Net Funding"], rows));
+        if (arbRows.length > 0) {
+          console.log(chalk.white.bold("  By Arb Position:"));
+          const rows = arbRows.map(a => [
+            chalk.white.bold(a.symbol),
+            `${a.longExchange} → ${a.shortExchange}`,
+            a.mode,
+            formatPnl(a.netFunding),
+            `${a.daysSinceEntry}d`,
+          ]);
+          console.log(makeTable(["Symbol", "Long → Short", "Mode", "Net Funding", "Held"], rows));
+        }
+
+        if (opts.daily && daily.length > 0) {
+          console.log(chalk.white.bold("  Daily Breakdown:"));
+          let cumulative = 0;
+          const rows = daily.map(d => {
+            cumulative += d.amount;
+            return [d.date, formatPnl(d.amount), formatPnl(cumulative)];
+          });
+          console.log(makeTable(["Date", "Funding", "Cumulative"], rows));
         }
       });
     });
@@ -667,6 +796,148 @@ function registerAnalyticsSubcommands(
         console.log(`    Trading Fees:    ${chalk.red(`-$${formatUsd(totalFees)}`)}`);
         console.log(`    Funding Income:  ${formatPnl(totalFunding)}`);
         console.log(`    Net:             ${formatPnl(totalFunding - totalFees)}`);
+        console.log();
+      });
+    });
+
+  // ── analytics compare ──
+  parent
+    .command("compare")
+    .description("Compare active arb positions — ROI, realized PnL, funding income side by side")
+    .option("--period <duration>", "Funding lookup period: 7d, 30d, 90d, all (default: all)")
+    .option("-n, --limit <n>", "Funding history limit per exchange", "200")
+    .action(async (opts: { period?: string; limit: string }) => {
+      await withJsonErrors(isJson(), async () => {
+        const arbState = loadArbState();
+        const positions = arbState?.positions ?? [];
+
+        if (positions.length === 0) {
+          if (isJson()) return printJson(jsonOk({ positions: [], message: "No active arb positions" }));
+          console.log(chalk.yellow("\n  No active arb positions. Use 'perp arb exec' to open one.\n"));
+          return;
+        }
+
+        const periodMs = parsePeriodMs(opts.period);
+        const sinceMs = periodMs ? Date.now() - periodMs : 0;
+        const limit = parseInt(opts.limit);
+
+        // Collect all unique exchanges from arb positions
+        const exchangeSet = new Set<string>();
+        for (const pos of positions) {
+          exchangeSet.add(pos.longExchange);
+          exchangeSet.add(pos.shortExchange);
+        }
+
+        // Fetch funding + current positions from all relevant exchanges
+        const fundingByExSym = new Map<string, number>();
+        const currentPrices = new Map<string, number>();
+
+        await Promise.allSettled(
+          [...exchangeSet].map(async (ex) => {
+            try {
+              const adapter = await getAdapterForExchange(ex);
+              const [funding, livePositions] = await Promise.all([
+                adapter.getFundingPayments(limit),
+                adapter.getPositions(),
+              ]);
+              for (const f of funding) {
+                if (sinceMs && f.time < sinceMs) continue;
+                const key = `${ex}:${f.symbol}`;
+                fundingByExSym.set(key, (fundingByExSym.get(key) ?? 0) + Number(f.payment));
+              }
+              for (const p of livePositions) {
+                currentPrices.set(`${ex}:${p.symbol}`, Number(p.markPrice));
+              }
+            } catch { /* skip */ }
+          }),
+        );
+
+        // Build comparison data
+        const rows = positions.map(pos => {
+          const daysHeld = Math.max(1, Math.round((Date.now() - new Date(pos.entryTime).getTime()) / 86400000));
+          const longFunding = fundingByExSym.get(`${pos.longExchange}:${pos.symbol}`) ?? 0;
+          const shortFunding = fundingByExSym.get(`${pos.shortExchange}:${pos.symbol}`) ?? 0;
+          const netFunding = longFunding + shortFunding;
+
+          // Estimate unrealized PnL from price movement
+          const longPrice = currentPrices.get(`${pos.longExchange}:${pos.symbol}`) ?? pos.entryLongPrice;
+          const shortPrice = currentPrices.get(`${pos.shortExchange}:${pos.symbol}`) ?? pos.entryShortPrice;
+          const longPnl = (longPrice - pos.entryLongPrice) * pos.longSize;
+          const shortPnl = (pos.entryShortPrice - shortPrice) * pos.shortSize;
+          const pricePnl = longPnl + shortPnl;
+          const totalPnl = pricePnl + netFunding;
+
+          // Notional for ROI calculation
+          const notional = pos.entryLongPrice * pos.longSize + pos.entryShortPrice * pos.shortSize;
+          const roi = notional > 0 ? (totalPnl / notional) * 100 : 0;
+          const fundingRoi = notional > 0 ? (netFunding / notional) * 100 : 0;
+          const annualizedRoi = daysHeld > 0 ? (fundingRoi / daysHeld) * 365 : 0;
+
+          return {
+            symbol: pos.symbol,
+            mode: pos.mode ?? "perp-perp",
+            longExchange: pos.longExchange,
+            shortExchange: pos.shortExchange,
+            daysHeld,
+            entrySpread: pos.entrySpread,
+            funding: netFunding,
+            pricePnl,
+            totalPnl,
+            notional,
+            roi,
+            fundingRoi,
+            annualizedRoi,
+          };
+        });
+
+        // Sort by total PnL descending
+        rows.sort((a, b) => b.totalPnl - a.totalPnl);
+
+        const totals = {
+          funding: rows.reduce((s, r) => s + r.funding, 0),
+          pricePnl: rows.reduce((s, r) => s + r.pricePnl, 0),
+          totalPnl: rows.reduce((s, r) => s + r.totalPnl, 0),
+          notional: rows.reduce((s, r) => s + r.notional, 0),
+        };
+
+        const result = {
+          period: opts.period ?? "all",
+          positionCount: rows.length,
+          positions: rows,
+          totals: {
+            ...totals,
+            roi: totals.notional > 0 ? (totals.totalPnl / totals.notional) * 100 : 0,
+          },
+        };
+
+        if (isJson()) return printJson(jsonOk(result));
+
+        // ── Terminal output ──
+        console.log(chalk.cyan.bold(`\n  Arb Position Comparison${opts.period ? ` (${opts.period})` : ""}\n`));
+
+        const tableRows = rows.map(r => [
+          chalk.white.bold(r.symbol),
+          `${r.longExchange} → ${r.shortExchange}`,
+          r.mode,
+          `${r.daysHeld}d`,
+          formatPnl(r.funding),
+          formatPnl(r.pricePnl),
+          formatPnl(r.totalPnl),
+          `${r.roi >= 0 ? "+" : ""}${r.roi.toFixed(2)}%`,
+          `${r.annualizedRoi >= 0 ? "+" : ""}${r.annualizedRoi.toFixed(1)}%`,
+        ]);
+        console.log(makeTable(
+          ["Symbol", "Long → Short", "Mode", "Held", "Funding", "Price PnL", "Total PnL", "ROI", "Ann.ROI"],
+          tableRows,
+        ));
+
+        console.log(chalk.white.bold("  Totals:"));
+        console.log(`    Funding Income:   ${formatPnl(totals.funding)}`);
+        console.log(`    Price PnL:        ${formatPnl(totals.pricePnl)}`);
+        console.log(`    Total PnL:        ${formatPnl(totals.totalPnl)}`);
+        if (totals.notional > 0) {
+          console.log(`    Total ROI:        ${result.totals.roi >= 0 ? "+" : ""}${result.totals.roi.toFixed(2)}%`);
+        }
         console.log();
       });
     });
