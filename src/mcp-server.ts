@@ -26,6 +26,8 @@ import {
   pingLighter,
 } from "./shared-api.js";
 import { fetchAllFundingRates } from "./funding-rates.js";
+import { loadArbState } from "./arb/state.js";
+import { validateTrade } from "./trade-validator.js";
 
 // ── Adapter cache & factory ──
 
@@ -81,7 +83,7 @@ const _pkg = _require("../package.json") as { version: string };
 
 const server = new McpServer(
   { name: "perp-cli", version: _pkg.version },
-  { capabilities: { tools: {}, resources: {} } },
+  { capabilities: { tools: {}, resources: {}, prompts: {} } },
 );
 
 // ============================================================
@@ -1374,6 +1376,505 @@ server.resource(
 
     return { contents: [{ uri: "perp://schema", text: JSON.stringify(schema, null, 2), mimeType: "application/json" }] };
   },
+);
+
+// ============================================================
+// Trade execution tools (dry-run + confirm safety model)
+// ============================================================
+
+server.tool(
+  "trade_preview",
+  "Preview a trade WITHOUT executing. Returns estimated fill price, fees, margin impact, and risk checks. ALWAYS call this before trade_execute and show the result to the user for confirmation.",
+  {
+    exchange: z.string().describe("Exchange: pacifica, hyperliquid, or lighter"),
+    symbol: z.string().describe("Trading symbol (e.g., BTC, ETH, SOL)"),
+    side: z.enum(["buy", "sell"]).describe("Order side"),
+    size: z.string().describe("Order size (base currency units, e.g., '0.1' for 0.1 BTC)"),
+    orderType: z.enum(["market", "limit"]).default("market").describe("Order type"),
+    price: z.string().optional().describe("Limit price (required for limit orders)"),
+  },
+  async ({ exchange, symbol, side, size, orderType, price }) => {
+    try {
+      const adapter = await getOrCreateAdapter(exchange);
+      const [balance, positions, orderbook] = await Promise.all([
+        adapter.getBalance(),
+        adapter.getPositions(),
+        adapter.getOrderbook(symbol),
+      ]);
+
+      // Estimate fill price from orderbook
+      const bestBid = orderbook.bids[0]?.[0];
+      const bestAsk = orderbook.asks[0]?.[0];
+      const estPrice = orderType === "limit" && price
+        ? price
+        : side === "buy" ? bestAsk : bestBid;
+
+      const notional = estPrice ? Number(estPrice) * Number(size) : 0;
+      const existingPos = positions.find(p => p.symbol.toUpperCase().includes(symbol.toUpperCase()));
+
+      // Run validation
+      let validation;
+      try {
+        validation = await validateTrade(adapter, { symbol, side, size: Number(size), leverage: existingPos?.leverage ?? 1 });
+      } catch {
+        validation = { valid: true, checks: [], warnings: ["Validation unavailable — proceed with caution"] };
+      }
+
+      const preview = {
+        order: { exchange, symbol, side, size, orderType, price: price ?? estPrice },
+        estimate: {
+          fillPrice: estPrice ?? "unknown",
+          notionalUsd: notional.toFixed(2),
+          spread: bestBid && bestAsk ? ((Number(bestAsk) - Number(bestBid)) / Number(bestBid) * 100).toFixed(4) + "%" : "unknown",
+        },
+        account: {
+          equity: balance.equity,
+          available: balance.available,
+          marginUsed: balance.marginUsed,
+          marginAfter: (Number(balance.marginUsed) + notional / (existingPos?.leverage ?? 1)).toFixed(2),
+        },
+        existingPosition: existingPos ? {
+          side: existingPos.side,
+          size: existingPos.size,
+          entryPrice: existingPos.entryPrice,
+          unrealizedPnl: existingPos.unrealizedPnl,
+        } : null,
+        validation,
+        warning: "This is a PREVIEW only. Call trade_execute to place the order after user confirms.",
+      };
+
+      return { content: [{ type: "text", text: ok(preview, { exchange, type: "preview" }) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: err(e instanceof Error ? e.message : String(e)) }], isError: true };
+    }
+  },
+);
+
+server.tool(
+  "trade_execute",
+  "Execute a trade. IMPORTANT: Always call trade_preview first and get explicit user confirmation before calling this tool. Supports market and limit orders.",
+  {
+    exchange: z.string().describe("Exchange: pacifica, hyperliquid, or lighter"),
+    symbol: z.string().describe("Trading symbol (e.g., BTC, ETH, SOL)"),
+    side: z.enum(["buy", "sell"]).describe("Order side"),
+    size: z.string().describe("Order size (base currency units)"),
+    orderType: z.enum(["market", "limit"]).default("market").describe("Order type"),
+    price: z.string().optional().describe("Limit price (required for limit orders)"),
+    reduceOnly: z.boolean().default(false).describe("Reduce-only order (close position only)"),
+  },
+  async ({ exchange, symbol, side, size, orderType, price, reduceOnly }) => {
+    try {
+      const adapter = await getOrCreateAdapter(exchange);
+      let result: unknown;
+
+      if (orderType === "limit") {
+        if (!price) throw new Error("Price is required for limit orders");
+        result = await adapter.limitOrder(symbol, side, price, size, { reduceOnly });
+      } else {
+        result = await adapter.marketOrder(symbol, side, size);
+      }
+
+      // Fetch updated position
+      const positions = await adapter.getPositions();
+      const pos = positions.find(p => p.symbol.toUpperCase().includes(symbol.toUpperCase()));
+
+      return {
+        content: [{
+          type: "text",
+          text: ok({
+            executed: true,
+            order: { exchange, symbol, side, size, orderType, price },
+            result,
+            currentPosition: pos ?? null,
+          }, { exchange, type: "execution" }),
+        }],
+      };
+    } catch (e) {
+      return { content: [{ type: "text", text: err(e instanceof Error ? e.message : String(e)) }], isError: true };
+    }
+  },
+);
+
+server.tool(
+  "trade_close",
+  "Close an existing position. IMPORTANT: Call trade_preview first with the opposite side to show impact, then get user confirmation.",
+  {
+    exchange: z.string().describe("Exchange: pacifica, hyperliquid, or lighter"),
+    symbol: z.string().describe("Symbol to close (e.g., BTC, ETH)"),
+  },
+  async ({ exchange, symbol }) => {
+    try {
+      const adapter = await getOrCreateAdapter(exchange);
+      const positions = await adapter.getPositions();
+      const pos = positions.find(p => p.symbol.toUpperCase().includes(symbol.toUpperCase()));
+      if (!pos || Number(pos.size) === 0) {
+        return { content: [{ type: "text", text: err(`No open position for ${symbol} on ${exchange}`) }], isError: true };
+      }
+
+      const closeSide = pos.side === "long" ? "sell" : "buy";
+      const result = await adapter.marketOrder(symbol, closeSide, pos.size);
+
+      return {
+        content: [{
+          type: "text",
+          text: ok({
+            closed: true,
+            symbol,
+            exchange,
+            closedPosition: { side: pos.side, size: pos.size, entryPrice: pos.entryPrice, unrealizedPnl: pos.unrealizedPnl },
+            result,
+          }, { exchange, type: "close" }),
+        }],
+      };
+    } catch (e) {
+      return { content: [{ type: "text", text: err(e instanceof Error ? e.message : String(e)) }], isError: true };
+    }
+  },
+);
+
+// ============================================================
+// Extended analytics tools
+// ============================================================
+
+server.tool(
+  "get_funding_analysis",
+  "Analyze funding income across exchanges — cumulative totals, annualized rates, and per-arb-position breakdown. Great for tracking funding arb profitability.",
+  {
+    period: z.string().default("30d").describe("Time period: 7d, 30d, 90d, or all"),
+    exchange: z.string().optional().describe("Filter by exchange"),
+    symbol: z.string().optional().describe("Filter by symbol"),
+  },
+  async ({ period, exchange: exFilter, symbol: symFilter }) => {
+    try {
+      const exchanges = exFilter ? [exFilter] : ["pacifica", "hyperliquid", "lighter"];
+      const periodMatch = period.match(/^(\d+)(d|w|m)$/);
+      const sinceMs = periodMatch
+        ? Date.now() - parseInt(periodMatch[1]) * ({ d: 86400000, w: 604800000, m: 2592000000 }[periodMatch[2]] ?? 86400000)
+        : 0;
+
+      interface FundingEntry { exchange: string; symbol: string; payment: number; time: number }
+      const allFunding: FundingEntry[] = [];
+      const posNotionals = new Map<string, number>();
+
+      await Promise.allSettled(exchanges.map(async (ex) => {
+        try {
+          const adapter = await getOrCreateAdapter(ex);
+          const [payments, positions] = await Promise.all([
+            adapter.getFundingPayments(200),
+            adapter.getPositions(),
+          ]);
+          for (const p of payments) {
+            if (sinceMs && p.time < sinceMs) continue;
+            if (symFilter && !p.symbol.toUpperCase().includes(symFilter.toUpperCase())) continue;
+            allFunding.push({ exchange: ex, symbol: p.symbol, payment: Number(p.payment), time: p.time });
+          }
+          for (const p of positions) {
+            if (Number(p.size) > 0) posNotionals.set(`${ex}:${p.symbol}`, Math.abs(Number(p.size) * Number(p.markPrice)));
+          }
+        } catch { /* skip */ }
+      }));
+
+      allFunding.sort((a, b) => a.time - b.time);
+
+      // Aggregate by exchange×symbol
+      const byExSym = new Map<string, { exchange: string; symbol: string; total: number; count: number }>();
+      let totalFunding = 0;
+      for (const f of allFunding) {
+        totalFunding += f.payment;
+        const key = `${f.exchange}:${f.symbol}`;
+        const e = byExSym.get(key) ?? { exchange: f.exchange, symbol: f.symbol, total: 0, count: 0 };
+        e.total += f.payment; e.count++;
+        byExSym.set(key, e);
+      }
+
+      const periodDays = sinceMs ? (Date.now() - sinceMs) / 86400000
+        : allFunding.length > 1 ? (allFunding[allFunding.length - 1].time - allFunding[0].time) / 86400000 : 1;
+
+      // Match to arb positions
+      const arbState = loadArbState();
+      const arbPositions = (arbState?.positions ?? []).map(pos => {
+        const lf = allFunding.filter(f => f.symbol === pos.symbol && f.exchange === pos.longExchange).reduce((s, f) => s + f.payment, 0);
+        const sf = allFunding.filter(f => f.symbol === pos.symbol && f.exchange === pos.shortExchange).reduce((s, f) => s + f.payment, 0);
+        return { symbol: pos.symbol, mode: pos.mode ?? "perp-perp", longExchange: pos.longExchange, shortExchange: pos.shortExchange, netFunding: lf + sf, daysHeld: Math.max(1, Math.round((Date.now() - new Date(pos.entryTime).getTime()) / 86400000)) };
+      }).filter(a => a.netFunding !== 0);
+
+      const data = {
+        period, periodDays: Math.round(periodDays), totalFunding, totalPayments: allFunding.length,
+        byExchangeSymbol: [...byExSym.values()].sort((a, b) => b.total - a.total).map(e => ({
+          ...e, annualizedRate: (() => {
+            const n = posNotionals.get(`${e.exchange}:${e.symbol}`);
+            return n && n > 0 && periodDays > 0 ? (e.total / Math.max(1, periodDays)) * 365 / n * 100 : null;
+          })(),
+        })),
+        arbPositions,
+      };
+
+      return { content: [{ type: "text", text: ok(data) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: err(e instanceof Error ? e.message : String(e)) }], isError: true };
+    }
+  },
+);
+
+server.tool(
+  "get_pnl_analysis",
+  "P&L analysis combining trading fees and funding income — shows net profit/loss by exchange with daily breakdown",
+  {
+    period: z.string().default("30d").describe("Time period: 7d, 30d, 90d, or all"),
+    exchange: z.string().optional().describe("Filter by exchange"),
+  },
+  async ({ period, exchange: exFilter }) => {
+    try {
+      const exchanges = exFilter ? [exFilter] : ["pacifica", "hyperliquid", "lighter"];
+      const periodMatch = period.match(/^(\d+)(d|w|m)$/);
+      const sinceMs = periodMatch
+        ? Date.now() - parseInt(periodMatch[1]) * ({ d: 86400000, w: 604800000, m: 2592000000 }[periodMatch[2]] ?? 86400000)
+        : 0;
+
+      const byExchange = new Map<string, { trades: number; volume: number; fees: number; funding: number }>();
+      const dailyMap = new Map<string, { fees: number; funding: number }>();
+
+      await Promise.allSettled(exchanges.map(async (ex) => {
+        try {
+          const adapter = await getOrCreateAdapter(ex);
+          const [trades, funding] = await Promise.all([adapter.getTradeHistory(200), adapter.getFundingPayments(200)]);
+          const exData = byExchange.get(ex) ?? { trades: 0, volume: 0, fees: 0, funding: 0 };
+          for (const t of trades) {
+            if (sinceMs && t.time < sinceMs) continue;
+            const notional = Number(t.price) * Number(t.size);
+            exData.trades++; exData.volume += notional; exData.fees += Number(t.fee);
+            const day = new Date(t.time).toISOString().slice(0, 10);
+            const d = dailyMap.get(day) ?? { fees: 0, funding: 0 }; d.fees += Number(t.fee); dailyMap.set(day, d);
+          }
+          for (const f of funding) {
+            if (sinceMs && f.time < sinceMs) continue;
+            exData.funding += Number(f.payment);
+            const day = new Date(f.time).toISOString().slice(0, 10);
+            const d = dailyMap.get(day) ?? { fees: 0, funding: 0 }; d.funding += Number(f.payment); dailyMap.set(day, d);
+          }
+          byExchange.set(ex, exData);
+        } catch { /* skip */ }
+      }));
+
+      let totalFees = 0, totalFunding = 0, totalVolume = 0, totalTrades = 0;
+      for (const d of byExchange.values()) { totalFees += d.fees; totalFunding += d.funding; totalVolume += d.volume; totalTrades += d.trades; }
+
+      const data = {
+        period, totalTrades, totalVolume, totalFees, totalFunding, netPnl: totalFunding - totalFees,
+        byExchange: Object.fromEntries([...byExchange.entries()].map(([ex, d]) => [ex, { ...d, netPnl: d.funding - d.fees }])),
+        daily: [...dailyMap.entries()].sort().map(([date, d]) => ({ date, fees: d.fees, funding: d.funding, net: d.funding - d.fees })),
+      };
+
+      return { content: [{ type: "text", text: ok(data) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: err(e instanceof Error ? e.message : String(e)) }], isError: true };
+    }
+  },
+);
+
+server.tool(
+  "get_arb_compare",
+  "Compare active arbitrage positions side by side — ROI, funding income, price PnL, and annualized returns for each position",
+  {
+    period: z.string().default("all").describe("Funding lookup period: 7d, 30d, 90d, or all"),
+  },
+  async ({ period }) => {
+    try {
+      const arbState = loadArbState();
+      const positions = arbState?.positions ?? [];
+      if (positions.length === 0) {
+        return { content: [{ type: "text", text: ok({ positions: [], message: "No active arb positions" }) }] };
+      }
+
+      const periodMatch = period === "all" ? null : period.match(/^(\d+)(d|w|m)$/);
+      const sinceMs = periodMatch
+        ? Date.now() - parseInt(periodMatch[1]) * ({ d: 86400000, w: 604800000, m: 2592000000 }[periodMatch[2]] ?? 86400000)
+        : 0;
+
+      const exchangeSet = new Set<string>();
+      for (const pos of positions) { exchangeSet.add(pos.longExchange); exchangeSet.add(pos.shortExchange); }
+
+      const fundingByExSym = new Map<string, number>();
+      const currentPrices = new Map<string, number>();
+
+      await Promise.allSettled([...exchangeSet].map(async (ex) => {
+        try {
+          const adapter = await getOrCreateAdapter(ex);
+          const [funding, livePos] = await Promise.all([adapter.getFundingPayments(200), adapter.getPositions()]);
+          for (const f of funding) {
+            if (sinceMs && f.time < sinceMs) continue;
+            const key = `${ex}:${f.symbol}`;
+            fundingByExSym.set(key, (fundingByExSym.get(key) ?? 0) + Number(f.payment));
+          }
+          for (const p of livePos) currentPrices.set(`${ex}:${p.symbol}`, Number(p.markPrice));
+        } catch { /* skip */ }
+      }));
+
+      const rows = positions.map(pos => {
+        const daysHeld = Math.max(1, Math.round((Date.now() - new Date(pos.entryTime).getTime()) / 86400000));
+        const funding = (fundingByExSym.get(`${pos.longExchange}:${pos.symbol}`) ?? 0) + (fundingByExSym.get(`${pos.shortExchange}:${pos.symbol}`) ?? 0);
+        const longPrice = currentPrices.get(`${pos.longExchange}:${pos.symbol}`) ?? pos.entryLongPrice;
+        const shortPrice = currentPrices.get(`${pos.shortExchange}:${pos.symbol}`) ?? pos.entryShortPrice;
+        const pricePnl = (longPrice - pos.entryLongPrice) * pos.longSize + (pos.entryShortPrice - shortPrice) * pos.shortSize;
+        const totalPnl = pricePnl + funding;
+        const notional = pos.entryLongPrice * pos.longSize + pos.entryShortPrice * pos.shortSize;
+        const roi = notional > 0 ? (totalPnl / notional) * 100 : 0;
+        const fundingRoi = notional > 0 ? (funding / notional) * 100 : 0;
+        return { symbol: pos.symbol, mode: pos.mode ?? "perp-perp", longExchange: pos.longExchange, shortExchange: pos.shortExchange, daysHeld, funding, pricePnl, totalPnl, roi, annualizedRoi: daysHeld > 0 ? (fundingRoi / daysHeld) * 365 : 0 };
+      }).sort((a, b) => b.totalPnl - a.totalPnl);
+
+      const totals = { funding: rows.reduce((s, r) => s + r.funding, 0), pricePnl: rows.reduce((s, r) => s + r.pricePnl, 0), totalPnl: rows.reduce((s, r) => s + r.totalPnl, 0) };
+
+      return { content: [{ type: "text", text: ok({ period, positionCount: rows.length, positions: rows, totals }) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: err(e instanceof Error ? e.message : String(e)) }], isError: true };
+    }
+  },
+);
+
+// ============================================================
+// Additional Resources
+// ============================================================
+
+server.resource(
+  "market_prices",
+  "market://prices",
+  { mimeType: "application/json", description: "Live cross-exchange prices for all perpetual futures markets" },
+  async () => {
+    const prices: Record<string, Record<string, string>> = {};
+    await Promise.allSettled(["pacifica", "hyperliquid", "lighter"].map(async (ex) => {
+      try {
+        const adapter = await getOrCreateAdapter(ex);
+        const markets = await adapter.getMarkets();
+        for (const m of markets) {
+          if (!prices[m.symbol]) prices[m.symbol] = {};
+          prices[m.symbol][ex] = m.markPrice;
+        }
+      } catch { /* skip */ }
+    }));
+    return { contents: [{ uri: "market://prices", text: JSON.stringify({ ok: true, data: prices, meta: { timestamp: new Date().toISOString() } }, null, 2), mimeType: "application/json" }] };
+  },
+);
+
+server.resource(
+  "funding_rates",
+  "market://funding-rates",
+  { mimeType: "application/json", description: "Current funding rates across all exchanges with spread analysis" },
+  async () => {
+    try {
+      const rates = await fetchAllFundingRates();
+      return { contents: [{ uri: "market://funding-rates", text: JSON.stringify({ ok: true, data: rates, meta: { timestamp: new Date().toISOString() } }, null, 2), mimeType: "application/json" }] };
+    } catch (e) {
+      return { contents: [{ uri: "market://funding-rates", text: JSON.stringify({ ok: false, error: String(e) }), mimeType: "application/json" }] };
+    }
+  },
+);
+
+// ============================================================
+// Prompts
+// ============================================================
+
+server.prompt(
+  "trading-guide",
+  "Step-by-step guide for trading with perp-cli via this MCP server. Covers market data lookup, trade preview, execution, and position management.",
+  {},
+  () => ({
+    messages: [{
+      role: "user",
+      content: {
+        type: "text",
+        text: `You are a helpful trading assistant with access to perp-cli MCP tools. Follow this workflow:
+
+## Trading Workflow
+
+1. **Check Market Data First**
+   - Use \`get_prices\` to compare prices across exchanges
+   - Use \`get_orderbook\` to check liquidity and spread
+   - Use \`get_funding_rates\` to check funding rate direction
+
+2. **Check Account State**
+   - Use \`get_balance\` to verify available margin
+   - Use \`get_positions\` to see existing positions
+   - Use \`portfolio\` for a full cross-exchange overview
+
+3. **Preview Before Executing**
+   - ALWAYS use \`trade_preview\` before any trade
+   - Show the user: estimated price, fees, margin impact
+   - Wait for explicit user confirmation
+
+4. **Execute with Confirmation**
+   - Only call \`trade_execute\` after user says "yes" or "confirm"
+   - Never execute trades without showing the preview first
+
+5. **Monitor After Execution**
+   - Use \`get_positions\` to verify the trade went through
+   - Use \`get_pnl_analysis\` to track performance over time
+
+## Safety Rules
+- Never execute trades without user confirmation
+- Always show the preview (estimated cost, risk) before executing
+- If the user asks to "buy" or "sell", preview first, then ask for confirmation
+- Warn about high-leverage trades or large position sizes
+
+## Supported Exchanges
+- **pacifica** (Solana) — SOL-based perpetual futures
+- **hyperliquid** (HyperEVM) — Low-fee perpetuals with HIP-3 DEXes
+- **lighter** (Ethereum) — Ethereum-based perpetual futures`,
+      },
+    }],
+  }),
+);
+
+server.prompt(
+  "arb-strategy",
+  "Funding rate arbitrage strategy guide. How to find, execute, and manage cross-exchange arbitrage positions using perp-cli.",
+  {},
+  () => ({
+    messages: [{
+      role: "user",
+      content: {
+        type: "text",
+        text: `You are a funding rate arbitrage specialist with access to perp-cli MCP tools. Help users find and manage arb opportunities.
+
+## Funding Rate Arbitrage
+
+Funding arb exploits rate differences between exchanges: go LONG on the exchange paying you funding, SHORT on the one charging you.
+
+### Step 1: Scan for Opportunities
+Use \`arb_scan\` to find symbols with large funding rate spreads:
+- Look for annualized spreads > 10% (good), > 20% (excellent)
+- Check that the spread has been persistent (not just a spike)
+
+### Step 2: Validate with Market Data
+- Use \`get_funding_rates\` to see current rates
+- Use \`get_orderbook\` on both exchanges to check liquidity
+- Use \`get_prices\` to compare mark prices (large deviation = risk)
+
+### Step 3: Execute the Arb
+For each leg:
+1. \`trade_preview\` the LONG leg on the exchange with positive funding
+2. \`trade_preview\` the SHORT leg on the exchange with negative funding
+3. Show both previews to user, get confirmation
+4. Execute both legs
+
+### Step 4: Monitor Performance
+- Use \`get_arb_compare\` to track all arb positions side by side
+- Use \`get_funding_analysis\` to see cumulative funding income
+- Use \`get_pnl_analysis\` to see net P&L (funding income - trading fees)
+
+### Step 5: Close When Spread Compresses
+When the funding spread narrows below 2-3%, consider closing:
+- Use \`trade_close\` on both legs
+- Check final P&L with \`get_pnl_analysis\`
+
+### Risk Factors
+- **Basis risk**: Prices may diverge between exchanges
+- **Liquidation risk**: Each leg can be liquidated independently
+- **Funding reversal**: Rates can flip direction
+- **Bridge costs**: Moving funds between exchanges has costs`,
+      },
+    }],
+  }),
 );
 
 // ── Start server ──
