@@ -24,6 +24,10 @@ export interface AlertSettings {
     userId: string;
     channelId?: string; // cached DM channel ID for faster sends
   };
+  telegram?: {
+    botToken: string;
+    chatId: string;
+  };
   rules: AlertRule[];
   /** Check interval in seconds (default: 300 = 5 min) */
   intervalSec: number;
@@ -105,6 +109,7 @@ export function loadSettings(): Settings {
       },
       alerts: {
         discord: stored.alerts?.discord ?? DEFAULTS.alerts.discord,
+        telegram: stored.alerts?.telegram ?? DEFAULTS.alerts.telegram,
         rules: Array.isArray(stored.alerts?.rules) ? stored.alerts.rules : DEFAULTS.alerts.rules,
         intervalSec: stored.alerts?.intervalSec ?? DEFAULTS.alerts.intervalSec,
         cooldownMin: stored.alerts?.cooldownMin ?? DEFAULTS.alerts.cooldownMin,
