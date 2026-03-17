@@ -41,6 +41,7 @@ import { registerPlanCommands } from "./commands/plan.js";
 import { registerBacktestCommands } from "./commands/backtest.js";
 import { registerDashboardCommands } from "./commands/dashboard.js";
 import { registerInitCommand, EXCHANGE_ENV_MAP, validateKey } from "./commands/init.js";
+import { registerAlertCommands } from "./commands/alerts.js";
 import { loadSettings, saveSettings } from "./settings.js";
 import { setSharedApiNetwork } from "./shared-api.js";
 
@@ -332,6 +333,7 @@ registerPlanCommands(program, getAdapter, isJson);
 registerBacktestCommands(program, isJson);
 registerDashboardCommands(program, getAdapterForExchange, isJson, getHLAdapterForDex);
 registerInitCommand(program);
+registerAlertCommands(program, isJson);
 
 // Agent discovery: perp api-spec — deprecated, use 'perp agent schema'
 const apiSpecCmd = program

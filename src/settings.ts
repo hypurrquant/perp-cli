@@ -9,6 +9,28 @@ export interface ExchangeFees {
   maker: number;
 }
 
+export interface AlertRule {
+  id: string;
+  symbol: string;      // "*" = all symbols
+  exchange: string;     // "*" = all exchanges
+  threshold: number;    // annualized funding rate %
+  direction: "above" | "below";
+  enabled: boolean;
+}
+
+export interface AlertSettings {
+  discord?: {
+    botToken: string;
+    userId: string;
+    channelId?: string; // cached DM channel ID for faster sends
+  };
+  rules: AlertRule[];
+  /** Check interval in seconds (default: 300 = 5 min) */
+  intervalSec: number;
+  /** Cooldown per symbol in minutes after alert fires (default: 60) */
+  cooldownMin: number;
+}
+
 export interface Settings {
   /** Default exchange when -e flag is omitted */
   defaultExchange: string;
@@ -27,6 +49,8 @@ export interface Settings {
   };
   /** Per-exchange fee tiers (fetched from exchange APIs) */
   fees: Record<string, ExchangeFees>;
+  /** Alert configuration */
+  alerts: AlertSettings;
 }
 
 const DEFAULTS: Settings = {
@@ -46,10 +70,15 @@ const DEFAULTS: Settings = {
     pacifica: { taker: 0.00035, maker: 0.0001 },
     lighter: { taker: 0, maker: 0 },
   },
+  alerts: {
+    rules: [],
+    intervalSec: 300,
+    cooldownMin: 60,
+  },
 };
 
 export function loadSettings(): Settings {
-  if (!existsSync(SETTINGS_FILE)) return { ...DEFAULTS, referralCodes: { ...DEFAULTS.referralCodes }, fees: { ...DEFAULTS.fees } };
+  if (!existsSync(SETTINGS_FILE)) return { ...DEFAULTS, referralCodes: { ...DEFAULTS.referralCodes }, fees: { ...DEFAULTS.fees }, alerts: { ...DEFAULTS.alerts } };
   try {
     const stored = JSON.parse(readFileSync(SETTINGS_FILE, "utf-8"));
     // Merge stored fees with defaults (so new exchanges get defaults)
@@ -74,10 +103,16 @@ export function loadSettings(): Settings {
         hyperliquid: stored.referralApplied?.hyperliquid ?? DEFAULTS.referralApplied.hyperliquid,
         lighter: stored.referralApplied?.lighter ?? DEFAULTS.referralApplied.lighter,
       },
+      alerts: {
+        discord: stored.alerts?.discord ?? DEFAULTS.alerts.discord,
+        rules: Array.isArray(stored.alerts?.rules) ? stored.alerts.rules : DEFAULTS.alerts.rules,
+        intervalSec: stored.alerts?.intervalSec ?? DEFAULTS.alerts.intervalSec,
+        cooldownMin: stored.alerts?.cooldownMin ?? DEFAULTS.alerts.cooldownMin,
+      },
       fees,
     };
   } catch {
-    return { ...DEFAULTS, referralCodes: { ...DEFAULTS.referralCodes }, fees: { ...DEFAULTS.fees } };
+    return { ...DEFAULTS, referralCodes: { ...DEFAULTS.referralCodes }, fees: { ...DEFAULTS.fees }, alerts: { ...DEFAULTS.alerts } };
   }
 }
 
