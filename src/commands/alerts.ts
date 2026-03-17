@@ -262,7 +262,8 @@ export function registerAlertCommands(program: Command, isJson: () => boolean) {
     .description("Start funding rate alert daemon")
     .option("--interval <sec>", "Check interval in seconds")
     .option("--cooldown <min>", "Cooldown per symbol after alert fires (minutes)")
-    .action(async (opts: { interval?: string; cooldown?: string }) => {
+    .option("--background", "Run in background (tmux)")
+    .action(async (opts: { interval?: string; cooldown?: string; background?: boolean }) => {
       const settings = loadSettings();
 
       if (!hasAnyService(settings.alerts)) {
@@ -278,8 +279,42 @@ export function registerAlertCommands(program: Command, isJson: () => boolean) {
 
       const intervalSec = parseInt(opts.interval || String(settings.alerts.intervalSec)) || 300;
       const cooldownMin = parseInt(opts.cooldown || String(settings.alerts.cooldownMin)) || 60;
-      const cooldowns = new Map<string, number>();
 
+      // ── Background mode: launch in tmux ──
+      if (opts.background) {
+        const { execSync } = await import("child_process");
+        try { execSync("which tmux", { stdio: "ignore" }); } catch {
+          console.log(chalk.red("  tmux required for --background. Install: brew install tmux\n"));
+          return;
+        }
+
+        const session = `perp-alerts-${Date.now().toString(36)}`;
+        const nodeCmd = process.argv[0];
+        const cliPath = process.argv[1];
+        const args = [
+          "alerts", "start",
+          "--interval", String(intervalSec),
+          "--cooldown", String(cooldownMin),
+        ].join(" ");
+
+        // Pass through env vars for keys
+        const envKeys = ["LIGHTER_PRIVATE_KEY", "LIGHTER_API_KEY", "LIGHTER_ACCOUNT_INDEX", "HL_PRIVATE_KEY", "PACIFICA_PRIVATE_KEY", "PRIVATE_KEY"];
+        const envStr = envKeys.filter(k => process.env[k]).map(k => `${k}='${process.env[k]}'`).join(" ");
+
+        const cmd = `${envStr} ${nodeCmd} ${cliPath} ${args}`;
+        execSync(`tmux new-session -d -s ${session} '${cmd.replace(/'/g, "'\\''")}'`);
+
+        if (isJson()) return printJson(jsonOk({ status: "started", session, rules: rules.length, interval: intervalSec }));
+        console.log(chalk.green(`\n  Alert daemon started in background.`));
+        console.log(`  Session: ${chalk.white.bold(session)}`);
+        console.log(`  Rules:   ${rules.length} active, ${intervalSec}s interval`);
+        console.log(`  Attach:  ${chalk.gray(`tmux attach -t ${session}`)}`);
+        console.log(`  Stop:    ${chalk.gray(`tmux kill-session -t ${session}`)}\n`);
+        return;
+      }
+
+      // ── Foreground mode ──
+      const cooldowns = new Map<string, number>();
       const services = serviceStatus(settings.alerts);
       console.log(chalk.cyan.bold("\n  Funding Rate Alert Daemon\n"));
       console.log(chalk.gray(`  Rules:     ${rules.length} active`));
@@ -353,6 +388,35 @@ export function registerAlertCommands(program: Command, isJson: () => boolean) {
         process.exit(0);
       });
       await new Promise(() => {});
+    });
+
+  // ── alerts stop ──
+
+  alerts
+    .command("stop")
+    .description("Stop background alert daemon")
+    .action(async () => {
+      const { execSync } = await import("child_process");
+      try {
+        const sessions = execSync("tmux list-sessions -F '#{session_name}'", { encoding: "utf-8" })
+          .trim().split("\n").filter(s => s.startsWith("perp-alerts-"));
+
+        if (sessions.length === 0) {
+          if (isJson()) return printJson(jsonOk({ status: "none" }));
+          console.log(chalk.gray("  No alert daemon running.\n"));
+          return;
+        }
+
+        for (const session of sessions) {
+          try { execSync(`tmux kill-session -t ${session}`); } catch { /* already dead */ }
+        }
+
+        if (isJson()) return printJson(jsonOk({ status: "stopped", sessions }));
+        console.log(chalk.green(`  Stopped ${sessions.length} alert daemon(s): ${sessions.join(", ")}\n`));
+      } catch {
+        if (isJson()) return printJson(jsonOk({ status: "no_tmux" }));
+        console.log(chalk.gray("  No tmux sessions found.\n"));
+      }
     });
 }
 
