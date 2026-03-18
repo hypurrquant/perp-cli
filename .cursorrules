@@ -24,7 +24,7 @@ perp-cli includes an MCP server (`perp-mcp`) with 18 tools for trading, analytic
   "mcpServers": {
     "perp-cli": {
       "command": "npx",
-      "args": ["-y", "perp-cli", "perp-mcp"]
+      "args": ["-y", "-p", "perp-cli", "perp-mcp"]
     }
   }
 }

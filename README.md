@@ -167,7 +167,7 @@ perp-cli includes a full-featured MCP server (18 tools, 3 resources, 2 prompts) 
   "mcpServers": {
     "perp-cli": {
       "command": "npx",
-      "args": ["-y", "perp-cli", "perp-mcp"],
+      "args": ["-y", "-p", "perp-cli", "perp-mcp"],
       "env": {
         "HYPERLIQUID_PRIVATE_KEY": "your-evm-key",
         "PACIFICA_PRIVATE_KEY": "your-solana-key"
