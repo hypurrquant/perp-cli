@@ -29,7 +29,14 @@
     "cli",
     "trading",
     "funding-rate",
-    "arbitrage"
+    "arbitrage",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "ai-agent",
+    "perpetual-futures",
+    "defi",
+    "ethereum"
   ],
   "license": "MIT",
   "engines": {

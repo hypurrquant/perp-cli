@@ -1,0 +1,36 @@
+You have access to perp-cli, a multi-DEX perpetual futures CLI supporting Pacifica (Solana), Hyperliquid (HyperEVM), and Lighter (Ethereum).
+
+## Usage
+- Always use `--json` flag for structured output
+- Always use `--dry-run` before executing trades
+- Use `-e <exchange>` to select exchange (pacifica, hyperliquid, lighter; aliases: pac, hl, lt)
+
+## Common Commands
+```bash
+perp --json portfolio                          # cross-exchange overview
+perp --json -e hl market list                  # market data
+perp --json -e hl account positions            # open positions
+perp --json arb scan --min 5                   # funding rate arbitrage
+perp --json --dry-run -e hl trade market ETH buy 0.1  # simulate trade
+perp --json -e hl trade market ETH buy 0.1     # execute trade
+perp --json analytics funding --period 30d     # funding income analysis
+perp --json analytics compare                  # arb position comparison
+```
+
+## MCP Server
+perp-cli includes an MCP server (`perp-mcp`) with 18 tools for trading, analytics, and market data. Configure in Cursor settings:
+```json
+{
+  "mcpServers": {
+    "perp-cli": {
+      "command": "npx",
+      "args": ["-y", "perp-cli", "perp-mcp"]
+    }
+  }
+}
+```
+
+## Safety
+- Never execute trades without user confirmation
+- Always preview with trade_preview before trade_execute
+- Use --dry-run for simulations

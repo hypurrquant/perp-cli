@@ -158,6 +158,31 @@ Exchange flag: `-e hyperliquid` / `-e pacifica` / `-e lighter` (aliases: `hl`, `
 
 Global flags: `--json`, `--fields <f>`, `--ndjson`, `--dry-run`, `--dex <name>` (HIP-3), `-w, --wallet <name>`.
 
+## MCP Server
+
+perp-cli includes a full-featured MCP server (18 tools, 3 resources, 2 prompts) for Claude Desktop, Cursor, and other MCP clients.
+
+```json
+{
+  "mcpServers": {
+    "perp-cli": {
+      "command": "npx",
+      "args": ["-y", "perp-cli", "perp-mcp"],
+      "env": {
+        "HYPERLIQUID_PRIVATE_KEY": "your-evm-key",
+        "PACIFICA_PRIVATE_KEY": "your-solana-key"
+      }
+    }
+  }
+}
+```
+
+**Tools:** market data, portfolio, orderbook, funding rates, arb scanning, trade preview/execute (with dry-run safety), funding analysis, PnL analysis, arb comparison.
+
+**Resources:** `market://prices`, `market://funding-rates`, `perp://schema`
+
+**Prompts:** `trading-guide`, `arb-strategy`
+
 ## AI Agent Skill
 
 Install as a skill for Claude Code, Cursor, Codex, Gemini CLI, etc.:
