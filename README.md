@@ -58,6 +58,7 @@ Same EVM key works for both Hyperliquid and Lighter.
 | `plan` | Multi-step composite execution plans |
 | `rebalance` | Cross-exchange balance management |
 | `jobs` | Background job management (tmux) |
+| `alerts` | Telegram funding rate alerts with background daemon |
 | `agent` | Schema introspection, capabilities, health check |
 
 ## Core Commands
@@ -124,6 +125,30 @@ perp --json bot grid <SYM> --range 5 --grids 10 --size 100
 perp --json bridge quote --from solana --to arbitrum --amount 100
 perp --json bridge send --from solana --to arbitrum --amount 100
 ```
+
+## Telegram Alerts
+
+Funding rate alerts via Telegram with background daemon support.
+
+```bash
+# Interactive setup (BotFather token + chat ID auto-detection)
+perp alerts setup
+
+# Add alert rules
+perp alerts add ETH 30              # alert when ETH funding > 30% annualized
+perp alerts add --all 50            # alert for any symbol > 50%
+
+# Test & manage
+perp alerts test                    # send test message
+perp alerts list                    # show active rules
+
+# Run daemon
+perp alerts start                   # foreground
+perp alerts start --background      # tmux background daemon
+perp alerts stop                    # stop background daemon
+```
+
+Setup flow: BotFather token → bot validation → send `/start` to bot → auto-detect chat ID → test message.
 
 Exchange flag: `-e hyperliquid` / `-e pacifica` / `-e lighter` (aliases: `hl`, `pac`, `lt`).
 
