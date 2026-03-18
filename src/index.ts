@@ -649,60 +649,74 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
         process.env.HL_PRIVATE_KEY || process.env.HYPERLIQUID_PRIVATE_KEY ||
         process.env.LIGHTER_PRIVATE_KEY);
 
+      // ── ASCII banner ──
+      const banner = [
+        chalk.cyan("  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"),
+        chalk.cyan("  ┃") + chalk.white.bold("  perp-cli ") + chalk.gray(`v${_pkg.version}`) + " ".repeat(Math.max(0, 32 - _pkg.version.length)) + chalk.cyan("┃"),
+        chalk.cyan("  ┃") + chalk.gray("  Multi-DEX Perpetual Futures               ") + chalk.cyan("┃"),
+        chalk.cyan("  ┃") + chalk.gray("  Pacifica · Hyperliquid · Lighter           ") + chalk.cyan("┃"),
+        chalk.cyan("  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"),
+      ];
+      console.log("\n" + banner.join("\n"));
+
       if (!status.hasWallets && !hasEnvKey && !settings.defaultExchange) {
         // Fresh install — onboarding
-        console.log(chalk.cyan.bold("\n  Welcome to perp-cli!") + chalk.gray(`  v${_pkg.version}\n`));
-        console.log("  Multi-DEX perpetual futures CLI for Pacifica, Hyperliquid, and Lighter.\n");
-        console.log(`  Get started:  ${chalk.cyan("perp wallet set <exchange> <key>")}`);
+        console.log(chalk.yellow.bold("\n  ⚡ Get started:\n"));
+        console.log(`    ${chalk.cyan("perp wallet set <exchange> <key>")}`);
         console.log(chalk.gray(`\n  Or explore without a wallet:`));
         console.log(`    ${chalk.green("perp market list")}              available markets`);
-        console.log(`    ${chalk.green("perp -e hyperliquid market list")}  Hyperliquid markets`);
+        console.log(`    ${chalk.green("perp -e hl market list")}         Hyperliquid markets`);
         console.log(`    ${chalk.green("perp arb scan")}                 funding rate arbitrage`);
         console.log(`    ${chalk.green("perp --help")}                   all commands\n`);
       } else {
-        // Configured — show status overview
-        const defaultEx = settings.defaultExchange || "pacifica";
-        const activeEntries = Object.entries(status.active);
-        console.log(chalk.cyan.bold("\n  perp-cli") + chalk.gray(`  v${_pkg.version}\n`));
-        console.log(`  Default exchange: ${chalk.cyan(defaultEx)}`);
+        // Configured — show exchange status + balance
+        const EX_NAMES = ["pacifica", "hyperliquid", "lighter"] as const;
+        const exLabel = (e: string) => e === "pacifica" ? "Pacifica" : e === "hyperliquid" ? "Hyperliquid" : "Lighter";
 
-        if (activeEntries.length > 0) {
-          console.log(chalk.white.bold("\n  Wallets:"));
-          for (const [exchange, walletName] of activeEntries) {
-            const w = status.wallets[walletName];
-            if (w) {
-              const addr = w.address.length > 20
-                ? w.address.slice(0, 6) + "..." + w.address.slice(-4)
-                : w.address;
-              console.log(`    ${chalk.cyan(exchange.padEnd(14))} ${chalk.white(walletName)} ${chalk.gray(addr)}`);
-            }
+        // Ping + balance in parallel (with 5s timeout to keep landing fast)
+        const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
+          Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+
+        const statusResults = await Promise.allSettled(EX_NAMES.map(async (ex) => {
+          try {
+            const adapter = await withTimeout(getAdapterForExchange(ex), 5000);
+            const [balance, positions] = await withTimeout(Promise.all([adapter.getBalance(), adapter.getPositions()]), 5000);
+            const posCount = positions.filter(p => Number(p.size) > 0).length;
+            return { exchange: ex, ok: true, equity: Number(balance.equity), positions: posCount };
+          } catch {
+            return { exchange: ex, ok: false, equity: 0, positions: 0 };
           }
-        } else if (hasEnvKey) {
-          console.log(chalk.white.bold("\n  Configured:"));
-          for (const [exchange, info] of Object.entries(EXCHANGE_ENV_MAP)) {
-            const key = process.env[info.envKey];
-            if (key) {
-              try {
-                const { valid, address } = await validateKey(info.chain, key);
-                const addr = valid ? address : "(invalid key)";
-                console.log(`    ${chalk.cyan(exchange.padEnd(14))} ${chalk.green(addr)}`);
-              } catch {
-                console.log(`    ${chalk.cyan(exchange.padEnd(14))} ${chalk.gray("(error reading key)")}`);
-              }
-            }
-          }
+        }));
+
+        console.log(chalk.white.bold("\n  Exchanges:"));
+        let totalEquity = 0;
+        let totalPositions = 0;
+        for (const r of statusResults) {
+          if (r.status !== "fulfilled") continue;
+          const s = r.value;
+          const icon = s.ok ? chalk.green("●") : chalk.red("○");
+          const eq = s.ok ? chalk.white(`$${Number(s.equity).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`) : chalk.gray("—");
+          const pos = s.ok && s.positions > 0 ? chalk.yellow(` ${s.positions} pos`) : "";
+          console.log(`    ${icon} ${chalk.cyan(exLabel(s.exchange).padEnd(14))} ${eq}${pos}`);
+          if (s.ok) { totalEquity += s.equity; totalPositions += s.positions; }
         }
 
-        console.log(chalk.white.bold("\n  Quick commands:"));
+        if (totalEquity > 0) {
+          console.log(chalk.gray("    ─".repeat(20)));
+          console.log(`    ${chalk.white.bold("Total".padEnd(16))} ${chalk.white.bold(`$${totalEquity.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)}${totalPositions > 0 ? chalk.yellow(` ${totalPositions} pos`) : ""}`);
+        }
+
+        console.log(chalk.white.bold("\n  Commands:"));
         console.log(`    ${chalk.green("perp portfolio")}     balances + positions + risk`);
-        console.log(`    ${chalk.green("perp market list")}   available markets`);
+        console.log(`    ${chalk.green("perp status")}        full dashboard`);
         console.log(`    ${chalk.green("perp arb scan")}      funding rate arbitrage`);
-        console.log(`    ${chalk.green("perp dashboard")}     live monitoring`);
+        console.log(`    ${chalk.green("perp dashboard")}     live web monitoring`);
         console.log(`    ${chalk.green("perp --help")}        all commands\n`);
       }
     } catch {
       program.help();
     }
+    setTimeout(() => process.exit(0), 500);
   })();
 } else {
 program.parseAsync().then(() => {
