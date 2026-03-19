@@ -15,7 +15,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run --exclude '**/integration/**'",
-    "test:integration": "vitest run '**/*.integration.test.ts'",
+    "test:integration": "vitest run -c vitest.integration.config.ts",
     "test:all": "vitest run",
     "prepublishOnly": "pnpm run build"
   },
