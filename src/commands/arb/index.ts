@@ -437,9 +437,10 @@ export function registerArbManageCommands(
             try {
               const perpAdapter = await getAdapterForExchange(shortPos.exchange);
               const payments = await perpAdapter.getFundingPayments(200);
-              const entryTime = persisted ? new Date(persisted.entryTime).getTime() : (holdDurationMs ? Date.now() - holdDurationMs : 0);
+              // Sum ALL funding for this symbol — no entryTime filter
+              // Position is currently open, so all recent funding belongs to it
               for (const p of payments) {
-                if (p.symbol.toUpperCase().includes(perpSymbol) && p.time >= entryTime) {
+                if (p.symbol.toUpperCase().includes(perpSymbol)) {
                   actualFundingIncome += Number(p.payment);
                 }
               }
