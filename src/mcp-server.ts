@@ -13,7 +13,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { ExchangeAdapter } from "./exchanges/interface.js";
-import { loadPrivateKey, parseSolanaKeypair, type Exchange } from "./config.js";
+import { loadPrivateKey, tryLoadPrivateKey, parseSolanaKeypair, type Exchange } from "./config.js";
 import { PacificaAdapter } from "./exchanges/pacifica.js";
 import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
 import { LighterAdapter } from "./exchanges/lighter.js";
@@ -66,6 +66,33 @@ async function getOrCreateAdapter(exchange: string): Promise<ExchangeAdapter> {
   return adapter;
 }
 
+/** Try to get adapter, returns null if no key configured (for read-only fallback) */
+async function tryGetAdapter(exchange: string): Promise<ExchangeAdapter | null> {
+  const key = exchange.toLowerCase();
+  if (adapters.has(key)) return adapters.get(key)!;
+  try {
+    return await getOrCreateAdapter(exchange);
+  } catch {
+    return null;
+  }
+}
+
+/** Fetch markets using public API (no key needed) */
+async function fetchMarketsPublic(exchange: string) {
+  const ex = exchange.toLowerCase();
+  if (ex === "pacifica" || ex === "pac") {
+    const data = await fetchPacificaPrices();
+    return data.map(d => ({ symbol: d.symbol, markPrice: String(d.mark), indexPrice: String(d.mark), fundingRate: String(d.funding), volume24h: "0", openInterest: "0", maxLeverage: 10 }));
+  } else if (ex === "hyperliquid" || ex === "hl") {
+    const data = await fetchHyperliquidMeta();
+    return data.map(d => ({ symbol: d.symbol, markPrice: String(d.markPx), indexPrice: String(d.markPx), fundingRate: String(d.funding), volume24h: "0", openInterest: "0", maxLeverage: 50 }));
+  } else if (ex === "lighter" || ex === "lt") {
+    const data = await fetchLighterOrderBookDetails();
+    return data.map(d => ({ symbol: d.symbol, markPrice: String(d.lastTradePrice), indexPrice: String(d.lastTradePrice), fundingRate: "0", volume24h: "0", openInterest: "0", maxLeverage: 20 }));
+  }
+  throw new Error(`Unknown exchange: ${exchange}. Supported: pacifica, hyperliquid, lighter`);
+}
+
 // ── JSON envelope helpers ──
 
 function ok(data: unknown, meta?: Record<string, unknown>) {
@@ -92,13 +119,18 @@ const server = new McpServer(
 
 server.tool(
   "get_markets",
-  "Get all available perpetual futures markets on an exchange, including price, funding rate, volume, and max leverage",
+  "Get all available perpetual futures markets on an exchange, including price, funding rate, volume, and max leverage. Works without API keys.",
   { exchange: z.string().describe("Exchange name: pacifica, hyperliquid, or lighter") },
   async ({ exchange }) => {
     try {
-      const adapter = await getOrCreateAdapter(exchange);
-      const markets = await adapter.getMarkets();
-      return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length }) }] };
+      // Try adapter first (richer data), fall back to public API (no key needed)
+      const adapter = await tryGetAdapter(exchange);
+      if (adapter) {
+        const markets = await adapter.getMarkets();
+        return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length }) }] };
+      }
+      const markets = await fetchMarketsPublic(exchange);
+      return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, source: "public" }) }] };
     } catch (e) {
       return { content: [{ type: "text", text: err(e instanceof Error ? e.message : String(e), { exchange }) }], isError: true };
     }
@@ -107,16 +139,20 @@ server.tool(
 
 server.tool(
   "get_orderbook",
-  "Get the order book (bids and asks) for a symbol on an exchange",
+  "Get the order book (bids and asks) for a symbol on an exchange. Works without API keys.",
   {
     exchange: z.string().describe("Exchange name: pacifica, hyperliquid, or lighter"),
     symbol: z.string().describe("Trading pair symbol, e.g. BTC, ETH, SOL"),
   },
   async ({ exchange, symbol }) => {
     try {
-      const adapter = await getOrCreateAdapter(exchange);
-      const book = await adapter.getOrderbook(symbol);
-      return { content: [{ type: "text", text: ok(book, { exchange, symbol }) }] };
+      // Try adapter first, fall back to error with guidance
+      const adapter = await tryGetAdapter(exchange);
+      if (adapter) {
+        const book = await adapter.getOrderbook(symbol);
+        return { content: [{ type: "text", text: ok(book, { exchange, symbol }) }] };
+      }
+      return { content: [{ type: "text", text: err(`Orderbook requires API key for ${exchange}. Use get_markets or get_prices for keyless market data.`, { exchange, symbol }) }], isError: true };
     } catch (e) {
       return { content: [{ type: "text", text: err(e instanceof Error ? e.message : String(e), { exchange, symbol }) }], isError: true };
     }
