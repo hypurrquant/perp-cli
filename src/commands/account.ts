@@ -800,9 +800,10 @@ export function registerAccountCommands(
     .command("funding-history")
     .alias("funding")
     .description("Personal funding payment history")
-    .action(async () => {
+    .option("-n, --limit <n>", "Number of records", "200")
+    .action(async (opts: { limit: string }) => {
       const adapter = await getAdapter();
-      const payments = await adapter.getFundingPayments(30);
+      const payments = await adapter.getFundingPayments(parseInt(opts.limit));
       if (isJson()) return printJson(jsonOk(payments));
       if (payments.length === 0) {
         console.log(chalk.gray("\n  No funding history.\n"));
