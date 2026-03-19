@@ -598,34 +598,52 @@ export function registerArbManageCommands(
         ));
       }
 
-      // ── Spot-Perp table ──
+      // ── Spot-Perp detailed view ──
       if (spotPerpPositions.length > 0) {
-        console.log(chalk.cyan.bold("  Spot-Perp Arb Positions\n"));
-
-        const spRows = spotPerpPositions.map(sp => {
-          const spotLabel = sp.spotToken !== sp.symbol
-            ? `${sp.spotToken} (${sp.spotExchange})`
-            : sp.spotExchange;
+        for (const sp of spotPerpPositions) {
+          const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
           const spreadStr = sp.currentSpread !== null ? `${sp.currentSpread.toFixed(1)}%` : "-";
-          return [
-            chalk.white.bold(sp.symbol),
-            chalk.green(`${sp.spotAmount.toFixed(4)} ${sp.spotToken}`),
-            spotLabel,
-            chalk.red(sp.perpExchange),
-            `$${formatUsd(sp.perpNotionalUsd)}`,
-            `$${sp.perpMarkPrice.toFixed(2)}`,
-            formatPnl(sp.perpUnrealizedPnl),
-            chalk.yellow(`$${sp.estimatedFundingIncome.toFixed(4)}`),
-            spreadStr,
-            sp.holdDuration ?? "-",
-            formatPnl(sp.netPnl),
-          ];
-        });
+          const spotPriceEach = sp.spotAmount > 0 ? sp.spotValueUsd / sp.spotAmount : 0;
+          const spotPnl = sp.spotValueUsd - (sp.perpEntryPrice * sp.spotAmount); // spot value vs entry
+          const roi = sp.perpNotionalUsd > 0 ? (sp.netPnl / sp.perpNotionalUsd) * 100 : 0;
+          const dailyRoi = sp.holdDurationMs && sp.holdDurationMs > 0 ? roi / (sp.holdDurationMs / 86400000) : 0;
+          const annRoi = dailyRoi * 365;
 
-        console.log(makeTable(
-          ["Symbol", "Spot Held", "Spot Ex", "Perp Ex", "Size", "Mark", "uPnL", "Funding", "Spread", "Hold", "Net PnL"],
-          spRows,
-        ));
+          console.log(chalk.cyan.bold(`\n  ${sp.symbol} spot-perp`) + chalk.gray(` (${exAbbr(sp.spotExchange)} ↔ ${exAbbr(sp.perpExchange)})`) + chalk.gray(`  ${sp.holdDuration ?? "-"}`));
+          console.log("");
+
+          // Leg details
+          const legRows = [
+            [
+              chalk.green("Spot"),
+              `${sp.spotAmount.toFixed(4)} ${sp.spotToken}`,
+              `$${sp.perpEntryPrice.toFixed(4)}`,
+              `$${spotPriceEach.toFixed(4)}`,
+              formatPnl(spotPnl),
+            ],
+            [
+              chalk.red("Perp"),
+              `${sp.perpSize.toFixed(4)} ${sp.symbol}`,
+              `$${sp.perpEntryPrice.toFixed(4)}`,
+              `$${sp.perpMarkPrice.toFixed(4)}`,
+              formatPnl(sp.perpUnrealizedPnl),
+            ],
+          ];
+          console.log(makeTable(["Leg", "Qty", "Entry", "Current", "PnL"], legRows));
+
+          // Summary
+          console.log(chalk.white.bold("  PnL Breakdown:"));
+          console.log(`    Spot PnL:        ${formatPnl(spotPnl)}`);
+          console.log(`    Perp PnL:        ${formatPnl(sp.perpUnrealizedPnl)}`);
+          console.log(`    Funding Earned:  ${chalk.yellow(`$${sp.estimatedFundingIncome.toFixed(4)}`)}`);
+          console.log(`    Trading Fees:    ${chalk.red(`-$${sp.estimatedFees.toFixed(4)}`)}`);
+          console.log(`    ${chalk.white.bold("Total PnL:")}       ${formatPnl(sp.netPnl)}${roi !== 0 ? chalk.gray(` (ROI: ${roi >= 0 ? "+" : ""}${roi.toFixed(2)}%)`) : ""}`);
+          console.log("");
+          console.log(`    Current Spread:  ${spreadStr}`);
+          console.log(`    Daily Income:    ${chalk.cyan(`$${sp.dailyFundingEstimate.toFixed(4)}/day`)}`);
+          if (annRoi !== 0) console.log(`    Annualized ROI:  ${chalk.cyan(`${annRoi >= 0 ? "+" : ""}${annRoi.toFixed(1)}%`)}`);
+        }
+        console.log("");
       }
 
       // ── Combined Summary ──
