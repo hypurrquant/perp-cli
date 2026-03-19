@@ -24,6 +24,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   private _szDecimalsMap: Map<string, number> = new Map(); // symbol → szDecimals
   /** HIP-3 deployed perp dex name. Empty string = native (validator) perps. */
   private _dex: string = "";
+  private static _lastNonce = 0;
   // In-memory cache removed — using file-based cache (src/cache.ts) for cross-process dedup
 
   constructor(privateKey?: string, testnet = false) {
@@ -355,7 +356,9 @@ export class HyperliquidAdapter implements ExchangeAdapter {
           side: szi > 0 ? ("long" as const) : ("short" as const),
           size: String(Math.abs(szi)),
           entryPrice: String(pos.entryPx ?? "0"),
-          markPrice: String(pos.positionValue ? Number(pos.positionValue) / Math.abs(szi) : "0"),
+          markPrice: String(szi !== 0 && pos.positionValue && Number(pos.positionValue) !== 0
+            ? Number(pos.positionValue) / Math.abs(szi)
+            : pos.markPx ?? "0"),
           liquidationPrice: String(pos.liquidationPx ?? "N/A"),
           unrealizedPnl: String(pos.unrealizedPnl ?? "0"),
           leverage: Number((pos.leverage as { value?: number })?.value ?? 1),
@@ -521,7 +524,10 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const normalizedAction = HyperliquidAdapter._normalizeAction(action);
 
     // Sign L1 action (replicates SDK's signL1Action)
-    const nonce = Date.now();
+    // Monotonic nonce: ensures uniqueness even for rapid-fire requests in same millisecond
+    const now = Date.now();
+    HyperliquidAdapter._lastNonce = now > HyperliquidAdapter._lastNonce ? now : HyperliquidAdapter._lastNonce + 1;
+    const nonce = HyperliquidAdapter._lastNonce;
     const msgPackBytes = encode(normalizedAction);
     const data = new Uint8Array(msgPackBytes.length + 9); // +8 nonce +1 vault flag
     data.set(msgPackBytes);
@@ -572,7 +578,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       throw new Error(`HL exchange API error (${res.status}): ${text.slice(0, 200)}`);
     }
     if (result?.status === "err") {
-      throw new Error(result.response as string ?? JSON.stringify(result));
+      throw new Error(typeof result.response === "string" ? result.response : JSON.stringify(result));
     }
     return result;
   }

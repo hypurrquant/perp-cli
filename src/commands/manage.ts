@@ -47,18 +47,8 @@ export function registerManageCommands(
   const withdrawCmd = manage
     .command("withdraw <amount> <address>")
     .description("Use 'perp withdraw pacifica <amount>'")
-    .action(async (amount: string, address: string) => {
+    .action(async (_amount: string, _address: string) => {
       console.log(chalk.yellow("\n  Use 'perp withdraw pacifica <amount>' instead.\n"));
-      const a = await pac();
-      const result = await a.sdk.withdraw(
-        { amount, dest_address: address },
-        a.publicKey,
-        a.signer
-      );
-      if (isJson()) return printJson(jsonOk(result));
-      console.log(
-        chalk.green(`\n  Withdrawal of $${amount} to ${address} submitted.\n`)
-      );
     });
   (withdrawCmd as any)._hidden = true;
 
@@ -89,7 +79,7 @@ export function registerManageCommands(
         a.signer
       );
       if (isJson()) return printJson(jsonOk(result));
-      printJson(jsonOk(result));
+      console.log(JSON.stringify(result, null, 2));
     });
 
   sub
@@ -133,7 +123,7 @@ export function registerManageCommands(
         a.signer
       );
       if (isJson()) return printJson(jsonOk(result));
-      printJson(jsonOk(result));
+      console.log(JSON.stringify(result, null, 2));
     });
 
   agent
@@ -178,7 +168,6 @@ export function registerManageCommands(
       );
       if (isJson()) return printJson(jsonOk(result));
       console.log(chalk.green(`\n  Lake created for ${symbol.toUpperCase()} with $${amount}.\n`));
-      printJson(jsonOk(result));
     });
 
   lake
@@ -266,7 +255,7 @@ export function registerManageCommands(
       const a = await pac();
       const result = await a.sdk.getBuilderOverview(a.publicKey);
       if (isJson()) return printJson(jsonOk(result));
-      printJson(jsonOk(result));
+      console.log(JSON.stringify(result, null, 2));
     });
 
   builder
@@ -276,7 +265,7 @@ export function registerManageCommands(
       const a = await pac();
       const result = await a.sdk.getBuilderTrades(code);
       if (isJson()) return printJson(jsonOk(result));
-      printJson(jsonOk(result));
+      console.log(JSON.stringify(result, null, 2));
     });
 
   builder
@@ -286,7 +275,7 @@ export function registerManageCommands(
       const a = await pac();
       const result = await a.sdk.getBuilderLeaderboard(code);
       if (isJson()) return printJson(jsonOk(result));
-      printJson(jsonOk(result));
+      console.log(JSON.stringify(result, null, 2));
     });
 
   builder
@@ -336,7 +325,6 @@ export function registerManageCommands(
       );
       if (isJson()) return printJson(jsonOk(result));
       console.log(chalk.green(`\n  API key "${name}" created.\n`));
-      printJson(jsonOk(result));
     });
 
   apikey
@@ -349,7 +337,7 @@ export function registerManageCommands(
         a.signer
       );
       if (isJson()) return printJson(jsonOk(result));
-      printJson(jsonOk(result));
+      console.log(JSON.stringify(result, null, 2));
     });
 
   apikey

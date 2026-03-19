@@ -1034,8 +1034,15 @@ export function registerAccountCommands(
     .command("twap-orders")
     .description("Active TWAP orders")
     .action(async () => {
-      const adapter = await getAdapter();
-      const p = pac(adapter);
+      let p: PacificaAdapter;
+      try {
+        const adapter = await getAdapter();
+        p = pac(adapter);
+      } catch (err) {
+        if (isJson()) return printJson(jsonError("EXCHANGE_ERROR", err instanceof Error ? err.message : String(err)));
+        console.error(chalk.red(`\n  ${err instanceof Error ? err.message : String(err)}\n`));
+        return;
+      }
       const orders = await p.sdk.getTWAPOrders(p.publicKey);
       if (isJson()) return printJson(jsonOk(orders));
 

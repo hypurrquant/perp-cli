@@ -33,7 +33,10 @@ export function computeExecutableSize(
   }
 
   const bestPrice = Number(levels[0][0]);
-  const slippageLimit = bestPrice * (1 + maxSlippagePct / 100);
+  // Detect direction: asks are ascending (price goes up), bids are descending (price goes down)
+  const isAscending = levels.length < 2 || Number(levels[1]?.[0] ?? bestPrice) >= bestPrice;
+  const slippageLimitUp = bestPrice * (1 + maxSlippagePct / 100);
+  const slippageLimitDown = bestPrice * (1 - maxSlippagePct / 100);
 
   let filledSize = 0;
   let filledNotional = 0;
@@ -45,8 +48,11 @@ export function computeExecutableSize(
     const levelUsd = price * size;
     totalDepthUsd += levelUsd;
 
-    // Stop walking if we exceed slippage tolerance
-    if (price > slippageLimit && filledSize > 0) break;
+    // Stop walking if we exceed slippage tolerance (direction-aware)
+    if (filledSize > 0) {
+      if (isAscending && price > slippageLimitUp) break;
+      if (!isAscending && price < slippageLimitDown) break;
+    }
 
     const remainingUsd = requestedSizeUsd - filledNotional;
     if (remainingUsd <= 0) break;
@@ -115,8 +121,8 @@ export async function checkArbLiquidity(
 
     // Use whichever side has less available liquidity
     const executableUsd = Math.min(
-      longCheck.maxSize * longCheck.avgFillPrice,
-      shortCheck.maxSize * shortCheck.avgFillPrice,
+      longCheck.recommendedSize * longCheck.avgFillPrice,
+      shortCheck.recommendedSize * shortCheck.avgFillPrice,
     );
 
     // Minimum viable: at least 20% of requested size

@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { printJson, formatUsd, jsonOk } from "../utils.js";
+import { printJson, formatUsd, jsonOk, jsonError } from "../utils.js";
 import { PacificaAdapter, HyperliquidAdapter, type ExchangeAdapter } from "../exchanges/index.js";
 import type { Network } from "../pacifica/index.js";
 import { logExecution } from "../execution-log.js";
@@ -203,7 +203,12 @@ export function registerFundsCommands(
 
         const { ethers } = await import("ethers");
         const { loadPrivateKey } = await import("../config.js");
-        const pk = await loadPrivateKey("hyperliquid");
+        let pk: string;
+        try {
+          pk = await loadPrivateKey("hyperliquid");
+        } catch (err) {
+          throw new Error(`Private key not configured for Hyperliquid. Run: perp init`);
+        }
         const wallet = new ethers.Wallet(pk);
 
         try {
@@ -736,8 +741,13 @@ export function registerFundsCommands(
         console.log(chalk.gray(`\n  Waiting for Circle attestation (~1-3 min)...`));
         console.log(chalk.gray(`  Check: perp funds bridge-status --hash ${result.messageHash}\n`));
       } else {
+        if (isJson()) {
+          printJson(jsonError("RELAYER_UNAVAILABLE", "CCTP bridge requires relayer server. Start: cd packages/relayer && pnpm start"));
+          process.exit(1);
+        }
         console.error(chalk.red("\n  CCTP bridge requires relayer server."));
         console.error(chalk.gray("  Start: cd packages/relayer && pnpm start\n"));
+        process.exit(1);
       }
     });
 

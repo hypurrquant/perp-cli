@@ -1041,8 +1041,8 @@ function registerPnlSubcommands(
 
       // Initial snapshot
       const snaps = await takeSnapshot(getAdapterForExchange, exchanges);
-      const total = snaps.reduce((s, sn) => s + sn.equity, 0);
-      console.log(`${chalk.gray(new Date().toLocaleTimeString())} Total equity: $${formatUsd(total)}`);
+      let prevTotal = snaps.reduce((s, sn) => s + sn.equity, 0);
+      console.log(`${chalk.gray(new Date().toLocaleTimeString())} Total equity: $${formatUsd(prevTotal)}`);
 
       while (!controller.signal.aborted) {
         await new Promise<void>((resolve) => {
@@ -1054,11 +1054,12 @@ function registerPnlSubcommands(
         try {
           const s = await takeSnapshot(getAdapterForExchange, exchanges);
           const t = s.reduce((sum, sn) => sum + sn.equity, 0);
-          const delta = t - total;
+          const delta = t - prevTotal;
           console.log(
             `${chalk.gray(new Date().toLocaleTimeString())} ` +
             `Total: $${formatUsd(t)}  ${formatPnl(delta)}`,
           );
+          prevTotal = t;
         } catch (err) {
           console.error(chalk.red(`Snapshot error: ${err instanceof Error ? err.message : err}`));
         }

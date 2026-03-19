@@ -105,11 +105,12 @@ export function saveArbState(state: ArbDaemonState): void {
   renameSync(tmpPath, stateFilePath);
 }
 
-/** Add a position to the persisted state. */
+/** Add a position to the persisted state. Auto-initializes state if missing. */
 export function addPosition(pos: ArbPositionState): void {
-  const state = loadArbState();
+  let state = loadArbState();
   if (!state) {
-    throw new Error("No daemon state found. Initialize state before adding positions.");
+    // State was lost — create minimal valid state to avoid losing position tracking
+    state = createInitialState({ minSpread: 0, closeSpread: 0, size: 0, holdDays: 0, bridgeCost: 0, maxPositions: 10, settleStrategy: "off" });
   }
   // Avoid duplicates by symbol
   state.positions = state.positions.filter(p => p.symbol !== pos.symbol);

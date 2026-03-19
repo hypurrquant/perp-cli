@@ -80,9 +80,7 @@ export class LighterAdapter implements ExchangeAdapter {
     return this._address;
   }
 
-  get evmKey(): string {
-    return this._evmKey;
-  }
+  /** @internal — evmKey is intentionally not exposed publicly for security */
 
   get isReadOnly(): boolean {
     return this._readOnly;
@@ -1123,6 +1121,9 @@ export class LighterAdapter implements ExchangeAdapter {
   async setupApiKey(apiKeyIndex = 4): Promise<{ privateKey: string; publicKey: string }> {
     if (!this._evmSigner) {
       throw new Error("No EVM private key configured. Run: perp init");
+    }
+    if (this._accountIndex < 0) {
+      throw new Error("Account index not available. Call init() first or set LIGHTER_ACCOUNT_INDEX.");
     }
 
     // 1. Generate key pair

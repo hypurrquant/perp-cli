@@ -409,7 +409,7 @@ export async function startDashboard(
   }
 
   return new Promise((resolve) => {
-    server.listen(port, async () => {
+    server.listen(port, "127.0.0.1", async () => {
       // Start WS feeds (connects to exchange WS APIs)
       await feedMgr!.start();
       // Start arb REST polling (30s cycle)

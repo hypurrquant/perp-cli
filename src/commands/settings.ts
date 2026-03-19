@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { printJson, jsonOk, withJsonErrors } from "../utils.js";
+import { printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import { loadSettings, saveSettings, type Settings, type ExchangeFees } from "../settings.js";
 import type { ExchangeAdapter } from "../exchanges/index.js";
 import { ENV_FILE, loadEnvFile, setEnvVar, EXCHANGE_ENV_MAP, validateKey } from "./init.js";
@@ -80,6 +80,7 @@ export function registerSettingsCommands(
           if (isJson()) return printJson(jsonOk({ referrals: false }));
           console.log(chalk.yellow("\n  Referrals disabled. No codes will be sent.\n"));
         } else {
+          if (isJson()) return printJson(jsonError("INVALID_ARGS", `Invalid action "${action}". Usage: perp settings referrals <on|off>`));
           console.error(chalk.red(`\n  Usage: perp settings referrals <on|off>\n`));
         }
       });

@@ -109,7 +109,8 @@ export function getLiquidationDistances(
       const liquidationPrice = Number(p.liquidationPrice);
       const distancePct = calcLiquidationDistance(markPrice, liquidationPrice, p.side);
       let status: LiquidationDistanceInfo["status"] = "safe";
-      if (distancePct < lim.minLiquidationDistance) status = "danger";
+      if (distancePct < lim.minLiquidationDistance * 0.3) status = "critical";
+      else if (distancePct < lim.minLiquidationDistance) status = "danger";
       else if (distancePct < lim.minLiquidationDistance * 1.5) status = "warning";
       return { exchange, symbol: p.symbol, side: p.side, markPrice, liquidationPrice, distancePct, status };
     })

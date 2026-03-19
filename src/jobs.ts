@@ -177,7 +177,7 @@ function buildEnvString(): string {
   ];
   const parts: string[] = [];
   for (const k of keys) {
-    if (process.env[k]) parts.push(`${k}='${process.env[k]}'`);
+    if (process.env[k]) parts.push(`${k}='${process.env[k]!.replace(/'/g, "'\"'\"'")}'`);
   }
   return parts.join(" ");
 }

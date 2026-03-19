@@ -14,6 +14,8 @@ interface BotState {
   equity: number;
   peakEquity: number;
   dailyPnl: number;
+  dailyStartEquity: number;
+  dailyStartDate: string; // YYYY-MM-DD for daily reset
   fills: number;
   totalPnl: number;
   rebalanceCount: number;
@@ -44,6 +46,8 @@ export async function runBot(
     equity: 0,
     peakEquity: 0,
     dailyPnl: 0,
+    dailyStartEquity: 0,
+    dailyStartDate: new Date().toISOString().slice(0, 10),
     fills: 0,
     totalPnl: 0,
     rebalanceCount: 0,
@@ -80,6 +84,7 @@ export async function runBot(
     const bal = await adapter.getBalance();
     state.equity = parseFloat(bal.equity);
     state.peakEquity = state.equity;
+    state.dailyStartEquity = state.equity;
     log(`  Starting equity: $${state.equity.toFixed(2)}`);
   } catch {
     log(chalk.yellow(`  Could not fetch initial balance`));
@@ -100,7 +105,13 @@ export async function runBot(
           const bal = await adapter.getBalance();
           state.equity = parseFloat(bal.equity);
           if (state.equity > state.peakEquity) state.peakEquity = state.equity;
-          state.dailyPnl = state.equity - state.peakEquity; // simplified
+          // Reset daily baseline at day boundary
+          const today = new Date().toISOString().slice(0, 10);
+          if (today !== state.dailyStartDate) {
+            state.dailyStartEquity = state.equity;
+            state.dailyStartDate = today;
+          }
+          state.dailyPnl = state.equity - state.dailyStartEquity;
         } catch { /* non-critical */ }
 
         const context = {
@@ -144,12 +155,15 @@ export async function runBot(
 
           // Check risk limits
           const drawdown = state.peakEquity - state.equity;
-          const riskBreached = drawdown > config.risk.max_drawdown;
+          const dailyLossBreached = state.dailyPnl < -config.risk.max_daily_loss;
+          const riskBreached = drawdown > config.risk.max_drawdown || dailyLossBreached;
 
           if (shouldExit || riskBreached) {
-            const reason = riskBreached
-              ? `drawdown $${drawdown.toFixed(2)} > limit $${config.risk.max_drawdown}`
-              : "exit condition met";
+            const reason = dailyLossBreached
+              ? `daily loss $${Math.abs(state.dailyPnl).toFixed(2)} > limit $${config.risk.max_daily_loss}`
+              : drawdown > config.risk.max_drawdown
+                ? `drawdown $${drawdown.toFixed(2)} > limit $${config.risk.max_drawdown}`
+                : "exit condition met";
             log(chalk.yellow(`  ⚠ Exiting: ${reason}`));
             state.phase = "exiting";
           } else {
@@ -324,6 +338,7 @@ async function placeGridOrders(
   currentPrice: number,
   log: BotLog,
 ) {
+  if (params.grids < 2) throw new Error("Grid requires at least 2 grid lines");
   const step = (state.gridUpper - state.gridLower) / (params.grids - 1);
   const sizePerGrid = params.size / params.grids;
   let placed = 0;
@@ -364,6 +379,7 @@ async function manageGrid(
   snapshot: MarketSnapshot,
   log: BotLog,
 ) {
+  if (params.grids < 2) throw new Error("Grid requires at least 2 grid lines");
   const step = (state.gridUpper - state.gridLower) / (params.grids - 1);
   const sizePerGrid = params.size / params.grids;
 
@@ -374,9 +390,22 @@ async function manageGrid(
       openOrders.filter(o => o.symbol.toUpperCase() === symbol.toUpperCase()).map(o => o.orderId)
     );
 
+    // Build filled order IDs from order history for accurate fill detection
+    let filledIds: Set<string> | null = null;
+    try {
+      const history = await adapter.getOrderHistory(100);
+      filledIds = new Set(history.filter(o => o.status === "filled").map(o => o.orderId));
+    } catch { /* non-critical — fall back to assuming fills */ }
+
     let newFills = 0;
     for (const [idx, orderId] of state.gridOrders.entries()) {
       if (!openIds.has(orderId)) {
+        // Verify the order was actually filled (not just cancelled)
+        if (filledIds && !filledIds.has(orderId)) {
+          log(chalk.yellow(`  [GRID] Order ${orderId} missing — likely cancelled, skipping`));
+          state.gridOrders.delete(idx);
+          continue;
+        }
         // Order filled — place opposite order
         newFills++;
         state.fills++;

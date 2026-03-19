@@ -179,7 +179,7 @@ export async function runGrid(
           const bal = await adapter.getBalance();
           const equity = parseFloat(bal.equity);
           if (equity > state.peakEquity) state.peakEquity = equity;
-          const drawdown = ((state.peakEquity - equity) / state.peakEquity) * 100;
+          const drawdown = state.peakEquity > 0 ? ((state.peakEquity - equity) / state.peakEquity) * 100 : 0;
           if (drawdown > params.trailingStop) {
             log(`[GRID] Trailing stop triggered (${drawdown.toFixed(1)}% drawdown). Stopping.`);
             break;

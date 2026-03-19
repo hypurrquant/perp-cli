@@ -141,7 +141,6 @@ export function registerTradeCommands(
 
       if (isJson()) return printJson(jsonOk(clientId ? { ...result as object, clientOrderId: clientId } : result));
       console.log(chalk.green(`\n  Market ${s.toUpperCase()} ${size} ${symbol.toUpperCase()} placed on ${adapter.name}.${opts.smart ? " (smart)" : ""}${clientId ? ` (id: ${clientId})` : ""}\n`));
-      printJson(jsonOk(result));
     });
 
   // Shortcuts: trade buy / trade sell
@@ -177,7 +176,6 @@ export function registerTradeCommands(
       }
       if (isJson()) return printJson(jsonOk(clientId ? { ...result as object, clientOrderId: clientId } : result));
       console.log(chalk.green(`\n  Market BUY ${size} ${symbol.toUpperCase()} placed on ${adapter.name}.${opts.smart ? " (smart)" : ""}\n`));
-      printJson(jsonOk(result));
     });
 
   trade
@@ -212,7 +210,6 @@ export function registerTradeCommands(
       }
       if (isJson()) return printJson(jsonOk(clientId ? { ...result as object, clientOrderId: clientId } : result));
       console.log(chalk.green(`\n  Market SELL ${size} ${symbol.toUpperCase()} placed on ${adapter.name}.${opts.smart ? " (smart)" : ""}\n`));
-      printJson(jsonOk(result));
     });
 
   // ── Split Order (orderbook-aware) ──
@@ -233,10 +230,8 @@ export function registerTradeCommands(
       if (!["buy", "sell"].includes(orderSide)) errorAndExit("Side must be 'buy' or 'sell'");
       if (isNaN(totalUsd) || totalUsd <= 0) errorAndExit("USD amount must be > 0");
 
-      const exchange = program.opts().exchange ?? "unknown";
-      if (dryRunGuard("split-order", { exchange, symbol: sym, side: orderSide, totalUsd, ...opts })) return;
-
       const adapter = await getAdapter();
+      if (dryRunGuard("split-order", { exchange: adapter.name, symbol: sym, side: orderSide, totalUsd, ...opts })) return;
       const { runSplitOrder } = await import("../strategies/split-order.js");
 
       const result = await runSplitOrder(adapter, {
@@ -321,7 +316,6 @@ export function registerTradeCommands(
 
       if (isJson()) return printJson(jsonOk(clientId ? { ...result as object, clientOrderId: clientId } : result));
       console.log(chalk.green(`\n  Limit ${s.toUpperCase()} ${size} ${symbol.toUpperCase()} @ $${price} placed on ${adapter.name}.${clientId ? ` (id: ${clientId})` : ""}\n`));
-      printJson(jsonOk(result));
     });
 
   trade
@@ -490,7 +484,6 @@ export function registerTradeCommands(
 
       if (isJson()) return printJson(jsonOk(result));
       console.log(chalk.green(`\n  TWAP ${s.toUpperCase()} ${size} ${symbol.toUpperCase()} over ${duration} placed on ${adapter.name}.\n`));
-      printJson(jsonOk(result));
     });
 
   // === Stop / Trigger orders — Pacifica + Hyperliquid ===
@@ -523,7 +516,6 @@ export function registerTradeCommands(
 
       if (isJson()) return printJson(jsonOk(result));
       console.log(chalk.green(`\n  Stop order placed on ${adapter.name}.\n`));
-      printJson(jsonOk(result));
     });
 
   // === TP/SL — Pacifica + Hyperliquid ===

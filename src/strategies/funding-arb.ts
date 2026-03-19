@@ -86,6 +86,11 @@ export async function runFundingArb(
   let cycleCount = 0;
   let lastRebalanceCheck = 0;
 
+  let running = true;
+  const shutdown = () => { running = false; log(`[ARB] Shutdown signal received, finishing current cycle...`); };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+
   log(`[ARB] Funding rate arbitrage started`);
   log(`[ARB] Entry spread: >= ${params.minSpread}% | Close spread: <= ${closeSpread}%`);
   log(`[ARB] Size: ${params.size} | Interval: ${params.intervalSec}s`);
@@ -95,7 +100,8 @@ export async function runFundingArb(
   if (params.maxDrawdown) log(`[ARB] Max drawdown: $${params.maxDrawdown}`);
   if (params.symbols?.length) log(`[ARB] Symbols: ${params.symbols.join(", ")}`);
 
-  while (true) {
+  try {
+  while (running) {
     cycleCount++;
     try {
       const rates = await fetchAllRates();
@@ -313,8 +319,13 @@ export async function runFundingArb(
       log(`[ARB] Cycle error: ${msg}`);
     }
 
-    await sleep(params.intervalSec * 1000);
+    if (running) await sleep(params.intervalSec * 1000);
   }
+  } finally {
+    process.removeListener("SIGINT", shutdown);
+    process.removeListener("SIGTERM", shutdown);
+  }
+  log(`[ARB] Funding rate arbitrage stopped. Positions: ${positions.length}`);
 }
 
 async function closeAllPositions(
