@@ -357,7 +357,7 @@ export class PacificaAdapter implements ExchangeAdapter {
     }));
   }
 
-  async getFundingPayments(limit = 30): Promise<ExchangeFundingPayment[]> {
+  async getFundingPayments(limit = 200): Promise<ExchangeFundingPayment[]> {
     if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp init");
     const raw = await this.client.getFundingAccountHistory(this.account);
     const history = ((raw as Record<string, unknown>).data ?? raw) as Record<string, unknown>[];

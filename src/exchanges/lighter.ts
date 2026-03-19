@@ -749,7 +749,7 @@ export class LighterAdapter implements ExchangeAdapter {
     }));
   }
 
-  async getFundingPayments(limit = 30): Promise<ExchangeFundingPayment[]> {
+  async getFundingPayments(limit = 200): Promise<ExchangeFundingPayment[]> {
     if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp init");
     const raw = await this._getPositionFundingRaw() as Record<string, unknown>;
     const items = (raw.funding ?? []) as Record<string, unknown>[];
