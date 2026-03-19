@@ -1,9 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { printJson, formatUsd, jsonOk } from "../utils.js";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
-import { PacificaAdapter } from "../exchanges/pacifica.js";
-import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
+import { PacificaAdapter, HyperliquidAdapter, type ExchangeAdapter } from "../exchanges/index.js";
 import type { Network } from "../pacifica/index.js";
 import { logExecution } from "../execution-log.js";
 

@@ -1,4 +1,4 @@
-import type { ExchangeAdapter } from "../exchanges/interface.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import type { BotConfig, GridStrategyParams, DCAStrategyParams, FundingArbStrategyParams } from "./config.js";
 import { getMarketSnapshot, evaluateAllConditions, type MarketSnapshot } from "./conditions.js";
 import { updateJobState } from "../jobs.js";

@@ -1,4 +1,4 @@
-import type { ExchangeAdapter } from "../exchanges/interface.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import { updateJobState } from "../jobs.js";
 
 export interface TWAPParams {

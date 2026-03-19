@@ -15,7 +15,7 @@ import {
   getCompoundedAnnualReturn,
   getExchangeCompoundingHours,
 } from "../funding-history.js";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import {
   fetchPacificaPrices, fetchHyperliquidMeta,
   fetchLighterOrderBookDetails, fetchLighterFundingRates,

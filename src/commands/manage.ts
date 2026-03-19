@@ -1,6 +1,5 @@
 import { Command } from "commander";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
-import { PacificaAdapter } from "../exchanges/pacifica.js";
+import { PacificaAdapter, type ExchangeAdapter } from "../exchanges/index.js";
 import { printJson, jsonOk } from "../utils.js";
 import { setEnvVar } from "./init.js";
 import chalk from "chalk";

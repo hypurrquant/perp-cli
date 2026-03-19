@@ -1,7 +1,8 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
-import { startDashboard, type DashboardExchange } from "../dashboard/server.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
+import { startDashboard } from "../dashboard/index.js";
+import type { DashboardExchange } from "../dashboard/index.js";
 
 const KNOWN_HIP3_DEXES = ["xyz", "flx", "hyna", "km", "cash", "vntl"];
 const HL_INFO_URL = "https://api.hyperliquid.xyz/info";

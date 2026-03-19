@@ -7,7 +7,7 @@
  */
 
 import { WebSocket as NodeWebSocket } from "ws";
-import type { ExchangeBalance, ExchangePosition, ExchangeOrder } from "../exchanges/interface.js";
+import type { ExchangeBalance, ExchangePosition, ExchangeOrder } from "../exchanges/index.js";
 import type { DashboardExchange } from "./server.js";
 
 export interface WsFeedState {

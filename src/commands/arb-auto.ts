@@ -1,9 +1,9 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { formatUsd, printJson, jsonOk, makeTable } from "../utils.js";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import { computeExecutableSize } from "../liquidity.js";
-import { computeMatchedSize, computeSpotPerpMatchedSize } from "../arb/sizing.js";
+import { computeMatchedSize, computeSpotPerpMatchedSize } from "../arb/index.js";
 import { computeAnnualSpread, toHourlyRate } from "../funding.js";
 import {
   fetchPacificaPricesRaw, parsePacificaRaw,

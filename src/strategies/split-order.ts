@@ -13,7 +13,7 @@
  *   4. Wait for book to refresh, then repeat
  */
 
-import type { ExchangeAdapter } from "../exchanges/interface.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import { computeExecutableSize } from "../liquidity.js";
 import { logExecution } from "../execution-log.js";
 

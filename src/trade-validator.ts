@@ -1,4 +1,4 @@
-import type { ExchangeAdapter, ExchangeMarketInfo } from "./exchanges/interface.js";
+import type { ExchangeAdapter, ExchangeMarketInfo } from "./exchanges/index.js";
 import { symbolMatch } from "./utils.js";
 import { DEFAULT_TAKER_FEE } from "./constants.js";
 

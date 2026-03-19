@@ -1,4 +1,4 @@
-import type { ExchangeAdapter } from "../exchanges/interface.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 
 /**
  * Calculate the exact same size for both legs of an arb position,

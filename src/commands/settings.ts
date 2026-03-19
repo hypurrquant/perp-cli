@@ -2,7 +2,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { printJson, jsonOk, withJsonErrors } from "../utils.js";
 import { loadSettings, saveSettings, type Settings, type ExchangeFees } from "../settings.js";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import { ENV_FILE, loadEnvFile, setEnvVar, EXCHANGE_ENV_MAP, validateKey } from "./init.js";
 
 // Resolve exchange alias → env var key

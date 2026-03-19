@@ -10,8 +10,8 @@ import type {
   ExchangeFundingPayment,
   ExchangeKline,
 } from "./interface.js";
-import type { SolanaSigner } from "../signer/interface.js";
-import { LocalSolanaSigner } from "../signer/solana-local.js";
+import type { SolanaSigner } from "../signer/index.js";
+import { LocalSolanaSigner } from "../signer/index.js";
 
 export class PacificaAdapter implements ExchangeAdapter {
   readonly name = "pacifica";

@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { formatUsd, makeTable, printJson, jsonOk } from "../utils.js";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import {
   fetchAllBalances,
   computeRebalancePlan,

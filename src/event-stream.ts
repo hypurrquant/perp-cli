@@ -10,7 +10,7 @@ import type {
   ExchangePosition,
   ExchangeOrder,
   ExchangeBalance,
-} from "./exchanges/interface.js";
+} from "./exchanges/index.js";
 
 export type EventType =
   | "position_opened" | "position_closed" | "position_updated"

@@ -1,16 +1,10 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { printJson, jsonOk } from "../utils.js";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
-import { loadBotConfig, quickGridConfig, quickDCAConfig } from "../bot/config.js";
-import { runBot } from "../bot/engine.js";
-import { PRESETS, getPreset, getPresetsByStrategy } from "../bot/presets.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
+import { loadBotConfig, quickGridConfig, quickDCAConfig, runBot, PRESETS, getPreset, getPresetsByStrategy } from "../bot/index.js";
 import { updateJobState } from "../jobs.js";
-import { runTWAP } from "../strategies/twap.js";
-import { runFundingArb } from "../strategies/funding-arb.js";
-import { runGrid } from "../strategies/grid.js";
-import { runDCA } from "../strategies/dca.js";
-import { runTrailingStop } from "../strategies/trailing-stop.js";
+import { runTWAP, runFundingArb, runGrid, runDCA, runTrailingStop } from "../strategies/index.js";
 
 export function registerBotCommands(
   program: Command,

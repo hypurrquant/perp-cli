@@ -1,7 +1,5 @@
 import { Command } from "commander";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
-import { PacificaAdapter } from "../exchanges/pacifica.js";
-import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
+import { PacificaAdapter, HyperliquidAdapter, type ExchangeAdapter } from "../exchanges/index.js";
 import { makeTable, formatUsd, formatPercent, printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import chalk from "chalk";
 

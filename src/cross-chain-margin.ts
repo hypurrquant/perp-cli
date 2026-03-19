@@ -6,7 +6,7 @@
  * - Auto-size computation based on orderbook depth and margin limits
  */
 
-import type { ExchangeAdapter } from "./exchanges/interface.js";
+import type { ExchangeAdapter } from "./exchanges/index.js";
 import { computeExecutableSize } from "./liquidity.js";
 import { loadRiskLimits } from "./risk.js";
 

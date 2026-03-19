@@ -1,7 +1,5 @@
 import { Command } from "commander";
-import type { ExchangeAdapter, ExchangeBalance, ExchangePosition, ExchangeOrder } from "../exchanges/interface.js";
-import { PacificaAdapter } from "../exchanges/pacifica.js";
-import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
+import { PacificaAdapter, HyperliquidAdapter, type ExchangeAdapter, type ExchangeBalance, type ExchangePosition, type ExchangeOrder } from "../exchanges/index.js";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk, jsonError, symbolMatch, withJsonErrors } from "../utils.js";
 import chalk from "chalk";
 import { assessRisk, type RiskLevel, type RiskViolation } from "../risk.js";

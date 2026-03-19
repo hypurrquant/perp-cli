@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { resolve } from "path";
-import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "./exchanges/interface.js";
+import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "./exchanges/index.js";
 
 // ── Risk Configuration ──
 

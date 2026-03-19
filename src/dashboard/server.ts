@@ -7,7 +7,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { WebSocketServer, WebSocket } from "ws";
-import type { ExchangeAdapter, ExchangeBalance, ExchangePosition, ExchangeOrder, ExchangeMarketInfo } from "../exchanges/interface.js";
+import type { ExchangeAdapter, ExchangeBalance, ExchangePosition, ExchangeOrder, ExchangeMarketInfo } from "../exchanges/index.js";
 import { getUI } from "./ui.js";
 import { WsFeedManager, type WsFeedState } from "./ws-feeds.js";
 

@@ -9,8 +9,8 @@ import type {
   ExchangeFundingPayment,
   ExchangeKline,
 } from "./interface.js";
-import type { EvmSigner } from "../signer/interface.js";
-import { LocalEvmSigner } from "../signer/evm-local.js";
+import type { EvmSigner } from "../signer/index.js";
+import { LocalEvmSigner } from "../signer/index.js";
 
 export class HyperliquidAdapter implements ExchangeAdapter {
   readonly name = "hyperliquid";

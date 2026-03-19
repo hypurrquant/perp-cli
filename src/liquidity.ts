@@ -1,5 +1,4 @@
-import type { ExchangeAdapter } from "./exchanges/interface.js";
-import type { SpotAdapter } from "./exchanges/spot-interface.js";
+import type { ExchangeAdapter, SpotAdapter } from "./exchanges/index.js";
 
 export interface LiquidityCheck {
   /** Max executable size (base) within slippage tolerance */

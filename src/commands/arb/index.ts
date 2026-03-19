@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk } from "../../utils.js";
-import type { ExchangeAdapter, ExchangePosition } from "../../exchanges/interface.js";
+import { SPOT_PERP_TOKEN_MAP, type ExchangeAdapter, type ExchangePosition, type SpotBalance } from "../../exchanges/index.js";
 import { readExecutionLog, logExecution, type ExecutionRecord } from "../../execution-log.js";
 import { toHourlyRate, computeAnnualSpread } from "../../funding.js";
 import {
@@ -11,8 +11,6 @@ import {
 import { computeBasisRisk } from "../../arb-utils.js";
 import { smartOrder } from "../../smart-order.js";
 import { removePosition as persistRemovePosition, getPositions as getArbStatePositions, loadArbState } from "../../arb-state.js";
-import { SPOT_PERP_TOKEN_MAP } from "../../exchanges/spot-interface.js";
-import type { SpotBalance } from "../../exchanges/spot-interface.js";
 import { fetchAllBalances, computeRebalancePlan } from "../../rebalance.js";
 import { EXCHANGE_TO_CHAIN, getBestQuote } from "../../bridge-engine.js";
 import { computeEnhancedStats, type ArbTradeForStats } from "../../arb-history-stats.js";

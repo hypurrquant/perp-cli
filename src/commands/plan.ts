@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { readFileSync } from "fs";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import { printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import { validatePlan, executePlan, type ExecutionPlan } from "../plan-executor.js";
 import chalk from "chalk";

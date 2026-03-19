@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { printJson, jsonOk } from "../utils.js";
 import { ERROR_CODES } from "../errors.js";
 import chalk from "chalk";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 
 const _require = createRequire(import.meta.url);
 const _pkg = _require("../../package.json") as { version: string };

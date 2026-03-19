@@ -12,7 +12,7 @@ import {
   fetchLighterOrderBookDetails, fetchLighterFundingRates as fetchLtFundingRates,
 } from "../shared-api.js";
 import { getHistoricalAverages, type HistoricalAverages } from "./history.js";
-import { SPOT_PERP_TOKEN_MAP, MAX_PRICE_DEVIATION_PCT } from "../exchanges/spot-interface.js";
+import { SPOT_PERP_TOKEN_MAP, MAX_PRICE_DEVIATION_PCT } from "../exchanges/index.js";
 
 // ── API URLs (centralized in shared-api.ts) ──
 

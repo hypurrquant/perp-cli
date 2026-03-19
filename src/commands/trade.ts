@@ -1,8 +1,5 @@
 import { Command } from "commander";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
-import { PacificaAdapter } from "../exchanges/pacifica.js";
-import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
-import { LighterAdapter } from "../exchanges/lighter.js";
+import { PacificaAdapter, HyperliquidAdapter, LighterAdapter, type ExchangeAdapter } from "../exchanges/index.js";
 import { printJson, errorAndExit, withJsonErrors, jsonOk, jsonError, symbolMatch, formatUsd } from "../utils.js";
 import { logExecution } from "../execution-log.js";
 import { validateTrade } from "../trade-validator.js";

@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import { printJson, jsonOk, makeTable, formatUsd, withJsonErrors } from "../utils.js";
 import { loadRiskLimits, saveRiskLimits, assessRisk, getLiquidationDistances, type RiskLimits } from "../risk.js";
 import { pingPacifica, pingHyperliquid, pingLighter } from "../shared-api.js";

@@ -19,7 +19,7 @@
  * Fallback: if the IOC limit fails, falls back to market order.
  */
 
-import type { ExchangeAdapter } from "./exchanges/interface.js";
+import type { ExchangeAdapter } from "./exchanges/index.js";
 
 export interface SmartOrderOpts {
   /** Extra ticks of tolerance beyond best price. Default: 1 */

@@ -1,4 +1,4 @@
-import type { ExchangeAdapter } from "../exchanges/interface.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import { symbolMatch } from "../utils.js";
 import { updateJobState } from "../jobs.js";
 import { fetchAllBalances, computeRebalancePlan, hasEnoughBalance, type ExchangeBalanceSnapshot } from "../rebalance.js";
