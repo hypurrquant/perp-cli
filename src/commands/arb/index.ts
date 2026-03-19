@@ -432,24 +432,32 @@ export function registerArbManageCommands(
             const perpNotional = shortPos.size * shortPos.markPrice;
             const spotValueUsd = spotAmount * shortPos.markPrice; // approx using perp mark price
 
-            // Funding income: spot has 0 funding, perp short receives when rate > 0
-            let estimatedFundingIncome = 0;
-            if (holdDurationMs && hourlyRate !== 0) {
-              const holdHours = holdDurationMs / (1000 * 60 * 60);
-              // Short position: pays when rate < 0, receives when rate > 0
-              estimatedFundingIncome = Math.abs(hourlyRate) * perpNotional * holdHours;
-              if (hourlyRate < 0) estimatedFundingIncome = -estimatedFundingIncome;
+            // Funding income: fetch actual payments from exchange API
+            let actualFundingIncome = 0;
+            try {
+              const perpAdapter = await getAdapterForExchange(shortPos.exchange);
+              const payments = await perpAdapter.getFundingPayments(200);
+              const entryTime = persisted ? new Date(persisted.entryTime).getTime() : (holdDurationMs ? Date.now() - holdDurationMs : 0);
+              for (const p of payments) {
+                if (p.symbol.toUpperCase().includes(perpSymbol) && p.time >= entryTime) {
+                  actualFundingIncome += Number(p.payment);
+                }
+              }
+            } catch {
+              // Fallback to estimate if API fails
+              if (holdDurationMs && hourlyRate !== 0) {
+                const holdHours = holdDurationMs / (1000 * 60 * 60);
+                actualFundingIncome = Math.abs(hourlyRate) * perpNotional * holdHours;
+                if (hourlyRate < 0) actualFundingIncome = -actualFundingIncome;
+              }
             }
-            // Add persisted accumulated funding
-            if (persisted?.accumulatedFunding) {
-              estimatedFundingIncome += persisted.accumulatedFunding;
-            }
+            const estimatedFundingIncome = actualFundingIncome;
 
-            // Fees: spot buy + spot sell + perp short entry + perp buy to close
+            // Fees: entry only (exit not yet paid)
             const { getTakerFee } = await import("../../constants.js");
             const spotFee = getTakerFee(spotEx);
             const perpFee = getTakerFee(shortPos.exchange);
-            const totalFees = (spotValueUsd * spotFee * 2) + (perpNotional * perpFee * 2);
+            const entryFees = (spotValueUsd * spotFee) + (perpNotional * perpFee);
 
             const direction = hourlyRate >= 0 ? "long-spot-short-perp" as const : "sell-spot-long-perp" as const;
             const dailyFundingEstimate = Math.abs(hourlyRate) * perpNotional * 24;
@@ -474,8 +482,8 @@ export function registerArbManageCommands(
               holdDuration,
               holdDurationMs,
               estimatedFundingIncome,
-              estimatedFees: totalFees,
-              netPnl: (spotValueUsd - shortPos.entryPrice * spotAmount) + shortPos.unrealizedPnl + estimatedFundingIncome - totalFees,
+              estimatedFees: entryFees,
+              netPnl: (spotValueUsd - shortPos.entryPrice * spotAmount) + shortPos.unrealizedPnl + estimatedFundingIncome - entryFees,
               dailyFundingEstimate,
             });
           }
