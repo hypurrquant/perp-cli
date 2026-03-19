@@ -770,18 +770,21 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     }));
   }
 
-  async getFundingPayments(limit = 30): Promise<ExchangeFundingPayment[]> {
+  async getFundingPayments(limit = 200): Promise<ExchangeFundingPayment[]> {
     this.ensureAddress();
-    const now = Date.now();
-    const history = await this.client.info.perpetuals.getUserFunding(this._address, now - 7 * 24 * 60 * 60 * 1000);
-    return (history as unknown as Record<string, unknown>[] ?? []).slice(0, limit).map((h) => {
-      const delta = (h.delta ?? {}) as Record<string, unknown>;
-      return {
-        time: Number(h.time ?? 0),
-        symbol: String(delta.coin ?? ""),
-        payment: String(delta.usdc ?? "0"),
-      };
+    // Direct API call — SDK's getUserFunding silently truncates results
+    const apiUrl = this._testnet ? "https://api.hyperliquid-testnet.xyz/info" : "https://api.hyperliquid.xyz/info";
+    const res = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "userFunding", user: this._address, startTime: Date.now() - 7 * 24 * 60 * 60 * 1000 }),
     });
+    const data = await res.json() as { time: number; delta: { coin: string; usdc: string } }[];
+    return (data ?? []).slice(0, limit).map((h) => ({
+      time: h.time,
+      symbol: h.delta.coin + "-PERP",
+      payment: h.delta.usdc,
+    }));
   }
 
   async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
