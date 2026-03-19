@@ -93,6 +93,41 @@ async function fetchMarketsPublic(exchange: string) {
   throw new Error(`Unknown exchange: ${exchange}. Supported: pacifica, hyperliquid, lighter`);
 }
 
+/** Fetch orderbook using public API (no key needed) */
+async function fetchOrderbookPublic(exchange: string, symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
+  const ex = exchange.toLowerCase();
+  if (ex === "hyperliquid" || ex === "hl") {
+    const { HYPERLIQUID_API_URL } = await import("./api/public/urls.js");
+    const res = await fetch(HYPERLIQUID_API_URL, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "l2Book", coin: symbol.toUpperCase() }),
+    });
+    const data = await res.json() as { levels: [{ px: string; sz: string }[], { px: string; sz: string }[]] };
+    return {
+      bids: (data.levels?.[0] ?? []).map(l => [l.px, l.sz] as [string, string]),
+      asks: (data.levels?.[1] ?? []).map(l => [l.px, l.sz] as [string, string]),
+    };
+  } else if (ex === "lighter" || ex === "lt") {
+    const { LIGHTER_API_URL } = await import("./api/public/urls.js");
+    const res = await fetch(`${LIGHTER_API_URL}/api/v1/orderBookOrders?market_id=0&limit=20`);
+    const data = await res.json() as { bids?: { price: string; remaining_base_amount?: string; size?: string }[]; asks?: { price: string; remaining_base_amount?: string; size?: string }[] };
+    return {
+      bids: (data.bids ?? []).map(l => [l.price, l.remaining_base_amount ?? l.size ?? "0"] as [string, string]),
+      asks: (data.asks ?? []).map(l => [l.price, l.remaining_base_amount ?? l.size ?? "0"] as [string, string]),
+    };
+  } else if (ex === "pacifica" || ex === "pac") {
+    const { PACIFICA_API_URL } = await import("./api/public/urls.js");
+    const baseUrl = PACIFICA_API_URL.replace("/info/prices", "");
+    const res = await fetch(`${baseUrl}/info/l2Book?symbol=${symbol.toUpperCase()}`);
+    const data = await res.json() as { l?: [{ p: string; a: string }[], { p: string; a: string }[]] };
+    return {
+      bids: (data.l?.[0] ?? []).map(e => [e.p, e.a] as [string, string]),
+      asks: (data.l?.[1] ?? []).map(e => [e.p, e.a] as [string, string]),
+    };
+  }
+  throw new Error(`Unknown exchange: ${exchange}`);
+}
+
 // ── JSON envelope helpers ──
 
 function ok(data: unknown, meta?: Record<string, unknown>) {
@@ -146,13 +181,14 @@ server.tool(
   },
   async ({ exchange, symbol }) => {
     try {
-      // Try adapter first, fall back to error with guidance
+      // Try adapter first (richer data), fall back to public API (no key needed)
       const adapter = await tryGetAdapter(exchange);
       if (adapter) {
         const book = await adapter.getOrderbook(symbol);
         return { content: [{ type: "text", text: ok(book, { exchange, symbol }) }] };
       }
-      return { content: [{ type: "text", text: err(`Orderbook requires API key for ${exchange}. Use get_markets or get_prices for keyless market data.`, { exchange, symbol }) }], isError: true };
+      const book = await fetchOrderbookPublic(exchange, symbol);
+      return { content: [{ type: "text", text: ok(book, { exchange, symbol, source: "public" }) }] };
     } catch (e) {
       return { content: [{ type: "text", text: err(e instanceof Error ? e.message : String(e), { exchange, symbol }) }], isError: true };
     }
