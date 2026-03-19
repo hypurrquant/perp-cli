@@ -10,7 +10,11 @@ docs/phases/
 docs/refactoring/
 docs/archive
 docs/report
+docs/type-dep-graph/
+
+scripts/check/
+scripts/type-dep-graph/
 
 CLAUDE.md
-.claude/worktrees/
+.claude/
 GROWTH.md
