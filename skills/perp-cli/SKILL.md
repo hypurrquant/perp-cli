@@ -5,12 +5,29 @@ allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*)"
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.5.1"
+  version: "0.6.1"
 ---
 
 # perp-cli Agent Guide
 
-Multi-DEX perpetual futures CLI — Pacifica (Solana), Hyperliquid (HyperEVM), Lighter (Ethereum).
+Multi-DEX perpetual futures CLI + MCP server — Pacifica (Solana), Hyperliquid (HyperEVM), Lighter (Ethereum).
+
+[![Glama MCP server](https://glama.ai/mcp/servers/hypurrquant/perp-cli/badges/score.svg)](https://glama.ai/mcp/servers/hypurrquant/perp-cli)
+
+## MCP Server
+
+18 tools, 3 resources, 2 prompts. No API keys required for market data — explore prices, orderbooks, funding rates, and arb opportunities without setup.
+
+```json
+{
+  "mcpServers": {
+    "perp-cli": {
+      "command": "npx",
+      "args": ["-y", "-p", "perp-cli", "perp-mcp"]
+    }
+  }
+}
+```
 
 ## Rules
 
@@ -24,7 +41,7 @@ Multi-DEX perpetual futures CLI — Pacifica (Solana), Hyperliquid (HyperEVM), L
 ## Install
 
 ```bash
-perp --version 2>/dev/null  # check if exists (must be >= 0.5.1)
+perp --version 2>/dev/null  # check if exists (must be >= 0.6.1)
 npm install -g perp-cli@latest 2>/dev/null || npx -y perp-cli@latest --json --version
 ```
 

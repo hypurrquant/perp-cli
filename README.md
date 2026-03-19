@@ -160,24 +160,36 @@ Global flags: `--json`, `--fields <f>`, `--ndjson`, `--dry-run`, `--dex <name>` 
 
 ## MCP Server
 
+[![Glama MCP server](https://glama.ai/mcp/servers/hypurrquant/perp-cli/badges/score.svg)](https://glama.ai/mcp/servers/hypurrquant/perp-cli)
+
 perp-cli includes a full-featured MCP server (18 tools, 3 resources, 2 prompts) for Claude Desktop, Cursor, and other MCP clients.
+
+**No API keys required for market data** — explore prices, orderbooks, funding rates, and arb opportunities without any setup. Add keys only when you want to trade.
 
 ```json
 {
   "mcpServers": {
     "perp-cli": {
       "command": "npx",
-      "args": ["-y", "-p", "perp-cli", "perp-mcp"],
-      "env": {
-        "HYPERLIQUID_PRIVATE_KEY": "your-evm-key",
-        "PACIFICA_PRIVATE_KEY": "your-solana-key"
-      }
+      "args": ["-y", "-p", "perp-cli", "perp-mcp"]
     }
   }
 }
 ```
 
-**Tools:** market data, portfolio, orderbook, funding rates, arb scanning, trade preview/execute (with dry-run safety), funding analysis, PnL analysis, arb comparison.
+Optional: add keys for trading and account data:
+```json
+{
+  "env": {
+    "HYPERLIQUID_PRIVATE_KEY": "your-evm-key",
+    "PACIFICA_PRIVATE_KEY": "your-solana-key"
+  }
+}
+```
+
+**Read-only tools (no keys):** `get_markets`, `get_orderbook`, `get_funding_rates`, `get_prices`, `arb_scan`, `health_check`
+
+**Account & trading tools (keys required):** `get_balance`, `get_positions`, `portfolio`, `trade_preview`, `trade_execute`, `trade_close`, `get_funding_analysis`, `get_pnl_analysis`, `get_arb_compare`
 
 **Resources:** `market://prices`, `market://funding-rates`, `perp://schema`
 
