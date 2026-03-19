@@ -21,11 +21,6 @@ export interface AccountSettings {
   leverage: number;
 }
 
-export interface SubaccountInfo {
-  subaccount_name: string;
-  subaccount_address: string;
-}
-
 export interface TransferFundsParams {
   from_account: string;
   to_account: string;
@@ -40,9 +35,4 @@ export interface WithdrawParams {
 export interface UpdateLeverageParams {
   symbol: string;
   leverage: number;
-}
-
-export interface UpdateMarginModeParams {
-  symbol: string;
-  is_isolated: boolean;
 }

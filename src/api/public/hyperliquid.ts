@@ -3,7 +3,7 @@ import { withCache, TTL_MARKET } from "../../cache.js";
 
 // ── Types ──
 
-export interface HyperliquidAsset {
+interface HyperliquidAsset {
   symbol: string;
   funding: number;
   markPx: number;
@@ -63,16 +63,6 @@ export function parseHyperliquidMetaRaw(raw: unknown): { rates: Map<string, numb
     if (mp > 0) prices.set(sym, mp);
   });
   return { rates, prices };
-}
-
-export function fetchHyperliquidAllMids(): Promise<Record<string, string>> {
-  return withCache("pub:hl:allMids", TTL_MARKET, async () => {
-    try {
-      return await hlPost("allMids") as Record<string, string>;
-    } catch {
-      return {};
-    }
-  });
 }
 
 export function fetchHyperliquidAllMidsRaw(): Promise<unknown> {

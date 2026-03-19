@@ -14,7 +14,6 @@ const CACHE_DIR = join(tmpdir(), "perp-cli-cache");
 // TTL presets
 export const TTL_ACCOUNT = 5_000;   // 5s — balance, positions, orders
 export const TTL_MARKET = 30_000;   // 30s — funding rates, prices, markets
-export const TTL_META = 300_000;    // 5min — dex universe, static metadata
 
 interface CacheEntry<T = unknown> {
   ts: number;

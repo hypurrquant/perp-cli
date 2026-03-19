@@ -20,11 +20,6 @@ export const TESTNET_CENTRAL_STATE = "2zPRq1Qvdq5A4Ld6WsH7usgCge4ApZRYfhhf5VAjfX
 export const TESTNET_PACIFICA_VAULT = "5SDFdHZGTZbyRYu54CgmRkCGnPHC5pYaN27p7XGLqnBs";
 export const TESTNET_USDC_MINT = "USDPqRbLidFGufty2s3oizmDEKdqx7ePTqzDMbf5ZKM";
 
-// Standard Solana Program IDs
-export const SYSTEM_PROGRAM_ID = "11111111111111111111111111111111";
-export const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
-export const ASSOCIATED_TOKEN_PROGRAM_ID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
-
 // Signing defaults
 export const DEFAULT_EXPIRY_WINDOW = 5000; // 5 seconds
 

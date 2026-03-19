@@ -1,4 +1,4 @@
-import type { ExchangeAdapter } from "./exchanges/interface.js";
+import type { ExchangeAdapter } from "./exchanges/index.js";
 
 /**
  * Cross-exchange rebalancing engine.
@@ -154,13 +154,6 @@ export function hasEnoughBalance(
   const snap = snapshots.find((s) => s.exchange === exchange);
   if (!snap) return false;
   return snap.available >= requiredUsd * marginBuffer;
-}
-
-/**
- * Get the chain/bridge info for an exchange.
- */
-export function getExchangeChain(exchange: string) {
-  return EXCHANGE_CHAINS[exchange];
 }
 
 /**

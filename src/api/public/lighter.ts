@@ -3,7 +3,7 @@ import { withCache, TTL_MARKET } from "../../cache.js";
 
 // ── Types ──
 
-export interface LighterMarketDetail {
+interface LighterMarketDetail {
   marketId: number;
   symbol: string;
   lastTradePrice: number;

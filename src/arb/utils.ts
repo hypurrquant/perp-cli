@@ -3,7 +3,6 @@
  */
 
 import { toHourlyRate, getFundingHours } from "../funding.js";
-import type { ExchangeAdapter } from "../exchanges/interface.js";
 
 // ── Settlement Timing Strategy ──
 
@@ -128,65 +127,6 @@ export interface BasisRisk {
   shortMarkPrice: number;
   divergencePct: number; // |longPrice - shortPrice| / avgPrice * 100
   warning: boolean;
-}
-
-/**
- * Check basis risk (mark price divergence) for open arb positions.
- * Fetches current mark prices from each exchange and computes divergence.
- */
-export async function checkBasisRisk(
-  positions: Array<{
-    symbol: string;
-    longExchange: string;
-    shortExchange: string;
-  }>,
-  adapters: Map<string, ExchangeAdapter>,
-  maxDivergencePct: number = 3,
-): Promise<BasisRisk[]> {
-  const results: BasisRisk[] = [];
-
-  for (const pos of positions) {
-    const longAdapter = adapters.get(pos.longExchange);
-    const shortAdapter = adapters.get(pos.shortExchange);
-    if (!longAdapter || !shortAdapter) continue;
-
-    try {
-      const [longMarkets, shortMarkets] = await Promise.all([
-        longAdapter.getMarkets(),
-        shortAdapter.getMarkets(),
-      ]);
-
-      const longMarket = longMarkets.find(
-        m => m.symbol.replace("-PERP", "").toUpperCase() === pos.symbol.toUpperCase()
-      );
-      const shortMarket = shortMarkets.find(
-        m => m.symbol.replace("-PERP", "").toUpperCase() === pos.symbol.toUpperCase()
-      );
-
-      if (!longMarket || !shortMarket) continue;
-
-      const longPrice = Number(longMarket.markPrice);
-      const shortPrice = Number(shortMarket.markPrice);
-      if (longPrice <= 0 || shortPrice <= 0) continue;
-
-      const avgPrice = (longPrice + shortPrice) / 2;
-      const divergencePct = Math.abs(longPrice - shortPrice) / avgPrice * 100;
-
-      results.push({
-        symbol: pos.symbol,
-        longExchange: pos.longExchange,
-        shortExchange: pos.shortExchange,
-        longMarkPrice: longPrice,
-        shortMarkPrice: shortPrice,
-        divergencePct,
-        warning: divergencePct >= maxDivergencePct,
-      });
-    } catch {
-      // Skip positions where we can't fetch prices
-    }
-  }
-
-  return results;
 }
 
 /**

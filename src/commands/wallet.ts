@@ -71,12 +71,6 @@ export function getWalletKeyByName(name: string): string | null {
   return store.wallets[name]?.privateKey ?? null;
 }
 
-/** Get all wallet names. */
-export function getWalletNames(): string[] {
-  const store = loadStore();
-  return Object.keys(store.wallets);
-}
-
 // ── Balance helpers ───────────────────────────────────────────
 
 interface TokenBalance {

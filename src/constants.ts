@@ -2,7 +2,7 @@
  * Shared constants for perp-cli.
  */
 
-import { loadSettings, type ExchangeFees } from "./settings.js";
+import { loadSettings } from "./settings.js";
 
 /** Default taker fee per exchange (as fraction, e.g. 0.00035 = 0.035%) */
 export const TAKER_FEES: Record<string, number> = {
@@ -33,11 +33,6 @@ export function getMakerFee(exchange: string): number {
     }
   } catch { /* fallback */ }
   return 0;
-}
-
-/** Get full fee info for an exchange. */
-export function getExchangeFees(exchange: string): ExchangeFees {
-  return { taker: getTakerFee(exchange), maker: getMakerFee(exchange) };
 }
 
 /** Default taker fee for single-exchange use (when exchange is unknown). */

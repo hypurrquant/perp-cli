@@ -3,7 +3,7 @@ import { withCache, TTL_MARKET } from "../../cache.js";
 
 // ── Types ──
 
-export interface PacificaAsset {
+interface PacificaAsset {
   symbol: string;
   funding: number;
   mark: number;

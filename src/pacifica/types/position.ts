@@ -12,16 +12,3 @@ export interface Position {
   leverage: number;
   created_at: number;
 }
-
-export interface PositionTPSL {
-  symbol: string;
-  side: Side;
-  take_profit?: {
-    stop_price: string;
-    limit_price?: string;
-    amount?: string;
-  };
-  stop_loss?: {
-    stop_price: string;
-  };
-}
