@@ -1069,9 +1069,66 @@ export function registerAccountCommands(
             ? opts.exchange.split(",").map(e => e.trim())
             : [...EXCHANGES];
 
-          const snapshots = await Promise.all(
-            exchanges.map(ex => fetchExchangeSnapshot(ex, getAdapterForExchange)),
-          );
+          // Fetch snapshots + funding + spot ALL in parallel
+          const fundingByExSym = new Map<string, number>();
+          const spotRows: string[][] = [];
+          let totalSpotValue = 0;
+
+          const [snapshots] = await Promise.all([
+            // Phase 1: balance + positions + orders
+            Promise.all(exchanges.map(ex => fetchExchangeSnapshot(ex, getAdapterForExchange))),
+            // Phase 2: funding payments (parallel with Phase 1)
+            Promise.allSettled(exchanges.map(async (exName) => {
+              try {
+                const adapter = await getAdapterForExchange(exName);
+                const payments = await adapter.getFundingPayments(200);
+                for (const p of payments) {
+                  const sym = p.symbol.replace("-PERP", "").toUpperCase();
+                  const key = `${exName}:${sym}`;
+                  fundingByExSym.set(key, (fundingByExSym.get(key) ?? 0) + Number(p.payment));
+                }
+              } catch { /* skip */ }
+            })),
+            // Phase 3: spot balances (parallel with Phase 1+2)
+            Promise.allSettled(exchanges.map(async (exName) => {
+              try {
+                const adapter = await getAdapterForExchange(exName);
+                if (exName === "hyperliquid") {
+                  const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+                  const hlSpot = new HyperliquidSpotAdapter(adapter as HyperliquidAdapter);
+                  await hlSpot.init();
+                  const bals = await hlSpot.getSpotBalances();
+                  const markets = await hlSpot.getSpotMarkets();
+                  const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
+                  for (const b of bals) {
+                    const base = b.token.replace(/-SPOT$/i, "").toUpperCase();
+                    if (base === "USDC" || Number(b.total) <= 0) continue;
+                    const price = priceMap.get(base) ?? 0;
+                    const value = price * Number(b.total);
+                    if (value < 1) continue;
+                    totalSpotValue += value;
+                    spotRows.push([chalk.white.bold(base), chalk.gray("hyperliquid"), b.total, `$${formatUsd(price)}`, `$${formatUsd(value)}`]);
+                  }
+                } else if (exName === "lighter") {
+                  const { LighterAdapter } = await import("../exchanges/lighter.js");
+                  const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");
+                  const ltSpot = new LighterSpotAdapter(adapter as InstanceType<typeof LighterAdapter>);
+                  await ltSpot.init();
+                  const bals = await ltSpot.getSpotBalances();
+                  const markets = await ltSpot.getSpotMarkets();
+                  const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
+                  for (const b of bals) {
+                    if (b.token === "USDC" || b.token === "USDC_SPOT" || Number(b.total) <= 0) continue;
+                    const price = priceMap.get(b.token.toUpperCase()) ?? 0;
+                    const value = price * Number(b.total);
+                    if (value < 1) continue;
+                    totalSpotValue += value;
+                    spotRows.push([chalk.white.bold(b.token), chalk.gray("lighter"), b.total, `$${formatUsd(price)}`, `$${formatUsd(value)}`]);
+                  }
+                }
+              } catch { /* spot not available */ }
+            })),
+          ]);
 
           const summary = buildSummary(snapshots);
 
@@ -1098,7 +1155,6 @@ export function registerAccountCommands(
               chalk.green("connected"),
             ];
           });
-          // Totals row
           balRows.push([
             chalk.cyan.bold("TOTAL"),
             chalk.cyan.bold(`$${formatUsd(summary.totalEquity)}`),
@@ -1108,21 +1164,6 @@ export function registerAccountCommands(
             "",
           ]);
           console.log(makeTable(["Exchange", "Equity", "Available", "Margin Used", "uPnL", "Status"], balRows));
-
-          // ── Positions + Funding ──
-          // Fetch funding per exchange in parallel
-          const fundingByExSym = new Map<string, number>();
-          await Promise.allSettled(exchanges.map(async (exName) => {
-            try {
-              const adapter = await getAdapterForExchange(exName);
-              const payments = await adapter.getFundingPayments(200);
-              for (const p of payments) {
-                const sym = p.symbol.replace("-PERP", "").toUpperCase();
-                const key = `${exName}:${sym}`;
-                fundingByExSym.set(key, (fundingByExSym.get(key) ?? 0) + Number(p.payment));
-              }
-            } catch { /* skip */ }
-          }));
 
           if (summary.positions.length > 0) {
             console.log(chalk.white.bold("\n  Open Positions"));
@@ -1152,59 +1193,7 @@ export function registerAccountCommands(
             console.log(chalk.gray("\n  No open positions.\n"));
           }
 
-          // ── Spot Holdings ──
-          const spotRows: string[][] = [];
-          let totalSpotValue = 0;
-          for (const exName of exchanges) {
-            try {
-              const adapter = await getAdapterForExchange(exName);
-              if (exName === "hyperliquid") {
-                const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
-                const hlSpot = new HyperliquidSpotAdapter(adapter as HyperliquidAdapter);
-                await hlSpot.init();
-                const bals = await hlSpot.getSpotBalances();
-                const markets = await hlSpot.getSpotMarkets();
-                const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
-                for (const b of bals) {
-                  const base = b.token.replace(/-SPOT$/i, "").toUpperCase();
-                  if (base === "USDC" || Number(b.total) <= 0) continue;
-                  const price = priceMap.get(base) ?? 0;
-                  const value = price * Number(b.total);
-                  if (value < 1) continue; // skip dust
-                  totalSpotValue += value;
-                  spotRows.push([
-                    chalk.white.bold(base),
-                    chalk.gray("hyperliquid"),
-                    b.total,
-                    `$${formatUsd(price)}`,
-                    `$${formatUsd(value)}`,
-                  ]);
-                }
-              } else if (exName === "lighter") {
-                const { LighterAdapter } = await import("../exchanges/lighter.js");
-                const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");
-                const ltSpot = new LighterSpotAdapter(adapter as InstanceType<typeof LighterAdapter>);
-                await ltSpot.init();
-                const bals = await ltSpot.getSpotBalances();
-                const markets = await ltSpot.getSpotMarkets();
-                const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
-                for (const b of bals) {
-                  if (b.token === "USDC" || b.token === "USDC_SPOT" || Number(b.total) <= 0) continue;
-                  const price = priceMap.get(b.token.toUpperCase()) ?? 0;
-                  const value = price * Number(b.total);
-                  if (value < 1) continue;
-                  totalSpotValue += value;
-                  spotRows.push([
-                    chalk.white.bold(b.token),
-                    chalk.gray("lighter"),
-                    b.total,
-                    `$${formatUsd(price)}`,
-                    `$${formatUsd(value)}`,
-                  ]);
-                }
-              }
-            } catch { /* spot not available */ }
-          }
+          // ── Spot Holdings (already fetched in parallel above) ──
           if (spotRows.length > 0) {
             console.log(chalk.white.bold("\n  Spot Holdings"));
             console.log(makeTable(["Token", "Exchange", "Amount", "Price", "Value"], spotRows));
