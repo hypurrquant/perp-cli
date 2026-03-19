@@ -1109,12 +1109,28 @@ export function registerAccountCommands(
           ]);
           console.log(makeTable(["Exchange", "Equity", "Available", "Margin Used", "uPnL", "Status"], balRows));
 
-          // ── Positions ──
+          // ── Positions + Funding ──
+          // Fetch funding per exchange in parallel
+          const fundingByExSym = new Map<string, number>();
+          await Promise.allSettled(exchanges.map(async (exName) => {
+            try {
+              const adapter = await getAdapterForExchange(exName);
+              const payments = await adapter.getFundingPayments(200);
+              for (const p of payments) {
+                const sym = p.symbol.replace("-PERP", "").toUpperCase();
+                const key = `${exName}:${sym}`;
+                fundingByExSym.set(key, (fundingByExSym.get(key) ?? 0) + Number(p.payment));
+              }
+            } catch { /* skip */ }
+          }));
+
           if (summary.positions.length > 0) {
             console.log(chalk.white.bold("\n  Open Positions"));
             const posRows = summary.positions.map(p => {
               const sideColor = p.side === "long" ? chalk.green : chalk.red;
               const notional = Math.abs(Number(p.size) * Number(p.markPrice));
+              const sym = p.symbol.replace("-PERP", "").toUpperCase();
+              const funding = fundingByExSym.get(`${p.exchange}:${sym}`) ?? 0;
               return [
                 chalk.white.bold(p.symbol),
                 chalk.gray(p.exchange),
@@ -1123,12 +1139,13 @@ export function registerAccountCommands(
                 `$${formatUsd(p.entryPrice)}`,
                 `$${formatUsd(p.markPrice)}`,
                 formatPnl(p.unrealizedPnl),
+                formatPnl(funding),
                 `$${formatUsd(notional)}`,
                 `${p.leverage}x`,
               ];
             });
             console.log(makeTable(
-              ["Symbol", "Exchange", "Side", "Size", "Entry", "Mark", "uPnL", "Notional", "Lev"],
+              ["Symbol", "Exchange", "Side", "Size", "Entry", "Mark", "uPnL", "Funding", "Notional", "Lev"],
               posRows,
             ));
           } else {
@@ -1137,6 +1154,7 @@ export function registerAccountCommands(
 
           // ── Spot Holdings ──
           const spotRows: string[][] = [];
+          let totalSpotValue = 0;
           for (const exName of exchanges) {
             try {
               const adapter = await getAdapterForExchange(exName);
@@ -1153,6 +1171,7 @@ export function registerAccountCommands(
                   const price = priceMap.get(base) ?? 0;
                   const value = price * Number(b.total);
                   if (value < 1) continue; // skip dust
+                  totalSpotValue += value;
                   spotRows.push([
                     chalk.white.bold(base),
                     chalk.gray("hyperliquid"),
@@ -1174,6 +1193,7 @@ export function registerAccountCommands(
                   const price = priceMap.get(b.token.toUpperCase()) ?? 0;
                   const value = price * Number(b.total);
                   if (value < 1) continue;
+                  totalSpotValue += value;
                   spotRows.push([
                     chalk.white.bold(b.token),
                     chalk.gray("lighter"),
@@ -1188,6 +1208,15 @@ export function registerAccountCommands(
           if (spotRows.length > 0) {
             console.log(chalk.white.bold("\n  Spot Holdings"));
             console.log(makeTable(["Token", "Exchange", "Amount", "Price", "Value"], spotRows));
+          }
+
+          // ── Total (perp + spot) ──
+          if (totalSpotValue > 0) {
+            const totalValue = summary.totalEquity + totalSpotValue;
+            console.log(chalk.white.bold("  Total Account Value"));
+            console.log(`    Perp Equity:   $${formatUsd(summary.totalEquity)}`);
+            console.log(`    Spot Value:    $${formatUsd(totalSpotValue)}`);
+            console.log(`    ${chalk.cyan.bold(`Total:         $${formatUsd(totalValue)}`)}`);
           }
 
           // ── Risk Metrics ──
