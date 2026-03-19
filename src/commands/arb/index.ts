@@ -475,7 +475,7 @@ export function registerArbManageCommands(
               holdDurationMs,
               estimatedFundingIncome,
               estimatedFees: totalFees,
-              netPnl: shortPos.unrealizedPnl + estimatedFundingIncome - totalFees,
+              netPnl: (spotValueUsd - shortPos.entryPrice * spotAmount) + shortPos.unrealizedPnl + estimatedFundingIncome - totalFees,
               dailyFundingEstimate,
             });
           }
