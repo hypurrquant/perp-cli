@@ -756,7 +756,7 @@ export class LighterAdapter implements ExchangeAdapter {
     return items.slice(0, limit).map((f) => ({
       time: Number(f.timestamp ?? 0) * 1000,
       symbol: String(f.symbol ?? ""),
-      payment: String(f.amount ?? f.payment ?? "0"),
+      payment: String(f.change ?? f.amount ?? f.payment ?? "0"),
     }));
   }
 
@@ -889,8 +889,10 @@ export class LighterAdapter implements ExchangeAdapter {
         return this.restGetAuth("/positionFunding", {
           account_index: String(this._accountIndex),
           market_id: String(marketId),
+          limit: "100",
+          side: "all",
         }).then((res) => {
-          const items = ((res as Record<string, unknown>).funding ?? (res as Record<string, unknown>).data ?? []) as Record<string, unknown>[];
+          const items = ((res as Record<string, unknown>).position_fundings ?? (res as Record<string, unknown>).funding ?? (res as Record<string, unknown>).data ?? []) as Record<string, unknown>[];
           return items.map((f) => ({ ...f, symbol: f.symbol ?? sym }));
         });
       })
