@@ -64,8 +64,28 @@ export class AsterAdapter implements ExchangeAdapter {
       premiumMap = new Map(premiums.map(p => [String(p.symbol), p]));
     } catch { /* non-critical */ }
 
-    return (info?.symbols ?? [])
-      .filter((s) => String(s.contractType) === "PERPETUAL" && String(s.status) === "TRADING")
+    const tradingSymbols = (info?.symbols ?? [])
+      .filter((s) => String(s.contractType) === "PERPETUAL" && String(s.status) === "TRADING");
+
+    // Fetch open interest per symbol in parallel (batched to avoid overwhelming the API).
+    // The /fapi/v1/ticker/24hr response does NOT include openInterest — need a separate endpoint.
+    const oiMap = new Map<string, string>();
+    const OI_BATCH = 20;
+    for (let i = 0; i < tradingSymbols.length; i += OI_BATCH) {
+      const batch = tradingSymbols.slice(i, i + OI_BATCH);
+      const results = await Promise.allSettled(
+        batch.map(async (s) => {
+          const sym = String(s.symbol);
+          const res = await this._publicGet("/fapi/v1/openInterest", { symbol: sym }) as Record<string, unknown>;
+          return { sym, oi: String(res?.openInterest ?? "0") };
+        }),
+      );
+      for (const r of results) {
+        if (r.status === "fulfilled") oiMap.set(r.value.sym, r.value.oi);
+      }
+    }
+
+    return tradingSymbols
       .map((s) => {
         const sym = String(s.symbol);
         const ticker = tickerMap.get(sym);
@@ -79,7 +99,7 @@ export class AsterAdapter implements ExchangeAdapter {
           indexPrice: String(premium?.indexPrice ?? "0"),
           fundingRate: String(premium?.lastFundingRate ?? "0"),
           volume24h: String(ticker?.quoteVolume ?? ticker?.volume ?? "0"),
-          openInterest: String(ticker?.openInterest ?? "0"),
+          openInterest: oiMap.get(sym) ?? "0",
           maxLeverage: maxLev,
         };
       });
@@ -202,7 +222,12 @@ export class AsterAdapter implements ExchangeAdapter {
     // allOrders requires symbol — get from positions or recent trades
     const positions = await this.getPositions();
     const symbols = new Set(positions.map(p => p.symbol));
-    if (symbols.size === 0) symbols.add("BTCUSDT"); // fallback
+    if (symbols.size === 0) {
+      // Fallback: query the most common perp symbols when no open positions exist
+      for (const s of ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]) {
+        symbols.add(s);
+      }
+    }
 
     const allOrders: ExchangeOrder[] = [];
     for (const sym of symbols) {
