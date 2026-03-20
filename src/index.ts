@@ -59,7 +59,7 @@ program
   .name("perp")
   .description("Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter)")
   .version(_pkg.version)
-  .option("-e, --exchange <exchange>", `Exchange: pacifica, hyperliquid, lighter (default: ${_defaultExchange})`, _defaultExchange)
+  .option("-e, --exchange <exchange>", `Exchange: pacifica, hyperliquid, lighter, aster (default: ${_defaultExchange})`, _defaultExchange)
   .option("-n, --network <network>", "Network: mainnet or testnet", "mainnet")
   .option("-k, --private-key <key>", "Private key")
   .option("--json", "Output raw JSON (for piping)")
@@ -168,6 +168,13 @@ async function getAdapter(): Promise<ExchangeAdapter> {
         }
       }
       _adapter = _lighterAdapter;
+      break;
+    }
+    case "aster": {
+      const { AsterAdapter } = await import("./exchanges/aster.js");
+      const ast = new AsterAdapter(undefined, undefined, isTestnet);
+      await ast.init();
+      _adapter = ast;
       break;
     }
     default:
@@ -288,6 +295,12 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
       }
       if (!_adapter) _adapter = _lighterAdapter;
       return _lighterAdapter;
+    }
+    case "aster": {
+      const { AsterAdapter } = await import("./exchanges/aster.js");
+      const ast = new AsterAdapter(undefined, undefined, isTestnet);
+      await ast.init();
+      return ast;
     }
     default:
       throw new Error(`Unknown exchange: ${exchange}`);
