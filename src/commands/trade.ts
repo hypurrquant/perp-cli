@@ -1,16 +1,12 @@
 import { Command } from "commander";
-import { PacificaAdapter, HyperliquidAdapter, LighterAdapter, type ExchangeAdapter } from "../exchanges/index.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import { printJson, errorAndExit, withJsonErrors, jsonOk, jsonError, symbolMatch, formatUsd } from "../utils.js";
 import { logExecution } from "../execution-log.js";
 import { validateTrade } from "../trade-validator.js";
 import { generateClientId, logClientId, isOrderDuplicate } from "../client-id-tracker.js";
 import { smartOrder } from "../smart-order.js";
 import chalk from "chalk";
-
-function pac(adapter: ExchangeAdapter): PacificaAdapter {
-  if (!(adapter instanceof PacificaAdapter)) throw new Error("This command requires --exchange pacifica");
-  return adapter;
-}
+import { hasPacificaSdk, isTwapCapable, isTpSlCapable, isTriggerOrderCapable, isQueryOrderCapable } from "../exchanges/capabilities.js";
 
 export function registerTradeCommands(
   program: Command,
@@ -440,23 +436,12 @@ export function registerTradeCommands(
 
       const adapter = await getAdapter();
 
-      // Lighter or any exchange without native TWAP → client-side TWAP (foreground)
-      if (adapter instanceof LighterAdapter) {
-        const { runTWAP } = await import("../strategies/twap.js");
-        const result = await runTWAP(adapter, {
-          symbol: symbol.toUpperCase(),
-          side: s as "buy" | "sell",
-          totalSize: parseFloat(size),
-          durationSec: parseInt(duration),
-          slices: opts.slices ? parseInt(opts.slices) : undefined,
-        });
-        if (isJson()) return printJson(jsonOk(result));
-        return;
-      }
-
+      // Native TWAP: Pacifica (SDK) or Hyperliquid (twapOrder)
+      // Fallback: client-side TWAP for any exchange without native support
       let result: unknown;
-      if (adapter instanceof PacificaAdapter) {
-        result = await adapter.sdk.createTWAP(
+      if (hasPacificaSdk(adapter)) {
+        const sdk = adapter.sdk as Record<string, (...args: any[]) => any>;
+        result = await sdk.createTWAP(
           {
             symbol: symbol.toUpperCase(),
             amount: size,
@@ -468,7 +453,7 @@ export function registerTradeCommands(
           adapter.publicKey,
           adapter.signer
         );
-      } else if (adapter instanceof HyperliquidAdapter) {
+      } else if (isTwapCapable(adapter)) {
         const minutes = parseInt(duration);
         if (minutes < 5 || minutes > 1440) errorAndExit("HL TWAP duration must be 5-1440 minutes");
         result = await adapter.twapOrder(
@@ -479,7 +464,17 @@ export function registerTradeCommands(
           { reduceOnly: opts.reduceOnly }
         );
       } else {
-        errorAndExit("TWAP orders require --exchange pacifica, hyperliquid, or lighter");
+        // Client-side TWAP (foreground) for exchanges without native TWAP
+        const { runTWAP } = await import("../strategies/twap.js");
+        const twapResult = await runTWAP(adapter, {
+          symbol: symbol.toUpperCase(),
+          side: s as "buy" | "sell",
+          totalSize: parseFloat(size),
+          durationSec: parseInt(duration),
+          slices: opts.slices ? parseInt(opts.slices) : undefined,
+        });
+        if (isJson()) return printJson(jsonOk(twapResult));
+        return;
       }
 
       if (isJson()) return printJson(jsonOk(result));
@@ -535,7 +530,7 @@ export function registerTradeCommands(
       const adapter = await getAdapter();
       if (dryRunGuard("tpsl", { exchange: adapter.name, symbol: symbol.toUpperCase(), side: s, tp: opts.tp ?? "none", sl: opts.sl ?? "none" })) return;
 
-      if (adapter instanceof PacificaAdapter) {
+      if (hasPacificaSdk(adapter)) {
         // TP/SL side is opposite of position: LONG position → "ask" to close
         const params: Record<string, unknown> = {
           symbol: symbol.toUpperCase(),
@@ -544,14 +539,15 @@ export function registerTradeCommands(
         if (opts.tp) params.take_profit = { stop_price: opts.tp, limit_price: opts.tpLimit };
         if (opts.sl) params.stop_loss = { stop_price: opts.sl };
 
-        const result = await adapter.sdk.setTPSL(
-          params as unknown as Parameters<typeof adapter.sdk.setTPSL>[0],
+        const sdk = adapter.sdk as Record<string, (...args: any[]) => any>;
+        const result = await sdk.setTPSL(
+          params,
           adapter.publicKey,
           adapter.signer
         );
         if (isJson()) return printJson(jsonOk(result));
         console.log(chalk.green(`\n  TP/SL set for ${symbol.toUpperCase()} on Pacifica.\n`));
-      } else if (adapter instanceof HyperliquidAdapter) {
+      } else if (isTriggerOrderCapable(adapter)) {
         // HL uses trigger orders for TP/SL
         const results: unknown[] = [];
         const posSize = opts.size || "0"; // 0 = full position via positionTpsl grouping
@@ -582,8 +578,8 @@ export function registerTradeCommands(
         }
         if (isJson()) return printJson(jsonOk(results));
         console.log(chalk.green(`\n  TP/SL set for ${symbol.toUpperCase()} on Hyperliquid.\n`));
-      } else if (adapter instanceof LighterAdapter) {
-        // Lighter uses triggerPrice in signCreateOrder for TP/SL
+      } else {
+        // Fallback: use stopOrder for TP/SL (Lighter and others)
         const closeSide = s === "buy" ? "sell" : "buy"; // Close opposite side
         const results: unknown[] = [];
         if (opts.tp) {
@@ -609,9 +605,7 @@ export function registerTradeCommands(
           );
         }
         if (isJson()) return printJson(jsonOk(results));
-        console.log(chalk.green(`\n  TP/SL set for ${symbol.toUpperCase()} on Lighter.\n`));
-      } else {
-        errorAndExit("TP/SL requires --exchange pacifica, hyperliquid, or lighter");
+        console.log(chalk.green(`\n  TP/SL set for ${symbol.toUpperCase()} on ${adapter.name}.\n`));
       }
     });
 
@@ -720,11 +714,12 @@ export function registerTradeCommands(
     .description("Cancel a stop order (Pacifica)")
     .action(async (symbol: string, stopOrderId: string) => {
       const adapter = await getAdapter();
-      const p = pac(adapter);
-      const result = await p.sdk.cancelStopOrder(
+      if (!hasPacificaSdk(adapter)) throw new Error("This command requires --exchange pacifica");
+      const sdk = adapter.sdk as Record<string, (...args: any[]) => any>;
+      const result = await sdk.cancelStopOrder(
         { symbol: symbol.toUpperCase(), order_id: Number(stopOrderId) },
-        p.publicKey,
-        p.signer
+        adapter.publicKey,
+        adapter.signer
       );
       if (isJson()) return printJson(jsonOk(result));
       console.log(chalk.green(`\n  Stop order ${stopOrderId} cancelled.\n`));
@@ -737,13 +732,14 @@ export function registerTradeCommands(
       const adapter = await getAdapter();
 
       let result: unknown;
-      if (adapter instanceof PacificaAdapter) {
-        result = await adapter.sdk.cancelTWAP(
+      if (hasPacificaSdk(adapter)) {
+        const sdk = adapter.sdk as Record<string, (...args: any[]) => any>;
+        result = await sdk.cancelTWAP(
           { symbol: symbol.toUpperCase(), twap_order_id: Number(twapOrderId) },
           adapter.publicKey,
           adapter.signer
         );
-      } else if (adapter instanceof HyperliquidAdapter) {
+      } else if (isTwapCapable(adapter)) {
         result = await adapter.twapCancel(symbol.toUpperCase(), Number(twapOrderId));
       } else {
         errorAndExit("Cancel TWAP requires --exchange pacifica or hyperliquid");
@@ -948,7 +944,7 @@ export function registerTradeCommands(
       await withJsonErrors(isJson(), async () => {
         const adapter = await getAdapter();
 
-        if (adapter instanceof HyperliquidAdapter) {
+        if (isQueryOrderCapable(adapter)) {
           const result = await adapter.queryOrder(Number(orderId));
           if (isJson()) return printJson(jsonOk(result));
           const order = (result as Record<string, unknown>)?.order as Record<string, unknown> | undefined;

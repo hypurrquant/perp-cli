@@ -272,14 +272,15 @@ async function executeWithdraw(
   move: RebalanceMove,
   adapters: Map<string, ExchangeAdapter>,
 ): Promise<void> {
+  const { hasPacificaSdk, isWithdrawCapable, hasEvmAddress } = await import("../exchanges/capabilities.js");
   const adapter = adapters.get(move.from);
   if (!adapter) throw new Error(`No adapter for ${move.from}`);
 
-  switch (move.from) {
+  switch (adapter.name) {
     case "pacifica": {
-      const { PacificaAdapter } = await import("../exchanges/pacifica.js");
-      if (!(adapter instanceof PacificaAdapter)) throw new Error("Invalid adapter");
-      await adapter.sdk.withdraw(
+      if (!hasPacificaSdk(adapter)) throw new Error("Invalid adapter");
+      const sdk = adapter.sdk as Record<string, (...args: any[]) => any>;
+      await sdk.withdraw(
         { amount: String(move.amount), dest_address: adapter.publicKey },
         adapter.publicKey,
         adapter.signer,
@@ -287,15 +288,13 @@ async function executeWithdraw(
       break;
     }
     case "hyperliquid": {
-      const { HyperliquidAdapter } = await import("../exchanges/hyperliquid.js");
-      if (!(adapter instanceof HyperliquidAdapter)) throw new Error("Invalid adapter");
+      if (!isWithdrawCapable(adapter) || !hasEvmAddress(adapter)) throw new Error("Invalid adapter");
       await adapter.withdraw(String(move.amount), adapter.address);
       break;
     }
     case "lighter": {
-      const { LighterAdapter } = await import("../exchanges/lighter.js");
-      if (!(adapter instanceof LighterAdapter)) throw new Error("Invalid adapter");
-      await adapter.withdraw(move.amount);
+      if (!isWithdrawCapable(adapter)) throw new Error("Invalid adapter");
+      await adapter.withdraw(String(move.amount), "");
       break;
     }
     default:

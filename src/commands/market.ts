@@ -1,7 +1,8 @@
 import { Command } from "commander";
-import { PacificaAdapter, HyperliquidAdapter, type ExchangeAdapter } from "../exchanges/index.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import { makeTable, formatUsd, formatPercent, printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import chalk from "chalk";
+import { hasPacificaSdk, isDexCapable } from "../exchanges/capabilities.js";
 
 const EXCHANGES = ["pacifica", "hyperliquid", "lighter"] as const;
 
@@ -41,10 +42,10 @@ export function registerMarketCommands(
             const adapter = await getAdapterForExchange(ex);
             grouped[ex] = await adapter.getMarkets();
             // --hip3: fetch HIP-3 dex markets
-            if (opts.hip3 && ex === "hyperliquid" && adapter instanceof HyperliquidAdapter) {
+            if (opts.hip3 && ex === "hyperliquid" && isDexCapable(adapter)) {
               const dexes = await adapter.listDeployedDexes();
               await Promise.allSettled(dexes.map(async (d) => {
-                const dexAdapter = Object.create(adapter) as HyperliquidAdapter;
+                const dexAdapter = Object.create(adapter) as ExchangeAdapter & import("../exchanges/capabilities.js").DexCapable;
                 dexAdapter.setDex(d.name);
                 const markets = await dexAdapter.getMarkets();
                 if (markets.length > 0) grouped[`hip3:${d.name}`] = markets;
@@ -79,10 +80,10 @@ export function registerMarketCommands(
 
       // --hip3: fetch HIP-3 dex markets
       const hip3: Record<string, typeof markets> = {};
-      if (opts.hip3 && adapter instanceof HyperliquidAdapter) {
+      if (opts.hip3 && isDexCapable(adapter)) {
         const dexes = await adapter.listDeployedDexes();
         await Promise.allSettled(dexes.map(async (d) => {
-          const dexAdapter = Object.create(adapter) as HyperliquidAdapter;
+          const dexAdapter = Object.create(adapter) as ExchangeAdapter & import("../exchanges/capabilities.js").DexCapable;
           dexAdapter.setDex(d.name);
           const m = await dexAdapter.getMarkets();
           if (m.length > 0) hip3[d.name] = m;
@@ -145,10 +146,11 @@ export function registerMarketCommands(
 
       const adapter = await getAdapter();
 
-      if (adapter instanceof PacificaAdapter) {
-        const prices = await adapter.sdk.getPrices();
+      if (hasPacificaSdk(adapter)) {
+        const sdk = adapter.sdk as Record<string, (...args: any[]) => any>;
+        const prices = await sdk.getPrices();
         if (isJson()) return printJson(jsonOk(prices));
-        const rows = prices.map((p) => [
+        const rows = (prices as { symbol: string; mark: string; mid: string; oracle: string; funding: string }[]).map((p) => [
           chalk.white.bold(p.symbol),
           `$${formatUsd(p.mark)}`,
           `$${formatUsd(p.mid)}`,
@@ -385,7 +387,7 @@ export function registerMarketCommands(
     .action(async () => {
       await withJsonErrors(isJson(), async () => {
         const adapter = await getAdapter();
-        if (!(adapter instanceof HyperliquidAdapter)) {
+        if (!(isDexCapable(adapter))) {
           if (isJson()) return printJson(jsonError("INVALID_EXCHANGE", "HIP-3 dexes are only available on Hyperliquid. Use -e hyperliquid."));
           console.error(chalk.red("\n  HIP-3 dexes are only available on Hyperliquid. Use -e hyperliquid.\n"));
           return;
