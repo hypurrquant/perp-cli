@@ -16,6 +16,7 @@ import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
 // LighterAdapter is lazy-imported to avoid CJS/ESM issues at startup
 import type { LighterAdapter } from "./exchanges/lighter.js";
 import type { ExchangeAdapter } from "./exchanges/interface.js";
+import { resolveExchangeName } from "./exchanges/registry.js";
 import { registerMarketCommands } from "./commands/market.js";
 import { registerAccountCommands } from "./commands/account.js";
 import { registerTradeCommands } from "./commands/trade.js";
@@ -90,12 +91,7 @@ let _lighterAdapter: LighterAdapter | null = null;
 
 /** Map short aliases to canonical exchange names. Full names pass through. */
 function resolveExchangeAlias(name: string): string {
-  const aliases: Record<string, string> = {
-    hl: "hyperliquid",
-    lt: "lighter",
-    pac: "pacifica",
-  };
-  return aliases[name.toLowerCase()] ?? name.toLowerCase();
+  return resolveExchangeName(name);
 }
 
 function getExchange(): Exchange {

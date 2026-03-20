@@ -14,6 +14,8 @@ import { LocalEvmSigner } from "../signer/index.js";
 
 export class HyperliquidAdapter implements ExchangeAdapter {
   readonly name = "hyperliquid";
+  readonly chain = "evm";
+  readonly aliases = ["hl"] as const;
   private sdk: Hyperliquid;
   private _address: string;
   private _privateKey: string;
@@ -918,7 +920,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Withdraw from Hyperliquid L1 bridge.
    * Python SDK: withdraw_from_bridge(amount, destination) → action type "withdraw3"
    */
-  async withdraw(amount: string, destination: string) {
+  async withdraw(amount: string, destination: string, _opts?: { assetId?: number; routeType?: number }) {
     this.ensureSigner();
     try {
       return await this.sdk.exchange.initiateWithdrawal(destination, parseFloat(amount));

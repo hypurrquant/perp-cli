@@ -1,9 +1,10 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { printJson, formatUsd, jsonOk, jsonError } from "../utils.js";
-import { PacificaAdapter, HyperliquidAdapter, type ExchangeAdapter } from "../exchanges/index.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import type { Network } from "../pacifica/index.js";
 import { logExecution } from "../execution-log.js";
+import { hasPacificaSdk, hasEvmAddress, isWithdrawCapable, isUsdTransferCapable, hasLighterAccount } from "../exchanges/capabilities.js";
 
 const DEFAULT_RELAYER = "http://localhost:3100";
 
@@ -50,14 +51,16 @@ export function registerFundsCommands(
         if (!isJson()) console.log(chalk.cyan(`\n  Depositing $${formatUsd(amountNum)} via relayer (gasless)...\n`));
 
         const adapter = await getAdapter();
-        if (!(adapter instanceof PacificaAdapter)) throw new Error("Requires --exchange pacifica");
+        if (adapter.name !== "pacifica") throw new Error("Requires --exchange pacifica");
+        const { PacificaAdapter } = await import("../exchanges/pacifica.js");
+        const pacAdapter = adapter as InstanceType<typeof PacificaAdapter>;
 
         try {
           const buildRes = await fetch(`${getRelayerUrl()}/deposit/pacifica/build`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              userPubkey: adapter.keypair.publicKey.toBase58(),
+              userPubkey: pacAdapter.keypair.publicKey.toBase58(),
               amount: amountNum,
               testnet: getNetwork() === "testnet",
             }),
@@ -79,7 +82,7 @@ export function registerFundsCommands(
 
           const { Transaction } = await import("@solana/web3.js");
           const tx = Transaction.from(Buffer.from(transaction, "base64"));
-          tx.partialSign(adapter.keypair);
+          tx.partialSign(pacAdapter.keypair);
           const signed = tx.serialize().toString("base64");
 
           const submitRes = await fetch(`${getRelayerUrl()}/deposit/pacifica/submit`, {
@@ -127,7 +130,9 @@ export function registerFundsCommands(
       }
 
       const adapter = await getAdapter();
-      if (!(adapter instanceof PacificaAdapter)) throw new Error("Requires --exchange pacifica");
+      if (adapter.name !== "pacifica") throw new Error("Requires --exchange pacifica");
+      const { PacificaAdapter: PacAdapterCls } = await import("../exchanges/pacifica.js");
+      const pacDirect = adapter as InstanceType<typeof PacAdapterCls>;
 
       try {
         const { Connection, Transaction } = await import("@solana/web3.js");
@@ -136,7 +141,7 @@ export function registerFundsCommands(
         const rpcUrl = network === "testnet" ? "https://api.devnet.solana.com" : "https://api.mainnet-beta.solana.com";
         const connection = new Connection(rpcUrl, "confirmed");
 
-        const solBalance = await connection.getBalance(adapter.keypair.publicKey);
+        const solBalance = await connection.getBalance(pacDirect.keypair.publicKey);
         if (solBalance < 5_000_000) {
           console.error(chalk.red("  Insufficient SOL for gas. Need ~0.005 SOL."));
           console.error(chalk.gray("  Tip: Use relayer for gasless deposits (start relayer server)\n"));
@@ -146,7 +151,7 @@ export function registerFundsCommands(
         const { PublicKey } = await import("@solana/web3.js");
         const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
         const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
-          adapter.keypair.publicKey, { mint: USDC_MINT }
+          pacDirect.keypair.publicKey, { mint: USDC_MINT }
         );
         const usdcBalance = tokenAccounts.value.length > 0
           ? tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount ?? 0
@@ -156,11 +161,11 @@ export function registerFundsCommands(
           process.exit(1);
         }
 
-        const ix = await buildDepositInstruction(adapter.keypair.publicKey, amountNum, network);
+        const ix = await buildDepositInstruction(pacDirect.keypair.publicKey, amountNum, network);
         const tx = new Transaction().add(ix);
-        tx.feePayer = adapter.keypair.publicKey;
+        tx.feePayer = pacDirect.keypair.publicKey;
         tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-        tx.sign(adapter.keypair);
+        tx.sign(pacDirect.keypair);
 
         const sig = await connection.sendRawTransaction(tx.serialize());
         await connection.confirmTransaction(sig, "confirmed");
@@ -545,7 +550,7 @@ export function registerFundsCommands(
       if (isNaN(amountNum) || amountNum <= 0) throw new Error("Invalid amount");
 
       const adapter = await getAdapter();
-      if (!(adapter instanceof PacificaAdapter)) throw new Error("Requires --exchange pacifica");
+      if (!hasPacificaSdk(adapter) || !isWithdrawCapable(adapter)) throw new Error("Requires --exchange pacifica");
 
       const dest = opts.to || adapter.publicKey;
 
@@ -555,11 +560,7 @@ export function registerFundsCommands(
       }
 
       try {
-        const result = await adapter.sdk.withdraw(
-          { amount: String(amountNum), dest_address: dest },
-          adapter.publicKey,
-          adapter.signer
-        );
+        const result = await adapter.withdraw(String(amountNum), dest);
 
         logExecution({
           type: "bridge", exchange: "pacifica", symbol: "USDC", side: "withdraw",
@@ -593,7 +594,7 @@ export function registerFundsCommands(
       if (isNaN(amountNum) || amountNum <= 0) throw new Error("Invalid amount");
 
       const adapter = await getAdapter();
-      if (!(adapter instanceof HyperliquidAdapter)) throw new Error("Requires --exchange hyperliquid");
+      if (adapter.name !== "hyperliquid" || !hasEvmAddress(adapter) || !isWithdrawCapable(adapter)) throw new Error("Requires --exchange hyperliquid");
 
       const dest = opts.to || adapter.address;
 
@@ -645,8 +646,7 @@ export function registerFundsCommands(
       if (isNaN(amountNum) || amountNum <= 0) throw new Error("Invalid amount");
 
       const adapter = await getAdapter();
-      const { LighterAdapter } = await import("../exchanges/lighter.js");
-      if (!(adapter instanceof LighterAdapter)) throw new Error("Requires --exchange lighter");
+      if (!hasLighterAccount(adapter) || !isWithdrawCapable(adapter)) throw new Error("Requires --exchange lighter");
 
       if (!isJson()) {
         console.log(chalk.cyan(`\n  Withdrawing $${formatUsd(amountNum)} USDC from Lighter...\n`));
@@ -655,7 +655,7 @@ export function registerFundsCommands(
       }
 
       try {
-        const result = await adapter.withdraw(amountNum, parseInt(opts.assetId), parseInt(opts.route));
+        const result = await adapter.withdraw(String(amountNum), "", { assetId: parseInt(opts.assetId), routeType: parseInt(opts.route) });
 
         logExecution({
           type: "bridge", exchange: "lighter", symbol: "USDC", side: "withdraw",
@@ -690,7 +690,7 @@ export function registerFundsCommands(
       if (isNaN(amountNum) || amountNum <= 0) throw new Error("Invalid amount");
 
       const adapter = await getAdapter();
-      if (!(adapter instanceof HyperliquidAdapter)) throw new Error("Requires --exchange hyperliquid");
+      if (!isUsdTransferCapable(adapter)) throw new Error("Requires --exchange hyperliquid");
 
       if (!isJson()) console.log(chalk.cyan(`\n  Transferring $${formatUsd(amountNum)} USDC to ${destination}...\n`));
 

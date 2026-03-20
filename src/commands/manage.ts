@@ -1,24 +1,26 @@
 import { Command } from "commander";
-import { PacificaAdapter, type ExchangeAdapter } from "../exchanges/index.js";
+import type { ExchangeAdapter } from "../exchanges/index.js";
 import { printJson, jsonOk } from "../utils.js";
 import { setEnvVar } from "./init.js";
 import chalk from "chalk";
+import { hasPacificaSdk, hasLighterAccount } from "../exchanges/capabilities.js";
 
 export function registerManageCommands(
   program: Command,
   getAdapter: () => Promise<ExchangeAdapter>,
   isJson: () => boolean,
-  getPacificaAdapter: () => PacificaAdapter
+  getPacificaAdapter: () => unknown
 ) {
   const manage = program.command("manage").description("Exchange account settings (margin, subaccount, API keys, builder)");
 
   // Ensure adapter is initialized before accessing PacificaAdapter
-  async function pac(): Promise<PacificaAdapter> {
+  async function pac() {
     const adapter = await getAdapter();
-    if (!(adapter instanceof PacificaAdapter)) {
+    if (!hasPacificaSdk(adapter)) {
       throw new Error("This command requires --exchange pacifica");
     }
-    return adapter as PacificaAdapter;
+    // Cast sdk to any to allow calling Pacifica SDK methods without importing the concrete type
+    return adapter as typeof adapter & { sdk: Record<string, (...args: any[]) => any> };
   }
 
   manage
@@ -361,8 +363,7 @@ export function registerManageCommands(
     .option("--key-index <n>", "API key index (4-254, default: 4)", "4")
     .action(async (opts: { keyIndex: string }) => {
       const adapter = await getAdapter();
-      const { LighterAdapter } = await import("../exchanges/lighter.js");
-      if (!(adapter instanceof LighterAdapter)) {
+      if (!hasLighterAccount(adapter)) {
         throw new Error("This command requires --exchange lighter");
       }
 

@@ -23,6 +23,8 @@ interface WasmTxResponse {
 
 export class LighterAdapter implements ExchangeAdapter {
   readonly name = "lighter";
+  readonly chain = "ethereum";
+  readonly aliases = ["lt"] as const;
   private _signer!: WasmSignerClientType;
   private _accountIndex = -1;
   private _apiKeyIndex: number;
@@ -659,7 +661,11 @@ export class LighterAdapter implements ExchangeAdapter {
     return this.sendTx(signed);
   }
 
-  async withdraw(amount: number, assetId = 3, routeType = 0): Promise<unknown> {
+  async withdraw(amount: string, destination: string, opts?: { assetId?: number; routeType?: number }): Promise<unknown> {
+    return this._withdrawRaw(parseFloat(amount), opts?.assetId ?? 3, opts?.routeType ?? 0);
+  }
+
+  private async _withdrawRaw(amount: number, assetId = 3, routeType = 0): Promise<unknown> {
     this.ensureSigner();
     const nonce = await this.getNextNonce();
     const signed = await this._signer.signWithdraw({
