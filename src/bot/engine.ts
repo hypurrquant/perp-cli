@@ -10,6 +10,17 @@ import chalk from "chalk";
 import "./strategies/grid-strategy.js";
 import "./strategies/dca-strategy.js";
 import "./strategies/funding-arb-strategy.js";
+import "./strategies/simple-mm.js";
+import "./strategies/engine-mm.js";
+import "./strategies/avellaneda-mm.js";
+import "./strategies/momentum-breakout.js";
+import "./strategies/mean-reversion.js";
+import "./strategies/aggressive-taker.js";
+import "./strategies/funding-arb-v2.js";
+import "./strategies/basis-arb.js";
+import "./strategies/regime-mm.js";
+import "./strategies/grid-mm.js";
+import "./strategies/liquidation-mm.js";
 
 export type BotLog = (msg: string) => void;
 
