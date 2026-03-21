@@ -69,6 +69,9 @@ export interface ExchangeKline {
 
 export interface ExchangeAdapter {
   readonly name: string;
+  readonly chain?: string;
+  readonly aliases?: readonly string[];
+  init?(): Promise<void>;
 
   // ── Market Data ──
   getMarkets(): Promise<ExchangeMarketInfo[]>;

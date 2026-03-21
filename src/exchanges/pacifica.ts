@@ -15,6 +15,8 @@ import { LocalSolanaSigner } from "../signer/index.js";
 
 export class PacificaAdapter implements ExchangeAdapter {
   readonly name = "pacifica";
+  readonly chain = "solana";
+  readonly aliases = ["pac"] as const;
   private client: PacificaClient;
   private _solanaSigner: SolanaSigner;
   private _hasRealKey: boolean;
@@ -281,6 +283,15 @@ export class PacificaAdapter implements ExchangeAdapter {
       },
       this.account,
       this.signMessage
+    );
+  }
+
+  async withdraw(amount: string, destination: string, _opts?: { assetId?: number; routeType?: number }): Promise<unknown> {
+    this.ensureSigner();
+    return this.client.withdraw(
+      { amount, dest_address: destination },
+      this.account,
+      this.signMessage,
     );
   }
 

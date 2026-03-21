@@ -1,8 +1,9 @@
 import { Command } from "commander";
-import { PacificaAdapter, HyperliquidAdapter, type ExchangeAdapter, type ExchangeBalance, type ExchangePosition, type ExchangeOrder } from "../exchanges/index.js";
+import type { ExchangeAdapter, ExchangeBalance, ExchangePosition, ExchangeOrder } from "../exchanges/index.js";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk, jsonError, symbolMatch, withJsonErrors } from "../utils.js";
 import chalk from "chalk";
 import { assessRisk, type RiskLevel, type RiskViolation } from "../risk.js";
+import { hasPacificaSdk, isDexCapable } from "../exchanges/capabilities.js";
 
 // ── Portfolio types & helpers ──
 
@@ -139,8 +140,8 @@ function buildSummary(snapshots: ExchangeSnapshot[]): PortfolioSummary {
   };
 }
 
-function pac(adapter: ExchangeAdapter): PacificaAdapter {
-  if (!(adapter instanceof PacificaAdapter)) throw new Error("Market settings are only available on Pacifica.");
+function pac(adapter: ExchangeAdapter) {
+  if (!hasPacificaSdk(adapter)) throw new Error("Market settings are only available on Pacifica.");
   return adapter;
 }
 
@@ -180,7 +181,8 @@ export function registerAccountCommands(
     try {
       if (name === "hyperliquid") {
         const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
-        const hlSpot = new HyperliquidSpotAdapter(adapter as HyperliquidAdapter);
+        const { HyperliquidAdapter } = await import("../exchanges/hyperliquid.js");
+        const hlSpot = new HyperliquidSpotAdapter(adapter as InstanceType<typeof HyperliquidAdapter>);
         await hlSpot.init();
         const raw = await hlSpot.getSpotBalances();
         const markets = await hlSpot.getSpotMarkets();
@@ -216,7 +218,7 @@ export function registerAccountCommands(
 
     // HL unified account: perp equity already includes spot USDC balance.
     // Detect by checking if adapter is HL without a dex override.
-    const isUnified = name === "hyperliquid" && !(adapter as HyperliquidAdapter).dex;
+    const isUnified = name === "hyperliquid" && (!isDexCapable(adapter) || !adapter.dex);
 
     const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
     const recent = fundingPayments.filter(f => f.time >= cutoff24h);
@@ -419,14 +421,14 @@ export function registerAccountCommands(
   // ── HIP-3 dex helper: fetch data from all deployed dexes in parallel ──
 
   async function fetchHip3Data<T>(
-    hlAdapter: HyperliquidAdapter,
-    fetcher: (dexAdapter: HyperliquidAdapter) => Promise<T[]>,
+    hlAdapter: ExchangeAdapter & import("../exchanges/capabilities.js").DexCapable,
+    fetcher: (dexAdapter: ExchangeAdapter & import("../exchanges/capabilities.js").DexCapable) => Promise<T[]>,
   ): Promise<{ dex: string; items: T[] }[]> {
     const dexes = await hlAdapter.listDeployedDexes();
     const results = await Promise.allSettled(
       dexes.map(async (d) => {
         // Clone adapter with dex set
-        const dexAdapter = Object.create(hlAdapter) as HyperliquidAdapter;
+        const dexAdapter = Object.create(hlAdapter) as ExchangeAdapter & import("../exchanges/capabilities.js").DexCapable;
         dexAdapter.setDex(d.name);
         const items = await fetcher(dexAdapter);
         return { dex: d.name, items };
@@ -467,7 +469,7 @@ export function registerAccountCommands(
               ]);
             }
             // --hip3: fetch HIP-3 dex positions for HL
-            if (opts.hip3 && ex === "hyperliquid" && adapter instanceof HyperliquidAdapter) {
+            if (opts.hip3 && ex === "hyperliquid" && isDexCapable(adapter)) {
               const hip3 = await fetchHip3Data(adapter, a => a.getPositions());
               for (const { dex, items } of hip3) {
                 for (const p of items) {
@@ -496,7 +498,7 @@ export function registerAccountCommands(
             try {
               const adapter = await getAdapterForExchange(ex);
               grouped[ex] = await adapter.getPositions();
-              if (opts.hip3 && ex === "hyperliquid" && adapter instanceof HyperliquidAdapter) {
+              if (opts.hip3 && ex === "hyperliquid" && isDexCapable(adapter)) {
                 const hip3 = await fetchHip3Data(adapter, a => a.getPositions());
                 for (const { dex, items } of hip3) grouped[`hip3:${dex}`] = items;
               }
@@ -522,7 +524,7 @@ export function registerAccountCommands(
 
       // --hip3: append HIP-3 dex positions
       const hip3Positions: { dex: string; items: ExchangePosition[] }[] = [];
-      if (opts.hip3 && adapter instanceof HyperliquidAdapter) {
+      if (opts.hip3 && isDexCapable(adapter)) {
         hip3Positions.push(...await fetchHip3Data(adapter, a => a.getPositions()));
       }
 
@@ -599,7 +601,7 @@ export function registerAccountCommands(
               ]);
             }
             // --hip3: fetch HIP-3 dex orders for HL
-            if (opts.hip3 && ex === "hyperliquid" && adapter instanceof HyperliquidAdapter) {
+            if (opts.hip3 && ex === "hyperliquid" && isDexCapable(adapter)) {
               const hip3 = await fetchHip3Data(adapter, a => a.getOpenOrders());
               for (const { dex, items } of hip3) {
                 for (const o of items) {
@@ -628,7 +630,7 @@ export function registerAccountCommands(
             try {
               const adapter = await getAdapterForExchange(ex);
               grouped[ex] = await adapter.getOpenOrders();
-              if (opts.hip3 && ex === "hyperliquid" && adapter instanceof HyperliquidAdapter) {
+              if (opts.hip3 && ex === "hyperliquid" && isDexCapable(adapter)) {
                 const hip3 = await fetchHip3Data(adapter, a => a.getOpenOrders());
                 for (const { dex, items } of hip3) grouped[`hip3:${dex}`] = items;
               }
@@ -654,7 +656,7 @@ export function registerAccountCommands(
 
       // --hip3: append HIP-3 dex orders
       const hip3Orders: { dex: string; items: ExchangeOrder[] }[] = [];
-      if (opts.hip3 && adapter instanceof HyperliquidAdapter) {
+      if (opts.hip3 && isDexCapable(adapter)) {
         hip3Orders.push(...await fetchHip3Data(adapter, a => a.getOpenOrders()));
       }
 
@@ -735,8 +737,9 @@ export function registerAccountCommands(
       const adapter = await getAdapter();
 
       // Pacifica: use dedicated SDK endpoint
-      if (adapter instanceof PacificaAdapter) {
-        const settings = await adapter.sdk.getAccountSettings(adapter.publicKey);
+      if (hasPacificaSdk(adapter)) {
+        const sdk = adapter.sdk as Record<string, (...args: any[]) => any>;
+        const settings = await sdk.getAccountSettings(adapter.publicKey);
         if (isJson()) return printJson(jsonOk(settings));
         if (!Array.isArray(settings) || settings.length === 0) {
           console.log(chalk.gray("\n  No market settings configured.\n"));
@@ -1034,7 +1037,7 @@ export function registerAccountCommands(
     .command("twap-orders")
     .description("Active TWAP orders")
     .action(async () => {
-      let p: PacificaAdapter;
+      let p: ReturnType<typeof pac>;
       try {
         const adapter = await getAdapter();
         p = pac(adapter);
@@ -1043,7 +1046,8 @@ export function registerAccountCommands(
         console.error(chalk.red(`\n  ${err instanceof Error ? err.message : String(err)}\n`));
         return;
       }
-      const orders = await p.sdk.getTWAPOrders(p.publicKey);
+      const sdk = p.sdk as Record<string, (...args: any[]) => any>;
+      const orders = await sdk.getTWAPOrders(p.publicKey);
       if (isJson()) return printJson(jsonOk(orders));
 
       if (!orders || orders.length === 0) {
@@ -1100,7 +1104,8 @@ export function registerAccountCommands(
                 const adapter = await getAdapterForExchange(exName);
                 if (exName === "hyperliquid") {
                   const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
-                  const hlSpot = new HyperliquidSpotAdapter(adapter as HyperliquidAdapter);
+                  const { HyperliquidAdapter } = await import("../exchanges/hyperliquid.js");
+                  const hlSpot = new HyperliquidSpotAdapter(adapter as InstanceType<typeof HyperliquidAdapter>);
                   await hlSpot.init();
                   const bals = await hlSpot.getSpotBalances();
                   const markets = await hlSpot.getSpotMarkets();
