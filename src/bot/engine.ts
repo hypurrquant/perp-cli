@@ -1,10 +1,15 @@
 import type { ExchangeAdapter } from "../exchanges/index.js";
-import type { BotConfig, GridStrategyParams, DCAStrategyParams, FundingArbStrategyParams } from "./config.js";
+import type { BotConfig } from "./config.js";
 import { getMarketSnapshot, evaluateAllConditions, type MarketSnapshot } from "./conditions.js";
 import { updateJobState } from "../jobs.js";
-import { checkArbLiquidity } from "../liquidity.js";
-import { computeMatchedSize, reconcileArbFills } from "../arb-sizing.js";
+import { getStrategy } from "./strategy-registry.js";
+import type { StrategyAction, StrategyContext, EnrichedSnapshot } from "./strategy-types.js";
 import chalk from "chalk";
+
+// Auto-register built-in strategies
+import "./strategies/grid-strategy.js";
+import "./strategies/dca-strategy.js";
+import "./strategies/funding-arb-strategy.js";
 
 export type BotLog = (msg: string) => void;
 
@@ -21,16 +26,6 @@ interface BotState {
   rebalanceCount: number;
   lastRebalance: number;
   strategyActive: boolean;
-  // Grid specific
-  gridOrders: Map<number, string>;  // gridIndex → orderId
-  gridUpper: number;
-  gridLower: number;
-  // DCA specific
-  dcaOrdersPlaced: number;
-  dcaLastOrder: number;
-  // Funding arb specific
-  arbRunning: boolean;
-  arbPositions: number;
 }
 
 export async function runBot(
@@ -53,14 +48,27 @@ export async function runBot(
     rebalanceCount: 0,
     lastRebalance: 0,
     strategyActive: false,
-    gridOrders: new Map(),
-    gridUpper: 0,
-    gridLower: 0,
-    dcaOrdersPlaced: 0,
-    dcaLastOrder: 0,
-    arbRunning: false,
-    arbPositions: 0,
   };
+
+  // Resolve strategy from registry
+  const strategyFactory = getStrategy(config.strategy.type);
+  if (!strategyFactory) throw new Error(`Unknown strategy: ${config.strategy.type}`);
+  const strategy = strategyFactory(config.strategy as unknown as Record<string, unknown>);
+  const strategyCtx: StrategyContext = {
+    adapter,
+    symbol: config.symbol,
+    config: config.strategy as unknown as Record<string, unknown>,
+    state: new Map(),
+    tick: 0,
+    log,
+  };
+
+  // Pass extra adapters to strategy context for funding-arb
+  if (extraAdapters) {
+    strategyCtx.state.set("extraAdapters", extraAdapters);
+  }
+
+  const isDryRun = false; // TODO: wire up from config when dry-run mode is added
 
   let running = true;
   const shutdown = () => { running = false; state.phase = "stopped"; };
@@ -97,8 +105,8 @@ export async function runBot(
       const loopStart = Date.now();
 
       try {
-        // Get market data
-        const snapshot = await getMarketSnapshot(adapter, config.symbol);
+        // Get market data (enriched for strategy use)
+        const snapshot = await getEnrichedSnapshot(adapter, config.symbol);
 
         // Update equity
         try {
@@ -136,7 +144,14 @@ export async function runBot(
         // ── Phase: Entering (start strategy) ──
         if (state.phase === "entering") {
           try {
-            await startStrategy(adapter, config, state, snapshot, log, extraAdapters);
+            await strategy.init(strategyCtx, snapshot);
+            // Execute any initial actions (e.g., grid placement on first tick)
+            strategyCtx.tick = 0;
+            const initActions = await strategy.onTick(strategyCtx, snapshot);
+            await executeActions(adapter, config.symbol, initActions, log, isDryRun);
+            state.fills += countFills(initActions);
+            strategyCtx.tick++;
+
             state.phase = "running";
             state.strategyActive = true;
             log(chalk.green(`  ▶ Strategy started`));
@@ -168,14 +183,18 @@ export async function runBot(
             state.phase = "exiting";
           } else {
             // Manage running strategy
-            await manageStrategy(adapter, config, state, snapshot, log, extraAdapters);
+            const actions = await strategy.onTick(strategyCtx, snapshot);
+            await executeActions(adapter, config.symbol, actions, log, isDryRun);
+            state.fills += countFills(actions);
+            strategyCtx.tick++;
             logStatus(log, state, snapshot, "running");
           }
         }
 
         // ── Phase: Exiting (close everything) ──
         if (state.phase === "exiting") {
-          await stopStrategy(adapter, config, state, log);
+          const stopActions = await strategy.onStop(strategyCtx);
+          await executeActions(adapter, config.symbol, stopActions, log, isDryRun);
           state.strategyActive = false;
 
           if (config.risk.pause_after_loss_sec > 0 && state.dailyPnl < 0) {
@@ -238,421 +257,71 @@ export async function runBot(
   return { fills: state.fills, totalPnl: state.totalPnl, runtime };
 }
 
-// ── Strategy lifecycle ──
+// ── Action executor ──
 
-async function startStrategy(
-  adapter: ExchangeAdapter,
-  config: BotConfig,
-  state: BotState,
-  snapshot: MarketSnapshot,
-  log: BotLog,
-  extraAdapters?: Map<string, ExchangeAdapter>,
-) {
-  const strat = config.strategy;
-
-  if (strat.type === "grid") {
-    await startGrid(adapter, config.symbol, strat, state, snapshot, log);
-  } else if (strat.type === "dca") {
-    state.dcaOrdersPlaced = 0;
-    state.dcaLastOrder = 0;
-    log(`  [DCA] Ready: ${strat.amount} ${config.symbol} every ${strat.interval_sec}s`);
-  } else if (strat.type === "funding-arb") {
-    state.arbRunning = true;
-    state.arbPositions = 0;
-    log(`  [ARB] Funding arb ready | spread >= ${strat.min_spread}% | size $${strat.size_usd}`);
-    log(`  [ARB] Exchanges: ${strat.exchanges.join(", ")}`);
-  }
-}
-
-async function manageStrategy(
-  adapter: ExchangeAdapter,
-  config: BotConfig,
-  state: BotState,
-  snapshot: MarketSnapshot,
-  log: BotLog,
-  extraAdapters?: Map<string, ExchangeAdapter>,
-) {
-  const strat = config.strategy;
-
-  if (strat.type === "grid") {
-    await manageGrid(adapter, config.symbol, strat, state, snapshot, log);
-  } else if (strat.type === "dca") {
-    await manageDCA(adapter, config.symbol, strat, state, snapshot, log);
-  } else if (strat.type === "funding-arb") {
-    await manageFundingArb(adapter, config.symbol, strat, state, snapshot, log, extraAdapters);
-  }
-}
-
-async function stopStrategy(
-  adapter: ExchangeAdapter,
-  config: BotConfig,
-  state: BotState,
-  log: BotLog,
-) {
-  log(`  Cancelling all orders...`);
-  try {
-    await adapter.cancelAllOrders(config.symbol);
-  } catch { /* best effort */ }
-  state.gridOrders.clear();
-}
-
-// ── Grid strategy ──
-
-async function startGrid(
+async function executeActions(
   adapter: ExchangeAdapter,
   symbol: string,
-  params: GridStrategyParams,
-  state: BotState,
-  snapshot: MarketSnapshot,
+  actions: StrategyAction[],
   log: BotLog,
+  dryRun = false,
 ) {
-  // Determine price range
-  if (params.range_mode === "auto") {
-    const pct = params.range_pct ?? 3;
-    state.gridUpper = snapshot.price * (1 + pct / 100);
-    state.gridLower = snapshot.price * (1 - pct / 100);
-    log(`  [GRID] Auto range: $${state.gridLower.toFixed(2)} - $${state.gridUpper.toFixed(2)} (±${pct}%)`);
-  } else {
-    if (!params.upper || !params.lower) throw new Error("Fixed grid requires upper and lower");
-    state.gridUpper = params.upper;
-    state.gridLower = params.lower;
-  }
-
-  // Set leverage
-  if (params.leverage) {
-    try {
-      await adapter.setLeverage(symbol, params.leverage);
-      log(`  [GRID] Leverage: ${params.leverage}x`);
-    } catch { /* non-critical */ }
-  }
-
-  // Place grid orders
-  await placeGridOrders(adapter, symbol, params, state, snapshot.price, log);
-}
-
-async function placeGridOrders(
-  adapter: ExchangeAdapter,
-  symbol: string,
-  params: GridStrategyParams,
-  state: BotState,
-  currentPrice: number,
-  log: BotLog,
-) {
-  if (params.grids < 2) throw new Error("Grid requires at least 2 grid lines");
-  const step = (state.gridUpper - state.gridLower) / (params.grids - 1);
-  const sizePerGrid = params.size / params.grids;
-  let placed = 0;
-
-  // Cancel existing orders first
-  if (state.gridOrders.size > 0) {
-    try { await adapter.cancelAllOrders(symbol); } catch { /* */ }
-    state.gridOrders.clear();
-  }
-
-  for (let i = 0; i < params.grids; i++) {
-    const price = state.gridLower + step * i;
-
-    // Determine side based on current price
-    let side: "buy" | "sell";
-    if (params.side === "long") side = "buy";
-    else if (params.side === "short") side = "sell";
-    else side = price < currentPrice ? "buy" : "sell";
-
-    try {
-      const result = await adapter.limitOrder(symbol, side, price.toFixed(2), String(sizePerGrid)) as Record<string, unknown>;
-      const orderId = String(result?.orderId ?? result?.oid ?? result?.id ?? "");
-      state.gridOrders.set(i, orderId);
-      placed++;
-    } catch {
-      // skip failed grid line
+  for (const action of actions) {
+    if (dryRun) {
+      log(`  [DRY-RUN] ${action.type}: ${JSON.stringify(action)}`);
+      continue;
     }
-  }
-
-  log(`  [GRID] Placed ${placed}/${params.grids} orders (step: $${step.toFixed(2)}, size: ${sizePerGrid.toFixed(6)})`);
-}
-
-async function manageGrid(
-  adapter: ExchangeAdapter,
-  symbol: string,
-  params: GridStrategyParams,
-  state: BotState,
-  snapshot: MarketSnapshot,
-  log: BotLog,
-) {
-  if (params.grids < 2) throw new Error("Grid requires at least 2 grid lines");
-  const step = (state.gridUpper - state.gridLower) / (params.grids - 1);
-  const sizePerGrid = params.size / params.grids;
-
-  // Check for fills
-  try {
-    const openOrders = await adapter.getOpenOrders();
-    const openIds = new Set(
-      openOrders.filter(o => o.symbol.toUpperCase() === symbol.toUpperCase()).map(o => o.orderId)
-    );
-
-    // Build filled order IDs from order history for accurate fill detection
-    let filledIds: Set<string> | null = null;
-    try {
-      const history = await adapter.getOrderHistory(100);
-      filledIds = new Set(history.filter(o => o.status === "filled").map(o => o.orderId));
-    } catch { /* non-critical — fall back to assuming fills */ }
-
-    let newFills = 0;
-    for (const [idx, orderId] of state.gridOrders.entries()) {
-      if (!openIds.has(orderId)) {
-        // Verify the order was actually filled (not just cancelled)
-        if (filledIds && !filledIds.has(orderId)) {
-          log(chalk.yellow(`  [GRID] Order ${orderId} missing — likely cancelled, skipping`));
-          state.gridOrders.delete(idx);
-          continue;
-        }
-        // Order filled — place opposite order
-        newFills++;
-        state.fills++;
-        state.totalPnl += step * sizePerGrid;
-
-        // Determine new side and price
-        const oldPrice = state.gridLower + step * idx;
-        const wasBuy = oldPrice < snapshot.price;
-        const newSide: "buy" | "sell" = wasBuy ? "sell" : "buy";
-        const newPrice = wasBuy ? oldPrice + step : oldPrice - step;
-
-        if (newPrice >= state.gridLower && newPrice <= state.gridUpper) {
-          try {
-            const result = await adapter.limitOrder(symbol, newSide, newPrice.toFixed(2), String(sizePerGrid)) as Record<string, unknown>;
-            const newOrderId = String(result?.orderId ?? result?.oid ?? result?.id ?? "");
-            state.gridOrders.set(idx, newOrderId);
-          } catch { /* skip */ }
+    switch (action.type) {
+      case "place_order":
+        if (action.orderType === "market") {
+          await adapter.marketOrder(symbol, action.side, action.size);
         } else {
-          state.gridOrders.delete(idx);
+          await adapter.limitOrder(symbol, action.side, action.price, action.size, {
+            reduceOnly: action.reduceOnly,
+            tif: action.tif,
+          });
         }
-      }
-    }
-
-    if (newFills > 0) {
-      log(chalk.green(`  [GRID] ${newFills} fill(s) | Total: ${state.fills} | Est. PnL: $${state.totalPnl.toFixed(2)}`));
-    }
-  } catch { /* retry next loop */ }
-
-  // Auto-rebalance if price exits range
-  if (params.rebalance) {
-    const outOfRange = snapshot.price > state.gridUpper || snapshot.price < state.gridLower;
-    const cooldownOk = Date.now() - state.lastRebalance > params.rebalance_cooldown * 1000;
-
-    if (outOfRange && cooldownOk) {
-      const pct = params.range_pct ?? 3;
-      state.gridUpper = snapshot.price * (1 + pct / 100);
-      state.gridLower = snapshot.price * (1 - pct / 100);
-      state.rebalanceCount++;
-      state.lastRebalance = Date.now();
-
-      log(chalk.yellow(`  [GRID] Rebalance #${state.rebalanceCount}: price $${snapshot.price.toFixed(2)} outside range → new $${state.gridLower.toFixed(2)} - $${state.gridUpper.toFixed(2)}`));
-      await placeGridOrders(adapter, symbol, params, state, snapshot.price, log);
+        break;
+      case "cancel_order":
+        await adapter.cancelOrder(symbol, action.orderId);
+        break;
+      case "cancel_all":
+        await adapter.cancelAllOrders(symbol);
+        break;
+      case "edit_order":
+        await adapter.editOrder(symbol, action.orderId, action.price, action.size);
+        break;
+      case "set_leverage":
+        await adapter.setLeverage(symbol, action.leverage, action.marginMode);
+        break;
+      case "noop":
+        break;
     }
   }
 }
 
-// ── DCA strategy ──
+// ── Enriched snapshot ──
 
-async function manageDCA(
+async function getEnrichedSnapshot(
   adapter: ExchangeAdapter,
   symbol: string,
-  params: DCAStrategyParams,
-  state: BotState,
-  snapshot: MarketSnapshot,
-  log: BotLog,
-) {
-  // Check if it's time for next order
-  const timeSinceLast = (Date.now() - state.dcaLastOrder) / 1000;
-  if (state.dcaLastOrder > 0 && timeSinceLast < params.interval_sec) return;
-
-  // Check order limit
-  if (params.total_orders > 0 && state.dcaOrdersPlaced >= params.total_orders) return;
-
-  // Check price limit
-  if (params.price_limit) {
-    // For DCA, we assume buying — skip if price above limit
-    if (snapshot.price > params.price_limit) {
-      return;
-    }
-  }
-
-  // Place market order
-  try {
-    const side: "buy" | "sell" = "buy"; // DCA is typically buying
-    await adapter.marketOrder(symbol, side, String(params.amount));
-    state.dcaOrdersPlaced++;
-    state.dcaLastOrder = Date.now();
-    state.fills++;
-
-    const progress = params.total_orders > 0 ? ` (${state.dcaOrdersPlaced}/${params.total_orders})` : "";
-    log(chalk.green(`  [DCA] Order #${state.dcaOrdersPlaced}${progress}: buy ${params.amount} ${symbol} @ $${snapshot.price.toFixed(2)}`));
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    log(chalk.red(`  [DCA] Order failed: ${msg}`));
-  }
-}
-
-// ── Funding Arb strategy ──
-
-interface ArbOpportunity {
-  symbol: string;
-  longExchange: string;
-  shortExchange: string;
-  longRate: number;
-  shortRate: number;
-  spread: number; // annualized %
-}
-
-async function fetchRatesFromAdapter(
-  adapter: ExchangeAdapter,
-  exchangeName: string,
-): Promise<{ symbol: string; rate: number; price: number }[]> {
-  try {
-    const markets = await adapter.getMarkets();
-    return markets.map(m => ({
-      symbol: m.symbol,
-      rate: parseFloat(m.fundingRate),
-      price: parseFloat(m.markPrice),
-    }));
-  } catch {
-    return [];
-  }
-}
-
-async function manageFundingArb(
-  adapter: ExchangeAdapter,
-  symbol: string,
-  params: FundingArbStrategyParams,
-  state: BotState,
-  _snapshot: MarketSnapshot,
-  log: BotLog,
-  extraAdapters?: Map<string, ExchangeAdapter>,
-) {
-  // Build adapter map from primary + extras
-  const adapters = new Map<string, ExchangeAdapter>();
-  adapters.set(adapter.name.toLowerCase(), adapter);
-  if (extraAdapters) {
-    for (const [name, a] of extraAdapters) adapters.set(name, a);
-  }
-
-  if (adapters.size < 2) {
-    log(chalk.yellow(`  [ARB] Need 2+ exchanges, have ${adapters.size}. Skipping.`));
-    return;
-  }
-
-  // Fetch rates from all exchanges
-  const ratesByExchange = new Map<string, Map<string, { rate: number; price: number }>>();
-  for (const [name, a] of adapters) {
-    const rates = await fetchRatesFromAdapter(a, name);
-    const map = new Map<string, { rate: number; price: number }>();
-    for (const r of rates) map.set(r.symbol.toUpperCase(), { rate: r.rate, price: r.price });
-    ratesByExchange.set(name, map);
-  }
-
-  // Find opportunities: largest spread between any two exchanges
-  const exchangeNames = [...ratesByExchange.keys()];
-  const opportunities: ArbOpportunity[] = [];
-
-  // Collect all symbols
-  const allSymbols = new Set<string>();
-  for (const [, map] of ratesByExchange) {
-    for (const sym of map.keys()) allSymbols.add(sym);
-  }
-
-  for (const sym of allSymbols) {
-    let minRate = Infinity, maxRate = -Infinity;
-    let minExchange = "", maxExchange = "";
-
-    for (const exName of exchangeNames) {
-      const rate = ratesByExchange.get(exName)?.get(sym)?.rate;
-      if (rate === undefined) continue;
-      if (rate < minRate) { minRate = rate; minExchange = exName; }
-      if (rate > maxRate) { maxRate = rate; maxExchange = exName; }
-    }
-
-    if (minExchange && maxExchange && minExchange !== maxExchange) {
-      const { computeAnnualSpread: cas } = await import("../funding.js");
-      const spread = cas(maxRate, maxExchange, minRate, minExchange);
-      if (spread >= params.min_spread) {
-        opportunities.push({
-          symbol: sym,
-          longExchange: minExchange, // long where rate is low (we receive funding)
-          shortExchange: maxExchange, // short where rate is high (we pay less or receive)
-          longRate: minRate,
-          shortRate: maxRate,
-          spread,
-        });
-      }
-    }
-  }
-
-  // Sort by spread descending
-  opportunities.sort((a, b) => b.spread - a.spread);
-
-  if (opportunities.length > 0) {
-    const top = opportunities.slice(0, 3);
-    for (const opp of top) {
-      log(`  [ARB] ${opp.symbol}: ${opp.spread.toFixed(1)}% spread (long ${opp.longExchange} ${(opp.longRate * 100).toFixed(4)}% / short ${opp.shortExchange} ${(opp.shortRate * 100).toFixed(4)}%)`);
-    }
-
-    // Auto-execute if under position limit
-    if (state.arbPositions < params.max_positions && opportunities.length > 0) {
-      const best = opportunities[0];
-      const longAdapter = adapters.get(best.longExchange);
-      const shortAdapter = adapters.get(best.shortExchange);
-
-      if (longAdapter && shortAdapter) {
-        // Calculate size from USD
-        const price = ratesByExchange.get(best.longExchange)?.get(best.symbol)?.price ?? 0;
-        if (price > 0) {
-          // Liquidity check & size adjustment
-          const liq = await checkArbLiquidity(
-            longAdapter, shortAdapter, best.symbol, params.size_usd, 0.5,
-            (msg) => log(chalk.yellow(`  ${msg}`)),
-          );
-          if (!liq.viable) return;
-
-          // Compute matched size for both legs
-          const matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange);
-          if (!matched) {
-            log(chalk.yellow(`  [ARB] Skip ${best.symbol}: can't compute matched size (min notional or precision issue)`));
-            return;
-          }
-
-          try {
-            log(chalk.cyan(`  [ARB] Opening: ${matched.size} ${best.symbol} on both legs ($${matched.notional.toFixed(0)}/leg, slippage ~${liq.longSlippage.toFixed(2)}%/${liq.shortSlippage.toFixed(2)}%)`));
-            await Promise.all([
-              longAdapter.marketOrder(best.symbol, "buy", matched.size),
-              shortAdapter.marketOrder(best.symbol, "sell", matched.size),
-            ]);
-
-            // Verify fills match, correct if needed
-            try {
-              const recon = await reconcileArbFills(longAdapter, shortAdapter, best.symbol,
-                (msg) => log(chalk.yellow(`  ${msg}`)),
-              );
-              if (!recon.matched) {
-                log(chalk.red(`  [ARB] WARNING: fills not matched after correction attempt`));
-              }
-            } catch { /* non-critical */ }
-
-            state.arbPositions++;
-            state.fills += 2;
-            log(chalk.green(`  [ARB] Position opened! (${state.arbPositions}/${params.max_positions})`));
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            log(chalk.red(`  [ARB] Execution failed: ${msg}`));
-          }
-        }
-      }
-    }
-  } else {
-    log(chalk.gray(`  [ARB] No opportunities >= ${params.min_spread}% spread`));
-  }
+): Promise<EnrichedSnapshot> {
+  const base = await getMarketSnapshot(adapter, symbol);
+  const [orderbook, klines, markets] = await Promise.all([
+    adapter.getOrderbook(symbol).catch(() => ({ bids: [] as [string, string][], asks: [] as [string, string][] })),
+    adapter.getKlines(symbol, "1h", Date.now() - 24 * 60 * 60 * 1000, Date.now()).catch(() => []),
+    adapter.getMarkets().catch(() => []),
+  ]);
+  const market = markets.find(m => m.symbol.toUpperCase().includes(symbol.toUpperCase()));
+  return { ...base, klines, orderbook, openInterest: market?.openInterest ?? "0" };
 }
 
 // ── Utils ──
+
+/** Count fill-producing actions (market orders and limit orders) */
+function countFills(actions: StrategyAction[]): number {
+  return actions.filter(a => a.type === "place_order" && a.orderType === "market").length;
+}
 
 function logStatus(log: BotLog, state: BotState, snapshot: MarketSnapshot, phase: string) {
   const runtime = formatDuration(Math.floor((Date.now() - state.startTime) / 1000));
