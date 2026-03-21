@@ -359,6 +359,164 @@ export function registerBotCommands(
       await runBot(adapter, config, opts.jobId, log);
     });
 
+  // ── bot list-strategies ──
+
+  bot
+    .command("list-strategies")
+    .description("List all available trading strategies")
+    .action(async () => {
+      await import("../bot/engine.js");
+      const { listStrategies } = await import("../bot/strategy-registry.js");
+      const strategies = listStrategies();
+      if (isJson()) return printJson(jsonOk({ strategies }));
+      console.log(chalk.cyan.bold("\n  Available Strategies:\n"));
+      for (const s of strategies) {
+        console.log(`    ${chalk.white(s)}`);
+      }
+      console.log();
+    });
+
+  // ── bot apex ──
+
+  bot
+    .command("apex [symbol]")
+    .description("Start APEX autonomous orchestrator")
+    .option("--preset <preset>", "Preset: default, conservative, aggressive", "default")
+    .option("--max-slots <n>", "Max concurrent positions", "3")
+    .option("--daily-limit <usd>", "Daily loss limit in USD", "250")
+    .action(async (symbol: string | undefined, opts: {
+      preset: string; maxSlots: string; dailyLimit: string;
+    }) => {
+      const adapter = await getAdapter();
+      const sym = (symbol ?? "ETH").toUpperCase();
+      const config: import("../bot/config.js").BotConfig = {
+        name: `apex-${sym.toLowerCase()}-${Date.now().toString(36)}`,
+        exchange: adapter.name,
+        symbol: sym,
+        strategy: {
+          type: "apex",
+          preset: opts.preset,
+          max_slots: parseInt(opts.maxSlots),
+        },
+        entry_conditions: [{ type: "always", value: 0 }],
+        exit_conditions: [],
+        risk: {
+          max_position_usd: 1000,
+          max_daily_loss: parseFloat(opts.dailyLimit),
+          max_drawdown: parseFloat(opts.dailyLimit) * 2,
+          pause_after_loss_sec: 300,
+          max_open_bots: 1,
+        },
+        monitor_interval_sec: 10,
+      };
+      const log = makeLog();
+      await runBot(adapter, config, undefined, log);
+    });
+
+  // ── bot reflect ──
+
+  bot
+    .command("reflect")
+    .description("Analyze trading performance")
+    .option("--period <days>", "Analysis period in days", "7")
+    .action(async (opts: { period: string }) => {
+      const { readJournal } = await import("../bot/trade-journal.js");
+      const { analyzePerformance } = await import("../bot/reflect.js");
+      const periodDays = Number(opts.period);
+      const entries = readJournal({ from: Date.now() - periodDays * 86400000 });
+      const report = analyzePerformance(entries, periodDays);
+      if (isJson()) return printJson(jsonOk(report));
+
+      console.log(chalk.cyan.bold("\n  Performance Report\n"));
+      console.log(`  Period:        ${chalk.white(`${report.period.days}d`)} (${new Date(report.period.from).toLocaleDateString()} – ${new Date(report.period.to).toLocaleDateString()})`);
+      console.log(`  Total trades:  ${chalk.white(report.totalTrades)}`);
+      if (report.totalTrades === 0) {
+        console.log(chalk.gray("\n  No trades in the selected period.\n"));
+        return;
+      }
+      const wrColor = report.winRate >= 0.5 ? chalk.green : chalk.red;
+      console.log(`  Win rate:      ${wrColor((report.winRate * 100).toFixed(1) + "%")}`);
+      console.log(`  Avg win:       ${chalk.green(`$${report.avgWin.toFixed(2)}`)}`);
+      console.log(`  Avg loss:      ${chalk.red(`$${report.avgLoss.toFixed(2)}`)}`);
+      const pfColor = report.profitFactor >= 1.0 ? chalk.green : chalk.red;
+      console.log(`  Profit factor: ${pfColor(report.profitFactor === Infinity ? "∞" : report.profitFactor.toFixed(2))}`);
+      console.log(`  Fee drag:      ${chalk.yellow((report.feeDragRatio * 100).toFixed(1) + "%")}`);
+      console.log(`  Direction:     ${chalk.gray(`long ${(report.directionSplit.long * 100).toFixed(0)}% / short ${(report.directionSplit.short * 100).toFixed(0)}%`)}`);
+      if (report.bestStrategy) console.log(`  Best strategy: ${chalk.green(report.bestStrategy)}`);
+      if (report.worstStrategy && report.worstStrategy !== report.bestStrategy) console.log(`  Worst strategy:${chalk.red(report.worstStrategy)}`);
+      console.log(chalk.cyan.bold("\n  Suggestions:\n"));
+      for (const s of report.suggestions) {
+        console.log(`    ${chalk.white("•")} ${chalk.gray(s)}`);
+      }
+      console.log();
+    });
+
+  // ── bot run <strategy> <symbol> ──
+
+  bot
+    .command("run <strategy> <symbol>")
+    .description("Run any registered strategy")
+    .option("--config <path>", "YAML/JSON config file")
+    .option("--param <key=value>", "Strategy parameter (repeatable)", (val: string, acc: string[]) => [...acc, val], [] as string[])
+    .action(async (strategyName: string, symbol: string, opts: {
+      config?: string; param: string[];
+    }) => {
+      // Load or build config
+      let config: import("../bot/config.js").BotConfig;
+      if (opts.config) {
+        config = loadBotConfig(opts.config);
+        // Override strategy type and symbol from CLI args
+        config.strategy = { ...(config.strategy as Record<string, unknown>), type: strategyName } as import("../bot/config.js").StrategyParams;
+        config.symbol = symbol.toUpperCase();
+      } else {
+        // Parse --param key=value pairs
+        const params: Record<string, unknown> = { type: strategyName };
+        for (const kv of opts.param) {
+          const eq = kv.indexOf("=");
+          if (eq === -1) continue;
+          const key = kv.slice(0, eq);
+          const raw = kv.slice(eq + 1);
+          // Try to coerce numbers and booleans
+          if (raw === "true") params[key] = true;
+          else if (raw === "false") params[key] = false;
+          else if (!isNaN(Number(raw)) && raw !== "") params[key] = Number(raw);
+          else params[key] = raw;
+        }
+
+        const adapter = await getAdapter();
+        config = {
+          name: `${strategyName}-${symbol.toLowerCase()}-${Date.now().toString(36)}`,
+          exchange: adapter.name,
+          symbol: symbol.toUpperCase(),
+          strategy: params as import("../bot/config.js").GenericStrategyParams,
+          entry_conditions: [{ type: "always", value: 0 }],
+          exit_conditions: [],
+          risk: {
+            max_position_usd: 1000,
+            max_daily_loss: 100,
+            max_drawdown: 200,
+            pause_after_loss_sec: 300,
+            max_open_bots: 5,
+          },
+          monitor_interval_sec: 10,
+        };
+      }
+
+      // Verify strategy is registered
+      await import("../bot/engine.js");
+      const { getStrategy } = await import("../bot/strategy-registry.js");
+      if (!getStrategy(strategyName)) {
+        console.error(chalk.red(`\n  Unknown strategy: "${strategyName}"`));
+        console.error(chalk.gray(`  Run 'perp bot list-strategies' to see available strategies.\n`));
+        return;
+      }
+
+      const adapter = await getAdapter();
+      config.exchange = adapter.name;
+      const log = makeLog();
+      await runBot(adapter, config, undefined, log);
+    });
+
   // ── bot example ──
 
   bot
