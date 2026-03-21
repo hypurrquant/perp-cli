@@ -21,6 +21,10 @@ import "./strategies/basis-arb.js";
 import "./strategies/regime-mm.js";
 import "./strategies/grid-mm.js";
 import "./strategies/liquidation-mm.js";
+import "./strategies/hedge-agent.js";
+import "./strategies/rfq-agent.js";
+import "./strategies/claude-agent.js";
+import "./strategies/apex-strategy.js";
 
 export type BotLog = (msg: string) => void;
 

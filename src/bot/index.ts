@@ -25,3 +25,7 @@ export * from "./indicators.js";
 export * from "./strategy-types.js";
 export { registerStrategy, getStrategy, listStrategies } from "./strategy-registry.js";
 export type { StrategyFactory } from "./strategy-registry.js";
+export { appendJournal, readJournal, clearJournal } from "./trade-journal.js";
+export type { JournalEntry } from "./trade-journal.js";
+export { analyzePerformance, suggestAdjustments } from "./reflect.js";
+export type { ReflectReport } from "./reflect.js";
