@@ -267,7 +267,7 @@ describe("trade stop -- parameter correctness", () => {
   it("calls adapter.stopOrder with correct args and options", async () => {
     const adapter = mockAdapter();
     await run(adapter, [
-      "trade", "stop", "btc", "sell", "60000", "0.1",
+      "trade", "stop", "btc", "sell", "0.1", "60000",
       "--limit-price", "59500", "--reduce-only",
     ]);
 
@@ -283,7 +283,7 @@ describe("trade stop -- parameter correctness", () => {
 
   it("without --limit-price and --reduce-only: options have undefined values", async () => {
     const adapter = mockAdapter();
-    await run(adapter, ["trade", "stop", "btc", "sell", "60000", "0.1"]);
+    await run(adapter, ["trade", "stop", "btc", "sell", "0.1", "60000"]);
 
     expect(adapter.stopOrder).toHaveBeenCalledTimes(1);
     expect(adapter.stopOrder).toHaveBeenCalledWith(
@@ -297,7 +297,7 @@ describe("trade stop -- parameter correctness", () => {
 
   it("uppercases symbol for stop orders", async () => {
     const adapter = mockAdapter();
-    await run(adapter, ["trade", "stop", "eth", "buy", "3500", "1"]);
+    await run(adapter, ["trade", "stop", "eth", "buy", "1", "3500"]);
 
     expect(adapter.stopOrder).toHaveBeenCalledWith(
       "ETH",
@@ -963,7 +963,7 @@ describe("no unexpected extra adapter calls", () => {
 
   it("stop order only calls stopOrder", async () => {
     const adapter = mockAdapter();
-    await run(adapter, ["trade", "stop", "btc", "sell", "60000", "0.1"]);
+    await run(adapter, ["trade", "stop", "btc", "sell", "0.1", "60000"]);
 
     expect(adapter.stopOrder).toHaveBeenCalledTimes(1);
     expect(adapter.marketOrder).not.toHaveBeenCalled();

@@ -489,11 +489,11 @@ export function registerTradeCommands(
   // === Stop / Trigger orders — Pacifica + Hyperliquid ===
 
   trade
-    .command("stop <symbol> <side> <stopPrice> <size>")
+    .command("stop <symbol> <side> <size> <stopPrice>")
     .description("Place a stop order")
     .option("--limit-price <price>", "Limit price (makes it stop-limit)")
     .option("--reduce-only", "Reduce only order")
-    .action(async (symbol: string, side: string, stopPrice: string, size: string, opts: { limitPrice?: string; reduceOnly?: boolean }) => {
+    .action(async (symbol: string, side: string, size: string, stopPrice: string, opts: { limitPrice?: string; reduceOnly?: boolean }) => {
       const s = side.toLowerCase();
       if (s !== "buy" && s !== "sell") errorAndExit("Side must be buy or sell");
 
