@@ -175,48 +175,46 @@ export class EdgeXAdapter implements ExchangeAdapter {
       return this._marketsCache.data;
     }
     // edgeX requires contractId per ticker call (bulk returns empty).
-    // Fetch top 5 popular + metadata-only for the rest to avoid Cloudflare rate limiting.
+    // With auth headers, Cloudflare is bypassed — fetch top 30 contracts.
     const allContracts = [...this._contractById.values()];
-    const TOP_IDS = ["10000001","10000002","10000003","10000004","10000005"]; // BTC,ETH,SOL,BNB,LTC
+    const TOP_COUNT = 30;
+    const topContracts = allContracts.slice(0, TOP_COUNT);
     const results: ExchangeMarketInfo[] = [];
+    const BATCH = 10;
 
-    // Fetch real-time data for top contracts (sequential to avoid rate limit)
-    for (const id of TOP_IDS) {
-      const c = this._contractById.get(id);
-      if (!c) continue;
-      try {
-        const [tArr, fArr] = await Promise.all([
-          this._publicGet("/api/v1/public/quote/getTicker", { contractId: c.contractId }),
-          this._publicGet("/api/v1/public/funding/getLatestFundingRate", { contractId: c.contractId }),
-        ]);
-        const t = (Array.isArray(tArr) ? tArr[0] : null) as Record<string, unknown> | null;
-        const f = (Array.isArray(fArr) ? fArr[0] : null) as Record<string, unknown> | null;
-        results.push({
-          symbol: this._fromApi(c.symbol),
-          markPrice: String(t?.lastPrice ?? t?.oraclePrice ?? "0"),
-          indexPrice: String(t?.indexPrice ?? "0"),
-          fundingRate: String(f?.fundingRate ?? "0"),
-          volume24h: String(t?.value ?? "0"),
-          openInterest: String(t?.openInterest ?? "0"),
-          maxLeverage: c.maxLeverage,
-        });
-      } catch { /* skip on rate limit */ }
+    for (let i = 0; i < topContracts.length; i += BATCH) {
+      const batch = topContracts.slice(i, i + BATCH);
+      const settled = await Promise.allSettled(
+        batch.map(async (c) => {
+          const [tArr, fArr] = await Promise.all([
+            this._publicGet("/api/v1/public/quote/getTicker", { contractId: c.contractId }),
+            this._publicGet("/api/v1/public/funding/getLatestFundingRate", { contractId: c.contractId }),
+          ]);
+          const t = (Array.isArray(tArr) ? tArr[0] : null) as Record<string, unknown> | null;
+          const f = (Array.isArray(fArr) ? fArr[0] : null) as Record<string, unknown> | null;
+          return {
+            symbol: this._fromApi(c.symbol),
+            markPrice: String(t?.lastPrice ?? t?.oraclePrice ?? "0"),
+            indexPrice: String(t?.indexPrice ?? "0"),
+            fundingRate: String(f?.fundingRate ?? "0"),
+            volume24h: String(t?.value ?? "0"),
+            openInterest: String(t?.openInterest ?? "0"),
+            maxLeverage: c.maxLeverage,
+          };
+        }),
+      );
+      for (const r of settled) {
+        if (r.status === "fulfilled") results.push(r.value);
+      }
     }
 
-    // Add remaining contracts with metadata only (no API calls)
+    // Add remaining contracts with metadata only
     const fetched = new Set(results.map(r => r.symbol));
-    for (const c of allContracts) {
+    for (const c of allContracts.slice(TOP_COUNT)) {
       const sym = this._fromApi(c.symbol);
-      if (fetched.has(sym)) continue;
-      results.push({
-        symbol: sym,
-        markPrice: "0",
-        indexPrice: "0",
-        fundingRate: "0",
-        volume24h: "0",
-        openInterest: "0",
-        maxLeverage: c.maxLeverage,
-      });
+      if (!fetched.has(sym)) {
+        results.push({ symbol: sym, markPrice: "0", indexPrice: "0", fundingRate: "0", volume24h: "0", openInterest: "0", maxLeverage: c.maxLeverage });
+      }
     }
 
     this._marketsCache = { data: results, ts: Date.now() };
@@ -571,28 +569,22 @@ export class EdgeXAdapter implements ExchangeAdapter {
   // ── HTTP helpers ──
 
   private async _publicGet(path: string, params: Record<string, string> = {}): Promise<unknown> {
+    // If credentials available, use authenticated request to bypass Cloudflare
+    if (!this.isReadOnly) {
+      return this._authGet(path, params);
+    }
     const qs = Object.entries(params)
       .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
       .join("&");
     const url = `${this._baseUrl}${path}${qs ? `?${qs}` : ""}`;
-
-    // edgeX has Cloudflare protection that blocks Node.js fetch on /quote/ and /funding/ paths.
-    // Use curl as fallback for those endpoints.
-    let json: { code?: string; data?: unknown; msg?: string };
-    try {
-      const res = await fetch(url, {
-        headers: { "Accept": "application/json", "User-Agent": "perp-cli/0.7.1" },
-      });
-      if (res.status === 403) throw new Error("cf-blocked");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      json = (await res.json()) as typeof json;
-    } catch {
-      // Fallback to curl (bypasses Cloudflare)
-      const { execSync } = await import("node:child_process");
-      const out = execSync(`curl -s '${url}'`, { encoding: "utf-8", timeout: 10_000 });
-      json = JSON.parse(out);
+    const res = await fetch(url, {
+      headers: { "Accept": "application/json" },
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`GET ${path} failed (${res.status}): ${text.slice(0, 200)}`);
     }
-
+    const json = (await res.json()) as { code?: string; data?: unknown; msg?: string };
     if (json.code && json.code !== "0" && json.code !== "SUCCESS") {
       throw new Error(`${path}: ${json.msg ?? json.code}`);
     }
