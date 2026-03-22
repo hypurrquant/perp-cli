@@ -48,7 +48,7 @@ Same EVM key works for both Hyperliquid and Lighter.
 | `account` | Balance, positions, orders, margin |
 | `trade` | Market/limit/stop orders, close, scale, split execution |
 | `arb` | Funding rate arb — scan, exec, close, monitor (perp-perp & spot-perp) |
-| `bot` | TWAP, grid, DCA, trailing-stop bots |
+| `bot` | 19 strategies, APEX orchestrator, REFLECT analytics, presets |
 | `funds` | Deposit, withdraw, transfer, CCTP bridge |
 | `bridge` | Cross-chain USDC bridge (deBridge DLN) |
 | `risk` | Risk limits, liquidation distance, guardrails |
@@ -121,7 +121,12 @@ perp --json funds info                               # all routes & limits
 perp --json risk limits --max-leverage 5
 perp --json risk liquidation-distance
 
-# Bots
+# Bots (19 strategies)
+perp bot list-strategies                             # list all available strategies
+perp bot run <strategy> [symbol]                     # run any strategy
+perp bot apex [symbol]                               # APEX autonomous orchestrator
+perp bot reflect                                     # trading performance analysis
+perp bot preset-list                                 # list strategy presets
 perp --json bot twap <SYM> buy <SIZE> 30m
 perp --json bot grid <SYM> --range 5 --grids 10 --size 100
 

@@ -297,7 +297,15 @@ export class PacificaAdapter implements ExchangeAdapter {
 
   async getRecentTrades(symbol: string, _limit = 20): Promise<ExchangeTrade[]> {
     const trades = await this.client.getTrades(symbol);
-    return trades.slice(0, _limit).map((t) => ({
+    // Deduplicate by time+price+size+side (API sometimes returns duplicate entries)
+    const seen = new Set<string>();
+    const unique = trades.filter((t) => {
+      const key = `${t.created_at}:${t.price}:${t.amount}:${t.side}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return unique.slice(0, _limit).map((t) => ({
       time: Number(t.created_at ?? 0),
       symbol,
       side: t.side === "bid" ? "buy" as const : "sell" as const,

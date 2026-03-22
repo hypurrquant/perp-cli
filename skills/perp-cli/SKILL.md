@@ -98,6 +98,26 @@ perp --json arb close ETH                   # sells spot + buys back perp
 
 Spot exchanges: HL, LT. Pacifica is perp-only.
 
+## Bot Engine (19 Strategies)
+
+```bash
+perp bot list-strategies                              # list all 19 strategies
+perp bot run <strategy> [symbol]                      # run any registered strategy
+perp bot run funding-auto                             # multi-exchange funding arb
+perp bot apex [symbol]                                # APEX orchestrator (Radar+Pulse+Guard)
+perp bot reflect                                      # performance analysis (win rate, fees, PnL)
+perp bot preset-list                                  # list strategy presets
+perp bot preset <name> [symbol]                       # run from preset
+perp bot start <config.yaml>                          # start from YAML/JSON config
+perp bot quick-grid <symbol>                          # quick grid bot
+perp bot quick-dca <symbol> <side> <amount> <interval>
+perp bot quick-arb                                    # quick funding arb
+```
+
+**Strategies:** simple-mm, engine-mm, avellaneda-mm, regime-mm, grid-mm, liquidation-mm, momentum-breakout, mean-reversion, aggressive-taker, funding-arb, funding-auto, basis-arb, hedge-agent, rfq-agent, claude-agent, grid, dca, twap, apex
+
+**Flags:** `--dry-run` (simulate without executing), `--headless` (no TUI, log only)
+
 ## Core Workflow: Single Trade
 
 ```bash

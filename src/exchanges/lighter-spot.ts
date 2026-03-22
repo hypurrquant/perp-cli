@@ -89,6 +89,18 @@ export class LighterSpotAdapter implements SpotAdapter {
   }
 
   /** Resolve a symbol (e.g., "ETH" or "ETH/USDC") to the full spot symbol */
+  /** Get decimals for a symbol — always from API data, never hardcoded fallback */
+  private _getDecimals(symbol: string): { size: number; price: number } {
+    const resolved = symbol.includes("/") ? symbol : symbol.toUpperCase();
+    const dec = this._spotDecimals.get(resolved);
+    if (dec) return dec;
+    // Try base token lookup (e.g., "ETH" → "ETH/USDC")
+    for (const [key, val] of this._spotDecimals) {
+      if (key.split("/")[0] === symbol.toUpperCase()) return val;
+    }
+    throw new Error(`No decimal info for spot market ${symbol}. Ensure init() completed successfully.`);
+  }
+
   private resolveSymbol(symbol: string): string {
     const upper = symbol.toUpperCase();
     if (this._spotMarketMap.has(upper)) return upper;
@@ -125,7 +137,7 @@ export class LighterSpotAdapter implements SpotAdapter {
       const parts = symbol.split("/");
       const base = parts[0] ?? "";
       const quote = parts[1] ?? "USDC";
-      const dec = this._spotDecimals.get(symbol) ?? { size: 4, price: 2 };
+      const dec = this._getDecimals(symbol);
       return {
         symbol, baseToken: base, quoteToken: quote,
         markPrice: this._spotPrices.get(symbol) ?? "0", volume24h: "0",
@@ -229,12 +241,12 @@ export class LighterSpotAdapter implements SpotAdapter {
     }
 
     const slippagePrice = side === "buy" ? refPrice * 1.05 : refPrice * 0.95;
-    const dec = this._spotDecimals.get(resolved) ?? { size: 2, price: 4 };
+    const dec = this._getDecimals(resolved);
 
     const baseAmount = Math.round(sizeNum * Math.pow(10, dec.size));
     const priceTicks = Math.round(slippagePrice * Math.pow(10, dec.price));
 
-    return this._placeOrder({
+    const result = await this._placeOrder({
       marketIndex: marketId,
       baseAmount,
       price: Math.max(priceTicks, 1),
@@ -242,6 +254,7 @@ export class LighterSpotAdapter implements SpotAdapter {
       orderType: 1, // MARKET
       timeInForce: 0, // IOC
     });
+    return result;
   }
 
   async spotLimitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { tif?: string }): Promise<unknown> {
@@ -252,25 +265,33 @@ export class LighterSpotAdapter implements SpotAdapter {
       throw new Error(`Unknown Lighter spot market: ${symbol}`);
     }
 
-    // Validate min order size
-    const sizeNum = parseFloat(size);
-    const priceNum = parseFloat(price);
+    const dec = this._getDecimals(resolved);
+
+    // Auto-round to exchange precision — caller doesn't need to know decimals
+    let sizeNum = Number(Number(size).toFixed(dec.size));
+    const priceNum = Number(Number(price).toFixed(dec.price));
+
+    // Auto-ceil size to min_base_amount if just below (within 10%)
     const minSize = this._spotMinSize.get(resolved);
+    if (minSize && sizeNum > 0 && sizeNum < minSize.base && sizeNum >= minSize.base * 0.9) {
+      sizeNum = minSize.base;
+    }
+
+    // Validate min order size
     if (minSize) {
       if (sizeNum < minSize.base) {
-        throw new Error(`Size ${size} below min_base_amount ${minSize.base} for ${resolved}`);
+        throw new Error(`Size ${sizeNum} below min_base_amount ${minSize.base} for ${resolved}`);
       }
       if (sizeNum * priceNum < minSize.quote) {
         throw new Error(`Order value $${(sizeNum * priceNum).toFixed(2)} below min_quote_amount $${minSize.quote} for ${resolved}`);
       }
     }
 
-    const dec = this._spotDecimals.get(resolved) ?? { size: 2, price: 4 };
     const baseAmount = Math.round(sizeNum * Math.pow(10, dec.size));
     const priceTicks = Math.round(priceNum * Math.pow(10, dec.price));
     const isIoc = opts?.tif?.toUpperCase() === "IOC";
 
-    return this._placeOrder({
+    const result = await this._placeOrder({
       marketIndex: marketId,
       baseAmount,
       price: priceTicks,
@@ -278,6 +299,7 @@ export class LighterSpotAdapter implements SpotAdapter {
       orderType: 0, // LIMIT
       timeInForce: isIoc ? 0 : 1,
     });
+    return result;
   }
 
   async spotCancelOrder(symbol: string, orderId: string): Promise<unknown> {
@@ -288,25 +310,35 @@ export class LighterSpotAdapter implements SpotAdapter {
       throw new Error(`Unknown Lighter spot market: ${symbol}`);
     }
 
-    // Lighter order IDs can exceed Number.MAX_SAFE_INTEGER (2^53-1).
-    // The WASM signer only accepts JS number, so large IDs lose precision
-    // and the cancel silently targets the wrong order.
-    // Fall back to cancelAll for the market when the ID is unsafe.
     const idNum = Number(orderId);
-    if (!Number.isSafeInteger(idNum)) {
-      return this.spotCancelAllOrders(symbol);
+
+    // If order ID is safe integer, cancel directly
+    if (Number.isSafeInteger(idNum)) {
+      const signer = this._lt.signer;
+      const nonce = await this._getNextNonce();
+      const signed = await signer.signCancelOrder({
+        marketIndex: marketId,
+        orderIndex: idNum,
+        nonce,
+        apiKeyIndex: (this._lt as unknown as { _apiKeyIndex: number })._apiKeyIndex,
+        accountIndex: this._lt.accountIndex,
+      });
+      return this._sendTx(signed);
     }
 
-    const signer = this._lt.signer;
-    const nonce = await this._getNextNonce();
-    const signed = await signer.signCancelOrder({
-      marketIndex: marketId,
-      orderIndex: idNum,
-      nonce,
-      apiKeyIndex: (this._lt as unknown as { _apiKeyIndex: number })._apiKeyIndex,
-      accountIndex: this._lt.accountIndex,
-    });
-    return this._sendTx(signed);
+    // Order ID exceeds MAX_SAFE_INTEGER → try lookup from open orders
+    // Note: getSpotOpenOrders() can return empty due to block finality delay.
+    // Prefer spotCancelByClientIndex() with the clientOrderIndex from spotLimitOrder().
+    const openOrders = await this.getSpotOpenOrders();
+    const symbolOrders = openOrders.filter(o =>
+      o.symbol.split("/")[0].toUpperCase() === resolved.toUpperCase() && o.clientOrderIndex
+    );
+
+    if (symbolOrders.length >= 1) {
+      return this.spotCancelByClientIndex(resolved, symbolOrders[0].clientOrderIndex!);
+    }
+
+    throw new Error(`Cannot cancel Lighter spot order ${orderId}: exceeds MAX_SAFE_INTEGER and no clientOrderIndex found`);
   }
 
   /** Cancel all orders across all markets (spot + perp) */
@@ -417,6 +449,69 @@ export class LighterSpotAdapter implements SpotAdapter {
       this._spotMarketMap.has(`${base.toUpperCase()}/USDC`);
   }
 
+  /** Query open orders across all spot markets (market_id ≥ 2048). */
+  async getSpotOpenOrders(): Promise<Array<{
+    orderId: string;
+    symbol: string;
+    side: "buy" | "sell";
+    price: string;
+    size: string;
+    clientOrderIndex?: number;
+  }>> {
+    await this.init();
+    if (this._lt.isReadOnly) return [];
+
+    const allOrders: Array<{
+      orderId: string;
+      symbol: string;
+      side: "buy" | "sell";
+      price: string;
+      size: string;
+      clientOrderIndex?: number;
+    }> = [];
+
+    for (const [sym, marketId] of this._spotMarketMap) {
+      try {
+        const data = await this._restGetAuth("/accountActiveOrders", {
+          account_index: String(this._lt.accountIndex),
+          market_id: String(marketId),
+        }) as { orders?: Array<Record<string, unknown>> };
+        for (const o of data.orders ?? []) {
+          allOrders.push({
+            orderId: String(o.order_id ?? o.order_index ?? ""),
+            symbol: sym,
+            side: o.is_ask ? "sell" as const : "buy" as const,
+            price: String(o.price ?? "0"),
+            size: String(o.remaining_base_amount ?? o.initial_base_amount ?? "0"),
+            clientOrderIndex: o.client_order_index != null ? Number(o.client_order_index) : undefined,
+          });
+        }
+      } catch { /* skip market on error */ }
+    }
+    return allOrders;
+  }
+
+  /** Cancel a spot order by clientOrderIndex (safe integer, avoids order_id overflow). */
+  async spotCancelByClientIndex(symbol: string, clientOrderIndex: number): Promise<unknown> {
+    await this.init();
+    const resolved = this.resolveSymbol(symbol);
+    const marketId = this._spotMarketMap.get(resolved);
+    if (marketId === undefined) throw new Error(`Unknown spot market: ${symbol}`);
+
+    const signer = this._lt.signer;
+    const nonce = await this._getNextNonce();
+    const apiKeyIndex = (this._lt as unknown as { _apiKeyIndex: number })._apiKeyIndex;
+
+    const signed = await signer.signCancelOrder({
+      marketIndex: marketId,
+      orderIndex: clientOrderIndex,
+      nonce,
+      apiKeyIndex,
+      accountIndex: this._lt.accountIndex,
+    });
+    return this._sendTx(signed);
+  }
+
   // ── Private helpers ──
 
   private async _placeOrder(opts: {
@@ -426,7 +521,7 @@ export class LighterSpotAdapter implements SpotAdapter {
     isAsk: number;
     orderType: number;
     timeInForce: number;
-  }): Promise<unknown> {
+  }): Promise<{ clientOrderIndex: number; [key: string]: unknown }> {
     if (this._lt.isReadOnly) {
       throw new Error("Spot trading requires a Lighter API key. Run `perp -e lighter manage setup-api-key` first.");
     }
@@ -455,7 +550,8 @@ export class LighterSpotAdapter implements SpotAdapter {
     if ((signed as { error?: string }).error) {
       throw new Error(`Signer: ${(signed as { error: string }).error}`);
     }
-    return this._sendTx(signed);
+    const txResult = await this._sendTx(signed);
+    return { ...(txResult as Record<string, unknown>), clientOrderIndex };
   }
 
   /** Generate a unique client order index (uint48). Uses timestamp + counter. */

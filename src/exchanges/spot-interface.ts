@@ -23,6 +23,16 @@ export interface SpotBalance {
   held: string;
 }
 
+export interface SpotOrderParams {
+  symbol: string;
+  side: "buy" | "sell";
+  /** Price as number or string — adapter rounds to exchange precision automatically */
+  price: number | string;
+  /** Size as number or string — adapter rounds to exchange precision automatically */
+  size: number | string;
+  tif?: string;
+}
+
 export interface SpotAdapter {
   readonly name: string;
 
@@ -36,7 +46,7 @@ export interface SpotAdapter {
   // Account
   getSpotBalances(): Promise<SpotBalance[]>;
 
-  // Trading
+  // Trading — accepts raw numbers, adapter handles precision + min size validation
   spotMarketOrder(symbol: string, side: "buy" | "sell", size: string): Promise<unknown>;
   spotLimitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { tif?: string }): Promise<unknown>;
   spotCancelOrder(symbol: string, orderId: string): Promise<unknown>;

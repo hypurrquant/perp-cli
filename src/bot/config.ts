@@ -68,7 +68,12 @@ export interface FundingArbStrategyParams {
   exchanges: string[];
 }
 
-export type StrategyParams = GridStrategyParams | DCAStrategyParams | FundingArbStrategyParams;
+export interface GenericStrategyParams {
+  type: string;
+  [key: string]: unknown;
+}
+
+export type StrategyParams = GridStrategyParams | DCAStrategyParams | FundingArbStrategyParams | GenericStrategyParams;
 
 // ── Full bot config ──
 
@@ -146,7 +151,7 @@ function parseBotConfig(raw: Record<string, unknown>): BotConfig {
   return { name, exchange, symbol, strategy, entry_conditions: entryConds, exit_conditions: exitConds, risk, monitor_interval_sec: monitorInterval };
 }
 
-function parseStrategy(type: string, raw: Record<string, unknown>): StrategyParams {
+export function parseStrategy(type: string, raw: Record<string, unknown>): StrategyParams {
   switch (type) {
     case "grid":
       return {
@@ -182,7 +187,7 @@ function parseStrategy(type: string, raw: Record<string, unknown>): StrategyPara
           : String(raw.exchanges ?? "pacifica,hyperliquid").split(",").map(s => s.trim()),
       };
     default:
-      throw new Error(`Unknown strategy type: ${type}`);
+      return { type, ...raw } as GenericStrategyParams;
   }
 }
 
