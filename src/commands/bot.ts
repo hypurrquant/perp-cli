@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { printJson, jsonOk } from "../utils.js";
 import type { ExchangeAdapter } from "../exchanges/index.js";
 import { loadBotConfig, quickGridConfig, quickDCAConfig, runBot, PRESETS, getPreset, getPresetsByStrategy } from "../bot/index.js";
+import type { BotOutputMode } from "../bot/index.js";
 import { updateJobState } from "../jobs.js";
 import { runTWAP, runFundingArb, runGrid, runDCA, runTrailingStop } from "../strategies/index.js";
 
@@ -20,8 +21,9 @@ export function registerBotCommands(
     .command("start <config>")
     .description("Start a bot from a YAML/JSON config file")
     .option("--background", "Run in background (tmux)")
+    .option("--headless", "Run without TUI dashboard")
     .option("--job-id <id>", "Job ID (set by background runner)")
-    .action(async (configPath: string, opts: { background?: boolean; jobId?: string }) => {
+    .action(async (configPath: string, opts: { background?: boolean; headless?: boolean; jobId?: string }) => {
       const config = loadBotConfig(configPath);
 
       if (opts.background) {
@@ -41,8 +43,9 @@ export function registerBotCommands(
         ? await getAdapterFor(config.exchange)
         : await getAdapter();
 
+      const mode = resolveOutputMode(isJson, opts.headless);
       const log = makeLog();
-      await runBot(adapter, config, opts.jobId, log);
+      await runBot(adapter, config, opts.jobId, log, undefined, mode);
     });
 
   // ── bot quick grid ──
@@ -58,11 +61,12 @@ export function registerBotCommands(
     .option("--max-drawdown <usd>", "Stop if drawdown exceeds ($)", "100")
     .option("--max-runtime <sec>", "Max runtime in seconds", "0")
     .option("--background", "Run in background (tmux)")
+    .option("--headless", "Run without TUI dashboard")
     .option("--job-id <id>", "Job ID")
     .action(async (symbol: string, opts: {
       range: string; grids: string; size: string; side: string;
       leverage?: string; maxDrawdown: string; maxRuntime: string;
-      background?: boolean; jobId?: string;
+      background?: boolean; headless?: boolean; jobId?: string;
     }) => {
       const adapter = await getAdapter();
       const config = quickGridConfig({
@@ -97,8 +101,9 @@ export function registerBotCommands(
         return;
       }
 
+      const mode = resolveOutputMode(isJson, opts.headless);
       const log = makeLog();
-      await runBot(adapter, config, opts.jobId, log);
+      await runBot(adapter, config, opts.jobId, log, undefined, mode);
     });
 
   // ── bot quick dca ──
@@ -111,10 +116,11 @@ export function registerBotCommands(
     .option("--trigger-drop <pct>", "Only buy when price drops X% from recent high")
     .option("--max-drawdown <usd>", "Stop if drawdown exceeds ($)", "100")
     .option("--background", "Run in background (tmux)")
+    .option("--headless", "Run without TUI dashboard")
     .option("--job-id <id>", "Job ID")
     .action(async (symbol: string, side: string, amount: string, interval: string, opts: {
       orders: string; priceLimit?: string; triggerDrop?: string;
-      maxDrawdown: string; background?: boolean; jobId?: string;
+      maxDrawdown: string; background?: boolean; headless?: boolean; jobId?: string;
     }) => {
       const adapter = await getAdapter();
       const config = quickDCAConfig({
@@ -148,8 +154,9 @@ export function registerBotCommands(
         return;
       }
 
+      const mode = resolveOutputMode(isJson, opts.headless);
       const log = makeLog();
-      await runBot(adapter, config, opts.jobId, log);
+      await runBot(adapter, config, opts.jobId, log, undefined, mode);
     });
 
   // ── bot quick arb ──
@@ -165,11 +172,12 @@ export function registerBotCommands(
     .option("--interval <sec>", "Check interval in seconds", "60")
     .option("--max-drawdown <usd>", "Stop if drawdown exceeds ($)", "200")
     .option("--background", "Run in background (tmux)")
+    .option("--headless", "Run without TUI dashboard")
     .option("--job-id <id>", "Job ID")
     .action(async (opts: {
       minSpread: string; closeSpread: string; size: string;
       maxPositions: string; exchanges: string; interval: string;
-      maxDrawdown: string; background?: boolean; jobId?: string;
+      maxDrawdown: string; background?: boolean; headless?: boolean; jobId?: string;
     }) => {
       const exchangeNames = opts.exchanges.split(",").map(e => e.trim());
       const adapters = new Map<string, ExchangeAdapter>();
@@ -233,8 +241,9 @@ export function registerBotCommands(
         return;
       }
 
+      const mode = resolveOutputMode(isJson, opts.headless);
       const log = makeLog();
-      await runBot(primaryAdapter, config, opts.jobId, log, adapters);
+      await runBot(primaryAdapter, config, opts.jobId, log, adapters, mode);
     });
 
   // ── bot preset list ──
@@ -277,8 +286,9 @@ export function registerBotCommands(
     .command("preset <name> [symbol]")
     .description("Start a bot from a preset (use 'preset-list' to see options)")
     .option("--background", "Run in background (tmux)")
+    .option("--headless", "Run without TUI dashboard")
     .option("--job-id <id>", "Job ID")
-    .action(async (name: string, symbol: string | undefined, opts: { background?: boolean; jobId?: string }) => {
+    .action(async (name: string, symbol: string | undefined, opts: { background?: boolean; headless?: boolean; jobId?: string }) => {
       const preset = getPreset(name);
       if (!preset) {
         console.error(chalk.red(`\n  Unknown preset: "${name}"`));
@@ -329,7 +339,8 @@ export function registerBotCommands(
           console.log(chalk.cyan.bold(`\n  Starting preset: ${chalk.white(preset.name)}`));
           console.log(chalk.gray(`  ${preset.description}\n`));
         }
-        await runBot(primaryAdapter, config, opts.jobId, log, adapters);
+        const mode = resolveOutputMode(isJson, opts.headless);
+        await runBot(primaryAdapter, config, opts.jobId, log, adapters, mode);
         return;
       }
 
@@ -356,7 +367,8 @@ export function registerBotCommands(
         console.log(chalk.cyan.bold(`\n  Starting preset: ${chalk.white(preset.name)}`));
         console.log(chalk.gray(`  ${preset.description}\n`));
       }
-      await runBot(adapter, config, opts.jobId, log);
+      const mode = resolveOutputMode(isJson, opts.headless);
+      await runBot(adapter, config, opts.jobId, log, undefined, mode);
     });
 
   // ── bot list-strategies ──
@@ -384,8 +396,9 @@ export function registerBotCommands(
     .option("--preset <preset>", "Preset: default, conservative, aggressive", "default")
     .option("--max-slots <n>", "Max concurrent positions", "3")
     .option("--daily-limit <usd>", "Daily loss limit in USD", "250")
+    .option("--headless", "Run without TUI dashboard")
     .action(async (symbol: string | undefined, opts: {
-      preset: string; maxSlots: string; dailyLimit: string;
+      preset: string; maxSlots: string; dailyLimit: string; headless?: boolean;
     }) => {
       const adapter = await getAdapter();
       const sym = (symbol ?? "ETH").toUpperCase();
@@ -409,8 +422,9 @@ export function registerBotCommands(
         },
         monitor_interval_sec: 10,
       };
+      const mode = resolveOutputMode(isJson, opts.headless);
       const log = makeLog();
-      await runBot(adapter, config, undefined, log);
+      await runBot(adapter, config, undefined, log, undefined, mode);
     });
 
   // ── bot reflect ──
@@ -457,9 +471,10 @@ export function registerBotCommands(
     .command("run <strategy> <symbol>")
     .description("Run any registered strategy")
     .option("--config <path>", "YAML/JSON config file")
+    .option("--headless", "Run without TUI dashboard")
     .option("--param <key=value>", "Strategy parameter (repeatable)", (val: string, acc: string[]) => [...acc, val], [] as string[])
     .action(async (strategyName: string, symbol: string, opts: {
-      config?: string; param: string[];
+      config?: string; headless?: boolean; param: string[];
     }) => {
       // Load or build config
       let config: import("../bot/config.js").BotConfig;
@@ -513,8 +528,24 @@ export function registerBotCommands(
 
       const adapter = await getAdapter();
       config.exchange = adapter.name;
+      const mode = resolveOutputMode(isJson, opts.headless);
       const log = makeLog();
-      await runBot(adapter, config, undefined, log);
+
+      // Multi-exchange strategies need all adapters
+      let extraAdapters: Map<string, import("../exchanges/index.js").ExchangeAdapter> | undefined;
+      const multiExchangeStrategies = ["funding-auto", "funding-arb", "funding-arb-v2", "basis-arb", "hedge-agent"];
+      if (multiExchangeStrategies.includes(strategyName) && getAdapterFor) {
+        extraAdapters = new Map();
+        for (const ex of ["pacifica", "hyperliquid", "lighter"]) {
+          if (ex === adapter.name) continue;
+          try {
+            const a = await getAdapterFor(ex);
+            extraAdapters.set(ex, a);
+          } catch { /* skip unavailable exchanges */ }
+        }
+      }
+
+      await runBot(adapter, config, undefined, log, extraAdapters, mode);
     });
 
   // ── bot example ──
@@ -550,6 +581,12 @@ function makeLog(): (msg: string) => void {
     const ts = new Date().toLocaleTimeString();
     console.log(`${chalk.gray(ts)} ${msg}`);
   };
+}
+
+function resolveOutputMode(isJson: () => boolean, headless?: boolean): BotOutputMode {
+  if (isJson()) return "json";
+  if (headless) return "headless";
+  return process.stdout.isTTY ? "tui" : "headless";
 }
 
 function printBotJobStarted(name: string, jobId: string) {

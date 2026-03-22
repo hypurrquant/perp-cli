@@ -147,10 +147,17 @@ class FundingAutoStrategy implements Strategy {
     const positions = (ctx.state.get("positions") as ActivePosition[]) ?? [];
     const now = Date.now();
 
-    // Cache total equity for capital-based sizing
+    // Cache total equity across ALL exchanges for capital-based sizing
     try {
-      const bal = await ctx.adapter.getBalance();
-      this._cachedEquity = Number(bal.equity) || 0;
+      const adapters = this.getAdapters(ctx);
+      let totalEquity = 0;
+      for (const [, adapter] of adapters) {
+        try {
+          const bal = await adapter.getBalance();
+          totalEquity += Number(bal.equity) || 0;
+        } catch { /* skip */ }
+      }
+      this._cachedEquity = totalEquity > 0 ? totalEquity : this._cachedEquity;
     } catch { /* keep previous cached value */ }
 
     // Get all adapters
@@ -168,14 +175,19 @@ class FundingAutoStrategy implements Strategy {
         const markets = await adapter.getMarkets();
         const map = new Map<string, { rate: number; price: number; exchange: string }>();
         for (const m of markets) {
-          const sym = m.symbol.toUpperCase();
+          // Normalize symbol: "ETH-PERP" → "ETH", "BTC-PERP" → "BTC", "ETHUSDT" → "ETH"
+          const raw = m.symbol.toUpperCase();
+          const sym = raw.replace(/-PERP$/, "").replace(/USDT$/, "").replace(/USD$/, "").replace(/-USD$/, "");
           const price = parseFloat(m.markPrice);
           map.set(sym, {
             rate: parseFloat(m.fundingRate),
             price,
             exchange: name,
           });
-          if (price > 0) priceCache.set(`${name}:${sym}`, price);
+          if (price > 0) {
+            priceCache.set(`${name}:${sym}`, price);
+            priceCache.set(`${name}:${raw}`, price); // keep raw for order execution
+          }
         }
         ratesByExchange.set(name, map);
       } catch {
@@ -258,6 +270,8 @@ class FundingAutoStrategy implements Strategy {
     if (positions.length >= this.maxPositions) return [{ type: "noop" }];
 
     ctx.state.set("lastScan", now);
+
+    ctx.log(`[funding-auto] Scanning ${ratesByExchange.size} exchanges, equity: $${this._cachedEquity.toFixed(2)}, size: $${this.getSizeUsd().toFixed(2)}/pos`);
 
     const activeSymbols = new Set(positions.map(p => `${p.symbol}:${p.mode}`));
     const opportunities: FundingOpportunity[] = [];
@@ -374,6 +388,15 @@ class FundingAutoStrategy implements Strategy {
 
     // Sort by break-even hours ascending (best opportunities first)
     opportunities.sort((a, b) => a.breakEvenHours - b.breakEvenHours);
+
+    if (opportunities.length > 0) {
+      const top = opportunities.slice(0, 3);
+      for (const o of top) {
+        ctx.log(`[funding-auto] ${o.mode} ${o.symbol}: spread ${o.annualSpread.toFixed(1)}%, BE ${o.breakEvenHours.toFixed(0)}h, income $${(o.hourlyIncome * 24).toFixed(4)}/day (${o.longExchange}↔${o.shortExchange})`);
+      }
+    } else {
+      ctx.log(`[funding-auto] No opportunities found (perp-perp min ${this.perpPerpMinSpread}%, spot-perp min ${this.spotPerpMinSpread}%, BE max ${this.maxBreakEvenHours}h)`);
+    }
 
     // ── Phase 3: Enter new positions ──
     const slotsAvailable = this.maxPositions - positions.length;
