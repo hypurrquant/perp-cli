@@ -234,7 +234,7 @@ export class LighterSpotAdapter implements SpotAdapter {
     const baseAmount = Math.round(sizeNum * Math.pow(10, dec.size));
     const priceTicks = Math.round(slippagePrice * Math.pow(10, dec.price));
 
-    return this._placeOrder({
+    const result = await this._placeOrder({
       marketIndex: marketId,
       baseAmount,
       price: Math.max(priceTicks, 1),
@@ -242,6 +242,7 @@ export class LighterSpotAdapter implements SpotAdapter {
       orderType: 1, // MARKET
       timeInForce: 0, // IOC
     });
+    return result;
   }
 
   async spotLimitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { tif?: string }): Promise<unknown> {
@@ -270,7 +271,7 @@ export class LighterSpotAdapter implements SpotAdapter {
     const priceTicks = Math.round(priceNum * Math.pow(10, dec.price));
     const isIoc = opts?.tif?.toUpperCase() === "IOC";
 
-    return this._placeOrder({
+    const result = await this._placeOrder({
       marketIndex: marketId,
       baseAmount,
       price: priceTicks,
@@ -278,6 +279,7 @@ export class LighterSpotAdapter implements SpotAdapter {
       orderType: 0, // LIMIT
       timeInForce: isIoc ? 0 : 1,
     });
+    return result;
   }
 
   async spotCancelOrder(symbol: string, orderId: string): Promise<unknown> {
@@ -290,11 +292,13 @@ export class LighterSpotAdapter implements SpotAdapter {
 
     // Lighter order IDs can exceed Number.MAX_SAFE_INTEGER (2^53-1).
     // The WASM signer only accepts JS number, so large IDs lose precision
-    // and the cancel silently targets the wrong order.
-    // Fall back to cancelAll for the market when the ID is unsafe.
+    // and the cancel silently targets the wrong order → "invalid signature".
     const idNum = Number(orderId);
     if (!Number.isSafeInteger(idNum)) {
-      return this.spotCancelAllOrders(symbol);
+      throw new Error(
+        `Lighter spot order ID ${orderId} exceeds MAX_SAFE_INTEGER. ` +
+        `Use clientOrderIndex for cancel (spotCancelByClientIndex) or cancel via Lighter web UI.`,
+      );
     }
 
     const signer = this._lt.signer;
@@ -417,6 +421,69 @@ export class LighterSpotAdapter implements SpotAdapter {
       this._spotMarketMap.has(`${base.toUpperCase()}/USDC`);
   }
 
+  /** Query open orders across all spot markets (market_id ≥ 2048). */
+  async getSpotOpenOrders(): Promise<Array<{
+    orderId: string;
+    symbol: string;
+    side: "buy" | "sell";
+    price: string;
+    size: string;
+    clientOrderIndex?: number;
+  }>> {
+    await this.init();
+    if (this._lt.isReadOnly) return [];
+
+    const allOrders: Array<{
+      orderId: string;
+      symbol: string;
+      side: "buy" | "sell";
+      price: string;
+      size: string;
+      clientOrderIndex?: number;
+    }> = [];
+
+    for (const [sym, marketId] of this._spotMarketMap) {
+      try {
+        const data = await this._restGetAuth("/accountActiveOrders", {
+          account_index: String(this._lt.accountIndex),
+          market_id: String(marketId),
+        }) as { orders?: Array<Record<string, unknown>> };
+        for (const o of data.orders ?? []) {
+          allOrders.push({
+            orderId: String(o.order_id ?? o.order_index ?? ""),
+            symbol: sym,
+            side: o.is_ask ? "sell" as const : "buy" as const,
+            price: String(o.price ?? "0"),
+            size: String(o.remaining_base_amount ?? o.initial_base_amount ?? "0"),
+            clientOrderIndex: o.client_order_index != null ? Number(o.client_order_index) : undefined,
+          });
+        }
+      } catch { /* skip market on error */ }
+    }
+    return allOrders;
+  }
+
+  /** Cancel a spot order by clientOrderIndex (safe integer, avoids order_id overflow). */
+  async spotCancelByClientIndex(symbol: string, clientOrderIndex: number): Promise<unknown> {
+    await this.init();
+    const resolved = this.resolveSymbol(symbol);
+    const marketId = this._spotMarketMap.get(resolved);
+    if (marketId === undefined) throw new Error(`Unknown spot market: ${symbol}`);
+
+    const signer = this._lt.signer;
+    const nonce = await this._getNextNonce();
+    const apiKeyIndex = (this._lt as unknown as { _apiKeyIndex: number })._apiKeyIndex;
+
+    const signed = await signer.signCancelOrder({
+      marketIndex: marketId,
+      orderIndex: clientOrderIndex,
+      nonce,
+      apiKeyIndex,
+      accountIndex: this._lt.accountIndex,
+    });
+    return this._sendTx(signed);
+  }
+
   // ── Private helpers ──
 
   private async _placeOrder(opts: {
@@ -426,7 +493,7 @@ export class LighterSpotAdapter implements SpotAdapter {
     isAsk: number;
     orderType: number;
     timeInForce: number;
-  }): Promise<unknown> {
+  }): Promise<{ clientOrderIndex: number; [key: string]: unknown }> {
     if (this._lt.isReadOnly) {
       throw new Error("Spot trading requires a Lighter API key. Run `perp -e lighter manage setup-api-key` first.");
     }
@@ -455,7 +522,8 @@ export class LighterSpotAdapter implements SpotAdapter {
     if ((signed as { error?: string }).error) {
       throw new Error(`Signer: ${(signed as { error: string }).error}`);
     }
-    return this._sendTx(signed);
+    const txResult = await this._sendTx(signed);
+    return { ...(txResult as Record<string, unknown>), clientOrderIndex };
   }
 
   /** Generate a unique client order index (uint48). Uses timestamp + counter. */
