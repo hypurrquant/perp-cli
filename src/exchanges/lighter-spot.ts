@@ -89,6 +89,18 @@ export class LighterSpotAdapter implements SpotAdapter {
   }
 
   /** Resolve a symbol (e.g., "ETH" or "ETH/USDC") to the full spot symbol */
+  /** Get decimals for a symbol — always from API data, never hardcoded fallback */
+  private _getDecimals(symbol: string): { size: number; price: number } {
+    const resolved = symbol.includes("/") ? symbol : symbol.toUpperCase();
+    const dec = this._spotDecimals.get(resolved);
+    if (dec) return dec;
+    // Try base token lookup (e.g., "ETH" → "ETH/USDC")
+    for (const [key, val] of this._spotDecimals) {
+      if (key.split("/")[0] === symbol.toUpperCase()) return val;
+    }
+    throw new Error(`No decimal info for spot market ${symbol}. Ensure init() completed successfully.`);
+  }
+
   private resolveSymbol(symbol: string): string {
     const upper = symbol.toUpperCase();
     if (this._spotMarketMap.has(upper)) return upper;
@@ -125,7 +137,7 @@ export class LighterSpotAdapter implements SpotAdapter {
       const parts = symbol.split("/");
       const base = parts[0] ?? "";
       const quote = parts[1] ?? "USDC";
-      const dec = this._spotDecimals.get(symbol) ?? { size: 2, price: 4 };
+      const dec = this._getDecimals(symbol);
       return {
         symbol, baseToken: base, quoteToken: quote,
         markPrice: this._spotPrices.get(symbol) ?? "0", volume24h: "0",

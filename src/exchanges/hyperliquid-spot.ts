@@ -271,9 +271,11 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
     return this._spotAssetMap.get(base.toUpperCase());
   }
 
-  /** Get spot size decimals for a base token */
+  /** Get spot size decimals for a base token — from API data, not hardcoded */
   getSpotDecimals(base: string): { size: number; price: number } {
-    return this._spotDecimals.get(base.toUpperCase()) ?? { size: 2, price: 6 };
+    const dec = this._spotDecimals.get(base.toUpperCase());
+    if (dec) return dec;
+    throw new Error(`No decimal info for spot token ${base}. Ensure init() completed successfully.`);
   }
 
   /**
