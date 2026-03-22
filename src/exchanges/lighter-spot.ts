@@ -290,27 +290,36 @@ export class LighterSpotAdapter implements SpotAdapter {
       throw new Error(`Unknown Lighter spot market: ${symbol}`);
     }
 
-    // Lighter order IDs can exceed Number.MAX_SAFE_INTEGER (2^53-1).
-    // The WASM signer only accepts JS number, so large IDs lose precision
-    // and the cancel silently targets the wrong order → "invalid signature".
     const idNum = Number(orderId);
-    if (!Number.isSafeInteger(idNum)) {
-      throw new Error(
-        `Lighter spot order ID ${orderId} exceeds MAX_SAFE_INTEGER. ` +
-        `Use clientOrderIndex for cancel (spotCancelByClientIndex) or cancel via Lighter web UI.`,
-      );
+
+    // If order ID is safe integer, cancel directly
+    if (Number.isSafeInteger(idNum)) {
+      const signer = this._lt.signer;
+      const nonce = await this._getNextNonce();
+      const signed = await signer.signCancelOrder({
+        marketIndex: marketId,
+        orderIndex: idNum,
+        nonce,
+        apiKeyIndex: (this._lt as unknown as { _apiKeyIndex: number })._apiKeyIndex,
+        accountIndex: this._lt.accountIndex,
+      });
+      return this._sendTx(signed);
     }
 
-    const signer = this._lt.signer;
-    const nonce = await this._getNextNonce();
-    const signed = await signer.signCancelOrder({
-      marketIndex: marketId,
-      orderIndex: idNum,
-      nonce,
-      apiKeyIndex: (this._lt as unknown as { _apiKeyIndex: number })._apiKeyIndex,
-      accountIndex: this._lt.accountIndex,
-    });
-    return this._sendTx(signed);
+    // Order ID exceeds MAX_SAFE_INTEGER → look up clientOrderIndex from open orders
+    const openOrders = await this.getSpotOpenOrders();
+    const match = openOrders.find(o => o.orderId === orderId && o.clientOrderIndex);
+    if (match?.clientOrderIndex) {
+      return this.spotCancelByClientIndex(resolved, match.clientOrderIndex);
+    }
+
+    // Fallback: try cancel by matching symbol+side (cancel first matching order)
+    const symbolOrders = openOrders.filter(o => o.symbol.split("/")[0] === resolved && o.clientOrderIndex);
+    if (symbolOrders.length > 0) {
+      return this.spotCancelByClientIndex(resolved, symbolOrders[0].clientOrderIndex!);
+    }
+
+    throw new Error(`Cannot cancel Lighter spot order ${orderId}: exceeds MAX_SAFE_INTEGER and no clientOrderIndex found`);
   }
 
   /** Cancel all orders across all markets (spot + perp) */
