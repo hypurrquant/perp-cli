@@ -182,7 +182,7 @@ export function registerMarketCommands(
       if (!m) {
         if (isJson()) return printJson(jsonError("SYMBOL_NOT_FOUND", `Market ${sym} not found`));
         console.log(chalk.red(`\n  Market "${sym}" not found.\n`));
-        return;
+        return process.exit(1);
       }
       if (isJson()) return printJson(jsonOk(m));
 
@@ -256,9 +256,10 @@ export function registerMarketCommands(
   market
     .command("trades <symbol>")
     .description("Recent trades for a symbol")
-    .action(async (symbol: string) => {
+    .option("--limit <n>", "Number of recent trades to show", "20")
+    .action(async (symbol: string, opts: { limit: string }) => {
       const adapter = await getAdapter();
-      const trades = await adapter.getRecentTrades(symbol.toUpperCase(), 20);
+      const trades = await adapter.getRecentTrades(symbol.toUpperCase(), parseInt(opts.limit));
       if (isJson()) return printJson(jsonOk(trades));
       if (trades.length === 0) {
         console.log(chalk.gray("\n  No recent trades.\n"));
@@ -285,12 +286,18 @@ export function registerMarketCommands(
         console.log(chalk.gray("\n  No funding history.\n"));
         return;
       }
-      const rows = history.map((h) => [
-        new Date(h.time).toLocaleString(),
-        formatPercent(h.rate),
-        h.price != null ? `$${formatUsd(h.price)}` : chalk.gray("n/a"),
-      ]);
-      console.log(makeTable(["Time", "Funding Rate", "Oracle"], rows));
+      const hasOracle = history.some((h) => h.price != null && h.price !== "0" && h.price !== "");
+      const rows = history.map((h) => {
+        const base = [
+          new Date(h.time).toLocaleString(),
+          formatPercent(h.rate),
+        ];
+        if (hasOracle) base.push(h.price != null ? `$${formatUsd(h.price)}` : chalk.gray("n/a"));
+        return base;
+      });
+      const headers = hasOracle ? ["Time", "Funding Rate", "Oracle"] : ["Time", "Funding Rate"];
+      console.log(makeTable(headers, rows));
+      if (!hasOracle) console.log(chalk.gray("  Note: Oracle price not available for this exchange.\n"));
     });
 
   market
@@ -404,7 +411,7 @@ export function registerMarketCommands(
         console.log(chalk.cyan.bold("\n  HIP-3 Deployed Perp DEXes\n"));
         const rows = dexes.map(d => [
           chalk.white.bold(d.name),
-          chalk.gray(d.deployer.slice(0, 10) + "..."),
+          chalk.gray(d.deployer.slice(0, 6) + "..." + d.deployer.slice(-4)),
           String(d.assets.length),
           d.assets.slice(0, 5).join(", ") + (d.assets.length > 5 ? ` +${d.assets.length - 5}` : ""),
         ]);

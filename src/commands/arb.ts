@@ -345,7 +345,7 @@ function printDetailedComparison(comparison: SymbolFundingComparison): void {
 
 // ── Exported handler functions for use by arb-auto.ts scan routing ──
 
-export async function handleRates(isJson: () => boolean, opts: { symbol?: string; symbols?: string; all?: boolean; minSpread: string }): Promise<void> {
+export async function handleRates(isJson: () => boolean, opts: { symbol?: string; symbols?: string; all?: boolean; minSpread: string; top?: string }): Promise<void> {
   const minSpread = parseFloat(opts.minSpread);
   let filterSymbols: string[] | undefined;
   if (opts.symbol) filterSymbols = [opts.symbol.toUpperCase()];
@@ -354,6 +354,7 @@ export async function handleRates(isJson: () => boolean, opts: { symbol?: string
   if (!isJson()) console.log(chalk.cyan("  Fetching funding rates from all exchanges...\n"));
   const snapshot = await fetchAllFundingRates({ symbols: filterSymbols, minSpread });
   try { const allRates = snapshot.symbols.flatMap(s => s.rates); if (allRates.length > 0) saveFundingSnapshot(allRates); } catch { /* non-critical */ }
+  if (opts.top) snapshot.symbols = snapshot.symbols.slice(0, parseInt(opts.top));
   if (isJson()) {
     // Enrich with 24h rate history for each symbol
     const now = new Date();

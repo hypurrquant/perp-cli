@@ -21,7 +21,7 @@ export function registerBridgeCommands(
   program: Command,
   isJson: () => boolean
 ) {
-  const bridge = program.command("bridge").description("Cross-chain USDC bridge (deBridge DLN)");
+  const bridge = program.command("bridge").description("Cross-chain USDC bridge (deBridge DLN). See also: perp funds bridge (CCTP V2)");
 
   // ── bridge chains ──
 

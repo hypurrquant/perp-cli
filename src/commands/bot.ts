@@ -110,7 +110,7 @@ export function registerBotCommands(
 
   bot
     .command("quick-dca <symbol> <side> <amount> <interval>")
-    .description("Quick-start a DCA bot")
+    .description("Quick-start a DCA bot (interval: seconds between orders)")
     .option("--orders <n>", "Total orders (0 = unlimited)", "0")
     .option("--price-limit <price>", "Don't buy above / sell below this price")
     .option("--trigger-drop <pct>", "Only buy when price drops X% from recent high")
@@ -397,8 +397,10 @@ export function registerBotCommands(
     .option("--max-slots <n>", "Max concurrent positions", "3")
     .option("--daily-limit <usd>", "Daily loss limit in USD", "250")
     .option("--headless", "Run without TUI dashboard")
+    .option("--background", "Run in background (tmux)")
+    .option("--job-id <id>", "Job ID")
     .action(async (symbol: string | undefined, opts: {
-      preset: string; maxSlots: string; dailyLimit: string; headless?: boolean;
+      preset: string; maxSlots: string; dailyLimit: string; headless?: boolean; background?: boolean; jobId?: string;
     }) => {
       const adapter = await getAdapter();
       const sym = (symbol ?? "ETH").toUpperCase();
@@ -422,9 +424,28 @@ export function registerBotCommands(
         },
         monitor_interval_sec: 10,
       };
+
+      if (opts.background) {
+        const { startJob } = await import("../jobs.js");
+        const cliArgs = [
+          `-e`, adapter.name, `apex`, sym,
+          `--preset`, opts.preset, `--max-slots`, opts.maxSlots,
+          `--daily-limit`, opts.dailyLimit,
+        ];
+        const job = startJob({
+          strategy: `bot:apex`,
+          exchange: adapter.name,
+          params: { symbol: sym, ...opts },
+          cliArgs,
+        });
+        if (isJson()) return printJson(jsonOk(job));
+        printBotJobStarted(config.name, job.id);
+        return;
+      }
+
       const mode = resolveOutputMode(isJson, opts.headless);
       const log = makeLog();
-      await runBot(adapter, config, undefined, log, undefined, mode);
+      await runBot(adapter, config, opts.jobId, log, undefined, mode);
     });
 
   // ── bot reflect ──
@@ -477,6 +498,20 @@ export function registerBotCommands(
       config?: string; headless?: boolean; param: string[];
     }) => {
       const sym = symbol?.toUpperCase() || "ALL";
+
+      // Strategies that require an explicit symbol
+      const symbolRequiredStrategies = [
+        "grid", "dca", "simple-mm", "engine-mm", "avellaneda-mm",
+        "momentum-breakout", "mean-reversion", "aggressive-taker",
+        "grid-mm", "liquidation-mm", "regime-mm",
+      ];
+      if (sym === "ALL" && symbolRequiredStrategies.includes(strategyName)) {
+        console.error(chalk.red(`\n  Error: The '${strategyName}' strategy requires a <symbol> argument.`));
+        console.error(chalk.gray(`  Usage: perp bot run ${strategyName} <symbol>\n`));
+        process.exitCode = 1;
+        return;
+      }
+
       // Load or build config
       let config: import("../bot/config.js").BotConfig;
       if (opts.config) {

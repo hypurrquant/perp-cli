@@ -1304,7 +1304,7 @@ export function registerArbAutoCommands(
 
       // Route to specialized handlers
       if (opts.compare) return handleCompare(isJson, opts.compare);
-      if (opts.rates) return handleRates(isJson, { symbol: opts.symbol, symbols: opts.symbols, all: opts.all, minSpread: opts.min });
+      if (opts.rates) return handleRates(isJson, { symbol: opts.symbol, symbols: opts.symbols, all: opts.all, minSpread: opts.min, top: opts.top });
       if (opts.basis) return handleBasisScan(isJson, { minBasis: opts.min, symbol: typeof opts.basis === "string" ? opts.basis : opts.symbol });
       if (opts.hip3) return handleDexScan(isJson, { minSpread: opts.min, maxGap: opts.maxGap || "5", includeNative: opts.includeNative !== false, top: opts.top || "20" });
       if (opts.history) return handleFundingHistory(isJson, { symbol: (typeof opts.history === "string" ? opts.history : opts.symbol) || "ETH", hours: opts.hours || "24", exchange: opts.exchange });
@@ -1382,7 +1382,8 @@ export function registerArbAutoCommands(
       if (!isJson()) console.log(chalk.cyan("  Scanning perp-perp funding rate spreads...\n"));
 
       const spreads = await fetchFundingSpreads();
-      const filtered = spreads.filter(s => Math.abs(s.spread) >= minSpread);
+      let filtered = spreads.filter(s => Math.abs(s.spread) >= minSpread);
+      if (opts.top) filtered = filtered.slice(0, parseInt(opts.top));
 
       if (isJson()) {
         const perpPerp: Record<string, unknown>[] = filtered.map(s => {

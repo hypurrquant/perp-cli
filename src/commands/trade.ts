@@ -256,7 +256,7 @@ export function registerTradeCommands(
   trade
     .command("limit <symbol> <side> <price> <size>")
     .description("Place a limit order")
-    .option("--tif <tif>", "Time in force: GTC, IOC, ALO, TOB", "GTC")
+    .option("--tif <tif>", "Time in force: GTC, IOC, ALO (HL only), TOB (HL only)", "GTC")
     .option("--reduce-only", "Reduce only order")
     .option("--client-id <id>", "Client order ID for idempotent tracking")
     .option("--auto-id", "Auto-generate a client order ID")
@@ -517,7 +517,7 @@ export function registerTradeCommands(
 
   trade
     .command("tpsl <symbol> <side>")
-    .description("Set take-profit / stop-loss on a position")
+    .description("Set take-profit / stop-loss on a position (side: the side to CLOSE — buy to close short, sell to close long)")
     .option("--tp <price>", "Take profit trigger price")
     .option("--tp-limit <price>", "Take profit limit price")
     .option("--sl <price>", "Stop loss trigger price")
@@ -614,7 +614,7 @@ export function registerTradeCommands(
   trade
     .command("scale-tp <symbol>")
     .description("Place multiple take-profit limit orders at different price levels (분할익절)")
-    .requiredOption("--levels <levels>", "Comma-separated price:percent pairs (e.g., 72000:25,75000:25,80000:50)")
+    .requiredOption("--levels <levels>", "[required] Comma-separated price:percent pairs (e.g., 72000:25,75000:25,80000:50)")
     .option("--size <size>", "Override total position size (default: uses current position)")
     .action(async (symbol: string, opts: { levels: string; size?: string }) => {
       const sym = symbol.toUpperCase();

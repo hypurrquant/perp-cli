@@ -708,7 +708,7 @@ export function registerFundsCommands(
 
   funds
     .command("bridge")
-    .description("Bridge USDC between chains via CCTP V2")
+    .description("Bridge USDC between chains via CCTP V2. See also: perp bridge (deBridge DLN)")
     .requiredOption("--from <chain>", "Source chain (arbitrum, ethereum)")
     .requiredOption("--to <chain>", "Destination chain (arbitrum, ethereum, solana)")
     .requiredOption("--amount <amount>", "USDC amount")

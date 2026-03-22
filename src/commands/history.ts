@@ -98,7 +98,11 @@ export function registerHistoryCommands(
             : chalk.red;
           const sideColor = r.side === "buy" || r.side === "long" ? chalk.green : chalk.red;
           const time = new Date(r.timestamp).toLocaleString();
-          const notional = r.notional ? `$${formatUsd(r.notional)}` : r.price ? `$${formatUsd(Number(r.price) * Number(r.size))}` : "-";
+          const metaPrice = r.meta?.price ?? r.meta?.markPrice ?? r.meta?.entryPrice;
+          const effectivePrice = r.price ?? (typeof metaPrice === "number" || typeof metaPrice === "string" ? String(metaPrice) : undefined);
+          const sizeNum = Number(r.size);
+          const priceNum = effectivePrice ? Number(effectivePrice) : 0;
+          const notional = r.notional ? `$${formatUsd(r.notional)}` : (priceNum > 0 && sizeNum > 0) ? `$${formatUsd(priceNum * sizeNum)}` : "-";
           return [
             chalk.gray(time),
             chalk.white(r.exchange),
