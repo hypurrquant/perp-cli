@@ -22,6 +22,11 @@ function formatSizeForPrice(rawSize: number, price: number): string {
   return rawSize.toFixed(0);                       // sub-$1 tokens
 }
 
+/** Normalize exchange symbol to base asset: "ETH-PERP" → "ETH", "ETHUSDT" → "ETH" */
+function normalizeSymbol(raw: string): string {
+  return raw.toUpperCase().replace(/-PERP$/, "").replace(/USDT$/, "").replace(/USD$/, "").replace(/-USD$/, "");
+}
+
 /**
  * Automated funding rate trading strategy — dual mode.
  *
@@ -38,6 +43,8 @@ function formatSizeForPrice(rawSize: number, price: number): string {
  *   Hourly Income = |hourlyRateA - hourlyRateB| * notional
  *   Break-Even Hours = Total Cost / Hourly Income
  *   Entry if: breakEvenHours < maxHoldHours AND hourlyIncome > 0 AND spread > minSpread
+ *
+ * Position tracking: discovered from live exchange data every tick (survives restarts).
  */
 
 // ── Types ──
@@ -60,6 +67,10 @@ interface ActivePosition {
   mode: "perp-perp" | "spot-perp";
   longExchange: string;
   shortExchange: string;
+  longSize: number;       // actual size from exchange
+  shortSize: number;      // actual size from exchange
+  longSymbol: string;     // raw exchange symbol for order execution
+  shortSymbol: string;    // raw exchange symbol for order execution
   entrySpread: number;
   entryTime: number;
   notional: number;
@@ -137,16 +148,12 @@ class FundingAutoStrategy implements Strategy {
 
   async init(ctx: StrategyContext, _snapshot: EnrichedSnapshot): Promise<void> {
     this._config = ctx.config;
-    ctx.state.set("positions", [] as ActivePosition[]);
     ctx.state.set("lastScan", 0);
     ctx.state.set("priceCache", new Map<string, number>());
     ctx.log(`[funding-auto] Starting with ${this.spotPerpRatio}/${this.perpPerpRatio} spot-perp/perp-perp split`);
   }
 
   async onTick(ctx: StrategyContext, _snapshot: EnrichedSnapshot): Promise<StrategyAction[]> {
-    const positions = (ctx.state.get("positions") as ActivePosition[]) ?? [];
-    const now = Date.now();
-
     // Cache total equity across ALL exchanges for capital-based sizing
     try {
       const adapters = this.getAdapters(ctx);
@@ -167,6 +174,9 @@ class FundingAutoStrategy implements Strategy {
       return [];
     }
 
+    // ── Discover existing arb pairs from live exchange positions ──
+    const positions = await this.discoverArbPairs(adapters);
+
     // Fetch funding rates from all exchanges (price data cached for position sizing)
     const ratesByExchange = new Map<string, Map<string, { rate: number; price: number; exchange: string }>>();
     const priceCache = new Map<string, number>(); // "exchange:symbol" -> price
@@ -175,9 +185,8 @@ class FundingAutoStrategy implements Strategy {
         const markets = await adapter.getMarkets();
         const map = new Map<string, { rate: number; price: number; exchange: string }>();
         for (const m of markets) {
-          // Normalize symbol: "ETH-PERP" → "ETH", "BTC-PERP" → "BTC", "ETHUSDT" → "ETH"
           const raw = m.symbol.toUpperCase();
-          const sym = raw.replace(/-PERP$/, "").replace(/USDT$/, "").replace(/USD$/, "").replace(/-USD$/, "");
+          const sym = normalizeSymbol(raw);
           const price = parseFloat(m.markPrice);
           map.set(sym, {
             rate: parseFloat(m.fundingRate),
@@ -197,83 +206,103 @@ class FundingAutoStrategy implements Strategy {
     // Store priceCache for use by openPosition/closePosition
     ctx.state.set("priceCache", priceCache);
 
-    // ── Phase 1: Monitor existing positions for exit ──
-    const toClose: number[] = [];
-    for (let i = 0; i < positions.length; i++) {
-      const pos = positions[i];
+    // Calculate notional for discovered positions (using current price)
+    for (const pos of positions) {
+      const price = priceCache.get(`${pos.longExchange}:${pos.symbol}`)
+        || priceCache.get(`${pos.shortExchange}:${pos.symbol}`) || 0;
+      if (price > 0) {
+        pos.notional = Math.max(pos.longSize, pos.shortSize) * price;
+      }
+    }
 
+    // ── Phase 1: Monitor existing positions for exit ──
+    const surviving: ActivePosition[] = [];
+    for (const pos of positions) {
       if (pos.mode === "perp-perp") {
         // Check if spread has converged below close threshold
         const longRates = ratesByExchange.get(pos.longExchange);
         const shortRates = ratesByExchange.get(pos.shortExchange);
-        if (!longRates || !shortRates) continue;
+        if (!longRates || !shortRates) { surviving.push(pos); continue; }
 
         const longInfo = longRates.get(pos.symbol);
         const shortInfo = shortRates.get(pos.symbol);
-        if (!longInfo || !shortInfo) continue;
+        if (!longInfo || !shortInfo) { surviving.push(pos); continue; }
 
         const currentSpread = computeAnnualSpread(
           shortInfo.rate, pos.shortExchange,
           longInfo.rate, pos.longExchange,
         );
 
+        // Calculate real P&L from exchange history
+        const [longPnl, shortPnl] = await Promise.all([
+          this.calculateRealPnl(adapters.get(pos.longExchange)!, pos.symbol),
+          this.calculateRealPnl(adapters.get(pos.shortExchange)!, pos.symbol),
+        ]);
+        const totalFees = longPnl.fees + shortPnl.fees;
+        const totalFunding = longPnl.funding + shortPnl.funding;
+        pos.accumulatedFunding = totalFunding;
+        pos.totalCost = totalFees;
+
+        ctx.log(
+          `[funding-auto] ${pos.symbol} spread ${currentSpread.toFixed(1)}% | ` +
+          `fees $${totalFees.toFixed(4)} | funding $${totalFunding.toFixed(4)} | ` +
+          `net $${(totalFunding - totalFees).toFixed(4)} (${pos.longExchange}↔${pos.shortExchange})`,
+        );
+
         // Only close when spread REVERSES (≤ 0%) — never close a profitable position
         // A spread of 5% or even 2% still earns funding. Closing costs more than keeping.
         if (currentSpread <= 0) {
-          ctx.log(`[funding-auto] Closing perp-perp ${pos.symbol}: spread REVERSED to ${currentSpread.toFixed(1)}% (entry was ${pos.entrySpread.toFixed(1)}%)`);
+          ctx.log(`[funding-auto] Closing perp-perp ${pos.symbol}: spread REVERSED to ${currentSpread.toFixed(1)}%`);
           await this.closePosition(ctx, pos, adapters);
-          toClose.push(i);
         } else {
-          // Track accumulated funding estimate
-          const hourlyIncome = Math.abs(
-            toHourlyRate(shortInfo.rate, pos.shortExchange) - toHourlyRate(longInfo.rate, pos.longExchange),
-          ) * pos.notional;
-          const hoursHeld = (now - pos.entryTime) / (1000 * 60 * 60);
-          pos.accumulatedFunding = hourlyIncome * hoursHeld;
+          surviving.push(pos);
         }
       } else if (pos.mode === "spot-perp") {
         // Spot-perp: exit if perp funding flips negative (we are short perp)
         const shortRates = ratesByExchange.get(pos.shortExchange);
-        if (!shortRates) continue;
+        if (!shortRates) { surviving.push(pos); continue; }
 
         const shortInfo = shortRates.get(pos.symbol);
-        if (!shortInfo) continue;
+        if (!shortInfo) { surviving.push(pos); continue; }
 
         const hourlyRate = toHourlyRate(shortInfo.rate, pos.shortExchange);
         const annualized = Math.abs(hourlyRate) * 8760 * 100;
+
+        const pnl = await this.calculateRealPnl(adapters.get(pos.shortExchange)!, pos.symbol);
+        pos.accumulatedFunding = pnl.funding;
+        pos.totalCost = pnl.fees;
+
+        ctx.log(
+          `[funding-auto] ${pos.symbol} rate ${annualized.toFixed(1)}% | ` +
+          `fees $${pnl.fees.toFixed(4)} | funding $${pnl.funding.toFixed(4)} | ` +
+          `net $${(pnl.funding - pnl.fees).toFixed(4)} (${pos.shortExchange})`,
+        );
 
         // Exit if funding flipped (rate went negative — shorts would pay instead of receive)
         if (shortInfo.rate < 0) {
           ctx.log(`[funding-auto] Closing spot-perp ${pos.symbol}: funding flipped negative (${(shortInfo.rate * 100).toFixed(4)}%)`);
           await this.closePosition(ctx, pos, adapters);
-          toClose.push(i);
         } else {
-          // Track accumulated funding
-          const hoursHeld = (now - pos.entryTime) / (1000 * 60 * 60);
-          pos.accumulatedFunding = Math.abs(hourlyRate) * pos.notional * hoursHeld;
-
           if (annualized < this.spotPerpMinSpread) {
             ctx.log(`[funding-auto] Spot-perp ${pos.symbol} annualized rate dropped to ${annualized.toFixed(1)}% — monitoring`);
           }
+          surviving.push(pos);
         }
       }
     }
 
-    // Remove closed positions (reverse order to preserve indices)
-    for (let i = toClose.length - 1; i >= 0; i--) {
-      positions.splice(toClose[i], 1);
-    }
-    ctx.state.set("positions", positions);
-
     // ── Phase 2: Scan for new opportunities ──
-    if (ctx.tick % this.scanIntervalTicks !== 0) return positions.length > 0 ? [{ type: "noop" }] : [];
-    if (positions.length >= this.maxPositions) return [{ type: "noop" }];
+    if (ctx.tick % this.scanIntervalTicks !== 0) return surviving.length > 0 ? [{ type: "noop" }] : [];
+    if (surviving.length >= this.maxPositions) return [{ type: "noop" }];
 
-    ctx.state.set("lastScan", now);
+    ctx.state.set("lastScan", Date.now());
 
-    ctx.log(`[funding-auto] Scanning ${ratesByExchange.size} exchanges, equity: $${this._cachedEquity.toFixed(2)}, size: $${this.getSizeUsd().toFixed(2)}/pos`);
+    ctx.log(`[funding-auto] Scanning ${ratesByExchange.size} exchanges, equity: $${this._cachedEquity.toFixed(2)}, size: $${this.getSizeUsd().toFixed(2)}/pos, active: ${surviving.length}`);
 
-    const activeSymbols = new Set(positions.map(p => `${p.symbol}:${p.mode}`));
+    const activeSymbols = new Set(surviving.map(p => `${p.symbol}:${p.mode}`));
+    // Also block symbols we already tried to enter (prevents re-entry on failed/tiny orders)
+    const attempted = (ctx.state.get("attemptedSymbols") as Set<string>) ?? new Set<string>();
+    for (const sym of attempted) activeSymbols.add(sym);
     const opportunities: FundingOpportunity[] = [];
 
     // Collect all symbols across exchanges
@@ -399,7 +428,7 @@ class FundingAutoStrategy implements Strategy {
     }
 
     // ── Phase 3: Enter new positions ──
-    const slotsAvailable = this.maxPositions - positions.length;
+    const slotsAvailable = this.maxPositions - surviving.length;
 
     // Allocate slots by ratio
     const perpPerpSlots = Math.max(1, Math.floor(slotsAvailable * this.perpPerpRatio));
@@ -407,36 +436,21 @@ class FundingAutoStrategy implements Strategy {
 
     let perpPerpOpened = 0;
     let spotPerpOpened = 0;
+    let currentCount = surviving.length;
 
     for (const opp of opportunities) {
-      if (positions.length >= this.maxPositions) break;
+      if (currentCount >= this.maxPositions) break;
 
       if (opp.mode === "perp-perp" && perpPerpOpened >= perpPerpSlots) continue;
       if (opp.mode === "spot-perp" && spotPerpOpened >= spotPerpSlots) continue;
 
+      // Track attempted symbols to prevent re-entry on same tick cycle
+      attempted.add(`${opp.symbol}:${opp.mode}`);
+      ctx.state.set("attemptedSymbols", attempted);
+
       const success = await this.openPosition(ctx, opp, adapters);
       if (success) {
-        const notional = this.getSizeUsd();
-        const { totalCost } = calculateCosts(
-          notional,
-          this.defaultFeeRate, this.defaultFeeRate,
-          this.defaultSlippage, this.defaultSlippage,
-        );
-
-        const pos: ActivePosition = {
-          id: `${opp.mode}-${opp.symbol}-${Date.now()}`,
-          symbol: opp.symbol,
-          mode: opp.mode,
-          longExchange: opp.longExchange,
-          shortExchange: opp.shortExchange,
-          entrySpread: opp.annualSpread,
-          entryTime: now,
-          notional,
-          totalCost,
-          accumulatedFunding: 0,
-        };
-        positions.push(pos);
-        ctx.state.set("positions", positions);
+        currentCount++;
 
         if (opp.mode === "perp-perp") perpPerpOpened++;
         else spotPerpOpened++;
@@ -444,7 +458,7 @@ class FundingAutoStrategy implements Strategy {
         ctx.log(
           `[funding-auto] Opened ${opp.mode} ${opp.symbol}: spread ${opp.annualSpread.toFixed(1)}% | ` +
           `BE ${opp.breakEvenHours.toFixed(1)}h | income $${opp.hourlyIncome.toFixed(4)}/h | ` +
-          `long ${opp.longExchange}, short ${opp.shortExchange} (${positions.length}/${this.maxPositions})`,
+          `long ${opp.longExchange}, short ${opp.shortExchange} (${currentCount}/${this.maxPositions})`,
         );
       }
     }
@@ -453,14 +467,15 @@ class FundingAutoStrategy implements Strategy {
   }
 
   async onStop(ctx: StrategyContext): Promise<StrategyAction[]> {
-    const positions = (ctx.state.get("positions") as ActivePosition[]) ?? [];
+    const adapters = this.getAdapters(ctx);
+    const positions = await this.discoverArbPairs(adapters);
+
     if (positions.length === 0) {
       ctx.log("[funding-auto] No positions to close.");
       return [];
     }
 
     ctx.log(`[funding-auto] Stopping - closing ${positions.length} positions`);
-    const adapters = this.getAdapters(ctx);
 
     for (const pos of positions) {
       try {
@@ -471,7 +486,6 @@ class FundingAutoStrategy implements Strategy {
       }
     }
 
-    ctx.state.set("positions", []);
     return [{ type: "cancel_all" }];
   }
 
@@ -494,10 +508,110 @@ class FundingAutoStrategy implements Strategy {
   }
 
   /** Format size with exchange-appropriate precision based on asset price */
-  private formatSize(rawSize: number, symbol: string): string {
+  private formatSize(rawSize: number, _symbol: string): string {
     // Use price to determine precision
     const price = rawSize > 0 ? this.getSizeUsd() / rawSize : 0;
     return formatSizeForPrice(rawSize, price);
+  }
+
+  /** Discover existing arb pairs from live exchange positions */
+  private async discoverArbPairs(adapters: Map<string, ExchangeAdapter>): Promise<ActivePosition[]> {
+    const allPositions = new Map<string, { exchange: string; side: string; size: number; symbol: string }[]>();
+
+    for (const [name, adapter] of adapters) {
+      try {
+        const exchangePositions = await adapter.getPositions();
+        for (const p of exchangePositions) {
+          const sym = normalizeSymbol(p.symbol);
+          if (!allPositions.has(sym)) allPositions.set(sym, []);
+          allPositions.get(sym)!.push({
+            exchange: name,
+            side: p.side,
+            size: Math.abs(Number(p.size)),
+            symbol: p.symbol, // raw for order execution
+          });
+        }
+      } catch { /* skip unavailable exchange */ }
+    }
+
+    // Find arb pairs: same symbol, opposite sides, different exchanges = perp-perp
+    const pairs: ActivePosition[] = [];
+    const matchedShorts = new Set<string>(); // track shorts already matched to perp-perp
+
+    for (const [sym, positionList] of allPositions) {
+      const longs = positionList.filter(p => p.side === "long");
+      const shorts = positionList.filter(p => p.side === "short");
+
+      for (const long of longs) {
+        for (const short of shorts) {
+          if (long.exchange !== short.exchange) {
+            pairs.push({
+              id: `${sym}-${long.exchange}-${short.exchange}`,
+              symbol: sym,
+              mode: "perp-perp",
+              longExchange: long.exchange,
+              shortExchange: short.exchange,
+              longSize: long.size,
+              shortSize: short.size,
+              longSymbol: long.symbol,
+              shortSymbol: short.symbol,
+              entrySpread: 0,
+              entryTime: 0,
+              notional: 0,
+              totalCost: 0,
+              accumulatedFunding: 0,
+            });
+            matchedShorts.add(`${sym}:${short.exchange}`);
+          }
+        }
+      }
+
+      // Unmatched shorts (no cross-exchange long counterpart) = spot-perp positions
+      for (const short of shorts) {
+        if (!matchedShorts.has(`${sym}:${short.exchange}`)) {
+          pairs.push({
+            id: `${sym}-spot-${short.exchange}`,
+            symbol: sym,
+            mode: "spot-perp",
+            longExchange: short.exchange, // spot leg on same exchange
+            shortExchange: short.exchange,
+            longSize: 0,
+            shortSize: short.size,
+            longSymbol: "",
+            shortSymbol: short.symbol,
+            entrySpread: 0,
+            entryTime: 0,
+            notional: 0,
+            totalCost: 0,
+            accumulatedFunding: 0,
+          });
+        }
+      }
+    }
+    return pairs;
+  }
+
+  /** Calculate actual P&L from exchange trade/funding history */
+  private async calculateRealPnl(
+    adapter: ExchangeAdapter,
+    symbol: string,
+  ): Promise<{ fees: number; funding: number }> {
+    try {
+      const [trades, funding] = await Promise.all([
+        adapter.getTradeHistory(50),
+        adapter.getFundingPayments(50),
+      ]);
+
+      const symTrades = trades.filter(t => normalizeSymbol(t.symbol) === symbol);
+      const symFunding = funding.filter(f => normalizeSymbol(f.symbol) === symbol);
+
+      const totalFees = symTrades.reduce((s, t) => s + Math.abs(Number(t.fee)), 0);
+      const totalFunding = symFunding.reduce((s, f) => s + Number(f.payment), 0);
+
+      return { fees: totalFees, funding: totalFunding };
+    } catch {
+      return { fees: 0, funding: 0 };
+    }
   }
 
   private async openPosition(
@@ -572,17 +686,18 @@ class FundingAutoStrategy implements Strategy {
       const longAdapter = adapters.get(pos.longExchange);
       const shortAdapter = adapters.get(pos.shortExchange);
 
-      const price = this.getCachedPrice(ctx, pos.longExchange, pos.symbol)
-        || this.getCachedPrice(ctx, pos.shortExchange, pos.symbol);
-      const size = price > 0 ? (pos.notional / price).toFixed(6) : "0";
-
       if (longAdapter && shortAdapter) {
+        // Use actual sizes from exchange positions, with raw exchange symbols
+        const longSize = formatSizeForPrice(pos.longSize, pos.longSize > 0 && pos.notional > 0 ? pos.notional / pos.longSize : 0);
+        const shortSize = formatSizeForPrice(pos.shortSize, pos.shortSize > 0 && pos.notional > 0 ? pos.notional / pos.shortSize : 0);
+
         try {
           await Promise.all([
-            longAdapter.marketOrder(pos.symbol, "sell", size),
-            shortAdapter.marketOrder(pos.symbol, "buy", size),
+            longAdapter.marketOrder(pos.longSymbol, "sell", longSize),
+            shortAdapter.marketOrder(pos.shortSymbol, "buy", shortSize),
           ]);
-          ctx.log(`[funding-auto] Closed perp-perp ${pos.symbol} | accumulated ~$${pos.accumulatedFunding.toFixed(2)} funding`);
+          const netPnl = pos.accumulatedFunding - pos.totalCost;
+          ctx.log(`[funding-auto] Closed perp-perp ${pos.symbol} | funding $${pos.accumulatedFunding.toFixed(4)} - fees $${pos.totalCost.toFixed(4)} = net $${netPnl.toFixed(4)}`);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           ctx.log(`[funding-auto] Close failed ${pos.symbol}: ${msg}`);
@@ -593,12 +708,12 @@ class FundingAutoStrategy implements Strategy {
       const shortAdapter = adapters.get(pos.shortExchange);
       if (!shortAdapter) return;
 
-      const price = this.getCachedPrice(ctx, pos.shortExchange, pos.symbol);
-      const size = price > 0 ? (pos.notional / price).toFixed(6) : "0";
+      const shortSize = formatSizeForPrice(pos.shortSize, pos.shortSize > 0 && pos.notional > 0 ? pos.notional / pos.shortSize : 0);
 
       try {
-        await shortAdapter.marketOrder(pos.symbol, "buy", size);
-        ctx.log(`[funding-auto] Closed spot-perp ${pos.symbol} | accumulated ~$${pos.accumulatedFunding.toFixed(2)} funding`);
+        await shortAdapter.marketOrder(pos.shortSymbol, "buy", shortSize);
+        const netPnl = pos.accumulatedFunding - pos.totalCost;
+        ctx.log(`[funding-auto] Closed spot-perp ${pos.symbol} | funding $${pos.accumulatedFunding.toFixed(4)} - fees $${pos.totalCost.toFixed(4)} = net $${netPnl.toFixed(4)}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         ctx.log(`[funding-auto] Close failed ${pos.symbol}: ${msg}`);
