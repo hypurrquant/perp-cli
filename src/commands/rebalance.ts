@@ -24,7 +24,7 @@ export function registerRebalanceCommands(
   rebalance
     .command("check")
     .description("Show balances across all exchanges")
-    .option("--exchanges <list>", "Comma-separated exchanges", "pacifica,hyperliquid,lighter")
+    .option("--exchanges <list>", "Comma-separated exchanges", "pacifica,hyperliquid,lighter,aster")
     .action(async (opts: { exchanges: string }) => {
       const exchangeNames = opts.exchanges.split(",").map((e) => e.trim());
       const adapters = new Map<string, ExchangeAdapter>();
@@ -77,7 +77,7 @@ export function registerRebalanceCommands(
   rebalance
     .command("plan")
     .description("Calculate optimal rebalancing moves")
-    .option("--exchanges <list>", "Comma-separated exchanges", "pacifica,hyperliquid,lighter")
+    .option("--exchanges <list>", "Comma-separated exchanges", "pacifica,hyperliquid,lighter,aster")
     .option("--min-move <usd>", "Minimum move amount ($)", "50")
     .option("--reserve <usd>", "Keep at least this much per exchange ($)", "20")
     .action(async (opts: { exchanges: string; minMove: string; reserve: string }) => {
@@ -145,7 +145,7 @@ export function registerRebalanceCommands(
   rebalance
     .command("execute")
     .description("Execute rebalancing (withdraw → bridge → deposit)")
-    .option("--exchanges <list>", "Comma-separated exchanges", "pacifica,hyperliquid,lighter")
+    .option("--exchanges <list>", "Comma-separated exchanges", "pacifica,hyperliquid,lighter,aster")
     .option("--min-move <usd>", "Minimum move amount ($)", "50")
     .option("--reserve <usd>", "Keep at least this much per exchange ($)", "20")
     .option("--dry-run", "Show what would happen without executing")

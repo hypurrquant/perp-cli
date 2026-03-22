@@ -1483,8 +1483,8 @@ export function registerArbManageCommands(
       const totalEquity = snapshots.reduce((s, e) => s + e.equity, 0);
       const totalAvailable = snapshots.reduce((s, e) => s + e.available, 0);
 
-      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e.toUpperCase();
-      const exChain = (e: string) => e === "pacifica" ? "Solana" : e === "hyperliquid" ? "Hyperliquid" : e === "lighter" ? "Arbitrum" : "unknown";
+      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
+      const exChain = (e: string) => e === "pacifica" ? "Solana" : e === "hyperliquid" ? "Hyperliquid" : e === "lighter" ? "Arbitrum" : e === "aster" ? "BNB" : "unknown";
 
       if (opts.check) {
         // Show current balance distribution

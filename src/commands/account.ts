@@ -37,7 +37,7 @@ interface PortfolioSummary {
   };
 }
 
-const EXCHANGES = ["pacifica", "hyperliquid", "lighter"] as const;
+const EXCHANGES = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
 
 async function fetchExchangeSnapshot(
   name: string,

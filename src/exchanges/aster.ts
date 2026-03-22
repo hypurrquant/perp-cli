@@ -39,6 +39,18 @@ export class AsterAdapter implements ExchangeAdapter {
     return !this._apiKey || !this._apiSecret;
   }
 
+  /** CLI symbol → Aster API symbol (ETH → ETHUSDT) */
+  private _toApi(symbol: string): string {
+    const s = symbol.toUpperCase().replace(/-PERP$/, "");
+    if (s.endsWith("USDT") || s.endsWith("BUSD")) return s;
+    return `${s}USDT`;
+  }
+
+  /** Aster API symbol → CLI symbol (ETHUSDT → ETH) */
+  private _fromApi(symbol: string): string {
+    return symbol.replace(/USDT$/, "").replace(/BUSD$/, "");
+  }
+
   async init(): Promise<void> {
     // Verify connectivity by fetching server time
     await this._publicGet("/fapi/v1/time");
@@ -94,7 +106,7 @@ export class AsterAdapter implements ExchangeAdapter {
         const maxLev = Number(s.maxLeverage ?? 50);
 
         return {
-          symbol: sym,
+          symbol: this._fromApi(sym),
           markPrice: String(premium?.markPrice ?? ticker?.lastPrice ?? "0"),
           indexPrice: String(premium?.indexPrice ?? "0"),
           fundingRate: String(premium?.lastFundingRate ?? "0"),
@@ -106,7 +118,7 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
-    const res = await this._publicGet("/fapi/v1/depth", { symbol: symbol.toUpperCase(), limit: "50" }) as {
+    const res = await this._publicGet("/fapi/v1/depth", { symbol: this._toApi(symbol), limit: "50" }) as {
       bids?: [string, string][];
       asks?: [string, string][];
     };
@@ -118,13 +130,13 @@ export class AsterAdapter implements ExchangeAdapter {
 
   async getRecentTrades(symbol: string, limit = 20): Promise<ExchangeTrade[]> {
     const trades = await this._publicGet("/fapi/v1/trades", {
-      symbol: symbol.toUpperCase(),
+      symbol: this._toApi(symbol),
       limit: String(limit),
     }) as Array<Record<string, unknown>>;
 
     return (trades ?? []).map((t) => ({
       time: Number(t.time ?? 0),
-      symbol: symbol.toUpperCase(),
+      symbol: this._fromApi(String(t.symbol ?? symbol)),
       side: t.isBuyerMaker ? "sell" as const : "buy" as const,
       price: String(t.price ?? "0"),
       size: String(t.qty ?? "0"),
@@ -134,7 +146,7 @@ export class AsterAdapter implements ExchangeAdapter {
 
   async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
     const data = await this._publicGet("/fapi/v1/fundingRate", {
-      symbol: symbol.toUpperCase(),
+      symbol: this._toApi(symbol),
       limit: String(limit),
     }) as Array<Record<string, unknown>>;
 
@@ -147,7 +159,7 @@ export class AsterAdapter implements ExchangeAdapter {
 
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
     const data = await this._publicGet("/fapi/v1/klines", {
-      symbol: symbol.toUpperCase(),
+      symbol: this._toApi(symbol),
       interval,
       startTime: String(startTime),
       endTime: String(endTime),
@@ -191,7 +203,7 @@ export class AsterAdapter implements ExchangeAdapter {
       .map((p) => {
         const amt = Number(p.positionAmt ?? 0);
         return {
-          symbol: String(p.symbol ?? ""),
+          symbol: this._fromApi(String(p.symbol ?? "")),
           side: amt > 0 ? "long" as const : "short" as const,
           size: String(Math.abs(amt)),
           entryPrice: String(p.entryPrice ?? "0"),
@@ -208,7 +220,7 @@ export class AsterAdapter implements ExchangeAdapter {
 
     return (orders ?? []).map((o) => ({
       orderId: String(o.orderId ?? ""),
-      symbol: String(o.symbol ?? ""),
+      symbol: this._fromApi(String(o.symbol ?? "")),
       side: String(o.side).toLowerCase() as "buy" | "sell",
       price: String(o.price ?? "0"),
       size: String(o.origQty ?? "0"),
@@ -240,7 +252,7 @@ export class AsterAdapter implements ExchangeAdapter {
         for (const o of orders ?? []) {
           allOrders.push({
             orderId: String(o.orderId ?? ""),
-            symbol: String(o.symbol ?? ""),
+            symbol: this._fromApi(String(o.symbol ?? "")),
             side: String(o.side).toLowerCase() as "buy" | "sell",
             price: String(o.price ?? "0"),
             size: String(o.origQty ?? "0"),
@@ -270,7 +282,7 @@ export class AsterAdapter implements ExchangeAdapter {
         for (const t of trades ?? []) {
           allTrades.push({
             time: Number(t.time ?? 0),
-            symbol: String(t.symbol ?? ""),
+            symbol: this._fromApi(String(t.symbol ?? "")),
             side: t.buyer ? "buy" as const : "sell" as const,
             price: String(t.price ?? "0"),
             size: String(t.qty ?? "0"),
@@ -290,7 +302,7 @@ export class AsterAdapter implements ExchangeAdapter {
 
     return (data ?? []).map((f) => ({
       time: Number(f.time ?? 0),
-      symbol: String(f.symbol ?? ""),
+      symbol: this._fromApi(String(f.symbol ?? "")),
       payment: String(f.income ?? "0"),
     }));
   }
@@ -299,7 +311,7 @@ export class AsterAdapter implements ExchangeAdapter {
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string): Promise<unknown> {
     return this._signedPost("/fapi/v1/order", {
-      symbol: symbol.toUpperCase(),
+      symbol: this._toApi(symbol),
       side: side.toUpperCase(),
       type: "MARKET",
       quantity: size,
@@ -314,7 +326,7 @@ export class AsterAdapter implements ExchangeAdapter {
     opts?: { reduceOnly?: boolean; tif?: string },
   ): Promise<unknown> {
     const params: Record<string, string> = {
-      symbol: symbol.toUpperCase(),
+      symbol: this._toApi(symbol),
       side: side.toUpperCase(),
       type: "LIMIT",
       price,
@@ -337,7 +349,7 @@ export class AsterAdapter implements ExchangeAdapter {
 
   async cancelOrder(symbol: string, orderId: string): Promise<unknown> {
     return this._signedDelete("/fapi/v1/order", {
-      symbol: symbol.toUpperCase(),
+      symbol: this._toApi(symbol),
       orderId,
     });
   }
@@ -346,14 +358,14 @@ export class AsterAdapter implements ExchangeAdapter {
     if (!symbol) {
       // Cancel all for all symbols with open orders
       const orders = await this.getOpenOrders();
-      const symbols = new Set(orders.map(o => o.symbol));
+      const apiSymbols = new Set(orders.map(o => this._toApi(o.symbol)));
       const results = [];
-      for (const sym of symbols) {
+      for (const sym of apiSymbols) {
         results.push(await this._signedDelete("/fapi/v1/allOpenOrders", { symbol: sym }));
       }
       return results;
     }
-    return this._signedDelete("/fapi/v1/allOpenOrders", { symbol: symbol.toUpperCase() });
+    return this._signedDelete("/fapi/v1/allOpenOrders", { symbol: this._toApi(symbol) });
   }
 
   // ── Risk ──
@@ -363,7 +375,7 @@ export class AsterAdapter implements ExchangeAdapter {
     if (marginMode) {
       try {
         await this._signedPost("/fapi/v1/marginType", {
-          symbol: symbol.toUpperCase(),
+          symbol: this._toApi(symbol),
           marginType: marginMode === "cross" ? "CROSSED" : "ISOLATED",
         });
       } catch {
@@ -371,7 +383,7 @@ export class AsterAdapter implements ExchangeAdapter {
       }
     }
     return this._signedPost("/fapi/v1/leverage", {
-      symbol: symbol.toUpperCase(),
+      symbol: this._toApi(symbol),
       leverage: String(leverage),
     });
   }
@@ -384,7 +396,7 @@ export class AsterAdapter implements ExchangeAdapter {
     opts?: { limitPrice?: string; reduceOnly?: boolean },
   ): Promise<unknown> {
     const params: Record<string, string> = {
-      symbol: symbol.toUpperCase(),
+      symbol: this._toApi(symbol),
       side: side.toUpperCase(),
       quantity: size,
       stopPrice: triggerPrice,

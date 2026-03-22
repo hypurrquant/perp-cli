@@ -63,7 +63,7 @@ export async function runHealthCheck(isJson: () => boolean): Promise<void> {
       console.log(`\n  Overall: ${overall}\n`);
 }
 
-const EXCHANGES = ["pacifica", "hyperliquid", "lighter"] as const;
+const EXCHANGES = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
 
 export function registerRiskCommands(
   program: Command,

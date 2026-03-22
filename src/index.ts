@@ -367,8 +367,8 @@ program.command("status")
     const { saveFundingSnapshot, getHistoricalRates } = await import("./funding-history.js");
 
     await withJsonErrors(json, async () => {
-      const EX_LIST = ["pacifica", "hyperliquid", "lighter"] as const;
-      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+      const EX_LIST = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
+      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : "AST";
 
       // Fetch balances + positions + spot balances + arb scan in parallel
       type SpotHolding = { token: string; total: string; available: string; held: string; valueUsd: number };
@@ -645,7 +645,7 @@ program.hook("preAction", () => {
 
 // Smart landing page: `perp` with no subcommand
 const rawArgs = process.argv.slice(2);
-const hasSubcommand = rawArgs.some((a) => !a.startsWith("-") && !["pacifica", "hyperliquid", "lighter", "hl", "lt", "pac", "mainnet", "testnet"].includes(a));
+const hasSubcommand = rawArgs.some((a) => !a.startsWith("-") && !["pacifica", "hyperliquid", "lighter", "aster", "hl", "lt", "pac", "ast", "mainnet", "testnet"].includes(a));
 
 if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawArgs.includes("--help") && !rawArgs.includes("-V") && !rawArgs.includes("--version"))) {
   // No subcommand — show smart landing instead of help dump
@@ -679,8 +679,8 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
         console.log(`    ${chalk.green("perp --help")}                   all commands\n`);
       } else {
         // Configured — show exchange status + balance
-        const EX_NAMES = ["pacifica", "hyperliquid", "lighter"] as const;
-        const exLabel = (e: string) => e === "pacifica" ? "Pacifica" : e === "hyperliquid" ? "Hyperliquid" : "Lighter";
+        const EX_NAMES = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
+        const exLabel = (e: string) => e === "pacifica" ? "Pacifica" : e === "hyperliquid" ? "Hyperliquid" : e === "lighter" ? "Lighter" : "Aster";
 
         // Ping + balance in parallel (with 5s timeout to keep landing fast)
         const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
