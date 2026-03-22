@@ -369,53 +369,9 @@ class FundingAutoStrategy implements Strategy {
     }
 
     // ── Spot-Perp opportunities ──
-    for (const sym of allSymbols) {
-      if (activeSymbols.has(`${sym}:spot-perp`)) continue;
-
-      // Find exchange with highest positive funding rate
-      let bestRate = 0;
-      let bestExchange = "";
-
-      for (const exName of exchangeNames) {
-        const info = ratesByExchange.get(exName)?.get(sym);
-        if (!info) continue;
-        const hourly = toHourlyRate(info.rate, exName);
-        if (hourly > bestRate) {
-          bestRate = hourly;
-          bestExchange = exName;
-        }
-      }
-
-      if (!bestExchange || bestRate <= 0) continue;
-
-      // Annualized rate (spot funding = 0, so spread = perp rate)
-      const annualSpread = bestRate * 8760 * 100;
-      if (annualSpread < this.spotPerpMinSpread) continue;
-
-      // Calculate cost and break-even (spot side: typically lower fees, no funding)
-      const notional = this.getSizeUsd();
-      const hourlyIncome = bestRate * notional;
-      const { totalCost } = calculateCosts(
-        notional,
-        this.defaultFeeRate, this.defaultFeeRate,
-        this.defaultSlippage, this.defaultSlippage,
-      );
-      const breakEvenHours = calculateBreakEven(totalCost, hourlyIncome);
-
-      if (breakEvenHours >= this.maxBreakEvenHours) continue;
-
-      opportunities.push({
-        symbol: sym,
-        longExchange: bestExchange, // buy spot on same exchange (or primary)
-        shortExchange: bestExchange,
-        longRate: 0,
-        shortRate: ratesByExchange.get(bestExchange)!.get(sym)!.rate,
-        annualSpread,
-        hourlyIncome,
-        breakEvenHours,
-        mode: "spot-perp",
-      });
-    }
+    // DISABLED: spot-perp requires SpotAdapter to buy spot (not yet integrated).
+    // Opening perp short without spot buy creates naked short = directional risk.
+    // TODO: Enable when SpotAdapter is wired into the strategy context.
 
     // Sort by break-even hours ascending (best opportunities first)
     opportunities.sort((a, b) => a.breakEvenHours - b.breakEvenHours);

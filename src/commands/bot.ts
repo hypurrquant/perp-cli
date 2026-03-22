@@ -468,21 +468,22 @@ export function registerBotCommands(
   // ── bot run <strategy> <symbol> ──
 
   bot
-    .command("run <strategy> <symbol>")
-    .description("Run any registered strategy")
+    .command("run <strategy> [symbol]")
+    .description("Run any registered strategy (symbol optional for multi-symbol strategies like funding-auto)")
     .option("--config <path>", "YAML/JSON config file")
     .option("--headless", "Run without TUI dashboard")
     .option("--param <key=value>", "Strategy parameter (repeatable)", (val: string, acc: string[]) => [...acc, val], [] as string[])
-    .action(async (strategyName: string, symbol: string, opts: {
+    .action(async (strategyName: string, symbol: string | undefined, opts: {
       config?: string; headless?: boolean; param: string[];
     }) => {
+      const sym = symbol?.toUpperCase() || "ALL";
       // Load or build config
       let config: import("../bot/config.js").BotConfig;
       if (opts.config) {
         config = loadBotConfig(opts.config);
         // Override strategy type and symbol from CLI args
         config.strategy = { ...(config.strategy as Record<string, unknown>), type: strategyName } as import("../bot/config.js").StrategyParams;
-        config.symbol = symbol.toUpperCase();
+        config.symbol = sym;
       } else {
         // Parse --param key=value pairs
         const params: Record<string, unknown> = { type: strategyName };
@@ -500,9 +501,9 @@ export function registerBotCommands(
 
         const adapter = await getAdapter();
         config = {
-          name: `${strategyName}-${symbol.toLowerCase()}-${Date.now().toString(36)}`,
+          name: `${strategyName}-${sym.toLowerCase()}-${Date.now().toString(36)}`,
           exchange: adapter.name,
-          symbol: symbol.toUpperCase(),
+          symbol: sym,
           strategy: params as import("../bot/config.js").GenericStrategyParams,
           entry_conditions: [{ type: "always", value: 0 }],
           exit_conditions: [],
