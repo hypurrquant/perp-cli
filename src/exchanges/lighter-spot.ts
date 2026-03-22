@@ -306,16 +306,15 @@ export class LighterSpotAdapter implements SpotAdapter {
       return this._sendTx(signed);
     }
 
-    // Order ID exceeds MAX_SAFE_INTEGER → look up clientOrderIndex from open orders
+    // Order ID exceeds MAX_SAFE_INTEGER → try lookup from open orders
+    // Note: getSpotOpenOrders() can return empty due to block finality delay.
+    // Prefer spotCancelByClientIndex() with the clientOrderIndex from spotLimitOrder().
     const openOrders = await this.getSpotOpenOrders();
-    const match = openOrders.find(o => o.orderId === orderId && o.clientOrderIndex);
-    if (match?.clientOrderIndex) {
-      return this.spotCancelByClientIndex(resolved, match.clientOrderIndex);
-    }
+    const symbolOrders = openOrders.filter(o =>
+      o.symbol.split("/")[0].toUpperCase() === resolved.toUpperCase() && o.clientOrderIndex
+    );
 
-    // Fallback: try cancel by matching symbol+side (cancel first matching order)
-    const symbolOrders = openOrders.filter(o => o.symbol.split("/")[0] === resolved && o.clientOrderIndex);
-    if (symbolOrders.length > 0) {
+    if (symbolOrders.length >= 1) {
       return this.spotCancelByClientIndex(resolved, symbolOrders[0].clientOrderIndex!);
     }
 
