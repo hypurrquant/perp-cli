@@ -19,7 +19,7 @@ import { SPOT_PERP_TOKEN_MAP, MAX_PRICE_DEVIATION_PCT } from "../exchanges/index
 // ── Types ──
 
 export interface ExchangeFundingRate {
-  exchange: "pacifica" | "hyperliquid" | "lighter" | "aster";
+  exchange: "pacifica" | "hyperliquid" | "lighter" | "aster" | "edgex";
   symbol: string;
   fundingRate: number;       // raw rate (period depends on exchange)
   hourlyRate: number;        // normalized to per-hour
@@ -190,7 +190,7 @@ export async function fetchAllFundingRates(opts?: {
   // Attach historical averages when available
   try {
     const symbols = Array.from(rateMap.keys());
-    const exchanges = ["pacifica", "hyperliquid", "lighter", "aster"];
+    const exchanges = ["pacifica", "hyperliquid", "lighter", "aster", "edgex"];
     const historicals = getHistoricalAverages(symbols, exchanges);
     for (const [, rates] of rateMap) {
       for (const r of rates) {

@@ -1,0 +1,44 @@
+{
+  "agents": [
+    {
+      "agent_id": "a63ce490608e607e3",
+      "agent_type": "executor",
+      "started_at": "2026-03-22T16:23:16.812Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-03-22T16:24:45.372Z",
+      "duration_ms": 88560
+    },
+    {
+      "agent_id": "a4509bb8c2fc01abd",
+      "agent_type": "architect",
+      "started_at": "2026-03-22T16:36:07.020Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-03-22T16:38:33.426Z",
+      "duration_ms": 146406
+    },
+    {
+      "agent_id": "adfda2627d1f6a7c4",
+      "agent_type": "executor",
+      "started_at": "2026-03-22T17:38:42.686Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-03-22T17:41:48.351Z",
+      "duration_ms": 185665
+    },
+    {
+      "agent_id": "a31eb6da875fd7e04",
+      "agent_type": "executor",
+      "started_at": "2026-03-22T17:42:29.019Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-03-22T17:46:48.955Z",
+      "duration_ms": 259936
+    }
+  ],
+  "total_spawned": 4,
+  "total_completed": 4,
+  "total_failed": 0,
+  "last_updated": "2026-03-22T17:46:49.057Z"
+}

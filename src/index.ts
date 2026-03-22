@@ -59,7 +59,7 @@ program
   .name("perp")
   .description("Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter)")
   .version(_pkg.version)
-  .option("-e, --exchange <exchange>", `Exchange: pacifica, hyperliquid, lighter, aster (default: ${_defaultExchange})`, _defaultExchange)
+  .option("-e, --exchange <exchange>", `Exchange: pacifica, hyperliquid, lighter, aster, edgex (default: ${_defaultExchange})`, _defaultExchange)
   .option("-n, --network <network>", "Network: mainnet or testnet", "mainnet")
   .option("-k, --private-key <key>", "Private key")
   .option("--json", "Output raw JSON (for piping)")
@@ -177,11 +177,18 @@ async function getAdapter(): Promise<ExchangeAdapter> {
       _adapter = ast;
       break;
     }
+    case "edgex": {
+      const { EdgeXAdapter } = await import("./exchanges/edgex.js");
+      const edgex = new EdgeXAdapter(undefined, undefined);
+      await edgex.init();
+      _adapter = edgex;
+      break;
+    }
     default:
       throw new Error(`Unknown exchange: ${exchange}`);
   }
 
-  return _adapter;
+  return _adapter!;
 }
 
 // Sync wrapper for commands that need adapter (lazy init)
@@ -302,6 +309,12 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
       await ast.init();
       return ast;
     }
+    case "edgex": {
+      const { EdgeXAdapter } = await import("./exchanges/edgex.js");
+      const edgex = new EdgeXAdapter(undefined, undefined);
+      await edgex.init();
+      return edgex;
+    }
     default:
       throw new Error(`Unknown exchange: ${exchange}`);
   }
@@ -367,8 +380,8 @@ program.command("status")
     const { saveFundingSnapshot, getHistoricalRates } = await import("./funding-history.js");
 
     await withJsonErrors(json, async () => {
-      const EX_LIST = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
-      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : "AST";
+      const EX_LIST = ["pacifica", "hyperliquid", "lighter", "aster", "edgex"] as const;
+      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e === "edgex" ? "EX" : e.toUpperCase();
 
       // Fetch balances + positions + spot balances + arb scan in parallel
       type SpotHolding = { token: string; total: string; available: string; held: string; valueUsd: number };
@@ -645,7 +658,7 @@ program.hook("preAction", () => {
 
 // Smart landing page: `perp` with no subcommand
 const rawArgs = process.argv.slice(2);
-const hasSubcommand = rawArgs.some((a) => !a.startsWith("-") && !["pacifica", "hyperliquid", "lighter", "aster", "hl", "lt", "pac", "ast", "mainnet", "testnet"].includes(a));
+const hasSubcommand = rawArgs.some((a) => !a.startsWith("-") && !["pacifica", "hyperliquid", "lighter", "aster", "edgex", "hl", "lt", "pac", "ast", "ex", "mainnet", "testnet"].includes(a));
 
 if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawArgs.includes("--help") && !rawArgs.includes("-V") && !rawArgs.includes("--version"))) {
   // No subcommand — show smart landing instead of help dump
@@ -679,8 +692,8 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
         console.log(`    ${chalk.green("perp --help")}                   all commands\n`);
       } else {
         // Configured — show exchange status + balance
-        const EX_NAMES = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
-        const exLabel = (e: string) => e === "pacifica" ? "Pacifica" : e === "hyperliquid" ? "Hyperliquid" : e === "lighter" ? "Lighter" : "Aster";
+        const EX_NAMES = ["pacifica", "hyperliquid", "lighter", "aster", "edgex"] as const;
+        const exLabel = (e: string) => e === "pacifica" ? "Pacifica" : e === "hyperliquid" ? "Hyperliquid" : e === "lighter" ? "Lighter" : e === "aster" ? "Aster" : "EdgeX";
 
         // Ping + balance in parallel (with 5s timeout to keep landing fast)
         const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>

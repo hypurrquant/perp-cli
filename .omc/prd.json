@@ -1,0 +1,108 @@
+{
+  "title": "Pre-Release v0.7.1 QA — E2E Scenario Tests",
+  "stories": [
+    {
+      "id": "QA-01",
+      "title": "Build + Unit Tests",
+      "priority": 1,
+      "passes": true,
+      "acceptanceCriteria": [
+        "pnpm build completes with 0 tsc errors",
+        "pnpm test passes all existing unit tests (941+)"
+      ]
+    },
+    {
+      "id": "QA-02",
+      "title": "CLI 커맨드 출력 검증 — Market Data",
+      "priority": 2,
+      "passes": true,
+      "acceptanceCriteria": [
+        "perp market list -e hyperliquid outputs market list without error",
+        "perp market list -e pacifica outputs market list without error",
+        "perp market list -e lighter outputs market list without error",
+        "perp market price ETH -e hyperliquid returns valid price",
+        "perp market price ETH -e pacifica returns valid price",
+        "perp market price ETH -e lighter returns valid price",
+        "perp market funding -e hyperliquid returns funding rates",
+        "perp market funding -e lighter returns funding rates",
+        "--json flag produces valid JSON output for market commands"
+      ]
+    },
+    {
+      "id": "QA-03",
+      "title": "CLI 커맨드 출력 검증 — Account & Portfolio",
+      "priority": 3,
+      "passes": true,
+      "acceptanceCriteria": [
+        "perp account -e hyperliquid shows balance without error",
+        "perp account -e pacifica shows balance without error",
+        "perp account -e lighter shows balance without error",
+        "perp positions -e hyperliquid returns position list (may be empty)",
+        "perp orders -e hyperliquid returns open orders (may be empty)",
+        "perp arb scan runs and outputs results without error"
+      ]
+    },
+    {
+      "id": "QA-04",
+      "title": "Perp 주문/취소 E2E — Hyperliquid",
+      "priority": 4,
+      "passes": true,
+      "acceptanceCriteria": [
+        "10-15 representative HL perp assets: limit order at 50% below market → order confirmed → cancel → cancel confirmed",
+        "Assets tested include: BTC, ETH, SOL, AVAX, DOGE, LINK, ARB, OP, SUI, APT",
+        "All orders respect MIN_NOTIONAL ($12+)",
+        "All decimal/precision from API (no hardcoded fallback)",
+        "Zero errors across all order/cancel cycles"
+      ]
+    },
+    {
+      "id": "QA-05",
+      "title": "Perp 주문/취소 E2E — Pacifica",
+      "priority": 5,
+      "passes": true,
+      "acceptanceCriteria": [
+        "10-15 representative PAC perp assets: limit order at 50% below market → order confirmed → cancel → cancel confirmed",
+        "Assets tested include: BTC, ETH, SOL, AVAX, DOGE, LINK, SUI, APT, SEI",
+        "All orders respect MIN_NOTIONAL ($12+)",
+        "Zero errors across all order/cancel cycles"
+      ]
+    },
+    {
+      "id": "QA-06",
+      "title": "Perp 주문/취소 E2E — Lighter",
+      "priority": 6,
+      "passes": true,
+      "acceptanceCriteria": [
+        "10-15 representative LT perp assets: limit order at 50% below market → order confirmed → cancel → cancel confirmed",
+        "Assets tested include: BTC, ETH, SOL, LINK, AVAX, AAVE, UNI, LDO, ARB, OP",
+        "All orders respect MIN_NOTIONAL ($12+)",
+        "All decimal/precision from API (no hardcoded fallback)",
+        "Zero errors across all order/cancel cycles"
+      ]
+    },
+    {
+      "id": "QA-07",
+      "title": "Spot 주문/취소 E2E — HL + LT",
+      "priority": 7,
+      "passes": true,
+      "acceptanceCriteria": [
+        "HL spot: 5+ assets (ETH, HYPE, PURR, UBTC, UETH) — limit order → cancel → confirmed",
+        "LT spot: 5+ assets (ETH, LINK, AAVE, UNI, LDO) — limit order → cancel → confirmed",
+        "Spot decimal auto-rounding works correctly",
+        "Zero errors across all spot order/cancel cycles"
+      ]
+    },
+    {
+      "id": "QA-08",
+      "title": "결과값 비교 + 최종 검증",
+      "priority": 8,
+      "passes": true,
+      "acceptanceCriteria": [
+        "Account balance from CLI matches expected range (no gross discrepancies)",
+        "Price data within ±5% of real-time market prices",
+        "All QA-01 through QA-07 stories passed",
+        "QA results documented in progress.txt"
+      ]
+    }
+  ]
+}

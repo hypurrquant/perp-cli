@@ -24,5 +24,6 @@ export { PacificaAdapter } from "./pacifica.js";
 export { HyperliquidAdapter } from "./hyperliquid.js";
 export { LighterAdapter } from "./lighter.js";
 export { AsterAdapter } from "./aster.js";
+export { EdgeXAdapter } from "./edgex.js";
 export { HyperliquidSpotAdapter } from "./hyperliquid-spot.js";
 export { LighterSpotAdapter } from "./lighter-spot.js";

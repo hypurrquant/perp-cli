@@ -1,0 +1,257 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1266" height="368" style="background:#1a1a2e;font-family:monospace">
+<rect width="1266" height="368" fill="#1a1a2e"/>
+<text x="633" y="28" fill="white" font-size="15" font-weight="bold" text-anchor="middle">Solana Perp DEX — Interface Compatibility Matrix (March 2026)</text>
+<text transform="translate(161,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">getMarkets</text>
+<text transform="translate(223,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">getOrderbook</text>
+<text transform="translate(285,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">getRecentTrades</text>
+<text transform="translate(347,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">getFundingHistory</text>
+<text transform="translate(409,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">getKlines</text>
+<text transform="translate(471,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">getBalance</text>
+<text transform="translate(533,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">getPositions</text>
+<text transform="translate(595,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">getOpenOrders</text>
+<text transform="translate(657,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">getOrderHistory</text>
+<text transform="translate(719,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">getTradeHistory</text>
+<text transform="translate(781,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">getFundingPayments</text>
+<text transform="translate(843,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">marketOrder</text>
+<text transform="translate(905,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">limitOrder</text>
+<text transform="translate(967,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">editOrder</text>
+<text transform="translate(1029,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">cancelOrder</text>
+<text transform="translate(1091,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">cancelAllOrders</text>
+<text transform="translate(1153,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">setLeverage</text>
+<text transform="translate(1215,112) rotate(-45)" fill="#ccc" font-size="10" text-anchor="end">stopOrder</text>
+<rect x="0" y="120" width="1266" height="28" fill="#16213e"/>
+<text x="8" y="132" fill="white" font-size="10" font-weight="bold">Drift v3</text>
+<rect x="131" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="161" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="193" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="223" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="255" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="285" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="317" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="347" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="379" y="122" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="409" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="441" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="471" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="503" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="533" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="565" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="595" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="627" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="657" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="689" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="719" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="751" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="781" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="813" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="843" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="875" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="905" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="937" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="967" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="999" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1029" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="1061" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1091" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="1123" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1153" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="1185" y="122" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1215" y="138" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="0" y="148" width="1266" height="28" fill="#0f3460"/>
+<text x="8" y="160" fill="white" font-size="10" font-weight="bold">Jupiter Perps</text>
+<rect x="131" y="150" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="161" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="193" y="150" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="223" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="255" y="150" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="285" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="317" y="150" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="347" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="379" y="150" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="409" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="441" y="150" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="471" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="503" y="150" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="533" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="565" y="150" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="595" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="627" y="150" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="657" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="689" y="150" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="719" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="751" y="150" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="781" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="813" y="150" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="843" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="875" y="150" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="905" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="937" y="150" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="967" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="999" y="150" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="1029" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="1061" y="150" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="1091" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="1123" y="150" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1153" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="1185" y="150" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="1215" y="166" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="0" y="176" width="1266" height="28" fill="#16213e"/>
+<text x="8" y="188" fill="white" font-size="10" font-weight="bold">Flash Trade</text>
+<rect x="131" y="178" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="161" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="193" y="178" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="223" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="255" y="178" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="285" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="317" y="178" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="347" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="379" y="178" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="409" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="441" y="178" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="471" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="503" y="178" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="533" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="565" y="178" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="595" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="627" y="178" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="657" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="689" y="178" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="719" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="751" y="178" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="781" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="813" y="178" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="843" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="875" y="178" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="905" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="937" y="178" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="967" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="999" y="178" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="1029" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="1061" y="178" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="1091" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="1123" y="178" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1153" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="1185" y="178" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1215" y="194" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="0" y="204" width="1266" height="28" fill="#0f3460"/>
+<text x="8" y="216" fill="white" font-size="10" font-weight="bold">Hxro/Dexterity</text>
+<rect x="131" y="206" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="161" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="193" y="206" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="223" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="255" y="206" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="285" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="317" y="206" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="347" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="379" y="206" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="409" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="441" y="206" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="471" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="503" y="206" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="533" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="565" y="206" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="595" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="627" y="206" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="657" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="689" y="206" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="719" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="751" y="206" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="781" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="813" y="206" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="843" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="875" y="206" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="905" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="937" y="206" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="967" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="999" y="206" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1029" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="1061" y="206" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1091" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="1123" y="206" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1153" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="1185" y="206" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1215" y="222" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="0" y="232" width="1266" height="28" fill="#16213e"/>
+<text x="8" y="244" fill="white" font-size="10" font-weight="bold">Raydium Perps</text>
+<text x="8" y="257" fill="white" font-size="10" font-weight="bold">(Orderly)</text>
+<rect x="131" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="161" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="193" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="223" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="255" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="285" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="317" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="347" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="379" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="409" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="441" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="471" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="503" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="533" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="565" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="595" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="627" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="657" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="689" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="719" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="751" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="781" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="813" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="843" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="875" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="905" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="937" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="967" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="999" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1029" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="1061" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1091" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="1123" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1153" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="1185" y="234" width="60" height="24" rx="3" fill="#27ae60"/>
+<text x="1215" y="250" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">YES</text>
+<rect x="0" y="260" width="1266" height="28" fill="#0f3460"/>
+<text x="8" y="272" fill="white" font-size="10" font-weight="bold">Parcl</text>
+<rect x="131" y="262" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="161" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="193" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="223" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="255" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="285" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="317" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="347" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="379" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="409" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="441" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="471" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="503" y="262" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="533" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="565" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="595" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="627" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="657" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="689" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="719" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="751" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="781" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="813" y="262" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="843" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="875" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="905" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="937" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="967" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="999" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="1029" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="1061" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="1091" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="1123" y="262" width="60" height="24" rx="3" fill="#e67e22"/>
+<text x="1153" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">PART</text>
+<rect x="1185" y="262" width="60" height="24" rx="3" fill="#e74c3c"/>
+<text x="1215" y="278" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">NO</text>
+<rect x="20" y="303" width="14" height="14" rx="3" fill="#27ae60"/>
+<text x="40" y="314" fill="#ccc" font-size="10">YES — Fully supported</text>
+<rect x="360" y="303" width="14" height="14" rx="3" fill="#e67e22"/>
+<text x="380" y="314" fill="#ccc" font-size="10">PARTIAL — On-chain workaround</text>
+<rect x="700" y="303" width="14" height="14" rx="3" fill="#e74c3c"/>
+<text x="720" y="314" fill="#ccc" font-size="10">NO — Not available</text>
+</svg>

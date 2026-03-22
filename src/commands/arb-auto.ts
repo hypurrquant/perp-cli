@@ -698,7 +698,7 @@ export function registerArbAutoCommands(
           // Log next settlement times and funding estimation
           if (!isJson() && settleStrategy !== "off") {
             const nowDate = new Date();
-            const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
+            const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e === "edgex" ? "EX" : e.toUpperCase();
             const nextHL = getNextSettlement("hyperliquid", nowDate);
             const nextPAC = getNextSettlement("pacifica", nowDate);
             const nextLT = getNextSettlement("lighter", nowDate);
@@ -1257,7 +1257,7 @@ export function registerArbAutoCommands(
           console.log(chalk.gray(`  Press Ctrl+C to stop\n`));
         }
 
-        const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
+        const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e === "edgex" ? "EX" : e.toUpperCase();
 
         while (true) {
           cycle++;
@@ -1365,7 +1365,7 @@ export function registerArbAutoCommands(
           if (spotSpreads.length === 0) {
             console.log(chalk.gray(`  No spot+perp opportunities above ${minSpread}%\n`));
           } else {
-            const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
+            const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e === "edgex" ? "EX" : e.toUpperCase();
             const rows = spotSpreads.slice(0, parseInt(opts.top ?? "30")).map(s => {
               const spotEx = s.spotExchanges[0] || "lighter";
               const rtCost = computeRoundTripCostPct(spotEx, s.perpExchange);
@@ -1439,7 +1439,7 @@ export function registerArbAutoCommands(
         return;
       }
 
-      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
+      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e === "edgex" ? "EX" : e.toUpperCase();
       const rows = filtered.map(s => {
         const direction = `${exAbbr(s.shortExch)}>${exAbbr(s.longExch)}`;
         const grossSpread = Math.abs(s.spread);

@@ -14,7 +14,7 @@ import {
   type EquitySnapshot,
 } from "../equity-tracker.js";
 
-const EXCHANGES = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
+const EXCHANGES = ["pacifica", "hyperliquid", "lighter", "aster", "edgex"] as const;
 
 function parseSince(since?: string): string | undefined {
   if (!since) return undefined;

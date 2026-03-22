@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="480">
+<rect width="800" height="480" fill="#1a1a2e"/>
+<text x="400" y="36" text-anchor="middle" font-family="monospace" font-size="18" font-weight="bold" fill="#e8e8f0">EVM L2 Perpetual DEX Landscape — March 2026</text>
+<text x="200" y="70" text-anchor="middle" font-family="monospace" font-size="13" fill="#a0a0c0">Integration Feasibility</text>
+<rect x="40" y="260" width="60" height="60" fill="#2ecc71" rx="4"/>
+<text x="70" y="254" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="white">2</text>
+<text x="70" y="338" text-anchor="middle" font-family="monospace" font-size="11" fill="#c0c0d8">EASY</text>
+<rect x="120" y="110" width="60" height="210" fill="#f39c12" rx="4"/>
+<text x="150" y="104" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="white">7</text>
+<text x="150" y="338" text-anchor="middle" font-family="monospace" font-size="11" fill="#c0c0d8">MEDIUM</text>
+<rect x="200" y="170" width="60" height="150" fill="#e74c3c" rx="4"/>
+<text x="230" y="164" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="white">5</text>
+<text x="230" y="338" text-anchor="middle" font-family="monospace" font-size="11" fill="#c0c0d8">HARD</text>
+<rect x="280" y="290" width="60" height="30" fill="#7f8c8d" rx="4"/>
+<text x="310" y="284" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="white">1</text>
+<text x="310" y="338" text-anchor="middle" font-family="monospace" font-size="11" fill="#c0c0d8">N/A</text>
+<line x1="30" y1="320" x2="380" y2="320" stroke="#555" stroke-width="1"/>
+<text x="590" y="70" text-anchor="middle" font-family="monospace" font-size="13" fill="#a0a0c0">Active DEXes by Chain</text>
+<rect x="430" y="95" width="224" height="22" fill="#3498db" rx="3"/>
+<text x="662" y="110" font-family="monospace" font-size="12" fill="white">7  Arbitrum</text>
+<rect x="430" y="129" width="96" height="22" fill="#2ecc71" rx="3"/>
+<text x="534" y="144" font-family="monospace" font-size="12" fill="white">3  Base</text>
+<rect x="430" y="163" width="96" height="22" fill="#e74c3c" rx="3"/>
+<text x="534" y="178" font-family="monospace" font-size="12" fill="white">3  Optimism/OP</text>
+<rect x="430" y="197" width="64" height="22" fill="#9b59b6" rx="3"/>
+<text x="502" y="212" font-family="monospace" font-size="12" fill="white">2  Linea</text>
+<rect x="430" y="231" width="64" height="22" fill="#1abc9c" rx="3"/>
+<text x="502" y="246" font-family="monospace" font-size="12" fill="white">2  Custom ZK L2</text>
+<rect x="430" y="265" width="32" height="22" fill="#e67e22" rx="3"/>
+<text x="470" y="280" font-family="monospace" font-size="12" fill="white">1  zkSync Era</text>
+<line x1="30" y1="360" x2="770" y2="360" stroke="#444" stroke-width="1"/>
+<text x="400" y="382" text-anchor="middle" font-family="monospace" font-size="12" fill="#a0a0c0">TVL Snapshot (early 2026) — DefiLlama</text>
+<rect x="50" y="395" width="130" height="52" fill="#252540" rx="6" stroke="#1abc9c" stroke-width="1.5"/>
+<text x="115" y="415" text-anchor="middle" font-family="monospace" font-size="11" fill="#1abc9c" font-weight="bold">Lighter</text>
+<text x="115" y="435" text-anchor="middle" font-family="monospace" font-size="13" fill="white" font-weight="bold">$873M</text>
+<rect x="200" y="395" width="130" height="52" fill="#252540" rx="6" stroke="#3498db" stroke-width="1.5"/>
+<text x="265" y="415" text-anchor="middle" font-family="monospace" font-size="11" fill="#3498db" font-weight="bold">Synthetix v3</text>
+<text x="265" y="435" text-anchor="middle" font-family="monospace" font-size="13" fill="white" font-weight="bold">$210M</text>
+<rect x="370" y="395" width="130" height="52" fill="#252540" rx="6" stroke="#f39c12" stroke-width="1.5"/>
+<text x="435" y="415" text-anchor="middle" font-family="monospace" font-size="11" fill="#f39c12" font-weight="bold">GMX v2</text>
+<text x="435" y="435" text-anchor="middle" font-family="monospace" font-size="13" fill="white" font-weight="bold">$258M</text>
+<rect x="520" y="395" width="130" height="52" fill="#252540" rx="6" stroke="#2ecc71" stroke-width="1.5"/>
+<text x="585" y="415" text-anchor="middle" font-family="monospace" font-size="11" fill="#2ecc71" font-weight="bold">gTrade</text>
+<text x="585" y="435" text-anchor="middle" font-family="monospace" font-size="13" fill="white" font-weight="bold">$24.7M</text>
+<rect x="660" y="395" width="130" height="52" fill="#252540" rx="6" stroke="#9b59b6" stroke-width="1.5"/>
+<text x="725" y="415" text-anchor="middle" font-family="monospace" font-size="11" fill="#9b59b6" font-weight="bold">MYX Finance</text>
+<text x="725" y="435" text-anchor="middle" font-family="monospace" font-size="13" fill="white" font-weight="bold">$21M</text>
+<text x="400" y="465" text-anchor="middle" font-family="monospace" font-size="10" fill="#666">Generated by Scientist agent — March 2026 | Sources: DefiLlama, official docs, web search</text>
+</svg>

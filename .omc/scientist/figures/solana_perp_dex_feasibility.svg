@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="750" height="396" style="background:#1a1a2e;font-family:monospace">
+<rect width="750" height="396" fill="#1a1a2e"/>
+<text x="375" y="32" fill="white" font-size="14" font-weight="bold" text-anchor="middle">Solana Perp DEX — Implementation Feasibility (March 2026)</text>
+<rect x="230" y="64" width="400" height="28" rx="4" fill="#16213e"/>
+<rect x="230" y="64" width="400" height="28" rx="4" fill="#27ae60"/>
+<text x="222" y="82" fill="white" font-size="11" text-anchor="end">Drift Protocol v3</text>
+<text x="640" y="82" fill="#27ae60" font-size="12" font-weight="bold">EASY</text>
+<rect x="230" y="110" width="400" height="28" rx="4" fill="#16213e"/>
+<rect x="230" y="110" width="400" height="28" rx="4" fill="#27ae60"/>
+<text x="222" y="128" fill="white" font-size="11" text-anchor="end">Raydium Perps (Orderly)</text>
+<text x="640" y="128" fill="#27ae60" font-size="12" font-weight="bold">EASY</text>
+<rect x="230" y="156" width="400" height="28" rx="4" fill="#16213e"/>
+<rect x="230" y="156" width="266" height="28" rx="4" fill="#e67e22"/>
+<text x="222" y="174" fill="white" font-size="11" text-anchor="end">Flash Trade</text>
+<text x="506" y="174" fill="#e67e22" font-size="12" font-weight="bold">MEDIUM</text>
+<rect x="230" y="202" width="400" height="28" rx="4" fill="#16213e"/>
+<rect x="230" y="202" width="266" height="28" rx="4" fill="#e67e22"/>
+<text x="222" y="220" fill="white" font-size="11" text-anchor="end">Hxro / Dexterity Protocol</text>
+<text x="506" y="220" fill="#e67e22" font-size="12" font-weight="bold">MEDIUM</text>
+<rect x="230" y="248" width="400" height="28" rx="4" fill="#16213e"/>
+<rect x="230" y="248" width="133" height="28" rx="4" fill="#e74c3c"/>
+<text x="222" y="266" fill="white" font-size="11" text-anchor="end">Jupiter Perps</text>
+<text x="373" y="266" fill="#e74c3c" font-size="12" font-weight="bold">HARD</text>
+<rect x="230" y="294" width="400" height="28" rx="4" fill="#16213e"/>
+<rect x="230" y="294" width="133" height="28" rx="4" fill="#e74c3c"/>
+<text x="222" y="312" fill="white" font-size="11" text-anchor="end">Parcl Protocol</text>
+<text x="373" y="312" fill="#e74c3c" font-size="12" font-weight="bold">HARD</text>
+<text x="230" y="376" fill="#888" font-size="9">Feasibility: EASY=full TS SDK | MEDIUM=partial SDK/API | HARD=on-chain only / no SDK</text>
+</svg>

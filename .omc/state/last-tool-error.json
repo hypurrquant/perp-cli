@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"curl -s 'https://pro.edgex.exchange/api/v1/public/quote/getTicker?contractId=10000001' | node -e \\\"const d=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log('len:',d.data?.lengt...",
+  "error": "Exit code 1\n<anonymous_script>:1\n<!DOCTYPE html><html lang=\"en-US\"><head><title>Just a moment...</title><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"><meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\"><meta name=\"robots\" content=\"noindex,nofollow\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><style>*{box-sizing:border-box;margin:0;padding:0}html{line-height:1.15;-webkit-text-size-adjust:100%;color:#313131;font-family:system-ui,-apple-system,BlinkMacSy...",
+  "timestamp": "2026-03-22T17:54:34.264Z",
+  "retry_count": 1
+}

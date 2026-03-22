@@ -1,0 +1,475 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1774183472938,
+  "projectRoot": "/Users/hik/Documents/GitHub/perp-cli",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": "^20.0.0 || ^22.0.0 || ^24.0.0",
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "react",
+        "version": "19.2.4",
+        "category": "frontend"
+      },
+      {
+        "name": "vitest",
+        "version": "4.0.18",
+        "category": "testing"
+      }
+    ],
+    "packageManager": "pnpm",
+    "runtime": "Node.js 20.0.0||22.0.0||24.0.0"
+  },
+  "build": {
+    "buildCommand": "pnpm build",
+    "testCommand": "pnpm test",
+    "lintCommand": null,
+    "devCommand": "pnpm dev",
+    "scripts": {
+      "build": "tsc",
+      "dev": "tsc --watch",
+      "test": "vitest run --exclude '**/integration/**'",
+      "test:integration": "vitest run -c vitest.integration.config.ts",
+      "test:all": "vitest run",
+      "prepublishOnly": "pnpm run build"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "scripts",
+      "src"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 70,
+      "lastAccessed": 1774183472927,
+      "keyFiles": [
+        "arb-history-stats.d.ts",
+        "arb-history-stats.js",
+        "arb-sizing.d.ts",
+        "arb-sizing.js",
+        "arb-state.d.ts"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 2,
+      "lastAccessed": 1774183472927,
+      "keyFiles": [
+        "PLAN-arb-auto-fixes.md",
+        "bridge.md"
+      ]
+    },
+    "prompts": {
+      "path": "prompts",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1774183472927,
+      "keyFiles": [
+        "funding-arb-agent.md"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 1,
+      "lastAccessed": 1774183472927,
+      "keyFiles": [
+        "check-fees.ts"
+      ]
+    },
+    "skills": {
+      "path": "skills",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1774183472928,
+      "keyFiles": []
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 34,
+      "lastAccessed": 1774183472928,
+      "keyFiles": [
+        "arb-history-stats.ts",
+        "arb-sizing.ts",
+        "arb-state.ts",
+        "arb-utils.ts",
+        "bridge-engine.ts"
+      ]
+    },
+    "dist/__tests__": {
+      "path": "dist/__tests__",
+      "purpose": "Test files",
+      "fileCount": 68,
+      "lastAccessed": 1774183472928,
+      "keyFiles": [
+        "alert-logic.test.d.ts",
+        "alert-logic.test.js",
+        "arb-auto-3dex.test.d.ts"
+      ]
+    },
+    "dist/api": {
+      "path": "dist/api",
+      "purpose": "API routes",
+      "fileCount": 0,
+      "lastAccessed": 1774183472928,
+      "keyFiles": []
+    },
+    "src/__tests__": {
+      "path": "src/__tests__",
+      "purpose": "Test files",
+      "fileCount": 39,
+      "lastAccessed": 1774183472929,
+      "keyFiles": [
+        "alert-logic.test.ts",
+        "arb-auto-3dex.test.ts",
+        "arb-auto-fixes.test.ts"
+      ]
+    },
+    "src/api": {
+      "path": "src/api",
+      "purpose": "API routes",
+      "fileCount": 0,
+      "lastAccessed": 1774183472929,
+      "keyFiles": []
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/index.ts",
+      "accessCount": 37,
+      "lastAccessed": 1774201585185,
+      "type": "directory"
+    },
+    {
+      "path": "src/exchanges/aster.ts",
+      "accessCount": 35,
+      "lastAccessed": 1774201127036,
+      "type": "file"
+    },
+    {
+      "path": "src/commands/arb-auto.ts",
+      "accessCount": 30,
+      "lastAccessed": 1774201488520,
+      "type": "file"
+    },
+    {
+      "path": "src/commands/bot.ts",
+      "accessCount": 20,
+      "lastAccessed": 1774201449756,
+      "type": "directory"
+    },
+    {
+      "path": "src/commands/arb.ts",
+      "accessCount": 17,
+      "lastAccessed": 1774201477782,
+      "type": "file"
+    },
+    {
+      "path": "src/commands/arb/index.ts",
+      "accessCount": 16,
+      "lastAccessed": 1774201484420,
+      "type": "file"
+    },
+    {
+      "path": "src/funding/rates.ts",
+      "accessCount": 14,
+      "lastAccessed": 1774201459511,
+      "type": "file"
+    },
+    {
+      "path": "src/bot/engine.ts",
+      "accessCount": 11,
+      "lastAccessed": 1774195225189,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 10,
+      "lastAccessed": 1774197373105,
+      "type": "directory"
+    },
+    {
+      "path": "src",
+      "accessCount": 10,
+      "lastAccessed": 1774201134192,
+      "type": "directory"
+    },
+    {
+      "path": "src/commands/rebalance.ts",
+      "accessCount": 10,
+      "lastAccessed": 1774201453937,
+      "type": "file"
+    },
+    {
+      "path": "src/config.ts",
+      "accessCount": 9,
+      "lastAccessed": 1774201385245,
+      "type": "directory"
+    },
+    {
+      "path": "package.json",
+      "accessCount": 7,
+      "lastAccessed": 1774201126889,
+      "type": "file"
+    },
+    {
+      "path": "src/exchanges/registry.ts",
+      "accessCount": 7,
+      "lastAccessed": 1774201382615,
+      "type": "directory"
+    },
+    {
+      "path": "src/funding/normalize.ts",
+      "accessCount": 7,
+      "lastAccessed": 1774201460314,
+      "type": "file"
+    },
+    {
+      "path": "README.md",
+      "accessCount": 6,
+      "lastAccessed": 1774186326660,
+      "type": "directory"
+    },
+    {
+      "path": "src/bot/tui/BotDashboard.tsx",
+      "accessCount": 6,
+      "lastAccessed": 1774195160677,
+      "type": "file"
+    },
+    {
+      "path": "src/constants.ts",
+      "accessCount": 6,
+      "lastAccessed": 1774201472193,
+      "type": "directory"
+    },
+    {
+      "path": "src/exchanges/index.ts",
+      "accessCount": 6,
+      "lastAccessed": 1774201560706,
+      "type": "directory"
+    },
+    {
+      "path": "src/commands",
+      "accessCount": 5,
+      "lastAccessed": 1774197107755,
+      "type": "directory"
+    },
+    {
+      "path": "src/exchanges/interface.ts",
+      "accessCount": 5,
+      "lastAccessed": 1774201126673,
+      "type": "directory"
+    },
+    {
+      "path": "src/commands/market.ts",
+      "accessCount": 5,
+      "lastAccessed": 1774201430684,
+      "type": "file"
+    },
+    {
+      "path": "src/cli-spec.ts",
+      "accessCount": 5,
+      "lastAccessed": 1774201438588,
+      "type": "file"
+    },
+    {
+      "path": "skills/perp-cli/SKILL.md",
+      "accessCount": 4,
+      "lastAccessed": 1774186362944,
+      "type": "directory"
+    },
+    {
+      "path": "src/commands/arb",
+      "accessCount": 4,
+      "lastAccessed": 1774196845252,
+      "type": "directory"
+    },
+    {
+      "path": "src/commands/account.ts",
+      "accessCount": 4,
+      "lastAccessed": 1774201431472,
+      "type": "file"
+    },
+    {
+      "path": "src/commands/risk.ts",
+      "accessCount": 4,
+      "lastAccessed": 1774201432290,
+      "type": "file"
+    },
+    {
+      "path": "src/commands/history.ts",
+      "accessCount": 4,
+      "lastAccessed": 1774201433324,
+      "type": "file"
+    },
+    {
+      "path": "src/commands/dashboard.ts",
+      "accessCount": 4,
+      "lastAccessed": 1774201436074,
+      "type": "file"
+    },
+    {
+      "path": "src/arb/utils.ts",
+      "accessCount": 4,
+      "lastAccessed": 1774201463840,
+      "type": "file"
+    },
+    {
+      "path": "src/exchanges/lighter-spot.ts",
+      "accessCount": 3,
+      "lastAccessed": 1774185548217,
+      "type": "directory"
+    },
+    {
+      "path": "src/bot/config.ts",
+      "accessCount": 3,
+      "lastAccessed": 1774195039995,
+      "type": "file"
+    },
+    {
+      "path": "src/exchanges/hyperliquid.ts",
+      "accessCount": 3,
+      "lastAccessed": 1774197400812,
+      "type": "directory"
+    },
+    {
+      "path": "skills",
+      "accessCount": 2,
+      "lastAccessed": 1774186299881,
+      "type": "directory"
+    },
+    {
+      "path": "skills/perp-cli/references/commands.md",
+      "accessCount": 2,
+      "lastAccessed": 1774186335819,
+      "type": "file"
+    },
+    {
+      "path": "src/bot/index.ts",
+      "accessCount": 2,
+      "lastAccessed": 1774195041327,
+      "type": "file"
+    },
+    {
+      "path": "src/bot/tui/index.ts",
+      "accessCount": 2,
+      "lastAccessed": 1774195230670,
+      "type": "file"
+    },
+    {
+      "path": "src/funding",
+      "accessCount": 2,
+      "lastAccessed": 1774196796929,
+      "type": "directory"
+    },
+    {
+      "path": "src/exchanges/lighter.ts",
+      "accessCount": 2,
+      "lastAccessed": 1774197401685,
+      "type": "directory"
+    },
+    {
+      "path": "vitest.config.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774183554014,
+      "type": "file"
+    },
+    {
+      "path": "vitest.integration.config.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774183554434,
+      "type": "file"
+    },
+    {
+      "path": "src/commands/trade.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774184671853,
+      "type": "directory"
+    },
+    {
+      "path": "src/mcp-server.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774186369532,
+      "type": "directory"
+    },
+    {
+      "path": "skills/perp-cli/scripts",
+      "accessCount": 1,
+      "lastAccessed": 1774186382361,
+      "type": "directory"
+    },
+    {
+      "path": "src/bot/strategies/funding-arb-strategy.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774194973212,
+      "type": "file"
+    },
+    {
+      "path": "src/bot/presets.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774194973471,
+      "type": "file"
+    },
+    {
+      "path": "src/bot/strategy-registry.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774195017727,
+      "type": "file"
+    },
+    {
+      "path": "src/arb-utils.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774197435313,
+      "type": "directory"
+    },
+    {
+      "path": "tsconfig.json",
+      "accessCount": 1,
+      "lastAccessed": 1774201132274,
+      "type": "file"
+    },
+    {
+      "path": "src/exchanges",
+      "accessCount": 1,
+      "lastAccessed": 1774201133618,
+      "type": "directory"
+    }
+  ],
+  "userDirectives": []
+}

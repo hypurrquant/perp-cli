@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "perp-cli": {
+      "source": "hypurrquant/perp-cli",
+      "sourceType": "github",
+      "computedHash": "bbf9d1f3c9ad3153e36eda62c5b1ad7a10b7a1ad2e6cc8e0dc784b049dca642b"
+    }
+  }
+}

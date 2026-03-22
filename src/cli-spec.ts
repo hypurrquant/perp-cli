@@ -85,7 +85,7 @@ export function getCliSpec(program: Command): CliSpec {
     description: "Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter)",
     globalOptions,
     commands,
-    exchanges: ["pacifica", "hyperliquid", "lighter", "aster"],
+    exchanges: ["pacifica", "hyperliquid", "lighter", "aster", "edgex"],
     envelope: {
       success: "{ ok: true, data: T, meta: { timestamp } }",
       error: "{ ok: false, error: { code, message, retryable?, retryAfterMs? }, meta: { timestamp } }",

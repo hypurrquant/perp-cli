@@ -56,3 +56,9 @@ registerAdapter({
   aliases: ["ast"],
   chain: "bnb",
 });
+
+registerAdapter({
+  name: "edgex",
+  aliases: ["ex"],
+  chain: "starkex",
+});

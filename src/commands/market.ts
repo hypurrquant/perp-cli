@@ -4,7 +4,7 @@ import { makeTable, formatUsd, formatPercent, printJson, jsonOk, jsonError, with
 import chalk from "chalk";
 import { hasPacificaSdk, isDexCapable } from "../exchanges/capabilities.js";
 
-const EXCHANGES = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
+const EXCHANGES = ["pacifica", "hyperliquid", "lighter", "aster", "edgex"] as const;
 
 export function registerMarketCommands(
   program: Command,

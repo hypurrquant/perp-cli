@@ -66,7 +66,7 @@ export function registerDashboardCommands(
     .description("Launch live web dashboard for real-time portfolio monitoring")
     .option("-p, --port <port>", "Port to serve dashboard on (auto-finds free port)", "3456")
     .option("--interval <ms>", "Poll interval in milliseconds", "5000")
-    .option("--exchanges <list>", "Comma-separated exchanges to monitor", "pacifica,hyperliquid,lighter,aster")
+    .option("--exchanges <list>", "Comma-separated exchanges to monitor", "pacifica,hyperliquid,lighter,aster,edgex")
     .option("--dex <list>", "Comma-separated HIP-3 dexes to monitor (e.g. xyz,flx,hyna)")
     .option("--no-auto-dex", "Disable auto-detection of HIP-3 dexes with active positions")
     .action(async (opts) => {

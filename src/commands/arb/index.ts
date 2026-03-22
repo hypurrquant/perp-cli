@@ -616,7 +616,7 @@ export function registerArbManageCommands(
       // ── Spot-Perp detailed view ──
       if (spotPerpPositions.length > 0) {
         for (const sp of spotPerpPositions) {
-          const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
+          const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e === "edgex" ? "EX" : e.toUpperCase();
           const spreadStr = sp.currentSpread !== null ? `${sp.currentSpread.toFixed(1)}%` : "-";
           const spotPriceEach = sp.spotAmount > 0 ? sp.spotValueUsd / sp.spotAmount : 0;
           const spotPnl = sp.spotValueUsd - (sp.perpEntryPrice * sp.spotAmount); // spot value vs entry
@@ -1491,8 +1491,8 @@ export function registerArbManageCommands(
       const totalEquity = snapshots.reduce((s, e) => s + e.equity, 0);
       const totalAvailable = snapshots.reduce((s, e) => s + e.available, 0);
 
-      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
-      const exChain = (e: string) => e === "pacifica" ? "Solana" : e === "hyperliquid" ? "Hyperliquid" : e === "lighter" ? "Arbitrum" : e === "aster" ? "BNB" : "unknown";
+      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e === "edgex" ? "EX" : e.toUpperCase();
+      const exChain = (e: string) => e === "pacifica" ? "Solana" : e === "hyperliquid" ? "Hyperliquid" : e === "lighter" ? "Arbitrum" : e === "aster" ? "BNB" : e === "edgex" ? "StarkEx" : "unknown";
 
       if (opts.check) {
         // Show current balance distribution

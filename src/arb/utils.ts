@@ -12,6 +12,7 @@ export const SETTLEMENT_SCHEDULES: Record<string, number[]> = {
   pacifica: Array.from({ length: 24 }, (_, i) => i),    // every hour
   lighter: Array.from({ length: 24 }, (_, i) => i),     // every hour
   aster: [0, 8, 16],                                     // every 8 hours (Binance convention)
+  edgex: [0, 8, 16],                                     // every 8 hours
 };
 
 export type SettleStrategy = "block" | "aggressive" | "off";

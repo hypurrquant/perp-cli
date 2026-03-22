@@ -21,6 +21,7 @@ const EXCHANGE_FUNDING_HOURS: Record<string, number> = {
   pacifica: 1,
   lighter: 8,
   aster: 8,
+  edgex: 8,
 };
 
 /**
