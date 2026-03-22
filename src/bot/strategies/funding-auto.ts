@@ -118,6 +118,8 @@ class FundingAutoStrategy implements Strategy {
   private get scanIntervalTicks(): number { return Number(this._config.scanIntervalTicks ?? 1); }
   /** Position size: min of sizeUsd (if set) and maxCapitalPct% of total equity */
   private _cachedEquity = 0;
+  /** Symbols managed by this strategy instance (persists across ticks, prevents adopting unrelated positions) */
+  private _managedSymbols = new Set<string>();
   private getSizeUsd(): number {
     const fixedSize = Number(this._config.sizeUsd ?? 0);
     const capitalLimit = this._cachedEquity * (this.maxCapitalPct / 100);
@@ -451,6 +453,7 @@ class FundingAutoStrategy implements Strategy {
       const success = await this.openPosition(ctx, opp, adapters);
       if (success) {
         currentCount++;
+        this._managedSymbols.add(`${opp.symbol}:${opp.mode}`);
 
         if (opp.mode === "perp-perp") perpPerpOpened++;
         else spotPerpOpened++;
@@ -566,14 +569,15 @@ class FundingAutoStrategy implements Strategy {
         }
       }
 
-      // Unmatched shorts (no cross-exchange long counterpart) = spot-perp positions
+      // Unmatched shorts = spot-perp ONLY if funding-auto previously entered them
+      // (prevents adopting unrelated positions like manual PURR short)
       for (const short of shorts) {
-        if (!matchedShorts.has(`${sym}:${short.exchange}`)) {
+        if (!matchedShorts.has(`${sym}:${short.exchange}`) && this._managedSymbols.has(`${sym}:spot-perp`)) {
           pairs.push({
             id: `${sym}-spot-${short.exchange}`,
             symbol: sym,
             mode: "spot-perp",
-            longExchange: short.exchange, // spot leg on same exchange
+            longExchange: short.exchange,
             shortExchange: short.exchange,
             longSize: 0,
             shortSize: short.size,
