@@ -106,6 +106,8 @@ export class EdgeXAdapter implements ExchangeAdapter {
   private _baseUrl = "https://pro.edgex.exchange";
   private _contracts = new Map<string, ContractMeta>();
   private _contractById = new Map<string, ContractMeta>();
+  private _marketsCache: { data: ExchangeMarketInfo[]; ts: number } | null = null;
+  private static CACHE_TTL = 60_000; // 60s cache
 
   constructor(accountId?: string, starkPrivateKey?: string) {
     this._accountId = accountId || process.env.EDGEX_ACCOUNT_ID || "";
@@ -168,46 +170,56 @@ export class EdgeXAdapter implements ExchangeAdapter {
   // ── Market Data ──
 
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
+    // Return cached data if fresh
+    if (this._marketsCache && Date.now() - this._marketsCache.ts < EdgeXAdapter.CACHE_TTL) {
+      return this._marketsCache.data;
+    }
     // edgeX requires contractId per ticker call (bulk returns empty).
-    // Limit to top contracts to avoid rate limiting (292 contracts × 2 calls = 584 requests).
-    const TOP_IDS = new Set([
-      "10000001","10000002","10000003","10000004","10000005","10000006","10000007",
-      "10000008","10000009","10000010","10000011","10000012","10000013","10000014",
-      "10000015","10000016","10000017","10000018","10000019","10000020",
-      "10000021","10000022","10000023","10000024","10000025","10000026","10000027",
-      "10000028","10000029","10000030",
-    ]);
+    // Fetch top 5 popular + metadata-only for the rest to avoid Cloudflare rate limiting.
     const allContracts = [...this._contractById.values()];
-    const contracts = allContracts.filter(c => TOP_IDS.has(c.contractId));
-    const BATCH = 10;
+    const TOP_IDS = ["10000001","10000002","10000003","10000004","10000005"]; // BTC,ETH,SOL,BNB,LTC
     const results: ExchangeMarketInfo[] = [];
 
-    for (let i = 0; i < contracts.length; i += BATCH) {
-      const batch = contracts.slice(i, i + BATCH);
-      const settled = await Promise.allSettled(
-        batch.map(async (c) => {
-          const [tArr, fArr] = await Promise.all([
-            this._publicGet("/api/v1/public/quote/getTicker", { contractId: c.contractId }),
-            this._publicGet("/api/v1/public/funding/getLatestFundingRate", { contractId: c.contractId }),
-          ]);
-          const t = (Array.isArray(tArr) ? tArr[0] : null) as Record<string, unknown> | null;
-          const f = (Array.isArray(fArr) ? fArr[0] : null) as Record<string, unknown> | null;
-          return {
-            symbol: this._fromApi(c.symbol),
-            markPrice: String(t?.lastPrice ?? t?.oraclePrice ?? "0"),
-            indexPrice: String(t?.indexPrice ?? "0"),
-            fundingRate: String(f?.fundingRate ?? "0"),
-            volume24h: String(t?.value ?? "0"),
-            openInterest: String(t?.openInterest ?? "0"),
-            maxLeverage: c.maxLeverage,
-          };
-        }),
-      );
-      for (const r of settled) {
-        if (r.status === "fulfilled") results.push(r.value);
-      }
+    // Fetch real-time data for top contracts (sequential to avoid rate limit)
+    for (const id of TOP_IDS) {
+      const c = this._contractById.get(id);
+      if (!c) continue;
+      try {
+        const [tArr, fArr] = await Promise.all([
+          this._publicGet("/api/v1/public/quote/getTicker", { contractId: c.contractId }),
+          this._publicGet("/api/v1/public/funding/getLatestFundingRate", { contractId: c.contractId }),
+        ]);
+        const t = (Array.isArray(tArr) ? tArr[0] : null) as Record<string, unknown> | null;
+        const f = (Array.isArray(fArr) ? fArr[0] : null) as Record<string, unknown> | null;
+        results.push({
+          symbol: this._fromApi(c.symbol),
+          markPrice: String(t?.lastPrice ?? t?.oraclePrice ?? "0"),
+          indexPrice: String(t?.indexPrice ?? "0"),
+          fundingRate: String(f?.fundingRate ?? "0"),
+          volume24h: String(t?.value ?? "0"),
+          openInterest: String(t?.openInterest ?? "0"),
+          maxLeverage: c.maxLeverage,
+        });
+      } catch { /* skip on rate limit */ }
     }
 
+    // Add remaining contracts with metadata only (no API calls)
+    const fetched = new Set(results.map(r => r.symbol));
+    for (const c of allContracts) {
+      const sym = this._fromApi(c.symbol);
+      if (fetched.has(sym)) continue;
+      results.push({
+        symbol: sym,
+        markPrice: "0",
+        indexPrice: "0",
+        fundingRate: "0",
+        volume24h: "0",
+        openInterest: "0",
+        maxLeverage: c.maxLeverage,
+      });
+    }
+
+    this._marketsCache = { data: results, ts: Date.now() };
     return results;
   }
 
