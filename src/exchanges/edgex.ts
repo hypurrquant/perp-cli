@@ -31,7 +31,7 @@ function bytesToBigInt(bytes: Uint8Array): bigint {
   return result;
 }
 
-function starkEcdsaSign(msgHash: bigint, privKey: bigint): { r: bigint; s: bigint; yPub: bigint } {
+function starkEcdsaSign(msgHash: bigint, privKey: bigint): { r: bigint; s: bigint } {
   const Fn = Point.Fn;
   for (let attempt = 0; attempt < 256; attempt++) {
     const kBig = bytesToBigInt(randomBytes(32)) % EC_ORDER;
@@ -44,7 +44,7 @@ function starkEcdsaSign(msgHash: bigint, privKey: bigint): { r: bigint; s: bigin
     const w = (kBig * Fn.inv(sum)) % EC_ORDER;
     if (w === 0n || w >= MAX_STARK_VALUE) continue;
     const s = Fn.inv(w);
-    return { r, s, yPub: Point.BASE.multiply(privKey).y };
+    return { r, s };
   }
   throw new Error("Failed to generate valid StarkEx ECDSA signature");
 }
@@ -547,13 +547,12 @@ export class EdgeXAdapter implements ExchangeAdapter {
       ? this._starkPrivateKey.slice(2)
       : this._starkPrivateKey;
     const privKeyBig = BigInt("0x" + privKeyRaw);
-    const { r, s, yPub } = starkEcdsaSign(msgHash, privKeyBig);
+    const { r, s } = starkEcdsaSign(msgHash, privKeyBig);
     return {
       timestamp,
       signature:
         r.toString(16).padStart(64, "0") +
-        s.toString(16).padStart(64, "0") +
-        yPub.toString(16).padStart(64, "0"),
+        s.toString(16).padStart(64, "0"),
     };
   }
 
