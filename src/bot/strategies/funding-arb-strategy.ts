@@ -1,0 +1,201 @@
+import type { Strategy, StrategyContext, StrategyAction, EnrichedSnapshot } from "../strategy-types.js";
+import type { FundingArbStrategyParams } from "../config.js";
+import type { ExchangeAdapter } from "../../exchanges/index.js";
+import { registerStrategy } from "../strategy-registry.js";
+import { checkArbLiquidity } from "../../liquidity.js";
+import { computeMatchedSize, reconcileArbFills } from "../../arb-sizing.js";
+
+interface ArbOpportunity {
+  symbol: string;
+  longExchange: string;
+  shortExchange: string;
+  longRate: number;
+  shortRate: number;
+  spread: number; // annualized %
+}
+
+export class FundingArbStrategy implements Strategy {
+  readonly name = "funding-arb";
+
+  describe() {
+    return {
+      description: "Cross-exchange funding rate arbitrage",
+      params: [
+        { name: "min_spread", type: "number" as const, required: true, description: "Minimum annualized spread %" },
+        { name: "close_spread", type: "number" as const, required: false, default: 5, description: "Spread to close at" },
+        { name: "size_usd", type: "number" as const, required: true, description: "Position size in USD" },
+        { name: "max_positions", type: "number" as const, required: false, default: 3, description: "Max concurrent positions" },
+        { name: "exchanges", type: "string" as const, required: true, description: "Comma-separated exchange names" },
+      ],
+    };
+  }
+
+  private get params(): FundingArbStrategyParams {
+    return this._config as unknown as FundingArbStrategyParams;
+  }
+
+  private _config: Record<string, unknown> = {};
+
+  async init(ctx: StrategyContext, _snapshot: EnrichedSnapshot): Promise<void> {
+    this._config = ctx.config;
+    const params = this.params;
+    ctx.state.set("arbRunning", true);
+    ctx.state.set("arbPositions", 0);
+    ctx.log(`  [ARB] Funding arb ready | spread >= ${params.min_spread}% | size $${params.size_usd}`);
+    ctx.log(`  [ARB] Exchanges: ${params.exchanges.join(", ")}`);
+  }
+
+  async onTick(ctx: StrategyContext, _snapshot: EnrichedSnapshot): Promise<StrategyAction[]> {
+    const params = this.params;
+    const arbPositions = ctx.state.get("arbPositions") as number;
+
+    // Get extra adapters from context state (set by engine)
+    const extraAdapters = ctx.state.get("extraAdapters") as Map<string, ExchangeAdapter> | undefined;
+
+    // Build adapter map from primary + extras
+    const adapters = new Map<string, ExchangeAdapter>();
+    adapters.set(ctx.adapter.name.toLowerCase(), ctx.adapter);
+    if (extraAdapters) {
+      for (const [name, a] of extraAdapters) adapters.set(name, a);
+    }
+
+    if (adapters.size < 2) {
+      ctx.log(`  [ARB] Need 2+ exchanges, have ${adapters.size}. Skipping.`);
+      return [];
+    }
+
+    // Fetch rates from all exchanges
+    const ratesByExchange = new Map<string, Map<string, { rate: number; price: number }>>();
+    for (const [name, a] of adapters) {
+      const rates = await this.fetchRates(a, name);
+      const map = new Map<string, { rate: number; price: number }>();
+      for (const r of rates) map.set(r.symbol.toUpperCase(), { rate: r.rate, price: r.price });
+      ratesByExchange.set(name, map);
+    }
+
+    // Find opportunities
+    const exchangeNames = [...ratesByExchange.keys()];
+    const opportunities: ArbOpportunity[] = [];
+
+    const allSymbols = new Set<string>();
+    for (const [, map] of ratesByExchange) {
+      for (const sym of map.keys()) allSymbols.add(sym);
+    }
+
+    for (const sym of allSymbols) {
+      let minRate = Infinity, maxRate = -Infinity;
+      let minExchange = "", maxExchange = "";
+
+      for (const exName of exchangeNames) {
+        const rate = ratesByExchange.get(exName)?.get(sym)?.rate;
+        if (rate === undefined) continue;
+        if (rate < minRate) { minRate = rate; minExchange = exName; }
+        if (rate > maxRate) { maxRate = rate; maxExchange = exName; }
+      }
+
+      if (minExchange && maxExchange && minExchange !== maxExchange) {
+        const { computeAnnualSpread: cas } = await import("../../funding.js");
+        const spread = cas(maxRate, maxExchange, minRate, minExchange);
+        if (spread >= params.min_spread) {
+          opportunities.push({
+            symbol: sym,
+            longExchange: minExchange,
+            shortExchange: maxExchange,
+            longRate: minRate,
+            shortRate: maxRate,
+            spread,
+          });
+        }
+      }
+    }
+
+    opportunities.sort((a, b) => b.spread - a.spread);
+
+    if (opportunities.length > 0) {
+      const top = opportunities.slice(0, 3);
+      for (const opp of top) {
+        ctx.log(`  [ARB] ${opp.symbol}: ${opp.spread.toFixed(1)}% spread (long ${opp.longExchange} ${(opp.longRate * 100).toFixed(4)}% / short ${opp.shortExchange} ${(opp.shortRate * 100).toFixed(4)}%)`);
+      }
+
+      // Auto-execute if under position limit
+      if (arbPositions < params.max_positions && opportunities.length > 0) {
+        const best = opportunities[0];
+        const longAdapter = adapters.get(best.longExchange);
+        const shortAdapter = adapters.get(best.shortExchange);
+
+        if (longAdapter && shortAdapter) {
+          const price = ratesByExchange.get(best.longExchange)?.get(best.symbol)?.price ?? 0;
+          if (price > 0) {
+            // Liquidity check
+            const liq = await checkArbLiquidity(
+              longAdapter, shortAdapter, best.symbol, params.size_usd, 0.5,
+              (msg) => ctx.log(`  ${msg}`),
+            );
+            if (!liq.viable) return [];
+
+            // Compute matched size
+            const matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange);
+            if (!matched) {
+              ctx.log(`  [ARB] Skip ${best.symbol}: can't compute matched size (min notional or precision issue)`);
+              return [];
+            }
+
+            try {
+              ctx.log(`  [ARB] Opening: ${matched.size} ${best.symbol} on both legs ($${matched.notional.toFixed(0)}/leg, slippage ~${liq.longSlippage.toFixed(2)}%/${liq.shortSlippage.toFixed(2)}%)`);
+              await Promise.all([
+                longAdapter.marketOrder(best.symbol, "buy", matched.size),
+                shortAdapter.marketOrder(best.symbol, "sell", matched.size),
+              ]);
+
+              // Verify fills match, correct if needed
+              try {
+                const recon = await reconcileArbFills(longAdapter, shortAdapter, best.symbol,
+                  (msg) => ctx.log(`  ${msg}`),
+                );
+                if (!recon.matched) {
+                  ctx.log(`  [ARB] WARNING: fills not matched after correction attempt`);
+                }
+              } catch { /* non-critical */ }
+
+              ctx.state.set("arbPositions", arbPositions + 1);
+              ctx.log(`  [ARB] Position opened! (${arbPositions + 1}/${params.max_positions})`);
+
+              // Return noop -- we already executed directly via adapters
+              // (arb requires multi-adapter coordination, can't be expressed as single-adapter actions)
+              return [{ type: "noop" }];
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              ctx.log(`  [ARB] Execution failed: ${msg}`);
+            }
+          }
+        }
+      }
+    } else {
+      ctx.log(`  [ARB] No opportunities >= ${params.min_spread}% spread`);
+    }
+
+    return [];
+  }
+
+  async onStop(_ctx: StrategyContext): Promise<StrategyAction[]> {
+    return [{ type: "cancel_all" }];
+  }
+
+  private async fetchRates(
+    adapter: ExchangeAdapter,
+    _exchangeName: string,
+  ): Promise<{ symbol: string; rate: number; price: number }[]> {
+    try {
+      const markets = await adapter.getMarkets();
+      return markets.map(m => ({
+        symbol: m.symbol,
+        rate: parseFloat(m.fundingRate),
+        price: parseFloat(m.markPrice),
+      }));
+    } catch {
+      return [];
+    }
+  }
+}
+
+registerStrategy("funding-arb", (_config) => new FundingArbStrategy());

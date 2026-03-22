@@ -116,24 +116,30 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
         if (t.szDecimals !== undefined) tokenSzDec.set(t.index, t.szDecimals);
       }
 
-      const ctxs = metaCtx[1] ?? [];
+      // Fetch accurate mid prices from allMids (markPx in metaCtx is unreliable for spot)
+      const allMids = await this._infoPost({ type: "allMids" }) as Record<string, string>;
+
+      const usdcTokenIndex = metaCtx[0].tokens?.find(t => t.name === "USDC")?.index ?? 0;
       const markets: SpotMarketInfo[] = [];
 
-      for (let i = 0; i < metaCtx[0].universe.length; i++) {
-        const u = metaCtx[0].universe[i];
-        const ctx = ctxs[i] ?? {};
+      for (const u of metaCtx[0].universe) {
+        // Only USDC-quoted pairs
+        if (u.tokens[1] !== usdcTokenIndex) continue;
         const baseToken = tokenNames.get(u.tokens[0]) ?? "";
-        const quoteToken = tokenNames.get(u.tokens[1]) ?? "USDC";
         if (!baseToken) continue;
 
+        // Price from allMids using universe.name (e.g., "PURR/USDC" or "@107")
+        const midPrice = allMids[u.name] ?? "0";
+
+        const spotDec = this._spotDecimals.get(baseToken.toUpperCase());
         markets.push({
           symbol: `${baseToken}/USDC`,
           baseToken,
-          quoteToken,
-          markPrice: String(ctx.markPx ?? ctx.midPx ?? "0"),
-          volume24h: String(ctx.dayNtlVlm ?? "0"),
-          sizeDecimals: tokenSzDec.get(u.tokens[0]) ?? 2,
-          priceDecimals: 6,
+          quoteToken: "USDC",
+          markPrice: midPrice,
+          volume24h: "0",
+          sizeDecimals: spotDec?.size ?? tokenSzDec.get(u.tokens[0]) ?? 2,
+          priceDecimals: spotDec?.price ?? 6,
         });
       }
 
@@ -265,9 +271,11 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
     return this._spotAssetMap.get(base.toUpperCase());
   }
 
-  /** Get spot size decimals for a base token */
+  /** Get spot size decimals for a base token — from API data, not hardcoded */
   getSpotDecimals(base: string): { size: number; price: number } {
-    return this._spotDecimals.get(base.toUpperCase()) ?? { size: 2, price: 6 };
+    const dec = this._spotDecimals.get(base.toUpperCase());
+    if (dec) return dec;
+    throw new Error(`No decimal info for spot token ${base}. Ensure init() completed successfully.`);
   }
 
   /**

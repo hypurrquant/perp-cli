@@ -148,18 +148,32 @@ perp --json history perf --period summary   # performance summary stats
 perp --json history list                    # execution audit trail
 ```
 
-## Automated Strategies (bot)
+## Automated Strategies (bot — 19 strategies)
 ```bash
-perp --json bot twap <SYMBOL> <SIDE> <SIZE> <DURATION>    # TWAP execution
+perp --json bot list-strategies                              # list all 19 strategies
+perp --json bot run <STRATEGY> [SYMBOL]                      # run any registered strategy
+perp --json bot run funding-auto                             # multi-exchange funding arb (no symbol needed)
+perp --json bot apex [SYMBOL]                                # APEX autonomous orchestrator (Radar+Pulse+Guard)
+perp --json bot reflect                                      # trading performance analysis (win rate, fees, PnL)
+perp --json bot preset-list                                  # list strategy presets
+perp --json bot preset <NAME> [SYMBOL]                       # run from preset
+perp --json bot twap <SYMBOL> <SIDE> <SIZE> <DURATION>       # TWAP execution
 perp --json bot grid <SYMBOL> --range <PCT> --grids <N> --size <USD>
 perp --json bot dca <SYMBOL> <SIDE> <AMOUNT> <INTERVAL>
-perp --json bot trailing-stop <SYMBOL>      # trailing stop with callback %
-perp --json bot funding-arb                 # auto funding arb
-perp --json bot quick-grid <SYMBOL>         # quick grid bot
-perp --json bot quick-arb                   # quick arb bot
-perp --json jobs list                       # list running jobs
-perp --json jobs stop <ID>                  # stop a job
+perp --json bot trailing-stop <SYMBOL>                       # trailing stop with callback %
+perp --json bot funding-arb                                  # auto funding arb
+perp --json bot quick-grid <SYMBOL>                          # quick grid bot
+perp --json bot quick-arb                                    # quick arb bot
+perp --json jobs list                                        # list running jobs
+perp --json jobs stop <ID>                                   # stop a job
 ```
+
+### Available Strategies
+Market Making: `simple-mm`, `engine-mm`, `avellaneda-mm`, `regime-mm`, `grid-mm`, `liquidation-mm`
+Signal/Directional: `momentum-breakout`, `mean-reversion`, `aggressive-taker`
+Arbitrage: `funding-arb`, `funding-auto`, `basis-arb`
+Infrastructure: `hedge-agent`, `rfq-agent`, `claude-agent`
+Classic: `grid`, `dca`, `twap`, `apex`
 
 ## Command Discovery
 ```bash

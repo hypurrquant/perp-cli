@@ -405,13 +405,12 @@ export class LighterAdapter implements ExchangeAdapter {
           side: (Number(p.sign) > 0 ? "long" : "short") as "long" | "short",
           size: String(Math.abs(posSize)),
           entryPrice: String(p.avg_entry_price || "0"),
-          markPrice: String(
-            posSize !== 0
-              ? (Number(p.position_value || 0) / Math.abs(posSize)).toFixed(
-                  this._marketDecimals.get(String(p.symbol || "").toUpperCase())?.price ?? 4
-                )
-              : "0"
-          ),
+          markPrice: (() => {
+            if (posSize === 0) return "0";
+            const rawMark = Number(p.position_value || 0) / Math.abs(posSize);
+            const priceDec = this._marketDecimals.get(String(p.symbol || "").toUpperCase())?.price;
+            return String(priceDec !== undefined ? rawMark.toFixed(priceDec) : rawMark);
+          })(),
           liquidationPrice: String(p.liquidation_price || "N/A"),
           unrealizedPnl: String(p.unrealized_pnl || "0"),
           // Compute actual leverage = notional / account equity (not max leverage from IMF)
