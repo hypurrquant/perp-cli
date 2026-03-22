@@ -241,7 +241,7 @@ export class LighterSpotAdapter implements SpotAdapter {
     }
 
     const slippagePrice = side === "buy" ? refPrice * 1.05 : refPrice * 0.95;
-    const dec = this._spotDecimals.get(resolved) ?? { size: 2, price: 4 };
+    const dec = this._getDecimals(resolved);
 
     const baseAmount = Math.round(sizeNum * Math.pow(10, dec.size));
     const priceTicks = Math.round(slippagePrice * Math.pow(10, dec.price));
@@ -265,7 +265,7 @@ export class LighterSpotAdapter implements SpotAdapter {
       throw new Error(`Unknown Lighter spot market: ${symbol}`);
     }
 
-    const dec = this._spotDecimals.get(resolved) ?? { size: 2, price: 4 };
+    const dec = this._getDecimals(resolved);
 
     // Auto-round to exchange precision — caller doesn't need to know decimals
     let sizeNum = Number(Number(size).toFixed(dec.size));

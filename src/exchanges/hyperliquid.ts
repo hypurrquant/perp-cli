@@ -167,7 +167,13 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   /** Get szDecimals for a symbol (cached from init/getMeta) */
   getSzDecimals(symbol: string): number {
     const resolved = this.resolveSymbol(symbol.toUpperCase());
-    return this._szDecimalsMap.get(resolved) ?? 2; // 2 is safe middle ground
+    const dec = this._szDecimalsMap.get(resolved);
+    if (dec !== undefined) return dec;
+    // Retry asset map load if empty
+    if (this._szDecimalsMap.size === 0) {
+      console.error(`[hyperliquid] szDecimals not loaded for ${symbol}, using fallback 2`);
+    }
+    return 2;
   }
 
   /** HL official price rounding: 5 significant figures */
