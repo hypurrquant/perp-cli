@@ -82,10 +82,19 @@ class FundingAutoStrategy implements Strategy {
   private get perpPerpCloseSpread(): number { return Number(this._config.perpPerpCloseSpread ?? 5); }
   private get maxBreakEvenHours(): number { return Number(this._config.maxBreakEvenHours ?? 48); }
   private get maxPositions(): number { return Number(this._config.maxPositions ?? 5); }
+  private get maxCapitalPct(): number { return Number(this._config.maxCapitalPct ?? 20); }
   private get defaultFeeRate(): number { return Number(this._config.defaultFeeRate ?? 0.0005); }
   private get defaultSlippage(): number { return Number(this._config.defaultSlippage ?? 0.001); }
   private get scanIntervalTicks(): number { return Number(this._config.scanIntervalTicks ?? 1); }
-  private get sizeUsd(): number { return Number(this._config.sizeUsd ?? 100); }
+  /** Position size: min of sizeUsd (if set) and maxCapitalPct% of total equity */
+  private _cachedEquity = 0;
+  private getSizeUsd(): number {
+    const fixedSize = Number(this._config.sizeUsd ?? 0);
+    const capitalLimit = this._cachedEquity * (this.maxCapitalPct / 100);
+    if (fixedSize > 0 && capitalLimit > 0) return Math.min(fixedSize, capitalLimit);
+    if (capitalLimit > 0) return capitalLimit;
+    return fixedSize > 0 ? fixedSize : 100; // fallback
+  }
 
   describe() {
     return {
@@ -95,13 +104,14 @@ class FundingAutoStrategy implements Strategy {
         { name: "perpPerpRatio", type: "number" as const, required: false, default: 0.3, description: "Capital ratio for perp-perp mode" },
         { name: "perpPerpMinSpread", type: "number" as const, required: false, default: 20, description: "Min annualized spread % for perp-perp entry" },
         { name: "spotPerpMinSpread", type: "number" as const, required: false, default: 5, description: "Min annualized spread % for spot-perp entry" },
-        { name: "perpPerpCloseSpread", type: "number" as const, required: false, default: 5, description: "Close perp-perp when spread falls below this %" },
+        { name: "perpPerpCloseSpread", type: "number" as const, required: false, default: 0, description: "Close perp-perp when spread reverses below this % (0 = only on reversal)" },
         { name: "maxBreakEvenHours", type: "number" as const, required: false, default: 48, description: "Max break-even hours to enter" },
         { name: "maxPositions", type: "number" as const, required: false, default: 5, description: "Max concurrent positions" },
+        { name: "maxCapitalPct", type: "number" as const, required: false, default: 20, description: "Max % of total capital per position (e.g., 20 = 20%)" },
         { name: "defaultFeeRate", type: "number" as const, required: false, default: 0.0005, description: "Default taker fee rate (0.05%)" },
         { name: "defaultSlippage", type: "number" as const, required: false, default: 0.001, description: "Default slippage estimate (0.1%)" },
         { name: "scanIntervalTicks", type: "number" as const, required: false, default: 1, description: "Scan every N ticks" },
-        { name: "sizeUsd", type: "number" as const, required: false, default: 100, description: "Position size in USD per leg" },
+        { name: "sizeUsd", type: "number" as const, required: false, default: 0, description: "Fixed position size in USD (0 = use maxCapitalPct instead)" },
       ],
     };
   }
@@ -117,6 +127,12 @@ class FundingAutoStrategy implements Strategy {
   async onTick(ctx: StrategyContext, _snapshot: EnrichedSnapshot): Promise<StrategyAction[]> {
     const positions = (ctx.state.get("positions") as ActivePosition[]) ?? [];
     const now = Date.now();
+
+    // Cache total equity for capital-based sizing
+    try {
+      const bal = await ctx.adapter.getBalance();
+      this._cachedEquity = Number(bal.equity) || 0;
+    } catch { /* keep previous cached value */ }
 
     // Get all adapters
     const adapters = this.getAdapters(ctx);
@@ -170,8 +186,10 @@ class FundingAutoStrategy implements Strategy {
           longInfo.rate, pos.longExchange,
         );
 
-        if (currentSpread <= this.perpPerpCloseSpread) {
-          ctx.log(`[funding-auto] Closing perp-perp ${pos.symbol}: spread ${currentSpread.toFixed(1)}% <= ${this.perpPerpCloseSpread}% (entry was ${pos.entrySpread.toFixed(1)}%)`);
+        // Only close when spread REVERSES (≤ 0%) — never close a profitable position
+        // A spread of 5% or even 2% still earns funding. Closing costs more than keeping.
+        if (currentSpread <= 0) {
+          ctx.log(`[funding-auto] Closing perp-perp ${pos.symbol}: spread REVERSED to ${currentSpread.toFixed(1)}% (entry was ${pos.entrySpread.toFixed(1)}%)`);
           await this.closePosition(ctx, pos, adapters);
           toClose.push(i);
         } else {
@@ -261,7 +279,7 @@ class FundingAutoStrategy implements Strategy {
       if (annualSpread < this.perpPerpMinSpread) continue;
 
       // Calculate cost and break-even
-      const notional = this.sizeUsd;
+      const notional = this.getSizeUsd();
       const hourlyIncome = Math.abs(maxRate - minRate) * notional;
       const { totalCost } = calculateCosts(
         notional,
@@ -311,7 +329,7 @@ class FundingAutoStrategy implements Strategy {
       if (annualSpread < this.spotPerpMinSpread) continue;
 
       // Calculate cost and break-even (spot side: typically lower fees, no funding)
-      const notional = this.sizeUsd;
+      const notional = this.getSizeUsd();
       const hourlyIncome = bestRate * notional;
       const { totalCost } = calculateCosts(
         notional,
@@ -356,7 +374,7 @@ class FundingAutoStrategy implements Strategy {
 
       const success = await this.openPosition(ctx, opp, adapters);
       if (success) {
-        const notional = this.sizeUsd;
+        const notional = this.getSizeUsd();
         const { totalCost } = calculateCosts(
           notional,
           this.defaultFeeRate, this.defaultFeeRate,
@@ -447,7 +465,7 @@ class FundingAutoStrategy implements Strategy {
         || this.getCachedPrice(ctx, opp.shortExchange, opp.symbol);
       if (price <= 0) return false;
 
-      const size = (this.sizeUsd / price).toFixed(6);
+      const size = (this.getSizeUsd() / price).toFixed(6);
       try {
         await Promise.all([
           longAdapter.marketOrder(opp.symbol, "buy", size),
@@ -467,7 +485,7 @@ class FundingAutoStrategy implements Strategy {
       const price = this.getCachedPrice(ctx, opp.shortExchange, opp.symbol);
       if (price <= 0) return false;
 
-      const size = (this.sizeUsd / price).toFixed(6);
+      const size = (this.getSizeUsd() / price).toFixed(6);
       try {
         // Short perp leg — spot buy is out-of-scope for perp-only adapters
         await shortAdapter.marketOrder(opp.symbol, "sell", size);
