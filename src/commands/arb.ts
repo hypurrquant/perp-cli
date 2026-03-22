@@ -54,6 +54,23 @@ async function fetchHyperliquidRates(): Promise<FundingRate[]> {
   }));
 }
 
+async function fetchAsterRates(): Promise<FundingRate[]> {
+  try {
+    const premiums = await fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()) as Array<Record<string, unknown>>;
+    return (premiums ?? [])
+      .filter(p => String(p.symbol ?? "").endsWith("USDT"))
+      .map(p => ({
+        exchange: "aster",
+        symbol: String(p.symbol ?? "").replace(/USDT$/, ""),
+        fundingRate: Number(p.lastFundingRate ?? 0),
+        markPrice: Number(p.markPrice ?? 0),
+        nextFunding: Number(p.nextFundingTime ?? 0),
+      }));
+  } catch {
+    return [];
+  }
+}
+
 async function fetchLighterRates(): Promise<FundingRate[]> {
   try {
     const [details, funding] = await Promise.all([
@@ -375,10 +392,10 @@ export async function handleRates(isJson: () => boolean, opts: { symbol?: string
 
 export async function handleBasisScan(isJson: () => boolean, opts: { minBasis: string; symbol?: string }): Promise<void> {
   if (!isJson()) console.log(chalk.cyan("  Fetching prices for basis calculation...\n"));
-  const [pacRates, hlRates, ltRates] = await Promise.all([fetchPacificaRates(), fetchHyperliquidRates(), fetchLighterRates()]);
+  const [pacRates, hlRates, ltRates, astRates] = await Promise.all([fetchPacificaRates(), fetchHyperliquidRates(), fetchLighterRates(), fetchAsterRates()]);
   const exchangePrices = new Map<string, Map<string, number>>();
   const filterSymbol = opts.symbol?.toUpperCase();
-  for (const r of [...pacRates, ...hlRates, ...ltRates]) {
+  for (const r of [...pacRates, ...hlRates, ...ltRates, ...astRates]) {
     if (r.markPrice <= 0) continue;
     if (filterSymbol && r.symbol.toUpperCase() !== filterSymbol) continue;
     if (!exchangePrices.has(r.symbol)) exchangePrices.set(r.symbol, new Map());
