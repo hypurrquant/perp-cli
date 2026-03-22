@@ -4,6 +4,25 @@ import { registerStrategy } from "../strategy-registry.js";
 import { toHourlyRate, computeAnnualSpread } from "../../funding/normalize.js";
 
 /**
+ * Minimum notional per exchange (USD):
+ * - HL: ~$2 (0.001 ETH)
+ * - PAC: $10
+ * - LT: ~$21 (0.01 ETH)
+ * Use $12 as safe minimum across all exchanges.
+ */
+const MIN_NOTIONAL_USD = 12;
+
+/** Size precision per asset price range */
+function formatSizeForPrice(rawSize: number, price: number): string {
+  // Higher price → fewer decimals (BTC: 4, ETH: 3, SOL: 1, small coins: 0)
+  if (price > 10000) return rawSize.toFixed(4);   // BTC
+  if (price > 1000) return rawSize.toFixed(3);     // ETH
+  if (price > 10) return rawSize.toFixed(2);       // SOL, AVAX
+  if (price > 1) return rawSize.toFixed(1);        // DOGE, etc
+  return rawSize.toFixed(0);                       // sub-$1 tokens
+}
+
+/**
  * Automated funding rate trading strategy — dual mode.
  *
  * Mode 1: Perp-Perp (opportunity mode)
@@ -451,6 +470,13 @@ class FundingAutoStrategy implements Strategy {
     return cache?.get(`${exchange}:${symbol}`) ?? 0;
   }
 
+  /** Format size with exchange-appropriate precision based on asset price */
+  private formatSize(rawSize: number, symbol: string): string {
+    // Use price to determine precision
+    const price = rawSize > 0 ? this.getSizeUsd() / rawSize : 0;
+    return formatSizeForPrice(rawSize, price);
+  }
+
   private async openPosition(
     ctx: StrategyContext,
     opp: FundingOpportunity,
@@ -465,7 +491,15 @@ class FundingAutoStrategy implements Strategy {
         || this.getCachedPrice(ctx, opp.shortExchange, opp.symbol);
       if (price <= 0) return false;
 
-      const size = (this.getSizeUsd() / price).toFixed(6);
+      const notionalUsd = this.getSizeUsd();
+      const size = this.formatSize(notionalUsd / price, opp.symbol);
+
+      // Minimum notional check — skip if below exchange minimums
+      if (notionalUsd < MIN_NOTIONAL_USD) {
+        ctx.log(`[funding-auto] Skip ${opp.symbol}: notional $${notionalUsd.toFixed(0)} < min $${MIN_NOTIONAL_USD}`);
+        return false;
+      }
+
       try {
         await Promise.all([
           longAdapter.marketOrder(opp.symbol, "buy", size),
@@ -485,7 +519,14 @@ class FundingAutoStrategy implements Strategy {
       const price = this.getCachedPrice(ctx, opp.shortExchange, opp.symbol);
       if (price <= 0) return false;
 
-      const size = (this.getSizeUsd() / price).toFixed(6);
+      const notionalUsd = this.getSizeUsd();
+      const size = this.formatSize(notionalUsd / price, opp.symbol);
+
+      if (notionalUsd < MIN_NOTIONAL_USD) {
+        ctx.log(`[funding-auto] Skip ${opp.symbol}: notional $${notionalUsd.toFixed(0)} < min $${MIN_NOTIONAL_USD}`);
+        return false;
+      }
+
       try {
         // Short perp leg — spot buy is out-of-scope for perp-only adapters
         await shortAdapter.marketOrder(opp.symbol, "sell", size);
