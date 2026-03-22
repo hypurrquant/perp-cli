@@ -9,6 +9,7 @@ export const TAKER_FEES: Record<string, number> = {
   hyperliquid: 0.00035,
   pacifica: 0.00035,
   lighter: 0,
+  aster: 0.0004, // 0.04% taker fee
 };
 
 /** Get taker fee for an exchange. Uses settings if available, falls back to defaults. */

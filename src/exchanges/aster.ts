@@ -233,16 +233,16 @@ export class AsterAdapter implements ExchangeAdapter {
   async getOrderHistory(limit = 30): Promise<ExchangeOrder[]> {
     // allOrders requires symbol — get from positions or recent trades
     const positions = await this.getPositions();
-    const symbols = new Set(positions.map(p => p.symbol));
-    if (symbols.size === 0) {
+    const apiSymbols = new Set(positions.map(p => this._toApi(p.symbol)));
+    if (apiSymbols.size === 0) {
       // Fallback: query the most common perp symbols when no open positions exist
       for (const s of ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]) {
-        symbols.add(s);
+        apiSymbols.add(s);
       }
     }
 
     const allOrders: ExchangeOrder[] = [];
-    for (const sym of symbols) {
+    for (const sym of apiSymbols) {
       try {
         const orders = await this._signedGet("/fapi/v1/allOrders", {
           symbol: sym,
@@ -268,11 +268,11 @@ export class AsterAdapter implements ExchangeAdapter {
 
   async getTradeHistory(limit = 30): Promise<ExchangeTrade[]> {
     const positions = await this.getPositions();
-    const symbols = new Set(positions.map(p => p.symbol));
-    if (symbols.size === 0) symbols.add("BTCUSDT");
+    const apiSymbols = new Set(positions.map(p => this._toApi(p.symbol)));
+    if (apiSymbols.size === 0) apiSymbols.add("BTCUSDT");
 
     const allTrades: ExchangeTrade[] = [];
-    for (const sym of symbols) {
+    for (const sym of apiSymbols) {
       try {
         const trades = await this._signedGet("/fapi/v1/userTrades", {
           symbol: sym,

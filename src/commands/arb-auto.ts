@@ -192,7 +192,7 @@ export function isSpreadReversed(
   snapshot: FundingSnapshot,
 ): boolean {
   const rateFor = (e: string) =>
-    e === "pacifica" ? snapshot.pacRate : e === "hyperliquid" ? snapshot.hlRate : snapshot.ltRate;
+    e === "pacifica" ? snapshot.pacRate : e === "hyperliquid" ? snapshot.hlRate : e === "aster" ? snapshot.astRate : snapshot.ltRate;
   const longHourly = toHourlyRate(rateFor(longExchange), longExchange);
   const shortHourly = toHourlyRate(rateFor(shortExchange), shortExchange);
   // Reversed if the long side rate exceeds the short side rate
@@ -711,7 +711,7 @@ export function registerArbAutoCommands(
             for (const fPos of openPositions) {
               const fSnap = filtered.find(s => s.symbol === fPos.symbol);
               if (!fSnap) continue;
-              const fRateFor = (e: string) => e === "pacifica" ? fSnap.pacRate : e === "hyperliquid" ? fSnap.hlRate : fSnap.ltRate;
+              const fRateFor = (e: string) => e === "pacifica" ? fSnap.pacRate : e === "hyperliquid" ? fSnap.hlRate : e === "aster" ? fSnap.astRate : fSnap.ltRate;
               const fHlHourly = toHourlyRate(fRateFor("hyperliquid"), "hyperliquid");
               const fPacHourly = toHourlyRate(fRateFor("pacifica"), "pacifica");
               const fNotional = fPos.size * fSnap.markPrice;
@@ -850,7 +850,7 @@ export function registerArbAutoCommands(
               const effectiveNetSpread = netSpread * settleBoostMultiplier;
               if (effectiveNetSpread < minSpread) continue;
 
-              const rateForExch = (e: string) => e === "pacifica" ? snap.pacRate : e === "hyperliquid" ? snap.hlRate : snap.ltRate;
+              const rateForExch = (e: string) => e === "pacifica" ? snap.pacRate : e === "hyperliquid" ? snap.hlRate : e === "aster" ? snap.astRate : snap.ltRate;
 
               console.log(chalk.green(
                 `  ${now} ENTER ${snap.symbol} — gross ${grossSpread.toFixed(1)}% net ${netSpread.toFixed(1)}%` +
@@ -1075,7 +1075,7 @@ export function registerArbAutoCommands(
               const elapsedHours = (nowMs - pos.lastCheckTime) / (1000 * 60 * 60);
               const notional = pos.size * current.markPrice;
               // Estimate funding collected: normalize all rates to hourly before comparing
-              const rateFor = (e: string) => e === "pacifica" ? current.pacRate : e === "hyperliquid" ? current.hlRate : current.ltRate;
+              const rateFor = (e: string) => e === "pacifica" ? current.pacRate : e === "hyperliquid" ? current.hlRate : e === "aster" ? current.astRate : current.ltRate;
               const longHourly = toHourlyRate(rateFor(pos.longExchange), pos.longExchange);
               const shortHourly = toHourlyRate(rateFor(pos.shortExchange), pos.shortExchange);
               // Income = short gets paid positive funding, long pays; net = (shortRate - longRate) * notional * hours
