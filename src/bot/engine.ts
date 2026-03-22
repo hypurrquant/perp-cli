@@ -4,6 +4,7 @@ import { getMarketSnapshot, evaluateAllConditions, type MarketSnapshot } from ".
 import { updateJobState } from "../jobs.js";
 import { getStrategy } from "./strategy-registry.js";
 import type { StrategyAction, StrategyContext, EnrichedSnapshot } from "./strategy-types.js";
+import type { BotTuiState, StateListener, LogListener } from "./tui/index.js";
 import chalk from "chalk";
 
 // Auto-register built-in strategies
@@ -25,8 +26,10 @@ import "./strategies/hedge-agent.js";
 import "./strategies/rfq-agent.js";
 import "./strategies/claude-agent.js";
 import "./strategies/apex-strategy.js";
+import "./strategies/funding-auto.js";
 
 export type BotLog = (msg: string) => void;
+export type BotOutputMode = "tui" | "json" | "headless";
 
 interface BotState {
   phase: "monitoring" | "entering" | "running" | "exiting" | "paused" | "stopped";
@@ -43,12 +46,38 @@ interface BotState {
   strategyActive: boolean;
 }
 
+// ── TUI state emitter ──
+
+class TuiEmitter {
+  private stateListeners: StateListener[] = [];
+  private logListeners: LogListener[] = [];
+
+  subscribe(onState: StateListener, onLog: LogListener): () => void {
+    this.stateListeners.push(onState);
+    this.logListeners.push(onLog);
+    return () => {
+      this.stateListeners = this.stateListeners.filter((l) => l !== onState);
+      this.logListeners = this.logListeners.filter((l) => l !== onLog);
+    };
+  }
+
+  emitState(s: BotTuiState) {
+    for (const l of this.stateListeners) l(s);
+  }
+
+  emitLog(msg: string) {
+    const entry = { time: new Date().toLocaleTimeString(), message: msg };
+    for (const l of this.logListeners) l(entry);
+  }
+}
+
 export async function runBot(
   adapter: ExchangeAdapter,
   config: BotConfig,
   jobId?: string,
   log: BotLog = defaultLog,
   extraAdapters?: Map<string, ExchangeAdapter>, // for funding-arb (multi-exchange)
+  mode: BotOutputMode = "headless",
 ): Promise<{ fills: number; totalPnl: number; runtime: number }> {
   const state: BotState = {
     phase: "monitoring",
@@ -86,21 +115,56 @@ export async function runBot(
   const isDryRun = false; // TODO: wire up from config when dry-run mode is added
 
   let running = true;
+
+  // ── TUI / JSON mode setup ──
+  const tuiEmitter = new TuiEmitter();
+  let tuiUnmount: (() => void) | undefined;
+  let paused = false;
+
+  // Wrap log for TUI/JSON modes
+  const effectiveLog: BotLog = mode === "json"
+    ? () => {} // JSON mode suppresses console log; NDJSON emitted per tick
+    : mode === "tui"
+      ? (msg: string) => tuiEmitter.emitLog(msg)
+      : log;
+
+  // Update strategy context to use effective log
+  strategyCtx.log = effectiveLog;
+
+  if (mode === "tui") {
+    try {
+      const { startDashboard } = await import("./tui/index.js");
+      const initialTuiState = buildTuiState(state, config, { price: 0, volatility24h: 0, fundingRate: 0, volume24h: 0 }, [], [], strategyCtx);
+      const result = startDashboard({
+        initialState: initialTuiState,
+        onQuit: () => { running = false; state.phase = "stopped"; },
+        onPause: () => { paused = !paused; },
+        subscribe: (onState, onLog) => tuiEmitter.subscribe(onState, onLog),
+      });
+      tuiUnmount = result.unmount;
+    } catch {
+      // Fallback to headless if TUI fails (e.g., non-TTY)
+      // mode stays as-is but we just use the original log
+    }
+  }
+
   const shutdown = () => { running = false; state.phase = "stopped"; };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  // Header
-  log(chalk.cyan.bold(`\n  ╔═══════════════════════════════════════╗`));
-  log(chalk.cyan.bold(`  ║  ${config.name.padEnd(37)}║`));
-  log(chalk.cyan.bold(`  ╚═══════════════════════════════════════╝\n`));
-  log(`  Exchange:  ${chalk.white(config.exchange)}`);
-  log(`  Symbol:    ${chalk.white(config.symbol)}`);
-  log(`  Strategy:  ${chalk.white(config.strategy.type)}`);
-  log(`  Risk:      max drawdown $${config.risk.max_drawdown} | max daily loss $${config.risk.max_daily_loss}`);
-  log(`  Entry:     ${config.entry_conditions.map(c => c.type).join(" + ")}`);
-  log(`  Exit:      ${config.exit_conditions.map(c => c.type).join(" | ") || "manual"}`);
-  log("");
+  if (mode !== "tui") {
+    // Header (headless / json modes print header to console)
+    log(chalk.cyan.bold(`\n  ╔═══════════════════════════════════════╗`));
+    log(chalk.cyan.bold(`  ║  ${config.name.padEnd(37)}║`));
+    log(chalk.cyan.bold(`  ╚═══════════════════════════════════════╝\n`));
+    log(`  Exchange:  ${chalk.white(config.exchange)}`);
+    log(`  Symbol:    ${chalk.white(config.symbol)}`);
+    log(`  Strategy:  ${chalk.white(config.strategy.type)}`);
+    log(`  Risk:      max drawdown $${config.risk.max_drawdown} | max daily loss $${config.risk.max_daily_loss}`);
+    log(`  Entry:     ${config.entry_conditions.map(c => c.type).join(" + ")}`);
+    log(`  Exit:      ${config.exit_conditions.map(c => c.type).join(" | ") || "manual"}`);
+    log("");
+  }
 
   // Get initial equity
   try {
@@ -108,15 +172,23 @@ export async function runBot(
     state.equity = parseFloat(bal.equity);
     state.peakEquity = state.equity;
     state.dailyStartEquity = state.equity;
-    log(`  Starting equity: $${state.equity.toFixed(2)}`);
+    effectiveLog(`  Starting equity: $${state.equity.toFixed(2)}`);
   } catch {
-    log(chalk.yellow(`  Could not fetch initial balance`));
+    effectiveLog(chalk.yellow(`  Could not fetch initial balance`));
   }
 
-  log(chalk.gray(`\n  Monitoring conditions... (Ctrl+C to stop)\n`));
+  if (mode !== "tui") {
+    log(chalk.gray(`\n  Monitoring conditions... (Ctrl+C to stop)\n`));
+  }
 
   try {
     while (running) {
+      // Honor pause toggle from TUI
+      if (paused) {
+        await sleep(500);
+        continue;
+      }
+
       const loopStart = Date.now();
 
       try {
@@ -149,10 +221,10 @@ export async function runBot(
           const shouldEnter = evaluateAllConditions(config.entry_conditions, snapshot, context, "all");
 
           if (shouldEnter) {
-            log(chalk.green(`  ✓ Entry conditions met @ $${snapshot.price.toFixed(2)}`));
+            effectiveLog(`  Entry conditions met @ $${snapshot.price.toFixed(2)}`);
             state.phase = "entering";
           } else {
-            logStatus(log, state, snapshot, "waiting");
+            logStatus(effectiveLog, state, snapshot, "waiting");
           }
         }
 
@@ -163,16 +235,16 @@ export async function runBot(
             // Execute any initial actions (e.g., grid placement on first tick)
             strategyCtx.tick = 0;
             const initActions = await strategy.onTick(strategyCtx, snapshot);
-            await executeActions(adapter, config.symbol, initActions, log, isDryRun);
+            await executeActions(adapter, config.symbol, initActions, effectiveLog, isDryRun);
             state.fills += countFills(initActions);
             strategyCtx.tick++;
 
             state.phase = "running";
             state.strategyActive = true;
-            log(chalk.green(`  ▶ Strategy started`));
+            effectiveLog(`  Strategy started`);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            log(chalk.red(`  ✗ Strategy start failed: ${msg}`));
+            effectiveLog(`  Strategy start failed: ${msg}`);
             state.phase = "monitoring"; // retry
           }
         }
@@ -194,35 +266,46 @@ export async function runBot(
               : drawdown > config.risk.max_drawdown
                 ? `drawdown $${drawdown.toFixed(2)} > limit $${config.risk.max_drawdown}`
                 : "exit condition met";
-            log(chalk.yellow(`  ⚠ Exiting: ${reason}`));
+            effectiveLog(`  Exiting: ${reason}`);
             state.phase = "exiting";
           } else {
             // Manage running strategy
             const actions = await strategy.onTick(strategyCtx, snapshot);
-            await executeActions(adapter, config.symbol, actions, log, isDryRun);
+            await executeActions(adapter, config.symbol, actions, effectiveLog, isDryRun);
             state.fills += countFills(actions);
             strategyCtx.tick++;
-            logStatus(log, state, snapshot, "running");
+            logStatus(effectiveLog, state, snapshot, "running");
           }
         }
 
         // ── Phase: Exiting (close everything) ──
         if (state.phase === "exiting") {
           const stopActions = await strategy.onStop(strategyCtx);
-          await executeActions(adapter, config.symbol, stopActions, log, isDryRun);
+          await executeActions(adapter, config.symbol, stopActions, effectiveLog, isDryRun);
           state.strategyActive = false;
 
           if (config.risk.pause_after_loss_sec > 0 && state.dailyPnl < 0) {
-            log(chalk.yellow(`  ⏸ Pausing ${config.risk.pause_after_loss_sec}s after loss`));
+            effectiveLog(`  Pausing ${config.risk.pause_after_loss_sec}s after loss`);
             state.phase = "paused";
             await sleep(config.risk.pause_after_loss_sec * 1000);
             state.phase = "monitoring";
-            log(chalk.gray(`  Resuming monitoring...`));
+            effectiveLog(`  Resuming monitoring...`);
           } else {
             // If exit due to risk breach, stop completely
-            log(chalk.red(`  ■ Bot stopped.`));
+            effectiveLog(`  Bot stopped.`);
             break;
           }
+        }
+
+        // ── Emit state update for TUI / JSON ──
+        const positions = await fetchPositions(adapter, config.symbol);
+        const openOrders = await fetchOpenOrders(adapter, config.symbol);
+        const tuiState = buildTuiState(state, config, snapshot, positions, openOrders, strategyCtx);
+
+        if (mode === "tui") {
+          tuiEmitter.emitState(tuiState);
+        } else if (mode === "json") {
+          console.log(JSON.stringify(tuiState));
         }
 
         // Update job state
@@ -241,7 +324,7 @@ export async function runBot(
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        log(chalk.red(`  ✗ Loop error: ${msg}`));
+        effectiveLog(`  Loop error: ${msg}`);
       }
 
       // Wait for next interval
@@ -255,15 +338,25 @@ export async function runBot(
 
     // Cleanup: cancel any remaining orders
     if (state.strategyActive) {
-      log(chalk.gray(`  Cleaning up orders...`));
+      effectiveLog(`  Cleaning up orders...`);
       try { await adapter.cancelAllOrders(config.symbol); } catch { /* best effort */ }
+    }
+
+    // Unmount TUI if active
+    if (tuiUnmount) {
+      tuiUnmount();
     }
   }
 
   const runtime = Math.floor((Date.now() - state.startTime) / 1000);
-  log(chalk.cyan.bold(`\n  Bot "${config.name}" finished`));
-  log(`  Runtime: ${formatDuration(runtime)} | Fills: ${state.fills} | PnL: $${state.totalPnl.toFixed(2)}`);
-  log(`  Equity: $${state.equity.toFixed(2)} (peak: $${state.peakEquity.toFixed(2)})\n`);
+
+  if (mode === "json") {
+    console.log(JSON.stringify({ event: "done", fills: state.fills, totalPnl: state.totalPnl, runtime, equity: state.equity, peakEquity: state.peakEquity }));
+  } else if (mode !== "tui") {
+    log(chalk.cyan.bold(`\n  Bot "${config.name}" finished`));
+    log(`  Runtime: ${formatDuration(runtime)} | Fills: ${state.fills} | PnL: $${state.totalPnl.toFixed(2)}`);
+    log(`  Equity: $${state.equity.toFixed(2)} (peak: $${state.peakEquity.toFixed(2)})\n`);
+  }
 
   if (jobId) {
     updateJobState(jobId, { status: "done" });
@@ -366,4 +459,85 @@ function formatDuration(sec: number): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
+}
+
+// ── TUI helpers ──
+
+async function fetchPositions(adapter: ExchangeAdapter, symbol: string): Promise<import("./tui/index.js").Position[]> {
+  try {
+    const positions = await adapter.getPositions();
+    return positions
+      .filter(p => p.symbol.toUpperCase().includes(symbol.toUpperCase()) && parseFloat(p.size) !== 0)
+      .map(p => ({
+        symbol: p.symbol,
+        side: p.side,
+        size: p.size,
+        entryPrice: p.entryPrice,
+        markPrice: p.markPrice,
+        unrealizedPnl: p.unrealizedPnl,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+async function fetchOpenOrders(adapter: ExchangeAdapter, symbol: string): Promise<import("./tui/index.js").OpenOrder[]> {
+  try {
+    const orders = await adapter.getOpenOrders();
+    return orders
+      .filter(o => o.symbol.toUpperCase().includes(symbol.toUpperCase()))
+      .map(o => ({
+        orderId: o.orderId,
+        side: o.side,
+        price: o.price,
+        size: o.size,
+        type: o.type,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function buildTuiState(
+  state: BotState,
+  config: BotConfig,
+  snapshot: { price: number; volatility24h: number; fundingRate: number; volume24h: number },
+  positions: import("./tui/index.js").Position[],
+  openOrders: import("./tui/index.js").OpenOrder[],
+  strategyCtx: StrategyContext,
+): BotTuiState {
+  // Extract serializable strategy state from the Map
+  const strategyState: Record<string, unknown> = {};
+  for (const [k, v] of strategyCtx.state) {
+    // Skip non-serializable values (adapters, functions)
+    if (typeof v === "function" || (typeof v === "object" && v !== null && !(Array.isArray(v)) && v instanceof Map)) continue;
+    try {
+      JSON.stringify(v);
+      strategyState[k] = v;
+    } catch {
+      // skip non-serializable
+    }
+  }
+
+  return {
+    phase: state.phase,
+    equity: state.equity,
+    peakEquity: state.peakEquity,
+    dailyPnl: state.dailyPnl,
+    fills: state.fills,
+    totalPnl: state.totalPnl,
+    runtime: Math.floor((Date.now() - state.startTime) / 1000),
+    strategy: config.strategy.type,
+    symbol: config.symbol,
+    exchange: config.exchange,
+    price: snapshot.price,
+    volume24h: snapshot.volume24h ?? 0,
+    openInterest: "0",
+    fundingRate: snapshot.fundingRate,
+    volatility24h: snapshot.volatility24h,
+    positions,
+    openOrders,
+    strategyState,
+    tick: strategyCtx.tick,
+  };
 }
