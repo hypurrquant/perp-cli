@@ -16,7 +16,7 @@ export type {
   BotConfig,
 } from "./config.js";
 export { runBot } from "./engine.js";
-export type { BotLog } from "./engine.js";
+export type { BotLog, BotOutputMode } from "./engine.js";
 export { PRESETS, getPreset, getPresetsByStrategy } from "./presets.js";
 export type { Preset } from "./presets.js";
 export { evaluateCondition, evaluateAllConditions, getMarketSnapshot, calculateRSI } from "./conditions.js";
