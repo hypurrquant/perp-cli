@@ -168,40 +168,47 @@ export class EdgeXAdapter implements ExchangeAdapter {
   // ── Market Data ──
 
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
-    // edgeX has Cloudflare protection — batch API calls get blocked.
-    // Use single bulk ticker + funding calls, falling back to metadata-only.
-    const contracts = [...this._contractById.values()];
+    // edgeX requires contractId per ticker call (bulk returns empty).
+    // Limit to top contracts to avoid rate limiting (292 contracts × 2 calls = 584 requests).
+    const TOP_IDS = new Set([
+      "10000001","10000002","10000003","10000004","10000005","10000006","10000007",
+      "10000008","10000009","10000010","10000011","10000012","10000013","10000014",
+      "10000015","10000016","10000017","10000018","10000019","10000020",
+      "10000021","10000022","10000023","10000024","10000025","10000026","10000027",
+      "10000028","10000029","10000030",
+    ]);
+    const allContracts = [...this._contractById.values()];
+    const contracts = allContracts.filter(c => TOP_IDS.has(c.contractId));
+    const BATCH = 10;
+    const results: ExchangeMarketInfo[] = [];
 
-    // Try bulk ticker (no contractId = all)
-    let tickerMap = new Map<string, Record<string, unknown>>();
-    let fundingMap = new Map<string, Record<string, unknown>>();
-    try {
-      const tickers = (await this._publicGet("/api/v1/public/quote/getTicker")) as Array<Record<string, unknown>>;
-      if (Array.isArray(tickers)) {
-        for (const t of tickers) tickerMap.set(String(t.contractId ?? ""), t);
+    for (let i = 0; i < contracts.length; i += BATCH) {
+      const batch = contracts.slice(i, i + BATCH);
+      const settled = await Promise.allSettled(
+        batch.map(async (c) => {
+          const [tArr, fArr] = await Promise.all([
+            this._publicGet("/api/v1/public/quote/getTicker", { contractId: c.contractId }),
+            this._publicGet("/api/v1/public/funding/getLatestFundingRate", { contractId: c.contractId }),
+          ]);
+          const t = (Array.isArray(tArr) ? tArr[0] : null) as Record<string, unknown> | null;
+          const f = (Array.isArray(fArr) ? fArr[0] : null) as Record<string, unknown> | null;
+          return {
+            symbol: this._fromApi(c.symbol),
+            markPrice: String(t?.lastPrice ?? t?.oraclePrice ?? "0"),
+            indexPrice: String(t?.indexPrice ?? "0"),
+            fundingRate: String(f?.fundingRate ?? "0"),
+            volume24h: String(t?.value ?? "0"),
+            openInterest: String(t?.openInterest ?? "0"),
+            maxLeverage: c.maxLeverage,
+          };
+        }),
+      );
+      for (const r of settled) {
+        if (r.status === "fulfilled") results.push(r.value);
       }
-    } catch { /* fallback to no ticker data */ }
+    }
 
-    try {
-      const funding = (await this._publicGet("/api/v1/public/funding/getLatestFundingRate")) as Array<Record<string, unknown>>;
-      if (Array.isArray(funding)) {
-        for (const f of funding) fundingMap.set(String(f.contractId ?? ""), f);
-      }
-    } catch { /* fallback to no funding data */ }
-
-    return contracts.map((c) => {
-      const t = tickerMap.get(c.contractId) ?? {};
-      const f = fundingMap.get(c.contractId) ?? {};
-      return {
-        symbol: this._fromApi(c.symbol),
-        markPrice: String(t.lastPrice ?? t.oraclePrice ?? "0"),
-        indexPrice: String(t.indexPrice ?? "0"),
-        fundingRate: String(f.fundingRate ?? "0"),
-        volume24h: String(t.value ?? "0"),
-        openInterest: "0",
-        maxLeverage: c.maxLeverage,
-      };
-    });
+    return results;
   }
 
   async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {

@@ -261,6 +261,12 @@
       "type": "file"
     },
     {
+      "path": "src/commands/market.ts",
+      "accessCount": 7,
+      "lastAccessed": 1774206217544,
+      "type": "file"
+    },
+    {
       "path": "README.md",
       "accessCount": 6,
       "lastAccessed": 1774186326660,
@@ -295,12 +301,6 @@
       "accessCount": 5,
       "lastAccessed": 1774201126673,
       "type": "directory"
-    },
-    {
-      "path": "src/commands/market.ts",
-      "accessCount": 5,
-      "lastAccessed": 1774201430684,
-      "type": "file"
     },
     {
       "path": "src/cli-spec.ts",
