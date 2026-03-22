@@ -4,7 +4,7 @@ import { getMarketSnapshot, evaluateAllConditions, type MarketSnapshot } from ".
 import { updateJobState } from "../jobs.js";
 import { getStrategy } from "./strategy-registry.js";
 import type { StrategyAction, StrategyContext, EnrichedSnapshot } from "./strategy-types.js";
-import type { BotTuiState, StateListener, LogListener } from "./tui/index.js";
+import type { BotTuiState, ExchangeBalance, StateListener, LogListener } from "./tui/index.js";
 import chalk from "chalk";
 
 // Auto-register built-in strategies
@@ -298,9 +298,12 @@ export async function runBot(
         }
 
         // ── Emit state update for TUI / JSON ──
-        const positions = await fetchPositions(adapter, config.symbol);
-        const openOrders = await fetchOpenOrders(adapter, config.symbol);
-        const tuiState = buildTuiState(state, config, snapshot, positions, openOrders, strategyCtx);
+        const [positions, openOrders, exchangeBalances] = await Promise.all([
+          extraAdapters ? fetchAllPositions(adapter, config.symbol, extraAdapters) : fetchPositions(adapter, config.symbol, adapter.name),
+          fetchOpenOrders(adapter, config.symbol),
+          extraAdapters ? fetchExchangeBalances(adapter, extraAdapters) : Promise.resolve(undefined),
+        ]);
+        const tuiState = buildTuiState(state, config, snapshot, positions, openOrders, strategyCtx, exchangeBalances);
 
         if (mode === "tui") {
           tuiEmitter.emitState(tuiState);
@@ -463,11 +466,12 @@ function sleep(ms: number): Promise<void> {
 
 // ── TUI helpers ──
 
-async function fetchPositions(adapter: ExchangeAdapter, symbol: string): Promise<import("./tui/index.js").Position[]> {
+async function fetchPositions(adapter: ExchangeAdapter, symbol: string, exchangeName?: string): Promise<import("./tui/index.js").Position[]> {
   try {
     const positions = await adapter.getPositions();
+    const isAll = symbol.toUpperCase() === "ALL";
     return positions
-      .filter(p => p.symbol.toUpperCase().includes(symbol.toUpperCase()) && parseFloat(p.size) !== 0)
+      .filter(p => (isAll || p.symbol.toUpperCase().includes(symbol.toUpperCase())) && parseFloat(p.size) !== 0)
       .map(p => ({
         symbol: p.symbol,
         side: p.side,
@@ -475,10 +479,46 @@ async function fetchPositions(adapter: ExchangeAdapter, symbol: string): Promise
         entryPrice: p.entryPrice,
         markPrice: p.markPrice,
         unrealizedPnl: p.unrealizedPnl,
+        exchange: exchangeName ?? adapter.name,
       }));
   } catch {
     return [];
   }
+}
+
+async function fetchExchangeBalances(
+  primaryAdapter: ExchangeAdapter,
+  extraAdapters?: Map<string, ExchangeAdapter>,
+): Promise<import("./tui/index.js").ExchangeBalance[]> {
+  const adapters: [string, ExchangeAdapter][] = [[primaryAdapter.name, primaryAdapter]];
+  if (extraAdapters) {
+    for (const [name, a] of extraAdapters) adapters.push([name, a]);
+  }
+  const results: import("./tui/index.js").ExchangeBalance[] = [];
+  await Promise.all(adapters.map(async ([name, a]) => {
+    try {
+      const bal = await a.getBalance();
+      results.push({ exchange: name, equity: bal.equity, available: bal.available });
+    } catch { /* skip */ }
+  }));
+  return results;
+}
+
+async function fetchAllPositions(
+  primaryAdapter: ExchangeAdapter,
+  symbol: string,
+  extraAdapters?: Map<string, ExchangeAdapter>,
+): Promise<import("./tui/index.js").Position[]> {
+  const adapters: [string, ExchangeAdapter][] = [[primaryAdapter.name, primaryAdapter]];
+  if (extraAdapters) {
+    for (const [name, a] of extraAdapters) adapters.push([name, a]);
+  }
+  const all: import("./tui/index.js").Position[][] = [];
+  await Promise.all(adapters.map(async ([name, a]) => {
+    const pos = await fetchPositions(a, symbol, name);
+    all.push(pos);
+  }));
+  return all.flat();
 }
 
 async function fetchOpenOrders(adapter: ExchangeAdapter, symbol: string): Promise<import("./tui/index.js").OpenOrder[]> {
@@ -505,6 +545,7 @@ function buildTuiState(
   positions: import("./tui/index.js").Position[],
   openOrders: import("./tui/index.js").OpenOrder[],
   strategyCtx: StrategyContext,
+  exchangeBalances?: import("./tui/index.js").ExchangeBalance[],
 ): BotTuiState {
   // Extract serializable strategy state from the Map
   const strategyState: Record<string, unknown> = {};
@@ -539,5 +580,6 @@ function buildTuiState(
     openOrders,
     strategyState,
     tick: strategyCtx.tick,
+    exchangeBalances,
   };
 }

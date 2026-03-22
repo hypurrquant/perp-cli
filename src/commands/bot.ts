@@ -2,7 +2,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { printJson, jsonOk } from "../utils.js";
 import type { ExchangeAdapter } from "../exchanges/index.js";
-import { loadBotConfig, quickGridConfig, quickDCAConfig, runBot, PRESETS, getPreset, getPresetsByStrategy } from "../bot/index.js";
+import { loadBotConfig, parseStrategy, quickGridConfig, quickDCAConfig, runBot, PRESETS, getPreset, getPresetsByStrategy } from "../bot/index.js";
 import type { BotOutputMode } from "../bot/index.js";
 import { updateJobState } from "../jobs.js";
 import { runTWAP, runFundingArb, runGrid, runDCA, runTrailingStop } from "../strategies/index.js";
@@ -469,7 +469,7 @@ export function registerBotCommands(
 
   bot
     .command("run <strategy> [symbol]")
-    .description("Run any registered strategy (symbol optional for multi-symbol strategies like funding-auto)")
+    .description("Run a strategy (use 'perp bot list-strategies' to see all). Symbol optional for multi-symbol strategies.")
     .option("--config <path>", "YAML/JSON config file")
     .option("--headless", "Run without TUI dashboard")
     .option("--param <key=value>", "Strategy parameter (repeatable)", (val: string, acc: string[]) => [...acc, val], [] as string[])
@@ -500,11 +500,12 @@ export function registerBotCommands(
         }
 
         const adapter = await getAdapter();
+        const strategy = parseStrategy(strategyName, params);
         config = {
           name: `${strategyName}-${sym.toLowerCase()}-${Date.now().toString(36)}`,
           exchange: adapter.name,
           symbol: sym,
-          strategy: params as import("../bot/config.js").GenericStrategyParams,
+          strategy,
           entry_conditions: [{ type: "always", value: 0 }],
           exit_conditions: [],
           risk: {
@@ -520,10 +521,13 @@ export function registerBotCommands(
 
       // Verify strategy is registered
       await import("../bot/engine.js");
-      const { getStrategy } = await import("../bot/strategy-registry.js");
+      const { getStrategy, listStrategies: listStrats } = await import("../bot/strategy-registry.js");
       if (!getStrategy(strategyName)) {
+        const available = listStrats();
         console.error(chalk.red(`\n  Unknown strategy: "${strategyName}"`));
-        console.error(chalk.gray(`  Run 'perp bot list-strategies' to see available strategies.\n`));
+        console.error(chalk.gray(`\n  Available strategies:`));
+        for (const s of available) console.error(chalk.gray(`    - ${s}`));
+        console.error();
         return;
       }
 

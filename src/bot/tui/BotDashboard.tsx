@@ -3,6 +3,12 @@ import { Box, Text, useApp, useInput } from "ink";
 
 // ── Types ──
 
+export interface ExchangeBalance {
+  exchange: string;
+  equity: string;
+  available: string;
+}
+
 export interface BotTuiState {
   phase: string;
   equity: number;
@@ -23,6 +29,7 @@ export interface BotTuiState {
   openOrders: OpenOrder[];
   strategyState: Record<string, unknown>;
   tick: number;
+  exchangeBalances?: ExchangeBalance[];
 }
 
 export interface Position {
@@ -32,6 +39,7 @@ export interface Position {
   entryPrice: string;
   markPrice: string;
   unrealizedPnl: string;
+  exchange?: string;
 }
 
 export interface OpenOrder {
@@ -134,6 +142,7 @@ export function BotDashboard({ initialState, onQuit, onPause, subscribe }: Dashb
   const drawdownPct = state.peakEquity > 0 ? (drawdown / state.peakEquity) * 100 : 0;
   const bidOrders = state.openOrders.filter((o) => o.side.toLowerCase() === "buy");
   const askOrders = state.openOrders.filter((o) => o.side.toLowerCase() === "sell");
+  const hasMultiExchange = (state.exchangeBalances?.length ?? 0) > 1;
 
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -199,6 +208,25 @@ export function BotDashboard({ initialState, onQuit, onPause, subscribe }: Dashb
         </Box>
       </Box>
 
+      {/* ── Per-Exchange Balances ── */}
+      {state.exchangeBalances && state.exchangeBalances.length > 1 && (
+        <Box marginTop={1} flexDirection="column">
+          <Text color="cyan" bold>Exchange Balances</Text>
+          <Box flexDirection="row">
+            <Text color="gray">{pad("Exchange", 16)}</Text>
+            <Text color="gray">{pad("Equity", 14)}</Text>
+            <Text color="gray">Available</Text>
+          </Box>
+          {state.exchangeBalances.map((eb, i) => (
+            <Box key={i} flexDirection="row">
+              <Text color="white">{pad(eb.exchange, 16)}</Text>
+              <Text color="white">{pad(`$${parseFloat(eb.equity).toFixed(2)}`, 14)}</Text>
+              <Text color="gray">${parseFloat(eb.available).toFixed(2)}</Text>
+            </Box>
+          ))}
+        </Box>
+      )}
+
       {/* ── Positions ── */}
       <Box marginTop={1} flexDirection="column">
         <Text color="cyan" bold>Positions</Text>
@@ -207,6 +235,7 @@ export function BotDashboard({ initialState, onQuit, onPause, subscribe }: Dashb
         ) : (
           <Box flexDirection="column">
             <Box flexDirection="row">
+              {hasMultiExchange && <Text color="gray">{pad("Exchange", 14)}</Text>}
               <Text color="gray">{pad("Symbol", 10)}</Text>
               <Text color="gray">{pad("Side", 6)}</Text>
               <Text color="gray">{pad("Size", 12)}</Text>
@@ -218,6 +247,7 @@ export function BotDashboard({ initialState, onQuit, onPause, subscribe }: Dashb
               const upnl = parseFloat(p.unrealizedPnl);
               return (
                 <Box key={i} flexDirection="row">
+                  {hasMultiExchange && <Text color="cyan">{pad(p.exchange ?? "—", 14)}</Text>}
                   <Text color="white">{pad(p.symbol, 10)}</Text>
                   <Text color={p.side.toLowerCase() === "long" ? "green" : "red"}>{pad(p.side, 6)}</Text>
                   <Text color="white">{pad(p.size, 12)}</Text>

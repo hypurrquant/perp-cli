@@ -1,5 +1,5 @@
 export { BotDashboard } from "./BotDashboard.js";
-export type { BotTuiState, Position, OpenOrder, LogEntry, StateListener, LogListener, DashboardProps } from "./BotDashboard.js";
+export type { BotTuiState, ExchangeBalance, Position, OpenOrder, LogEntry, StateListener, LogListener, DashboardProps } from "./BotDashboard.js";
 
 import { render } from "ink";
 import React from "react";

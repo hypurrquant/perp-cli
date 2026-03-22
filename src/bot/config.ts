@@ -151,7 +151,7 @@ function parseBotConfig(raw: Record<string, unknown>): BotConfig {
   return { name, exchange, symbol, strategy, entry_conditions: entryConds, exit_conditions: exitConds, risk, monitor_interval_sec: monitorInterval };
 }
 
-function parseStrategy(type: string, raw: Record<string, unknown>): StrategyParams {
+export function parseStrategy(type: string, raw: Record<string, unknown>): StrategyParams {
   switch (type) {
     case "grid":
       return {

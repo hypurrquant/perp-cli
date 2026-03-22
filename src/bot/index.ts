@@ -1,6 +1,7 @@
 // bot/ barrel — public API
 export {
   loadBotConfig,
+  parseStrategy,
   quickGridConfig,
   quickDCAConfig,
 } from "./config.js";
