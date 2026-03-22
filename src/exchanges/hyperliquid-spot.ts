@@ -131,14 +131,15 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
         // Price from allMids using universe.name (e.g., "PURR/USDC" or "@107")
         const midPrice = allMids[u.name] ?? "0";
 
+        const spotDec = this._spotDecimals.get(baseToken.toUpperCase());
         markets.push({
           symbol: `${baseToken}/USDC`,
           baseToken,
           quoteToken: "USDC",
           markPrice: midPrice,
           volume24h: "0",
-          sizeDecimals: tokenSzDec.get(u.tokens[0]) ?? 2,
-          priceDecimals: 6,
+          sizeDecimals: spotDec?.size ?? tokenSzDec.get(u.tokens[0]) ?? 2,
+          priceDecimals: spotDec?.price ?? 6,
         });
       }
 

@@ -125,7 +125,7 @@ export class LighterSpotAdapter implements SpotAdapter {
       const parts = symbol.split("/");
       const base = parts[0] ?? "";
       const quote = parts[1] ?? "USDC";
-      const dec = this._spotDecimals.get(symbol) ?? { size: 4, price: 2 };
+      const dec = this._spotDecimals.get(symbol) ?? { size: 2, price: 4 };
       return {
         symbol, baseToken: base, quoteToken: quote,
         markPrice: this._spotPrices.get(symbol) ?? "0", volume24h: "0",
@@ -253,20 +253,28 @@ export class LighterSpotAdapter implements SpotAdapter {
       throw new Error(`Unknown Lighter spot market: ${symbol}`);
     }
 
-    // Validate min order size
-    const sizeNum = parseFloat(size);
-    const priceNum = parseFloat(price);
+    const dec = this._spotDecimals.get(resolved) ?? { size: 2, price: 4 };
+
+    // Auto-round to exchange precision — caller doesn't need to know decimals
+    let sizeNum = Number(Number(size).toFixed(dec.size));
+    const priceNum = Number(Number(price).toFixed(dec.price));
+
+    // Auto-ceil size to min_base_amount if just below (within 10%)
     const minSize = this._spotMinSize.get(resolved);
+    if (minSize && sizeNum > 0 && sizeNum < minSize.base && sizeNum >= minSize.base * 0.9) {
+      sizeNum = minSize.base;
+    }
+
+    // Validate min order size
     if (minSize) {
       if (sizeNum < minSize.base) {
-        throw new Error(`Size ${size} below min_base_amount ${minSize.base} for ${resolved}`);
+        throw new Error(`Size ${sizeNum} below min_base_amount ${minSize.base} for ${resolved}`);
       }
       if (sizeNum * priceNum < minSize.quote) {
         throw new Error(`Order value $${(sizeNum * priceNum).toFixed(2)} below min_quote_amount $${minSize.quote} for ${resolved}`);
       }
     }
 
-    const dec = this._spotDecimals.get(resolved) ?? { size: 2, price: 4 };
     const baseAmount = Math.round(sizeNum * Math.pow(10, dec.size));
     const priceTicks = Math.round(priceNum * Math.pow(10, dec.price));
     const isIoc = opts?.tif?.toUpperCase() === "IOC";
