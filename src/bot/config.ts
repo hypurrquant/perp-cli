@@ -57,6 +57,7 @@ export interface DCAStrategyParams {
   interval_sec: number;
   total_orders: number;     // 0 = unlimited
   price_limit?: number;
+  side?: "buy" | "sell";
 }
 
 export interface FundingArbStrategyParams {
@@ -174,6 +175,7 @@ export function parseStrategy(type: string, raw: Record<string, unknown>): Strat
         interval_sec: Number(raw.interval_sec ?? raw.interval ?? 60),
         total_orders: Number(raw.total_orders ?? raw.orders ?? 0),
         price_limit: raw.price_limit !== undefined ? Number(raw.price_limit) : undefined,
+        side: raw.side !== undefined ? (String(raw.side) as "buy" | "sell") : undefined,
       };
     case "funding-arb":
       return {
@@ -258,6 +260,7 @@ export function quickDCAConfig(opts: {
       interval_sec: opts.intervalSec,
       total_orders: opts.orders,
       price_limit: opts.priceLimit,
+      side: (opts.side as "buy" | "sell") ?? "buy",
     },
     entry_conditions: entryConds,
     exit_conditions: [

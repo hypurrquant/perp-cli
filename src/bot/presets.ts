@@ -214,6 +214,7 @@ const dcaSeller: Preset = {
       amount: 0.01,
       interval_sec: 3600,
       total_orders: 24,
+      side: "sell" as const,
     },
     entry_conditions: [{ type: "always" as ConditionType, value: 0 }],
     exit_conditions: [],

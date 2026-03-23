@@ -2,6 +2,12 @@ import type { Strategy, StrategyContext, StrategyAction, EnrichedSnapshot } from
 import type { GridStrategyParams } from "../config.js";
 import { registerStrategy } from "../strategy-registry.js";
 
+/** A grid level tracks its expected price and side */
+interface GridLevel {
+  price: number;
+  side: "buy" | "sell";
+}
+
 export class GridStrategy implements Strategy {
   readonly name = "grid";
 
@@ -47,13 +53,13 @@ export class GridStrategy implements Strategy {
       ctx.state.set("gridLower", params.lower);
     }
 
-    ctx.state.set("gridOrders", new Map<number, string>());
+    ctx.state.set("gridLevels", [] as GridLevel[]);
+    ctx.state.set("gridInitialized", false);
   }
 
   async onTick(ctx: StrategyContext, snapshot: EnrichedSnapshot): Promise<StrategyAction[]> {
     const params = this.params;
     const actions: StrategyAction[] = [];
-    const gridOrders = ctx.state.get("gridOrders") as Map<number, string>;
     const gridUpper = ctx.state.get("gridUpper") as number;
     const gridLower = ctx.state.get("gridLower") as number;
 
@@ -62,65 +68,72 @@ export class GridStrategy implements Strategy {
       if (params.leverage) {
         actions.push({ type: "set_leverage", leverage: params.leverage });
       }
-      return [...actions, ...this.buildGridOrders(ctx, snapshot.price)];
+      const gridActions = this.buildGridOrders(ctx, snapshot.price);
+      ctx.state.set("gridInitialized", true);
+      return [...actions, ...gridActions];
+    }
+
+    // Wait one tick after init/rebalance for orders to settle on exchange
+    if (!ctx.state.get("gridInitialized")) {
+      ctx.state.set("gridInitialized", true);
+      return [];
     }
 
     if (params.grids < 2) throw new Error("Grid requires at least 2 grid lines");
     const step = (gridUpper - gridLower) / (params.grids - 1);
     const sizePerGrid = params.size / params.grids;
+    // Price tolerance for matching: half a grid step
+    const tolerance = step * 0.5;
 
-    // Check for fills
+    const gridLevels = ctx.state.get("gridLevels") as GridLevel[];
+
+    // Check for fills by comparing expected grid levels against actual open orders
     try {
       const openOrders = await ctx.adapter.getOpenOrders();
-      const openIds = new Set(
-        openOrders.filter(o => o.symbol.toUpperCase() === ctx.symbol.toUpperCase()).map(o => o.orderId),
+      const symbolOrders = openOrders.filter(
+        o => o.symbol.toUpperCase() === ctx.symbol.toUpperCase(),
       );
 
-      // Build filled order IDs from order history for accurate fill detection
-      let filledIds: Set<string> | null = null;
-      try {
-        const history = await ctx.adapter.getOrderHistory(100);
-        filledIds = new Set(history.filter(o => o.status === "filled").map(o => o.orderId));
-      } catch { /* non-critical -- fall back to assuming fills */ }
+      // For each grid level, check if a matching open order exists (by price proximity)
+      const unmatchedLevels: GridLevel[] = [];
+      const matchedLevels: GridLevel[] = [];
 
-      let newFills = 0;
-      for (const [idx, orderId] of gridOrders.entries()) {
-        if (!openIds.has(orderId)) {
-          // Verify the order was actually filled (not just cancelled)
-          if (filledIds && !filledIds.has(orderId)) {
-            ctx.log(`  [GRID] Order ${orderId} missing -- likely cancelled, skipping`);
-            gridOrders.delete(idx);
-            continue;
-          }
-          // Order filled -- place opposite order
-          newFills++;
-
-          // Determine new side and price
-          const oldPrice = gridLower + step * idx;
-          const wasBuy = oldPrice < snapshot.price;
-          const newSide: "buy" | "sell" = wasBuy ? "sell" : "buy";
-          const newPrice = wasBuy ? oldPrice + step : oldPrice - step;
-
-          if (newPrice >= gridLower && newPrice <= gridUpper) {
-            actions.push({
-              type: "place_order",
-              side: newSide,
-              price: newPrice.toFixed(2),
-              size: String(sizePerGrid),
-              orderType: "limit",
-            });
-            // We'll update gridOrders when the action is executed
-            // For now mark this index as pending -- use a sentinel
-            gridOrders.set(idx, `pending-${idx}`);
-          } else {
-            gridOrders.delete(idx);
-          }
+      for (const level of gridLevels) {
+        const hasMatch = symbolOrders.some(o => {
+          const orderPrice = parseFloat(o.price);
+          return Math.abs(orderPrice - level.price) < tolerance && o.side === level.side;
+        });
+        if (hasMatch) {
+          matchedLevels.push(level);
+        } else {
+          unmatchedLevels.push(level);
         }
       }
 
-      if (newFills > 0) {
-        ctx.log(`  [GRID] ${newFills} fill(s) detected`);
+      if (unmatchedLevels.length > 0) {
+        ctx.log(`  [GRID] ${unmatchedLevels.length} fill(s) detected`);
       }
+
+      // For each filled level, place the opposite (counter) order
+      const newLevels: GridLevel[] = [...matchedLevels];
+      for (const filled of unmatchedLevels) {
+        const wasBuy = filled.side === "buy";
+        const newSide: "buy" | "sell" = wasBuy ? "sell" : "buy";
+        const newPrice = wasBuy ? filled.price + step : filled.price - step;
+
+        if (newPrice >= gridLower && newPrice <= gridUpper) {
+          actions.push({
+            type: "place_order",
+            side: newSide,
+            price: newPrice.toFixed(2),
+            size: String(sizePerGrid),
+            orderType: "limit",
+          });
+          newLevels.push({ price: newPrice, side: newSide });
+        }
+      }
+
+      ctx.state.set("gridLevels", newLevels);
     } catch { /* retry next loop */ }
 
     // Auto-rebalance if price exits range
@@ -136,6 +149,7 @@ export class GridStrategy implements Strategy {
         ctx.state.set("gridUpper", newUpper);
         ctx.state.set("gridLower", newLower);
         ctx.state.set("lastRebalance", Date.now());
+        ctx.state.set("gridInitialized", false);
 
         const rebalanceCount = ((ctx.state.get("rebalanceCount") as number) ?? 0) + 1;
         ctx.state.set("rebalanceCount", rebalanceCount);
@@ -144,7 +158,6 @@ export class GridStrategy implements Strategy {
 
         // Cancel all and rebuild
         actions.push({ type: "cancel_all" });
-        gridOrders.clear();
         return [...actions, ...this.buildGridOrders(ctx, snapshot.price)];
       }
     }
@@ -166,12 +179,12 @@ export class GridStrategy implements Strategy {
     const step = (gridUpper - gridLower) / (params.grids - 1);
     const sizePerGrid = params.size / params.grids;
     const actions: StrategyAction[] = [];
+    const gridLevels: GridLevel[] = [];
 
     // Cancel existing orders first
-    const gridOrders = ctx.state.get("gridOrders") as Map<number, string>;
-    if (gridOrders.size > 0) {
+    const existingLevels = ctx.state.get("gridLevels") as GridLevel[];
+    if (existingLevels && existingLevels.length > 0) {
       actions.push({ type: "cancel_all" });
-      gridOrders.clear();
     }
 
     for (let i = 0; i < params.grids; i++) {
@@ -189,10 +202,10 @@ export class GridStrategy implements Strategy {
         size: String(sizePerGrid),
         orderType: "limit",
       });
-      // Mark grid index with pending sentinel -- engine updates after execution
-      gridOrders.set(i, `pending-${i}`);
+      gridLevels.push({ price, side });
     }
 
+    ctx.state.set("gridLevels", gridLevels);
     ctx.log(`  [GRID] Placing ${params.grids} orders (step: $${step.toFixed(2)}, size: ${sizePerGrid.toFixed(6)})`);
     return actions;
   }

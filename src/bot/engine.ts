@@ -41,6 +41,7 @@ interface BotState {
   dailyStartDate: string; // YYYY-MM-DD for daily reset
   fills: number;
   totalPnl: number;
+  initialEquity: number;
   rebalanceCount: number;
   lastRebalance: number;
   strategyActive: boolean;
@@ -89,6 +90,7 @@ export async function runBot(
     dailyStartDate: new Date().toISOString().slice(0, 10),
     fills: 0,
     totalPnl: 0,
+    initialEquity: 0,
     rebalanceCount: 0,
     lastRebalance: 0,
     strategyActive: false,
@@ -172,6 +174,7 @@ export async function runBot(
     state.equity = parseFloat(bal.equity);
     state.peakEquity = state.equity;
     state.dailyStartEquity = state.equity;
+    state.initialEquity = state.equity;
     effectiveLog(`  Starting equity: $${state.equity.toFixed(2)}`);
   } catch {
     effectiveLog(chalk.yellow(`  Could not fetch initial balance`));
@@ -207,6 +210,7 @@ export async function runBot(
             state.dailyStartDate = today;
           }
           state.dailyPnl = state.equity - state.dailyStartEquity;
+          state.totalPnl = state.equity - state.initialEquity;
         } catch { /* non-critical */ }
 
         const context = {

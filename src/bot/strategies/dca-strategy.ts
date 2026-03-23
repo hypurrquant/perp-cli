@@ -43,21 +43,24 @@ export class DCAStrategy implements Strategy {
     // Check order limit
     if (params.total_orders > 0 && dcaOrdersPlaced >= params.total_orders) return [];
 
-    // Check price limit
+    // Check price limit (buy: skip if price too high, sell: skip if price too low)
     if (params.price_limit) {
-      if (snapshot.price > params.price_limit) return [];
+      const side = params.side ?? "buy";
+      if (side === "buy" && snapshot.price > params.price_limit) return [];
+      if (side === "sell" && snapshot.price < params.price_limit) return [];
     }
 
     // Place market buy order
     ctx.state.set("dcaOrdersPlaced", dcaOrdersPlaced + 1);
     ctx.state.set("dcaLastOrder", Date.now());
 
+    const side = params.side ?? "buy";
     const progress = params.total_orders > 0 ? ` (${dcaOrdersPlaced + 1}/${params.total_orders})` : "";
-    ctx.log(`  [DCA] Order #${dcaOrdersPlaced + 1}${progress}: buy ${params.amount} ${ctx.symbol} @ $${snapshot.price.toFixed(2)}`);
+    ctx.log(`  [DCA] Order #${dcaOrdersPlaced + 1}${progress}: ${side} ${params.amount} ${ctx.symbol} @ $${snapshot.price.toFixed(2)}`);
 
     return [{
       type: "place_order",
-      side: "buy",
+      side,
       price: "0",
       size: String(params.amount),
       orderType: "market",
