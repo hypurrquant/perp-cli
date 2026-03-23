@@ -164,7 +164,7 @@ export function parseStrategy(type: string, raw: Record<string, unknown>): Strat
         range_pct: raw.range_pct !== undefined ? Number(raw.range_pct) : 3,
         upper: raw.upper !== undefined ? Number(raw.upper) : undefined,
         lower: raw.lower !== undefined ? Number(raw.lower) : undefined,
-        rebalance: raw.rebalance !== false,
+        rebalance: raw.rebalance !== false && raw.rebalance !== "false",
         rebalance_cooldown: Number(raw.rebalance_cooldown ?? 60),
         leverage: raw.leverage !== undefined ? Number(raw.leverage) : undefined,
       };

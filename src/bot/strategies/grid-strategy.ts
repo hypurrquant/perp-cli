@@ -39,6 +39,8 @@ export class GridStrategy implements Strategy {
     this._config = ctx.config;
     const params = this.params;
 
+    if (params.grids < 2) throw new Error("Grid strategy requires at least 2 grid lines");
+
     // Determine price range
     if (params.range_mode === "auto") {
       const pct = params.range_pct ?? 3;

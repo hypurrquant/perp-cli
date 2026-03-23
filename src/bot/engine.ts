@@ -45,6 +45,7 @@ interface BotState {
   rebalanceCount: number;
   lastRebalance: number;
   strategyActive: boolean;
+  riskBreached: boolean;
 }
 
 // ── TUI state emitter ──
@@ -94,6 +95,7 @@ export async function runBot(
     rebalanceCount: 0,
     lastRebalance: 0,
     strategyActive: false,
+    riskBreached: false,
   };
 
   // Resolve strategy from registry
@@ -271,6 +273,7 @@ export async function runBot(
                 ? `drawdown $${drawdown.toFixed(2)} > limit $${config.risk.max_drawdown}`
                 : "exit condition met";
             effectiveLog(`  Exiting: ${reason}`);
+            state.riskBreached = riskBreached;
             state.phase = "exiting";
           } else {
             // Manage running strategy
@@ -294,10 +297,15 @@ export async function runBot(
             await sleep(config.risk.pause_after_loss_sec * 1000);
             state.phase = "monitoring";
             effectiveLog(`  Resuming monitoring...`);
-          } else {
-            // If exit due to risk breach, stop completely
+          } else if (state.riskBreached) {
+            // Risk breach (drawdown or daily loss exceeded) — stop completely
             effectiveLog(`  Bot stopped.`);
             break;
+          } else {
+            // Normal exit condition (not risk breach) — return to monitoring
+            state.phase = "monitoring";
+            state.riskBreached = false;
+            effectiveLog(`  Exit condition met, returning to monitoring...`);
           }
         }
 
@@ -427,7 +435,8 @@ async function getEnrichedSnapshot(
     adapter.getKlines(symbol, "1h", Date.now() - 24 * 60 * 60 * 1000, Date.now()).catch(() => []),
     adapter.getMarkets().catch(() => []),
   ]);
-  const market = markets.find(m => m.symbol.toUpperCase().includes(symbol.toUpperCase()));
+  const symUp = symbol.toUpperCase();
+  const market = markets.find(m => m.symbol.toUpperCase() === symUp || m.symbol.toUpperCase() === symUp + "-PERP");
   return { ...base, klines, orderbook, openInterest: market?.openInterest ?? "0" };
 }
 
@@ -475,7 +484,7 @@ async function fetchPositions(adapter: ExchangeAdapter, symbol: string, exchange
     const positions = await adapter.getPositions();
     const isAll = symbol.toUpperCase() === "ALL";
     return positions
-      .filter(p => (isAll || p.symbol.toUpperCase().includes(symbol.toUpperCase())) && parseFloat(p.size) !== 0)
+      .filter(p => (isAll || p.symbol.toUpperCase() === symbol.toUpperCase() || p.symbol.toUpperCase() === symbol.toUpperCase() + "-PERP") && parseFloat(p.size) !== 0)
       .map(p => ({
         symbol: p.symbol,
         side: p.side,
@@ -529,7 +538,7 @@ async function fetchOpenOrders(adapter: ExchangeAdapter, symbol: string): Promis
   try {
     const orders = await adapter.getOpenOrders();
     return orders
-      .filter(o => o.symbol.toUpperCase().includes(symbol.toUpperCase()))
+      .filter(o => o.symbol.toUpperCase() === symbol.toUpperCase() || o.symbol.toUpperCase() === symbol.toUpperCase() + "-PERP")
       .map(o => ({
         orderId: o.orderId,
         side: o.side,

@@ -174,7 +174,10 @@ export class FundingArbStrategy implements Strategy {
                 if (!recon.matched) {
                   ctx.log(`  [ARB] WARNING: fills not matched after correction attempt`);
                 }
-              } catch { /* non-critical */ }
+              } catch (reconErr) {
+                const reconMsg = reconErr instanceof Error ? reconErr.message : String(reconErr);
+                ctx.log(`  [ARB] WARNING: Fill reconciliation failed: ${reconMsg}`);
+              }
 
               ctx.state.set("arbPositions", arbPositions + 1);
               ctx.log(`  [ARB] Position opened! (${arbPositions + 1}/${params.max_positions})`);
@@ -196,7 +199,21 @@ export class FundingArbStrategy implements Strategy {
     return [];
   }
 
-  async onStop(_ctx: StrategyContext): Promise<StrategyAction[]> {
+  async onStop(ctx: StrategyContext): Promise<StrategyAction[]> {
+    // NOTE (M1/M6): close_spread monitoring is not yet implemented.
+    // Opened arb positions are tracked in arbPositions counter but are never
+    // automatically closed when spread narrows below close_spread. Full
+    // implementation requires storing per-position metadata (symbol, legs,
+    // sizes) and re-checking spread on each tick.
+    ctx.log(`  [ARB] WARNING: close_spread monitoring not implemented — open positions must be closed manually`);
+
+    // Cancel on extra adapters directly (M2: was only cancelling on primary adapter)
+    const extraAdapters = ctx.state.get("extraAdapters") as Map<string, ExchangeAdapter> | undefined;
+    if (extraAdapters) {
+      for (const [, a] of extraAdapters) {
+        try { await a.cancelAllOrders(); } catch { /* best effort */ }
+      }
+    }
     return [{ type: "cancel_all" }];
   }
 
