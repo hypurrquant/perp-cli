@@ -411,7 +411,7 @@ export function registerMarketCommands(
         console.log(chalk.cyan.bold("\n  HIP-3 Deployed Perp DEXes\n"));
         const rows = dexes.map(d => [
           chalk.white.bold(d.name),
-          chalk.gray(d.deployer.slice(0, 6) + "..." + d.deployer.slice(-4)),
+          chalk.gray(d.deployer ? d.deployer.slice(0, 6) + "..." + d.deployer.slice(-4) : "-"),
           String(d.assets.length),
           d.assets.slice(0, 5).join(", ") + (d.assets.length > 5 ? ` +${d.assets.length - 5}` : ""),
         ]);
