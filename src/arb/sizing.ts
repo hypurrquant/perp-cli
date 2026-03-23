@@ -11,7 +11,7 @@ export function computeMatchedSize(
   price: number,
   longExchange: string,
   shortExchange: string,
-  opts?: { longSizeDecimals?: number; shortSizeDecimals?: number },
+  opts?: { longSizeDecimals?: number; shortSizeDecimals?: number; lotSize?: number },
 ): { size: string; notional: number } | null {
   if (price <= 0) return null;
 
@@ -23,9 +23,15 @@ export function computeMatchedSize(
     opts?.shortSizeDecimals ?? getSizeDecimals(shortExchange),
   );
 
-  // Round DOWN to the least precise exchange's decimals
-  const factor = Math.pow(10, szDecimals);
-  const roundedSize = Math.floor(rawSize * factor) / factor;
+  // If lotSize is provided, round to nearest multiple of lotSize (floor)
+  let roundedSize: number;
+  if (opts?.lotSize && opts.lotSize > 0) {
+    roundedSize = Math.floor(rawSize / opts.lotSize) * opts.lotSize;
+  } else {
+    // Round DOWN to the least precise exchange's decimals
+    const factor = Math.pow(10, szDecimals);
+    roundedSize = Math.floor(rawSize * factor) / factor;
+  }
   if (roundedSize <= 0) return null;
 
   // Verify notional meets minimum for both exchanges
@@ -37,16 +43,27 @@ export function computeMatchedSize(
 
   if (notional < minNotional) {
     // Try rounding UP instead
-    const roundedUp = Math.ceil(rawSize * factor) / factor;
+    let roundedUp: number;
+    if (opts?.lotSize && opts.lotSize > 0) {
+      roundedUp = Math.ceil(rawSize / opts.lotSize) * opts.lotSize;
+    } else {
+      const factor = Math.pow(10, szDecimals);
+      roundedUp = Math.ceil(rawSize * factor) / factor;
+    }
     const notionalUp = roundedUp * price;
     // Only round up if the increase is small (< 20% over requested)
     if (notionalUp <= sizeUsd * 1.2) {
-      return { size: roundedUp.toFixed(szDecimals), notional: notionalUp };
+      return { size: formatSize(roundedUp, szDecimals, opts?.lotSize), notional: notionalUp };
     }
     return null; // Can't meet minimum
   }
 
-  return { size: roundedSize.toFixed(szDecimals), notional };
+  return { size: formatSize(roundedSize, szDecimals, opts?.lotSize), notional };
+}
+
+function formatSize(size: number, szDecimals: number, lotSize?: number): string {
+  if (lotSize && lotSize >= 1) return String(Math.round(size));
+  return size.toFixed(szDecimals);
 }
 
 /** Size decimal precision by exchange (conservative fallbacks — prefer explicit decimals via opts) */

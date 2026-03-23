@@ -134,7 +134,7 @@ export class FundingArbStrategy implements Strategy {
             if (!liq.viable) return [];
 
             // Compute matched size
-            const matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange);
+            let matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange);
             if (!matched) {
               ctx.log(`  [ARB] Skip ${best.symbol}: can't compute matched size (min notional or precision issue)`);
               return [];
@@ -142,10 +142,29 @@ export class FundingArbStrategy implements Strategy {
 
             try {
               ctx.log(`  [ARB] Opening: ${matched.size} ${best.symbol} on both legs ($${matched.notional.toFixed(0)}/leg, slippage ~${liq.longSlippage.toFixed(2)}%/${liq.shortSlippage.toFixed(2)}%)`);
-              await Promise.all([
-                longAdapter.marketOrder(best.symbol, "buy", matched.size),
-                shortAdapter.marketOrder(best.symbol, "sell", matched.size),
-              ]);
+              try {
+                await Promise.all([
+                  longAdapter.marketOrder(best.symbol, "buy", matched.size),
+                  shortAdapter.marketOrder(best.symbol, "sell", matched.size),
+                ]);
+              } catch (orderErr) {
+                // Parse lot size from error and retry with corrected size
+                const errMsg = orderErr instanceof Error ? orderErr.message : String(orderErr);
+                const lotMatch = errMsg.match(/not a multiple of lot size (\d+(?:\.\d+)?)/);
+                if (lotMatch) {
+                  const lotSize = parseFloat(lotMatch[1]);
+                  ctx.log(`  [ARB] Lot size ${lotSize} detected, recalculating...`);
+                  matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange, { lotSize });
+                  if (!matched) { ctx.log(`  [ARB] Skip ${best.symbol}: can't meet lot size ${lotSize}`); return []; }
+                  ctx.log(`  [ARB] Retry: ${matched.size} ${best.symbol} ($${matched.notional.toFixed(0)}/leg)`);
+                  await Promise.all([
+                    longAdapter.marketOrder(best.symbol, "buy", matched.size),
+                    shortAdapter.marketOrder(best.symbol, "sell", matched.size),
+                  ]);
+                } else {
+                  throw orderErr;
+                }
+              }
 
               // Verify fills match, correct if needed
               try {

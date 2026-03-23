@@ -238,7 +238,7 @@ export async function runFundingArb(
               if (!liq.viable) continue;
 
               // Compute matched size (same for both legs)
-              const matched = computeMatchedSize(liq.adjustedSizeUsd, highest.markPrice, longEx, shortEx);
+              let matched = computeMatchedSize(liq.adjustedSizeUsd, highest.markPrice, longEx, shortEx);
               if (!matched) {
                 log(`[ARB] Skip ${symbol}: can't compute matched size (min notional or precision issue)`);
                 continue;
@@ -255,10 +255,28 @@ export async function runFundingArb(
 
               try {
                 log(`[ARB] Opening: ${matched.size} ${symbol} on both legs ($${matched.notional.toFixed(0)}/leg, slippage ~${liq.longSlippage.toFixed(2)}%/${liq.shortSlippage.toFixed(2)}%)...`);
-                await Promise.all([
-                  longAdapter.marketOrder(symbol, "buy", matched.size),
-                  shortAdapter.marketOrder(symbol, "sell", matched.size),
-                ]);
+                try {
+                  await Promise.all([
+                    longAdapter.marketOrder(symbol, "buy", matched.size),
+                    shortAdapter.marketOrder(symbol, "sell", matched.size),
+                  ]);
+                } catch (orderErr) {
+                  const errMsg = orderErr instanceof Error ? orderErr.message : String(orderErr);
+                  const lotMatch = errMsg.match(/not a multiple of lot size (\d+(?:\.\d+)?)/);
+                  if (lotMatch) {
+                    const lotSize = parseFloat(lotMatch[1]);
+                    log(`[ARB] Lot size ${lotSize} detected, recalculating...`);
+                    matched = computeMatchedSize(liq.adjustedSizeUsd, highest.markPrice, longEx, shortEx, { lotSize });
+                    if (!matched) { log(`[ARB] Skip ${symbol}: can't meet lot size ${lotSize}`); continue; }
+                    log(`[ARB] Retry: ${matched.size} ${symbol} ($${matched.notional.toFixed(0)}/leg)`);
+                    await Promise.all([
+                      longAdapter.marketOrder(symbol, "buy", matched.size),
+                      shortAdapter.marketOrder(symbol, "sell", matched.size),
+                    ]);
+                  } else {
+                    throw orderErr;
+                  }
+                }
 
                 // Verify fills match, correct if needed
                 try {
