@@ -42,10 +42,21 @@ export async function loadPrivateKey(exchange: Exchange, pkOverride?: string, wa
     if (process.env[envVar]) return process.env[envVar]!;
   }
 
-  // 3. Generic fallback
+  // 3. ~/.perp/.env file (written by `perp wallet set` / `perp setup`)
+  try {
+    const { loadEnvFile } = await import("./commands/init.js");
+    const envFile = loadEnvFile();
+    for (const envVar of envMap[exchange]) {
+      if (envFile[envVar]) return envFile[envVar];
+    }
+  } catch {
+    // init module not available, skip
+  }
+
+  // 4. Generic fallback
   if (process.env.PRIVATE_KEY) return process.env.PRIVATE_KEY;
 
-  // 4. Active wallet from wallets.json
+  // 5. Active wallet from wallets.json
   try {
     const { getActiveWalletKey } = await import("./commands/wallet.js");
     const walletKey = getActiveWalletKey(exchange);
@@ -54,7 +65,7 @@ export async function loadPrivateKey(exchange: Exchange, pkOverride?: string, wa
     // wallet module not available, skip
   }
 
-  // 5. Legacy key file (~/.perp/<exchange>.key)
+  // 6. Legacy key file (~/.perp/<exchange>.key)
   const keyFile = resolve(process.env.HOME || "~", ".perp", `${exchange}.key`);
   if (existsSync(keyFile)) {
     return readFileSync(keyFile, "utf-8").trim();
