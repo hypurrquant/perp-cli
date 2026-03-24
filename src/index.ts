@@ -57,7 +57,7 @@ const _defaultExchange = _settings.defaultExchange || "pacifica";
 
 program
   .name("perp")
-  .description("Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter)")
+  .description("Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter, Aster)")
   .version(_pkg.version)
   .option("-e, --exchange <exchange>", `Exchange: pacifica, hyperliquid, lighter, aster (default: ${_defaultExchange})`, _defaultExchange)
   .option("-n, --network <network>", "Network: mainnet or testnet", "mainnet")
@@ -663,7 +663,7 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
         chalk.cyan("  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"),
         chalk.cyan("  ┃") + chalk.white.bold("  perp-cli ") + chalk.gray(`v${_pkg.version}`) + " ".repeat(Math.max(0, 32 - _pkg.version.length)) + chalk.cyan("┃"),
         chalk.cyan("  ┃") + chalk.gray("  Multi-DEX Perpetual Futures               ") + chalk.cyan("┃"),
-        chalk.cyan("  ┃") + chalk.gray("  Pacifica · Hyperliquid · Lighter           ") + chalk.cyan("┃"),
+        chalk.cyan("  ┃") + chalk.gray("  Pacifica · Hyperliquid · Lighter · Aster   ") + chalk.cyan("┃"),
         chalk.cyan("  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"),
       ];
       console.log("\n" + banner.join("\n"));
@@ -691,7 +691,34 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
             const adapter = await withTimeout(getAdapterForExchange(ex), 5000);
             const [balance, positions] = await withTimeout(Promise.all([adapter.getBalance(), adapter.getPositions()]), 5000);
             const posCount = positions.filter(p => Number(p.size) > 0).length;
-            return { exchange: ex, ok: true, equity: Number(balance.equity), positions: posCount };
+            let spotValue = 0;
+            // Include non-USDC spot value for unified accounts (HL, LT)
+            try {
+              if (ex === "hyperliquid") {
+                const { HyperliquidSpotAdapter } = await import("./exchanges/hyperliquid-spot.js");
+                const hlSpot = new HyperliquidSpotAdapter(adapter as HyperliquidAdapter);
+                await hlSpot.init();
+                const [raw, markets] = await Promise.all([hlSpot.getSpotBalances(), hlSpot.getSpotMarkets()]);
+                const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
+                for (const b of raw) {
+                  const base = b.token.replace(/-SPOT$/i, "").toUpperCase();
+                  if (base === "USDC" || Number(b.total) <= 0) continue;
+                  spotValue += (priceMap.get(base) ?? 0) * Number(b.total);
+                }
+              } else if (ex === "lighter") {
+                const { LighterAdapter } = await import("./exchanges/lighter.js");
+                const { LighterSpotAdapter } = await import("./exchanges/lighter-spot.js");
+                const ltSpot = new LighterSpotAdapter(adapter as InstanceType<typeof LighterAdapter>);
+                await ltSpot.init();
+                const [raw, markets] = await Promise.all([ltSpot.getSpotBalances(), ltSpot.getSpotMarkets()]);
+                const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
+                for (const b of raw) {
+                  if (b.token === "USDC" || b.token === "USDC_SPOT" || Number(b.total) <= 0) continue;
+                  spotValue += (priceMap.get(b.token.toUpperCase()) ?? 0) * Number(b.total);
+                }
+              }
+            } catch { /* spot not available */ }
+            return { exchange: ex, ok: true, equity: Number(balance.equity) + spotValue, positions: posCount };
           } catch {
             return { exchange: ex, ok: false, equity: 0, positions: 0 };
           }
