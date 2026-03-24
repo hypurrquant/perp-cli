@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import type { ExchangeAdapter } from "../exchanges/index.js";
-import { printJson, jsonOk } from "../utils.js";
+import { printJson, jsonOk, jsonError } from "../utils.js";
 import { setEnvVar } from "./init.js";
 import chalk from "chalk";
 import { hasPacificaSdk, hasLighterAccount } from "../exchanges/capabilities.js";
@@ -29,6 +29,10 @@ export function registerManageCommands(
     .action(async (symbol: string, mode: string) => {
       const m = mode.toLowerCase();
       if (m !== "cross" && m !== "isolated") {
+        if (isJson()) {
+          console.error(JSON.stringify(jsonError("INVALID_PARAMS", "Mode must be cross or isolated")));
+          process.exit(1);
+        }
         console.error(chalk.red("Mode must be cross or isolated"));
         process.exit(1);
       }

@@ -246,7 +246,7 @@ export function registerBridgeCommands(
       const gasCheck = await checkBridgeGasBalance(srcChain, senderAddress, dstChain, recipientAddress, needsDstGas);
       if (!gasCheck.ok) {
         const msg = gasCheck.errors.map(e => `  ✗ ${e}`).join("\n");
-        if (isJson()) return printJson({ ok: false, error: "Insufficient gas", details: gasCheck.errors });
+        if (isJson()) return printJson({ ok: false, error: { code: "INSUFFICIENT_BALANCE", message: "Insufficient gas for transaction", details: gasCheck.errors }, meta: { timestamp: new Date().toISOString() } });
         console.log(chalk.red("\n  Insufficient gas for bridge:\n"));
         console.log(chalk.red(msg));
         if (needsDstGas) {
@@ -391,7 +391,7 @@ export function registerBridgeCommands(
       const gasCheck = await checkBridgeGasBalance(srcChain, senderAddress, dstChain, recipientAddress, needsDstGas);
       if (!gasCheck.ok) {
         const msg = gasCheck.errors.map(e => `  ✗ ${e}`).join("\n");
-        if (isJson()) return printJson({ ok: false, error: "Insufficient gas", details: gasCheck.errors });
+        if (isJson()) return printJson({ ok: false, error: { code: "INSUFFICIENT_BALANCE", message: "Insufficient gas for transaction", details: gasCheck.errors }, meta: { timestamp: new Date().toISOString() } });
         console.log(chalk.red("\n  Insufficient gas for bridge:\n"));
         console.log(chalk.red(msg));
         if (needsDstGas) {

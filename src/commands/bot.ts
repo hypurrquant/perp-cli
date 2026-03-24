@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { printJson, jsonOk } from "../utils.js";
+import { printJson, jsonOk, jsonError } from "../utils.js";
 import type { ExchangeAdapter } from "../exchanges/index.js";
 import { loadBotConfig, parseStrategy, quickGridConfig, quickDCAConfig, runBot, PRESETS, getPreset, getPresetsByStrategy } from "../bot/index.js";
 import type { BotOutputMode } from "../bot/index.js";
@@ -506,6 +506,10 @@ export function registerBotCommands(
         "grid-mm", "liquidation-mm", "regime-mm",
       ];
       if (sym === "ALL" && symbolRequiredStrategies.includes(strategyName)) {
+        if (isJson()) {
+          console.error(JSON.stringify(jsonError("INVALID_PARAMS", `The '${strategyName}' strategy requires a <symbol> argument`)));
+          return process.exit(1);
+        }
         console.error(chalk.red(`\n  Error: The '${strategyName}' strategy requires a <symbol> argument.`));
         console.error(chalk.gray(`  Usage: perp bot run ${strategyName} <symbol>\n`));
         return process.exit(1);
@@ -558,6 +562,10 @@ export function registerBotCommands(
       const { getStrategy, listStrategies: listStrats } = await import("../bot/strategy-registry.js");
       if (!getStrategy(strategyName)) {
         const available = listStrats();
+        if (isJson()) {
+          console.error(JSON.stringify(jsonError("INVALID_PARAMS", `Unknown strategy: "${strategyName}"`, { details: { available } })));
+          return process.exit(1);
+        }
         console.error(chalk.red(`\n  Unknown strategy: "${strategyName}"`));
         console.error(chalk.gray(`\n  Available strategies:`));
         for (const s of available) console.error(chalk.gray(`    - ${s}`));

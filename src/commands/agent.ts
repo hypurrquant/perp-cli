@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { createRequire } from "node:module";
-import { printJson, jsonOk } from "../utils.js";
+import { printJson, jsonOk, jsonError } from "../utils.js";
 import { ERROR_CODES } from "../errors.js";
 import chalk from "chalk";
 import type { ExchangeAdapter } from "../exchanges/index.js";
@@ -316,7 +316,7 @@ export function registerAgentCommands(
         await program.parseAsync(fullArgs);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(JSON.stringify({ error: msg }));
+        console.error(JSON.stringify(jsonError("EXEC_FAILED", msg)));
         process.exit(1);
       }
     });

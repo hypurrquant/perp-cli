@@ -143,8 +143,12 @@ export function registerFundsCommands(
 
         const solBalance = await connection.getBalance(pacDirect.keypair.publicKey);
         if (solBalance < 5_000_000) {
-          console.error(chalk.red("  Insufficient SOL for gas. Need ~0.005 SOL."));
-          console.error(chalk.gray("  Tip: Use relayer for gasless deposits (start relayer server)\n"));
+          if (isJson()) {
+            printJson(jsonError("INSUFFICIENT_BALANCE", "Insufficient SOL for gas. Need ~0.005 SOL."));
+          } else {
+            console.error(chalk.red("  Insufficient SOL for gas. Need ~0.005 SOL."));
+            console.error(chalk.gray("  Tip: Use relayer for gasless deposits (start relayer server)\n"));
+          }
           process.exit(1);
         }
 
@@ -157,7 +161,11 @@ export function registerFundsCommands(
           ? tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount ?? 0
           : 0;
         if (usdcBalance < amountNum) {
-          console.error(chalk.red(`  Insufficient USDC on Solana. Have: $${formatUsd(usdcBalance)}, need: $${formatUsd(amountNum)}`));
+          if (isJson()) {
+            printJson(jsonError("INSUFFICIENT_BALANCE", `Insufficient USDC on Solana. Have: $${formatUsd(usdcBalance)}, need: $${formatUsd(amountNum)}`));
+          } else {
+            console.error(chalk.red(`  Insufficient USDC on Solana. Have: $${formatUsd(usdcBalance)}, need: $${formatUsd(amountNum)}`));
+          }
           process.exit(1);
         }
 
@@ -267,7 +275,11 @@ export function registerFundsCommands(
 
       const ethBal = await provider.getBalance(wallet.address);
       if (ethBal < ethers.parseEther("0.0001")) {
-        console.error(chalk.red("  Insufficient ETH on Arbitrum for gas."));
+        if (isJson()) {
+          printJson(jsonError("INSUFFICIENT_BALANCE", "Insufficient ETH on Arbitrum for gas."));
+        } else {
+          console.error(chalk.red("  Insufficient ETH on Arbitrum for gas."));
+        }
         process.exit(1);
       }
 
@@ -279,7 +291,11 @@ export function registerFundsCommands(
       const amountRaw = ethers.parseUnits(amount, 6);
       const usdcBal = await usdc.balanceOf(wallet.address);
       if (usdcBal < amountRaw) {
-        console.error(chalk.red(`  Insufficient USDC. Have: $${formatUsd(Number(ethers.formatUnits(usdcBal, 6)))}`));
+        if (isJson()) {
+          printJson(jsonError("INSUFFICIENT_BALANCE", `Insufficient USDC. Have: $${formatUsd(Number(ethers.formatUnits(usdcBal, 6)))}`));
+        } else {
+          console.error(chalk.red(`  Insufficient USDC. Have: $${formatUsd(Number(ethers.formatUnits(usdcBal, 6)))}`));
+        }
         process.exit(1);
       }
 
@@ -352,13 +368,21 @@ export function registerFundsCommands(
 
       const ethBal = await provider.getBalance(wallet.address);
       if (ethBal < ethers.parseEther("0.003")) {
-        console.error(chalk.red("  Insufficient ETH on Ethereum for gas. Need ~0.003 ETH ($3+)."));
+        if (isJson()) {
+          printJson(jsonError("INSUFFICIENT_BALANCE", "Insufficient ETH on Ethereum for gas. Need ~0.003 ETH ($3+)."));
+        } else {
+          console.error(chalk.red("  Insufficient ETH on Ethereum for gas. Need ~0.003 ETH ($3+)."));
+        }
         process.exit(1);
       }
 
       const usdcBal = await usdc.balanceOf(wallet.address);
       if (usdcBal < amountRaw) {
-        console.error(chalk.red(`  Insufficient USDC on Ethereum. Have: $${formatUsd(Number(ethers.formatUnits(usdcBal, 6)))}`));
+        if (isJson()) {
+          printJson(jsonError("INSUFFICIENT_BALANCE", `Insufficient USDC on Ethereum. Have: $${formatUsd(Number(ethers.formatUnits(usdcBal, 6)))}`));
+        } else {
+          console.error(chalk.red(`  Insufficient USDC on Ethereum. Have: $${formatUsd(Number(ethers.formatUnits(usdcBal, 6)))}`));
+        }
         process.exit(1);
       }
 
@@ -453,7 +477,11 @@ export function registerFundsCommands(
 
       const gasBal = await provider.getBalance(wallet.address);
       if (gasBal < ethers.parseEther("0.00005")) {
-        console.error(chalk.red(`  Insufficient gas token on ${chainInfo.name}. Need native token for gas (~$0.01).`));
+        if (isJson()) {
+          printJson(jsonError("INSUFFICIENT_BALANCE", `Insufficient gas token on ${chainInfo.name}. Need native token for gas (~$0.01).`));
+        } else {
+          console.error(chalk.red(`  Insufficient gas token on ${chainInfo.name}. Need native token for gas (~$0.01).`));
+        }
         process.exit(1);
       }
 
@@ -465,7 +493,11 @@ export function registerFundsCommands(
       const amountRaw = ethers.parseUnits(amount, 6);
       const usdcBal = await usdc.balanceOf(wallet.address);
       if (usdcBal < amountRaw) {
-        console.error(chalk.red(`  Insufficient USDC on ${chainInfo.name}. Have: $${formatUsd(Number(ethers.formatUnits(usdcBal, 6)))}`));
+        if (isJson()) {
+          printJson(jsonError("INSUFFICIENT_BALANCE", `Insufficient USDC on ${chainInfo.name}. Have: $${formatUsd(Number(ethers.formatUnits(usdcBal, 6)))}`));
+        } else {
+          console.error(chalk.red(`  Insufficient USDC on ${chainInfo.name}. Have: $${formatUsd(Number(ethers.formatUnits(usdcBal, 6)))}`));
+        }
         process.exit(1);
       }
 
@@ -606,7 +638,11 @@ export function registerFundsCommands(
       const balance = await adapter.getBalance();
       const available = Number(balance.available);
       if (amountNum > available) {
-        console.error(chalk.red(`  Insufficient withdrawable balance. Available: $${formatUsd(available)}`));
+        if (isJson()) {
+          printJson(jsonError("INSUFFICIENT_BALANCE", `Insufficient withdrawable balance. Available: $${formatUsd(available)}`));
+        } else {
+          console.error(chalk.red(`  Insufficient withdrawable balance. Available: $${formatUsd(available)}`));
+        }
         process.exit(1);
       }
 

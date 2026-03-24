@@ -75,11 +75,11 @@ function askChoice(rl: ReturnType<typeof createInterface>, question: string, cho
 
 // ── Exchange → env var mapping ────────────────────────────────
 
-export const EXCHANGE_ENV_MAP: Record<string, { envKey: string; chain: "solana" | "evm" | "apikey"; label: string }> = {
+export const EXCHANGE_ENV_MAP: Record<string, { envKey: string; envKeySecret?: string; chain: "solana" | "evm" | "apikey"; label: string }> = {
   pacifica: { envKey: "PACIFICA_PRIVATE_KEY", chain: "solana", label: "Pacifica (Solana)" },
   hyperliquid: { envKey: "HL_PRIVATE_KEY", chain: "evm", label: "Hyperliquid (EVM)" },
   lighter: { envKey: "LIGHTER_PRIVATE_KEY", chain: "evm", label: "Lighter (EVM)" },
-  aster: { envKey: "ASTER_API_KEY", chain: "apikey", label: "Aster (BNB Chain)" },
+  aster: { envKey: "ASTER_API_KEY", envKeySecret: "ASTER_API_SECRET", chain: "apikey", label: "Aster (BNB Chain)" },
 };
 
 // ── Validate keys ─────────────────────────────────────────────
@@ -158,9 +158,10 @@ export function registerInitCommand(program: Command) {
         console.log(`    1) ${chalk.cyan("Pacifica")}    ${chalk.gray("— Solana perps (USDC on Solana)")}`);
         console.log(`    2) ${chalk.cyan("Hyperliquid")} ${chalk.gray("— EVM perps (USDC on Arbitrum)")}`);
         console.log(`    3) ${chalk.cyan("Lighter")}     ${chalk.gray("— EVM perps (USDC on Ethereum/Arb)")}`);
+        console.log(`    4) ${chalk.cyan("Aster")}       ${chalk.gray("— BNB Chain perps (API key + secret)")}`);
         console.log();
 
-        const exchangeChoice = await ask(rl, "  Which exchange(s)? (1,2,3 or 'all'): ");
+        const exchangeChoice = await ask(rl, "  Which exchange(s)? (1,2,3,4 or 'all'): ");
         const selected = parseExchangeChoice(exchangeChoice);
 
         if (selected.length === 0) {
@@ -173,6 +174,7 @@ export function registerInitCommand(program: Command) {
         // EVM exchanges can share the same key
         const evmExchanges = selected.filter((e) => EXCHANGE_ENV_MAP[e].chain === "evm");
         const solExchanges = selected.filter((e) => EXCHANGE_ENV_MAP[e].chain === "solana");
+        const apikeyExchanges = selected.filter((e) => EXCHANGE_ENV_MAP[e].chain === "apikey");
         const newEnv = { ...env };
 
         if (evmExchanges.length > 0) {
@@ -226,6 +228,28 @@ export function registerInitCommand(program: Command) {
           }
         }
 
+        if (apikeyExchanges.length > 0) {
+          for (const ex of apikeyExchanges) {
+            const info = EXCHANGE_ENV_MAP[ex];
+            console.log(chalk.cyan.bold(`\n  ${info.label} API Credentials`));
+            const apiKey = await ask(rl, `  ${info.label} API key: `);
+            if (!apiKey) { console.log(chalk.gray("  Skipped.")); continue; }
+            const { valid, address } = await validateKey("apikey", apiKey);
+            if (!valid) { console.log(chalk.red("  Invalid API key (must be at least 16 chars), skipped.")); continue; }
+            newEnv[info.envKey] = apiKey;
+            console.log(`  ${chalk.green("OK")} ${chalk.gray(address)}`);
+            if (info.envKeySecret) {
+              const secret = await ask(rl, `  ${info.label} API secret: `);
+              if (secret) {
+                newEnv[info.envKeySecret] = secret;
+                console.log(`  ${chalk.green("OK")} secret saved`);
+              } else {
+                console.log(chalk.yellow("  No secret provided — some operations may fail."));
+              }
+            }
+          }
+        }
+
         // Default exchange
         const settings = loadSettings();
         if (selected.length === 1) {
@@ -274,7 +298,8 @@ export function registerInitCommand(program: Command) {
 
 function parseExchangeChoice(input: string): string[] {
   const lower = input.toLowerCase().trim();
-  if (lower === "all" || lower === "1,2,3") return ["pacifica", "hyperliquid", "lighter"];
+  if (lower === "all" || lower === "1,2,3,4") return ["pacifica", "hyperliquid", "lighter", "aster"];
+  if (lower === "1,2,3") return ["pacifica", "hyperliquid", "lighter"];
 
   const exchanges: string[] = [];
   const parts = lower.split(/[,\s]+/);
@@ -282,6 +307,7 @@ function parseExchangeChoice(input: string): string[] {
     if (p === "1" || p.startsWith("pac")) exchanges.push("pacifica");
     else if (p === "2" || p.startsWith("hyp") || p === "hl") exchanges.push("hyperliquid");
     else if (p === "3" || p.startsWith("lig") || p === "lt") exchanges.push("lighter");
+    else if (p === "4" || p.startsWith("ast")) exchanges.push("aster");
   }
   return [...new Set(exchanges)];
 }

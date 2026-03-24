@@ -27,7 +27,10 @@ export const DEFAULT_EXPIRY_WINDOW = 5000; // 5 seconds
 export const USDC_DECIMALS = 6;
 
 // Builder code — 0% fee, used for Pacifica hackathon tracking
-export const BUILDER_CODE = process.env.PACIFICA_BUILDER_CODE || "PERPCLI";
+// The actual 3-way fallback (env → settings.referralCodes.pacifica → "PERPCLI") is
+// resolved in index.ts before constructing PacificaAdapter. This constant is only
+// a last-resort default for direct PacificaClient usage without a builderCode arg.
+export const BUILDER_CODE = "PERPCLI";
 
 // Network config helper
 export type Network = "mainnet" | "testnet";
