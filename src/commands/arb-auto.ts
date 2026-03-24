@@ -52,6 +52,7 @@ interface FundingSnapshot {
   pacRate: number;
   hlRate: number;
   ltRate: number;
+  astRate: number;
   spread: number; // annualized %, max spread across all exchanges
   longExch: string;
   shortExch: string;
@@ -59,6 +60,7 @@ interface FundingSnapshot {
   pacMarkPrice: number;
   hlMarkPrice: number;
   ltMarkPrice: number;
+  astMarkPrice: number;
 }
 
 interface ArbPosition {
@@ -190,7 +192,7 @@ export function isSpreadReversed(
   snapshot: FundingSnapshot,
 ): boolean {
   const rateFor = (e: string) =>
-    e === "pacifica" ? snapshot.pacRate : e === "hyperliquid" ? snapshot.hlRate : snapshot.ltRate;
+    e === "pacifica" ? snapshot.pacRate : e === "hyperliquid" ? snapshot.hlRate : e === "aster" ? snapshot.astRate : snapshot.ltRate;
   const longHourly = toHourlyRate(rateFor(longExchange), longExchange);
   const shortHourly = toHourlyRate(rateFor(shortExchange), shortExchange);
   // Reversed if the long side rate exceeds the short side rate
@@ -198,30 +200,44 @@ export function isSpreadReversed(
 }
 
 async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
-  const [pacRes, hlRes, ltDetailsRes, ltFundingRes] = await Promise.all([
+  const [pacRes, hlRes, ltDetailsRes, ltFundingRes, astPremiums] = await Promise.all([
     fetchPacificaPricesRaw(),
     fetchHyperliquidMetaRaw(),
     fetchLighterOrderBookDetailsRaw(),
     fetchLighterFundingRatesRaw(),
+    fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()).catch(() => []) as Promise<Array<Record<string, unknown>>>,
   ]);
 
   const { rates: pacRates, prices: pacPrices } = parsePacificaRaw(pacRes);
   const { rates: hlRates, prices: hlPrices } = parseHyperliquidMetaRaw(hlRes);
   const { rates: ltRates, prices: ltPrices } = parseLighterRaw(ltDetailsRes, ltFundingRes);
 
+  // Aster: parse premiumIndex
+  const astRates = new Map<string, number>();
+  const astPrices = new Map<string, number>();
+  for (const p of astPremiums ?? []) {
+    const rawSym = String(p.symbol ?? "");
+    if (!rawSym.endsWith("USDT")) continue;
+    const sym = rawSym.replace(/USDT$/, "");
+    astRates.set(sym, Number(p.lastFundingRate ?? 0));
+    astPrices.set(sym, Number(p.markPrice ?? 0));
+  }
+
   const snapshots: FundingSnapshot[] = [];
-  const allSymbols = new Set([...pacRates.keys(), ...hlRates.keys(), ...ltRates.keys()]);
+  const allSymbols = new Set([...pacRates.keys(), ...hlRates.keys(), ...ltRates.keys(), ...astRates.keys()]);
 
   for (const sym of allSymbols) {
     const pac = pacRates.get(sym);
     const hl = hlRates.get(sym);
     const lt = ltRates.get(sym);
+    const ast = astRates.get(sym);
 
     // Need at least 2 exchanges
     const available: ExchangeRate[] = [];
     if (pac !== undefined) available.push({ exchange: "pacifica", rate: pac });
     if (hl !== undefined) available.push({ exchange: "hyperliquid", rate: hl });
     if (lt !== undefined) available.push({ exchange: "lighter", rate: lt });
+    if (ast !== undefined) available.push({ exchange: "aster", rate: ast });
     if (available.length < 2) continue;
 
     const norm = (r: ExchangeRate) => toHourlyRate(r.rate, r.exchange);
@@ -230,14 +246,15 @@ async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
     const highest = available[available.length - 1];
     const spread = computeAnnualSpread(highest.rate, highest.exchange, lowest.rate, lowest.exchange);
 
-    // Use best available mark price (prefer HL as most liquid, then PAC, then LT)
-    const markPrice = hlPrices.get(sym) ?? pacPrices.get(sym) ?? ltPrices.get(sym) ?? 0;
+    // Use best available mark price (prefer HL as most liquid, then PAC, then LT, then AST)
+    const markPrice = hlPrices.get(sym) ?? pacPrices.get(sym) ?? ltPrices.get(sym) ?? astPrices.get(sym) ?? 0;
 
     snapshots.push({
       symbol: sym,
       pacRate: pac ?? 0,
       hlRate: hl ?? 0,
       ltRate: lt ?? 0,
+      astRate: ast ?? 0,
       spread,
       longExch: lowest.exchange,  // long where funding is lowest
       shortExch: highest.exchange, // short where funding is highest
@@ -245,6 +262,7 @@ async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
       pacMarkPrice: pacPrices.get(sym) ?? 0,
       hlMarkPrice: hlPrices.get(sym) ?? 0,
       ltMarkPrice: ltPrices.get(sym) ?? 0,
+      astMarkPrice: astPrices.get(sym) ?? 0,
     });
   }
 
@@ -680,7 +698,7 @@ export function registerArbAutoCommands(
           // Log next settlement times and funding estimation
           if (!isJson() && settleStrategy !== "off") {
             const nowDate = new Date();
-            const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+            const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
             const nextHL = getNextSettlement("hyperliquid", nowDate);
             const nextPAC = getNextSettlement("pacifica", nowDate);
             const nextLT = getNextSettlement("lighter", nowDate);
@@ -693,7 +711,7 @@ export function registerArbAutoCommands(
             for (const fPos of openPositions) {
               const fSnap = filtered.find(s => s.symbol === fPos.symbol);
               if (!fSnap) continue;
-              const fRateFor = (e: string) => e === "pacifica" ? fSnap.pacRate : e === "hyperliquid" ? fSnap.hlRate : fSnap.ltRate;
+              const fRateFor = (e: string) => e === "pacifica" ? fSnap.pacRate : e === "hyperliquid" ? fSnap.hlRate : e === "aster" ? fSnap.astRate : fSnap.ltRate;
               const fHlHourly = toHourlyRate(fRateFor("hyperliquid"), "hyperliquid");
               const fPacHourly = toHourlyRate(fRateFor("pacifica"), "pacifica");
               const fNotional = fPos.size * fSnap.markPrice;
@@ -832,7 +850,7 @@ export function registerArbAutoCommands(
               const effectiveNetSpread = netSpread * settleBoostMultiplier;
               if (effectiveNetSpread < minSpread) continue;
 
-              const rateForExch = (e: string) => e === "pacifica" ? snap.pacRate : e === "hyperliquid" ? snap.hlRate : snap.ltRate;
+              const rateForExch = (e: string) => e === "pacifica" ? snap.pacRate : e === "hyperliquid" ? snap.hlRate : e === "aster" ? snap.astRate : snap.ltRate;
 
               console.log(chalk.green(
                 `  ${now} ENTER ${snap.symbol} — gross ${grossSpread.toFixed(1)}% net ${netSpread.toFixed(1)}%` +
@@ -1057,7 +1075,7 @@ export function registerArbAutoCommands(
               const elapsedHours = (nowMs - pos.lastCheckTime) / (1000 * 60 * 60);
               const notional = pos.size * current.markPrice;
               // Estimate funding collected: normalize all rates to hourly before comparing
-              const rateFor = (e: string) => e === "pacifica" ? current.pacRate : e === "hyperliquid" ? current.hlRate : current.ltRate;
+              const rateFor = (e: string) => e === "pacifica" ? current.pacRate : e === "hyperliquid" ? current.hlRate : e === "aster" ? current.astRate : current.ltRate;
               const longHourly = toHourlyRate(rateFor(pos.longExchange), pos.longExchange);
               const shortHourly = toHourlyRate(rateFor(pos.shortExchange), pos.shortExchange);
               // Income = short gets paid positive funding, long pays; net = (shortRate - longRate) * notional * hours
@@ -1239,7 +1257,7 @@ export function registerArbAutoCommands(
           console.log(chalk.gray(`  Press Ctrl+C to stop\n`));
         }
 
-        const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+        const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
 
         while (true) {
           cycle++;
@@ -1347,7 +1365,7 @@ export function registerArbAutoCommands(
           if (spotSpreads.length === 0) {
             console.log(chalk.gray(`  No spot+perp opportunities above ${minSpread}%\n`));
           } else {
-            const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+            const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
             const rows = spotSpreads.slice(0, parseInt(opts.top ?? "30")).map(s => {
               const spotEx = s.spotExchanges[0] || "lighter";
               const rtCost = computeRoundTripCostPct(spotEx, s.perpExchange);
@@ -1391,8 +1409,9 @@ export function registerArbAutoCommands(
           const rtCost = computeRoundTripCostPct(s.longExch, s.shortExch);
           const net = computeNetSpread(grossSpread, holdDays, rtCost, bridgeCostUsd, sizeUsd);
           // Compute price gap between long and short exchanges
-          const longPrice = s.longExch === "pacifica" ? s.pacMarkPrice : s.longExch === "hyperliquid" ? s.hlMarkPrice : s.ltMarkPrice;
-          const shortPrice = s.shortExch === "pacifica" ? s.pacMarkPrice : s.shortExch === "hyperliquid" ? s.hlMarkPrice : s.ltMarkPrice;
+          const pFor = (ex: string) => ex === "pacifica" ? s.pacMarkPrice : ex === "hyperliquid" ? s.hlMarkPrice : ex === "lighter" ? s.ltMarkPrice : s.astMarkPrice;
+          const longPrice = pFor(s.longExch);
+          const shortPrice = pFor(s.shortExch);
           const mid = (longPrice + shortPrice) / 2;
           const priceGapPct = mid > 0 ? Math.abs(longPrice - shortPrice) / mid * 100 : 0;
           return { mode: "perp-perp" as const, symbol: s.symbol, longExch: s.longExch, shortExch: s.shortExch, markPrice: s.markPrice, grossSpread, netSpread: net, estFeesPct: rtCost, priceGapPct: Math.round(priceGapPct * 10000) / 10000 };
@@ -1421,7 +1440,7 @@ export function registerArbAutoCommands(
         return;
       }
 
-      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
       const rows = filtered.map(s => {
         const direction = `${exAbbr(s.shortExch)}>${exAbbr(s.longExch)}`;
         const grossSpread = Math.abs(s.spread);
@@ -1429,8 +1448,9 @@ export function registerArbAutoCommands(
         const netSpread = computeNetSpread(grossSpread, holdDays, rtCost, bridgeCostUsd, sizeUsd);
         const grossColor = grossSpread >= 50 ? chalk.green.bold : grossSpread >= 30 ? chalk.green : chalk.yellow;
         const netColor = netSpread >= 20 ? chalk.green : netSpread >= 0 ? chalk.yellow : chalk.red;
-        const longPrice = s.longExch === "pacifica" ? s.pacMarkPrice : s.longExch === "hyperliquid" ? s.hlMarkPrice : s.ltMarkPrice;
-        const shortPrice = s.shortExch === "pacifica" ? s.pacMarkPrice : s.shortExch === "hyperliquid" ? s.hlMarkPrice : s.ltMarkPrice;
+        const priceFor = (ex: string) => ex === "pacifica" ? s.pacMarkPrice : ex === "hyperliquid" ? s.hlMarkPrice : ex === "lighter" ? s.ltMarkPrice : s.astMarkPrice;
+        const longPrice = priceFor(s.longExch);
+        const shortPrice = priceFor(s.shortExch);
         const mid = (longPrice + shortPrice) / 2;
         const priceGapPct = mid > 0 ? Math.abs(longPrice - shortPrice) / mid * 100 : 0;
         const gapColor = priceGapPct >= 0.5 ? chalk.red : priceGapPct >= 0.1 ? chalk.yellow : chalk.gray;
@@ -1438,6 +1458,7 @@ export function registerArbAutoCommands(
         if (s.pacRate) rates.push(`PAC:${(s.pacRate * 100).toFixed(4)}%`);
         if (s.hlRate) rates.push(`HL:${(s.hlRate * 100).toFixed(4)}%`);
         if (s.ltRate) rates.push(`LT:${(s.ltRate * 100).toFixed(4)}%`);
+        if (s.astRate) rates.push(`AST:${(s.astRate * 100).toFixed(4)}%`);
         return [
           chalk.white.bold(s.symbol),
           grossColor(`${grossSpread.toFixed(1)}%`),

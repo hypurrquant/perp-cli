@@ -19,7 +19,7 @@ import { SPOT_PERP_TOKEN_MAP, MAX_PRICE_DEVIATION_PCT } from "../exchanges/index
 // ── Types ──
 
 export interface ExchangeFundingRate {
-  exchange: "pacifica" | "hyperliquid" | "lighter";
+  exchange: "pacifica" | "hyperliquid" | "lighter" | "aster";
   symbol: string;
   fundingRate: number;       // raw rate (period depends on exchange)
   hourlyRate: number;        // normalized to per-hour
@@ -122,6 +122,40 @@ async function fetchLighterRates(): Promise<ExchangeFundingRate[]> {
   }
 }
 
+async function fetchAsterRates(): Promise<ExchangeFundingRate[]> {
+  try {
+    const [premiums, tickers] = await Promise.all([
+      fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()) as Promise<Array<Record<string, unknown>>>,
+      fetch("https://fapi.asterdex.com/fapi/v1/ticker/24hr").then(r => r.json()) as Promise<Array<Record<string, unknown>>>,
+    ]);
+
+    const priceMap = new Map<string, number>();
+    for (const t of tickers ?? []) {
+      priceMap.set(String(t.symbol), Number(t.lastPrice ?? 0));
+    }
+
+    return (premiums ?? [])
+      .filter(p => String(p.symbol ?? "").endsWith("USDT"))
+      .map(p => {
+        const rawSymbol = String(p.symbol ?? "");
+        const symbol = rawSymbol.replace(/USDT$/, "");
+        const rate = Number(p.lastFundingRate ?? 0);
+        const hourly = toHourlyRate(rate, "aster");
+        return {
+          exchange: "aster" as const,
+          symbol,
+          fundingRate: rate,
+          hourlyRate: hourly,
+          annualizedPct: annualizeRate(rate, "aster"),
+          markPrice: Number(p.markPrice ?? priceMap.get(rawSymbol) ?? 0),
+          nextFundingTime: Number(p.nextFundingTime ?? 0),
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
 // ── Core comparison logic ──
 
 /**
@@ -134,13 +168,14 @@ export async function fetchAllFundingRates(opts?: {
 }): Promise<FundingRateSnapshot> {
   const exchangeStatus: Record<string, "ok" | "error"> = {};
 
-  const [pacRates, hlRates, ltRates] = await Promise.all([
+  const [pacRates, hlRates, ltRates, astRates] = await Promise.all([
     fetchPacificaRates().then(r => { exchangeStatus.pacifica = r.length > 0 ? "ok" : "error"; return r; }),
     fetchHyperliquidRates().then(r => { exchangeStatus.hyperliquid = r.length > 0 ? "ok" : "error"; return r; }),
     fetchLighterRates().then(r => { exchangeStatus.lighter = r.length > 0 ? "ok" : "error"; return r; }),
+    fetchAsterRates().then(r => { exchangeStatus.aster = r.length > 0 ? "ok" : "error"; return r; }),
   ]);
 
-  const allRates = [...pacRates, ...hlRates, ...ltRates];
+  const allRates = [...pacRates, ...hlRates, ...ltRates, ...astRates];
 
   // Build per-symbol rate map
   const rateMap = new Map<string, ExchangeFundingRate[]>();
@@ -155,7 +190,7 @@ export async function fetchAllFundingRates(opts?: {
   // Attach historical averages when available
   try {
     const symbols = Array.from(rateMap.keys());
-    const exchanges = ["pacifica", "hyperliquid", "lighter"];
+    const exchanges = ["pacifica", "hyperliquid", "lighter", "aster"];
     const historicals = getHistoricalAverages(symbols, exchanges);
     for (const [, rates] of rateMap) {
       for (const r of rates) {

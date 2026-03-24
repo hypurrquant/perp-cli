@@ -4,7 +4,7 @@ import chalk from "chalk";
 import { resolve } from "path";
 import { existsSync, readFileSync } from "fs";
 
-export type Exchange = "pacifica" | "hyperliquid" | "lighter";
+export type Exchange = "pacifica" | "hyperliquid" | "lighter" | "aster";
 
 /**
  * Try to load a private key without throwing if none is found.
@@ -35,6 +35,7 @@ export async function loadPrivateKey(exchange: Exchange, pkOverride?: string, wa
     pacifica: ["PACIFICA_PRIVATE_KEY", "pk"],
     hyperliquid: ["HYPERLIQUID_PRIVATE_KEY", "HL_PRIVATE_KEY"],
     lighter: ["LIGHTER_PRIVATE_KEY"],
+    aster: ["ASTER_API_KEY"],
   };
 
   for (const envVar of envMap[exchange]) {

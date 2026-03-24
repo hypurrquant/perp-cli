@@ -23,5 +23,6 @@ export type { AdapterRegistration } from "./registry.js";
 export { PacificaAdapter } from "./pacifica.js";
 export { HyperliquidAdapter } from "./hyperliquid.js";
 export { LighterAdapter } from "./lighter.js";
+export { AsterAdapter } from "./aster.js";
 export { HyperliquidSpotAdapter } from "./hyperliquid-spot.js";
 export { LighterSpotAdapter } from "./lighter-spot.js";

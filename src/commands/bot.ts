@@ -168,7 +168,7 @@ export function registerBotCommands(
     .option("--close-spread <pct>", "Close when spread drops below (%)", "5")
     .option("--size <usd>", "Position size per leg ($)", "50")
     .option("--max-positions <n>", "Max simultaneous positions", "3")
-    .option("--exchanges <list>", "Comma-separated exchanges", "pacifica,hyperliquid,lighter")
+    .option("--exchanges <list>", "Comma-separated exchanges", "pacifica,hyperliquid,lighter,aster")
     .option("--interval <sec>", "Check interval in seconds", "60")
     .option("--max-drawdown <usd>", "Stop if drawdown exceeds ($)", "200")
     .option("--background", "Run in background (tmux)")
@@ -576,7 +576,7 @@ export function registerBotCommands(
       const multiExchangeStrategies = ["funding-auto", "funding-arb", "funding-arb-v2", "basis-arb", "hedge-agent"];
       if (multiExchangeStrategies.includes(strategyName) && getAdapterFor) {
         extraAdapters = new Map();
-        for (const ex of ["pacifica", "hyperliquid", "lighter"]) {
+        for (const ex of ["pacifica", "hyperliquid", "lighter", "aster"]) {
           if (ex === adapter.name) continue;
           try {
             const a = await getAdapterFor(ex);
@@ -768,7 +768,7 @@ function registerRunSubcommands(
     .option("--interval <sec>", "Check interval in seconds", "60")
     .option("--auto-execute", "Actually place trades (default: monitor only)")
     .option("--max-positions <n>", "Max simultaneous positions", "3")
-    .option("--exchanges <list>", "Comma-separated exchanges to use", "pacifica,hyperliquid,lighter")
+    .option("--exchanges <list>", "Comma-separated exchanges to use", "pacifica,hyperliquid,lighter,aster")
     .option("--auto-rebalance", "Trigger rebalance alerts when exchange balance is low")
     .option("--rebalance-threshold <usd>", "Rebalance when available < this ($)", "100")
     .option("--max-drawdown <usd>", "Close all positions if total uPnL exceeds this loss ($)")

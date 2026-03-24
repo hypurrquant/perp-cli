@@ -118,11 +118,12 @@ function formatDuration(ms: number): string {
 async function fetchFundingRatesMap(): Promise<Map<string, { exchange: string; rate: number; markPrice: number }[]>> {
   const rateMap = new Map<string, { exchange: string; rate: number; markPrice: number }[]>();
 
-  const [pacAssets, hlAssets, ltDetails, ltFunding] = await Promise.all([
+  const [pacAssets, hlAssets, ltDetails, ltFunding, asterPremiums] = await Promise.all([
     fetchPacificaPrices(),
     fetchHyperliquidMeta(),
     fetchLighterOrderBookDetails(),
     fetchLighterFundingRates(),
+    fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()).catch(() => []) as Promise<Array<Record<string, unknown>>>,
   ]);
 
   const addRate = (sym: string, exchange: string, rate: number, markPrice: number) => {
@@ -141,6 +142,13 @@ async function fetchFundingRatesMap(): Promise<Map<string, { exchange: string; r
     const sym = fr.symbol || ltSymMap.get(fr.marketId) || "";
     const mp = fr.markPrice || ltPriceMap.get(fr.marketId) || 0;
     addRate(sym, "lighter", fr.rate, mp);
+  }
+
+  // Aster: premiumIndex
+  for (const p of asterPremiums ?? []) {
+    const rawSym = String(p.symbol ?? "");
+    if (!rawSym.endsWith("USDT")) continue;
+    addRate(rawSym.replace(/USDT$/, ""), "aster", Number(p.lastFundingRate ?? 0), Number(p.markPrice ?? 0));
   }
 
   return rateMap;
@@ -608,7 +616,7 @@ export function registerArbManageCommands(
       // ── Spot-Perp detailed view ──
       if (spotPerpPositions.length > 0) {
         for (const sp of spotPerpPositions) {
-          const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+          const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
           const spreadStr = sp.currentSpread !== null ? `${sp.currentSpread.toFixed(1)}%` : "-";
           const spotPriceEach = sp.spotAmount > 0 ? sp.spotValueUsd / sp.spotAmount : 0;
           const spotPnl = sp.spotValueUsd - (sp.perpEntryPrice * sp.spotAmount); // spot value vs entry
@@ -1483,8 +1491,8 @@ export function registerArbManageCommands(
       const totalEquity = snapshots.reduce((s, e) => s + e.equity, 0);
       const totalAvailable = snapshots.reduce((s, e) => s + e.available, 0);
 
-      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e.toUpperCase();
-      const exChain = (e: string) => e === "pacifica" ? "Solana" : e === "hyperliquid" ? "Hyperliquid" : e === "lighter" ? "Arbitrum" : "unknown";
+      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
+      const exChain = (e: string) => e === "pacifica" ? "Solana" : e === "hyperliquid" ? "Hyperliquid" : e === "lighter" ? "Arbitrum" : e === "aster" ? "BNB" : "unknown";
 
       if (opts.check) {
         // Show current balance distribution

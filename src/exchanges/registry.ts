@@ -50,3 +50,9 @@ registerAdapter({
   aliases: ["lt"],
   chain: "ethereum",
 });
+
+registerAdapter({
+  name: "aster",
+  aliases: ["ast"],
+  chain: "bnb",
+});

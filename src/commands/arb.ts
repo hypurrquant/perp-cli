@@ -54,6 +54,23 @@ async function fetchHyperliquidRates(): Promise<FundingRate[]> {
   }));
 }
 
+async function fetchAsterRates(): Promise<FundingRate[]> {
+  try {
+    const premiums = await fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()) as Array<Record<string, unknown>>;
+    return (premiums ?? [])
+      .filter(p => String(p.symbol ?? "").endsWith("USDT"))
+      .map(p => ({
+        exchange: "aster",
+        symbol: String(p.symbol ?? "").replace(/USDT$/, ""),
+        fundingRate: Number(p.lastFundingRate ?? 0),
+        markPrice: Number(p.markPrice ?? 0),
+        nextFunding: Number(p.nextFundingTime ?? 0),
+      }));
+  } catch {
+    return [];
+  }
+}
+
 async function fetchLighterRates(): Promise<FundingRate[]> {
   try {
     const [details, funding] = await Promise.all([
@@ -301,18 +318,20 @@ function printSnapshotTable(snapshot: FundingRateSnapshot): void {
     const pacRate = s.rates.find(r => r.exchange === "pacifica");
     const hlRate = s.rates.find(r => r.exchange === "hyperliquid");
     const ltRate = s.rates.find(r => r.exchange === "lighter");
+    const astRate = s.rates.find(r => r.exchange === "aster");
     const spreadColor = s.maxSpreadAnnual >= 30 ? chalk.green : s.maxSpreadAnnual >= 10 ? chalk.yellow : chalk.white;
-    const bestRate = hlRate ?? pacRate ?? ltRate;
+    const bestRate = hlRate ?? pacRate ?? ltRate ?? astRate;
     const trend = trendMap.get(s.symbol) ?? chalk.gray("-");
     return [
       chalk.white.bold(s.symbol), pacRate ? formatPercent(pacRate.fundingRate) : chalk.gray("-"),
       hlRate ? formatPercent(hlRate.fundingRate) : chalk.gray("-"), ltRate ? formatPercent(ltRate.fundingRate) : chalk.gray("-"),
+      astRate ? formatPercent(astRate.fundingRate) : chalk.gray("-"),
       spreadColor(`${s.maxSpreadAnnual.toFixed(1)}%`), trend,
       s.maxSpreadAnnual >= 5 ? `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}` : chalk.gray("-"),
       formatAvgRate(bestRate?.historicalAvg?.avg8h), formatAvgRate(bestRate?.historicalAvg?.avg24h), formatAvgRate(bestRate?.historicalAvg?.avg7d),
     ];
   });
-  console.log(makeTable(["Symbol", "Pacifica", "Hyperliquid", "Lighter", "Spread", "24h", "Direction", "Avg 8h", "Avg 24h", "Avg 7d"], rows));
+  console.log(makeTable(["Symbol", "Pacifica", "Hyperliquid", "Lighter", "Aster", "Spread", "24h", "Direction", "Avg 8h", "Avg 24h", "Avg 7d"], rows));
   console.log(chalk.gray(`\n  ${snapshot.symbols.length} symbols compared across exchanges.\n`));
 }
 
@@ -374,10 +393,10 @@ export async function handleRates(isJson: () => boolean, opts: { symbol?: string
 
 export async function handleBasisScan(isJson: () => boolean, opts: { minBasis: string; symbol?: string }): Promise<void> {
   if (!isJson()) console.log(chalk.cyan("  Fetching prices for basis calculation...\n"));
-  const [pacRates, hlRates, ltRates] = await Promise.all([fetchPacificaRates(), fetchHyperliquidRates(), fetchLighterRates()]);
+  const [pacRates, hlRates, ltRates, astRates] = await Promise.all([fetchPacificaRates(), fetchHyperliquidRates(), fetchLighterRates(), fetchAsterRates()]);
   const exchangePrices = new Map<string, Map<string, number>>();
   const filterSymbol = opts.symbol?.toUpperCase();
-  for (const r of [...pacRates, ...hlRates, ...ltRates]) {
+  for (const r of [...pacRates, ...hlRates, ...ltRates, ...astRates]) {
     if (r.markPrice <= 0) continue;
     if (filterSymbol && r.symbol.toUpperCase() !== filterSymbol) continue;
     if (!exchangePrices.has(r.symbol)) exchangePrices.set(r.symbol, new Map());
@@ -494,7 +513,7 @@ export async function handleFundingPositions(
     results.sort((a, b) => Math.abs(b.dailyPayment) - Math.abs(a.dailyPayment));
     const tH = results.reduce((s, r) => s + r.hourlyPayment, 0); const tD = results.reduce((s, r) => s + r.dailyPayment, 0); const tN = results.reduce((s, r) => s + r.notionalUsd, 0); const tA = results.reduce((s, r) => s + r.actualNet24h, 0);
     if (isJson()) return printJson(jsonOk({ positions: results.map(r => ({ exchange: r.exchange, symbol: r.symbol, side: r.side, size: r.size, notionalUsd: +r.notionalUsd.toFixed(2), fundingRate: r.fundingRate, annualPct: +r.annualPct.toFixed(2), predicted: { hourly: +r.hourlyPayment.toFixed(6), daily: +r.dailyPayment.toFixed(4) }, actual24h: { received: +r.actualReceived24h.toFixed(6), paid: +r.actualPaid24h.toFixed(6), net: +r.actualNet24h.toFixed(6) }, unrealizedPnl: r.unrealizedPnl })), totals: { predicted: { hourly: +tH.toFixed(6), daily: +tD.toFixed(4) }, actual24h: { net: +tA.toFixed(6) }, notionalUsd: +tN.toFixed(2) }, errors: Object.keys(exchangeErrors).length > 0 ? exchangeErrors : undefined }));
-    const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e.toUpperCase();
+    const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
     console.log(chalk.cyan.bold("  Position Funding Impact\n"));
     const rows = results.map(r => { const sc = r.side === "long" ? chalk.green : chalk.red; const rc = r.fundingRate > 0 ? chalk.red : r.fundingRate < 0 ? chalk.green : chalk.white; const as = r.actualNet24h !== 0 ? (r.actualNet24h > 0 ? chalk.green : chalk.red)(`${r.actualNet24h > 0 ? "+" : ""}$${r.actualNet24h.toFixed(4)}`) : chalk.gray("-"); return [chalk.white.bold(exAbbr(r.exchange)), chalk.white.bold(r.symbol), sc(r.side.toUpperCase()), `$${formatUsd(r.notionalUsd)}`, rc(formatPercent(r.fundingRate)), rc(`${r.annualPct.toFixed(1)}%`), as, formatPnl(r.unrealizedPnl)]; });
     console.log(makeTable(["Ex", "Symbol", "Side", "Notional", "Rate(now)", "Annual(now)", "Actual 24h", "uPnL"], rows));

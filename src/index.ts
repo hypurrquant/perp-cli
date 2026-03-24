@@ -59,7 +59,7 @@ program
   .name("perp")
   .description("Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter)")
   .version(_pkg.version)
-  .option("-e, --exchange <exchange>", `Exchange: pacifica, hyperliquid, lighter (default: ${_defaultExchange})`, _defaultExchange)
+  .option("-e, --exchange <exchange>", `Exchange: pacifica, hyperliquid, lighter, aster (default: ${_defaultExchange})`, _defaultExchange)
   .option("-n, --network <network>", "Network: mainnet or testnet", "mainnet")
   .option("-k, --private-key <key>", "Private key")
   .option("--json", "Output raw JSON (for piping)")
@@ -168,6 +168,13 @@ async function getAdapter(): Promise<ExchangeAdapter> {
         }
       }
       _adapter = _lighterAdapter;
+      break;
+    }
+    case "aster": {
+      const { AsterAdapter } = await import("./exchanges/aster.js");
+      const ast = new AsterAdapter(undefined, undefined, isTestnet);
+      await ast.init();
+      _adapter = ast;
       break;
     }
     default:
@@ -289,6 +296,12 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
       if (!_adapter) _adapter = _lighterAdapter;
       return _lighterAdapter;
     }
+    case "aster": {
+      const { AsterAdapter } = await import("./exchanges/aster.js");
+      const ast = new AsterAdapter(undefined, undefined, isTestnet);
+      await ast.init();
+      return ast;
+    }
     default:
       throw new Error(`Unknown exchange: ${exchange}`);
   }
@@ -354,8 +367,8 @@ program.command("status")
     const { saveFundingSnapshot, getHistoricalRates } = await import("./funding-history.js");
 
     await withJsonErrors(json, async () => {
-      const EX_LIST = ["pacifica", "hyperliquid", "lighter"] as const;
-      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+      const EX_LIST = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
+      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : "AST";
 
       // Fetch balances + positions + spot balances + arb scan in parallel
       type SpotHolding = { token: string; total: string; available: string; held: string; valueUsd: number };
@@ -632,7 +645,7 @@ program.hook("preAction", () => {
 
 // Smart landing page: `perp` with no subcommand
 const rawArgs = process.argv.slice(2);
-const hasSubcommand = rawArgs.some((a) => !a.startsWith("-") && !["pacifica", "hyperliquid", "lighter", "hl", "lt", "pac", "mainnet", "testnet"].includes(a));
+const hasSubcommand = rawArgs.some((a) => !a.startsWith("-") && !["pacifica", "hyperliquid", "lighter", "aster", "hl", "lt", "pac", "ast", "mainnet", "testnet"].includes(a));
 
 if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawArgs.includes("--help") && !rawArgs.includes("-V") && !rawArgs.includes("--version"))) {
   // No subcommand — show smart landing instead of help dump
@@ -666,8 +679,8 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
         console.log(`    ${chalk.green("perp --help")}                   all commands\n`);
       } else {
         // Configured — show exchange status + balance
-        const EX_NAMES = ["pacifica", "hyperliquid", "lighter"] as const;
-        const exLabel = (e: string) => e === "pacifica" ? "Pacifica" : e === "hyperliquid" ? "Hyperliquid" : "Lighter";
+        const EX_NAMES = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
+        const exLabel = (e: string) => e === "pacifica" ? "Pacifica" : e === "hyperliquid" ? "Hyperliquid" : e === "lighter" ? "Lighter" : "Aster";
 
         // Ping + balance in parallel (with 5s timeout to keep landing fast)
         const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
