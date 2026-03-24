@@ -489,14 +489,27 @@ export function registerBotCommands(
   // ── bot run <strategy> <symbol> ──
 
   bot
-    .command("run <strategy> [symbol]")
+    .command("run [strategy] [symbol]")
     .description("Run a strategy (use 'perp bot list-strategies' to see all). Symbol optional for multi-symbol strategies.")
     .option("--config <path>", "YAML/JSON config file")
     .option("--headless", "Run without TUI dashboard")
     .option("--param <key=value>", "Strategy parameter (repeatable)", (val: string, acc: string[]) => [...acc, val], [] as string[])
-    .action(async (strategyName: string, symbol: string | undefined, opts: {
+    .action(async (strategyName: string | undefined, symbol: string | undefined, opts: {
       config?: string; headless?: boolean; param: string[];
     }) => {
+      if (!strategyName) {
+        await import("../bot/engine.js");
+        const { listStrategies: listStrats } = await import("../bot/strategy-registry.js");
+        const available = listStrats();
+        if (isJson()) {
+          printJson(jsonOk({ strategies: available }));
+          return;
+        }
+        console.log(chalk.cyan.bold("\n  Available Strategies:\n"));
+        for (const s of available) console.log(`    ${chalk.green(s)}`);
+        console.log(chalk.gray(`\n  Usage: perp bot run <strategy> [symbol]\n`));
+        return;
+      }
       const sym = symbol?.toUpperCase() || "ALL";
 
       // Strategies that require an explicit symbol

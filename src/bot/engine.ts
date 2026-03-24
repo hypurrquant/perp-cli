@@ -430,6 +430,14 @@ async function getEnrichedSnapshot(
   adapter: ExchangeAdapter,
   symbol: string,
 ): Promise<EnrichedSnapshot> {
+  // Multi-symbol strategies use "ALL" — skip market-specific data
+  if (symbol.toUpperCase() === "ALL") {
+    return {
+      price: 0, high24h: 0, low24h: 0, volume24h: 0,
+      fundingRate: 0, volatility24h: 0, rsi: NaN, spreadPct: 0,
+      klines: [], orderbook: { bids: [], asks: [] }, openInterest: "0",
+    };
+  }
   const base = await getMarketSnapshot(adapter, symbol);
   const [orderbook, klines] = await Promise.all([
     adapter.getOrderbook(symbol).catch(() => ({ bids: [] as [string, string][], asks: [] as [string, string][] })),
