@@ -129,10 +129,10 @@ export function BotDashboard({ initialState, onQuit, onPause, subscribe }: Dashb
   }, [onQuit, exit]);
 
   useInput((input, key) => {
-    if (input === "q" || (key.ctrl && input === "c")) {
+    if (input === "q" || input === "Q" || (key.ctrl && input === "c")) {
       handleQuit();
     }
-    if (input === "p") {
+    if (input === "p" || input === "P") {
       setPaused((v) => !v);
       onPause();
     }
