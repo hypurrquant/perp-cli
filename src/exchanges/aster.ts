@@ -25,6 +25,9 @@ export class AsterAdapter implements ExchangeAdapter {
   private _apiSecret: string;
   private _baseUrl: string;
   private _testnet: boolean;
+  private _marketsCache: ExchangeMarketInfo[] | null = null;
+  private _marketsCacheTime = 0;
+  private static readonly CACHE_TTL = 10_000; // 10 seconds
 
   constructor(apiKey?: string, apiSecret?: string, testnet = false) {
     this._apiKey = apiKey || process.env.ASTER_API_KEY || "";
@@ -59,6 +62,11 @@ export class AsterAdapter implements ExchangeAdapter {
   // ── Market Data ──
 
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
+    // Return cached result if fresh
+    if (this._marketsCache && Date.now() - this._marketsCacheTime < AsterAdapter.CACHE_TTL) {
+      return this._marketsCache;
+    }
+
     const [info, tickers] = await Promise.all([
       this._publicGet("/fapi/v1/exchangeInfo") as Promise<{ symbols?: Array<Record<string, unknown>> }>,
       this._publicGet("/fapi/v1/ticker/24hr") as Promise<Array<Record<string, unknown>>>,
@@ -79,30 +87,12 @@ export class AsterAdapter implements ExchangeAdapter {
     const tradingSymbols = (info?.symbols ?? [])
       .filter((s) => String(s.contractType) === "PERPETUAL" && String(s.status) === "TRADING");
 
-    // Fetch open interest per symbol in parallel (batched to avoid overwhelming the API).
-    // The /fapi/v1/ticker/24hr response does NOT include openInterest — need a separate endpoint.
-    const oiMap = new Map<string, string>();
-    const OI_BATCH = 20;
-    for (let i = 0; i < tradingSymbols.length; i += OI_BATCH) {
-      const batch = tradingSymbols.slice(i, i + OI_BATCH);
-      const results = await Promise.allSettled(
-        batch.map(async (s) => {
-          const sym = String(s.symbol);
-          const res = await this._publicGet("/fapi/v1/openInterest", { symbol: sym }) as Record<string, unknown>;
-          return { sym, oi: String(res?.openInterest ?? "0") };
-        }),
-      );
-      for (const r of results) {
-        if (r.status === "fulfilled") oiMap.set(r.value.sym, r.value.oi);
-      }
-    }
-
-    return tradingSymbols
+    // OI is fetched lazily per symbol (see getMarketInfo) to avoid 300+ API calls
+    const result = tradingSymbols
       .map((s) => {
         const sym = String(s.symbol);
         const ticker = tickerMap.get(sym);
         const premium = premiumMap.get(sym);
-        // Extract max leverage from leverage brackets if available
         const maxLev = Number(s.maxLeverage ?? 50);
 
         return {
@@ -111,10 +101,14 @@ export class AsterAdapter implements ExchangeAdapter {
           indexPrice: String(premium?.indexPrice ?? "0"),
           fundingRate: String(premium?.lastFundingRate ?? "0"),
           volume24h: String(ticker?.quoteVolume ?? ticker?.volume ?? "0"),
-          openInterest: oiMap.get(sym) ?? "0",
+          openInterest: "0",
           maxLeverage: maxLev,
         };
       });
+
+    this._marketsCache = result;
+    this._marketsCacheTime = Date.now();
+    return result;
   }
 
   async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
