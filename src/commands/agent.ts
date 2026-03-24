@@ -119,7 +119,7 @@ export function registerAgentCommands(
         schemaVersion: "2.0",
         cliVersion: _pkg.version,
         generatedAt: new Date().toISOString(),
-        exchanges: ["pacifica", "hyperliquid", "lighter"],
+        exchanges: ["pacifica", "hyperliquid", "lighter", "aster"],
         errorCodes: errorCodeDocs,
         commands: program.commands
           .filter(c => c.name() !== "help")
@@ -143,7 +143,7 @@ export function registerAgentCommands(
         schemaVersion: "2.0",
         cliVersion: _pkg.version,
         generatedAt: new Date().toISOString(),
-        exchanges: ["pacifica", "hyperliquid", "lighter"],
+        exchanges: ["pacifica", "hyperliquid", "lighter", "aster"],
         errorCodes: errorCodeDocs,
         commands: program.commands
           .filter(c => c.name() !== "help" && c.name() !== "schema")
@@ -160,8 +160,8 @@ export function registerAgentCommands(
       printJson(jsonOk({
         name: "perp-cli",
         version: _pkg.version,
-        description: "Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter) with HIP-3 deployed dex support",
-        exchanges: ["pacifica", "hyperliquid", "lighter"],
+        description: "Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter, Aster) with HIP-3 deployed dex support",
+        exchanges: ["pacifica", "hyperliquid", "lighter", "aster"],
         capabilities: [
           {
             category: "market_data",
@@ -292,7 +292,7 @@ export function registerAgentCommands(
         ],
         notes: [
           "Always use --json flag for machine-readable output",
-          "Use -e <exchange> to switch between pacifica, hyperliquid, lighter",
+          "Use -e <exchange> to switch between pacifica, hyperliquid, lighter, aster",
           "Use --dex <name> for HIP-3 deployed perp dexes on Hyperliquid",
           "Use -n testnet for testnet mode",
           "Use --client-id or --auto-id on trade commands for retry safety",

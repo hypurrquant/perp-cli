@@ -660,13 +660,17 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
 
       // ── ASCII banner ──
       const banner = [
-        chalk.cyan("  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"),
-        chalk.cyan("  ┃") + chalk.white.bold("  perp-cli ") + chalk.gray(`v${_pkg.version}`) + " ".repeat(Math.max(0, 32 - _pkg.version.length)) + chalk.cyan("┃"),
-        chalk.cyan("  ┃") + chalk.gray("  Multi-DEX Perpetual Futures               ") + chalk.cyan("┃"),
-        chalk.cyan("  ┃") + chalk.gray("  Pacifica · Hyperliquid · Lighter · Aster   ") + chalk.cyan("┃"),
-        chalk.cyan("  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"),
+        "",
+        chalk.cyan("  ██████╗ ███████╗██████╗ ██████╗      ██████╗██╗     ██╗"),
+        chalk.cyan("  ██╔══██╗██╔════╝██╔══██╗██╔══██╗    ██╔════╝██║     ██║"),
+        chalk.cyan("  ██████╔╝█████╗  ██████╔╝██████╔╝    ██║     ██║     ██║"),
+        chalk.cyan("  ██╔═══╝ ██╔══╝  ██╔══██╗██╔═══╝     ██║     ██║     ██║"),
+        chalk.cyan("  ██║     ███████╗██║  ██║██║          ╚██████╗███████╗██║"),
+        chalk.cyan("  ╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝           ╚═════╝╚══════╝╚═╝"),
+        "",
+        chalk.gray(`  4 exchanges · 19 strategies · v${_pkg.version}`),
       ];
-      console.log("\n" + banner.join("\n"));
+      console.log(banner.join("\n"));
 
       if (!status.hasWallets && !hasEnvKey && !settings.defaultExchange) {
         // Fresh install — onboarding
