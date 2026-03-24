@@ -431,62 +431,78 @@ export class AsterAdapter implements ExchangeAdapter {
     return `${queryString}&signature=${signature}`;
   }
 
+  /** Handle 429 rate limit with retry */
+  private async _handleResponse(res: Response, method: string, path: string, attempt = 0): Promise<unknown> {
+    if (res.status === 429) {
+      if (attempt >= 2) throw new Error(`${method} ${path} rate limited after ${attempt + 1} attempts`);
+      const retryAfter = parseInt(res.headers.get("Retry-After") || "5", 10);
+      const waitMs = Math.min(retryAfter * 1000, 30000);
+      await new Promise(r => setTimeout(r, waitMs));
+      return null; // signal retry
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`${method} ${path} failed (${res.status}): ${text.slice(0, 200)}`);
+    }
+    return res.json();
+  }
+
   private async _publicGet(path: string, params: Record<string, string> = {}): Promise<unknown> {
     const qs = Object.entries(params)
       .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
       .join("&");
     const url = `${this._baseUrl}${path}${qs ? `?${qs}` : ""}`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`GET ${path} failed (${res.status}): ${text.slice(0, 200)}`);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await fetch(url);
+      const result = await this._handleResponse(res, "GET", path, attempt);
+      if (result !== null) return result;
     }
-    return res.json();
+    throw new Error(`GET ${path} failed: max retries exceeded`);
   }
 
   private async _signedGet(path: string, params: Record<string, string> = {}): Promise<unknown> {
     if (this.isReadOnly) throw new Error("No API key configured for Aster. Set ASTER_API_KEY and ASTER_API_SECRET in ~/.perp/.env");
-    const signed = this._sign({ ...params });
-    const url = `${this._baseUrl}${path}?${signed}`;
-    const res = await fetch(url, {
-      headers: { "X-MBX-APIKEY": this._apiKey },
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`GET ${path} failed (${res.status}): ${text.slice(0, 200)}`);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const signed = this._sign({ ...params });
+      const url = `${this._baseUrl}${path}?${signed}`;
+      const res = await fetch(url, {
+        headers: { "X-MBX-APIKEY": this._apiKey },
+      });
+      const result = await this._handleResponse(res, "GET", path, attempt);
+      if (result !== null) return result;
     }
-    return res.json();
+    throw new Error(`GET ${path} failed: max retries exceeded`);
   }
 
   private async _signedPost(path: string, params: Record<string, string> = {}): Promise<unknown> {
     if (this.isReadOnly) throw new Error("No API key configured for Aster. Set ASTER_API_KEY and ASTER_API_SECRET in ~/.perp/.env");
-    const signed = this._sign({ ...params });
-    const res = await fetch(`${this._baseUrl}${path}`, {
-      method: "POST",
-      headers: {
-        "X-MBX-APIKEY": this._apiKey,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: signed,
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`POST ${path} failed (${res.status}): ${text.slice(0, 200)}`);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const signed = this._sign({ ...params });
+      const res = await fetch(`${this._baseUrl}${path}`, {
+        method: "POST",
+        headers: {
+          "X-MBX-APIKEY": this._apiKey,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: signed,
+      });
+      const result = await this._handleResponse(res, "POST", path, attempt);
+      if (result !== null) return result;
     }
-    return res.json();
+    throw new Error(`POST ${path} failed: max retries exceeded`);
   }
 
   private async _signedDelete(path: string, params: Record<string, string> = {}): Promise<unknown> {
     if (this.isReadOnly) throw new Error("No API key configured for Aster. Set ASTER_API_KEY and ASTER_API_SECRET in ~/.perp/.env");
-    const signed = this._sign({ ...params });
-    const res = await fetch(`${this._baseUrl}${path}?${signed}`, {
-      method: "DELETE",
-      headers: { "X-MBX-APIKEY": this._apiKey },
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`DELETE ${path} failed (${res.status}): ${text.slice(0, 200)}`);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const signed = this._sign({ ...params });
+      const res = await fetch(`${this._baseUrl}${path}?${signed}`, {
+        method: "DELETE",
+        headers: { "X-MBX-APIKEY": this._apiKey },
+      });
+      const result = await this._handleResponse(res, "DELETE", path, attempt);
+      if (result !== null) return result;
     }
-    return res.json();
+    throw new Error(`DELETE ${path} failed: max retries exceeded`);
   }
 }
