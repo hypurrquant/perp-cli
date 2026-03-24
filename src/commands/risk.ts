@@ -14,10 +14,20 @@ interface HealthResult {
 
 /** Run health check and return results + render. Exported for use by status --health. */
 export async function runHealthCheck(isJson: () => boolean): Promise<void> {
-      const [pacPing, hlPing, ltPing] = await Promise.all([
+      const pingAster = async (): Promise<{ ok: boolean; latencyMs: number; status: number }> => {
+        const start = Date.now();
+        try {
+          const res = await fetch("https://fapi.asterdex.com/fapi/v1/time");
+          return { ok: res.ok, latencyMs: Date.now() - start, status: res.status };
+        } catch {
+          return { ok: false, latencyMs: Date.now() - start, status: 0 };
+        }
+      };
+      const [pacPing, hlPing, ltPing, astPing] = await Promise.all([
         pingPacifica(),
         pingHyperliquid(),
         pingLighter(),
+        pingAster(),
       ]);
       const toPingResult = (name: string, p: { ok: boolean; latencyMs: number; status: number }): HealthResult => ({
         exchange: name,
@@ -29,6 +39,7 @@ export async function runHealthCheck(isJson: () => boolean): Promise<void> {
         toPingResult("pacifica", pacPing),
         toPingResult("hyperliquid", hlPing),
         toPingResult("lighter", ltPing),
+        toPingResult("aster", astPing),
       ];
 
       const allOk = checks.every(c => c.status === "ok");
