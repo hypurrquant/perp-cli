@@ -143,6 +143,7 @@ export function BotDashboard({ initialState, onQuit, onPause, subscribe }: Dashb
   const bidOrders = state.openOrders.filter((o) => o.side.toLowerCase() === "buy");
   const askOrders = state.openOrders.filter((o) => o.side.toLowerCase() === "sell");
   const hasMultiExchange = (state.exchangeBalances?.length ?? 0) > 1;
+  const isMultiSymbol = state.symbol.toUpperCase() === "ALL";
 
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -163,23 +164,40 @@ export function BotDashboard({ initialState, onQuit, onPause, subscribe }: Dashb
         </Box>
       </Box>
 
-      {/* ── Price Bar ── */}
-      <Box borderStyle="single" borderColor="gray" paddingX={1} flexDirection="row" justifyContent="space-between">
-        <Text>
-          Price: <Text bold color="white">${state.price.toFixed(2)}</Text>
-        </Text>
-        <Text color="gray">
-          Vol24h: <Text color="white">{state.volatility24h.toFixed(1)}%</Text>
-        </Text>
-        <Text color="gray">
-          FR: <Text color={state.fundingRate >= 0 ? "green" : "red"}>
-            {(state.fundingRate * 100).toFixed(4)}%
+      {/* ── Price Bar / Multi-Symbol Bar ── */}
+      {isMultiSymbol ? (
+        <Box borderStyle="single" borderColor="gray" paddingX={1} flexDirection="row" justifyContent="space-between">
+          <Text>
+            Exchanges: <Text bold color="white">{state.exchangeBalances?.length ?? 1}</Text>
           </Text>
-        </Text>
-        <Text color="gray">
-          OI: <Text color="white">{state.openInterest}</Text>
-        </Text>
-      </Box>
+          <Text color="gray">
+            Positions: <Text bold color={state.positions.length > 0 ? "yellow" : "white"}>{state.positions.length}</Text>
+          </Text>
+          <Text color="gray">
+            Total Equity: <Text bold color="white">${(state.exchangeBalances?.reduce((s, e) => s + parseFloat(e.equity), 0) ?? state.equity).toFixed(2)}</Text>
+          </Text>
+          <Text color="gray">
+            PnL: <Text bold color={state.totalPnl >= 0 ? "green" : "red"}>${state.totalPnl.toFixed(2)}</Text>
+          </Text>
+        </Box>
+      ) : (
+        <Box borderStyle="single" borderColor="gray" paddingX={1} flexDirection="row" justifyContent="space-between">
+          <Text>
+            Price: <Text bold color="white">${state.price.toFixed(2)}</Text>
+          </Text>
+          <Text color="gray">
+            Vol24h: <Text color="white">{state.volatility24h.toFixed(1)}%</Text>
+          </Text>
+          <Text color="gray">
+            FR: <Text color={state.fundingRate >= 0 ? "green" : "red"}>
+              {(state.fundingRate * 100).toFixed(4)}%
+            </Text>
+          </Text>
+          <Text color="gray">
+            OI: <Text color="white">{state.openInterest}</Text>
+          </Text>
+        </Box>
+      )}
 
       {/* ── Account ── */}
       <Box marginTop={1} flexDirection="row" justifyContent="space-between">
