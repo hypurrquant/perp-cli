@@ -6,8 +6,7 @@ Complete reference for non-interactive CLI operations. Every command here is saf
 
 ### NEVER use these (interactive, will hang):
 ```
-perp init                    # interactive wizard — asks questions via stdin
-perp wallet setup            # removed, but may appear in old docs
+perp setup                   # interactive wizard — asks questions via stdin (alias: perp init)
 ```
 
 ### ALWAYS use these (non-interactive, agent-safe):
@@ -101,14 +100,16 @@ perp --json wallet set lt 0xKEY        # same key, different exchange binding
 
 | Exchange | Chain | Key Format | Example |
 |----------|-------|-----------|---------|
+| Pacifica | Solana | Base58 string | `5KQwrPbwdL6PhXu...` |
 | Hyperliquid | EVM | Hex with 0x prefix, 66 chars | `0x4c0883a69102937d...` |
 | Lighter | EVM | Hex with 0x prefix, 66 chars | `0x4c0883a69102937d...` |
-| Pacifica | Solana | Base58 string | `5KQwrPbwdL6PhXu...` |
+| Aster | API Key | Hex string | `3971f62b...` |
 
 Aliases for exchange names:
-- `hl` or `hyperliquid`
 - `pac` or `pacifica`
+- `hl` or `hyperliquid`
 - `lt` or `lighter`
+- `aster`
 
 ## Deposit & Withdraw Flows
 
@@ -256,11 +257,11 @@ Error case:
 
 Symbols are auto-resolved by the CLI. **Always use bare symbols** (e.g., `BTC`, `SOL`, `ICP`) — the CLI handles exchange-specific naming automatically:
 
-| Input | Hyperliquid | Pacifica | Lighter |
-|-------|-------------|----------|---------|
-| `ICP` | → `ICP-PERP` | → `ICP` | → `ICP` |
-| `BTC` | → `BTC` | → `BTC` | → `BTC` |
-| `SOL` | → `SOL` | → `SOL` | → `SOL` |
+| Input | Pacifica | Hyperliquid | Lighter | Aster |
+|-------|----------|-------------|---------|-------|
+| `ICP` | → `ICP` | → `ICP-PERP` | → `ICP` | → `ICP` |
+| `BTC` | → `BTC` | → `BTC` | → `BTC` | → `BTC` |
+| `SOL` | → `SOL` | → `SOL` | → `SOL` | → `SOL` |
 
 - `arb scan` returns bare symbols — pass them directly to trade/leverage commands on any exchange.
 - Do NOT manually add `-PERP` suffix — the CLI resolves this automatically.
@@ -269,15 +270,16 @@ Symbols are auto-resolved by the CLI. **Always use bare symbols** (e.g., `BTC`, 
 
 | Exchange | Min Order (notional) | Notes |
 |----------|---------------------|-------|
-| Hyperliquid | **$10** | Rejects orders below $10 notional |
 | Pacifica | ~$1 (varies by symbol) | Lower minimums |
+| Hyperliquid | **$10** | Rejects orders below $10 notional |
 | Lighter | Varies by symbol | Check market info |
+| Aster | Varies by symbol | BNB Chain, API key based |
 
 **`trade check` is advisory only** — it returns `valid: true/false` but does NOT block execution. The exchange itself enforces minimums and will reject with an error if the order is too small.
 
 ## Common Agent Mistakes
 
-1. **Using `perp init`** — interactive, will hang forever. Use `wallet set` instead.
+1. **Using `perp setup`** (alias: `perp init`) — interactive, will hang forever. Use `wallet set` instead.
 2. **Forgetting `--json`** — output becomes unparseable human text.
 3. **Trading with zero balance** — check `account balance` first, tell user to deposit.
 4. **Retrying a trade without checking** — leads to double positions. Always check `account positions` after a trade, even if it seemed to fail.

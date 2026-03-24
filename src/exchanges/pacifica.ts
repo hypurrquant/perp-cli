@@ -34,7 +34,7 @@ export class PacificaAdapter implements ExchangeAdapter {
 
   private ensureSigner(): void {
     if (!this._hasRealKey) {
-      throw new Error("No private key configured. Run: perp init");
+      throw new Error("No private key configured. Run: perp setup");
     }
   }
 
@@ -108,7 +108,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async getBalance(): Promise<ExchangeBalance> {
-    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp init");
+    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     const [info, positions, prices] = await Promise.all([
       this.client.getAccount(this.account),
       this._getPositions(),
@@ -139,7 +139,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async getPositions(): Promise<ExchangePosition[]> {
-    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp init");
+    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     const [positions, prices] = await Promise.all([
       this._getPositions(),
       this._getPrices(),
@@ -183,7 +183,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async getOpenOrders(): Promise<ExchangeOrder[]> {
-    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp init");
+    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     const orders = await this.client.getOrders(this.account);
     return orders.map((o) => {
       const raw = o as unknown as Record<string, unknown>;
@@ -345,7 +345,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async getOrderHistory(limit = 30): Promise<ExchangeOrder[]> {
-    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp init");
+    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     const result = await this.client.getOrderHistory(this.account) as Record<string, unknown>;
     const data = (result.data ?? result.orders ?? []) as Record<string, unknown>[];
     if (!Array.isArray(data)) return [];
@@ -362,7 +362,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async getTradeHistory(limit = 30): Promise<ExchangeTrade[]> {
-    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp init");
+    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     const raw = await this.client.getTradeHistory(this.account);
     const trades = ((raw as Record<string, unknown>).data ?? raw) as Record<string, unknown>[];
     if (!Array.isArray(trades)) return [];
@@ -377,7 +377,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async getFundingPayments(limit = 200): Promise<ExchangeFundingPayment[]> {
-    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp init");
+    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     const raw = await this.client.getFundingAccountHistory(this.account);
     const history = ((raw as Record<string, unknown>).data ?? raw) as Record<string, unknown>[];
     if (!Array.isArray(history)) return [];

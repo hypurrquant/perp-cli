@@ -212,7 +212,7 @@ export function registerFundsCommands(
         try {
           pk = await loadPrivateKey("hyperliquid");
         } catch (err) {
-          throw new Error(`Private key not configured for Hyperliquid. Run: perp init`);
+          throw new Error(`Private key not configured for Hyperliquid. Run: perp setup`);
         }
         const wallet = new ethers.Wallet(pk);
 

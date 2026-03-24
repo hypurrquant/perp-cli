@@ -273,7 +273,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
 
   private ensureAddress(): void {
     if (!this._address) {
-      throw new Error("No private key configured — account data unavailable. Run: perp init");
+      throw new Error("No private key configured — account data unavailable. Run: perp setup");
     }
   }
 
@@ -482,7 +482,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    */
   private ensureSigner(): void {
     if (!this._evmSigner) {
-      throw new Error("No private key configured. Run: perp init");
+      throw new Error("No private key configured. Run: perp setup");
     }
   }
 

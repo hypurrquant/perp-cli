@@ -593,6 +593,18 @@ export function registerBotCommands(
     .command("example")
     .description("Print example YAML bot configs")
     .action(() => {
+      if (isJson()) {
+        printJson(jsonOk({
+          examples: [
+            { name: "eth-grid-bot", type: "grid", file: "~/.perp/bots/eth-grid.yaml", config: { exchange: "hyperliquid", symbol: "ETH", strategy: { type: "grid", grids: 15, size: 0.1, side: "neutral", range_mode: "auto", range_pct: 3, rebalance: true, leverage: 5 }, entry_conditions: [{ type: "volatility_below", value: 5 }], exit_conditions: [{ type: "volatility_above", value: 10 }, { type: "time_after", value: 86400 }], risk: { max_drawdown: 50, max_daily_loss: 30, pause_after_loss_sec: 300 } } },
+            { name: "eth-dca-dip", type: "dca", file: "~/.perp/bots/eth-dca.yaml", config: { exchange: "hyperliquid", symbol: "ETH", strategy: { type: "dca", amount: 0.01, interval_sec: 3600, total_orders: 24 }, entry_conditions: [{ type: "price_below", value: 2500 }], exit_conditions: [{ type: "price_above", value: 2800 }], risk: { max_drawdown: 100, max_daily_loss: 50 } } },
+            { name: "funding-arb", type: "funding-arb", file: "~/.perp/bots/funding-arb.yaml", config: { exchange: "hyperliquid", symbol: "ETH", strategy: { type: "funding-arb", min_spread: 20, close_spread: 5, size_usd: 100, max_positions: 3, exchanges: ["pacifica", "hyperliquid"] }, entry_conditions: [{ type: "always", value: 0 }], risk: { max_drawdown: 200, max_daily_loss: 50 } } },
+          ],
+          usage: ["perp bot start ~/.perp/bots/eth-grid.yaml", "perp bot start ~/.perp/bots/eth-grid.yaml --background"],
+        }));
+        return;
+      }
+
       console.log(chalk.cyan.bold("\n  Example Bot Configs\n"));
 
       console.log(chalk.white.bold("  1. Grid Bot (auto range)"));

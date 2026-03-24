@@ -1,16 +1,16 @@
 ---
 name: perp-cli
-description: "Multi-DEX perpetual futures trading CLI for Pacifica (Solana), Hyperliquid (EVM), and Lighter (Ethereum). Use when user asks to: trade perps, check funding rates, scan arbitrage (perp-perp or spot-perp), delta-neutral strategies, bridge USDC, manage positions/orders, deposit/withdraw, spot+perp hedge, HIP-3 DEX trading, or mentions perp-cli, hypurrquant, Pacifica, Hyperliquid, Lighter, HyperEVM, funding arb, U-token (UBTC/UETH/USOL)."
+description: "Multi-DEX perpetual futures trading CLI for Pacifica (Solana), Hyperliquid (EVM), Lighter (Ethereum), and Aster (BNB Chain). Use when user asks to: trade perps, check funding rates, scan arbitrage (perp-perp or spot-perp), delta-neutral strategies, bridge USDC, manage positions/orders, deposit/withdraw, spot+perp hedge, HIP-3 DEX trading, or mentions perp-cli, hypurrquant, Pacifica, Hyperliquid, Lighter, Aster, HyperEVM, funding arb, U-token (UBTC/UETH/USOL)."
 allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*)"
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.6.1"
+  version: "0.7.7"
 ---
 
 # perp-cli Agent Guide
 
-Multi-DEX perpetual futures CLI + MCP server — Pacifica (Solana), Hyperliquid (HyperEVM), Lighter (Ethereum).
+Multi-DEX perpetual futures CLI + MCP server — Pacifica (Solana), Hyperliquid (HyperEVM), Lighter (Ethereum), Aster (BNB Chain).
 
 [![Glama MCP server](https://glama.ai/mcp/servers/hypurrquant/perp-cli/badges/score.svg)](https://glama.ai/mcp/servers/hypurrquant/perp-cli)
 
@@ -34,14 +34,14 @@ Multi-DEX perpetual futures CLI + MCP server — Pacifica (Solana), Hyperliquid 
 1. **Always use `--json`** on every command.
 2. **Always use `--dry-run`** before any mutating trade (then execute without it after user confirms).
 3. **Always use `--fields`** to reduce output when you only need specific data (saves tokens).
-4. **NEVER use `perp init`** — interactive, will hang.
+4. **NEVER use `perp setup`** (alias: `perp init`) — interactive, will hang.
 5. **NEVER trade without user confirmation.**
 6. **NEVER read ~/.perp/.env or key files.**
 
 ## Install
 
 ```bash
-perp --version 2>/dev/null  # check if exists (must be >= 0.6.1)
+perp --version 2>/dev/null  # check if exists (must be >= 0.7.7)
 npm install -g perp-cli@latest 2>/dev/null || npx -y perp-cli@latest --json --version
 ```
 
@@ -49,14 +49,15 @@ Use `perp` if global install works, otherwise `npx -y perp-cli@latest` as prefix
 
 ## Global Flags
 
-`--json` (required) | `-e hl/pac/lt` (exchange) | `--dex <name>` (HIP-3) | `-w <wallet>` | `--dry-run` | `--fields <f1,f2>` | `--ndjson`
+`--json` (required) | `-e hl/pac/lt/aster` (exchange) | `--dex <name>` (HIP-3) | `-w <wallet>` | `--dry-run` | `--fields <f1,f2>` | `--ndjson`
 
 ## Wallet Setup
 
 ```bash
-perp --json wallet set hl <EVM_KEY>       # Hyperliquid
 perp --json wallet set pac <SOLANA_KEY>   # Pacifica
+perp --json wallet set hl <EVM_KEY>       # Hyperliquid
 perp --json wallet set lt <EVM_KEY>       # Lighter (API key auto-generated)
+perp --json wallet set aster <API_KEY>    # Aster (BNB Chain)
 perp --json wallet show                   # verify
 ```
 
@@ -96,7 +97,7 @@ perp --json arb exec BTC spot:lt pac 50     # spot buy(LT) + perp short(PAC)
 perp --json arb close ETH                   # sells spot + buys back perp
 ```
 
-Spot exchanges: HL, LT. Pacifica is perp-only.
+Spot exchanges: HL, LT. Pacifica and Aster are perp-only.
 
 ## Bot Engine (19 Strategies)
 
@@ -114,7 +115,7 @@ perp bot quick-dca <symbol> <side> <amount> <interval>
 perp bot quick-arb                                    # quick funding arb
 ```
 
-**Strategies:** simple-mm, engine-mm, avellaneda-mm, regime-mm, grid-mm, liquidation-mm, momentum-breakout, mean-reversion, aggressive-taker, funding-arb, funding-auto, basis-arb, hedge-agent, rfq-agent, claude-agent, grid, dca, twap, apex
+**Strategies:** grid, dca, funding-arb, funding-arb-v2, funding-auto, basis-arb, simple-mm, engine-mm, avellaneda-mm, regime-mm, grid-mm, liquidation-mm, momentum-breakout, mean-reversion, aggressive-taker, hedge-agent, rfq-agent, claude-agent, apex
 
 **Flags:** `--dry-run` (simulate without executing), `--headless` (no TUI, log only)
 

@@ -38,7 +38,7 @@ async function getOrCreateAdapter(exchange: string): Promise<ExchangeAdapter> {
   if (adapters.has(key)) return adapters.get(key)!;
 
   const pk = await tryLoadPrivateKey(key as Exchange);
-  if (!pk) throw new Error(`No private key configured for ${exchange}. Run: perp init`);
+  if (!pk) throw new Error(`No private key configured for ${exchange}. Run: perp setup`);
 
   let adapter: ExchangeAdapter;
   switch (key) {

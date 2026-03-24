@@ -62,7 +62,7 @@ export async function loadPrivateKey(exchange: Exchange, pkOverride?: string, wa
 
   throw new Error(
     `No private key configured for ${exchange}.\n\n` +
-      `  Quick start:  ${chalk.cyan("perp init")}\n\n` +
+      `  Quick start:  ${chalk.cyan("perp setup")}\n\n` +
       `  Or manually:\n` +
       `    perp wallet set ${exchange} <key>\n` +
       `    ${envMap[exchange][0]}=<key> (env var)\n` +

@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dw/perp-cli.svg)](https://www.npmjs.com/package/perp-cli)
 [![license](https://img.shields.io/npm/l/perp-cli.svg)](https://github.com/hypurrquant/perp-cli/blob/main/LICENSE)
 
-Multi-DEX perpetual futures CLI — **Pacifica** (Solana), **Hyperliquid** (HyperEVM), **Lighter** (Ethereum).
+Multi-DEX perpetual futures CLI — **Pacifica** (Solana), **Hyperliquid** (HyperEVM), **Lighter** (Ethereum), **Aster** (BNB Chain).
 
 ```bash
 npm install -g perp-cli       # global install
@@ -16,7 +16,7 @@ npx -y perp-cli --json portfolio
 
 ## Features
 
-- **3 Exchanges** — trade, bridge, arbitrage across Pacifica, Hyperliquid, Lighter
+- **4 Exchanges** — trade, bridge, arbitrage across Pacifica, Hyperliquid, Lighter, Aster
 - **Funding Rate Arb** — perp-perp + spot-perp scan & one-command dual-leg execution
 - **Portfolio** — single call returns balances, positions, risk level across all exchanges
 - **Funds** — deposit, withdraw, CCTP bridge, internal transfer in one group
@@ -28,9 +28,13 @@ npx -y perp-cli --json portfolio
 
 ```bash
 # Set exchange keys
-perp wallet set hl <EVM_KEY>         # Hyperliquid
 perp wallet set pac <SOLANA_KEY>     # Pacifica
+perp wallet set hl <EVM_KEY>         # Hyperliquid
 perp wallet set lt <EVM_KEY>         # Lighter (API key auto-generated)
+perp wallet set aster <API_KEY>      # Aster (BNB Chain)
+
+# Or interactive setup wizard
+perp setup
 
 # Verify
 perp wallet show
@@ -64,6 +68,8 @@ Same EVM key works for both Hyperliquid and Lighter.
 | `jobs` | Background job management (tmux) |
 | `alerts` | Telegram funding rate alerts with background daemon |
 | `agent` | Schema introspection, capabilities, health check |
+| `setup` | Interactive setup wizard (alias: `init`) |
+| `status` | Unified dashboard: balances, positions, arb opps |
 
 ## Core Commands
 
@@ -159,7 +165,7 @@ perp alerts stop                    # stop background daemon
 
 Setup flow: BotFather token → bot validation → send `/start` to bot → auto-detect chat ID → test message.
 
-Exchange flag: `-e hyperliquid` / `-e pacifica` / `-e lighter` (aliases: `hl`, `pac`, `lt`).
+Exchange flag: `-e hyperliquid` / `-e pacifica` / `-e lighter` / `-e aster` (aliases: `hl`, `pac`, `lt`).
 
 Global flags: `--json`, `--fields <f>`, `--ndjson`, `--dry-run`, `--dex <name>` (HIP-3), `-w, --wallet <name>`.
 
@@ -186,8 +192,10 @@ Optional: add keys for trading and account data:
 ```json
 {
   "env": {
+    "PACIFICA_PRIVATE_KEY": "your-solana-key",
     "HYPERLIQUID_PRIVATE_KEY": "your-evm-key",
-    "PACIFICA_PRIVATE_KEY": "your-solana-key"
+    "LIGHTER_PRIVATE_KEY": "your-evm-key",
+    "ASTER_API_KEY": "your-api-key"
   }
 }
 ```

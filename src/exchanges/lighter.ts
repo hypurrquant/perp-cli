@@ -372,7 +372,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getBalance(): Promise<ExchangeBalance> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp init");
+    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     const acct = await this.fetchAccount();
     if (!acct) return { equity: "0", available: "0", marginUsed: "0", unrealizedPnl: "0" };
 
@@ -392,7 +392,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getPositions(): Promise<ExchangePosition[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp init");
+    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     const acct = await this.fetchAccount();
     if (!acct) return [];
 
@@ -437,7 +437,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getOpenOrders(): Promise<ExchangeOrder[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp init");
+    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     if (this._accountIndex < 0 || this._readOnly) return [];
     try {
       // Check if account has any orders first
@@ -723,7 +723,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getOrderHistory(limit = 30): Promise<ExchangeOrder[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp init");
+    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     const raw = await this._getOrderHistoryRaw() as Record<string, unknown>;
     const orders = (raw.orders ?? []) as Record<string, unknown>[];
     return orders.slice(0, limit).map((o) => ({
@@ -739,7 +739,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getTradeHistory(limit = 30): Promise<ExchangeTrade[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp init");
+    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     const raw = await this._getTradeHistoryRaw(limit) as Record<string, unknown>;
     const trades = (raw.trades ?? []) as Record<string, unknown>[];
     return trades.slice(0, limit).map((t) => ({
@@ -753,7 +753,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getFundingPayments(limit = 200): Promise<ExchangeFundingPayment[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp init");
+    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     const raw = await this._getPositionFundingRaw() as Record<string, unknown>;
     const items = (raw.funding ?? []) as Record<string, unknown>[];
     return items.slice(0, limit).map((f) => ({
@@ -1125,7 +1125,7 @@ export class LighterAdapter implements ExchangeAdapter {
    */
   async setupApiKey(apiKeyIndex = 4): Promise<{ privateKey: string; publicKey: string }> {
     if (!this._evmSigner) {
-      throw new Error("No EVM private key configured. Run: perp init");
+      throw new Error("No EVM private key configured. Run: perp setup");
     }
     if (this._accountIndex < 0) {
       throw new Error("Account index not available. Call init() first or set LIGHTER_ACCOUNT_INDEX.");

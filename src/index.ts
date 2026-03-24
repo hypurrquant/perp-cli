@@ -675,12 +675,12 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
       if (!status.hasWallets && !hasEnvKey && !settings.defaultExchange) {
         // Fresh install — onboarding
         console.log(chalk.yellow.bold("\n  ⚡ Get started:\n"));
-        console.log(`    ${chalk.cyan("perp wallet set <exchange> <key>")}`);
-        console.log(chalk.gray(`\n  Or explore without a wallet:`));
-        console.log(`    ${chalk.green("perp market list")}              available markets`);
-        console.log(`    ${chalk.green("perp -e hl market list")}         Hyperliquid markets`);
-        console.log(`    ${chalk.green("perp arb scan")}                 funding rate arbitrage`);
-        console.log(`    ${chalk.green("perp --help")}                   all commands\n`);
+        console.log(`    ${chalk.cyan("perp setup")}                      setup wizard`);
+        console.log(chalk.gray(`\n  Explore without a wallet:`));
+        console.log(`    ${chalk.green("perp market mid BTC")}            quick price check`);
+        console.log(`    ${chalk.green("perp arb scan")}                  funding rate arbitrage`);
+        console.log(`    ${chalk.green("perp market list")}               available markets`);
+        console.log(`    ${chalk.green("perp --help")}                    all commands\n`);
       } else {
         // Configured — show exchange status + balance
         const EX_NAMES = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
@@ -746,12 +746,13 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
           console.log(`    ${chalk.white.bold("Total".padEnd(16))} ${chalk.white.bold(`$${totalEquity.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)}${totalPositions > 0 ? chalk.yellow(` ${totalPositions} pos`) : ""}`);
         }
 
-        console.log(chalk.white.bold("\n  Commands:"));
-        console.log(`    ${chalk.green("perp portfolio")}     balances + positions + risk`);
-        console.log(`    ${chalk.green("perp status")}        full dashboard`);
-        console.log(`    ${chalk.green("perp arb scan")}      funding rate arbitrage`);
-        console.log(`    ${chalk.green("perp dashboard")}     live web monitoring`);
-        console.log(`    ${chalk.green("perp --help")}        all commands\n`);
+        console.log(chalk.white.bold("\n  Quick:"));
+        console.log(`    ${chalk.green("perp portfolio")}             balances + positions + risk`);
+        console.log(`    ${chalk.green("perp arb scan")}              funding arbitrage opportunities`);
+        console.log(`    ${chalk.green("perp arb status")}            open arb positions + PnL`);
+        console.log(`    ${chalk.green("perp status")}                full dashboard`);
+        console.log(`    ${chalk.green("perp dashboard")}             live web monitoring`);
+        console.log(`    ${chalk.green("perp --help")}                all commands\n`);
       }
     } catch {
       program.help();

@@ -538,7 +538,7 @@ export function registerWalletCommands(program: Command, isJson: () => boolean) 
 
       if (results.length === 0) {
         console.log(chalk.gray("  No keys configured."));
-        console.log(chalk.gray(`  Run ${chalk.cyan("perp init")} or ${chalk.cyan("perp wallet set <exchange> <key>")}\n`));
+        console.log(chalk.gray(`  Run ${chalk.cyan("perp setup")} or ${chalk.cyan("perp wallet set <exchange> <key>")}\n`));
         return;
       }
 
@@ -669,9 +669,43 @@ export function registerWalletCommands(program: Command, isJson: () => boolean) 
           .map(([ex, wn]) => ({ exchange: ex, ...store.wallets[wn] }))
           .filter((e) => e.address);
 
+        // Fallback to .env-based wallets when no named wallets are active
         if (activeEntries.length === 0) {
-          console.error(chalk.gray("\n  No active wallets. Use 'perp wallet use <name>' to set one.\n"));
-          process.exit(1);
+          const stored = loadEnvFile();
+          const envEntries: { exchange: string; chain: "solana" | "evm"; address: string }[] = [];
+          for (const [exchange, info] of Object.entries(EXCHANGE_ENV_MAP)) {
+            if (info.chain === "apikey") continue; // API key exchanges don't have on-chain addresses
+            const key = stored[info.envKey] || process.env[info.envKey];
+            if (key) {
+              const { valid, address } = await validateKey(info.chain, key);
+              if (valid) envEntries.push({ exchange, chain: info.chain, address });
+            }
+          }
+
+          if (envEntries.length === 0) {
+            if (isJson()) {
+              printJson({ ok: false, error: { code: "INVALID_PARAMS", message: "No wallets configured. Run 'perp setup' or 'perp wallet set <exchange> <key>'." }, meta: { timestamp: new Date().toISOString() } });
+            } else {
+              console.error(chalk.gray("\n  No wallets configured. Run 'perp setup' or 'perp wallet set <exchange> <key>'.\n"));
+            }
+            process.exit(1);
+          }
+
+          for (const we of envEntries) {
+            if (!isJson()) console.log(chalk.cyan.bold(`\n  ${we.exchange} (${we.address.slice(0, 8)}...)`));
+            const balances = we.chain === "solana"
+              ? await getSolanaBalances(we.address, opts.testnet)
+              : await getEvmBalances(we.address, opts.testnet);
+
+            if (isJson()) { printJson(jsonOk({ exchange: we.exchange, address: we.address, balances })); continue; }
+
+            const rows = balances.map((b) => [
+              chalk.white.bold(b.token), b.balance, b.usdValue || chalk.gray("-"),
+            ]);
+            console.log(makeTable(["Token", "Balance", "USD Value"], rows));
+          }
+          console.log();
+          return;
         }
 
         for (const ae of activeEntries) {
