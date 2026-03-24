@@ -508,8 +508,7 @@ export function registerBotCommands(
       if (sym === "ALL" && symbolRequiredStrategies.includes(strategyName)) {
         console.error(chalk.red(`\n  Error: The '${strategyName}' strategy requires a <symbol> argument.`));
         console.error(chalk.gray(`  Usage: perp bot run ${strategyName} <symbol>\n`));
-        process.exitCode = 1;
-        return;
+        return process.exit(1);
       }
 
       // Load or build config
@@ -563,7 +562,7 @@ export function registerBotCommands(
         console.error(chalk.gray(`\n  Available strategies:`));
         for (const s of available) console.error(chalk.gray(`    - ${s}`));
         console.error();
-        return;
+        return process.exit(1);
       }
 
       const adapter = await getAdapter();

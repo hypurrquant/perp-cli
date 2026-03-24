@@ -344,7 +344,7 @@ function printFundingExchangeStatus(snapshot: FundingRateSnapshot): void {
 }
 
 function printDetailedComparison(comparison: SymbolFundingComparison): void {
-  const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : "LT";
+  const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : e === "aster" ? "AST" : e.toUpperCase();
   console.log(chalk.cyan.bold(`  ${comparison.symbol} Funding Rate Comparison\n`));
   console.log(`  Mark Price: $${formatUsd(comparison.bestMarkPrice)}\n`);
   for (const r of comparison.rates) {

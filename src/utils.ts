@@ -11,9 +11,14 @@ export function symbolMatch(candidate: string, target: string): boolean {
 export function formatUsd(value: string | number): string {
   const num = Number(value);
   if (isNaN(num)) return String(value);
+  // Use more decimals for sub-cent values so they don't show as $0.00
+  const absNum = Math.abs(num);
+  const maxDecimals = absNum > 0 && absNum < 0.01 ? 6
+    : absNum < 1 ? 4
+    : 2;
   return num.toLocaleString("en-US", {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: maxDecimals,
   });
 }
 
