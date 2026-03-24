@@ -171,9 +171,31 @@ export class FundingArbStrategy implements Strategy {
         if (longAdapter && shortAdapter) {
           const price = ratesByExchange.get(best.longExchange)?.get(best.symbol)?.price ?? 0;
           if (price > 0) {
+            // Balance check — reduce size to fit available balance
+            let targetSizeUsd = params.size_usd;
+            try {
+              const [longBal, shortBal] = await Promise.all([
+                longAdapter.getBalance(),
+                shortAdapter.getBalance(),
+              ]);
+              const longAvail = parseFloat(longBal.available);
+              const shortAvail = parseFloat(shortBal.available);
+              const minAvail = Math.min(longAvail, shortAvail);
+              // Use at most 80% of available balance per leg
+              const maxAffordable = minAvail * 0.8;
+              if (maxAffordable < 10) {
+                ctx.log(`  [ARB] Skip ${best.symbol}: insufficient balance ($${minAvail.toFixed(2)} available, need $10+ per leg)`);
+                return [];
+              }
+              if (targetSizeUsd > maxAffordable) {
+                ctx.log(`  [ARB] Size reduced $${targetSizeUsd} → $${maxAffordable.toFixed(0)} (limited by balance $${minAvail.toFixed(2)})`);
+                targetSizeUsd = Math.floor(maxAffordable);
+              }
+            } catch { /* non-critical, proceed with original size */ }
+
             // Liquidity check
             const liq = await checkArbLiquidity(
-              longAdapter, shortAdapter, best.symbol, params.size_usd, 0.5,
+              longAdapter, shortAdapter, best.symbol, targetSizeUsd, 0.5,
               (msg) => ctx.log(`  ${msg}`),
             );
             if (!liq.viable) return [];
