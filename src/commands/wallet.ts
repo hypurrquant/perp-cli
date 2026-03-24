@@ -427,10 +427,10 @@ export function registerWalletCommands(program: Command, isJson: () => boolean) 
       if (!info) {
         if (isJson()) {
           const { jsonError } = await import("../utils.js");
-          return printJson(jsonError("INVALID_PARAMS", `Unknown exchange: ${exchange}. Use: pacifica, hyperliquid, lighter (or hl, pac, lt)`));
+          return printJson(jsonError("INVALID_PARAMS", `Unknown exchange: ${exchange}. Use: pacifica, hyperliquid, lighter, aster (or hl, pac, lt, ast)`));
         }
         console.error(chalk.red(`\n  Unknown exchange: ${exchange}`));
-        console.error(chalk.gray(`  Use: pacifica, hyperliquid, lighter (or hl, pac, lt)\n`));
+        console.error(chalk.gray(`  Use: pacifica, hyperliquid, lighter, aster (or hl, pac, lt, ast)\n`));
         process.exit(1);
       }
 
@@ -511,7 +511,7 @@ export function registerWalletCommands(program: Command, isJson: () => boolean) 
     .description("Show configured wallets with public addresses")
     .action(async () => {
       const stored = loadEnvFile();
-      const entries: { name: string; chain: "solana" | "evm"; key: string; source: string }[] = [];
+      const entries: { name: string; chain: "solana" | "evm" | "apikey"; key: string; source: string }[] = [];
 
       for (const [exchange, info] of Object.entries(EXCHANGE_ENV_MAP)) {
         const fromFile = stored[info.envKey];

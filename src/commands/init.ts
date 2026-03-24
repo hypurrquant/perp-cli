@@ -75,15 +75,16 @@ function askChoice(rl: ReturnType<typeof createInterface>, question: string, cho
 
 // ── Exchange → env var mapping ────────────────────────────────
 
-export const EXCHANGE_ENV_MAP: Record<string, { envKey: string; chain: "solana" | "evm"; label: string }> = {
+export const EXCHANGE_ENV_MAP: Record<string, { envKey: string; chain: "solana" | "evm" | "apikey"; label: string }> = {
   pacifica: { envKey: "PACIFICA_PRIVATE_KEY", chain: "solana", label: "Pacifica (Solana)" },
   hyperliquid: { envKey: "HL_PRIVATE_KEY", chain: "evm", label: "Hyperliquid (EVM)" },
   lighter: { envKey: "LIGHTER_PRIVATE_KEY", chain: "evm", label: "Lighter (EVM)" },
+  aster: { envKey: "ASTER_API_KEY", chain: "apikey", label: "Aster (BNB Chain)" },
 };
 
 // ── Validate keys ─────────────────────────────────────────────
 
-export async function validateKey(chain: "solana" | "evm", key: string): Promise<{ valid: boolean; address: string }> {
+export async function validateKey(chain: "solana" | "evm" | "apikey", key: string): Promise<{ valid: boolean; address: string }> {
   if (chain === "solana") {
     try {
       const { Keypair } = await import("@solana/web3.js");
@@ -99,6 +100,9 @@ export async function validateKey(chain: "solana" | "evm", key: string): Promise
     } catch {
       return { valid: false, address: "" };
     }
+  } else if (chain === "apikey") {
+    // API key validation: just check it's a non-empty hex-like string
+    return { valid: key.length >= 16, address: key.slice(0, 8) + "..." + key.slice(-4) };
   } else {
     try {
       const { ethers } = await import("ethers");

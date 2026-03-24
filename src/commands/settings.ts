@@ -6,7 +6,7 @@ import type { ExchangeAdapter } from "../exchanges/index.js";
 import { ENV_FILE, loadEnvFile, setEnvVar, EXCHANGE_ENV_MAP, validateKey } from "./init.js";
 
 // Resolve exchange alias → env var key
-function resolveEnvKey(nameOrKey: string): { envKey: string; chain: "solana" | "evm" } | null {
+function resolveEnvKey(nameOrKey: string): { envKey: string; chain: "solana" | "evm" | "apikey" } | null {
   // Direct env var name
   const upper = nameOrKey.toUpperCase();
   for (const info of Object.values(EXCHANGE_ENV_MAP)) {
@@ -16,7 +16,7 @@ function resolveEnvKey(nameOrKey: string): { envKey: string; chain: "solana" | "
   const info = EXCHANGE_ENV_MAP[nameOrKey.toLowerCase()];
   if (info) return { envKey: info.envKey, chain: info.chain };
   // Common aliases
-  const aliases: Record<string, string> = { hl: "hyperliquid", pac: "pacifica", lt: "lighter" };
+  const aliases: Record<string, string> = { hl: "hyperliquid", pac: "pacifica", lt: "lighter", ast: "aster" };
   const aliased = aliases[nameOrKey.toLowerCase()];
   if (aliased) return resolveEnvKey(aliased);
   return null;
@@ -268,7 +268,7 @@ export function registerSettingsCommands(
     .description("Show current configuration")
     .action(async () => {
       const stored = loadEnvFile();
-      const entries: { name: string; chain: "solana" | "evm"; key: string; source: string }[] = [];
+      const entries: { name: string; chain: "solana" | "evm" | "apikey"; key: string; source: string }[] = [];
 
       for (const [exchange, info] of Object.entries(EXCHANGE_ENV_MAP)) {
         const fromFile = stored[info.envKey];
