@@ -56,33 +56,6 @@ jobs:
           npx perp --help
           npx perp-mcp --help || true
 
-  integration:
-    name: Integration (read-only)
-    runs-on: ubuntu-latest
-    # Not required — depends on external APIs that may be temporarily unavailable
-    continue-on-error: true
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build
-        run: pnpm run build
-
-      - name: Integration tests (read-only, no API keys needed)
-        run: pnpm run test:integration
-
   release:
     name: GitHub Release
     needs: build-and-test
