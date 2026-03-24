@@ -200,21 +200,6 @@ export async function runBot(
         // Get market data (enriched for strategy use)
         const snapshot = await getEnrichedSnapshot(adapter, config.symbol);
 
-        // Update equity
-        try {
-          const bal = await adapter.getBalance();
-          state.equity = parseFloat(bal.equity);
-          if (state.equity > state.peakEquity) state.peakEquity = state.equity;
-          // Reset daily baseline at day boundary
-          const today = new Date().toISOString().slice(0, 10);
-          if (today !== state.dailyStartDate) {
-            state.dailyStartEquity = state.equity;
-            state.dailyStartDate = today;
-          }
-          state.dailyPnl = state.equity - state.dailyStartEquity;
-          state.totalPnl = state.equity - state.initialEquity;
-        } catch { /* non-critical */ }
-
         const context = {
           equity: state.equity,
           startTime: state.startTime,
@@ -310,18 +295,40 @@ export async function runBot(
           }
         }
 
-        // ── Emit state update for TUI / JSON ──
+        // ── Fetch balances + emit state update for TUI / JSON ──
         const [positions, openOrders, exchangeBalances] = await Promise.all([
           extraAdapters ? fetchAllPositions(adapter, config.symbol, extraAdapters) : fetchPositions(adapter, config.symbol, adapter.name),
           fetchOpenOrders(adapter, config.symbol),
-          extraAdapters ? fetchExchangeBalances(adapter, extraAdapters) : Promise.resolve(undefined),
+          fetchExchangeBalances(adapter, extraAdapters),
         ]);
-        const tuiState = buildTuiState(state, config, snapshot, positions, openOrders, strategyCtx, exchangeBalances);
 
-        if (mode === "tui") {
-          tuiEmitter.emitState(tuiState);
-        } else if (mode === "json") {
-          console.log(JSON.stringify(tuiState));
+        // Update equity using the already-fetched balance (avoids a redundant getBalance() call)
+        try {
+          const primaryBal = exchangeBalances.find(b => b.exchange === adapter.name);
+          if (primaryBal) {
+            state.equity = parseFloat(primaryBal.equity);
+            if (state.equity > state.peakEquity) state.peakEquity = state.equity;
+            // Reset daily baseline at day boundary
+            const today = new Date().toISOString().slice(0, 10);
+            if (today !== state.dailyStartDate) {
+              state.dailyStartEquity = state.equity;
+              state.dailyStartDate = today;
+            }
+            state.dailyPnl = state.equity - state.dailyStartEquity;
+            state.totalPnl = state.equity - state.initialEquity;
+          }
+        } catch { /* non-critical */ }
+
+        if (mode === "tui" || mode === "json") {
+          const tuiState = buildTuiState(state, config, snapshot, positions, openOrders, strategyCtx, exchangeBalances);
+
+          if (mode === "tui") {
+            tuiEmitter.emitState(tuiState);
+          } else {
+            console.log(JSON.stringify(tuiState));
+          }
+        } else {
+          effectiveLog(`  tick: phase=${state.phase} equity=$${state.equity.toFixed(2)}`);
         }
 
         // Update job state

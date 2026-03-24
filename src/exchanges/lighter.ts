@@ -40,7 +40,9 @@ export class LighterAdapter implements ExchangeAdapter {
   private _testnet: boolean;
   private _readOnly: boolean;
   private _evmSigner?: EvmSigner;
-  // In-memory cache removed — using file-based cache (src/cache.ts) for cross-process dedup
+  private _marketsCache: ExchangeMarketInfo[] | null = null;
+  private _marketsCacheTime = 0;
+  private static readonly CACHE_TTL = 10_000;
 
   /**
    * @param evmKey    EVM private key (0x-prefixed, 32 bytes) — for deposits & key registration
@@ -302,6 +304,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
+    if (this._marketsCache && Date.now() - this._marketsCacheTime < LighterAdapter.CACHE_TTL) return this._marketsCache;
     const markets: ExchangeMarketInfo[] = [];
 
     try {
@@ -336,13 +339,13 @@ export class LighterAdapter implements ExchangeAdapter {
       }
     } catch { /* non-critical */ }
 
-    return markets;
+    this._marketsCache = markets; this._marketsCacheTime = Date.now(); return markets;
   }
 
   private async fetchAccount(): Promise<Record<string, unknown> | null> {
     if (!this._address) return null;
-    const { fetchAndCache, TTL_ACCOUNT } = await import("../cache.js");
-    return fetchAndCache(`acct:lt:account:${this._address}`, TTL_ACCOUNT, async () => {
+    const { withCache, TTL_ACCOUNT } = await import("../cache.js");
+    return withCache(`acct:lt:account:${this._address}`, TTL_ACCOUNT, async () => {
       const res = await this.restGet("/account", {
         by: "l1_address",
         value: this._address,

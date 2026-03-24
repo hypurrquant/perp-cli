@@ -27,7 +27,9 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   /** HIP-3 deployed perp dex name. Empty string = native (validator) perps. */
   private _dex: string = "";
   private static _lastNonce = 0;
-  // In-memory cache removed — using file-based cache (src/cache.ts) for cross-process dedup
+  private _marketsCache: ExchangeMarketInfo[] | null = null;
+  private _marketsCacheTime = 0;
+  private static readonly CACHE_TTL = 10_000;
 
   constructor(privateKey?: string, testnet = false) {
     // Disable WebSocket in SDK — we use REST for all info calls and raw
@@ -196,6 +198,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
+    if (this._marketsCache && Date.now() - this._marketsCacheTime < HyperliquidAdapter.CACHE_TTL) return this._marketsCache;
     let universe: Record<string, unknown>[];
     let ctxs: Record<string, unknown>[];
     let mids: Record<string, string> = {};
@@ -224,7 +227,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       });
     }
 
-    return universe.map((asset: Record<string, unknown>, i: number) => {
+    const result = universe.map((asset: Record<string, unknown>, i: number) => {
       const ctx = (ctxs[i] ?? {}) as Record<string, unknown>;
       const sym = String(asset.name);
       return {
@@ -237,6 +240,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         maxLeverage: Number(asset.maxLeverage ?? 50),
       };
     });
+    this._marketsCache = result; this._marketsCacheTime = Date.now(); return result;
   }
 
   async getOrderbook(symbol: string) {
@@ -277,12 +281,12 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     }
   }
 
-  /** Always fetches live clearinghouseState, writes result to shared cache for dashboard */
+  /** Read-through cached clearinghouseState — returns cached data if fresh */
   private async _getClearinghouseState(): Promise<Record<string, unknown>> {
     this.ensureAddress();
-    const { fetchAndCache, TTL_ACCOUNT } = await import("../cache.js");
+    const { withCache, TTL_ACCOUNT } = await import("../cache.js");
     const key = this._dex ? `acct:hl:chs:${this._address}:${this._dex}` : `acct:hl:chs:${this._address}`;
-    return fetchAndCache(key, TTL_ACCOUNT, async () => {
+    return withCache(key, TTL_ACCOUNT, async () => {
       const state = this._dex
         ? await this._infoPost({ type: "clearinghouseState", user: this._address, dex: this._dex }) as Record<string, unknown>
         : await this.sdk.info.perpetuals.getClearinghouseState(this._address);

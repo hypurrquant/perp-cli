@@ -22,7 +22,9 @@ export class PacificaAdapter implements ExchangeAdapter {
   private _hasRealKey: boolean;
   private account: string;
   private signMessage: (msg: Uint8Array) => Promise<Uint8Array>;
-  // In-memory caches removed — using file-based cache (src/cache.ts) for cross-process dedup
+  private _marketsCache: ExchangeMarketInfo[] | null = null;
+  private _marketsCacheTime = 0;
+  private static readonly CACHE_TTL = 10_000;
 
   constructor(keypair: Keypair, network: Network = "mainnet", builderCode?: string, hasRealKey = true) {
     this._solanaSigner = new LocalSolanaSigner(keypair);
@@ -54,15 +56,15 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   private async _getPrices() {
-    const { fetchAndCache, TTL_ACCOUNT } = await import("../cache.js");
-    return fetchAndCache(`acct:pac:prices:${this.account.slice(0, 8)}`, TTL_ACCOUNT, () =>
+    const { withCache, TTL_ACCOUNT } = await import("../cache.js");
+    return withCache(`acct:pac:prices:${this.account.slice(0, 8)}`, TTL_ACCOUNT, () =>
       this.client.getPrices(),
     );
   }
 
   private async _getPositions() {
-    const { fetchAndCache, TTL_ACCOUNT } = await import("../cache.js");
-    return fetchAndCache(`acct:pac:positions:${this.account.slice(0, 8)}`, TTL_ACCOUNT, () =>
+    const { withCache, TTL_ACCOUNT } = await import("../cache.js");
+    return withCache(`acct:pac:positions:${this.account.slice(0, 8)}`, TTL_ACCOUNT, () =>
       this.client.getPositions(this.account),
     );
   }
@@ -80,12 +82,13 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
+    if (this._marketsCache && Date.now() - this._marketsCacheTime < PacificaAdapter.CACHE_TTL) return this._marketsCache;
     const [markets, prices] = await Promise.all([
       this.client.getInfo(),
       this._getPrices(),
     ]);
     const priceMap = new Map(prices.map((p) => [p.symbol, p]));
-    return markets.map((m) => {
+    const result = markets.map((m) => {
       const p = priceMap.get(m.symbol);
       return {
         symbol: m.symbol,
@@ -97,6 +100,7 @@ export class PacificaAdapter implements ExchangeAdapter {
         maxLeverage: m.max_leverage,
       };
     });
+    this._marketsCache = result; this._marketsCacheTime = Date.now(); return result;
   }
 
   async getOrderbook(symbol: string) {
