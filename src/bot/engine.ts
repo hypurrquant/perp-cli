@@ -126,7 +126,7 @@ export async function runBot(
   let paused = false;
 
   // Wrap log for TUI/JSON modes
-  const effectiveLog: BotLog = mode === "json"
+  let effectiveLog: BotLog = mode === "json"
     ? () => {} // JSON mode suppresses console log; NDJSON emitted per tick
     : mode === "tui"
       ? (msg: string) => tuiEmitter.emitLog(msg)
@@ -148,7 +148,7 @@ export async function runBot(
       tuiUnmount = result.unmount;
     } catch {
       // Fallback to headless if TUI fails (e.g., non-TTY)
-      // mode stays as-is but we just use the original log
+      effectiveLog = log;
     }
   }
 
@@ -295,6 +295,7 @@ export async function runBot(
             effectiveLog(`  Pausing ${config.risk.pause_after_loss_sec}s after loss`);
             state.phase = "paused";
             await sleep(config.risk.pause_after_loss_sec * 1000);
+            // Data will be refreshed on the next loop iteration (re-fetches snapshot + equity)
             state.phase = "monitoring";
             effectiveLog(`  Resuming monitoring...`);
           } else if (state.riskBreached) {
@@ -430,21 +431,18 @@ async function getEnrichedSnapshot(
   symbol: string,
 ): Promise<EnrichedSnapshot> {
   const base = await getMarketSnapshot(adapter, symbol);
-  const [orderbook, klines, markets] = await Promise.all([
+  const [orderbook, klines] = await Promise.all([
     adapter.getOrderbook(symbol).catch(() => ({ bids: [] as [string, string][], asks: [] as [string, string][] })),
     adapter.getKlines(symbol, "1h", Date.now() - 24 * 60 * 60 * 1000, Date.now()).catch(() => []),
-    adapter.getMarkets().catch(() => []),
   ]);
-  const symUp = symbol.toUpperCase();
-  const market = markets.find(m => m.symbol.toUpperCase() === symUp || m.symbol.toUpperCase() === symUp + "-PERP");
-  return { ...base, klines, orderbook, openInterest: market?.openInterest ?? "0" };
+  return { ...base, klines, orderbook, openInterest: "0" };
 }
 
 // ── Utils ──
 
-/** Count fill-producing actions (market orders and limit orders) */
+/** Count fill-producing actions (all order placements) */
 function countFills(actions: StrategyAction[]): number {
-  return actions.filter(a => a.type === "place_order" && a.orderType === "market").length;
+  return actions.filter(a => a.type === "place_order").length;
 }
 
 function logStatus(log: BotLog, state: BotState, snapshot: MarketSnapshot, phase: string) {
@@ -554,7 +552,7 @@ async function fetchOpenOrders(adapter: ExchangeAdapter, symbol: string): Promis
 function buildTuiState(
   state: BotState,
   config: BotConfig,
-  snapshot: { price: number; volatility24h: number; fundingRate: number; volume24h: number },
+  snapshot: { price: number; volatility24h: number; fundingRate: number; volume24h: number; openInterest?: string },
   positions: import("./tui/index.js").Position[],
   openOrders: import("./tui/index.js").OpenOrder[],
   strategyCtx: StrategyContext,
@@ -586,7 +584,7 @@ function buildTuiState(
     exchange: config.exchange,
     price: snapshot.price,
     volume24h: snapshot.volume24h ?? 0,
-    openInterest: "0",
+    openInterest: snapshot.openInterest ?? "0",
     fundingRate: snapshot.fundingRate,
     volatility24h: snapshot.volatility24h,
     positions,

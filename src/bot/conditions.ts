@@ -66,7 +66,7 @@ export async function getMarketSnapshot(
   const m = markets.find(mk => mk.symbol.toUpperCase() === symbol.toUpperCase());
 
   if (!m) {
-    return { price: 0, high24h: 0, low24h: 0, volume24h: 0, fundingRate: 0, volatility24h: 0, rsi: NaN, spreadPct: 0 };
+    throw new Error(`Market "${symbol}" not found on ${adapter.name}`);
   }
 
   const price = parseFloat(m.markPrice);
@@ -173,8 +173,7 @@ export function evaluateCondition(
       return elapsed > val;
     }
 
-    // Custom exit conditions (not standard ConditionType but used in exit logic)
-    case "max_drawdown" as string:
+    case "max_drawdown":
       return (context.peakEquity - context.equity) > val;
 
     default:

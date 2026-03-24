@@ -4,6 +4,7 @@ import type { ExchangeAdapter } from "../../exchanges/index.js";
 import { registerStrategy } from "../strategy-registry.js";
 import { checkArbLiquidity } from "../../liquidity.js";
 import { computeMatchedSize, reconcileArbFills } from "../../arb-sizing.js";
+import { computeAnnualSpread } from "../../funding.js";
 
 interface ArbOpportunity {
   symbol: string;
@@ -12,6 +13,14 @@ interface ArbOpportunity {
   longRate: number;
   shortRate: number;
   spread: number; // annualized %
+}
+
+interface ArbOpenPosition {
+  symbol: string;
+  longExchange: string;
+  shortExchange: string;
+  entrySpread: number;
+  size: string;
 }
 
 export class FundingArbStrategy implements Strategy {
@@ -40,14 +49,15 @@ export class FundingArbStrategy implements Strategy {
     this._config = ctx.config;
     const params = this.params;
     ctx.state.set("arbRunning", true);
+    ctx.state.set("arbOpenPositions", [] as ArbOpenPosition[]);
     ctx.state.set("arbPositions", 0);
-    ctx.log(`  [ARB] Funding arb ready | spread >= ${params.min_spread}% | size $${params.size_usd}`);
+    ctx.log(`  [ARB] Funding arb ready | spread >= ${params.min_spread}% | close < ${params.close_spread}% | size $${params.size_usd}`);
     ctx.log(`  [ARB] Exchanges: ${params.exchanges.join(", ")}`);
   }
 
   async onTick(ctx: StrategyContext, _snapshot: EnrichedSnapshot): Promise<StrategyAction[]> {
     const params = this.params;
-    const arbPositions = ctx.state.get("arbPositions") as number;
+    const openPositions = ctx.state.get("arbOpenPositions") as ArbOpenPosition[];
 
     // Get extra adapters from context state (set by engine)
     const extraAdapters = ctx.state.get("extraAdapters") as Map<string, ExchangeAdapter> | undefined;
@@ -73,7 +83,43 @@ export class FundingArbStrategy implements Strategy {
       ratesByExchange.set(name, map);
     }
 
-    // Find opportunities
+    // ── Check existing positions for close_spread ──
+    const toClose: ArbOpenPosition[] = [];
+    for (const pos of openPositions) {
+      const longRate = ratesByExchange.get(pos.longExchange)?.get(pos.symbol)?.rate;
+      const shortRate = ratesByExchange.get(pos.shortExchange)?.get(pos.symbol)?.rate;
+      if (longRate === undefined || shortRate === undefined) continue;
+
+      const currentSpread = computeAnnualSpread(shortRate, pos.shortExchange, longRate, pos.longExchange);
+      if (currentSpread < params.close_spread) {
+        ctx.log(`  [ARB] Closing ${pos.symbol}: spread ${currentSpread.toFixed(1)}% < close_spread ${params.close_spread}% (entry: ${pos.entrySpread.toFixed(1)}%)`);
+        const longAdapter = adapters.get(pos.longExchange);
+        const shortAdapter = adapters.get(pos.shortExchange);
+        if (longAdapter && shortAdapter) {
+          try {
+            await Promise.all([
+              longAdapter.marketOrder(pos.symbol, "sell", pos.size),
+              shortAdapter.marketOrder(pos.symbol, "buy", pos.size),
+            ]);
+            toClose.push(pos);
+            ctx.log(`  [ARB] Closed ${pos.symbol} position`);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            ctx.log(`  [ARB] Close failed for ${pos.symbol}: ${msg}`);
+          }
+        }
+      }
+    }
+
+    // Remove closed positions
+    if (toClose.length > 0) {
+      const remaining = openPositions.filter(p => !toClose.includes(p));
+      ctx.state.set("arbOpenPositions", remaining);
+      ctx.state.set("arbPositions", remaining.length);
+    }
+
+    // ── Find new opportunities ──
+    const arbPositions = (ctx.state.get("arbOpenPositions") as ArbOpenPosition[]).length;
     const exchangeNames = [...ratesByExchange.keys()];
     const opportunities: ArbOpportunity[] = [];
 
@@ -94,8 +140,7 @@ export class FundingArbStrategy implements Strategy {
       }
 
       if (minExchange && maxExchange && minExchange !== maxExchange) {
-        const { computeAnnualSpread: cas } = await import("../../funding.js");
-        const spread = cas(maxRate, maxExchange, minRate, minExchange);
+        const spread = computeAnnualSpread(maxRate, maxExchange, minRate, minExchange);
         if (spread >= params.min_spread) {
           opportunities.push({
             symbol: sym,
@@ -179,8 +224,18 @@ export class FundingArbStrategy implements Strategy {
                 ctx.log(`  [ARB] WARNING: Fill reconciliation failed: ${reconMsg}`);
               }
 
-              ctx.state.set("arbPositions", arbPositions + 1);
-              ctx.log(`  [ARB] Position opened! (${arbPositions + 1}/${params.max_positions})`);
+              // Track position in array
+              const currentPositions = ctx.state.get("arbOpenPositions") as ArbOpenPosition[];
+              currentPositions.push({
+                symbol: best.symbol,
+                longExchange: best.longExchange,
+                shortExchange: best.shortExchange,
+                entrySpread: best.spread,
+                size: matched.size,
+              });
+              ctx.state.set("arbOpenPositions", currentPositions);
+              ctx.state.set("arbPositions", currentPositions.length);
+              ctx.log(`  [ARB] Position opened! (${currentPositions.length}/${params.max_positions})`);
 
               // Return noop -- we already executed directly via adapters
               // (arb requires multi-adapter coordination, can't be expressed as single-adapter actions)
@@ -200,15 +255,38 @@ export class FundingArbStrategy implements Strategy {
   }
 
   async onStop(ctx: StrategyContext): Promise<StrategyAction[]> {
-    // NOTE (M1/M6): close_spread monitoring is not yet implemented.
-    // Opened arb positions are tracked in arbPositions counter but are never
-    // automatically closed when spread narrows below close_spread. Full
-    // implementation requires storing per-position metadata (symbol, legs,
-    // sizes) and re-checking spread on each tick.
-    ctx.log(`  [ARB] WARNING: close_spread monitoring not implemented — open positions must be closed manually`);
+    const openPositions = ctx.state.get("arbOpenPositions") as ArbOpenPosition[] | undefined;
+    const extraAdapters = ctx.state.get("extraAdapters") as Map<string, ExchangeAdapter> | undefined;
+
+    // Close all open arb positions
+    if (openPositions && openPositions.length > 0) {
+      const adapters = new Map<string, ExchangeAdapter>();
+      adapters.set(ctx.adapter.name.toLowerCase(), ctx.adapter);
+      if (extraAdapters) {
+        for (const [name, a] of extraAdapters) adapters.set(name, a);
+      }
+
+      for (const pos of openPositions) {
+        const longAdapter = adapters.get(pos.longExchange);
+        const shortAdapter = adapters.get(pos.shortExchange);
+        if (longAdapter && shortAdapter) {
+          try {
+            ctx.log(`  [ARB] Closing ${pos.symbol} on stop (${pos.size})`);
+            await Promise.all([
+              longAdapter.marketOrder(pos.symbol, "sell", pos.size),
+              shortAdapter.marketOrder(pos.symbol, "buy", pos.size),
+            ]);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            ctx.log(`  [ARB] Close on stop failed for ${pos.symbol}: ${msg}`);
+          }
+        }
+      }
+      ctx.state.set("arbOpenPositions", []);
+      ctx.state.set("arbPositions", 0);
+    }
 
     // Cancel on extra adapters directly (M2: was only cancelling on primary adapter)
-    const extraAdapters = ctx.state.get("extraAdapters") as Map<string, ExchangeAdapter> | undefined;
     if (extraAdapters) {
       for (const [, a] of extraAdapters) {
         try { await a.cancelAllOrders(); } catch { /* best effort */ }

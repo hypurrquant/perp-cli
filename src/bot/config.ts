@@ -16,6 +16,7 @@ export type ConditionType =
   | "balance_above"
   | "balance_below"
   | "time_after"        // cron-like or timestamp
+  | "max_drawdown"      // drawdown exceeded threshold
   | "always";           // always true (start immediately)
 
 export interface Condition {
@@ -230,7 +231,7 @@ export function quickGridConfig(opts: {
     },
     entry_conditions: [{ type: "always", value: 0 }],
     exit_conditions: [
-      { type: "max_drawdown" as ConditionType, value: opts.maxDrawdown },
+      { type: "max_drawdown", value: opts.maxDrawdown },
       ...(opts.maxRuntime ? [{ type: "time_after" as ConditionType, value: opts.maxRuntime }] : []),
     ],
     risk: { ...DEFAULT_RISK, max_drawdown: opts.maxDrawdown },
@@ -264,7 +265,7 @@ export function quickDCAConfig(opts: {
     },
     entry_conditions: entryConds,
     exit_conditions: [
-      { type: "max_drawdown" as ConditionType, value: opts.maxDrawdown },
+      { type: "max_drawdown", value: opts.maxDrawdown },
     ],
     risk: { ...DEFAULT_RISK, max_drawdown: opts.maxDrawdown },
     monitor_interval_sec: opts.intervalSec,
