@@ -394,12 +394,15 @@ export class FundingArbStrategy implements Strategy {
     opportunities.sort((a, b) => b.spread - a.spread);
 
     if (opportunities.length > 0) {
-      const top = opportunities.slice(0, 3);
-      for (const opp of top) {
-        if (opp.mode === "spot-perp") {
-          ctx.log(`  [ARB] ${opp.symbol}: ${opp.spread.toFixed(1)}% spread [spot-perp] (short ${opp.shortExchange} ${(opp.shortRate * 100).toFixed(4)}%)`);
-        } else {
-          ctx.log(`  [ARB] ${opp.symbol}: ${opp.spread.toFixed(1)}% spread (long ${opp.longExchange} ${(opp.longRate * 100).toFixed(4)}% / short ${opp.shortExchange} ${(opp.shortRate * 100).toFixed(4)}%)`);
+      // Only log opportunities when there's room for new positions
+      if (arbPositions < params.max_positions) {
+        const top = opportunities.slice(0, 3);
+        for (const opp of top) {
+          if (opp.mode === "spot-perp") {
+            ctx.log(`  [ARB] ${opp.symbol}: ${opp.spread.toFixed(1)}% spread [spot-perp] (short ${opp.shortExchange} ${(opp.shortRate * 100).toFixed(4)}%)`);
+          } else {
+            ctx.log(`  [ARB] ${opp.symbol}: ${opp.spread.toFixed(1)}% spread (long ${opp.longExchange} ${(opp.longRate * 100).toFixed(4)}% / short ${opp.shortExchange} ${(opp.shortRate * 100).toFixed(4)}%)`);
+          }
         }
       }
 
