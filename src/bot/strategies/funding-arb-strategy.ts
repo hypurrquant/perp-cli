@@ -143,14 +143,16 @@ export class FundingArbStrategy implements Strategy {
           }
 
           const nonUsdc = spotBalances.filter(b => Number(b.total) > 0 && !b.token.toUpperCase().startsWith("USDC"));
+          ctx.log(`  [ARB] ${name} spot balances: ${nonUsdc.map(b => `${b.token}=${b.total}`).join(", ") || "none"}`);
           if (nonUsdc.length === 0) continue;
 
           const perpPositions = positionsByExchange.get(name) ?? [];
           for (const perp of perpPositions) {
             const perpKey = `${name}:${perp.symbol}`;
-            if (used.has(perpKey)) continue;
+            if (used.has(perpKey)) { ctx.log(`  [ARB] ${perpKey} already matched cross-exchange, skip spot-perp`); continue; }
             const base = perp.symbol.replace(/-PERP$/, "").toUpperCase();
             const spotBal = nonUsdc.find(b => b.token.toUpperCase() === base);
+            ctx.log(`  [ARB] ${name} perp ${perp.symbol}(${perp.side}) → base=${base}, spotMatch=${spotBal ? spotBal.token : "none"}`);
             if (spotBal && perp.side === "short") {
               recovered.push({ symbol: base, longExchange: `${name}-spot`, shortExchange: name, entrySpread: 0, size: perp.size, mode: "spot-perp" });
               used.add(perpKey);
@@ -408,7 +410,10 @@ export class FundingArbStrategy implements Strategy {
 
       // Auto-execute: try each opportunity until one succeeds
       if (arbPositions < params.max_positions) {
+        // Skip symbols already in open positions
+        const openSymbols = new Set((ctx.state.get("arbOpenPositions") as ArbOpenPosition[]).map(p => p.symbol.toUpperCase()));
         for (const best of opportunities) {
+          if (openSymbols.has(best.symbol.toUpperCase())) continue;
           if (best.mode === "spot-perp") {
             const opened = await this.openSpotPerp(best, adapters, ctx);
             if (opened) return [{ type: "noop" }];
