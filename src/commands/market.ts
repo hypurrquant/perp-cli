@@ -22,11 +22,11 @@ export function registerMarketCommands(
       const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
 
       const HEADERS = ["Symbol", "Mark", "Index", "Funding", "24h Vol", "OI", "Max Lev"];
-      const marketRow = (m: { symbol: string; markPrice: string; indexPrice: string; fundingRate: string; volume24h: string; openInterest: string; maxLeverage: number }) => [
+      const marketRow = (m: { symbol: string; markPrice: string; indexPrice: string; fundingRate: string | null; volume24h: string; openInterest: string; maxLeverage: number }) => [
         chalk.white.bold(m.symbol),
         `$${formatUsd(m.markPrice)}`,
         `$${formatUsd(m.indexPrice)}`,
-        formatPercent(m.fundingRate),
+        m.fundingRate != null ? formatPercent(m.fundingRate) : chalk.gray("N/A"),
         `$${formatUsd(m.volume24h)}`,
         `$${formatUsd(m.openInterest)}`,
         String(m.maxLeverage) + "x",
@@ -34,7 +34,7 @@ export function registerMarketCommands(
 
       // Multi-exchange mode
       if (!explicitExchange && getAdapterForExchange) {
-        const grouped: Record<string, { symbol: string; markPrice: string; indexPrice: string; fundingRate: string; volume24h: string; openInterest: string; maxLeverage: number }[]> = {};
+        const grouped: Record<string, { symbol: string; markPrice: string; indexPrice: string; fundingRate: string | null; volume24h: string; openInterest: string; maxLeverage: number }[]> = {};
         const errors: Record<string, string> = {};
 
         await Promise.all(EXCHANGES.map(async (ex) => {
@@ -111,15 +111,15 @@ export function registerMarketCommands(
     .action(async () => {
       const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
       const PRICE_HEADERS = ["Symbol", "Mark", "Index", "Funding"];
-      const priceRow = (m: { symbol: string; markPrice: string; indexPrice: string; fundingRate: string }) => [
+      const priceRow = (m: { symbol: string; markPrice: string; indexPrice: string; fundingRate: string | null }) => [
         chalk.white.bold(m.symbol),
         `$${formatUsd(m.markPrice)}`,
         `$${formatUsd(m.indexPrice)}`,
-        formatPercent(m.fundingRate),
+        m.fundingRate != null ? formatPercent(m.fundingRate) : chalk.gray("N/A"),
       ];
 
       if (!explicitExchange && getAdapterForExchange) {
-        const grouped: Record<string, { symbol: string; markPrice: string; indexPrice: string; fundingRate: string }[]> = {};
+        const grouped: Record<string, { symbol: string; markPrice: string; indexPrice: string; fundingRate: string | null }[]> = {};
         const errors: Record<string, string> = {};
 
         await Promise.all(EXCHANGES.map(async (ex) => {
@@ -189,7 +189,7 @@ export function registerMarketCommands(
       console.log(chalk.cyan.bold(`\n  ${m.symbol} on ${adapter.name}\n`));
       console.log(`  Mark Price:     $${formatUsd(m.markPrice)}`);
       console.log(`  Index Price:    $${formatUsd(m.indexPrice)}`);
-      console.log(`  Funding Rate:   ${formatPercent(m.fundingRate)}`);
+      console.log(`  Funding Rate:   ${m.fundingRate != null ? formatPercent(m.fundingRate) : chalk.gray("N/A")}`);
       console.log(`  24h Volume:     $${formatUsd(m.volume24h)}`);
       console.log(`  Open Interest:  $${formatUsd(m.openInterest)}`);
       console.log(`  Max Leverage:   ${m.maxLeverage}x`);

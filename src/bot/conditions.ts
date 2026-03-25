@@ -70,7 +70,7 @@ export async function getMarketSnapshot(
   }
 
   const price = parseFloat(m.markPrice);
-  const fundingRate = parseFloat(m.fundingRate);
+  const fundingRate = parseFloat(m.fundingRate ?? "0");
   const volume24h = parseFloat(m.volume24h);
 
   // Try to get kline data for 24h high/low + RSI

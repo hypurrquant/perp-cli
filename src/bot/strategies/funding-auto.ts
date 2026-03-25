@@ -191,7 +191,7 @@ class FundingAutoStrategy implements Strategy {
           const sym = normalizeSymbol(raw);
           const price = parseFloat(m.markPrice);
           map.set(sym, {
-            rate: parseFloat(m.fundingRate),
+            rate: m.fundingRate != null ? parseFloat(m.fundingRate) : NaN,
             price,
             exchange: name,
           });

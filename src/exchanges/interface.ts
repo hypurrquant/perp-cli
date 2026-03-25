@@ -7,7 +7,7 @@ export interface ExchangeMarketInfo {
   symbol: string;
   markPrice: string;
   indexPrice: string;
-  fundingRate: string;
+  fundingRate: string | null;  // null = rate unavailable (don't assume 0)
   volume24h: string;
   openInterest: string;
   maxLeverage: number;

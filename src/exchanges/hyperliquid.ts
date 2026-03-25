@@ -234,7 +234,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         symbol: sym,
         markPrice: String(ctx.markPx ?? mids[sym] ?? "0"),
         indexPrice: String(ctx.oraclePx ?? "0"),
-        fundingRate: String(ctx.funding ?? "0"),
+        fundingRate: ctx.funding != null ? String(ctx.funding) : null,
         volume24h: String(ctx.dayNtlVlm ?? "0"),
         openInterest: String(ctx.openInterest ?? "0"),
         maxLeverage: Number(asset.maxLeverage ?? 50),

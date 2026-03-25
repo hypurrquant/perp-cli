@@ -103,7 +103,7 @@ export class AsterAdapter implements ExchangeAdapter {
           symbol: this._fromApi(sym),
           markPrice: String(premium?.markPrice ?? ticker?.lastPrice ?? "0"),
           indexPrice: String(premium?.indexPrice ?? "0"),
-          fundingRate: String(premium?.lastFundingRate ?? "0"),
+          fundingRate: premium?.lastFundingRate != null ? String(premium.lastFundingRate) : null,
           volume24h: String(ticker?.quoteVolume ?? ticker?.volume ?? "0"),
           openInterest: "0",
           maxLeverage: maxLev,

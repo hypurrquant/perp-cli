@@ -75,7 +75,7 @@ export class FundingArbV2Strategy implements Strategy {
         const map = new Map<string, { rate: number; price: number }>();
         for (const m of markets) {
           map.set(m.symbol.toUpperCase(), {
-            rate: parseFloat(m.fundingRate),
+            rate: m.fundingRate != null ? parseFloat(m.fundingRate) : NaN,
             price: parseFloat(m.markPrice),
           });
         }

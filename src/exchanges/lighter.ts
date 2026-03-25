@@ -308,30 +308,34 @@ export class LighterAdapter implements ExchangeAdapter {
     const markets: ExchangeMarketInfo[] = [];
 
     try {
-      const res = await this.restGet("/orderBookDetails", {}) as {
-        order_book_details?: Array<{
-          symbol: string;
-          market_id: number;
-          last_trade_price?: number;
-          open_interest?: number | string;
-          daily_base_token_volume?: number | string;
-          daily_quote_token_volume?: number | string;
-          default_initial_margin_fraction?: number;
-          min_initial_margin_fraction?: number;
-          market_type?: string;
-        }>;
-      };
+      // Fetch order book details and funding rates in parallel
+      const [obRes, fundingRates] = await Promise.all([
+        this.restGet("/orderBookDetails", {}) as Promise<{
+          order_book_details?: Array<{
+            symbol: string;
+            market_id: number;
+            last_trade_price?: number;
+            open_interest?: number | string;
+            daily_base_token_volume?: number | string;
+            daily_quote_token_volume?: number | string;
+            default_initial_margin_fraction?: number;
+            min_initial_margin_fraction?: number;
+            market_type?: string;
+          }>;
+        }>,
+        this.getFundingRates().catch(() => new Map<string, { rate: string; markPrice: string }>()),
+      ]);
 
-      for (const d of res.order_book_details ?? []) {
+      for (const d of obRes.order_book_details ?? []) {
         if (d.market_type !== "perp") continue;
-        // max_leverage from min_initial_margin_fraction (e.g. 400 = 4% margin = 25x)
         const imf = d.min_initial_margin_fraction ?? d.default_initial_margin_fraction ?? 500;
         const maxLev = imf > 0 ? Math.floor(10000 / imf) : 50;
+        const fr = fundingRates.get(d.symbol);
         markets.push({
           symbol: d.symbol,
-          markPrice: String(d.last_trade_price ?? 0),
+          markPrice: fr?.markPrice ?? String(d.last_trade_price ?? 0),
           indexPrice: String(d.last_trade_price ?? 0),
-          fundingRate: "0", // funding rates require auth
+          fundingRate: fr?.rate ?? null,
           volume24h: String(d.daily_quote_token_volume ?? 0),
           openInterest: String(d.open_interest ?? 0),
           maxLeverage: maxLev,

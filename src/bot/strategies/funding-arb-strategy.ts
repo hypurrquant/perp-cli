@@ -399,113 +399,113 @@ export class FundingArbStrategy implements Strategy {
         }
       }
 
-      // Auto-execute if under position limit
-      if (arbPositions < params.max_positions && opportunities.length > 0) {
-        const best = opportunities[0];
+      // Auto-execute: try each opportunity until one succeeds
+      if (arbPositions < params.max_positions) {
+        for (const best of opportunities) {
+          if (best.mode === "spot-perp") {
+            const opened = await this.openSpotPerp(best, adapters, ctx);
+            if (opened) return [{ type: "noop" }];
+            continue;
+          }
 
-        if (best.mode === "spot-perp") {
-          await this.openSpotPerp(best, adapters, ctx);
-        } else {
           const longAdapter = adapters.get(best.longExchange);
           const shortAdapter = adapters.get(best.shortExchange);
+          if (!longAdapter || !shortAdapter) continue;
 
-          if (longAdapter && shortAdapter) {
-            const price = ratesByExchange.get(best.longExchange)?.get(best.symbol)?.price ?? 0;
-            if (price > 0) {
-              // Balance check
-              let targetSizeUsd = params.size_usd;
-              try {
-                const [longBal, shortBal] = await Promise.all([
-                  longAdapter.getBalance(),
-                  shortAdapter.getBalance(),
+          const price = ratesByExchange.get(best.longExchange)?.get(best.symbol)?.price ?? 0;
+          if (price <= 0) continue;
+
+          // Balance check
+          let targetSizeUsd = params.size_usd;
+          try {
+            const [longBal, shortBal] = await Promise.all([
+              longAdapter.getBalance(),
+              shortAdapter.getBalance(),
+            ]);
+            const longAvail = parseFloat(longBal.available);
+            const shortAvail = parseFloat(shortBal.available);
+            const minAvail = Math.min(longAvail, shortAvail);
+            const maxAffordable = minAvail * 0.8;
+            if (maxAffordable < 10) {
+              ctx.log(`  [ARB] Skip ${best.symbol}: insufficient balance ($${minAvail.toFixed(2)} available)`);
+              continue;
+            }
+            if (targetSizeUsd > maxAffordable) {
+              ctx.log(`  [ARB] Size reduced $${targetSizeUsd} → $${maxAffordable.toFixed(0)} (limited by balance $${minAvail.toFixed(2)})`);
+              targetSizeUsd = Math.floor(maxAffordable);
+            }
+          } catch { /* non-critical, proceed with original size */ }
+
+          // Liquidity check
+          const liq = await checkArbLiquidity(
+            longAdapter, shortAdapter, best.symbol, targetSizeUsd, 0.5,
+            (msg) => ctx.log(`  ${msg}`),
+          );
+          if (!liq.viable) continue;
+
+          // Compute matched size
+          let matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange);
+          if (!matched) {
+            ctx.log(`  [ARB] Skip ${best.symbol}: can't compute matched size (min notional or precision issue)`);
+            continue;
+          }
+
+          try {
+            ctx.log(`  [ARB] Opening: ${matched.size} ${best.symbol} on both legs ($${matched.notional.toFixed(0)}/leg, slippage ~${liq.longSlippage.toFixed(2)}%/${liq.shortSlippage.toFixed(2)}%)`);
+            try {
+              await Promise.all([
+                longAdapter.marketOrder(best.symbol, "buy", matched.size),
+                shortAdapter.marketOrder(best.symbol, "sell", matched.size),
+              ]);
+            } catch (orderErr) {
+              const errMsg = orderErr instanceof Error ? orderErr.message : String(orderErr);
+              const lotMatch = errMsg.match(/not a multiple of lot size (\d+(?:\.\d+)?)/);
+              if (lotMatch) {
+                const lotSize = parseFloat(lotMatch[1]);
+                ctx.log(`  [ARB] Lot size ${lotSize} detected, recalculating...`);
+                matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange, { lotSize });
+                if (!matched) { ctx.log(`  [ARB] Skip ${best.symbol}: can't meet lot size ${lotSize}`); continue; }
+                ctx.log(`  [ARB] Retry: ${matched.size} ${best.symbol} ($${matched.notional.toFixed(0)}/leg)`);
+                await Promise.all([
+                  longAdapter.marketOrder(best.symbol, "buy", matched.size),
+                  shortAdapter.marketOrder(best.symbol, "sell", matched.size),
                 ]);
-                const longAvail = parseFloat(longBal.available);
-                const shortAvail = parseFloat(shortBal.available);
-                const minAvail = Math.min(longAvail, shortAvail);
-                const maxAffordable = minAvail * 0.8;
-                if (maxAffordable < 10) {
-                  ctx.log(`  [ARB] Skip ${best.symbol}: insufficient balance ($${minAvail.toFixed(2)} available, need $10+ per leg)`);
-                  return [];
-                }
-                if (targetSizeUsd > maxAffordable) {
-                  ctx.log(`  [ARB] Size reduced $${targetSizeUsd} → $${maxAffordable.toFixed(0)} (limited by balance $${minAvail.toFixed(2)})`);
-                  targetSizeUsd = Math.floor(maxAffordable);
-                }
-              } catch { /* non-critical, proceed with original size */ }
-
-              // Liquidity check
-              const liq = await checkArbLiquidity(
-                longAdapter, shortAdapter, best.symbol, targetSizeUsd, 0.5,
-                (msg) => ctx.log(`  ${msg}`),
-              );
-              if (!liq.viable) return [];
-
-              // Compute matched size
-              let matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange);
-              if (!matched) {
-                ctx.log(`  [ARB] Skip ${best.symbol}: can't compute matched size (min notional or precision issue)`);
-                return [];
-              }
-
-              try {
-                ctx.log(`  [ARB] Opening: ${matched.size} ${best.symbol} on both legs ($${matched.notional.toFixed(0)}/leg, slippage ~${liq.longSlippage.toFixed(2)}%/${liq.shortSlippage.toFixed(2)}%)`);
-                try {
-                  await Promise.all([
-                    longAdapter.marketOrder(best.symbol, "buy", matched.size),
-                    shortAdapter.marketOrder(best.symbol, "sell", matched.size),
-                  ]);
-                } catch (orderErr) {
-                  // Parse lot size from error and retry with corrected size
-                  const errMsg = orderErr instanceof Error ? orderErr.message : String(orderErr);
-                  const lotMatch = errMsg.match(/not a multiple of lot size (\d+(?:\.\d+)?)/);
-                  if (lotMatch) {
-                    const lotSize = parseFloat(lotMatch[1]);
-                    ctx.log(`  [ARB] Lot size ${lotSize} detected, recalculating...`);
-                    matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange, { lotSize });
-                    if (!matched) { ctx.log(`  [ARB] Skip ${best.symbol}: can't meet lot size ${lotSize}`); return []; }
-                    ctx.log(`  [ARB] Retry: ${matched.size} ${best.symbol} ($${matched.notional.toFixed(0)}/leg)`);
-                    await Promise.all([
-                      longAdapter.marketOrder(best.symbol, "buy", matched.size),
-                      shortAdapter.marketOrder(best.symbol, "sell", matched.size),
-                    ]);
-                  } else {
-                    throw orderErr;
-                  }
-                }
-
-                // Verify fills match, correct if needed
-                try {
-                  const recon = await reconcileArbFills(longAdapter, shortAdapter, best.symbol,
-                    (msg) => ctx.log(`  ${msg}`),
-                  );
-                  if (!recon.matched) {
-                    ctx.log(`  [ARB] WARNING: fills not matched after correction attempt`);
-                  }
-                } catch (reconErr) {
-                  const reconMsg = reconErr instanceof Error ? reconErr.message : String(reconErr);
-                  ctx.log(`  [ARB] WARNING: Fill reconciliation failed: ${reconMsg}`);
-                }
-
-                // Track position
-                const currentPositions = ctx.state.get("arbOpenPositions") as ArbOpenPosition[];
-                currentPositions.push({
-                  symbol: best.symbol,
-                  longExchange: best.longExchange,
-                  shortExchange: best.shortExchange,
-                  entrySpread: best.spread,
-                  size: matched.size,
-                  mode: "perp-perp",
-                });
-                ctx.state.set("arbOpenPositions", currentPositions);
-                ctx.state.set("arbPositions", currentPositions.length);
-                ctx.log(`  [ARB] Position opened! (${currentPositions.length}/${params.max_positions})`);
-
-                return [{ type: "noop" }];
-              } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err);
-                ctx.log(`  [ARB] Execution failed: ${msg}`);
+              } else {
+                throw orderErr;
               }
             }
+
+            // Verify fills match
+            try {
+              const recon = await reconcileArbFills(longAdapter, shortAdapter, best.symbol,
+                (msg) => ctx.log(`  ${msg}`),
+              );
+              if (!recon.matched) {
+                ctx.log(`  [ARB] WARNING: fills not matched after correction attempt`);
+              }
+            } catch (reconErr) {
+              const reconMsg = reconErr instanceof Error ? reconErr.message : String(reconErr);
+              ctx.log(`  [ARB] WARNING: Fill reconciliation failed: ${reconMsg}`);
+            }
+
+            // Track position
+            const currentPositions = ctx.state.get("arbOpenPositions") as ArbOpenPosition[];
+            currentPositions.push({
+              symbol: best.symbol,
+              longExchange: best.longExchange,
+              shortExchange: best.shortExchange,
+              entrySpread: best.spread,
+              size: matched.size,
+              mode: "perp-perp",
+            });
+            ctx.state.set("arbOpenPositions", currentPositions);
+            ctx.state.set("arbPositions", currentPositions.length);
+            ctx.log(`  [ARB] Position opened! (${currentPositions.length}/${params.max_positions})`);
+            return [{ type: "noop" }];
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            ctx.log(`  [ARB] Execution failed for ${best.symbol}: ${msg}`);
+            continue;
           }
         }
       }
@@ -625,20 +625,20 @@ export class FundingArbStrategy implements Strategy {
     opp: ArbOpportunity,
     adapters: Map<string, ExchangeAdapter>,
     ctx: StrategyContext,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const params = this.params;
     const exchangeName = opp.longExchange.replace("-spot", "");
     const perpAdapter = adapters.get(opp.shortExchange) ?? adapters.get(exchangeName);
     if (!perpAdapter) {
       ctx.log(`  [ARB] Open spot-perp failed: no adapter for ${opp.shortExchange}`);
-      return;
+      return false;
     }
 
     try {
       const spotAdapter = await this.getSpotAdapter(exchangeName, perpAdapter);
       if (!spotAdapter) {
         ctx.log(`  [ARB] Open spot-perp failed: spot adapter not available for ${exchangeName}`);
-        return;
+        return false;
       }
 
       // Balance check: need full notional for spot + margin for perp
@@ -649,7 +649,7 @@ export class FundingArbStrategy implements Strategy {
         const maxAffordable = perpAvail * 0.8;
         if (maxAffordable < 10) {
           ctx.log(`  [ARB] Skip spot-perp ${opp.symbol}: insufficient balance ($${perpAvail.toFixed(2)} available)`);
-          return;
+          return false;
         }
         if (targetSizeUsd > maxAffordable) {
           ctx.log(`  [ARB] Spot-perp size reduced $${targetSizeUsd} → $${maxAffordable.toFixed(0)} (limited by balance)`);
@@ -661,7 +661,7 @@ export class FundingArbStrategy implements Strategy {
       const priceEstimate = await this.getPriceEstimate(perpAdapter, perpSymbol, opp.symbol);
       if (priceEstimate <= 0) {
         ctx.log(`  [ARB] Skip spot-perp ${opp.symbol}: can't determine price`);
-        return;
+        return false;
       }
 
       // Liquidity check
@@ -669,7 +669,7 @@ export class FundingArbStrategy implements Strategy {
         spotAdapter, perpAdapter, opp.symbol, perpSymbol, targetSizeUsd, 0.5,
         (msg) => ctx.log(`  ${msg}`),
       );
-      if (!liq.viable) return;
+      if (!liq.viable) return false;
 
       // Compute matched size
       const spotMarkets = await spotAdapter.getSpotMarkets();
@@ -678,7 +678,7 @@ export class FundingArbStrategy implements Strategy {
       const matched = computeSpotPerpMatchedSize(liq.adjustedSizeUsd, priceEstimate, exchangeName, opp.shortExchange, spotDecimals);
       if (!matched) {
         ctx.log(`  [ARB] Skip spot-perp ${opp.symbol}: can't compute matched size`);
-        return;
+        return false;
       }
 
       ctx.log(`  [ARB] Opening spot-perp: ${matched.size} ${opp.symbol} ($${matched.notional.toFixed(0)}, slippage ~${liq.spotSlippage.toFixed(2)}%/${liq.perpSlippage.toFixed(2)}%)`);
@@ -709,9 +709,11 @@ export class FundingArbStrategy implements Strategy {
       ctx.state.set("arbOpenPositions", currentPositions);
       ctx.state.set("arbPositions", currentPositions.length);
       ctx.log(`  [ARB] Spot-perp position opened! (${currentPositions.length}/${params.max_positions})`);
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       ctx.log(`  [ARB] Open spot-perp failed for ${opp.symbol}: ${msg}`);
+      return false;
     }
   }
 
@@ -814,11 +816,13 @@ export class FundingArbStrategy implements Strategy {
   ): Promise<{ symbol: string; rate: number; price: number }[]> {
     try {
       const markets = await adapter.getMarkets();
-      return markets.map(m => ({
-        symbol: m.symbol,
-        rate: parseFloat(m.fundingRate),
-        price: parseFloat(m.markPrice),
-      }));
+      return markets
+        .filter(m => m.fundingRate != null) // skip symbols with unavailable rates
+        .map(m => ({
+          symbol: m.symbol,
+          rate: parseFloat(m.fundingRate!),
+          price: parseFloat(m.markPrice),
+        }));
     } catch {
       return [];
     }
