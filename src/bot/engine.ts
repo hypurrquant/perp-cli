@@ -552,7 +552,18 @@ async function fetchSpotPositions(
         const base = strip(b.token);
         const markPrice = priceMap.get(base) ?? "0";
         if (base === "USDC" || markPrice === "0") continue;
-        hlPositions.push({ symbol: base, side: "spot", size: b.total, entryPrice: "—", markPrice, unrealizedPnl: "—", exchange: adapter.name });
+        const total = Number(b.total);
+        const entryNtl = b.entryNtl ? Number(b.entryNtl) : 0;
+        const avgEntry = (entryNtl > 0 && total > 0) ? (entryNtl / total) : 0;
+        const mark = Number(markPrice);
+        const uPnL = avgEntry > 0 ? (mark - avgEntry) * total : 0;
+        hlPositions.push({
+          symbol: base, side: "spot", size: b.total,
+          entryPrice: avgEntry > 0 ? avgEntry.toPrecision(5) : "—",
+          markPrice,
+          unrealizedPnl: avgEntry > 0 ? uPnL.toFixed(2) : "—",
+          exchange: adapter.name,
+        });
       }
       return hlPositions;
     }

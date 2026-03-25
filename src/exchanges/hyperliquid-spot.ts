@@ -183,6 +183,7 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
         total: String(b.total ?? "0"),
         available: String(Number(b.total ?? 0) - Number(b.hold ?? 0)),
         held: String(b.hold ?? "0"),
+        entryNtl: b.entryNtl !== undefined ? String(b.entryNtl) : undefined,
       }));
     } catch {
       return [];

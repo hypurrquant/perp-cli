@@ -271,7 +271,7 @@ export function BotDashboard({ initialState, onQuit, onPause, subscribe }: Dashb
                   <Text color="white">{pad(p.size, 12)}</Text>
                   <Text color="white">{pad(p.entryPrice, 12)}</Text>
                   <Text color="white">{pad(p.markPrice, 12)}</Text>
-                  <Text color={pnlColor(upnl)}>${upnl.toFixed(2)}</Text>
+                  <Text color={isNaN(upnl) ? "gray" : pnlColor(upnl)}>{isNaN(upnl) ? "$—" : `$${upnl.toFixed(2)}`}</Text>
                 </Box>
               );
             })}

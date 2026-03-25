@@ -21,6 +21,7 @@ export interface SpotBalance {
   total: string;
   available: string;     // total - held in orders
   held: string;
+  entryNtl?: string;     // cost basis in USDC (HL only)
 }
 
 export interface SpotOrderParams {

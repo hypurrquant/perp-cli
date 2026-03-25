@@ -56,6 +56,69 @@ export class FundingArbStrategy implements Strategy {
     ctx.state.set("fundingHistory", [] as { time: number; amount: number; exchange: string; symbol: string }[]);
     ctx.log(`  [ARB] Funding arb ready | spread >= ${params.min_spread}% | close < ${params.close_spread}% | size $${params.size_usd}`);
     ctx.log(`  [ARB] Exchanges: ${params.exchanges.join(", ")}`);
+
+    // ── Recover existing positions from exchanges ──
+    try {
+      const extraAdapters = ctx.state.get("extraAdapters") as Map<string, ExchangeAdapter> | undefined;
+      const adapters = new Map<string, ExchangeAdapter>();
+      adapters.set(ctx.adapter.name.toLowerCase(), ctx.adapter);
+      if (extraAdapters) {
+        for (const [name, a] of extraAdapters) adapters.set(name, a);
+      }
+
+      // Fetch all positions across exchanges
+      const positionsByExchange = new Map<string, { symbol: string; side: string; size: string }[]>();
+      for (const [name, a] of adapters) {
+        try {
+          const positions = await a.getPositions();
+          positionsByExchange.set(name, positions.map(p => ({
+            symbol: p.symbol.toUpperCase(),
+            side: p.side,
+            size: p.size,
+          })));
+        } catch { /* skip unavailable exchange */ }
+      }
+
+      // Match long/short pairs across exchanges → reconstruct arbOpenPositions
+      const recovered: ArbOpenPosition[] = [];
+      const used = new Set<string>(); // "exchange:symbol" to avoid double-matching
+
+      for (const [exA, posA] of positionsByExchange) {
+        for (const pA of posA) {
+          const keyA = `${exA}:${pA.symbol}`;
+          if (used.has(keyA)) continue;
+
+          for (const [exB, posB] of positionsByExchange) {
+            if (exA === exB) continue;
+            for (const pB of posB) {
+              const keyB = `${exB}:${pB.symbol}`;
+              if (used.has(keyB)) continue;
+              if (pA.symbol !== pB.symbol) continue;
+              if (pA.side === pB.side) continue;
+
+              // Found a matching pair
+              const longEx = pA.side === "long" ? exA : exB;
+              const shortEx = pA.side === "short" ? exA : exB;
+              const size = pA.side === "long" ? pA.size : pB.size;
+              recovered.push({ symbol: pA.symbol, longExchange: longEx, shortExchange: shortEx, entrySpread: 0, size });
+              used.add(keyA);
+              used.add(keyB);
+              break;
+            }
+            if (used.has(keyA)) break;
+          }
+        }
+      }
+
+      if (recovered.length > 0) {
+        ctx.state.set("arbOpenPositions", recovered);
+        ctx.state.set("arbPositions", recovered.length);
+        ctx.log(`  [ARB] Recovered ${recovered.length} existing position(s): ${recovered.map(p => `${p.symbol} ${p.longExchange}↔${p.shortExchange}`).join(", ")}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      ctx.log(`  [ARB] Position recovery failed: ${msg}`);
+    }
   }
 
   async onTick(ctx: StrategyContext, _snapshot: EnrichedSnapshot): Promise<StrategyAction[]> {
@@ -88,7 +151,7 @@ export class FundingArbStrategy implements Strategy {
 
     // ── Fetch funding income periodically (every 5 minutes) ──
     const lastCheck = ctx.state.get("fundingLastCheck") as number;
-    if (openPositions.length > 0 && Date.now() - lastCheck > 5 * 60 * 1000) {
+    if (Date.now() - lastCheck > 5 * 60 * 1000) {
       try {
         let totalFunding = 0;
         for (const [name, a] of adapters) {
