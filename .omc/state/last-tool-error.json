@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"npm whoami 2>&1\",\"description\":\"Check npm login status\"}",
-  "error": "Exit code 1\nnpm error code E401\nnpm error 401 Unauthorized - GET https://registry.npmjs.org/-/whoami\nnpm error A complete log of this run can be found in: /Users/hik/.npm/_logs/2026-03-24T04_58_59_676Z-debug-0.log",
-  "timestamp": "2026-03-24T04:58:59.997Z",
-  "retry_count": 2
-}
