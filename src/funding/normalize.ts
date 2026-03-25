@@ -20,7 +20,7 @@ const EXCHANGE_FUNDING_HOURS: Record<string, number> = {
   hyperliquid: 1,
   pacifica: 1,
   lighter: 8,
-  aster: 8,
+  aster: 1,
 };
 
 /**
