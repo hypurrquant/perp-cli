@@ -297,17 +297,27 @@ export class FundingArbStrategy implements Strategy {
           const longAdapter = adapters.get(pos.longExchange);
           const shortAdapter = adapters.get(pos.shortExchange);
           if (longAdapter && shortAdapter) {
+            let closeLongOk = false;
             try {
-              await Promise.all([
-                longAdapter.marketOrder(pos.symbol, "sell", pos.size),
-                shortAdapter.marketOrder(pos.symbol, "buy", pos.size),
-              ]);
-              toClose.push(pos);
-              ctx.log(`  [ARB] Closed ${pos.symbol} position`);
-              logExecution({ type: "arb_close", exchange: `${pos.longExchange}↔${pos.shortExchange}`, symbol: pos.symbol, side: "close", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, signedSpread: signedSpread } });
+              const closeLongResult = await longAdapter.marketOrder(pos.symbol, "sell", pos.size);
+              closeLongOk = true;
+              logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "long", signedSpread: signedSpread, response: closeLongResult } });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
-              ctx.log(`  [ARB] Close failed for ${pos.symbol}: ${msg}`);
+              ctx.log(`  [ARB] Close long leg failed for ${pos.symbol}: ${msg}`);
+              logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "long" } });
+            }
+            try {
+              const closeShortResult = await shortAdapter.marketOrder(pos.symbol, "buy", pos.size);
+              logExecution({ type: "arb_close", exchange: pos.shortExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "short", signedSpread: signedSpread, response: closeShortResult } });
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              ctx.log(`  [ARB] Close short leg failed for ${pos.symbol}: ${msg}`);
+              logExecution({ type: "arb_close", exchange: pos.shortExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "short" } });
+            }
+            if (closeLongOk) {
+              toClose.push(pos);
+              ctx.log(`  [ARB] Closed ${pos.symbol} position`);
             }
           }
         }
@@ -493,65 +503,68 @@ export class FundingArbStrategy implements Strategy {
             continue;
           }
 
+          ctx.log(`  [ARB] Opening: ${matched.size} ${best.symbol} on both legs ($${matched.notional.toFixed(0)}/leg, slippage ~${liq.longSlippage.toFixed(2)}%/${liq.shortSlippage.toFixed(2)}%)`);
+
+          // Step 1: Execute long leg first
+          let longResult: unknown;
           try {
-            ctx.log(`  [ARB] Opening: ${matched.size} ${best.symbol} on both legs ($${matched.notional.toFixed(0)}/leg, slippage ~${liq.longSlippage.toFixed(2)}%/${liq.shortSlippage.toFixed(2)}%)`);
-            try {
-              await Promise.all([
-                longAdapter.marketOrder(best.symbol, "buy", matched.size),
-                shortAdapter.marketOrder(best.symbol, "sell", matched.size),
-              ]);
-            } catch (orderErr) {
-              const errMsg = orderErr instanceof Error ? orderErr.message : String(orderErr);
-              const lotMatch = errMsg.match(/not a multiple of lot size (\d+(?:\.\d+)?)/);
-              if (lotMatch) {
-                const lotSize = parseFloat(lotMatch[1]);
-                ctx.log(`  [ARB] Lot size ${lotSize} detected, recalculating...`);
-                matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange, { lotSize, longSizeDecimals: longDec, shortSizeDecimals: shortDec });
-                if (!matched) { ctx.log(`  [ARB] Skip ${best.symbol}: can't meet lot size ${lotSize}`); continue; }
-                ctx.log(`  [ARB] Retry: ${matched.size} ${best.symbol} ($${matched.notional.toFixed(0)}/leg)`);
-                await Promise.all([
-                  longAdapter.marketOrder(best.symbol, "buy", matched.size),
-                  shortAdapter.marketOrder(best.symbol, "sell", matched.size),
-                ]);
-              } else {
-                throw orderErr;
-              }
-            }
+            longResult = await longAdapter.marketOrder(best.symbol, "buy", matched.size);
+            logExecution({ type: "arb_entry", exchange: best.longExchange, symbol: best.symbol, side: "buy", size: matched.size, notional: matched.notional / 2, status: "success", dryRun: false, meta: { mode: "perp-perp", leg: "long", response: longResult } });
+          } catch (longErr) {
+            const msg = longErr instanceof Error ? longErr.message : String(longErr);
+            ctx.log(`  [ARB] Long leg failed for ${best.symbol}: ${msg}`);
+            logExecution({ type: "arb_entry", exchange: best.longExchange, symbol: best.symbol, side: "buy", size: matched.size, status: "failed", error: msg, dryRun: false, meta: { mode: "perp-perp", leg: "long" } });
+            continue; // long failed, no position to rollback
+          }
 
-            // Verify fills match
+          // Step 2: Execute short leg
+          try {
+            const shortResult = await shortAdapter.marketOrder(best.symbol, "sell", matched.size);
+            logExecution({ type: "arb_entry", exchange: best.shortExchange, symbol: best.symbol, side: "sell", size: matched.size, notional: matched.notional / 2, status: "success", dryRun: false, meta: { mode: "perp-perp", leg: "short", response: shortResult } });
+          } catch (shortErr) {
+            const msg = shortErr instanceof Error ? shortErr.message : String(shortErr);
+            ctx.log(`  [ARB] Short leg failed for ${best.symbol}: ${msg} — ROLLING BACK long leg`);
+            logExecution({ type: "arb_entry", exchange: best.shortExchange, symbol: best.symbol, side: "sell", size: matched.size, status: "failed", error: msg, dryRun: false, meta: { mode: "perp-perp", leg: "short" } });
+            // Rollback: close the long position
             try {
-              const recon = await reconcileArbFills(longAdapter, shortAdapter, best.symbol,
-                (msg) => ctx.log(`  ${msg}`),
-              );
-              if (!recon.matched) {
-                ctx.log(`  [ARB] WARNING: fills not matched after correction attempt`);
-              }
-            } catch (reconErr) {
-              const reconMsg = reconErr instanceof Error ? reconErr.message : String(reconErr);
-              ctx.log(`  [ARB] WARNING: Fill reconciliation failed: ${reconMsg}`);
+              await longAdapter.marketOrder(best.symbol, "sell", matched.size);
+              ctx.log(`  [ARB] Rollback success: closed long ${matched.size} ${best.symbol} on ${best.longExchange}`);
+              logExecution({ type: "multi_leg_rollback", exchange: best.longExchange, symbol: best.symbol, side: "sell", size: matched.size, status: "success", dryRun: false });
+            } catch (rbErr) {
+              const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
+              ctx.log(`  [ARB] CRITICAL: Rollback failed for ${best.symbol}: ${rbMsg}`);
+              logExecution({ type: "multi_leg_rollback", exchange: best.longExchange, symbol: best.symbol, side: "sell", size: matched.size, status: "failed", error: rbMsg, dryRun: false });
             }
-
-            // Track position
-            const currentPositions = ctx.state.get("arbOpenPositions") as ArbOpenPosition[];
-            currentPositions.push({
-              symbol: best.symbol,
-              longExchange: best.longExchange,
-              shortExchange: best.shortExchange,
-              entrySpread: best.spread,
-              size: matched.size,
-              mode: "perp-perp",
-            });
-            ctx.state.set("arbOpenPositions", currentPositions);
-            ctx.state.set("arbPositions", currentPositions.length);
-            ctx.log(`  [ARB] Position opened! (${currentPositions.length}/${params.max_positions})`);
-            logExecution({ type: "arb_entry", exchange: `${best.longExchange}↔${best.shortExchange}`, symbol: best.symbol, side: "long/short", size: matched.size, notional: matched.notional, status: "success", dryRun: false, meta: { mode: "perp-perp", spread: best.spread } });
-            return [{ type: "noop" }];
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            ctx.log(`  [ARB] Execution failed for ${best.symbol}: ${msg}`);
-            logExecution({ type: "arb_entry", exchange: `${best.longExchange}↔${best.shortExchange}`, symbol: best.symbol, side: "long/short", size: matched?.size ?? "0", status: "failed", error: msg, dryRun: false, meta: { mode: "perp-perp" } });
             continue;
           }
+
+          // Verify fills match
+          try {
+            const recon = await reconcileArbFills(longAdapter, shortAdapter, best.symbol,
+              (msg) => ctx.log(`  ${msg}`),
+            );
+            if (!recon.matched) {
+              ctx.log(`  [ARB] WARNING: fills not matched after correction attempt`);
+            }
+          } catch (reconErr) {
+            const reconMsg = reconErr instanceof Error ? reconErr.message : String(reconErr);
+            ctx.log(`  [ARB] WARNING: Fill reconciliation failed: ${reconMsg}`);
+          }
+
+          // Track position
+          const currentPositions = ctx.state.get("arbOpenPositions") as ArbOpenPosition[];
+          currentPositions.push({
+            symbol: best.symbol,
+            longExchange: best.longExchange,
+            shortExchange: best.shortExchange,
+            entrySpread: best.spread,
+            size: matched.size,
+            mode: "perp-perp",
+          });
+          ctx.state.set("arbOpenPositions", currentPositions);
+          ctx.state.set("arbPositions", currentPositions.length);
+          ctx.log(`  [ARB] Position opened! (${currentPositions.length}/${params.max_positions})`);
+          return [{ type: "noop" }];
         }
       }
     } else {
@@ -579,15 +592,22 @@ export class FundingArbStrategy implements Strategy {
           const longAdapter = adapters.get(pos.longExchange);
           const shortAdapter = adapters.get(pos.shortExchange);
           if (longAdapter && shortAdapter) {
+            ctx.log(`  [ARB] Closing ${pos.symbol} on stop (${pos.size})`);
             try {
-              ctx.log(`  [ARB] Closing ${pos.symbol} on stop (${pos.size})`);
-              await Promise.all([
-                longAdapter.marketOrder(pos.symbol, "sell", pos.size),
-                shortAdapter.marketOrder(pos.symbol, "buy", pos.size),
-              ]);
+              const closeLongResult = await longAdapter.marketOrder(pos.symbol, "sell", pos.size);
+              logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "long", stop: true, response: closeLongResult } });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
-              ctx.log(`  [ARB] Close on stop failed for ${pos.symbol}: ${msg}`);
+              ctx.log(`  [ARB] Close on stop failed (long) for ${pos.symbol}: ${msg}`);
+              logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "long", stop: true } });
+            }
+            try {
+              const closeShortResult = await shortAdapter.marketOrder(pos.symbol, "buy", pos.size);
+              logExecution({ type: "arb_close", exchange: pos.shortExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "short", stop: true, response: closeShortResult } });
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              ctx.log(`  [ARB] Close on stop failed (short) for ${pos.symbol}: ${msg}`);
+              logExecution({ type: "arb_close", exchange: pos.shortExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "short", stop: true } });
             }
           }
         }
@@ -761,12 +781,43 @@ export class FundingArbStrategy implements Strategy {
       ctx.log(`  [ARB] Transferred $${transferAmt} USDC to spot`);
 
       // Step 2: Buy spot
-      await spotAdapter.spotMarketOrder(opp.symbol, "buy", matched.size);
-      ctx.log(`  [ARB] Bought spot ${matched.size} ${opp.symbol}`);
+      let spotResult: unknown;
+      try {
+        spotResult = await spotAdapter.spotMarketOrder(opp.symbol, "buy", matched.size);
+        ctx.log(`  [ARB] Bought spot ${matched.size} ${opp.symbol}`);
+        logExecution({ type: "arb_entry", exchange: opp.longExchange, symbol: opp.symbol, side: "buy", size: matched.size, notional: matched.notional, status: "success", dryRun: false, meta: { mode: "spot-perp", leg: "spot", response: spotResult } });
+      } catch (spotErr) {
+        const msg = spotErr instanceof Error ? spotErr.message : String(spotErr);
+        ctx.log(`  [ARB] Open spot-perp failed (spot buy) for ${opp.symbol}: ${msg}`);
+        logExecution({ type: "arb_entry", exchange: opp.longExchange, symbol: opp.symbol, side: "buy", size: matched.size, status: "failed", error: msg, dryRun: false, meta: { mode: "spot-perp", leg: "spot" } });
+        return false;
+      }
 
       // Step 3: Short perp
-      await perpAdapter.marketOrder(perpSymbol, "sell", matched.size);
-      ctx.log(`  [ARB] Shorted perp ${matched.size} ${perpSymbol}`);
+      try {
+        const perpResult = await perpAdapter.marketOrder(perpSymbol, "sell", matched.size);
+        ctx.log(`  [ARB] Shorted perp ${matched.size} ${perpSymbol}`);
+        logExecution({ type: "arb_entry", exchange: opp.shortExchange, symbol: opp.symbol, side: "sell", size: matched.size, notional: matched.notional, status: "success", dryRun: false, meta: { mode: "spot-perp", leg: "perp", response: perpResult } });
+      } catch (perpErr) {
+        const msg = perpErr instanceof Error ? perpErr.message : String(perpErr);
+        ctx.log(`  [ARB] Open spot-perp failed (perp short) for ${opp.symbol}: ${msg} — ROLLING BACK spot buy`);
+        logExecution({ type: "arb_entry", exchange: opp.shortExchange, symbol: opp.symbol, side: "sell", size: matched.size, status: "failed", error: msg, dryRun: false, meta: { mode: "spot-perp", leg: "perp" } });
+        // Rollback: sell spot back and transfer USDC back to perp
+        try {
+          await spotAdapter.spotMarketOrder(opp.symbol, "sell", matched.size);
+          ctx.log(`  [ARB] Rollback success: sold spot ${matched.size} ${opp.symbol}`);
+          logExecution({ type: "multi_leg_rollback", exchange: opp.longExchange, symbol: opp.symbol, side: "sell", size: matched.size, status: "success", dryRun: false });
+          // Transfer USDC back to perp account
+          try {
+            await this.transferUsdcToPerp(spotAdapter, opp.longExchange.replace("-spot", ""), Math.ceil(matched.notional * 1.02));
+          } catch { /* best effort */ }
+        } catch (rbErr) {
+          const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
+          ctx.log(`  [ARB] CRITICAL: Spot rollback failed for ${opp.symbol}: ${rbMsg}`);
+          logExecution({ type: "multi_leg_rollback", exchange: opp.longExchange, symbol: opp.symbol, side: "sell", size: matched.size, status: "failed", error: rbMsg, dryRun: false });
+        }
+        return false;
+      }
 
       // Track position
       const currentPositions = ctx.state.get("arbOpenPositions") as ArbOpenPosition[];
@@ -781,7 +832,6 @@ export class FundingArbStrategy implements Strategy {
       ctx.state.set("arbOpenPositions", currentPositions);
       ctx.state.set("arbPositions", currentPositions.length);
       ctx.log(`  [ARB] Spot-perp position opened! (${currentPositions.length}/${params.max_positions})`);
-      logExecution({ type: "arb_entry", exchange: `${opp.longExchange}↔${opp.shortExchange}`, symbol: opp.symbol, side: "spot-long/perp-short", size: matched.size, notional: matched.notional, status: "success", dryRun: false, meta: { mode: "spot-perp", spread: opp.spread } });
       return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

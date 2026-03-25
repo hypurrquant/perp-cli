@@ -328,12 +328,19 @@ export class AsterAdapter implements ExchangeAdapter {
   // ── Trading ──
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string): Promise<unknown> {
-    return this._signedPost("/fapi/v1/order", {
+    const result = await this._signedPost("/fapi/v1/order", {
       symbol: this._toApi(symbol),
       side: side.toUpperCase(),
       type: "MARKET",
       quantity: size,
     });
+    // Validate fill — Binance-style API returns 200 even for 0-fill orders
+    const r = result as Record<string, unknown>;
+    const executedQty = Number(r.executedQty ?? 0);
+    if (executedQty === 0) {
+      throw new Error(`Market ${side} ${symbol}: order accepted but 0 filled (status: ${r.status}, orderId: ${r.orderId})`);
+    }
+    return result;
   }
 
   async limitOrder(
