@@ -65,6 +65,7 @@ export interface FundingArbStrategyParams {
   type: "funding-arb";
   min_spread: number;
   close_spread: number;
+  spot_perp_min_spread?: number; // default: min_spread (spot-perp is safer so can be lower)
   size_usd: number;
   max_positions: number;
   exchanges: string[];
@@ -183,6 +184,7 @@ export function parseStrategy(type: string, raw: Record<string, unknown>): Strat
         type: "funding-arb",
         min_spread: Number(raw.min_spread ?? 20),
         close_spread: Number(raw.close_spread ?? 5),
+        spot_perp_min_spread: raw.spot_perp_min_spread !== undefined ? Number(raw.spot_perp_min_spread) : undefined,
         size_usd: Number(raw.size_usd ?? raw.size ?? 50),
         max_positions: Number(raw.max_positions ?? 3),
         exchanges: Array.isArray(raw.exchanges)

@@ -63,6 +63,22 @@ export function computeAnnualSpread(
 }
 
 /**
+ * Compute SIGNED annualized spread for an existing arb position.
+ * Positive = favorable (short receiving more than long paying).
+ * Negative = unfavorable (funding flipped, position losing on funding).
+ *
+ * For spot-perp: pass longRate=0, longExchange=shortExchange (spot has no funding).
+ */
+export function computeSignedAnnualSpread(
+  shortRate: number, shortExchange: string,
+  longRate: number, longExchange: string,
+): number {
+  const hourlyShort = toHourlyRate(shortRate, shortExchange);
+  const hourlyLong = toHourlyRate(longRate, longExchange);
+  return (hourlyShort - hourlyLong) * HOURLY_PERIODS * 100;
+}
+
+/**
  * Estimate hourly funding payment for a position.
  * @param rate - raw funding rate from the exchange
  * @param exchange - exchange name
