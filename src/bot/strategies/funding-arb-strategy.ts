@@ -152,7 +152,7 @@ export class FundingArbStrategy implements Strategy {
             const perpKey = `${name}:${perp.symbol}`;
             if (used.has(perpKey)) { ctx.log(`  [ARB] ${perpKey} already matched cross-exchange, skip spot-perp`); continue; }
             const base = perp.symbol.replace(/-PERP$/, "").toUpperCase();
-            const spotBal = nonUsdc.find(b => b.token.toUpperCase() === base);
+            const spotBal = nonUsdc.find(b => b.token.toUpperCase().replace(/-SPOT$/, "") === base);
             ctx.log(`  [ARB] ${name} perp ${perp.symbol}(${perp.side}) → base=${base}, spotMatch=${spotBal ? spotBal.token : "none"}`);
             if (spotBal && perp.side === "short") {
               recovered.push({ symbol: base, longExchange: `${name}-spot`, shortExchange: name, entrySpread: 0, size: perp.size, mode: "spot-perp" });
