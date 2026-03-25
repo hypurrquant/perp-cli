@@ -113,17 +113,34 @@ export class FundingArbStrategy implements Strategy {
       // ── Same-exchange spot-perp hedges (e.g. PURR spot + PURR-PERP short on HL) ──
       for (const [name, a] of adapters) {
         try {
-          const spotState = await (a as unknown as { _getSpotClearinghouseState?(): Promise<Record<string, unknown>> })._getSpotClearinghouseState?.();
-          if (!spotState?.balances) continue;
-          const spotBalances = (spotState.balances as { coin: string; total: string }[])
-            .filter(b => Number(b.total) > 0 && b.coin.toUpperCase() !== "USDC");
+          let spotBalances: { token: string; total: string }[] = [];
+          if (name === "hyperliquid") {
+            const { HyperliquidSpotAdapter } = await import("../../exchanges/hyperliquid-spot.js");
+            const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
+            if (a instanceof HyperliquidAdapter) {
+              const hlSpot = new HyperliquidSpotAdapter(a);
+              await hlSpot.init();
+              spotBalances = await hlSpot.getSpotBalances();
+            }
+          } else if (name === "lighter") {
+            const { LighterSpotAdapter } = await import("../../exchanges/lighter-spot.js");
+            const { LighterAdapter } = await import("../../exchanges/lighter.js");
+            if (a instanceof LighterAdapter) {
+              const ltSpot = new LighterSpotAdapter(a);
+              await ltSpot.init();
+              spotBalances = await ltSpot.getSpotBalances();
+            }
+          }
+
+          const nonUsdc = spotBalances.filter(b => Number(b.total) > 0 && !b.token.toUpperCase().startsWith("USDC"));
+          if (nonUsdc.length === 0) continue;
 
           const perpPositions = positionsByExchange.get(name) ?? [];
           for (const perp of perpPositions) {
             const perpKey = `${name}:${perp.symbol}`;
             if (used.has(perpKey)) continue;
             const base = perp.symbol.replace(/-PERP$/, "").toUpperCase();
-            const spotBal = spotBalances.find(b => b.coin.toUpperCase() === base);
+            const spotBal = nonUsdc.find(b => b.token.toUpperCase() === base);
             if (spotBal && perp.side === "short") {
               recovered.push({ symbol: base, longExchange: `${name}-spot`, shortExchange: name, entrySpread: 0, size: perp.size });
               used.add(perpKey);

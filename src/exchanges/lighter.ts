@@ -386,8 +386,16 @@ export class LighterAdapter implements ExchangeAdapter {
       (sum: number, p: Record<string, unknown>) => sum + Number(p.unrealized_pnl || 0), 0
     ) ?? 0;
 
+    // Include spot USDC balance (separate from perp collateral)
+    let spotUsdc = 0;
+    try {
+      const assets = (acct.assets ?? []) as Array<{ symbol: string; balance: string; locked_balance: string }>;
+      const usdcAsset = assets.find(a => a.symbol === "USDC");
+      if (usdcAsset) spotUsdc = parseFloat(usdcAsset.balance || "0");
+    } catch { /* non-critical */ }
+
     return {
-      equity: String(totalAsset),
+      equity: String(totalAsset + spotUsdc),
       available: String(available),
       marginUsed: String(Math.max(0, collateral - available)),
       unrealizedPnl: String(unrealizedPnl),
