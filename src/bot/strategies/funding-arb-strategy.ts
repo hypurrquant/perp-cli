@@ -314,18 +314,29 @@ export class FundingArbStrategy implements Strategy {
               logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "long" } });
               this._failCooldown.set(`${pos.symbol}:close`, Date.now() + 5 * 60 * 1000);
             }
+            if (!closeLongOk) continue; // don't close short if long failed — keep hedge intact
             try {
               const closeShortResult = await shortAdapter.marketOrder(pos.symbol, "buy", pos.size);
               logExecution({ type: "arb_close", exchange: pos.shortExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "short", signedSpread: signedSpread, response: closeShortResult } });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
-              ctx.log(`  [ARB] Close short leg failed for ${pos.symbol}: ${msg}`);
+              ctx.log(`  [ARB] Close short leg failed for ${pos.symbol}: ${msg} — re-opening long to restore hedge`);
               logExecution({ type: "arb_close", exchange: pos.shortExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "short" } });
+              // Rollback: re-open long to restore hedge
+              try {
+                await longAdapter.marketOrder(pos.symbol, "buy", pos.size);
+                ctx.log(`  [ARB] Rollback: re-opened long ${pos.size} ${pos.symbol} on ${pos.longExchange}`);
+                logExecution({ type: "multi_leg_rollback", exchange: pos.longExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false });
+              } catch (rbErr) {
+                const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
+                ctx.log(`  [ARB] CRITICAL: Close rollback failed for ${pos.symbol}: ${rbMsg}`);
+                logExecution({ type: "multi_leg_rollback", exchange: pos.longExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "failed", error: rbMsg, dryRun: false });
+              }
+              this._failCooldown.set(`${pos.symbol}:close`, Date.now() + 5 * 60 * 1000);
+              continue;
             }
-            if (closeLongOk) {
-              toClose.push(pos);
-              ctx.log(`  [ARB] Closed ${pos.symbol} position`);
-            }
+            toClose.push(pos);
+            ctx.log(`  [ARB] Closed ${pos.symbol} position`);
           }
         }
       }
