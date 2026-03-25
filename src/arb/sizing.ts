@@ -72,10 +72,11 @@ function getSizeDecimals(exchange: string): number {
     case "hyperliquid": return 2; // HL perps range 0-5; 2 is safe middle ground
     case "lighter": return 2;
     case "pacifica": return 4;
+    case "aster": return 0; // aster symbols mostly use integers; explicit sizeDecimals overrides this
     // Spot exchanges
     case "spot:hyperliquid": return 2;
     case "spot:lighter": return 2;
-    default: return 2;
+    default: return 0; // conservative: integers when unknown
   }
 }
 

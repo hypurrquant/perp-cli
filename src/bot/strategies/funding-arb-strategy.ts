@@ -50,6 +50,7 @@ export class FundingArbStrategy implements Strategy {
   }
 
   private _config: Record<string, unknown> = {};
+  private _failCooldown = new Map<string, number>(); // "symbol:action" → timestamp of next retry
 
   async init(ctx: StrategyContext, _snapshot: EnrichedSnapshot): Promise<void> {
     // Prune old execution logs (keep 30 days)
@@ -287,6 +288,11 @@ export class FundingArbStrategy implements Strategy {
       // Close if funding flipped (losing money) or spread below close threshold
       const shouldClose = signedSpread < 0 || signedSpread < params.close_spread;
       if (shouldClose) {
+        // Cooldown: skip if close recently failed for this symbol
+        const closeKey = `${pos.symbol}:close`;
+        const cooldownUntil = this._failCooldown.get(closeKey) ?? 0;
+        if (Date.now() < cooldownUntil) continue;
+
         const sign = signedSpread >= 0 ? "+" : "";
         ctx.log(`  [ARB] Closing ${pos.symbol}: signed spread ${sign}${signedSpread.toFixed(1)}% (close_spread=${params.close_spread}%, entry=${pos.entrySpread.toFixed(1)}%)`);
 
@@ -304,8 +310,9 @@ export class FundingArbStrategy implements Strategy {
               logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "long", signedSpread: signedSpread, response: closeLongResult } });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
-              ctx.log(`  [ARB] Close long leg failed for ${pos.symbol}: ${msg}`);
+              ctx.log(`  [ARB] Close long leg failed for ${pos.symbol}: ${msg} (cooldown 5m)`);
               logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "long" } });
+              this._failCooldown.set(`${pos.symbol}:close`, Date.now() + 5 * 60 * 1000);
             }
             try {
               const closeShortResult = await shortAdapter.marketOrder(pos.symbol, "buy", pos.size);
@@ -425,6 +432,10 @@ export class FundingArbStrategy implements Strategy {
         const openSymbols = new Set((ctx.state.get("arbOpenPositions") as ArbOpenPosition[]).map(p => p.symbol.toUpperCase()));
         for (const best of opportunities) {
           if (openSymbols.has(best.symbol.toUpperCase())) continue;
+          // Cooldown: skip if entry recently failed for this symbol
+          const entryKey = `${best.symbol}:entry`;
+          const entryCooldown = this._failCooldown.get(entryKey) ?? 0;
+          if (Date.now() < entryCooldown) continue;
           if (best.mode === "spot-perp") {
             const opened = await this.openSpotPerp(best, adapters, ctx, ratesByExchange);
             if (opened) return [{ type: "noop" }];
@@ -512,9 +523,10 @@ export class FundingArbStrategy implements Strategy {
             logExecution({ type: "arb_entry", exchange: best.longExchange, symbol: best.symbol, side: "buy", size: matched.size, notional: matched.notional / 2, status: "success", dryRun: false, meta: { mode: "perp-perp", leg: "long", response: longResult } });
           } catch (longErr) {
             const msg = longErr instanceof Error ? longErr.message : String(longErr);
-            ctx.log(`  [ARB] Long leg failed for ${best.symbol}: ${msg}`);
+            ctx.log(`  [ARB] Long leg failed for ${best.symbol}: ${msg} (cooldown 5m)`);
             logExecution({ type: "arb_entry", exchange: best.longExchange, symbol: best.symbol, side: "buy", size: matched.size, status: "failed", error: msg, dryRun: false, meta: { mode: "perp-perp", leg: "long" } });
-            continue; // long failed, no position to rollback
+            this._failCooldown.set(`${best.symbol}:entry`, Date.now() + 5 * 60 * 1000);
+            continue;
           }
 
           // Step 2: Execute short leg
@@ -523,7 +535,7 @@ export class FundingArbStrategy implements Strategy {
             logExecution({ type: "arb_entry", exchange: best.shortExchange, symbol: best.symbol, side: "sell", size: matched.size, notional: matched.notional / 2, status: "success", dryRun: false, meta: { mode: "perp-perp", leg: "short", response: shortResult } });
           } catch (shortErr) {
             const msg = shortErr instanceof Error ? shortErr.message : String(shortErr);
-            ctx.log(`  [ARB] Short leg failed for ${best.symbol}: ${msg} — ROLLING BACK long leg`);
+            ctx.log(`  [ARB] Short leg failed for ${best.symbol}: ${msg} — ROLLING BACK long leg (cooldown 5m)`);
             logExecution({ type: "arb_entry", exchange: best.shortExchange, symbol: best.symbol, side: "sell", size: matched.size, status: "failed", error: msg, dryRun: false, meta: { mode: "perp-perp", leg: "short" } });
             // Rollback: close the long position
             try {
@@ -535,6 +547,7 @@ export class FundingArbStrategy implements Strategy {
               ctx.log(`  [ARB] CRITICAL: Rollback failed for ${best.symbol}: ${rbMsg}`);
               logExecution({ type: "multi_leg_rollback", exchange: best.longExchange, symbol: best.symbol, side: "sell", size: matched.size, status: "failed", error: rbMsg, dryRun: false });
             }
+            this._failCooldown.set(`${best.symbol}:entry`, Date.now() + 5 * 60 * 1000);
             continue;
           }
 
