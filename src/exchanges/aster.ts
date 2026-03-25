@@ -328,17 +328,49 @@ export class AsterAdapter implements ExchangeAdapter {
   // ── Trading ──
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string): Promise<unknown> {
+    const apiSymbol = this._toApi(symbol);
     const result = await this._signedPost("/fapi/v1/order", {
-      symbol: this._toApi(symbol),
+      symbol: apiSymbol,
       side: side.toUpperCase(),
       type: "MARKET",
       quantity: size,
     });
-    // Validate fill — Binance-style API returns 200 even for 0-fill orders
     const r = result as Record<string, unknown>;
     const executedQty = Number(r.executedQty ?? 0);
+    const orderId = String(r.orderId ?? "");
+
+    // If immediately filled, return
+    if (executedQty > 0 && r.status === "FILLED") return result;
+
+    // status=NEW: order accepted but not yet filled — poll for up to 3 seconds
+    if (r.status === "NEW" && orderId) {
+      for (let i = 0; i < 3; i++) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        try {
+          const check = await this._signedGet("/fapi/v1/order", {
+            symbol: apiSymbol,
+            orderId,
+          }) as Record<string, unknown>;
+          const filledQty = Number(check.executedQty ?? 0);
+          if (filledQty > 0) return check; // filled
+          if (check.status === "CANCELED" || check.status === "EXPIRED" || check.status === "REJECTED") {
+            throw new Error(`Market ${side} ${symbol}: order ${check.status} (orderId: ${orderId})`);
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message.startsWith("Market ")) throw e;
+          // query failed, retry
+        }
+      }
+      // Still not filled after 3s — cancel and throw
+      try {
+        await this._signedDelete("/fapi/v1/order", { symbol: apiSymbol, orderId });
+      } catch { /* best effort cancel */ }
+      throw new Error(`Market ${side} ${symbol}: order not filled after 3s, cancelled (orderId: ${orderId})`);
+    }
+
+    // executedQty === 0 with non-NEW status
     if (executedQty === 0) {
-      throw new Error(`Market ${side} ${symbol}: order accepted but 0 filled (status: ${r.status}, orderId: ${r.orderId})`);
+      throw new Error(`Market ${side} ${symbol}: order accepted but 0 filled (status: ${r.status}, orderId: ${orderId})`);
     }
     return result;
   }
