@@ -40,6 +40,7 @@ export class FundingArbStrategy implements Strategy {
         { name: "size_usd", type: "number" as const, required: true, description: "Position size in USD" },
         { name: "max_positions", type: "number" as const, required: false, default: 3, description: "Max concurrent positions" },
         { name: "exchanges", type: "string" as const, required: true, description: "Comma-separated exchange names" },
+        { name: "leverage", type: "number" as const, required: false, default: 3, description: "Max leverage to use" },
       ],
     };
   }
@@ -210,11 +211,11 @@ export class FundingArbStrategy implements Strategy {
     }
 
     // Fetch rates from all exchanges
-    const ratesByExchange = new Map<string, Map<string, { rate: number; price: number; sizeDecimals?: number }>>();
+    const ratesByExchange = new Map<string, Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number }>>();
     for (const [name, a] of adapters) {
       const rates = await this.fetchRates(a, name);
-      const map = new Map<string, { rate: number; price: number; sizeDecimals?: number }>();
-      for (const r of rates) map.set(r.symbol.toUpperCase(), { rate: r.rate, price: r.price, sizeDecimals: r.sizeDecimals });
+      const map = new Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number }>();
+      for (const r of rates) map.set(r.symbol.toUpperCase(), { rate: r.rate, price: r.price, sizeDecimals: r.sizeDecimals, maxLeverage: r.maxLeverage });
       ratesByExchange.set(name, map);
     }
 
@@ -415,7 +416,7 @@ export class FundingArbStrategy implements Strategy {
         for (const best of opportunities) {
           if (openSymbols.has(best.symbol.toUpperCase())) continue;
           if (best.mode === "spot-perp") {
-            const opened = await this.openSpotPerp(best, adapters, ctx);
+            const opened = await this.openSpotPerp(best, adapters, ctx, ratesByExchange);
             if (opened) return [{ type: "noop" }];
             continue;
           }
@@ -427,24 +428,52 @@ export class FundingArbStrategy implements Strategy {
           const price = ratesByExchange.get(best.longExchange)?.get(best.symbol)?.price ?? 0;
           if (price <= 0) continue;
 
-          // Balance check
+          // Determine leverage for this symbol
+          const configLeverage = params.leverage ?? 3;
+          const longMaxLev = ratesByExchange.get(best.longExchange)?.get(best.symbol)?.maxLeverage ?? 1;
+          const shortMaxLev = ratesByExchange.get(best.shortExchange)?.get(best.symbol)?.maxLeverage ?? 1;
+          const leverage = Math.min(configLeverage, longMaxLev, shortMaxLev);
+
+          // Set leverage on both exchanges before ordering
+          try {
+            await Promise.all([
+              longAdapter.setLeverage(best.symbol, leverage, "cross"),
+              shortAdapter.setLeverage(best.symbol, leverage, "cross"),
+            ]);
+          } catch { /* non-critical, some exchanges set leverage on order */ }
+
+          // Balance + margin check
           let targetSizeUsd = params.size_usd;
           try {
             const [longBal, shortBal] = await Promise.all([
               longAdapter.getBalance(),
               shortAdapter.getBalance(),
             ]);
+
+            // Check margin usage (skip if > 80%)
+            const longEquity = parseFloat(longBal.equity);
+            const shortEquity = parseFloat(shortBal.equity);
+            const longMarginPct = longEquity > 0 ? parseFloat(longBal.marginUsed) / longEquity * 100 : 0;
+            const shortMarginPct = shortEquity > 0 ? parseFloat(shortBal.marginUsed) / shortEquity * 100 : 0;
+            if (longMarginPct > 80 || shortMarginPct > 80) {
+              ctx.log(`  [ARB] Skip ${best.symbol}: margin usage too high (long ${longMarginPct.toFixed(0)}%, short ${shortMarginPct.toFixed(0)}%)`);
+              continue;
+            }
+
+            // Required margin per leg = sizeUsd / leverage
             const longAvail = parseFloat(longBal.available);
             const shortAvail = parseFloat(shortBal.available);
             const minAvail = Math.min(longAvail, shortAvail);
-            const maxAffordable = minAvail * 0.8;
-            if (maxAffordable < 10) {
-              ctx.log(`  [ARB] Skip ${best.symbol}: insufficient balance ($${minAvail.toFixed(2)} available)`);
-              continue;
-            }
-            if (targetSizeUsd > maxAffordable) {
-              ctx.log(`  [ARB] Size reduced $${targetSizeUsd} → $${maxAffordable.toFixed(0)} (limited by balance $${minAvail.toFixed(2)})`);
-              targetSizeUsd = Math.floor(maxAffordable);
+            const requiredMarginPerLeg = targetSizeUsd / leverage;
+            if (minAvail < requiredMarginPerLeg) {
+              // Try reducing size to what's affordable
+              const maxAffordableNotional = minAvail * leverage * 0.8;
+              if (maxAffordableNotional < 10) {
+                ctx.log(`  [ARB] Skip ${best.symbol}: insufficient margin ($${minAvail.toFixed(2)} < $${requiredMarginPerLeg.toFixed(2)} needed at ${leverage}x)`);
+                continue;
+              }
+              ctx.log(`  [ARB] Size reduced $${targetSizeUsd} → $${maxAffordableNotional.toFixed(0)} (limited by margin $${minAvail.toFixed(2)} at ${leverage}x)`);
+              targetSizeUsd = Math.floor(maxAffordableNotional);
             }
           } catch { /* non-critical, proceed with original size */ }
 
@@ -641,6 +670,7 @@ export class FundingArbStrategy implements Strategy {
     opp: ArbOpportunity,
     adapters: Map<string, ExchangeAdapter>,
     ctx: StrategyContext,
+    ratesByExchange: Map<string, Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number }>>,
   ): Promise<boolean> {
     const params = this.params;
     const exchangeName = opp.longExchange.replace("-spot", "");
@@ -657,19 +687,45 @@ export class FundingArbStrategy implements Strategy {
         return false;
       }
 
-      // Balance check: need full notional for spot + margin for perp
+      // Determine leverage for perp leg
+      const configLeverage = params.leverage ?? 3;
+      const perpSymbolUpper = this.getPerpSymbol(opp.symbol, opp.shortExchange).toUpperCase();
+      const perpMaxLev = ratesByExchange.get(opp.shortExchange)?.get(perpSymbolUpper)?.maxLeverage
+        ?? ratesByExchange.get(opp.shortExchange)?.get(opp.symbol.toUpperCase())?.maxLeverage
+        ?? 1;
+      const leverage = Math.min(configLeverage, perpMaxLev);
+
+      // Set leverage on perp before ordering
+      try {
+        await perpAdapter.setLeverage(this.getPerpSymbol(opp.symbol, opp.shortExchange), leverage, "cross");
+      } catch { /* non-critical */ }
+
+      // Balance check: spot needs full notional, perp needs sizeUsd / leverage margin
       let targetSizeUsd = params.size_usd;
       try {
         const perpBal = await perpAdapter.getBalance();
-        const perpAvail = parseFloat(perpBal.available);
-        const maxAffordable = perpAvail * 0.8;
-        if (maxAffordable < 10) {
-          ctx.log(`  [ARB] Skip spot-perp ${opp.symbol}: insufficient balance ($${perpAvail.toFixed(2)} available)`);
+
+        // Check margin usage
+        const perpEquity = parseFloat(perpBal.equity);
+        const perpMarginPct = perpEquity > 0 ? parseFloat(perpBal.marginUsed) / perpEquity * 100 : 0;
+        if (perpMarginPct > 80) {
+          ctx.log(`  [ARB] Skip spot-perp ${opp.symbol}: perp margin usage too high (${perpMarginPct.toFixed(0)}%)`);
           return false;
         }
-        if (targetSizeUsd > maxAffordable) {
-          ctx.log(`  [ARB] Spot-perp size reduced $${targetSizeUsd} → $${maxAffordable.toFixed(0)} (limited by balance)`);
-          targetSizeUsd = Math.floor(maxAffordable);
+
+        const perpAvail = parseFloat(perpBal.available);
+        // Total needed from perp account: spot notional (to transfer) + perp margin
+        const perpMarginRequired = targetSizeUsd / leverage;
+        const totalNeeded = targetSizeUsd + perpMarginRequired;
+        if (perpAvail < totalNeeded) {
+          // Solve for max affordable: perpAvail >= notional + notional/lev = notional*(1 + 1/lev)
+          const maxNotional = perpAvail * 0.8 / (1 + 1 / leverage);
+          if (maxNotional < 10) {
+            ctx.log(`  [ARB] Skip spot-perp ${opp.symbol}: insufficient balance ($${perpAvail.toFixed(2)} available, need $${totalNeeded.toFixed(2)})`);
+            return false;
+          }
+          ctx.log(`  [ARB] Spot-perp size reduced $${targetSizeUsd} → $${maxNotional.toFixed(0)} (limited by balance at ${leverage}x)`);
+          targetSizeUsd = Math.floor(maxNotional);
         }
       } catch { /* non-critical */ }
 
@@ -831,7 +887,7 @@ export class FundingArbStrategy implements Strategy {
   private async fetchRates(
     adapter: ExchangeAdapter,
     _exchangeName: string,
-  ): Promise<{ symbol: string; rate: number; price: number; sizeDecimals?: number }[]> {
+  ): Promise<{ symbol: string; rate: number; price: number; sizeDecimals?: number; maxLeverage?: number }[]> {
     try {
       const markets = await adapter.getMarkets();
       return markets
@@ -841,6 +897,7 @@ export class FundingArbStrategy implements Strategy {
           rate: parseFloat(m.fundingRate!),
           price: parseFloat(m.markPrice),
           sizeDecimals: m.sizeDecimals,
+          maxLeverage: m.maxLeverage,
         }));
     } catch {
       return [];

@@ -69,6 +69,7 @@ export interface FundingArbStrategyParams {
   size_usd: number;
   max_positions: number;
   exchanges: string[];
+  leverage?: number; // max leverage to use (default: 3, capped by market maxLeverage)
 }
 
 export interface GenericStrategyParams {
@@ -190,6 +191,7 @@ export function parseStrategy(type: string, raw: Record<string, unknown>): Strat
         exchanges: Array.isArray(raw.exchanges)
           ? raw.exchanges.map(String)
           : String(raw.exchanges ?? "pacifica,hyperliquid").split(",").map(s => s.trim()),
+        leverage: raw.leverage !== undefined ? Number(raw.leverage) : undefined,
       };
     default:
       return { type, ...raw } as GenericStrategyParams;
