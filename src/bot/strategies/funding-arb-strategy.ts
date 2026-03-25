@@ -110,10 +110,50 @@ export class FundingArbStrategy implements Strategy {
         }
       }
 
+      // ── Same-exchange spot-perp hedges (e.g. PURR spot + PURR-PERP short on HL) ──
+      for (const [name, a] of adapters) {
+        try {
+          const spotState = await (a as unknown as { _getSpotClearinghouseState?(): Promise<Record<string, unknown>> })._getSpotClearinghouseState?.();
+          if (!spotState?.balances) continue;
+          const spotBalances = (spotState.balances as { coin: string; total: string }[])
+            .filter(b => Number(b.total) > 0 && b.coin.toUpperCase() !== "USDC");
+
+          const perpPositions = positionsByExchange.get(name) ?? [];
+          for (const perp of perpPositions) {
+            const perpKey = `${name}:${perp.symbol}`;
+            if (used.has(perpKey)) continue;
+            const base = perp.symbol.replace(/-PERP$/, "").toUpperCase();
+            const spotBal = spotBalances.find(b => b.coin.toUpperCase() === base);
+            if (spotBal && perp.side === "short") {
+              recovered.push({ symbol: base, longExchange: `${name}-spot`, shortExchange: name, entrySpread: 0, size: perp.size });
+              used.add(perpKey);
+              ctx.log(`  [ARB] Detected spot-perp hedge: ${base} ${name}-spot↔${name}`);
+            }
+          }
+        } catch { /* adapter doesn't support spot */ }
+      }
+
       if (recovered.length > 0) {
         ctx.state.set("arbOpenPositions", recovered);
         ctx.state.set("arbPositions", recovered.length);
-        ctx.log(`  [ARB] Recovered ${recovered.length} existing position(s): ${recovered.map(p => `${p.symbol} ${p.longExchange}↔${p.shortExchange}`).join(", ")}`);
+        ctx.log(`  [ARB] Recovered ${recovered.length} position(s): ${recovered.map(p => `${p.symbol} ${p.longExchange}↔${p.shortExchange}`).join(", ")}`);
+      }
+
+      // ── Load historical funding income ──
+      let historicalFunding = 0;
+      for (const [name, a] of adapters) {
+        try {
+          const payments = await a.getFundingPayments(200);
+          const sum = payments.reduce((s, p) => s + parseFloat(p.payment), 0);
+          if (Math.abs(sum) > 0.001) {
+            historicalFunding += sum;
+            ctx.log(`  [FUND] ${name}: $${sum.toFixed(4)} historical funding`);
+          }
+        } catch { /* not all adapters support this */ }
+      }
+      if (Math.abs(historicalFunding) > 0.001) {
+        ctx.state.set("fundingIncome", historicalFunding);
+        ctx.log(`  [FUND] Total historical funding: $${historicalFunding.toFixed(4)}`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -156,10 +196,10 @@ export class FundingArbStrategy implements Strategy {
         let totalFunding = 0;
         for (const [name, a] of adapters) {
           try {
-            const payments = await (a as unknown as { getFundingPayments(limit: number): Promise<{ symbol: string; amount: string; timestamp: number }[]> }).getFundingPayments(50);
+            const payments = await a.getFundingPayments(50);
             const startTime = ctx.state.get("fundingLastCheck") as number;
-            const recent = payments.filter(p => p.timestamp > startTime - 5 * 60 * 1000);
-            const sum = recent.reduce((s, p) => s + parseFloat(p.amount), 0);
+            const recent = payments.filter(p => p.time > startTime - 5 * 60 * 1000);
+            const sum = recent.reduce((s, p) => s + parseFloat(p.payment), 0);
             totalFunding += sum;
             if (Math.abs(sum) > 0.001) {
               ctx.log(`  [FUND] ${name}: $${sum.toFixed(4)} funding received`);
