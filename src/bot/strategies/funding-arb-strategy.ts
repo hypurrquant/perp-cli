@@ -6,6 +6,7 @@ import { registerStrategy } from "../strategy-registry.js";
 import { checkArbLiquidity, checkSpotPerpLiquidity } from "../../liquidity.js";
 import { computeMatchedSize, computeSpotPerpMatchedSize, reconcileArbFills } from "../../arb-sizing.js";
 import { computeSignedAnnualSpread, annualizeRate } from "../../funding.js";
+import { logExecution, pruneExecutionLog } from "../../execution-log.js";
 
 interface ArbOpportunity {
   symbol: string;
@@ -50,6 +51,8 @@ export class FundingArbStrategy implements Strategy {
   private _config: Record<string, unknown> = {};
 
   async init(ctx: StrategyContext, _snapshot: EnrichedSnapshot): Promise<void> {
+    // Prune old execution logs (keep 30 days)
+    try { pruneExecutionLog(30); } catch { /* non-critical */ }
     this._config = ctx.config;
     const params = this.params;
     ctx.state.set("arbRunning", true);
@@ -205,11 +208,11 @@ export class FundingArbStrategy implements Strategy {
     }
 
     // Fetch rates from all exchanges
-    const ratesByExchange = new Map<string, Map<string, { rate: number; price: number }>>();
+    const ratesByExchange = new Map<string, Map<string, { rate: number; price: number; sizeDecimals?: number }>>();
     for (const [name, a] of adapters) {
       const rates = await this.fetchRates(a, name);
-      const map = new Map<string, { rate: number; price: number }>();
-      for (const r of rates) map.set(r.symbol.toUpperCase(), { rate: r.rate, price: r.price });
+      const map = new Map<string, { rate: number; price: number; sizeDecimals?: number }>();
+      for (const r of rates) map.set(r.symbol.toUpperCase(), { rate: r.rate, price: r.price, sizeDecimals: r.sizeDecimals });
       ratesByExchange.set(name, map);
     }
 
@@ -298,6 +301,7 @@ export class FundingArbStrategy implements Strategy {
               ]);
               toClose.push(pos);
               ctx.log(`  [ARB] Closed ${pos.symbol} position`);
+              logExecution({ type: "arb_close", exchange: `${pos.longExchange}↔${pos.shortExchange}`, symbol: pos.symbol, side: "close", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, signedSpread: signedSpread } });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               ctx.log(`  [ARB] Close failed for ${pos.symbol}: ${msg}`);
@@ -443,8 +447,10 @@ export class FundingArbStrategy implements Strategy {
           );
           if (!liq.viable) continue;
 
-          // Compute matched size
-          let matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange);
+          // Compute matched size (use actual precision from exchange market data)
+          const longDec = ratesByExchange.get(best.longExchange)?.get(best.symbol)?.sizeDecimals;
+          const shortDec = ratesByExchange.get(best.shortExchange)?.get(best.symbol)?.sizeDecimals;
+          let matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange, { longSizeDecimals: longDec, shortSizeDecimals: shortDec });
           if (!matched) {
             ctx.log(`  [ARB] Skip ${best.symbol}: can't compute matched size (min notional or precision issue)`);
             continue;
@@ -463,7 +469,7 @@ export class FundingArbStrategy implements Strategy {
               if (lotMatch) {
                 const lotSize = parseFloat(lotMatch[1]);
                 ctx.log(`  [ARB] Lot size ${lotSize} detected, recalculating...`);
-                matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange, { lotSize });
+                matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange, { lotSize, longSizeDecimals: longDec, shortSizeDecimals: shortDec });
                 if (!matched) { ctx.log(`  [ARB] Skip ${best.symbol}: can't meet lot size ${lotSize}`); continue; }
                 ctx.log(`  [ARB] Retry: ${matched.size} ${best.symbol} ($${matched.notional.toFixed(0)}/leg)`);
                 await Promise.all([
@@ -501,10 +507,12 @@ export class FundingArbStrategy implements Strategy {
             ctx.state.set("arbOpenPositions", currentPositions);
             ctx.state.set("arbPositions", currentPositions.length);
             ctx.log(`  [ARB] Position opened! (${currentPositions.length}/${params.max_positions})`);
+            logExecution({ type: "arb_entry", exchange: `${best.longExchange}↔${best.shortExchange}`, symbol: best.symbol, side: "long/short", size: matched.size, notional: matched.notional, status: "success", dryRun: false, meta: { mode: "perp-perp", spread: best.spread } });
             return [{ type: "noop" }];
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             ctx.log(`  [ARB] Execution failed for ${best.symbol}: ${msg}`);
+            logExecution({ type: "arb_entry", exchange: `${best.longExchange}↔${best.shortExchange}`, symbol: best.symbol, side: "long/short", size: matched?.size ?? "0", status: "failed", error: msg, dryRun: false, meta: { mode: "perp-perp" } });
             continue;
           }
         }
@@ -709,10 +717,12 @@ export class FundingArbStrategy implements Strategy {
       ctx.state.set("arbOpenPositions", currentPositions);
       ctx.state.set("arbPositions", currentPositions.length);
       ctx.log(`  [ARB] Spot-perp position opened! (${currentPositions.length}/${params.max_positions})`);
+      logExecution({ type: "arb_entry", exchange: `${opp.longExchange}↔${opp.shortExchange}`, symbol: opp.symbol, side: "spot-long/perp-short", size: matched.size, notional: matched.notional, status: "success", dryRun: false, meta: { mode: "spot-perp", spread: opp.spread } });
       return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       ctx.log(`  [ARB] Open spot-perp failed for ${opp.symbol}: ${msg}`);
+      logExecution({ type: "arb_entry", exchange: opp.shortExchange, symbol: opp.symbol, side: "spot-long/perp-short", size: "0", status: "failed", error: msg, dryRun: false, meta: { mode: "spot-perp" } });
       return false;
     }
   }
@@ -813,15 +823,16 @@ export class FundingArbStrategy implements Strategy {
   private async fetchRates(
     adapter: ExchangeAdapter,
     _exchangeName: string,
-  ): Promise<{ symbol: string; rate: number; price: number }[]> {
+  ): Promise<{ symbol: string; rate: number; price: number; sizeDecimals?: number }[]> {
     try {
       const markets = await adapter.getMarkets();
       return markets
-        .filter(m => m.fundingRate != null) // skip symbols with unavailable rates
+        .filter(m => m.fundingRate != null)
         .map(m => ({
           symbol: m.symbol,
           rate: parseFloat(m.fundingRate!),
           price: parseFloat(m.markPrice),
+          sizeDecimals: m.sizeDecimals,
         }));
     } catch {
       return [];

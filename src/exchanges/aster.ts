@@ -99,6 +99,9 @@ export class AsterAdapter implements ExchangeAdapter {
         const premium = premiumMap.get(sym);
         const maxLev = Number(s.maxLeverage ?? 50);
 
+        const lotFilter = (s.filters as Array<Record<string, unknown>> | undefined)
+          ?.find(f => f.filterType === "LOT_SIZE");
+
         return {
           symbol: this._fromApi(sym),
           markPrice: String(premium?.markPrice ?? ticker?.lastPrice ?? "0"),
@@ -107,6 +110,8 @@ export class AsterAdapter implements ExchangeAdapter {
           volume24h: String(ticker?.quoteVolume ?? ticker?.volume ?? "0"),
           openInterest: "0",
           maxLeverage: maxLev,
+          sizeDecimals: s.quantityPrecision != null ? Number(s.quantityPrecision) : undefined,
+          stepSize: lotFilter?.stepSize != null ? String(lotFilter.stepSize) : undefined,
         };
       });
 

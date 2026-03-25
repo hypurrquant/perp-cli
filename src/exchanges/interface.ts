@@ -11,6 +11,8 @@ export interface ExchangeMarketInfo {
   volume24h: string;
   openInterest: string;
   maxLeverage: number;
+  sizeDecimals?: number;  // quantity precision (e.g. 0 = integers only, 2 = 0.01)
+  stepSize?: string;      // lot step size (e.g. "1", "0.1", "0.001")
 }
 
 export interface ExchangePosition {
