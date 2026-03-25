@@ -27,7 +27,11 @@ export class AsterAdapter implements ExchangeAdapter {
   private _testnet: boolean;
   private _marketsCache: ExchangeMarketInfo[] | null = null;
   private _marketsCacheTime = 0;
-  private static readonly CACHE_TTL = 30_000; // 30 seconds
+  private _accountCache: { data: unknown; time: number } | null = null;
+  private _positionsCache: { data: unknown; time: number } | null = null;
+  private _ordersCache: { data: unknown; time: number } | null = null;
+  private static readonly CACHE_TTL = 30_000; // 30 seconds (markets)
+  private static readonly ACCOUNT_CACHE_TTL = 5_000; // 5 seconds (account/positions/orders)
 
   constructor(apiKey?: string, apiSecret?: string, testnet = false) {
     this._apiKey = apiKey || process.env.ASTER_API_KEY || "";
@@ -174,6 +178,9 @@ export class AsterAdapter implements ExchangeAdapter {
   // ── Account ──
 
   async getBalance(): Promise<ExchangeBalance> {
+    if (this._accountCache && Date.now() - this._accountCache.time < AsterAdapter.ACCOUNT_CACHE_TTL) {
+      return this._accountCache.data as ExchangeBalance;
+    }
     const account = await this._signedGet("/fapi/v2/account") as Record<string, unknown>;
 
     const totalWallet = Number(account.totalWalletBalance ?? 0);
@@ -181,18 +188,23 @@ export class AsterAdapter implements ExchangeAdapter {
     const available = Number(account.availableBalance ?? 0);
     const marginUsed = Number(account.totalInitialMargin ?? 0);
 
-    return {
+    const result = {
       equity: String(totalWallet + unrealizedPnl),
       available: String(available),
       marginUsed: String(marginUsed),
       unrealizedPnl: String(unrealizedPnl),
     };
+    this._accountCache = { data: result, time: Date.now() };
+    return result;
   }
 
   async getPositions(): Promise<ExchangePosition[]> {
+    if (this._positionsCache && Date.now() - this._positionsCache.time < AsterAdapter.ACCOUNT_CACHE_TTL) {
+      return this._positionsCache.data as ExchangePosition[];
+    }
     const data = await this._signedGet("/fapi/v2/positionRisk") as Array<Record<string, unknown>>;
 
-    return (data ?? [])
+    const result = (data ?? [])
       .filter((p) => Number(p.positionAmt ?? 0) !== 0)
       .map((p) => {
         const amt = Number(p.positionAmt ?? 0);
@@ -207,12 +219,17 @@ export class AsterAdapter implements ExchangeAdapter {
           leverage: Number(p.leverage ?? 1),
         };
       });
+    this._positionsCache = { data: result, time: Date.now() };
+    return result;
   }
 
   async getOpenOrders(): Promise<ExchangeOrder[]> {
+    if (this._ordersCache && Date.now() - this._ordersCache.time < AsterAdapter.ACCOUNT_CACHE_TTL) {
+      return this._ordersCache.data as ExchangeOrder[];
+    }
     const orders = await this._signedGet("/fapi/v1/openOrders") as Array<Record<string, unknown>>;
 
-    return (orders ?? []).map((o) => ({
+    const result = (orders ?? []).map((o) => ({
       orderId: String(o.orderId ?? ""),
       symbol: this._fromApi(String(o.symbol ?? "")),
       side: String(o.side).toLowerCase() as "buy" | "sell",
@@ -222,6 +239,8 @@ export class AsterAdapter implements ExchangeAdapter {
       status: String(o.status ?? ""),
       type: String(o.type ?? ""),
     }));
+    this._ordersCache = { data: result, time: Date.now() };
+    return result;
   }
 
   async getOrderHistory(limit = 30): Promise<ExchangeOrder[]> {
