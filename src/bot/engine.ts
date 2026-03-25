@@ -530,6 +530,58 @@ async function fetchExchangeBalances(
   return results;
 }
 
+async function fetchSpotPositions(
+  adapter: ExchangeAdapter,
+): Promise<import("./tui/index.js").Position[]> {
+  const name = adapter.name.toLowerCase();
+  if (name !== "hyperliquid" && name !== "lighter") return [];
+
+  try {
+    if (name === "hyperliquid") {
+      const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+      const { HyperliquidAdapter } = await import("../exchanges/hyperliquid.js");
+      if (!(adapter instanceof HyperliquidAdapter)) return [];
+      const hlSpot = new HyperliquidSpotAdapter(adapter);
+      await hlSpot.init();
+      const [raw, markets] = await Promise.all([hlSpot.getSpotBalances(), hlSpot.getSpotMarkets()]);
+      const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), m.markPrice]));
+      const strip = (t: string) => t.replace(/-SPOT$/i, "").toUpperCase();
+      const hlPositions: import("./tui/index.js").Position[] = [];
+      for (const b of raw) {
+        if (Number(b.total) <= 0) continue;
+        const base = strip(b.token);
+        const markPrice = priceMap.get(base) ?? "0";
+        if (base === "USDC" || markPrice === "0") continue;
+        hlPositions.push({ symbol: base, side: "spot", size: b.total, entryPrice: "—", markPrice, unrealizedPnl: "—", exchange: adapter.name });
+      }
+      return hlPositions;
+    }
+
+    if (name === "lighter") {
+      const { LighterAdapter } = await import("../exchanges/lighter.js");
+      const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");
+      if (!(adapter instanceof LighterAdapter)) return [];
+      const ltSpot = new LighterSpotAdapter(adapter);
+      await ltSpot.init();
+      const [raw, markets] = await Promise.all([ltSpot.getSpotBalances(), ltSpot.getSpotMarkets()]);
+      const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), m.markPrice]));
+      const ltPositions: import("./tui/index.js").Position[] = [];
+      for (const b of raw) {
+        if (Number(b.total) <= 0) continue;
+        const base = b.token.toUpperCase();
+        const markPrice = priceMap.get(base) ?? "0";
+        if (base === "USDC" || base === "USDC_SPOT" || markPrice === "0") continue;
+        ltPositions.push({ symbol: base, side: "spot", size: b.total, entryPrice: "—", markPrice, unrealizedPnl: "—", exchange: adapter.name });
+      }
+      return ltPositions;
+    }
+  } catch {
+    // Spot adapter unavailable — skip silently
+  }
+
+  return [];
+}
+
 async function fetchAllPositions(
   primaryAdapter: ExchangeAdapter,
   symbol: string,
@@ -541,8 +593,11 @@ async function fetchAllPositions(
   }
   const all: import("./tui/index.js").Position[][] = [];
   await Promise.all(adapters.map(async ([name, a]) => {
-    const pos = await fetchPositions(a, symbol, name);
-    all.push(pos);
+    const [perpPos, spotPos] = await Promise.all([
+      fetchPositions(a, symbol, name),
+      fetchSpotPositions(a),
+    ]);
+    all.push([...perpPos, ...spotPos]);
   }));
   return all.flat();
 }

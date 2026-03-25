@@ -309,18 +309,45 @@ export function BotDashboard({ initialState, onQuit, onPause, subscribe }: Dashb
 
       {/* ── Strategy State ── */}
       <Box marginTop={1} flexDirection="column">
-        <Text color="cyan" bold>Strategy State</Text>
-        <Box flexDirection="row" flexWrap="wrap">
-          {Object.entries(state.strategyState).slice(0, 12).map(([k, v]) => (
-            <Box key={k} marginRight={2}>
-              <Text color="gray">{k}: </Text>
-              <Text color="white">{String(v)}</Text>
+        {state.strategyState.fundingTotal !== undefined ? (
+          <>
+            <Text color="cyan" bold>Funding &amp; Arb</Text>
+            <Box flexDirection="row" marginLeft={2}>
+              <Text color="gray">Funding Income: </Text>
+              <Text color="white">{String(state.strategyState.fundingTotal)}</Text>
+              <Text color="gray">        Positions: </Text>
+              <Text color="white">{String(state.strategyState.arbPositions ?? 0)}</Text>
             </Box>
-          ))}
-          {Object.keys(state.strategyState).length === 0 && (
-            <Text color="gray">  --</Text>
-          )}
-        </Box>
+            {Array.isArray(state.strategyState.arbPositionDetails) &&
+              (state.strategyState.arbPositionDetails as string[]).map((detail, i) => (
+                <Box key={i} marginLeft={2}>
+                  <Text color="yellow">{detail}</Text>
+                </Box>
+              ))}
+          </>
+        ) : (
+          <>
+            <Text color="cyan" bold>Strategy State</Text>
+            <Box flexDirection="row" flexWrap="wrap">
+              {Object.entries(state.strategyState)
+                .filter(([k, v]) => {
+                  if (k === 'arbRunning' || k === 'fundingLastCheck' || k === 'fundingHistory' || k === 'arbOpenPositions') return false;
+                  if (Array.isArray(v) || (typeof v === 'object' && v !== null)) return false;
+                  return true;
+                })
+                .slice(0, 12)
+                .map(([k, v]) => (
+                  <Box key={k} marginRight={2}>
+                    <Text color="gray">{k}: </Text>
+                    <Text color="white">{String(v)}</Text>
+                  </Box>
+                ))}
+              {Object.keys(state.strategyState).length === 0 && (
+                <Text color="gray">  --</Text>
+              )}
+            </Box>
+          </>
+        )}
       </Box>
 
       {/* ── Log ── */}
