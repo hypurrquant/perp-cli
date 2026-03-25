@@ -90,6 +90,9 @@ export class PacificaAdapter implements ExchangeAdapter {
     const priceMap = new Map(prices.map((p) => [p.symbol, p]));
     const result = markets.map((m) => {
       const p = priceMap.get(m.symbol);
+      // Derive sizeDecimals from lot_size (e.g. "0.001" → 3, "1" → 0)
+      const lotSize = parseFloat(m.lot_size ?? "0");
+      const sizeDecimals = lotSize > 0 ? Math.max(0, -Math.floor(Math.log10(lotSize))) : undefined;
       return {
         symbol: m.symbol,
         markPrice: p?.mark ?? "-",
@@ -98,6 +101,8 @@ export class PacificaAdapter implements ExchangeAdapter {
         volume24h: p?.volume_24h ?? "-",
         openInterest: p?.open_interest ?? "-",
         maxLeverage: m.max_leverage,
+        sizeDecimals,
+        stepSize: lotSize > 0 ? m.lot_size : undefined,
       };
     });
     this._marketsCache = result; this._marketsCacheTime = Date.now(); return result;

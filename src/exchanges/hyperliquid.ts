@@ -230,6 +230,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const result = universe.map((asset: Record<string, unknown>, i: number) => {
       const ctx = (ctxs[i] ?? {}) as Record<string, unknown>;
       const sym = String(asset.name);
+      const szDec = this._szDecimalsMap.get(sym) ?? (asset.szDecimals !== undefined ? Number(asset.szDecimals) : undefined);
       return {
         symbol: sym,
         markPrice: String(ctx.markPx ?? mids[sym] ?? "0"),
@@ -238,6 +239,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         volume24h: String(ctx.dayNtlVlm ?? "0"),
         openInterest: String(ctx.openInterest ?? "0"),
         maxLeverage: Number(asset.maxLeverage ?? 50),
+        sizeDecimals: szDec,
       };
     });
     this._marketsCache = result; this._marketsCacheTime = Date.now(); return result;

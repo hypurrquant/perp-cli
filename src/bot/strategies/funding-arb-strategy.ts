@@ -430,12 +430,14 @@ export class FundingArbStrategy implements Strategy {
       if (arbPositions < params.max_positions) {
         // Skip symbols already in open positions
         const openSymbols = new Set((ctx.state.get("arbOpenPositions") as ArbOpenPosition[]).map(p => p.symbol.toUpperCase()));
+        let skipMargin = 0;
+        let skipCooldown = 0;
         for (const best of opportunities) {
           if (openSymbols.has(best.symbol.toUpperCase())) continue;
           // Cooldown: skip if entry recently failed for this symbol
           const entryKey = `${best.symbol}:entry`;
           const entryCooldown = this._failCooldown.get(entryKey) ?? 0;
-          if (Date.now() < entryCooldown) continue;
+          if (Date.now() < entryCooldown) { skipCooldown++; continue; }
           if (best.mode === "spot-perp") {
             const opened = await this.openSpotPerp(best, adapters, ctx, ratesByExchange);
             if (opened) return [{ type: "noop" }];
@@ -477,7 +479,7 @@ export class FundingArbStrategy implements Strategy {
             const longMarginPct = longEquity > 0 ? parseFloat(longBal.marginUsed) / longEquity * 100 : 0;
             const shortMarginPct = shortEquity > 0 ? parseFloat(shortBal.marginUsed) / shortEquity * 100 : 0;
             if (longMarginPct > 80 || shortMarginPct > 80) {
-              ctx.log(`  [ARB] Skip ${best.symbol}: margin usage too high (long ${longMarginPct.toFixed(0)}%, short ${shortMarginPct.toFixed(0)}%)`);
+              skipMargin++;
               continue;
             }
 
@@ -578,6 +580,13 @@ export class FundingArbStrategy implements Strategy {
           ctx.state.set("arbPositions", currentPositions.length);
           ctx.log(`  [ARB] Position opened! (${currentPositions.length}/${params.max_positions})`);
           return [{ type: "noop" }];
+        }
+        // Log skip summary only when there were skips (avoids noise when nothing happened)
+        if (skipMargin > 0 || skipCooldown > 0) {
+          const parts: string[] = [];
+          if (skipMargin > 0) parts.push(`${skipMargin} margin`);
+          if (skipCooldown > 0) parts.push(`${skipCooldown} cooldown`);
+          ctx.log(`  [ARB] Skipped ${skipMargin + skipCooldown} opportunities (${parts.join(", ")})`);
         }
       }
     } else {

@@ -308,6 +308,9 @@ export class LighterAdapter implements ExchangeAdapter {
     const markets: ExchangeMarketInfo[] = [];
 
     try {
+      // Ensure _marketDecimals is populated (has supported_size_decimals per symbol)
+      await this.ensureMarketMap();
+
       // Fetch order book details and funding rates in parallel
       const [obRes, fundingRates] = await Promise.all([
         this.restGet("/orderBookDetails", {}) as Promise<{
@@ -331,6 +334,7 @@ export class LighterAdapter implements ExchangeAdapter {
         const imf = d.min_initial_margin_fraction ?? d.default_initial_margin_fraction ?? 500;
         const maxLev = imf > 0 ? Math.floor(10000 / imf) : 50;
         const fr = fundingRates.get(d.symbol);
+        const dec = this._marketDecimals.get(d.symbol.toUpperCase());
         markets.push({
           symbol: d.symbol,
           markPrice: fr?.markPrice ?? String(d.last_trade_price ?? 0),
@@ -339,6 +343,7 @@ export class LighterAdapter implements ExchangeAdapter {
           volume24h: String(d.daily_quote_token_volume ?? 0),
           openInterest: String(d.open_interest ?? 0),
           maxLeverage: maxLev,
+          sizeDecimals: dec?.size,
         });
       }
     } catch { /* non-critical */ }
