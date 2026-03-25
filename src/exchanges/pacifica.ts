@@ -24,7 +24,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   private signMessage: (msg: Uint8Array) => Promise<Uint8Array>;
   private _marketsCache: ExchangeMarketInfo[] | null = null;
   private _marketsCacheTime = 0;
-  private static readonly CACHE_TTL = 10_000;
+  private static readonly CACHE_TTL = 30_000;
 
   constructor(keypair: Keypair, network: Network = "mainnet", builderCode?: string, hasRealKey = true) {
     this._solanaSigner = new LocalSolanaSigner(keypair);

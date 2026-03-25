@@ -42,7 +42,7 @@ export class LighterAdapter implements ExchangeAdapter {
   private _evmSigner?: EvmSigner;
   private _marketsCache: ExchangeMarketInfo[] | null = null;
   private _marketsCacheTime = 0;
-  private static readonly CACHE_TTL = 10_000;
+  private static readonly CACHE_TTL = 30_000;
 
   /**
    * @param evmKey    EVM private key (0x-prefixed, 32 bytes) — for deposits & key registration

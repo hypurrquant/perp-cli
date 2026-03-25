@@ -29,7 +29,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   private static _lastNonce = 0;
   private _marketsCache: ExchangeMarketInfo[] | null = null;
   private _marketsCacheTime = 0;
-  private static readonly CACHE_TTL = 10_000;
+  private static readonly CACHE_TTL = 30_000;
 
   constructor(privateKey?: string, testnet = false) {
     // Disable WebSocket in SDK — we use REST for all info calls and raw

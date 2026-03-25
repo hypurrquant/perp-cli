@@ -51,6 +51,9 @@ export class FundingArbStrategy implements Strategy {
     ctx.state.set("arbRunning", true);
     ctx.state.set("arbOpenPositions", [] as ArbOpenPosition[]);
     ctx.state.set("arbPositions", 0);
+    ctx.state.set("fundingIncome", 0);
+    ctx.state.set("fundingLastCheck", Date.now());
+    ctx.state.set("fundingHistory", [] as { time: number; amount: number; exchange: string; symbol: string }[]);
     ctx.log(`  [ARB] Funding arb ready | spread >= ${params.min_spread}% | close < ${params.close_spread}% | size $${params.size_usd}`);
     ctx.log(`  [ARB] Exchanges: ${params.exchanges.join(", ")}`);
   }
@@ -82,6 +85,41 @@ export class FundingArbStrategy implements Strategy {
       for (const r of rates) map.set(r.symbol.toUpperCase(), { rate: r.rate, price: r.price });
       ratesByExchange.set(name, map);
     }
+
+    // ── Fetch funding income periodically (every 5 minutes) ──
+    const lastCheck = ctx.state.get("fundingLastCheck") as number;
+    if (openPositions.length > 0 && Date.now() - lastCheck > 5 * 60 * 1000) {
+      try {
+        let totalFunding = 0;
+        for (const [name, a] of adapters) {
+          try {
+            const payments = await (a as unknown as { getFundingPayments(limit: number): Promise<{ symbol: string; amount: string; timestamp: number }[]> }).getFundingPayments(50);
+            const startTime = ctx.state.get("fundingLastCheck") as number;
+            const recent = payments.filter(p => p.timestamp > startTime - 5 * 60 * 1000);
+            const sum = recent.reduce((s, p) => s + parseFloat(p.amount), 0);
+            totalFunding += sum;
+            if (Math.abs(sum) > 0.001) {
+              ctx.log(`  [FUND] ${name}: $${sum.toFixed(4)} funding received`);
+            }
+          } catch { /* not all adapters support this */ }
+        }
+        const prev = ctx.state.get("fundingIncome") as number;
+        ctx.state.set("fundingIncome", prev + totalFunding);
+        ctx.state.set("fundingLastCheck", Date.now());
+      } catch { /* non-critical */ }
+    }
+
+    // ── Update strategy state for TUI display ──
+    const arbPosForDisplay = openPositions.map(p => {
+      const longRate = ratesByExchange.get(p.longExchange)?.get(p.symbol)?.rate;
+      const shortRate = ratesByExchange.get(p.shortExchange)?.get(p.symbol)?.rate;
+      const spread = (longRate !== undefined && shortRate !== undefined)
+        ? computeAnnualSpread(shortRate, p.shortExchange, longRate, p.longExchange)
+        : 0;
+      return `${p.symbol} ${p.longExchange}↔${p.shortExchange} ${spread.toFixed(1)}%`;
+    });
+    ctx.state.set("arbPositionDetails", arbPosForDisplay);
+    ctx.state.set("fundingTotal", `$${(ctx.state.get("fundingIncome") as number).toFixed(4)}`);
 
     // ── Check existing positions for close_spread ──
     const toClose: ArbOpenPosition[] = [];

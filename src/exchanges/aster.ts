@@ -27,7 +27,7 @@ export class AsterAdapter implements ExchangeAdapter {
   private _testnet: boolean;
   private _marketsCache: ExchangeMarketInfo[] | null = null;
   private _marketsCacheTime = 0;
-  private static readonly CACHE_TTL = 10_000; // 10 seconds
+  private static readonly CACHE_TTL = 30_000; // 30 seconds
 
   constructor(apiKey?: string, apiSecret?: string, testnet = false) {
     this._apiKey = apiKey || process.env.ASTER_API_KEY || "";
