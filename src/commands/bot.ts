@@ -494,8 +494,14 @@ export function registerBotCommands(
     .option("--config <path>", "YAML/JSON config file")
     .option("--headless", "Run without TUI dashboard")
     .option("--param <key=value>", "Strategy parameter (repeatable)", (val: string, acc: string[]) => [...acc, val], [] as string[])
+    .option("--max-positions <n>", "Max simultaneous positions")
+    .option("--size <usd>", "Position size per leg ($)")
+    .option("--min-spread <pct>", "Min annual spread to enter (%)")
+    .option("--close-spread <pct>", "Close when spread drops below (%)")
+    .option("--exchanges <list>", "Comma-separated exchanges")
     .action(async (strategyName: string | undefined, symbol: string | undefined, opts: {
       config?: string; headless?: boolean; param: string[];
+      maxPositions?: string; size?: string; minSpread?: string; closeSpread?: string; exchanges?: string;
     }) => {
       if (!strategyName) {
         await import("../bot/engine.js");
@@ -549,6 +555,12 @@ export function registerBotCommands(
           else if (!isNaN(Number(raw)) && raw !== "") params[key] = Number(raw);
           else params[key] = raw;
         }
+        // Merge shorthand CLI options into params
+        if (opts.maxPositions) params.max_positions = parseInt(opts.maxPositions);
+        if (opts.size) params.size_usd = parseFloat(opts.size);
+        if (opts.minSpread) params.min_spread = parseFloat(opts.minSpread);
+        if (opts.closeSpread) params.close_spread = parseFloat(opts.closeSpread);
+        if (opts.exchanges) params.exchanges = opts.exchanges;
 
         const adapter = await getAdapter();
         const strategy = parseStrategy(strategyName, params);
