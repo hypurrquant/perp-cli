@@ -175,7 +175,9 @@ export class FundingArbStrategy implements Strategy {
       for (const [name, a] of adapters) {
         try {
           const payments = await a.getFundingPayments(200);
-          const sum = payments.reduce((s, p) => s + parseFloat(p.payment), 0);
+          const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+          const recent = payments.filter(p => p.time > oneDayAgo);
+          const sum = recent.reduce((s, p) => s + parseFloat(p.payment), 0);
           if (Math.abs(sum) > 0.001) {
             historicalFunding += sum;
             ctx.log(`  [FUND] ${name}: $${sum.toFixed(4)} historical funding`);
@@ -250,12 +252,12 @@ export class FundingArbStrategy implements Strategy {
         // For spot-perp: long side is spot (rate=0), short side is perp
         const perpExchange = p.shortExchange;
         const perpSymbol = this.getPerpSymbol(p.symbol, perpExchange);
-        const shortRate = ratesByExchange.get(perpExchange)?.get(perpSymbol)?.rate
-          ?? ratesByExchange.get(perpExchange)?.get(p.symbol)?.rate;
+        const shortRate = this.findRate(ratesByExchange, perpExchange, perpSymbol)?.rate
+          ?? this.findRate(ratesByExchange, perpExchange, p.symbol)?.rate;
         signedSpread = shortRate !== undefined ? annualizeRate(shortRate, perpExchange) : 0;
       } else {
-        const longRate = ratesByExchange.get(p.longExchange)?.get(p.symbol)?.rate;
-        const shortRate = ratesByExchange.get(p.shortExchange)?.get(p.symbol)?.rate;
+        const longRate = this.findRate(ratesByExchange, p.longExchange, p.symbol)?.rate;
+        const shortRate = this.findRate(ratesByExchange, p.shortExchange, p.symbol)?.rate;
         signedSpread = (longRate !== undefined && shortRate !== undefined)
           ? computeSignedAnnualSpread(shortRate, p.shortExchange, longRate, p.longExchange)
           : 0;
@@ -274,13 +276,13 @@ export class FundingArbStrategy implements Strategy {
       if (pos.mode === "spot-perp") {
         const perpExchange = pos.shortExchange;
         const perpSymbol = this.getPerpSymbol(pos.symbol, perpExchange);
-        const shortRate = ratesByExchange.get(perpExchange)?.get(perpSymbol)?.rate
-          ?? ratesByExchange.get(perpExchange)?.get(pos.symbol)?.rate;
+        const shortRate = this.findRate(ratesByExchange, perpExchange, perpSymbol)?.rate
+          ?? this.findRate(ratesByExchange, perpExchange, pos.symbol)?.rate;
         if (shortRate === undefined) continue;
         signedSpread = annualizeRate(shortRate, perpExchange);
       } else {
-        const longRate = ratesByExchange.get(pos.longExchange)?.get(pos.symbol)?.rate;
-        const shortRate = ratesByExchange.get(pos.shortExchange)?.get(pos.symbol)?.rate;
+        const longRate = this.findRate(ratesByExchange, pos.longExchange, pos.symbol)?.rate;
+        const shortRate = this.findRate(ratesByExchange, pos.shortExchange, pos.symbol)?.rate;
         if (longRate === undefined || shortRate === undefined) continue;
         signedSpread = computeSignedAnnualSpread(shortRate, pos.shortExchange, longRate, pos.longExchange);
       }
@@ -365,7 +367,7 @@ export class FundingArbStrategy implements Strategy {
       let minExchange = "", maxExchange = "";
 
       for (const exName of exchangeNames) {
-        const rate = ratesByExchange.get(exName)?.get(sym)?.rate;
+        const rate = this.findRate(ratesByExchange, exName, sym)?.rate;
         if (rate === undefined) continue;
         if (rate < minRate) { minRate = rate; minExchange = exName; }
         if (rate > maxRate) { maxRate = rate; maxExchange = exName; }
@@ -459,13 +461,13 @@ export class FundingArbStrategy implements Strategy {
           const shortAdapter = adapters.get(best.shortExchange);
           if (!longAdapter || !shortAdapter) continue;
 
-          const price = ratesByExchange.get(best.longExchange)?.get(best.symbol)?.price ?? 0;
+          const price = this.findRate(ratesByExchange, best.longExchange, best.symbol)?.price ?? 0;
           if (price <= 0) continue;
 
           // Determine leverage for this symbol
           const configLeverage = params.leverage ?? 3;
-          const longMaxLev = ratesByExchange.get(best.longExchange)?.get(best.symbol)?.maxLeverage ?? 1;
-          const shortMaxLev = ratesByExchange.get(best.shortExchange)?.get(best.symbol)?.maxLeverage ?? 1;
+          const longMaxLev = this.findRate(ratesByExchange, best.longExchange, best.symbol)?.maxLeverage ?? 1;
+          const shortMaxLev = this.findRate(ratesByExchange, best.shortExchange, best.symbol)?.maxLeverage ?? 1;
           const leverage = Math.min(configLeverage, longMaxLev, shortMaxLev);
 
           // Set leverage on both exchanges before ordering
@@ -519,8 +521,8 @@ export class FundingArbStrategy implements Strategy {
           if (!liq.viable) continue;
 
           // Compute matched size (use actual precision from exchange market data)
-          const longDec = ratesByExchange.get(best.longExchange)?.get(best.symbol)?.sizeDecimals;
-          const shortDec = ratesByExchange.get(best.shortExchange)?.get(best.symbol)?.sizeDecimals;
+          const longDec = this.findRate(ratesByExchange, best.longExchange, best.symbol)?.sizeDecimals;
+          const shortDec = this.findRate(ratesByExchange, best.shortExchange, best.symbol)?.sizeDecimals;
           let matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange, { longSizeDecimals: longDec, shortSizeDecimals: shortDec });
           if (!matched) {
             ctx.log(`  [ARB] Skip ${best.symbol}: can't compute matched size (min notional or precision issue)`);
@@ -768,8 +770,8 @@ export class FundingArbStrategy implements Strategy {
       // Determine leverage for perp leg
       const configLeverage = params.leverage ?? 3;
       const perpSymbolUpper = this.getPerpSymbol(opp.symbol, opp.shortExchange).toUpperCase();
-      const perpMaxLev = ratesByExchange.get(opp.shortExchange)?.get(perpSymbolUpper)?.maxLeverage
-        ?? ratesByExchange.get(opp.shortExchange)?.get(opp.symbol.toUpperCase())?.maxLeverage
+      const perpMaxLev = this.findRate(ratesByExchange, opp.shortExchange, perpSymbolUpper)?.maxLeverage
+        ?? this.findRate(ratesByExchange, opp.shortExchange, opp.symbol.toUpperCase())?.maxLeverage
         ?? 1;
       const leverage = Math.min(configLeverage, perpMaxLev);
 
@@ -965,13 +967,19 @@ export class FundingArbStrategy implements Strategy {
    * HL getPositions() returns symbols like "PURR" or "PURR-PERP" — we normalize here.
    */
   private getPerpSymbol(baseSymbol: string, exchangeName: string): string {
-    // Strip any existing -PERP suffix first
     const base = baseSymbol.replace(/-PERP$/, "").toUpperCase();
-    // HL perp symbols are just the base (e.g. "PURR", "ETH", "BTC")
-    // Some HIP-3 tokens might need "-PERP" suffix — use base for now
-    // since getPositions() returns the base form on HL
     void exchangeName;
     return base;
+  }
+
+  /** Look up rate from ratesByExchange, trying symbol, symbol-PERP, and symbol without -PERP */
+  private findRate(ratesByExchange: Map<string, Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number }>>, exchange: string, symbol: string): { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number } | undefined {
+    const map = ratesByExchange.get(exchange);
+    if (!map) return undefined;
+    const upper = symbol.toUpperCase();
+    return map.get(upper)
+      ?? map.get(upper + "-PERP")
+      ?? map.get(upper.replace(/-PERP$/, ""));
   }
 
   /**
