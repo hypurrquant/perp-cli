@@ -53,6 +53,7 @@ export class FundingArbStrategy implements Strategy {
 
   private _config: Record<string, unknown> = {};
   private _failCooldown = new Map<string, number>(); // "symbol:action" → timestamp of next retry
+  private _spotAdapterCache = new Map<string, SpotAdapter>();
 
   async init(ctx: StrategyContext, _snapshot: EnrichedSnapshot): Promise<void> {
     // Prune old execution logs (keep 30 days)
@@ -233,8 +234,10 @@ export class FundingArbStrategy implements Strategy {
         } else {
           ctx.log(`  [ARB] ${name} margin ${marginPct.toFixed(0)}% — skipping for this tick`);
         }
-      } catch {
-        availableAdapters.set(name, a); // on error, include it
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        ctx.log(`  [ARB] getBalance failed for ${name}: ${msg} — skipping`);
+        // Don't include in availableAdapters
       }
     }
 
@@ -349,8 +352,8 @@ export class FundingArbStrategy implements Strategy {
         ctx.log(`  [ARB] Closing ${pos.symbol}: signed spread ${sign}${signedSpread.toFixed(1)}% (close_spread=${params.close_spread}%, entry=${pos.entrySpread.toFixed(1)}%)`);
 
         if (pos.mode === "spot-perp") {
-          await this.closeSpotPerp(pos, adapters, ctx);
-          toClose.push(pos);
+          const spotPerpClosed = await this.closeSpotPerp(pos, adapters, ctx);
+          if (spotPerpClosed) toClose.push(pos);
         } else {
           const longAdapter = adapters.get(pos.longExchange);
           const shortAdapter = adapters.get(pos.shortExchange);
@@ -609,6 +612,20 @@ export class FundingArbStrategy implements Strategy {
               const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
               ctx.log(`  [ARB] CRITICAL: Rollback failed for ${best.symbol}: ${rbMsg}`);
               logExecution({ type: "multi_leg_rollback", exchange: best.longExchange, symbol: best.symbol, side: "sell", size: matched.size, status: "failed", error: rbMsg, dryRun: false });
+              // Track orphaned long position for manual cleanup
+              const currentPositions = ctx.state.get("arbOpenPositions") as ArbOpenPosition[];
+              currentPositions.push({
+                symbol: best.symbol,
+                longExchange: best.longExchange,
+                shortExchange: best.shortExchange, // note: short leg doesn't exist
+                entrySpread: 0,
+                size: matched.size,
+                mode: "perp-perp",
+                entryTime: 0, // flag as orphaned
+              });
+              ctx.state.set("arbOpenPositions", currentPositions);
+              ctx.state.set("arbPositions", currentPositions.length);
+              ctx.log(`  [ARB] Tracking orphaned long position for manual cleanup`);
             }
             this._failCooldown.set(`${best.symbol}:entry`, Date.now() + 5 * 60 * 1000);
             continue;
@@ -700,35 +717,65 @@ export class FundingArbStrategy implements Strategy {
         for (const [name, a] of extraAdapters) adapters.set(name, a);
       }
 
+      const remainingPositions: ArbOpenPosition[] = [];
       for (const pos of openPositions) {
         if (pos.mode === "spot-perp") {
-          await this.closeSpotPerp(pos, adapters, ctx);
+          const closed = await this.closeSpotPerp(pos, adapters, ctx);
+          if (!closed) {
+            ctx.log(`  [ARB] CRITICAL: spot-perp ${pos.symbol} could not be fully closed on stop — requires manual cleanup`);
+            remainingPositions.push(pos);
+          }
         } else {
           const longAdapter = adapters.get(pos.longExchange);
           const shortAdapter = adapters.get(pos.shortExchange);
           if (longAdapter && shortAdapter) {
             ctx.log(`  [ARB] Closing ${pos.symbol} on stop (${pos.size})`);
+            let closeLongOk = false;
             try {
               const closeLongResult = await longAdapter.marketOrder(pos.symbol, "sell", pos.size, { reduceOnly: true });
               logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "long", stop: true, response: closeLongResult } });
+              closeLongOk = true;
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               ctx.log(`  [ARB] Close on stop failed (long) for ${pos.symbol}: ${msg}`);
               logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "long", stop: true } });
             }
+            if (!closeLongOk) {
+              ctx.log(`  [ARB] CRITICAL: ${pos.symbol} long close failed on stop — skipping short close to preserve hedge`);
+              remainingPositions.push(pos);
+              continue;
+            }
+            let closeShortOk = false;
             try {
               const closeShortResult = await shortAdapter.marketOrder(pos.symbol, "buy", pos.size, { reduceOnly: true });
               logExecution({ type: "arb_close", exchange: pos.shortExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "short", stop: true, response: closeShortResult } });
+              closeShortOk = true;
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
-              ctx.log(`  [ARB] Close on stop failed (short) for ${pos.symbol}: ${msg}`);
+              ctx.log(`  [ARB] Close on stop failed (short) for ${pos.symbol}: ${msg} — re-opening long to restore hedge`);
               logExecution({ type: "arb_close", exchange: pos.shortExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "short", stop: true } });
+              // Rollback: re-open long to restore hedge
+              try {
+                await longAdapter.marketOrder(pos.symbol, "buy", pos.size);
+                ctx.log(`  [ARB] Rollback: re-opened long ${pos.size} ${pos.symbol} on ${pos.longExchange}`);
+                logExecution({ type: "multi_leg_rollback", exchange: pos.longExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false });
+              } catch (rbErr) {
+                const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
+                ctx.log(`  [ARB] CRITICAL: Stop rollback failed for ${pos.symbol}: ${rbMsg}`);
+                logExecution({ type: "multi_leg_rollback", exchange: pos.longExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "failed", error: rbMsg, dryRun: false });
+              }
             }
+            if (!closeShortOk) {
+              remainingPositions.push(pos);
+            }
+          } else {
+            ctx.log(`  [ARB] CRITICAL: ${pos.symbol} adapters not found on stop — requires manual cleanup`);
+            remainingPositions.push(pos);
           }
         }
       }
-      ctx.state.set("arbOpenPositions", []);
-      ctx.state.set("arbPositions", 0);
+      ctx.state.set("arbOpenPositions", remainingPositions);
+      ctx.state.set("arbPositions", remainingPositions.length);
     }
 
     // Cancel on extra adapters directly
@@ -740,35 +787,40 @@ export class FundingArbStrategy implements Strategy {
     return [{ type: "cancel_all" }];
   }
 
-  /** Close a spot-perp position: sell spot, transfer USDC back, close perp short */
+  /** Close a spot-perp position: sell spot, transfer USDC back, close perp short.
+   * Returns true only if ALL steps succeed. If spot sell succeeds but perp close fails,
+   * attempts to re-buy spot as rollback and returns false. */
   private async closeSpotPerp(
     pos: ArbOpenPosition,
     adapters: Map<string, ExchangeAdapter>,
     ctx: StrategyContext,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const exchangeName = pos.longExchange.replace("-spot", "");
     const perpAdapter = adapters.get(pos.shortExchange) ?? adapters.get(exchangeName);
     if (!perpAdapter) {
       ctx.log(`  [ARB] Close spot-perp failed: no adapter for ${pos.shortExchange}`);
-      return;
+      return false;
     }
 
     try {
       const spotAdapter = await this.getSpotAdapter(exchangeName, perpAdapter);
       if (!spotAdapter) {
         ctx.log(`  [ARB] Close spot-perp failed: spot adapter not available for ${exchangeName}`);
-        return;
+        return false;
       }
 
-      ctx.log(`  [ARB] Closing spot-perp ${pos.symbol} on stop (spot sell + perp buy)`);
+      ctx.log(`  [ARB] Closing spot-perp ${pos.symbol} (spot sell + perp buy)`);
 
       // Step 1: Sell spot
+      let spotSold = false;
       try {
         await spotAdapter.spotMarketOrder(pos.symbol, "sell", pos.size);
         ctx.log(`  [ARB] Sold spot ${pos.size} ${pos.symbol}`);
+        spotSold = true;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         ctx.log(`  [ARB] Spot sell failed for ${pos.symbol}: ${msg}`);
+        return false;
       }
 
       // Step 2: Transfer USDC back to perp (use 95% of notional as estimate)
@@ -783,20 +835,34 @@ export class FundingArbStrategy implements Strategy {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         ctx.log(`  [ARB] USDC transfer back failed: ${msg}`);
+        // Non-fatal: continue to close perp short
       }
 
       // Step 3: Close perp short
+      const perpSymbol = this.getPerpSymbol(pos.symbol, pos.shortExchange);
       try {
-        const perpSymbol = this.getPerpSymbol(pos.symbol, pos.shortExchange);
         await perpAdapter.marketOrder(perpSymbol, "buy", pos.size, { reduceOnly: true });
         ctx.log(`  [ARB] Closed perp short ${pos.size} ${perpSymbol}`);
+        return true;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         ctx.log(`  [ARB] Perp close failed for ${pos.symbol}: ${msg}`);
+        // Rollback: re-buy spot to restore hedge
+        if (spotSold) {
+          try {
+            await spotAdapter.spotMarketOrder(pos.symbol, "buy", pos.size);
+            ctx.log(`  [ARB] Rollback: re-bought spot ${pos.size} ${pos.symbol} on ${exchangeName}`);
+          } catch (rbErr) {
+            const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
+            ctx.log(`  [ARB] CRITICAL: Spot-perp close rollback failed for ${pos.symbol}: ${rbMsg}`);
+          }
+        }
+        return false;
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       ctx.log(`  [ARB] Close spot-perp failed for ${pos.symbol}: ${msg}`);
+      return false;
     }
   }
 
@@ -866,7 +932,11 @@ export class FundingArbStrategy implements Strategy {
           ctx.log(`  [ARB] Spot-perp size reduced $${targetSizeUsd} → $${maxNotional.toFixed(0)} (limited by balance at ${leverage}x)`);
           targetSizeUsd = Math.floor(maxNotional);
         }
-      } catch { /* non-critical */ }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        ctx.log(`  [ARB] Balance check failed for spot-perp ${opp.symbol}: ${msg}`);
+        return false;
+      }
 
       const perpSymbol = this.getPerpSymbol(opp.symbol, opp.shortExchange);
       const priceEstimate = await this.getPriceEstimate(perpAdapter, perpSymbol, opp.symbol);
@@ -1000,24 +1070,29 @@ export class FundingArbStrategy implements Strategy {
    * Returns null if the exchange doesn't support spot or instantiation fails.
    */
   private async getSpotAdapter(name: string, adapter: ExchangeAdapter): Promise<SpotAdapter | null> {
+    const cached = this._spotAdapterCache.get(name);
+    if (cached) return cached;
     try {
+      let spot: SpotAdapter | null = null;
       if (name === "hyperliquid") {
         const { HyperliquidSpotAdapter } = await import("../../exchanges/hyperliquid-spot.js");
         const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
         if (adapter instanceof HyperliquidAdapter) {
-          const spot = new HyperliquidSpotAdapter(adapter);
-          await spot.init();
-          return spot;
+          const instance = new HyperliquidSpotAdapter(adapter);
+          await instance.init();
+          spot = instance;
         }
       } else if (name === "lighter") {
         const { LighterSpotAdapter } = await import("../../exchanges/lighter-spot.js");
         const { LighterAdapter } = await import("../../exchanges/lighter.js");
         if (adapter instanceof LighterAdapter) {
-          const spot = new LighterSpotAdapter(adapter);
-          await spot.init();
-          return spot;
+          const instance = new LighterSpotAdapter(adapter);
+          await instance.init();
+          spot = instance;
         }
       }
+      if (spot) this._spotAdapterCache.set(name, spot);
+      return spot;
     } catch { /* not supported */ }
     return null;
   }
