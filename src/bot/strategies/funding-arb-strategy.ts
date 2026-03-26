@@ -648,20 +648,7 @@ export class FundingArbStrategy implements Strategy {
               const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
               ctx.log(`  [ARB] CRITICAL: Rollback failed for ${best.symbol}: ${rbMsg}`);
               logExecution({ type: "multi_leg_rollback", exchange: best.longExchange, symbol: best.symbol, side: "sell", size: matched.size, status: "failed", error: rbMsg, dryRun: false });
-              // Track orphaned long position for manual cleanup
-              const currentPositions = ctx.state.get("arbOpenPositions") as ArbOpenPosition[];
-              currentPositions.push({
-                symbol: best.symbol,
-                longExchange: best.longExchange,
-                shortExchange: best.shortExchange, // note: short leg doesn't exist
-                entrySpread: 0,
-                size: matched.size,
-                mode: "perp-perp",
-                entryTime: 0, // flag as orphaned
-              });
-              ctx.state.set("arbOpenPositions", currentPositions);
-              ctx.state.set("arbPositions", currentPositions.length);
-              ctx.log(`  [ARB] Tracking orphaned long position for manual cleanup`);
+              ctx.log(`  [ARB] CRITICAL: Orphaned long position on ${best.longExchange} for ${best.symbol} — operator must close manually`);
             }
             this._failCooldown.set(`${best.symbol}:entry`, Date.now() + 5 * 60 * 1000);
             continue;
@@ -1015,6 +1002,7 @@ export class FundingArbStrategy implements Strategy {
         const msg = spotErr instanceof Error ? spotErr.message : String(spotErr);
         ctx.log(`  [ARB] Open spot-perp failed (spot buy) for ${opp.symbol}: ${msg}`);
         logExecution({ type: "arb_entry", exchange: opp.longExchange, symbol: opp.symbol, side: "buy", size: matched.size, status: "failed", error: msg, dryRun: false, meta: { mode: "spot-perp", leg: "spot" } });
+        try { await this.transferUsdcToPerp(spotAdapter, exchangeName, transferAmt); ctx.log(`  [ARB] Transferred $${transferAmt} USDC back to perp after spot buy failure`); } catch { /* best effort */ }
         return false;
       }
 
@@ -1182,9 +1170,12 @@ export class FundingArbStrategy implements Strategy {
       // Bootstrap aster funding hours lazily (1 API call per unknown symbol, cached permanently)
       if (exchangeName === "aster" && "getFundingHours" in adapter) {
         const aster = adapter as unknown as { getFundingHours(sym: string): Promise<number> };
-        // Only bootstrap symbols not yet cached (up to 5 per tick to limit API calls)
-        const uncached = withRates.filter(m => m.fundingHours === undefined || m.fundingHours === 1);
-        const toBootstrap = uncached.slice(0, 5);
+        // Only bootstrap symbols not yet cached (up to 20 per tick to complete faster)
+        const uncached = withRates.filter(m => {
+          const cached = (adapter as any)?._fundingHoursCache?.get?.(m.symbol);
+          return cached === undefined; // only truly uncached, not symbols confirmed as 1h
+        });
+        const toBootstrap = uncached.slice(0, 20);
         for (const m of toBootstrap) {
           const fh = await aster.getFundingHours(m.symbol);
           m.fundingHours = fh;
