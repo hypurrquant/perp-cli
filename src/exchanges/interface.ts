@@ -13,6 +13,7 @@ export interface ExchangeMarketInfo {
   maxLeverage: number;
   sizeDecimals?: number;  // quantity precision (e.g. 0 = integers only, 2 = 0.01)
   stepSize?: string;      // lot step size (e.g. "1", "0.1", "0.001")
+  fundingHours?: number;  // funding period in hours (1 or 8). If omitted, use exchange default.
 }
 
 export interface ExchangePosition {

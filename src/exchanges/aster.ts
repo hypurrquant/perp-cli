@@ -102,6 +102,10 @@ export class AsterAdapter implements ExchangeAdapter {
         const lotFilter = (s.filters as Array<Record<string, unknown>> | undefined)
           ?.find(f => f.filterType === "LOT_SIZE");
 
+        const nextFunding = Number(premium?.nextFundingTime ?? 0);
+        const hoursFromMidnight = nextFunding > 0 ? (nextFunding % 86400000) / 3600000 : 0;
+        const fundingHours = (nextFunding > 0 && hoursFromMidnight % 8 === 0) ? 8 : 1;
+
         return {
           symbol: this._fromApi(sym),
           markPrice: String(premium?.markPrice ?? ticker?.lastPrice ?? "0"),
@@ -112,6 +116,7 @@ export class AsterAdapter implements ExchangeAdapter {
           maxLeverage: maxLev,
           sizeDecimals: s.quantityPrecision != null ? Number(s.quantityPrecision) : undefined,
           stepSize: lotFilter?.stepSize != null ? String(lotFilter.stepSize) : undefined,
+          fundingHours,
         };
       });
 

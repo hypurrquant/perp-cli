@@ -5,7 +5,7 @@ import type { SpotAdapter } from "../../exchanges/spot-interface.js";
 import { registerStrategy } from "../strategy-registry.js";
 import { checkArbLiquidity, checkSpotPerpLiquidity } from "../../liquidity.js";
 import { computeMatchedSize, computeSpotPerpMatchedSize, reconcileArbFills } from "../../arb-sizing.js";
-import { computeSignedAnnualSpread, annualizeRate } from "../../funding.js";
+import { getFundingHours } from "../../funding.js";
 import { logExecution, pruneExecutionLog } from "../../execution-log.js";
 
 interface ArbOpportunity {
@@ -214,11 +214,11 @@ export class FundingArbStrategy implements Strategy {
     }
 
     // Fetch rates from all exchanges
-    const ratesByExchange = new Map<string, Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number }>>();
+    const ratesByExchange = new Map<string, Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number }>>();
     for (const [name, a] of adapters) {
       const rates = await this.fetchRates(a, name);
-      const map = new Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number }>();
-      for (const r of rates) map.set(r.symbol.toUpperCase(), { rate: r.rate, price: r.price, sizeDecimals: r.sizeDecimals, maxLeverage: r.maxLeverage });
+      const map = new Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number }>();
+      for (const r of rates) map.set(r.symbol.toUpperCase(), { rate: r.rate, price: r.price, sizeDecimals: r.sizeDecimals, maxLeverage: r.maxLeverage, fundingHours: r.fundingHours });
       ratesByExchange.set(name, map);
     }
 
@@ -252,14 +252,18 @@ export class FundingArbStrategy implements Strategy {
         // For spot-perp: long side is spot (rate=0), short side is perp
         const perpExchange = p.shortExchange;
         const perpSymbol = this.getPerpSymbol(p.symbol, perpExchange);
-        const shortRate = this.findRate(ratesByExchange, perpExchange, perpSymbol)?.rate
-          ?? this.findRate(ratesByExchange, perpExchange, p.symbol)?.rate;
-        signedSpread = shortRate !== undefined ? annualizeRate(shortRate, perpExchange) : 0;
+        const rateInfo = this.findRate(ratesByExchange, perpExchange, perpSymbol)
+          ?? this.findRate(ratesByExchange, perpExchange, p.symbol);
+        const shortRate = rateInfo?.rate;
+        const fundingH = rateInfo?.fundingHours ?? getFundingHours(perpExchange);
+        signedSpread = shortRate !== undefined ? (shortRate / fundingH) * 8760 * 100 : 0;
       } else {
-        const longRate = this.findRate(ratesByExchange, p.longExchange, p.symbol)?.rate;
-        const shortRate = this.findRate(ratesByExchange, p.shortExchange, p.symbol)?.rate;
-        signedSpread = (longRate !== undefined && shortRate !== undefined)
-          ? computeSignedAnnualSpread(shortRate, p.shortExchange, longRate, p.longExchange)
+        const longInfo = this.findRate(ratesByExchange, p.longExchange, p.symbol);
+        const shortInfo = this.findRate(ratesByExchange, p.shortExchange, p.symbol);
+        const longHourly = longInfo ? longInfo.rate / (longInfo.fundingHours ?? getFundingHours(p.longExchange)) : undefined;
+        const shortHourly = shortInfo ? shortInfo.rate / (shortInfo.fundingHours ?? getFundingHours(p.shortExchange)) : undefined;
+        signedSpread = (longHourly !== undefined && shortHourly !== undefined)
+          ? (shortHourly - longHourly) * 8760 * 100
           : 0;
       }
       const sign = signedSpread >= 0 ? "+" : "";
@@ -276,15 +280,18 @@ export class FundingArbStrategy implements Strategy {
       if (pos.mode === "spot-perp") {
         const perpExchange = pos.shortExchange;
         const perpSymbol = this.getPerpSymbol(pos.symbol, perpExchange);
-        const shortRate = this.findRate(ratesByExchange, perpExchange, perpSymbol)?.rate
-          ?? this.findRate(ratesByExchange, perpExchange, pos.symbol)?.rate;
-        if (shortRate === undefined) continue;
-        signedSpread = annualizeRate(shortRate, perpExchange);
+        const rateInfo = this.findRate(ratesByExchange, perpExchange, perpSymbol)
+          ?? this.findRate(ratesByExchange, perpExchange, pos.symbol);
+        if (rateInfo === undefined) continue;
+        const fundingH = rateInfo.fundingHours ?? getFundingHours(perpExchange);
+        signedSpread = (rateInfo.rate / fundingH) * 8760 * 100;
       } else {
-        const longRate = this.findRate(ratesByExchange, pos.longExchange, pos.symbol)?.rate;
-        const shortRate = this.findRate(ratesByExchange, pos.shortExchange, pos.symbol)?.rate;
-        if (longRate === undefined || shortRate === undefined) continue;
-        signedSpread = computeSignedAnnualSpread(shortRate, pos.shortExchange, longRate, pos.longExchange);
+        const longInfo = this.findRate(ratesByExchange, pos.longExchange, pos.symbol);
+        const shortInfo = this.findRate(ratesByExchange, pos.shortExchange, pos.symbol);
+        if (longInfo === undefined || shortInfo === undefined) continue;
+        const longHourly = longInfo.rate / (longInfo.fundingHours ?? getFundingHours(pos.longExchange));
+        const shortHourly = shortInfo.rate / (shortInfo.fundingHours ?? getFundingHours(pos.shortExchange));
+        signedSpread = (shortHourly - longHourly) * 8760 * 100;
       }
 
       // Close if funding flipped (losing money) or spread below close threshold
@@ -363,18 +370,20 @@ export class FundingArbStrategy implements Strategy {
 
     // Perp-perp opportunities
     for (const sym of allSymbols) {
-      let minRate = Infinity, maxRate = -Infinity;
+      let minHourly = Infinity, maxHourly = -Infinity;
       let minExchange = "", maxExchange = "";
+      let minRate = 0, maxRate = 0;
 
       for (const exName of exchangeNames) {
-        const rate = this.findRate(ratesByExchange, exName, sym)?.rate;
-        if (rate === undefined) continue;
-        if (rate < minRate) { minRate = rate; minExchange = exName; }
-        if (rate > maxRate) { maxRate = rate; maxExchange = exName; }
+        const rateInfo = this.findRate(ratesByExchange, exName, sym);
+        if (!rateInfo) continue;
+        const hourlyRate = rateInfo.rate / (rateInfo.fundingHours ?? getFundingHours(exName));
+        if (hourlyRate < minHourly) { minHourly = hourlyRate; minExchange = exName; minRate = rateInfo.rate; }
+        if (hourlyRate > maxHourly) { maxHourly = hourlyRate; maxExchange = exName; maxRate = rateInfo.rate; }
       }
 
       if (minExchange && maxExchange && minExchange !== maxExchange) {
-        const spread = computeSignedAnnualSpread(maxRate, maxExchange, minRate, minExchange);
+        const spread = (maxHourly - minHourly) * 8760 * 100;
         if (spread >= params.min_spread) {
           opportunities.push({
             symbol: sym,
@@ -402,13 +411,15 @@ export class FundingArbStrategy implements Strategy {
         const perpRates = ratesByExchange.get(name);
         if (!perpRates) continue;
 
-        for (const [sym, { rate }] of perpRates) {
+        for (const [sym, rateEntry] of perpRates) {
+          const { rate } = rateEntry;
           // Only consider positive funding (shorts receive, longs pay)
           if (rate <= 0) continue;
           const base = sym.replace(/-PERP$/, "").toUpperCase();
           if (!spotSymbols.has(base)) continue;
 
-          const annualSpread = annualizeRate(rate, name);
+          const hourlyRate = rate / (rateEntry.fundingHours ?? getFundingHours(name));
+          const annualSpread = hourlyRate * 8760 * 100;
           if (annualSpread >= spotPerpMinSpread) {
             opportunities.push({
               symbol: base,
@@ -973,7 +984,7 @@ export class FundingArbStrategy implements Strategy {
   }
 
   /** Look up rate from ratesByExchange, trying symbol, symbol-PERP, and symbol without -PERP */
-  private findRate(ratesByExchange: Map<string, Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number }>>, exchange: string, symbol: string): { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number } | undefined {
+  private findRate(ratesByExchange: Map<string, Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number }>>, exchange: string, symbol: string): { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number } | undefined {
     const map = ratesByExchange.get(exchange);
     if (!map) return undefined;
     const upper = symbol.toUpperCase();
@@ -1003,7 +1014,7 @@ export class FundingArbStrategy implements Strategy {
   private async fetchRates(
     adapter: ExchangeAdapter,
     _exchangeName: string,
-  ): Promise<{ symbol: string; rate: number; price: number; sizeDecimals?: number; maxLeverage?: number }[]> {
+  ): Promise<{ symbol: string; rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number }[]> {
     try {
       const markets = await adapter.getMarkets();
       return markets
@@ -1014,6 +1025,7 @@ export class FundingArbStrategy implements Strategy {
           price: parseFloat(m.markPrice),
           sizeDecimals: m.sizeDecimals,
           maxLeverage: m.maxLeverage,
+          fundingHours: m.fundingHours,
         }));
     } catch {
       return [];
