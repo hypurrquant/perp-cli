@@ -615,8 +615,10 @@ export class FundingArbStrategy implements Strategy {
           }
 
           // Verify both positions actually exist (catches instant liquidation)
-          // Wait for cache to expire before checking (exchanges cache positions for ~5s)
-          await new Promise(resolve => setTimeout(resolve, 6000));
+          // Invalidate cache so getPositions returns fresh data
+          const { invalidateCache } = await import("../../cache.js");
+          invalidateCache("acct");
+          await new Promise(resolve => setTimeout(resolve, 2000)); // brief wait for exchange settlement
           try {
             const [longPositions, shortPositions] = await Promise.all([
               longAdapter.getPositions(),
