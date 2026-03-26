@@ -527,11 +527,21 @@ export class FundingArbStrategy implements Strategy {
 
           // Set leverage on both exchanges before ordering
           try {
-            await Promise.all([
-              longAdapter.setLeverage(best.symbol, leverage, "cross"),
-              shortAdapter.setLeverage(best.symbol, leverage, "cross"),
-            ]);
-          } catch { /* non-critical, some exchanges set leverage on order */ }
+            await longAdapter.setLeverage(best.symbol, leverage, "cross");
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            ctx.log(`  [ARB] setLeverage failed on ${best.longExchange} for ${best.symbol}: ${msg}`);
+            this._failCooldown.set(`${best.symbol}:entry`, Date.now() + 5 * 60 * 1000);
+            continue;
+          }
+          try {
+            await shortAdapter.setLeverage(best.symbol, leverage, "cross");
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            ctx.log(`  [ARB] setLeverage failed on ${best.shortExchange} for ${best.symbol}: ${msg}`);
+            this._failCooldown.set(`${best.symbol}:entry`, Date.now() + 5 * 60 * 1000);
+            continue;
+          }
 
           // Balance + margin check (use pre-fetched balances from tick start)
           let targetSizeUsd = params.size_usd;
@@ -823,7 +833,11 @@ export class FundingArbStrategy implements Strategy {
       // Set leverage on perp before ordering
       try {
         await perpAdapter.setLeverage(this.getPerpSymbol(opp.symbol, opp.shortExchange), leverage, "cross");
-      } catch { /* non-critical */ }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        ctx.log(`  [ARB] setLeverage failed on ${opp.shortExchange} for ${opp.symbol}: ${msg}`);
+        return false;
+      }
 
       // Balance check: spot needs full notional, perp needs sizeUsd / leverage margin
       let targetSizeUsd = params.size_usd;
