@@ -70,6 +70,7 @@ export interface FundingArbStrategyParams {
   max_positions: number;
   exchanges: string[];
   leverage?: number; // max leverage to use (default: 3, capped by market maxLeverage)
+  min_hold_hours?: number; // minimum hold time before close allowed (default: 2)
 }
 
 export interface GenericStrategyParams {

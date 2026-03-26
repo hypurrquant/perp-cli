@@ -25,6 +25,7 @@ interface ArbOpenPosition {
   entrySpread: number;
   size: string;
   mode: "perp-perp" | "spot-perp";
+  entryTime: number;  // timestamp ms
 }
 
 export class FundingArbStrategy implements Strategy {
@@ -41,6 +42,7 @@ export class FundingArbStrategy implements Strategy {
         { name: "max_positions", type: "number" as const, required: false, default: 3, description: "Max concurrent positions" },
         { name: "exchanges", type: "string" as const, required: true, description: "Comma-separated exchange names" },
         { name: "leverage", type: "number" as const, required: false, default: 3, description: "Max leverage to use" },
+        { name: "min_hold_hours", type: "number" as const, required: false, default: 2, description: "Min hold time before close (hours)" },
       ],
     };
   }
@@ -112,7 +114,7 @@ export class FundingArbStrategy implements Strategy {
               const longEx = pA.side === "long" ? exA : exB;
               const shortEx = pA.side === "short" ? exA : exB;
               const size = pA.side === "long" ? pA.size : pB.size;
-              recovered.push({ symbol: pA.symbol, longExchange: longEx, shortExchange: shortEx, entrySpread: 0, size, mode: "perp-perp" });
+              recovered.push({ symbol: pA.symbol, longExchange: longEx, shortExchange: shortEx, entrySpread: 0, size, mode: "perp-perp", entryTime: 0 });
               used.add(keyA);
               used.add(keyB);
               break;
@@ -156,7 +158,7 @@ export class FundingArbStrategy implements Strategy {
             const spotBal = nonUsdc.find(b => b.token.toUpperCase().replace(/-SPOT$/, "") === base);
             ctx.log(`  [ARB] ${name} perp ${perp.symbol}(${perp.side}) → base=${base}, spotMatch=${spotBal ? spotBal.token : "none"}`);
             if (spotBal && perp.side === "short") {
-              recovered.push({ symbol: base, longExchange: `${name}-spot`, shortExchange: name, entrySpread: 0, size: perp.size, mode: "spot-perp" });
+              recovered.push({ symbol: base, longExchange: `${name}-spot`, shortExchange: name, entrySpread: 0, size: perp.size, mode: "spot-perp", entryTime: 0 });
               used.add(perpKey);
               ctx.log(`  [ARB] Detected spot-perp hedge: ${base} ${name}-spot↔${name}`);
             }
@@ -295,7 +297,10 @@ export class FundingArbStrategy implements Strategy {
       }
 
       // Close if funding flipped (losing money) or spread below close threshold
-      const shouldClose = signedSpread < 0 || signedSpread < params.close_spread;
+      const minHoldMs = (params.min_hold_hours ?? 2) * 60 * 60 * 1000;
+      const holdTime = pos.entryTime > 0 ? Date.now() - pos.entryTime : Infinity;
+      const isFundingFlipped = signedSpread < 0;
+      const shouldClose = isFundingFlipped || (holdTime >= minHoldMs && signedSpread < params.close_spread);
       if (shouldClose) {
         // Cooldown: skip if close recently failed for this symbol
         const closeKey = `${pos.symbol}:close`;
@@ -631,6 +636,7 @@ export class FundingArbStrategy implements Strategy {
             entrySpread: best.spread,
             size: matched.size,
             mode: "perp-perp",
+            entryTime: Date.now(),
           });
           ctx.state.set("arbOpenPositions", currentPositions);
           ctx.state.set("arbPositions", currentPositions.length);
@@ -906,6 +912,7 @@ export class FundingArbStrategy implements Strategy {
         entrySpread: opp.spread,
         size: matched.size,
         mode: "spot-perp",
+        entryTime: Date.now(),
       });
       ctx.state.set("arbOpenPositions", currentPositions);
       ctx.state.set("arbPositions", currentPositions.length);
