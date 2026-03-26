@@ -236,9 +236,24 @@ export class FundingArbStrategy implements Strategy {
       }
     }
 
-    // Fetch rates from all exchanges
+    // Determine which exchanges need rate fetching.
+    // When at max_positions we only need rates for exchanges that hold open positions
+    // (to evaluate close conditions). Exchanges with no positions can be skipped.
+    const atMaxPositions = openPositions.length >= (params.max_positions ?? 3);
+    const positionExchanges = new Set<string>();
+    if (atMaxPositions) {
+      for (const p of openPositions) {
+        positionExchanges.add(p.longExchange.replace(/-spot$/i, ""));
+        positionExchanges.add(p.shortExchange);
+      }
+    }
+    const exchangesToScan = atMaxPositions
+      ? [...adapters].filter(([name]) => positionExchanges.has(name))
+      : [...adapters];
+
+    // Fetch rates — all exchanges if room for new positions, only position exchanges if full
     const ratesByExchange = new Map<string, Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number }>>();
-    for (const [name, a] of adapters) {
+    for (const [name, a] of exchangesToScan) {
       const rates = await this.fetchRates(a, name);
       const map = new Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number }>();
       for (const r of rates) map.set(r.symbol.toUpperCase(), { rate: r.rate, price: r.price, sizeDecimals: r.sizeDecimals, maxLeverage: r.maxLeverage, fundingHours: r.fundingHours });

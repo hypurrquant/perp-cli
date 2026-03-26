@@ -12,7 +12,7 @@ import { tmpdir } from "os";
 const CACHE_DIR = join(tmpdir(), "perp-cli-cache");
 
 // TTL presets
-export const TTL_ACCOUNT = 5_000;   // 5s — balance, positions, orders
+export const TTL_ACCOUNT = 15_000;  // 15s — balance, positions, orders (ticks are 30s; 15s ensures same-tick dedup)
 export const TTL_MARKET = 30_000;   // 30s — funding rates, prices, markets
 
 interface CacheEntry<T = unknown> {
