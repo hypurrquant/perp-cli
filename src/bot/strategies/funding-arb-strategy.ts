@@ -190,6 +190,8 @@ export class FundingArbStrategy implements Strategy {
         ctx.state.set("fundingIncome", historicalFunding);
         ctx.log(`  [FUND] Total historical funding: $${historicalFunding.toFixed(4)}`);
       }
+
+      // Note: aster funding intervals are bootstrapped lazily via getFundingHours()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       ctx.log(`  [ARB] Position recovery failed: ${msg}`);
@@ -226,7 +228,7 @@ export class FundingArbStrategy implements Strategy {
         const marginUsed = parseFloat(bal.marginUsed);
         const marginPct = equity > 0 ? (marginUsed / equity) * 100 : 100;
         exchangeBalances.set(name, { equity, available: parseFloat(bal.available), marginPct });
-        if (marginPct < 70) {
+        if (marginPct < 90) {
           availableAdapters.set(name, a);
         } else {
           ctx.log(`  [ARB] ${name} margin ${marginPct.toFixed(0)}% — skipping for this tick`);
@@ -831,7 +833,7 @@ export class FundingArbStrategy implements Strategy {
         // Check margin usage
         const perpEquity = parseFloat(perpBal.equity);
         const perpMarginPct = perpEquity > 0 ? parseFloat(perpBal.marginUsed) / perpEquity * 100 : 0;
-        if (perpMarginPct > 70) {
+        if (perpMarginPct > 90) {
           ctx.log(`  [ARB] Skip spot-perp ${opp.symbol}: perp margin usage too high (${perpMarginPct.toFixed(0)}%)`);
           return false;
         }
@@ -1046,20 +1048,32 @@ export class FundingArbStrategy implements Strategy {
 
   private async fetchRates(
     adapter: ExchangeAdapter,
-    _exchangeName: string,
+    exchangeName: string,
   ): Promise<{ symbol: string; rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number }[]> {
     try {
       const markets = await adapter.getMarkets();
-      return markets
-        .filter(m => m.fundingRate != null)
-        .map(m => ({
-          symbol: m.symbol,
-          rate: parseFloat(m.fundingRate!),
-          price: parseFloat(m.markPrice),
-          sizeDecimals: m.sizeDecimals,
-          maxLeverage: m.maxLeverage,
-          fundingHours: m.fundingHours,
-        }));
+      const withRates = markets.filter(m => m.fundingRate != null);
+
+      // Bootstrap aster funding hours lazily (1 API call per unknown symbol, cached permanently)
+      if (exchangeName === "aster" && "getFundingHours" in adapter) {
+        const aster = adapter as unknown as { getFundingHours(sym: string): Promise<number> };
+        // Only bootstrap symbols not yet cached (up to 5 per tick to limit API calls)
+        const uncached = withRates.filter(m => m.fundingHours === undefined || m.fundingHours === 1);
+        const toBootstrap = uncached.slice(0, 5);
+        for (const m of toBootstrap) {
+          const fh = await aster.getFundingHours(m.symbol);
+          m.fundingHours = fh;
+        }
+      }
+
+      return withRates.map(m => ({
+        symbol: m.symbol,
+        rate: parseFloat(m.fundingRate!),
+        price: parseFloat(m.markPrice),
+        sizeDecimals: m.sizeDecimals,
+        maxLeverage: m.maxLeverage,
+        fundingHours: m.fundingHours,
+      }));
     } catch {
       return [];
     }

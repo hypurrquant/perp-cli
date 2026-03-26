@@ -27,6 +27,7 @@ export class AsterAdapter implements ExchangeAdapter {
   private _testnet: boolean;
   private _marketsCache: ExchangeMarketInfo[] | null = null;
   private _marketsCacheTime = 0;
+  private _fundingHoursCache = new Map<string, number>();
   private _accountCache: { data: unknown; time: number } | null = null;
   private _positionsCache: { data: unknown; time: number } | null = null;
   private _ordersCache: { data: unknown; time: number } | null = null;
@@ -65,6 +66,27 @@ export class AsterAdapter implements ExchangeAdapter {
 
   // ── Market Data ──
 
+  /** Get funding interval for a symbol (lazy bootstrap — queries on first access, cached permanently). */
+  async getFundingHours(symbol: string): Promise<number> {
+    const key = symbol.toUpperCase();
+    const cached = this._fundingHoursCache.get(key);
+    if (cached !== undefined) return cached;
+
+    try {
+      const apiSym = this._toApi(key);
+      const data = await this._publicGet("/fapi/v1/fundingRate", { symbol: apiSym, limit: "2" }) as Array<{ fundingTime: number }>;
+      if (Array.isArray(data) && data.length >= 2) {
+        const hours = Math.abs(data[1].fundingTime - data[0].fundingTime) / 3600000;
+        const rounded = hours <= 1.5 ? 1 : hours <= 5 ? 4 : 8;
+        this._fundingHoursCache.set(key, rounded);
+        return rounded;
+      }
+    } catch { /* non-critical */ }
+
+    this._fundingHoursCache.set(key, 1); // default
+    return 1;
+  }
+
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
     // Return cached result if fresh
     if (this._marketsCache && Date.now() - this._marketsCacheTime < AsterAdapter.CACHE_TTL) {
@@ -102,12 +124,9 @@ export class AsterAdapter implements ExchangeAdapter {
         const lotFilter = (s.filters as Array<Record<string, unknown>> | undefined)
           ?.find(f => f.filterType === "LOT_SIZE");
 
-        // Aster funding periods vary (1h/4h/8h) but cannot be reliably detected
-        // from nextFundingTime alone (e.g., 12:00 is divisible by 1,4,8).
-        // Default to 1h — the aster API rate label matches the settlement interval,
-        // and most aster symbols are 1h. This may overestimate rates for 4h/8h symbols
-        // but is safer than underestimating (which causes wrong-direction entries).
-        const fundingHours = 1;
+        // Use cached funding interval if available (populated by loadFundingIntervals()),
+        // otherwise default to 1h.
+        const fundingHours = this._fundingHoursCache.get(this._fromApi(sym)) ?? 1;
 
         return {
           symbol: this._fromApi(sym),
