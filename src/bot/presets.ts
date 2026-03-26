@@ -71,7 +71,7 @@ const gridStandard: Preset = {
       { type: "volatility_above" as ConditionType, value: 12 },
     ],
     risk: { ...DEFAULT_RISK, max_drawdown: 100, max_daily_loss: 50 },
-    monitor_interval_sec: 10,
+    monitor_interval_sec: 30,
   }),
 };
 
@@ -126,7 +126,7 @@ const gridLongBias: Preset = {
     entry_conditions: [{ type: "always" as ConditionType, value: 0 }],
     exit_conditions: [],
     risk: { ...DEFAULT_RISK, max_drawdown: 150, max_daily_loss: 75 },
-    monitor_interval_sec: 10,
+    monitor_interval_sec: 30,
   }),
 };
 

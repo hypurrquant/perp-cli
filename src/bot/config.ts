@@ -127,7 +127,7 @@ function parseBotConfig(raw: Record<string, unknown>): BotConfig {
   const name = String(raw.name ?? `bot-${Date.now()}`);
   const exchange = String(raw.exchange ?? "hyperliquid");
   const symbol = String(raw.symbol ?? "ETH");
-  const monitorInterval = Number(raw.monitor_interval_sec ?? raw.interval ?? 10);
+  const monitorInterval = Number(raw.monitor_interval_sec ?? raw.interval ?? 30);
 
   // Strategy
   const stratRaw = (raw.strategy ?? raw.params ?? {}) as Record<string, unknown>;
@@ -240,7 +240,7 @@ export function quickGridConfig(opts: {
       ...(opts.maxRuntime ? [{ type: "time_after" as ConditionType, value: opts.maxRuntime }] : []),
     ],
     risk: { ...DEFAULT_RISK, max_drawdown: opts.maxDrawdown },
-    monitor_interval_sec: 10,
+    monitor_interval_sec: 30,
   };
 }
 

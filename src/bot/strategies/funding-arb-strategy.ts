@@ -215,6 +215,27 @@ export class FundingArbStrategy implements Strategy {
       return [];
     }
 
+    // ── Pre-filter exchanges by margin availability ──
+    const exchangeBalances = new Map<string, { equity: number; available: number; marginPct: number }>();
+    const availableAdapters = new Map<string, ExchangeAdapter>();
+
+    for (const [name, a] of adapters) {
+      try {
+        const bal = await a.getBalance();
+        const equity = parseFloat(bal.equity);
+        const marginUsed = parseFloat(bal.marginUsed);
+        const marginPct = equity > 0 ? (marginUsed / equity) * 100 : 100;
+        exchangeBalances.set(name, { equity, available: parseFloat(bal.available), marginPct });
+        if (marginPct < 70) {
+          availableAdapters.set(name, a);
+        } else {
+          ctx.log(`  [ARB] ${name} margin ${marginPct.toFixed(0)}% — skipping for this tick`);
+        }
+      } catch {
+        availableAdapters.set(name, a); // on error, include it
+      }
+    }
+
     // Fetch rates from all exchanges
     const ratesByExchange = new Map<string, Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number }>>();
     for (const [name, a] of adapters) {
@@ -366,6 +387,7 @@ export class FundingArbStrategy implements Strategy {
     // ── Find new opportunities ──
     const arbPositions = (ctx.state.get("arbOpenPositions") as ArbOpenPosition[]).length;
     const exchangeNames = [...ratesByExchange.keys()];
+    const scanExchangeNames = exchangeNames.filter(n => availableAdapters.has(n));
     const opportunities: ArbOpportunity[] = [];
 
     const allSymbols = new Set<string>();
@@ -379,7 +401,7 @@ export class FundingArbStrategy implements Strategy {
       let minExchange = "", maxExchange = "";
       let minRate = 0, maxRate = 0;
 
-      for (const exName of exchangeNames) {
+      for (const exName of scanExchangeNames) {
         const rateInfo = this.findRate(ratesByExchange, exName, sym);
         if (!rateInfo) continue;
         const hourlyRate = rateInfo.rate / (rateInfo.fundingHours ?? getFundingHours(exName));
@@ -459,7 +481,6 @@ export class FundingArbStrategy implements Strategy {
       if (arbPositions < params.max_positions) {
         // Skip symbols already in open positions
         const openSymbols = new Set((ctx.state.get("arbOpenPositions") as ArbOpenPosition[]).map(p => p.symbol.toUpperCase()));
-        let skipMargin = 0;
         let skipCooldown = 0;
         for (const best of opportunities) {
           if (openSymbols.has(best.symbol.toUpperCase())) continue;
@@ -494,40 +515,23 @@ export class FundingArbStrategy implements Strategy {
             ]);
           } catch { /* non-critical, some exchanges set leverage on order */ }
 
-          // Balance + margin check
+          // Balance + margin check (use pre-fetched balances from tick start)
           let targetSizeUsd = params.size_usd;
-          try {
-            const [longBal, shortBal] = await Promise.all([
-              longAdapter.getBalance(),
-              shortAdapter.getBalance(),
-            ]);
-
-            // Check margin usage (skip if > 70%)
-            const longEquity = parseFloat(longBal.equity);
-            const shortEquity = parseFloat(shortBal.equity);
-            const longMarginPct = longEquity > 0 ? parseFloat(longBal.marginUsed) / longEquity * 100 : 0;
-            const shortMarginPct = shortEquity > 0 ? parseFloat(shortBal.marginUsed) / shortEquity * 100 : 0;
-            if (longMarginPct > 70 || shortMarginPct > 70) {
-              skipMargin++;
+          const longBal = exchangeBalances.get(best.longExchange);
+          const shortBal = exchangeBalances.get(best.shortExchange);
+          if (!longBal || !shortBal) continue;
+          const minAvail = Math.min(longBal.available, shortBal.available);
+          const requiredMarginPerLeg = targetSizeUsd / leverage;
+          if (minAvail < requiredMarginPerLeg) {
+            // Try reducing size to what's affordable
+            const maxAffordableNotional = minAvail * leverage * 0.8;
+            if (maxAffordableNotional < 10) {
+              ctx.log(`  [ARB] Skip ${best.symbol}: insufficient margin ($${minAvail.toFixed(2)} < $${requiredMarginPerLeg.toFixed(2)} at ${leverage}x)`);
               continue;
             }
-
-            // Required margin per leg = sizeUsd / leverage
-            const longAvail = parseFloat(longBal.available);
-            const shortAvail = parseFloat(shortBal.available);
-            const minAvail = Math.min(longAvail, shortAvail);
-            const requiredMarginPerLeg = targetSizeUsd / leverage;
-            if (minAvail < requiredMarginPerLeg) {
-              // Try reducing size to what's affordable
-              const maxAffordableNotional = minAvail * leverage * 0.8;
-              if (maxAffordableNotional < 10) {
-                ctx.log(`  [ARB] Skip ${best.symbol}: insufficient margin ($${minAvail.toFixed(2)} < $${requiredMarginPerLeg.toFixed(2)} needed at ${leverage}x)`);
-                continue;
-              }
-              ctx.log(`  [ARB] Size reduced $${targetSizeUsd} → $${maxAffordableNotional.toFixed(0)} (limited by margin $${minAvail.toFixed(2)} at ${leverage}x)`);
-              targetSizeUsd = Math.floor(maxAffordableNotional);
-            }
-          } catch { /* non-critical, proceed with original size */ }
+            ctx.log(`  [ARB] Size reduced $${targetSizeUsd} → $${maxAffordableNotional.toFixed(0)} (limited by margin $${minAvail.toFixed(2)} at ${leverage}x)`);
+            targetSizeUsd = Math.floor(maxAffordableNotional);
+          }
 
           // Liquidity check
           const liq = await checkArbLiquidity(
@@ -644,11 +648,8 @@ export class FundingArbStrategy implements Strategy {
           return [{ type: "noop" }];
         }
         // Log skip summary only when there were skips (avoids noise when nothing happened)
-        if (skipMargin > 0 || skipCooldown > 0) {
-          const parts: string[] = [];
-          if (skipMargin > 0) parts.push(`${skipMargin} margin`);
-          if (skipCooldown > 0) parts.push(`${skipCooldown} cooldown`);
-          ctx.log(`  [ARB] Skipped ${skipMargin + skipCooldown} opportunities (${parts.join(", ")})`);
+        if (skipCooldown > 0) {
+          ctx.log(`  [ARB] Skipped ${skipCooldown} opportunities (${skipCooldown} cooldown)`);
         }
       }
     } else {
