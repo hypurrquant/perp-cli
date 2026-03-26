@@ -104,7 +104,10 @@ export class AsterAdapter implements ExchangeAdapter {
 
         const nextFunding = Number(premium?.nextFundingTime ?? 0);
         const hoursFromMidnight = nextFunding > 0 ? (nextFunding % 86400000) / 3600000 : 0;
-        const fundingHours = (nextFunding > 0 && hoursFromMidnight % 8 === 0) ? 8 : 1;
+        const fundingHours = nextFunding <= 0 ? 1
+          : hoursFromMidnight % 8 === 0 ? 8
+          : hoursFromMidnight % 4 === 0 ? 4
+          : 1;
 
         return {
           symbol: this._fromApi(sym),
