@@ -102,12 +102,12 @@ export class AsterAdapter implements ExchangeAdapter {
         const lotFilter = (s.filters as Array<Record<string, unknown>> | undefined)
           ?.find(f => f.filterType === "LOT_SIZE");
 
-        const nextFunding = Number(premium?.nextFundingTime ?? 0);
-        const hoursFromMidnight = nextFunding > 0 ? (nextFunding % 86400000) / 3600000 : 0;
-        const fundingHours = nextFunding <= 0 ? 1
-          : hoursFromMidnight % 8 === 0 ? 8
-          : hoursFromMidnight % 4 === 0 ? 4
-          : 1;
+        // Aster funding periods vary (1h/4h/8h) but cannot be reliably detected
+        // from nextFundingTime alone (e.g., 12:00 is divisible by 1,4,8).
+        // Default to 1h — the aster API rate label matches the settlement interval,
+        // and most aster symbols are 1h. This may overestimate rates for 4h/8h symbols
+        // but is safer than underestimating (which causes wrong-direction entries).
+        const fundingHours = 1;
 
         return {
           symbol: this._fromApi(sym),
