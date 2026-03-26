@@ -358,41 +358,67 @@ export class FundingArbStrategy implements Strategy {
           const longAdapter = adapters.get(pos.longExchange);
           const shortAdapter = adapters.get(pos.shortExchange);
           if (longAdapter && shortAdapter) {
+            const isPositionGone = (msg: string) => msg.includes("ReduceOnly") || msg.includes("reduceOnly") || msg.includes("-2022");
+
             let closeLongOk = false;
+            let longPositionGone = false;
             try {
               const closeLongResult = await longAdapter.marketOrder(pos.symbol, "sell", pos.size, { reduceOnly: true });
               closeLongOk = true;
               logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "long", signedSpread: signedSpread, response: closeLongResult } });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
-              ctx.log(`  [ARB] Close long leg failed for ${pos.symbol}: ${msg} (cooldown 5m)`);
-              logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "long" } });
-              this._failCooldown.set(`${pos.symbol}:close`, Date.now() + 5 * 60 * 1000);
+              if (isPositionGone(msg)) {
+                // Position already liquidated/closed on this exchange
+                longPositionGone = true;
+                ctx.log(`  [ARB] Long position gone for ${pos.symbol} on ${pos.longExchange} (liquidated?) — force closing short`);
+              } else {
+                ctx.log(`  [ARB] Close long leg failed for ${pos.symbol}: ${msg} (cooldown 5m)`);
+                logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "long" } });
+                this._failCooldown.set(`${pos.symbol}:close`, Date.now() + 5 * 60 * 1000);
+              }
             }
-            if (!closeLongOk) continue;
+            if (!closeLongOk && !longPositionGone) continue;
+
             try {
               const closeShortResult = await shortAdapter.marketOrder(pos.symbol, "buy", pos.size, { reduceOnly: true });
               logExecution({ type: "arb_close", exchange: pos.shortExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "short", signedSpread: signedSpread, response: closeShortResult } });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
-              ctx.log(`  [ARB] Close short leg failed for ${pos.symbol}: ${msg} — re-opening long to restore hedge`);
-              logExecution({ type: "arb_close", exchange: pos.shortExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "short" } });
-              // Rollback: re-open long to restore hedge
-              try {
-                await longAdapter.marketOrder(pos.symbol, "buy", pos.size);
-                ctx.log(`  [ARB] Rollback: re-opened long ${pos.size} ${pos.symbol} on ${pos.longExchange}`);
-                // Note: re-open is NOT reduceOnly (it's a new position)
-                logExecution({ type: "multi_leg_rollback", exchange: pos.longExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false });
-              } catch (rbErr) {
-                const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
-                ctx.log(`  [ARB] CRITICAL: Close rollback failed for ${pos.symbol}: ${rbMsg}`);
-                logExecution({ type: "multi_leg_rollback", exchange: pos.longExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "failed", error: rbMsg, dryRun: false });
+              if (isPositionGone(msg)) {
+                // Short position also gone — both liquidated, just clean up tracking
+                ctx.log(`  [ARB] Short position also gone for ${pos.symbol} on ${pos.shortExchange} — removing from tracking`);
+              } else if (closeLongOk) {
+                // Long was closed but short failed (not liquidated) — rollback long
+                ctx.log(`  [ARB] Close short leg failed for ${pos.symbol}: ${msg} — re-opening long to restore hedge`);
+                logExecution({ type: "arb_close", exchange: pos.shortExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "short" } });
+                try {
+                  await longAdapter.marketOrder(pos.symbol, "buy", pos.size);
+                  ctx.log(`  [ARB] Rollback: re-opened long ${pos.size} ${pos.symbol} on ${pos.longExchange}`);
+                  logExecution({ type: "multi_leg_rollback", exchange: pos.longExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false });
+                } catch (rbErr) {
+                  const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
+                  ctx.log(`  [ARB] CRITICAL: Close rollback failed for ${pos.symbol}: ${rbMsg}`);
+                  logExecution({ type: "multi_leg_rollback", exchange: pos.longExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "failed", error: rbMsg, dryRun: false });
+                }
+                this._failCooldown.set(`${pos.symbol}:close`, Date.now() + 5 * 60 * 1000);
+                continue;
+              } else {
+                // Long was gone, short failed (not liquidated) — orphaned short, force close without reduceOnly
+                ctx.log(`  [ARB] Force closing orphaned short for ${pos.symbol}: ${msg}`);
+                try {
+                  await shortAdapter.marketOrder(pos.symbol, "buy", pos.size);
+                  ctx.log(`  [ARB] Force closed short ${pos.size} ${pos.symbol} on ${pos.shortExchange}`);
+                } catch (forceErr) {
+                  const forceMsg = forceErr instanceof Error ? forceErr.message : String(forceErr);
+                  ctx.log(`  [ARB] CRITICAL: Force close short failed for ${pos.symbol}: ${forceMsg}`);
+                  this._failCooldown.set(`${pos.symbol}:close`, Date.now() + 10 * 60 * 1000);
+                  continue;
+                }
               }
-              this._failCooldown.set(`${pos.symbol}:close`, Date.now() + 5 * 60 * 1000);
-              continue;
             }
             toClose.push(pos);
-            ctx.log(`  [ARB] Closed ${pos.symbol} position`);
+            ctx.log(`  [ARB] Closed ${pos.symbol} position${longPositionGone ? ' (long was liquidated)' : ''}`);
           }
         }
       }
