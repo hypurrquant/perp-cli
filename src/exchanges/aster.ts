@@ -335,14 +335,16 @@ export class AsterAdapter implements ExchangeAdapter {
 
   // ── Trading ──
 
-  async marketOrder(symbol: string, side: "buy" | "sell", size: string): Promise<unknown> {
+  async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts?: { reduceOnly?: boolean }): Promise<unknown> {
     const apiSymbol = this._toApi(symbol);
-    const result = await this._signedPost("/fapi/v1/order", {
+    const params: Record<string, string> = {
       symbol: apiSymbol,
       side: side.toUpperCase(),
       type: "MARKET",
       quantity: size,
-    });
+    };
+    if (opts?.reduceOnly) params.reduceOnly = "true";
+    const result = await this._signedPost("/fapi/v1/order", params);
     const r = result as Record<string, unknown>;
     const executedQty = Number(r.executedQty ?? 0);
     const orderId = String(r.orderId ?? "");

@@ -509,8 +509,9 @@ export class LighterAdapter implements ExchangeAdapter {
     }
   }
 
-  async marketOrder(symbol: string, side: "buy" | "sell", size: string) {
+  async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts?: { reduceOnly?: boolean }) {
     this.ensureSigner();
+    void opts; // lighter doesn't support reduceOnly on market orders
     await this.ensureMarketMap();
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);

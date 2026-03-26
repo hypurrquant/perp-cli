@@ -209,10 +209,10 @@ export class PacificaAdapter implements ExchangeAdapter {
     });
   }
 
-  async marketOrder(symbol: string, side: "buy" | "sell", size: string) {
+  async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts?: { reduceOnly?: boolean }) {
     this.ensureSigner();
     return this.client.createMarketOrder(
-      { symbol, amount: size, side: side === "buy" ? "bid" : "ask", reduce_only: false, slippage_percent: "1" },
+      { symbol, amount: size, side: side === "buy" ? "bid" : "ask", reduce_only: opts?.reduceOnly ?? false, slippage_percent: "1" },
       this.account,
       this.signMessage
     );

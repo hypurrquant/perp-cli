@@ -355,7 +355,7 @@ export class FundingArbStrategy implements Strategy {
           if (longAdapter && shortAdapter) {
             let closeLongOk = false;
             try {
-              const closeLongResult = await longAdapter.marketOrder(pos.symbol, "sell", pos.size);
+              const closeLongResult = await longAdapter.marketOrder(pos.symbol, "sell", pos.size, { reduceOnly: true });
               closeLongOk = true;
               logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "long", signedSpread: signedSpread, response: closeLongResult } });
             } catch (err) {
@@ -364,9 +364,9 @@ export class FundingArbStrategy implements Strategy {
               logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "long" } });
               this._failCooldown.set(`${pos.symbol}:close`, Date.now() + 5 * 60 * 1000);
             }
-            if (!closeLongOk) continue; // don't close short if long failed — keep hedge intact
+            if (!closeLongOk) continue;
             try {
-              const closeShortResult = await shortAdapter.marketOrder(pos.symbol, "buy", pos.size);
+              const closeShortResult = await shortAdapter.marketOrder(pos.symbol, "buy", pos.size, { reduceOnly: true });
               logExecution({ type: "arb_close", exchange: pos.shortExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "short", signedSpread: signedSpread, response: closeShortResult } });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
@@ -376,6 +376,7 @@ export class FundingArbStrategy implements Strategy {
               try {
                 await longAdapter.marketOrder(pos.symbol, "buy", pos.size);
                 ctx.log(`  [ARB] Rollback: re-opened long ${pos.size} ${pos.symbol} on ${pos.longExchange}`);
+                // Note: re-open is NOT reduceOnly (it's a new position)
                 logExecution({ type: "multi_leg_rollback", exchange: pos.longExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false });
               } catch (rbErr) {
                 const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
@@ -589,7 +590,7 @@ export class FundingArbStrategy implements Strategy {
             logExecution({ type: "arb_entry", exchange: best.shortExchange, symbol: best.symbol, side: "sell", size: matched.size, status: "failed", error: msg, dryRun: false, meta: { mode: "perp-perp", leg: "short" } });
             // Rollback: close the long position
             try {
-              await longAdapter.marketOrder(best.symbol, "sell", matched.size);
+              await longAdapter.marketOrder(best.symbol, "sell", matched.size, { reduceOnly: true });
               ctx.log(`  [ARB] Rollback success: closed long ${matched.size} ${best.symbol} on ${best.longExchange}`);
               logExecution({ type: "multi_leg_rollback", exchange: best.longExchange, symbol: best.symbol, side: "sell", size: matched.size, status: "success", dryRun: false });
             } catch (rbErr) {
@@ -636,10 +637,10 @@ export class FundingArbStrategy implements Strategy {
               ctx.log(`  [ARB] Position verification failed for ${best.symbol}: long=${longExists}, short=${shortExists}`);
               logExecution({ type: "arb_entry", exchange: `${best.longExchange}↔${best.shortExchange}`, symbol: best.symbol, side: "verify", size: matched.size, status: "failed", error: `Position missing after fill: long=${longExists} short=${shortExists}`, dryRun: false });
               if (longExists && !shortExists) {
-                try { await longAdapter.marketOrder(best.symbol, "sell", matched.size); ctx.log(`  [ARB] Rollback: closed phantom long ${best.symbol}`); } catch { /* best effort */ }
+                try { await longAdapter.marketOrder(best.symbol, "sell", matched.size, { reduceOnly: true }); ctx.log(`  [ARB] Rollback: closed phantom long ${best.symbol}`); } catch { /* best effort */ }
               }
               if (shortExists && !longExists) {
-                try { await shortAdapter.marketOrder(best.symbol, "buy", matched.size); ctx.log(`  [ARB] Rollback: closed phantom short ${best.symbol}`); } catch { /* best effort */ }
+                try { await shortAdapter.marketOrder(best.symbol, "buy", matched.size, { reduceOnly: true }); ctx.log(`  [ARB] Rollback: closed phantom short ${best.symbol}`); } catch { /* best effort */ }
               }
               this._failCooldown.set(`${best.symbol}:entry`, Date.now() + 10 * 60 * 1000);
               continue;
@@ -696,7 +697,7 @@ export class FundingArbStrategy implements Strategy {
           if (longAdapter && shortAdapter) {
             ctx.log(`  [ARB] Closing ${pos.symbol} on stop (${pos.size})`);
             try {
-              const closeLongResult = await longAdapter.marketOrder(pos.symbol, "sell", pos.size);
+              const closeLongResult = await longAdapter.marketOrder(pos.symbol, "sell", pos.size, { reduceOnly: true });
               logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "long", stop: true, response: closeLongResult } });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
@@ -704,7 +705,7 @@ export class FundingArbStrategy implements Strategy {
               logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "long", stop: true } });
             }
             try {
-              const closeShortResult = await shortAdapter.marketOrder(pos.symbol, "buy", pos.size);
+              const closeShortResult = await shortAdapter.marketOrder(pos.symbol, "buy", pos.size, { reduceOnly: true });
               logExecution({ type: "arb_close", exchange: pos.shortExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false, meta: { mode: pos.mode, leg: "short", stop: true, response: closeShortResult } });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
@@ -775,7 +776,7 @@ export class FundingArbStrategy implements Strategy {
       // Step 3: Close perp short
       try {
         const perpSymbol = this.getPerpSymbol(pos.symbol, pos.shortExchange);
-        await perpAdapter.marketOrder(perpSymbol, "buy", pos.size);
+        await perpAdapter.marketOrder(perpSymbol, "buy", pos.size, { reduceOnly: true });
         ctx.log(`  [ARB] Closed perp short ${pos.size} ${perpSymbol}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

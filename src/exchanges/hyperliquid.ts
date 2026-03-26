@@ -418,7 +418,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     try { const { invalidateCache } = await import("../cache.js"); invalidateCache("acct"); } catch { /* ignore */ }
   }
 
-  async marketOrder(symbol: string, side: "buy" | "sell", size: string) {
+  async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts?: { reduceOnly?: boolean }) {
     this.ensureSigner();
     if (this._dex) {
       const r = await this._dexMarketOrder(symbol, side, size);

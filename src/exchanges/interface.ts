@@ -92,7 +92,7 @@ export interface ExchangeAdapter {
   getFundingPayments(limit?: number): Promise<ExchangeFundingPayment[]>;
 
   // ── Trading ──
-  marketOrder(symbol: string, side: "buy" | "sell", size: string): Promise<unknown>;
+  marketOrder(symbol: string, side: "buy" | "sell", size: string, opts?: { reduceOnly?: boolean }): Promise<unknown>;
   limitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { reduceOnly?: boolean; tif?: string }): Promise<unknown>;
   editOrder(symbol: string, orderId: string, price: string, size: string): Promise<unknown>;
   cancelOrder(symbol: string, orderId: string): Promise<unknown>;
