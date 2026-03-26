@@ -598,8 +598,10 @@ export class FundingArbStrategy implements Strategy {
               longAdapter.getPositions(),
               shortAdapter.getPositions(),
             ]);
-            const longExists = longPositions.some(p => p.symbol.toUpperCase() === best.symbol.toUpperCase() && parseFloat(p.size) > 0);
-            const shortExists = shortPositions.some(p => p.symbol.toUpperCase() === best.symbol.toUpperCase() && parseFloat(p.size) > 0);
+            const symUpper = best.symbol.toUpperCase();
+            const matchSymbol = (s: string) => { const u = s.toUpperCase(); return u === symUpper || u === symUpper + "-PERP" || u.replace(/-PERP$/, "") === symUpper; };
+            const longExists = longPositions.some(p => matchSymbol(p.symbol) && parseFloat(p.size) > 0);
+            const shortExists = shortPositions.some(p => matchSymbol(p.symbol) && parseFloat(p.size) > 0);
             if (!longExists && !shortExists) {
               // Both missing likely means cache issue — log warning but don't rollback
               ctx.log(`  [ARB] Position verification: both sides not visible for ${best.symbol} (may be cache delay)`);
