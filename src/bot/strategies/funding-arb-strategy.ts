@@ -484,12 +484,12 @@ export class FundingArbStrategy implements Strategy {
               shortAdapter.getBalance(),
             ]);
 
-            // Check margin usage (skip if > 80%)
+            // Check margin usage (skip if > 70%)
             const longEquity = parseFloat(longBal.equity);
             const shortEquity = parseFloat(shortBal.equity);
             const longMarginPct = longEquity > 0 ? parseFloat(longBal.marginUsed) / longEquity * 100 : 0;
             const shortMarginPct = shortEquity > 0 ? parseFloat(shortBal.marginUsed) / shortEquity * 100 : 0;
-            if (longMarginPct > 80 || shortMarginPct > 80) {
+            if (longMarginPct > 70 || shortMarginPct > 70) {
               skipMargin++;
               continue;
             }
@@ -575,6 +575,31 @@ export class FundingArbStrategy implements Strategy {
           } catch (reconErr) {
             const reconMsg = reconErr instanceof Error ? reconErr.message : String(reconErr);
             ctx.log(`  [ARB] WARNING: Fill reconciliation failed: ${reconMsg}`);
+          }
+
+          // Verify both positions actually exist (catches instant liquidation)
+          try {
+            const [longPositions, shortPositions] = await Promise.all([
+              longAdapter.getPositions(),
+              shortAdapter.getPositions(),
+            ]);
+            const longExists = longPositions.some(p => p.symbol.toUpperCase() === best.symbol.toUpperCase() && parseFloat(p.size) > 0);
+            const shortExists = shortPositions.some(p => p.symbol.toUpperCase() === best.symbol.toUpperCase() && parseFloat(p.size) > 0);
+            if (!longExists || !shortExists) {
+              ctx.log(`  [ARB] Position verification failed for ${best.symbol}: long=${longExists}, short=${shortExists}`);
+              logExecution({ type: "arb_entry", exchange: `${best.longExchange}↔${best.shortExchange}`, symbol: best.symbol, side: "verify", size: matched.size, status: "failed", error: `Position missing after fill: long=${longExists} short=${shortExists}`, dryRun: false });
+              // Rollback whichever side exists
+              if (longExists && !shortExists) {
+                try { await longAdapter.marketOrder(best.symbol, "sell", matched.size); ctx.log(`  [ARB] Rollback: closed phantom long ${best.symbol}`); } catch { /* best effort */ }
+              }
+              if (shortExists && !longExists) {
+                try { await shortAdapter.marketOrder(best.symbol, "buy", matched.size); ctx.log(`  [ARB] Rollback: closed phantom short ${best.symbol}`); } catch { /* best effort */ }
+              }
+              this._failCooldown.set(`${best.symbol}:entry`, Date.now() + 10 * 60 * 1000);
+              continue;
+            }
+          } catch (verifyErr) {
+            ctx.log(`  [ARB] Position verification error for ${best.symbol}: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`);
           }
 
           // Track position
@@ -761,7 +786,7 @@ export class FundingArbStrategy implements Strategy {
         // Check margin usage
         const perpEquity = parseFloat(perpBal.equity);
         const perpMarginPct = perpEquity > 0 ? parseFloat(perpBal.marginUsed) / perpEquity * 100 : 0;
-        if (perpMarginPct > 80) {
+        if (perpMarginPct > 70) {
           ctx.log(`  [ARB] Skip spot-perp ${opp.symbol}: perp margin usage too high (${perpMarginPct.toFixed(0)}%)`);
           return false;
         }
