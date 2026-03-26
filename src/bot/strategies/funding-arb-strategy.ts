@@ -591,6 +591,8 @@ export class FundingArbStrategy implements Strategy {
           }
 
           // Verify both positions actually exist (catches instant liquidation)
+          // Wait for cache to expire before checking (exchanges cache positions for ~5s)
+          await new Promise(resolve => setTimeout(resolve, 6000));
           try {
             const [longPositions, shortPositions] = await Promise.all([
               longAdapter.getPositions(),
@@ -598,10 +600,13 @@ export class FundingArbStrategy implements Strategy {
             ]);
             const longExists = longPositions.some(p => p.symbol.toUpperCase() === best.symbol.toUpperCase() && parseFloat(p.size) > 0);
             const shortExists = shortPositions.some(p => p.symbol.toUpperCase() === best.symbol.toUpperCase() && parseFloat(p.size) > 0);
-            if (!longExists || !shortExists) {
+            if (!longExists && !shortExists) {
+              // Both missing likely means cache issue — log warning but don't rollback
+              ctx.log(`  [ARB] Position verification: both sides not visible for ${best.symbol} (may be cache delay)`);
+            } else if (!longExists || !shortExists) {
+              // One side missing = instant liquidation — rollback the other
               ctx.log(`  [ARB] Position verification failed for ${best.symbol}: long=${longExists}, short=${shortExists}`);
               logExecution({ type: "arb_entry", exchange: `${best.longExchange}↔${best.shortExchange}`, symbol: best.symbol, side: "verify", size: matched.size, status: "failed", error: `Position missing after fill: long=${longExists} short=${shortExists}`, dryRun: false });
-              // Rollback whichever side exists
               if (longExists && !shortExists) {
                 try { await longAdapter.marketOrder(best.symbol, "sell", matched.size); ctx.log(`  [ARB] Rollback: closed phantom long ${best.symbol}`); } catch { /* best effort */ }
               }
