@@ -228,11 +228,18 @@ export class FundingArbStrategy implements Strategy {
         const equity = parseFloat(bal.equity);
         const marginUsed = parseFloat(bal.marginUsed);
         const marginPct = equity > 0 ? (marginUsed / equity) * 100 : 100;
-        exchangeBalances.set(name, { equity, available: parseFloat(bal.available), marginPct });
-        if (marginPct < 90) {
-          availableAdapters.set(name, a);
+        const available = parseFloat(bal.available);
+        exchangeBalances.set(name, { equity, available, marginPct });
+        // Skip if: margin > 90%, available < $5, or exchange on liquidation cooldown
+        const exchCooldown = this._failCooldown.get(`${name}:exchange`) ?? 0;
+        if (Date.now() < exchCooldown) {
+          ctx.log(`  [ARB] ${name} on liquidation cooldown — skipping`);
+        } else if (available < 5) {
+          ctx.log(`  [ARB] ${name} available $${available.toFixed(2)} too low — skipping`);
+        } else if (marginPct >= 90) {
+          ctx.log(`  [ARB] ${name} margin ${marginPct.toFixed(0)}% — skipping`);
         } else {
-          ctx.log(`  [ARB] ${name} margin ${marginPct.toFixed(0)}% — skipping for this tick`);
+          availableAdapters.set(name, a);
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -372,6 +379,8 @@ export class FundingArbStrategy implements Strategy {
                 // Position already liquidated/closed on this exchange
                 longPositionGone = true;
                 ctx.log(`  [ARB] Long position gone for ${pos.symbol} on ${pos.longExchange} (liquidated?) — force closing short`);
+                // Cooldown the exchange for 30 minutes to prevent liquidation-entry cycle
+                this._failCooldown.set(`${pos.longExchange}:exchange`, Date.now() + 30 * 60 * 1000);
               } else {
                 ctx.log(`  [ARB] Close long leg failed for ${pos.symbol}: ${msg} (cooldown 5m)`);
                 logExecution({ type: "arb_close", exchange: pos.longExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "failed", error: msg, dryRun: false, meta: { mode: pos.mode, leg: "long" } });
@@ -388,6 +397,7 @@ export class FundingArbStrategy implements Strategy {
               if (isPositionGone(msg)) {
                 // Short position also gone — both liquidated, just clean up tracking
                 ctx.log(`  [ARB] Short position also gone for ${pos.symbol} on ${pos.shortExchange} — removing from tracking`);
+                this._failCooldown.set(`${pos.shortExchange}:exchange`, Date.now() + 30 * 60 * 1000);
               } else if (closeLongOk) {
                 // Long was closed but short failed (not liquidated) — rollback long
                 ctx.log(`  [ARB] Close short leg failed for ${pos.symbol}: ${msg} — re-opening long to restore hedge`);
