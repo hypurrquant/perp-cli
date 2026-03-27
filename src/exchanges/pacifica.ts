@@ -230,7 +230,7 @@ export class PacificaAdapter implements ExchangeAdapter {
     if (orderId && !(opts?.reduceOnly ?? false)) {
       // Poll order status via history_by_id
       let lastPollError: unknown = null;
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 10; attempt++) {
         await new Promise(r => setTimeout(r, 500));
         try {
           const history = await this.client.getOrderHistoryById(Number(orderId));
@@ -250,8 +250,9 @@ export class PacificaAdapter implements ExchangeAdapter {
           lastPollError = e;
         }
       }
+      // Order was accepted but verification timed out — warn, don't throw
       const errDetail = lastPollError instanceof Error ? ` (poll error: ${lastPollError.message})` : "";
-      throw new Error(`Market ${side} ${symbol}: order ${orderId} not confirmed after 2.5s${errDetail}`);
+      console.error(`[pacifica] Warning: market ${side} ${symbol} order ${orderId} not confirmed after 5s${errDetail} — assuming executed`);
     }
 
     if (!(opts?.reduceOnly ?? false)) {

@@ -190,10 +190,10 @@ export class SpotPerpArbStrategy implements Strategy {
 
     const display = positions.map(pos => {
       const ann = this.calcAnnualized(pos, ratesByExchange);
-      const sign = ann >= 0 ? "+" : "";
+      const annStr = ann !== null ? `${ann >= 0 ? "+" : ""}${ann.toFixed(1)}%` : "?%";
       const hist = pos.fundingHistory;
       const posCount = hist.filter(h => h.amount > 0).length;
-      return `${pos.symbol} ${pos.spotExchange}-spot<>${pos.perpExchange} ${sign}${ann.toFixed(1)}% (${posCount}/${hist.length} positive)`;
+      return `${pos.symbol} ${pos.spotExchange}-spot<>${pos.perpExchange} ${annStr} (${posCount}/${hist.length} positive)`;
     });
     ctx.state.set("arbPositionDetails", display);
     ctx.state.set("arbPositions", positions.length);
@@ -368,17 +368,21 @@ export class SpotPerpArbStrategy implements Strategy {
     return best;
   }
 
-  private calcAnnualized(pos: SpotPerpPosition, ratesByExchange: RateMap): number {
+  private calcAnnualized(pos: SpotPerpPosition, ratesByExchange: RateMap): number | null {
     const ri = findRate(ratesByExchange, pos.perpExchange, getPerpSymbol(pos.symbol, pos.perpExchange))
       ?? findRate(ratesByExchange, pos.perpExchange, pos.symbol);
-    const fH = ri?.fundingHours ?? getFundingHours(pos.perpExchange);
-    return ri ? (ri.rate / fH) * 8760 * 100 : 0;
+    if (!ri) return null; // rate unknown — don't assume 0
+    const fH = ri.fundingHours ?? getFundingHours(pos.perpExchange);
+    return (ri.rate / fH) * 8760 * 100;
   }
 
   private shouldClose(pos: SpotPerpPosition, ratesByExchange: RateMap, p: SpotPerpArbParams): boolean {
     const minHoldMs = p.min_hold_hours * 60 * 60 * 1000;
     const holdTime = pos.entryTime > 0 ? Date.now() - pos.entryTime : Infinity;
     const ann = this.calcAnnualized(pos, ratesByExchange);
+
+    // Rate unknown — don't close (rate data not yet available)
+    if (ann === null) return false;
 
     // Emergency close: instantaneous spread deeply negative
     if (ann < -50) return true;
