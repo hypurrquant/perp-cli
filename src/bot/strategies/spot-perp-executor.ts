@@ -147,6 +147,21 @@ export class SpotPerpExecutor {
         return { success: false, error: `spot buy: ${msg}` };
       }
 
+      // Step 1b: Verify spot actually bought (safety net for "assuming executed" false positive)
+      try {
+        invalidateCache("acct");
+        const postBals = await spotAdapter.getSpotBalances();
+        const bought = postBals.find(b => b.token.toUpperCase().replace(/-SPOT$/, "") === symbol.toUpperCase());
+        const boughtAmt = bought ? parseFloat(bought.total) : 0;
+        if (boughtAmt < parseFloat(matched.size) * 0.5) {
+          log(`  [SPA] Spot buy returned OK but ${symbol} balance too low (${boughtAmt.toFixed(4)}) — aborting`);
+          if (actualTransferred > 0) {
+            try { await transferUsdcToPerp(spotAdapter, spotExchange, actualTransferred); } catch { /* best effort */ }
+          }
+          return { success: false, error: "spot buy not confirmed by balance" };
+        }
+      } catch { /* balance check failed, proceed optimistically */ }
+
       // Step 2: Short perp
       try {
         await perpAdapter.marketOrder(perpSymbol, "sell", matched.size);
@@ -227,6 +242,21 @@ export class SpotPerpExecutor {
         }
         return false;
       }
+
+      // Step 2b: Verify spot actually sold (safety net for "assuming executed" false positive)
+      try {
+        invalidateCache("acct");
+        const postBals = await spotAdapter.getSpotBalances();
+        const remaining = postBals.find(b => b.token.toUpperCase().replace(/-SPOT$/, "") === symbol.toUpperCase());
+        const remainingAmt = remaining ? parseFloat(remaining.total) : 0;
+        if (remainingAmt >= parseFloat(size) * 0.5) {
+          log(`  [SPA] CRITICAL: Spot sell returned OK but ${symbol} balance unchanged (${remainingAmt.toFixed(4)}) — re-hedging perp`);
+          try { await perpAdapter.marketOrder(perpSym, "sell", size); } catch (rbErr) {
+            log(`  [SPA] CRITICAL: Perp re-hedge failed: ${rbErr instanceof Error ? rbErr.message : String(rbErr)}`);
+          }
+          return false;
+        }
+      } catch { /* balance check failed, proceed optimistically */ }
 
       // Step 3: Transfer USDC back to perp (always — lighter/HL both need this)
       try {
