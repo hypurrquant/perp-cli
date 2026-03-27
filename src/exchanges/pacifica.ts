@@ -211,11 +211,36 @@ export class PacificaAdapter implements ExchangeAdapter {
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts?: { reduceOnly?: boolean }) {
     this.ensureSigner();
-    return this.client.createMarketOrder(
+    const result = await this.client.createMarketOrder(
       { symbol, amount: size, side: side === "buy" ? "bid" : "ask", reduce_only: opts?.reduceOnly ?? false, slippage_percent: "1" },
       this.account,
       this.signMessage
     );
+
+    // Validate response - check if order was accepted
+    const r = result as Record<string, unknown>;
+    if (r.success === false || r.error) {
+      throw new Error(`Market ${side} ${symbol}: ${r.error ?? 'order rejected'}`);
+    }
+
+    // For non-reduceOnly, verify trade via recent trade history
+    if (!(opts?.reduceOnly ?? false)) {
+      try {
+        const trades = await this.getTradeHistory(1);
+        const recent = trades.find(t =>
+          t.symbol.toUpperCase() === symbol.toUpperCase() &&
+          t.time > Date.now() - 10000
+        );
+        if (!recent) {
+          throw new Error(`Market ${side} ${symbol}: order accepted but no recent trade found`);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message.startsWith("Market ")) throw e;
+        // trade history query failed, log but don't block (order accepted)
+      }
+    }
+
+    return result;
   }
 
   async limitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { reduceOnly?: boolean; tif?: string }) {

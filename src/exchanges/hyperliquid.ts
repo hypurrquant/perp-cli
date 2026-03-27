@@ -418,10 +418,33 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     try { const { invalidateCache } = await import("../cache.js"); invalidateCache("acct"); } catch { /* ignore */ }
   }
 
+  /**
+   * Validate that an HL order actually filled.
+   * HL API returns status "ok" even for 0-fill IoC orders.
+   * Response shape: { status: "ok", response: { type: "order", data: { statuses: [...] } } }
+   * Each status is one of: { filled: { totalSz, avgPx, oid } }, { resting: { oid } }, { error: "msg" }
+   */
+  private _validateOrderFill(result: unknown, symbol: string, side: string, requestedSize: string): void {
+    const r = result as { status?: string; response?: { type?: string; data?: { statuses?: Array<Record<string, unknown>> } } };
+    const statuses = r?.response?.data?.statuses;
+    if (!statuses || statuses.length === 0) {
+      throw new Error(`Market ${side} ${symbol}: no order status in response`);
+    }
+    const st = statuses[0];
+    if (st.error) {
+      throw new Error(`Market ${side} ${symbol}: ${st.error}`);
+    }
+    const filled = st.filled as { totalSz?: string; avgPx?: string } | undefined;
+    if (!filled || Number(filled.totalSz ?? 0) === 0) {
+      throw new Error(`Market ${side} ${symbol}: order not filled (0 of ${requestedSize}). Check price/liquidity.`);
+    }
+  }
+
   async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts?: { reduceOnly?: boolean }) {
     this.ensureSigner();
     if (this._dex) {
       const r = await this._dexMarketOrder(symbol, side, size);
+      this._validateOrderFill(r, symbol, side, size);
       await this._invalidateAccountCache();
       return r;
     }
@@ -434,6 +457,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         side === "buy",
         parseFloat(size),
       );
+      this._validateOrderFill(result, symbol, side, size);
       await this._invalidateAccountCache();
       return result;
     } finally {

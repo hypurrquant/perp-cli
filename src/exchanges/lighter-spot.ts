@@ -254,6 +254,27 @@ export class LighterSpotAdapter implements SpotAdapter {
       orderType: 1, // MARKET
       timeInForce: 0, // IOC
     });
+
+    // Verify fill: check recent spot trades
+    try {
+      const trades = await this._restGetAuth("/trades", {
+        account_index: String(this._lt.accountIndex),
+        market_id: String(marketId),
+        limit: "1",
+      }) as { trades?: Array<Record<string, unknown>> };
+      const recent = (trades.trades ?? [])[0];
+      if (!recent) {
+        throw new Error(`Spot ${side} ${symbol}: no trade found after order submission`);
+      }
+      const tradeTime = Number(recent.timestamp ?? 0) * 1000;
+      if (Date.now() - tradeTime > 10000) {
+        throw new Error(`Spot ${side} ${symbol}: latest trade is stale, order may not have filled`);
+      }
+    } catch (e) {
+      if (e instanceof Error && (e.message.startsWith("Spot ") || e.message.startsWith("Market "))) throw e;
+      // trades query failed, log but don't block (sendTx succeeded)
+    }
+
     return result;
   }
 

@@ -513,6 +513,7 @@ export class LighterAdapter implements ExchangeAdapter {
     this.ensureSigner();
     void opts; // lighter doesn't support reduceOnly on market orders
     await this.ensureMarketMap();
+
     const nonce = await this.getNextNonce();
     const marketIndex = this.getMarketIndex(symbol);
     const { baseAmount } = this.toTicks(symbol, parseFloat(size), 0);
@@ -533,7 +534,30 @@ export class LighterAdapter implements ExchangeAdapter {
       orderExpiry: 0, // DEFAULT_IOC_EXPIRY
       nonce,
     });
-    return this.sendTx(signed);
+    const result = await this.sendTx(signed);
+
+    // Verify fill: check recent trades for this market
+    try {
+      const trades = await this.restGetAuth("/trades", {
+        account_index: String(this._accountIndex),
+        market_id: String(marketIndex),
+        limit: "1",
+      }) as { trades?: Array<Record<string, unknown>> };
+      const recent = (trades.trades ?? [])[0];
+      if (!recent) {
+        throw new Error(`Market ${side} ${symbol}: no trade found after order submission`);
+      }
+      // Check the trade is recent (within last 10 seconds)
+      const tradeTime = Number(recent.timestamp ?? 0) * 1000;
+      if (Date.now() - tradeTime > 10000) {
+        throw new Error(`Market ${side} ${symbol}: latest trade is stale (${new Date(tradeTime).toISOString()}), order may not have filled`);
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith("Market ")) throw e;
+      // trades query failed, log but don't block (sendTx succeeded)
+    }
+
+    return result;
   }
 
   async limitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { reduceOnly?: boolean; tif?: string }) {
