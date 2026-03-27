@@ -64,6 +64,10 @@ export const SPOT_PERP_TOKEN_MAP: Record<string, string> = {
   UETH: "ETH",
   USOL: "SOL",
   UFART: "FARTCOIN",
+  UPUMP: "PUMP",
+  LINK0: "LINK",
+  AVAX0: "AVAX",
+  AAVE0: "AAVE",
 };
 
 /** Reverse: perp symbol → U-token spot name on HL */
