@@ -1269,6 +1269,145 @@ export function registerTradeCommands(
       console.log(chalk.yellow(`\n  PnL tracker stopped.\n`));
     });
 
+  // === Spot Trading ===
+
+  trade
+    .command("spot-buy <symbol> <size>")
+    .description("Buy spot token (HL or Lighter spot market)")
+    .action(async (symbol: string, size: string) => {
+      await withJsonErrors(isJson(), async () => {
+        const adapter = await getAdapter();
+        const exchangeName = adapter.name.toLowerCase();
+
+        let spotAdapter;
+        if (exchangeName === "hyperliquid") {
+          const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+          const { HyperliquidAdapter } = await import("../exchanges/hyperliquid.js");
+          if (adapter instanceof HyperliquidAdapter) {
+            spotAdapter = new HyperliquidSpotAdapter(adapter);
+          }
+        } else if (exchangeName === "lighter") {
+          const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");
+          const { LighterAdapter } = await import("../exchanges/lighter.js");
+          if (adapter instanceof LighterAdapter) {
+            spotAdapter = new LighterSpotAdapter(adapter);
+          }
+        }
+
+        if (!spotAdapter) {
+          if (isJson()) return printJson(jsonError("UNSUPPORTED", `${exchangeName} does not support spot trading`));
+          errorAndExit(`${exchangeName} does not support spot trading`);
+          return;
+        }
+
+        await spotAdapter.init();
+
+        if (dryRunGuard("spot buy", { exchange: exchangeName, symbol: symbol.toUpperCase(), side: "buy", size })) return;
+
+        const result = await spotAdapter.spotMarketOrder(symbol.toUpperCase(), "buy", size);
+        logExecution({ type: "market_order", exchange: exchangeName + "-spot", symbol: symbol.toUpperCase(), side: "buy", size, status: "success", dryRun: false, meta: { spot: true, result } });
+
+        if (isJson()) {
+          printJson(jsonOk({ order: result, symbol: symbol.toUpperCase(), side: "buy", size }));
+        } else {
+          console.log(chalk.green(`\n  ✓ Spot bought ${size} ${symbol.toUpperCase()} on ${exchangeName}\n`));
+        }
+      });
+    });
+
+  trade
+    .command("spot-sell <symbol> <size>")
+    .description("Sell spot token (HL or Lighter spot market)")
+    .action(async (symbol: string, size: string) => {
+      await withJsonErrors(isJson(), async () => {
+        const adapter = await getAdapter();
+        const exchangeName = adapter.name.toLowerCase();
+
+        let spotAdapter;
+        if (exchangeName === "hyperliquid") {
+          const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+          const { HyperliquidAdapter } = await import("../exchanges/hyperliquid.js");
+          if (adapter instanceof HyperliquidAdapter) {
+            spotAdapter = new HyperliquidSpotAdapter(adapter);
+          }
+        } else if (exchangeName === "lighter") {
+          const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");
+          const { LighterAdapter } = await import("../exchanges/lighter.js");
+          if (adapter instanceof LighterAdapter) {
+            spotAdapter = new LighterSpotAdapter(adapter);
+          }
+        }
+
+        if (!spotAdapter) {
+          if (isJson()) return printJson(jsonError("UNSUPPORTED", `${exchangeName} does not support spot trading`));
+          errorAndExit(`${exchangeName} does not support spot trading`);
+          return;
+        }
+
+        await spotAdapter.init();
+
+        if (dryRunGuard("spot sell", { exchange: exchangeName, symbol: symbol.toUpperCase(), side: "sell", size })) return;
+
+        const result = await spotAdapter.spotMarketOrder(symbol.toUpperCase(), "sell", size);
+        logExecution({ type: "market_order", exchange: exchangeName + "-spot", symbol: symbol.toUpperCase(), side: "sell", size, status: "success", dryRun: false, meta: { spot: true, result } });
+
+        if (isJson()) {
+          printJson(jsonOk({ order: result, symbol: symbol.toUpperCase(), side: "sell", size }));
+        } else {
+          console.log(chalk.green(`\n  ✓ Spot sold ${size} ${symbol.toUpperCase()} on ${exchangeName}\n`));
+        }
+      });
+    });
+
+  trade
+    .command("spot-balance")
+    .description("Show spot token balances (HL or Lighter)")
+    .action(async () => {
+      await withJsonErrors(isJson(), async () => {
+        const adapter = await getAdapter();
+        const exchangeName = adapter.name.toLowerCase();
+
+        let spotAdapter;
+        if (exchangeName === "hyperliquid") {
+          const { HyperliquidSpotAdapter } = await import("../exchanges/hyperliquid-spot.js");
+          const { HyperliquidAdapter } = await import("../exchanges/hyperliquid.js");
+          if (adapter instanceof HyperliquidAdapter) {
+            spotAdapter = new HyperliquidSpotAdapter(adapter);
+          }
+        } else if (exchangeName === "lighter") {
+          const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");
+          const { LighterAdapter } = await import("../exchanges/lighter.js");
+          if (adapter instanceof LighterAdapter) {
+            spotAdapter = new LighterSpotAdapter(adapter);
+          }
+        }
+
+        if (!spotAdapter) {
+          if (isJson()) return printJson(jsonError("UNSUPPORTED", `${exchangeName} does not support spot trading`));
+          errorAndExit(`${exchangeName} does not support spot trading`);
+          return;
+        }
+
+        await spotAdapter.init();
+        const balances = await spotAdapter.getSpotBalances();
+        const nonZero = balances.filter(b => Number(b.total) > 0);
+
+        if (isJson()) {
+          printJson(jsonOk({ exchange: exchangeName, balances: nonZero }));
+        } else {
+          console.log(chalk.cyan(`\n  Spot Balances (${exchangeName}):\n`));
+          if (nonZero.length === 0) {
+            console.log(chalk.gray("  No spot tokens\n"));
+          } else {
+            for (const b of nonZero) {
+              console.log(`  ${b.token.padEnd(10)} ${b.total.padEnd(15)} available: ${b.available}`);
+            }
+            console.log();
+          }
+        }
+      });
+    });
+
   // ── Multi-leg orders ──────────────────────────────────────────────────
   if (getAdapterForExchange) {
     const tradeCmd = program.commands.find(c => c.name() === "trade");
