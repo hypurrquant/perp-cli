@@ -223,16 +223,18 @@ export class PacificaAdapter implements ExchangeAdapter {
       throw new Error(`Market ${side} ${symbol}: ${r.error ?? 'order rejected'}`);
     }
 
-    // For non-reduceOnly, verify trade via recent trade history
+    // Response-based validation: SDK didn't throw + no error in response = accepted
+    // Trade history verification is best-effort (Pacifica's getTradeHistory can be empty/delayed)
     if (!(opts?.reduceOnly ?? false)) {
       try {
         const trades = await this.getTradeHistory(1);
         const recent = trades.find(t =>
           t.symbol.toUpperCase() === symbol.toUpperCase() &&
-          t.time > Date.now() - 10000
+          t.time > Date.now() - 30000
         );
         if (!recent) {
-          throw new Error(`Market ${side} ${symbol}: order accepted but no recent trade found`);
+          // Warning only — don't throw. Strategy's position verification is the final safety net.
+          console.error(`[pacifica] Warning: market ${side} ${symbol} accepted but no recent trade in history`);
         }
       } catch (e) {
         if (e instanceof Error && e.message.startsWith("Market ")) throw e;

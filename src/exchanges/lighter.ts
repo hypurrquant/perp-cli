@@ -545,16 +545,15 @@ export class LighterAdapter implements ExchangeAdapter {
       }) as { trades?: Array<Record<string, unknown>> };
       const recent = (trades.trades ?? [])[0];
       if (!recent) {
-        throw new Error(`Market ${side} ${symbol}: no trade found after order submission`);
+        console.error(`[lighter] Warning: market ${side} ${symbol} submitted but no trade found in history`);
+      } else {
+        const tradeTime = Number(recent.timestamp ?? 0) * 1000;
+        if (Date.now() - tradeTime > 30000) {
+          console.error(`[lighter] Warning: market ${side} ${symbol} latest trade is stale (${new Date(tradeTime).toISOString()})`);
+        }
       }
-      // Check the trade is recent (within last 10 seconds)
-      const tradeTime = Number(recent.timestamp ?? 0) * 1000;
-      if (Date.now() - tradeTime > 10000) {
-        throw new Error(`Market ${side} ${symbol}: latest trade is stale (${new Date(tradeTime).toISOString()}), order may not have filled`);
-      }
-    } catch (e) {
-      if (e instanceof Error && e.message.startsWith("Market ")) throw e;
-      // trades query failed, log but don't block (sendTx succeeded)
+    } catch {
+      // trades query failed — non-blocking, sendTx succeeded
     }
 
     return result;

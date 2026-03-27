@@ -264,15 +264,15 @@ export class LighterSpotAdapter implements SpotAdapter {
       }) as { trades?: Array<Record<string, unknown>> };
       const recent = (trades.trades ?? [])[0];
       if (!recent) {
-        throw new Error(`Spot ${side} ${symbol}: no trade found after order submission`);
+        console.error(`[lighter-spot] Warning: spot ${side} ${symbol} submitted but no trade found in history`);
+      } else {
+        const tradeTime = Number(recent.timestamp ?? 0) * 1000;
+        if (Date.now() - tradeTime > 30000) {
+          console.error(`[lighter-spot] Warning: spot ${side} ${symbol} latest trade is stale`);
+        }
       }
-      const tradeTime = Number(recent.timestamp ?? 0) * 1000;
-      if (Date.now() - tradeTime > 10000) {
-        throw new Error(`Spot ${side} ${symbol}: latest trade is stale, order may not have filled`);
-      }
-    } catch (e) {
-      if (e instanceof Error && (e.message.startsWith("Spot ") || e.message.startsWith("Market "))) throw e;
-      // trades query failed, log but don't block (sendTx succeeded)
+    } catch {
+      // trades query failed — non-blocking, order was submitted
     }
 
     return result;
