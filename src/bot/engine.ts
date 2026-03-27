@@ -27,6 +27,7 @@ import "./strategies/rfq-agent.js";
 import "./strategies/claude-agent.js";
 import "./strategies/apex-strategy.js";
 import "./strategies/funding-auto.js";
+import "./strategies/spot-perp-arb-strategy.js";
 
 export type BotLog = (msg: string) => void;
 export type BotOutputMode = "tui" | "json" | "headless";
