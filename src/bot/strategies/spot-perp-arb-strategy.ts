@@ -235,6 +235,9 @@ export class SpotPerpArbStrategy implements Strategy {
     interface ScoredOpp { symbol: string; spotExchange: string; perpExchange: string; annualized: number; score: FundingScore }
     const scoredOpps: ScoredOpp[] = [];
 
+    // HL spot: only whitelisted tokens (U-tokens + PURR/HYPE). Lighter spot: all allowed.
+    const HL_SPOT_WHITELIST = new Set(["UBTC", "UETH", "USOL", "UFART", "UPUMP", "LINK0", "AVAX0", "AAVE0", "PURR", "HYPE"]);
+
     for (const [spotExName, spotExAdapter] of adapters) {
       try {
         const spotAdapter = await getSpotAdapter(spotExName, spotExAdapter);
@@ -242,6 +245,8 @@ export class SpotPerpArbStrategy implements Strategy {
         const spotMarkets = await spotAdapter.getSpotMarkets();
         for (const m of spotMarkets) {
           const base = m.baseToken.toUpperCase();
+          // HL spot: skip tokens not in whitelist
+          if (spotExName === "hyperliquid" && !HL_SPOT_WHITELIST.has(base)) continue;
           if (openSymbols.has(base)) continue;
           if (Date.now() < (this._failCooldown.get(`${base}:entry`) ?? 0)) continue;
           const best = await this.findBestPerp(base, adapters, ratesByExchange);

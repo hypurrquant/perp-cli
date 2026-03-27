@@ -1,6 +1,6 @@
 {
   "name": "perp-cli",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "Multi-DEX Perpetual Futures CLI - Pacifica, Hyperliquid, Lighter, Aster",
   "bin": {
     "perp": "dist/index.js",
