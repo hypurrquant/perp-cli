@@ -50,12 +50,17 @@ export class SpotPerpExecutor {
     await transferUsdcToPerp(spotAdapter, exchange, amount);
   }
 
+  /** Returns true if a reduceOnly rejection indicates the position is already gone. */
+  private isPositionGone(msg: string): boolean {
+    return msg.includes("ReduceOnly") || msg.includes("reduceOnly") || msg.includes("-2022");
+  }
+
   /**
    * Full spot-perp entry flow:
    * 1. Check liquidity
    * 2. Compute matched size
    * 3. Set leverage on perp
-   * 4. Transfer USDC to spot
+   * 4. Transfer USDC to spot (only the shortfall, track actual transferred)
    * 5. Buy spot
    * 6. Short perp
    * 7. Verify positions
@@ -73,7 +78,6 @@ export class SpotPerpExecutor {
     log: (msg: string) => void;
   }): Promise<ExecutionResult> {
     const { symbol, perpSymbol, spotExchange, perpExchange, spotAdapter, perpAdapter, sizeUsd, leverage, log } = params;
-    const sameExchange = spotExchange === perpExchange;
 
     try {
       // Set leverage
@@ -104,15 +108,28 @@ export class SpotPerpExecutor {
 
       log(`  [SPA] Opening: ${matched.size} ${symbol} ($${matched.notional.toFixed(0)}) ${spotExchange}-spot<>${perpExchange}`);
 
-      // Transfer USDC to spot account
+      // Transfer USDC to spot account — only transfer the shortfall, track actual amount
       const tAmt = Math.ceil(matched.notional * 1.02);
+      let spotUsdcAvailable = 0;
       try {
-        await transferUsdcToSpot(spotAdapter, spotExchange, tAmt);
-        log(`  [SPA] Transferred $${tAmt} USDC to ${spotExchange} spot`);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        log(`  [SPA] USDC transfer to spot failed: ${msg}`);
-        return { success: false, error: `transfer: ${msg}` };
+        const spotBals = await spotAdapter.getSpotBalances();
+        const usdcBal = spotBals.find(b => b.token.toUpperCase().startsWith("USDC"));
+        spotUsdcAvailable = usdcBal ? parseFloat(usdcBal.available) : 0;
+      } catch { /* ignore */ }
+
+      let actualTransferred = 0;
+      if (spotUsdcAvailable >= tAmt) {
+        log(`  [SPA] Spot already has $${spotUsdcAvailable.toFixed(2)} USDC, skipping transfer`);
+      } else {
+        actualTransferred = Math.ceil(tAmt - spotUsdcAvailable);
+        try {
+          await transferUsdcToSpot(spotAdapter, spotExchange, actualTransferred);
+          log(`  [SPA] Transferred $${actualTransferred} USDC to ${spotExchange} spot`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          log(`  [SPA] USDC transfer to spot failed: ${msg}`);
+          return { success: false, error: `transfer: ${msg}` };
+        }
       }
 
       // Step 1: Buy spot
@@ -122,7 +139,9 @@ export class SpotPerpExecutor {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         log(`  [SPA] Spot buy failed: ${msg}`);
-        try { await transferUsdcToPerp(spotAdapter, spotExchange, tAmt); log(`  [SPA] Recovered $${tAmt} USDC back to perp`); } catch { /* best effort */ }
+        if (actualTransferred > 0) {
+          try { await transferUsdcToPerp(spotAdapter, spotExchange, actualTransferred); log(`  [SPA] Recovered $${actualTransferred} USDC back to perp`); } catch { /* best effort */ }
+        }
         return { success: false, error: `spot buy: ${msg}` };
       }
 
@@ -136,7 +155,7 @@ export class SpotPerpExecutor {
         try {
           await spotAdapter.spotMarketOrder(symbol, "sell", matched.size);
           logExecution({ type: "multi_leg_rollback", exchange: `${spotExchange}-spot`, symbol, side: "sell", size: matched.size, status: "success", dryRun: false });
-          if (sameExchange) { try { await transferUsdcToPerp(spotAdapter, spotExchange, Math.ceil(matched.notional * 1.02)); } catch { /* best effort */ } }
+          if (actualTransferred > 0) { try { await transferUsdcToPerp(spotAdapter, spotExchange, actualTransferred); } catch { /* best effort */ } }
         } catch (rbErr) {
           log(`  [SPA] CRITICAL: Spot rollback failed: ${rbErr instanceof Error ? rbErr.message : String(rbErr)}`);
         }
@@ -145,7 +164,6 @@ export class SpotPerpExecutor {
 
       // Position verification
       invalidateCache("acct");
-      await new Promise(resolve => setTimeout(resolve, 2000));
       try {
         const perpPositions = await perpAdapter.getPositions();
         const hasPerp = perpPositions.some(x => matchSymbol(x.symbol, perpSymbol) && parseFloat(x.size) > 0);
@@ -164,10 +182,9 @@ export class SpotPerpExecutor {
 
   /**
    * Full spot-perp close flow:
-   * 1. Sell spot
-   * 2. Transfer USDC back to perp (same-exchange)
-   * 3. Close perp short (reduceOnly)
-   * Handle: ReduceOnly rejected (position gone), rollback.
+   * 1. Close perp short FIRST (reduceOnly) — hedge stays intact if this fails
+   * 2. Sell spot
+   * 3. Transfer USDC back to perp (always, not just same-exchange)
    */
   async closePosition(params: {
     symbol: string;
@@ -182,41 +199,45 @@ export class SpotPerpExecutor {
     const perpSym = getPerpSymbol(symbol, perpExchange);
 
     try {
-      // Step 1: Sell spot
-      try {
-        await spotAdapter.spotMarketOrder(symbol, "sell", size);
-      } catch (err) {
-        log(`  [SPA] Spot sell failed: ${err instanceof Error ? err.message : String(err)}`);
-        return false;
-      }
-
-      // Transfer USDC back (same-exchange)
-      if (spotExchange === perpExchange) {
-        try {
-          const price = await getPriceEstimate(perpAdapter, perpSym, symbol);
-          const proceeds = price * parseFloat(size) * 0.95;
-          if (proceeds > 1) await transferUsdcToPerp(spotAdapter, spotExchange, Math.floor(proceeds));
-        } catch { /* non-fatal */ }
-      }
-
-      // Step 2: Close perp short (reduceOnly)
+      // Step 1: Close perp short FIRST (reduceOnly) — if this fails, hedge is still intact
       try {
         await perpAdapter.marketOrder(perpSym, "buy", size, { reduceOnly: true });
         logExecution({ type: "arb_close", exchange: perpExchange, symbol, side: "buy", size, status: "success", dryRun: false, meta: { mode: "spot-perp" } });
-        return true;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        // Handle ReduceOnly rejected (position already gone)
-        if (msg.includes("ReduceOnly") || msg.includes("reduceOnly") || msg.includes("-2022")) {
+        // ReduceOnly rejected = position already gone, proceed to sell spot
+        if (this.isPositionGone(msg)) {
           log(`  [SPA] Perp already closed (ReduceOnly rejected)`);
-          return true;
+        } else {
+          log(`  [SPA] Perp close failed, hedge intact: ${msg}`);
+          return false;
         }
-        log(`  [SPA] Perp close failed: ${msg} -- rollback spot`);
-        try { await spotAdapter.spotMarketOrder(symbol, "buy", size); } catch (rbErr) {
-          log(`  [SPA] CRITICAL: Spot rollback failed: ${rbErr instanceof Error ? rbErr.message : String(rbErr)}`);
+      }
+
+      // Step 2: Sell spot
+      try {
+        await spotAdapter.spotMarketOrder(symbol, "sell", size);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log(`  [SPA] Spot sell failed: ${msg} -- re-opening perp hedge`);
+        try { await perpAdapter.marketOrder(perpSym, "sell", size); } catch (rbErr) {
+          log(`  [SPA] CRITICAL: Perp re-hedge failed: ${rbErr instanceof Error ? rbErr.message : String(rbErr)}`);
         }
         return false;
       }
+
+      // Step 3: Transfer USDC back to perp (always — lighter/HL both need this)
+      try {
+        const spotBals = await spotAdapter.getSpotBalances();
+        const usdcBal = spotBals.find(b => b.token.toUpperCase().startsWith("USDC"));
+        const usdcAmount = usdcBal ? parseFloat(usdcBal.total) : 0;
+        if (usdcAmount > 1) {
+          await transferUsdcToPerp(spotAdapter, spotExchange, Math.floor(usdcAmount));
+          log(`  [SPA] Transferred $${Math.floor(usdcAmount)} USDC back to perp`);
+        }
+      } catch { /* non-fatal */ }
+
+      return true;
     } catch (err) {
       log(`  [SPA] Close failed: ${err instanceof Error ? err.message : String(err)}`);
       return false;

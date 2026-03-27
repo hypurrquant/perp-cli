@@ -217,29 +217,45 @@ export class PacificaAdapter implements ExchangeAdapter {
       this.signMessage
     );
 
-    // Validate response - check if order was accepted
+    // Validate response
     const r = result as Record<string, unknown>;
+    const data = (r.data ?? r) as Record<string, unknown>;
     if (r.success === false || r.error) {
       throw new Error(`Market ${side} ${symbol}: ${r.error ?? 'order rejected'}`);
     }
 
-    // Response-based validation: SDK didn't throw + no error in response = accepted
-    // Trade history verification is best-effort (Pacifica's getTradeHistory can be empty/delayed)
-    if (!(opts?.reduceOnly ?? false)) {
-      try {
-        const trades = await this.getTradeHistory(1);
-        const recent = trades.find(t =>
-          t.symbol.toUpperCase() === symbol.toUpperCase() &&
-          t.time > Date.now() - 30000
-        );
-        if (!recent) {
-          // Warning only — don't throw. Strategy's position verification is the final safety net.
-          console.error(`[pacifica] Warning: market ${side} ${symbol} accepted but no recent trade in history`);
+    // Get order_id from response
+    const orderId = data.order_id ? String(data.order_id) : null;
+
+    if (orderId && !(opts?.reduceOnly ?? false)) {
+      // Poll order status via history_by_id
+      let lastPollError: unknown = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise(r => setTimeout(r, 500));
+        try {
+          const history = await this.client.getOrderHistoryById(Number(orderId));
+          const histData = ((history as Record<string, unknown>).data ?? history) as Record<string, unknown>[];
+          if (Array.isArray(histData) && histData.length > 0) {
+            const latest = histData[histData.length - 1] as Record<string, unknown>;
+            const status = String(latest.order_status ?? "");
+            const filled = parseFloat(String(latest.filled_amount ?? "0"));
+            if (status === "filled" || filled > 0) return result; // confirmed fill
+            if (status === "cancelled" || status === "rejected") {
+              throw new Error(`Market ${side} ${symbol}: order ${orderId} ${status}`);
+            }
+            // Still processing, retry
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message.startsWith("Market ")) throw e;
+          lastPollError = e;
         }
-      } catch (e) {
-        if (e instanceof Error && e.message.startsWith("Market ")) throw e;
-        // trade history query failed, log but don't block (order accepted)
       }
+      const errDetail = lastPollError instanceof Error ? ` (poll error: ${lastPollError.message})` : "";
+      throw new Error(`Market ${side} ${symbol}: order ${orderId} not confirmed after 2.5s${errDetail}`);
+    }
+
+    if (!(opts?.reduceOnly ?? false)) {
+      console.error(`[pacifica] Warning: market ${side} ${symbol} accepted but no order_id in response — skipping fill verification`);
     }
 
     return result;

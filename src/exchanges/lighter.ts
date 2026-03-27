@@ -534,20 +534,46 @@ export class LighterAdapter implements ExchangeAdapter {
       orderExpiry: 0, // DEFAULT_IOC_EXPIRY
       nonce,
     });
-    // Capture position BEFORE
-    const beforePositions = await this.getPositions();
-    const beforePos = beforePositions.find(p => p.symbol.toUpperCase() === symbol.toUpperCase());
-    const beforeSize = beforePos ? parseFloat(beforePos.size) : 0;
-
     const result = await this.sendTx(signed);
 
-    // Verify fill: check position actually changed (lighter sendTx returns 200 even on 0-fill IOC)
-    try { const { invalidateCache } = await import("../cache.js"); invalidateCache("acct"); } catch { /* ignore */ }
-    const afterPositions = await this.getPositions();
-    const afterPos = afterPositions.find(p => p.symbol.toUpperCase() === symbol.toUpperCase());
-    const afterSize = afterPos ? parseFloat(afterPos.size) : 0;
-    if (Math.abs(afterSize - beforeSize) < parseFloat(size) * 0.5) {
-      throw new Error(`Market ${side} ${symbol}: order submitted but position unchanged (before=${beforeSize}, after=${afterSize})`);
+    // Verify fill via tx endpoint
+    const txResult = result as { tx_hash?: string; code?: number };
+    if (txResult.tx_hash) {
+      // Poll tx status (may take a moment to process)
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise(r => setTimeout(r, 500));
+        try {
+          const tx = await this.restGet("/tx", { by: "hash", value: txResult.tx_hash }) as Record<string, unknown>;
+          const status = Number(tx.status ?? 0);
+          if (status === 3) {
+            // status 3 = executed. Parse event_info for fill details
+            try {
+              const eventInfo = JSON.parse(String(tx.event_info ?? "{}"));
+              const takerOrder = eventInfo.to;
+              if (takerOrder && Number(takerOrder.rs ?? -1) === 0) {
+                return result; // fully filled
+              }
+              // Partially filled or unfilled
+              if (takerOrder && Number(takerOrder.rs) > 0 && Number(takerOrder.is) > 0) {
+                const filled = Number(takerOrder.is) - Number(takerOrder.rs);
+                if (filled > 0) return result; // partially filled is OK for market orders
+              }
+            } catch { /* parse error, fall through to status=3 return */ }
+            // status=3 means tx was executed (even if zero-fill IOC — strategy verifies position)
+            return result;
+          }
+          if (status > 3) {
+            // status > 3 likely means rejected/cancelled
+            throw new Error(`Market ${side} ${symbol}: tx rejected (status=${status}, hash=${txResult.tx_hash})`);
+          }
+          // status < 3: still processing, retry
+        } catch (e) {
+          if (e instanceof Error && e.message.startsWith("Market ")) throw e;
+          // tx query failed, retry
+        }
+      }
+      // After 5 attempts, tx still not processed
+      throw new Error(`Market ${side} ${symbol}: tx not confirmed after 2.5s (hash=${txResult.tx_hash})`);
     }
 
     return result;

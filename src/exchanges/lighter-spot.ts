@@ -246,12 +246,6 @@ export class LighterSpotAdapter implements SpotAdapter {
     const baseAmount = Math.round(sizeNum * Math.pow(10, dec.size));
     const priceTicks = Math.round(slippagePrice * Math.pow(10, dec.price));
 
-    // Capture balance BEFORE order
-    const base = resolved.split("/")[0] || symbol;
-    const beforeBals = await this.getSpotBalances();
-    const beforeBal = beforeBals.find(b => b.token.toUpperCase() === base.toUpperCase());
-    const beforeTotal = beforeBal ? parseFloat(beforeBal.total) : 0;
-
     const result = await this._placeOrder({
       marketIndex: marketId,
       baseAmount,
@@ -261,20 +255,22 @@ export class LighterSpotAdapter implements SpotAdapter {
       timeInForce: 0, // IOC
     });
 
-    // Best-effort fill check: lighter sendTx returns 200 even for 0-fill IOC
-    // Balance verification is unreliable (cache timing, account context differences)
-    // Strategy's position verification is the final safety net
-    try {
-      const { invalidateCache } = await import("../cache.js");
-      invalidateCache("acct");
-      const afterBals = await this.getSpotBalances();
-      const afterBal = afterBals.find(b => b.token.toUpperCase() === base.toUpperCase());
-      const afterTotal = afterBal ? parseFloat(afterBal.total) : 0;
-      const change = side === "buy" ? afterTotal - beforeTotal : beforeTotal - afterTotal;
-      if (beforeTotal > 0 && change < sizeNum * 0.1) {
-        console.error(`[lighter-spot] Warning: spot ${side} ${symbol} balance may not have changed (before=${beforeTotal}, after=${afterTotal})`);
+    // Verify fill via tx endpoint
+    const txResult = result as { tx_hash?: string };
+    if (txResult.tx_hash) {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise(r => setTimeout(r, 500));
+        try {
+          const tx = await this._restGet("/tx", { by: "hash", value: txResult.tx_hash }) as Record<string, unknown>;
+          const status = Number(tx.status ?? 0);
+          if (status === 3) return result; // executed
+          if (status > 3) throw new Error(`Spot ${side} ${symbol}: tx rejected (status=${status})`);
+        } catch (e) {
+          if (e instanceof Error && e.message.startsWith("Spot ")) throw e;
+        }
       }
-    } catch { /* non-blocking */ }
+      throw new Error(`Spot ${side} ${symbol}: tx not confirmed after 2.5s (hash=${txResult.tx_hash})`);
+    }
 
     return result;
   }

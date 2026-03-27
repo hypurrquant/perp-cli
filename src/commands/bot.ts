@@ -246,6 +246,95 @@ export function registerBotCommands(
       await runBot(primaryAdapter, config, opts.jobId, log, adapters, mode);
     });
 
+  // ── bot delta-neutral ──
+
+  bot
+    .command("delta-neutral")
+    .description("Spot-long + perp-short delta-neutral funding rate farming")
+    .option("--exchanges <list>", "Comma-separated perp exchange names", "lighter,aster")
+    .option("--min-rate <pct>", "Min annualized rate to enter (%)", "10")
+    .option("--close-rate <pct>", "Close when avg rate drops below (%)", "2")
+    .option("--size <usd>", "Position size per leg ($)", "50")
+    .option("--max-positions <n>", "Max simultaneous positions", "5")
+    .option("--leverage <n>", "Perp side leverage", "3")
+    .option("--interval <sec>", "Check interval in seconds", "60")
+    .option("--max-drawdown <usd>", "Stop if drawdown exceeds ($)", "200")
+    .option("--background", "Run in background (tmux)")
+    .option("--headless", "Run without TUI dashboard")
+    .option("--job-id <id>", "Job ID")
+    .action(async (opts: {
+      exchanges: string; minRate: string; closeRate: string; size: string;
+      maxPositions: string; leverage: string; interval: string;
+      maxDrawdown: string; background?: boolean; headless?: boolean; jobId?: string;
+    }) => {
+      const exchangeNames = opts.exchanges.split(",").map(e => e.trim());
+      const adapters = new Map<string, ExchangeAdapter>();
+
+      for (const name of exchangeNames) {
+        try {
+          adapters.set(name, await getAdapterFor(name));
+        } catch {
+          // skip unavailable
+        }
+      }
+
+      if (adapters.size < 1) {
+        console.error(chalk.red("\n  Need at least 1 exchange for delta-neutral.\n"));
+        return;
+      }
+
+      const primaryAdapter = adapters.values().next().value!;
+
+      const config: import("../bot/config.js").BotConfig = {
+        name: `delta-neutral-${Date.now().toString(36)}`,
+        exchange: primaryAdapter.name,
+        symbol: "ETH",
+        strategy: {
+          type: "spot-perp-arb",
+          exchanges: exchangeNames,
+          min_rate: parseFloat(opts.minRate),
+          close_rate: parseFloat(opts.closeRate),
+          size_usd: parseFloat(opts.size),
+          max_positions: parseInt(opts.maxPositions),
+          leverage: parseInt(opts.leverage),
+        },
+        entry_conditions: [{ type: "always", value: 0 }],
+        exit_conditions: [],
+        risk: {
+          max_position_usd: parseFloat(opts.size) * parseInt(opts.maxPositions) * 2,
+          max_daily_loss: parseFloat(opts.maxDrawdown) / 2,
+          max_drawdown: parseFloat(opts.maxDrawdown),
+          pause_after_loss_sec: 300,
+          max_open_bots: 1,
+        },
+        monitor_interval_sec: parseInt(opts.interval),
+      };
+
+      if (opts.background) {
+        const { startJob } = await import("../jobs.js");
+        const cliArgs = [
+          `delta-neutral`,
+          `--min-rate`, opts.minRate, `--close-rate`, opts.closeRate,
+          `--size`, opts.size, `--max-positions`, opts.maxPositions,
+          `--leverage`, opts.leverage, `--exchanges`, opts.exchanges,
+          `--interval`, opts.interval, `--max-drawdown`, opts.maxDrawdown,
+        ];
+        const job = startJob({
+          strategy: `bot:delta-neutral`,
+          exchange: "multi",
+          params: { ...opts },
+          cliArgs,
+        });
+        if (isJson()) return printJson(jsonOk(job));
+        printBotJobStarted(config.name, job.id);
+        return;
+      }
+
+      const mode = resolveOutputMode(isJson, opts.headless);
+      const log = makeLog();
+      await runBot(primaryAdapter, config, opts.jobId, log, adapters, mode);
+    });
+
   // ── bot preset list ──
 
   bot

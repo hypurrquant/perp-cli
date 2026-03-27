@@ -411,9 +411,26 @@ export class SpotPerpArbStrategy implements Strategy {
       if (!spotAdapter) return false;
 
       const perpSymbol = getPerpSymbol(symbol, perpExchange);
-      const perpMaxLev = findRate(ratesByExchange, perpExchange, perpSymbol)?.maxLeverage
-        ?? findRate(ratesByExchange, perpExchange, symbol)?.maxLeverage ?? 1;
+      const rateInfo = findRate(ratesByExchange, perpExchange, perpSymbol)
+        ?? findRate(ratesByExchange, perpExchange, symbol);
+      const perpMaxLev = rateInfo?.maxLeverage ?? 1;
       const leverage = Math.min(p.leverage, perpMaxLev);
+
+      // Pre-entry: verify fundingHours (aster lazy bootstrap may not have run yet)
+      if (perpExchange === "aster" && rateInfo && "getFundingHours" in perpAdapter) {
+        const actualFh = await (perpAdapter as unknown as { getFundingHours(s: string): Promise<number | undefined> }).getFundingHours(symbol);
+        if (!actualFh) {
+          ctx.log(`  [SPA] Skip ${symbol}: fundingHours unknown (aster not yet bootstrapped)`);
+          this._failCooldown.set(`${symbol}:entry`, Date.now() + 5 * 60 * 1000);
+          return false;
+        }
+        const actualAnn = (rateInfo.rate / actualFh) * 8760 * 100;
+        if (actualAnn < p.min_rate) {
+          ctx.log(`  [SPA] Skip ${symbol}: actual rate ${actualAnn.toFixed(1)}% (${actualFh}h funding) below min_rate ${p.min_rate}%`);
+          this._failCooldown.set(`${symbol}:entry`, Date.now() + 10 * 60 * 1000);
+          return false;
+        }
+      }
 
       // Size decision
       let targetSizeUsd = p.size_usd;
@@ -428,11 +445,19 @@ export class SpotPerpArbStrategy implements Strategy {
           targetSizeUsd = Math.floor(max);
         }
       } else {
+        // For cross-exchange: spot side needs USDC in spot OR perp account (can transfer)
         const sBal = exchangeBalances.get(spotExchange);
         const pBal = exchangeBalances.get(perpExchange);
         if (!sBal || !pBal) return false;
-        const maxNtl = Math.min(sBal.available, pBal.available * leverage) * 0.8;
-        if (maxNtl < targetSizeUsd) { if (maxNtl < 10) return false; targetSizeUsd = Math.floor(maxNtl); }
+        // Check spot USDC balance too (already in spot account, no transfer needed)
+        let spotAvailable = sBal.available;
+        try {
+          const spotBals = await spotAdapter.getSpotBalances();
+          const spotUsdc = spotBals.find(b => b.token.toUpperCase().startsWith("USDC"));
+          if (spotUsdc) spotAvailable += parseFloat(spotUsdc.available);
+        } catch { /* non-critical */ }
+        const maxNtl = Math.min(spotAvailable, pBal.available * leverage) * 0.8;
+        if (maxNtl < targetSizeUsd) { if (maxNtl < 10) { ctx.log(`  [SPA] Skip ${symbol}: insufficient balance (spot=$${spotAvailable.toFixed(2)}, perp=$${pBal.available.toFixed(2)})`); return false; } targetSizeUsd = Math.floor(maxNtl); }
       }
 
       // Delegate to executor

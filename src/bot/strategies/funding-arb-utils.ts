@@ -254,14 +254,16 @@ export async function fetchRates(
       }
     }
 
-    return withRates.map(m => ({
-      symbol: m.symbol,
-      rate: parseFloat(m.fundingRate!),
-      price: parseFloat(m.markPrice),
-      sizeDecimals: m.sizeDecimals,
-      maxLeverage: m.maxLeverage,
-      fundingHours: m.fundingHours,
-    }));
+    return withRates
+      .filter(m => m.fundingHours != null) // skip symbols with unknown funding period (aster not yet bootstrapped)
+      .map(m => ({
+        symbol: m.symbol,
+        rate: parseFloat(m.fundingRate!),
+        price: parseFloat(m.markPrice),
+        sizeDecimals: m.sizeDecimals,
+        maxLeverage: m.maxLeverage,
+        fundingHours: m.fundingHours,
+      }));
   } catch {
     return [];
   }

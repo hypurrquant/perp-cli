@@ -67,7 +67,7 @@ export class AsterAdapter implements ExchangeAdapter {
   // ── Market Data ──
 
   /** Get funding interval for a symbol (lazy bootstrap — queries on first access, cached permanently). */
-  async getFundingHours(symbol: string): Promise<number> {
+  async getFundingHours(symbol: string): Promise<number | undefined> {
     const key = symbol.toUpperCase();
     const cached = this._fundingHoursCache.get(key);
     if (cached !== undefined) return cached;
@@ -83,8 +83,8 @@ export class AsterAdapter implements ExchangeAdapter {
       }
     } catch { /* non-critical */ }
 
-    this._fundingHoursCache.set(key, 1); // default
-    return 1;
+    // Don't cache a default — let strategy skip this symbol until real data is available
+    return undefined;
   }
 
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
@@ -124,9 +124,9 @@ export class AsterAdapter implements ExchangeAdapter {
         const lotFilter = (s.filters as Array<Record<string, unknown>> | undefined)
           ?.find(f => f.filterType === "LOT_SIZE");
 
-        // Use cached funding interval if available (populated by loadFundingIntervals()),
-        // otherwise default to 1h.
-        const fundingHours = this._fundingHoursCache.get(this._fromApi(sym)) ?? 1;
+        // Use cached funding interval if available (populated by getFundingHours()).
+        // If not yet bootstrapped, fundingHours = undefined → strategy must skip this symbol.
+        const fundingHours = this._fundingHoursCache.get(this._fromApi(sym));
 
         return {
           symbol: this._fromApi(sym),
