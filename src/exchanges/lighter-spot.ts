@@ -263,7 +263,7 @@ export class LighterSpotAdapter implements SpotAdapter {
         try {
           const tx = await this._restGet("/tx", { by: "hash", value: txResult.tx_hash }) as Record<string, unknown>;
           const status = Number(tx.status ?? 0);
-          if (status === 3) return result; // executed
+          if (status >= 2 && status <= 3) return result; // status 2=executed, 3=committed
           if (status > 3) throw new Error(`Spot ${side} ${symbol}: tx rejected (status=${status})`);
         } catch (e) {
           if (e instanceof Error && e.message.startsWith("Spot ")) throw e;

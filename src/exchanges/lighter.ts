@@ -545,8 +545,8 @@ export class LighterAdapter implements ExchangeAdapter {
         try {
           const tx = await this.restGet("/tx", { by: "hash", value: txResult.tx_hash }) as Record<string, unknown>;
           const status = Number(tx.status ?? 0);
-          if (status === 3) {
-            // status 3 = executed. Parse event_info for fill details
+          if (status >= 2 && status <= 3) {
+            // status 2 = executed, 3 = committed. Parse event_info for fill details
             try {
               const eventInfo = JSON.parse(String(tx.event_info ?? "{}"));
               const takerOrder = eventInfo.to;
@@ -562,7 +562,7 @@ export class LighterAdapter implements ExchangeAdapter {
             // status=3 means tx was executed (even if zero-fill IOC — strategy verifies position)
             return result;
           }
-          if (status > 3) {
+          if (status > 3) { // status 4+ = rejected/failed
             // status > 3 likely means rejected/cancelled
             throw new Error(`Market ${side} ${symbol}: tx rejected (status=${status}, hash=${txResult.tx_hash})`);
           }
