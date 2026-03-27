@@ -540,7 +540,7 @@ export class LighterAdapter implements ExchangeAdapter {
     const txResult = result as { tx_hash?: string; code?: number };
     if (txResult.tx_hash) {
       // Poll tx status (may take a moment to process)
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 10; attempt++) {
         await new Promise(r => setTimeout(r, 500));
         try {
           const tx = await this.restGet("/tx", { by: "hash", value: txResult.tx_hash }) as Record<string, unknown>;
@@ -572,8 +572,8 @@ export class LighterAdapter implements ExchangeAdapter {
           // tx query failed, retry
         }
       }
-      // After 5 attempts, tx still not processed
-      throw new Error(`Market ${side} ${symbol}: tx not confirmed after 2.5s (hash=${txResult.tx_hash})`);
+      // tx was accepted (sendTx 200) but verification timed out — warn, don't throw
+      console.error(`[lighter] Warning: market ${side} ${symbol} tx not confirmed after 5s (hash=${txResult.tx_hash}) — assuming executed`);
     }
 
     return result;

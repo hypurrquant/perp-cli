@@ -255,10 +255,10 @@ export class LighterSpotAdapter implements SpotAdapter {
       timeInForce: 0, // IOC
     });
 
-    // Verify fill via tx endpoint
+    // Verify fill via tx endpoint (best-effort: tx was accepted by sendTx, so likely executed)
     const txResult = result as { tx_hash?: string };
     if (txResult.tx_hash) {
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 10; attempt++) {
         await new Promise(r => setTimeout(r, 500));
         try {
           const tx = await this._restGet("/tx", { by: "hash", value: txResult.tx_hash }) as Record<string, unknown>;
@@ -269,7 +269,8 @@ export class LighterSpotAdapter implements SpotAdapter {
           if (e instanceof Error && e.message.startsWith("Spot ")) throw e;
         }
       }
-      throw new Error(`Spot ${side} ${symbol}: tx not confirmed after 2.5s (hash=${txResult.tx_hash})`);
+      // tx was accepted (sendTx 200) but verification timed out — warn, don't throw
+      console.error(`[lighter-spot] Warning: spot ${side} ${symbol} tx not confirmed after 5s (hash=${txResult.tx_hash}) — assuming executed`);
     }
 
     return result;

@@ -102,12 +102,13 @@ export function computeSpotPerpMatchedSize(
   spotExchange: string,
   perpExchange: string,
   spotSizeDecimals?: number,
+  perpSizeDecimals?: number,
 ): { size: string; notional: number } | null {
   if (price <= 0) return null;
 
-  // If explicit spot decimals provided, use them; otherwise derive from exchange
+  // If explicit decimals provided, use them; otherwise derive from exchange
   const spotDec = spotSizeDecimals ?? getSizeDecimals(`spot:${spotExchange}`);
-  const perpDec = getSizeDecimals(perpExchange);
+  const perpDec = perpSizeDecimals ?? getSizeDecimals(perpExchange);
   const szDecimals = Math.min(spotDec, perpDec);
 
   const rawSize = sizeUsd / price;

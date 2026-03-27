@@ -100,9 +100,11 @@ export class SpotPerpExecutor {
       // Compute matched size
       const spotMarkets = await spotAdapter.getSpotMarkets();
       const spotDec = spotMarkets.find(m => m.baseToken.toUpperCase() === symbol.toUpperCase())?.sizeDecimals;
-      const matched = computeSpotPerpMatchedSize(liq.adjustedSizeUsd, price, spotExchange, perpExchange, spotDec);
+      const perpMarkets = await perpAdapter.getMarkets();
+      const perpDec = perpMarkets.find(m => matchSymbol(m.symbol, perpSymbol) || matchSymbol(m.symbol, symbol))?.sizeDecimals;
+      const matched = computeSpotPerpMatchedSize(liq.adjustedSizeUsd, price, spotExchange, perpExchange, spotDec, perpDec);
       if (!matched) {
-        log(`  [SPA] Skip ${symbol}: matched size fail`);
+        log(`  [SPA] Skip ${symbol}: matched size fail (spotDec=${spotDec}, perpDec=${perpDec}, price=${price.toFixed(2)}, sizeUsd=${liq.adjustedSizeUsd.toFixed(2)})`);
         return { success: false, error: "matched size fail" };
       }
 

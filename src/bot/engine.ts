@@ -157,6 +157,21 @@ export async function runBot(
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
+  // Direct stdin 'q' handler as fallback (ink's useInput may not work in all terminals)
+  let stdinHandler: ((data: Buffer) => void) | undefined;
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode?.(true);
+    process.stdin.resume();
+    stdinHandler = (data: Buffer) => {
+      const ch = data.toString();
+      if (ch === "q" || ch === "Q" || ch === "\x03") { // q, Q, or Ctrl+C
+        shutdown();
+        if (tuiUnmount) tuiUnmount();
+      }
+    };
+    process.stdin.on("data", stdinHandler);
+  }
+
   if (mode !== "tui") {
     // Header (headless / json modes print header to console)
     log(chalk.cyan.bold(`\n  ╔═══════════════════════════════════════╗`));
@@ -359,6 +374,11 @@ export async function runBot(
   } finally {
     process.removeListener("SIGINT", shutdown);
     process.removeListener("SIGTERM", shutdown);
+    if (stdinHandler) {
+      process.stdin.removeListener("data", stdinHandler);
+      process.stdin.setRawMode?.(false);
+      process.stdin.pause();
+    }
 
     // Cleanup: cancel any remaining orders
     if (state.strategyActive) {
