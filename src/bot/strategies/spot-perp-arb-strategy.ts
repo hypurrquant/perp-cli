@@ -3,21 +3,22 @@
  *
  * Focused strategy: buy spot (HL or Lighter) + short perp on the BEST of 4 exchanges.
  * No perp-perp logic. History-based entry/exit with short rotation.
+ *
+ * Strategy layer handles ONLY decisions (opportunity scanning, scoring, close/rotation decisions).
+ * Execution layer (SpotPerpExecutor) handles ALL exchange interactions.
  */
 
 import type { Strategy, StrategyContext, StrategyAction, EnrichedSnapshot } from "../strategy-types.js";
 import type { ExchangeAdapter } from "../../exchanges/index.js";
 import { registerStrategy } from "../strategy-registry.js";
-import { checkSpotPerpLiquidity } from "../../liquidity.js";
-import { computeSpotPerpMatchedSize } from "../../arb-sizing.js";
 import { getFundingHours } from "../../funding.js";
-import { logExecution, pruneExecutionLog } from "../../execution-log.js";
-import { invalidateCache } from "../../cache.js";
+import { pruneExecutionLog } from "../../execution-log.js";
 import {
   type RateEntry, type RateMap,
-  buildAdapterMap, getSpotAdapter, transferUsdcToSpot, transferUsdcToPerp,
-  getPerpSymbol, findRate, matchSymbol, getPriceEstimate, fetchRates,
+  buildAdapterMap, getSpotAdapter,
+  getPerpSymbol, findRate, matchSymbol, fetchRates,
 } from "./funding-arb-utils.js";
+import { SpotPerpExecutor } from "./spot-perp-executor.js";
 
 // ── Types ──
 
@@ -45,6 +46,7 @@ function genPosId(): string { return `spa-${Date.now()}-${++_posIdCounter}`; }
 
 export class SpotPerpArbStrategy implements Strategy {
   readonly name = "spot-perp-arb";
+  private readonly executor = new SpotPerpExecutor();
 
   describe() {
     return {
@@ -197,14 +199,24 @@ export class SpotPerpArbStrategy implements Strategy {
     ctx.state.set("arbPositions", positions.length);
     ctx.state.set("fundingTotal", `$${(ctx.state.get("fundingIncome") as number).toFixed(4)}`);
 
+    // ── Close check ──
     const toClose: SpotPerpPosition[] = [];
     for (const pos of positions) {
       if (!this.shouldClose(pos, ratesByExchange, p)) continue;
       const cd = this._failCooldown.get(`${pos.symbol}:close`) ?? 0;
       if (Date.now() < cd) continue;
       ctx.log(`  [SPA] Closing ${pos.symbol} ${pos.spotExchange}-spot<>${pos.perpExchange}`);
-      const closed = await this.closePosition(pos, adapters, ctx);
+      const spotExAdapter = adapters.get(pos.spotExchange) ?? adapters.get(pos.perpExchange);
+      const perpAdapter = adapters.get(pos.perpExchange);
+      if (!perpAdapter || !spotExAdapter) { ctx.log(`  [SPA] Close: no adapter`); continue; }
+      const spotAdapter = await this.executor.getSpotAdapter(pos.spotExchange, spotExAdapter);
+      if (!spotAdapter) continue;
+      const closed = await this.executor.closePosition({
+        symbol: pos.symbol, spotExchange: pos.spotExchange, perpExchange: pos.perpExchange,
+        spotAdapter, perpAdapter, size: pos.size, log: ctx.log,
+      });
       if (closed) toClose.push(pos);
+      else this._failCooldown.set(`${pos.symbol}:close`, Date.now() + 5 * 60 * 1000);
     }
     if (toClose.length > 0) {
       const remaining = positions.filter(pos => !toClose.some(c => c.id === pos.id));
@@ -212,6 +224,7 @@ export class SpotPerpArbStrategy implements Strategy {
       ctx.state.set("arbPositions", remaining.length);
     }
 
+    // ── Rotation check ──
     const currentPositions = ctx.state.get("spaPositions") as SpotPerpPosition[];
     for (const pos of currentPositions) {
       const rcd = this._failCooldown.get(`${pos.id}:rotate`) ?? 0;
@@ -224,10 +237,28 @@ export class SpotPerpArbStrategy implements Strategy {
       const curAnn = (currentInfo.rate / (currentInfo.fundingHours ?? getFundingHours(pos.perpExchange))) * 8760 * 100;
       if (best.score.annualized - curAnn < p.rotation_threshold) continue;
       ctx.log(`  [SPA] Rotating ${pos.symbol} short: ${pos.perpExchange} (${curAnn.toFixed(1)}%) -> ${best.exchange} (${best.score.annualized.toFixed(1)}%)`);
-      const ok = await this.rotateShort(pos, best.exchange, adapters, ctx, ratesByExchange);
-      if (!ok) this._failCooldown.set(`${pos.id}:rotate`, Date.now() + 10 * 60 * 1000);
+      const oldAdapter = adapters.get(pos.perpExchange);
+      const newAdapter = adapters.get(best.exchange);
+      if (!oldAdapter || !newAdapter) continue;
+      const perpSym = getPerpSymbol(pos.symbol, pos.perpExchange);
+      const newMaxLev = findRate(ratesByExchange, best.exchange, getPerpSymbol(pos.symbol, best.exchange))?.maxLeverage
+        ?? findRate(ratesByExchange, best.exchange, pos.symbol)?.maxLeverage ?? 1;
+      const ok = await this.executor.rotateShort({
+        symbol: pos.symbol, perpSymbol: perpSym,
+        currentExchange: pos.perpExchange, newExchange: best.exchange,
+        currentAdapter: oldAdapter, newAdapter,
+        size: pos.size, leverage: Math.min(p.leverage, newMaxLev), log: ctx.log,
+      });
+      if (ok) {
+        pos.perpExchange = best.exchange;
+        pos.fundingHistory = [];
+        pos.lastFundingCheck = 0;
+      } else {
+        this._failCooldown.set(`${pos.id}:rotate`, Date.now() + 10 * 60 * 1000);
+      }
     }
 
+    // ── New entry ──
     const numPos = (ctx.state.get("spaPositions") as SpotPerpPosition[]).length;
     if (numPos >= p.max_positions) return [];
     const openSymbols = new Set((ctx.state.get("spaPositions") as SpotPerpPosition[]).map(pos => pos.symbol.toUpperCase()));
@@ -266,7 +297,7 @@ export class SpotPerpArbStrategy implements Strategy {
 
     for (const opp of scoredOpps) {
       if ((ctx.state.get("spaPositions") as SpotPerpPosition[]).length >= p.max_positions) break;
-      const opened = await this.openPosition(opp.spotExchange, opp.perpExchange, opp.symbol, opp.annualized, adapters, ctx, ratesByExchange, exchangeBalances);
+      const opened = await this.tryOpenPosition(opp.spotExchange, opp.perpExchange, opp.symbol, opp.annualized, adapters, ctx, ratesByExchange, exchangeBalances);
       if (opened) return [{ type: "noop" }];
     }
     if (scoredOpps.length === 0 && numPos < p.max_positions) {
@@ -283,7 +314,15 @@ export class SpotPerpArbStrategy implements Strategy {
     if (positions && positions.length > 0) {
       const remaining: SpotPerpPosition[] = [];
       for (const pos of positions) {
-        const closed = await this.closePosition(pos, adapters, ctx);
+        const spotExAdapter = adapters.get(pos.spotExchange) ?? adapters.get(pos.perpExchange);
+        const perpAdapter = adapters.get(pos.perpExchange);
+        if (!perpAdapter || !spotExAdapter) { ctx.log(`  [SPA] CRITICAL: ${pos.symbol} no adapter on stop`); remaining.push(pos); continue; }
+        const spotAdapter = await this.executor.getSpotAdapter(pos.spotExchange, spotExAdapter);
+        if (!spotAdapter) { ctx.log(`  [SPA] CRITICAL: ${pos.symbol} no spot adapter on stop`); remaining.push(pos); continue; }
+        const closed = await this.executor.closePosition({
+          symbol: pos.symbol, spotExchange: pos.spotExchange, perpExchange: pos.perpExchange,
+          spotAdapter, perpAdapter, size: pos.size, log: ctx.log,
+        });
         if (!closed) { ctx.log(`  [SPA] CRITICAL: ${pos.symbol} could not be closed on stop`); remaining.push(pos); }
       }
       ctx.state.set("spaPositions", remaining);
@@ -294,7 +333,7 @@ export class SpotPerpArbStrategy implements Strategy {
     return [{ type: "cancel_all" }];
   }
 
-  // ── Scoring ──
+  // ── Scoring (decision logic) ──
 
   private async scoreFunding(adapter: ExchangeAdapter, symbol: string, exchangeName: string): Promise<FundingScore | null> {
     const p = this.params;
@@ -355,9 +394,9 @@ export class SpotPerpArbStrategy implements Strategy {
     return ann < p.close_rate;
   }
 
-  // ── Open position ──
+  // ── Open position (decision + sizing, delegates execution) ──
 
-  private async openPosition(
+  private async tryOpenPosition(
     spotExchange: string, perpExchange: string, symbol: string, entryRate: number,
     adapters: Map<string, ExchangeAdapter>, ctx: StrategyContext,
     ratesByExchange: RateMap, exchangeBalances: Map<string, { equity: number; available: number; marginPct: number }>,
@@ -368,7 +407,7 @@ export class SpotPerpArbStrategy implements Strategy {
     if (!spotExAdapter || !perpAdapter) { this._failCooldown.set(`${symbol}:entry`, Date.now() + 5 * 60 * 1000); return false; }
 
     try {
-      const spotAdapter = await getSpotAdapter(spotExchange, spotExAdapter);
+      const spotAdapter = await this.executor.getSpotAdapter(spotExchange, spotExAdapter);
       if (!spotAdapter) return false;
 
       const perpSymbol = getPerpSymbol(symbol, perpExchange);
@@ -376,11 +415,7 @@ export class SpotPerpArbStrategy implements Strategy {
         ?? findRate(ratesByExchange, perpExchange, symbol)?.maxLeverage ?? 1;
       const leverage = Math.min(p.leverage, perpMaxLev);
 
-      try { await perpAdapter.setLeverage(perpSymbol, leverage, "cross"); } catch (err) {
-        ctx.log(`  [SPA] setLeverage failed: ${err instanceof Error ? err.message : String(err)}`);
-        this._failCooldown.set(`${symbol}:entry`, Date.now() + 5 * 60 * 1000); return false;
-      }
-
+      // Size decision
       let targetSizeUsd = p.size_usd;
       const sameExchange = spotExchange === perpExchange;
       if (sameExchange) {
@@ -400,177 +435,28 @@ export class SpotPerpArbStrategy implements Strategy {
         if (maxNtl < targetSizeUsd) { if (maxNtl < 10) return false; targetSizeUsd = Math.floor(maxNtl); }
       }
 
-      const price = await getPriceEstimate(perpAdapter, perpSymbol, symbol);
-      if (price <= 0) return false;
-      const liq = await checkSpotPerpLiquidity(spotAdapter, perpAdapter, symbol, perpSymbol, targetSizeUsd, 0.5, (msg) => ctx.log(`  ${msg}`));
-      if (!liq.viable) return false;
+      // Delegate to executor
+      const result = await this.executor.openPosition({
+        symbol, perpSymbol, spotExchange, perpExchange,
+        spotAdapter, perpAdapter, sizeUsd: targetSizeUsd, leverage, log: ctx.log,
+      });
 
-      const spotMarkets = await spotAdapter.getSpotMarkets();
-      const spotDec = spotMarkets.find(m => m.baseToken.toUpperCase() === symbol.toUpperCase())?.sizeDecimals;
-      const matched = computeSpotPerpMatchedSize(liq.adjustedSizeUsd, price, spotExchange, perpExchange, spotDec);
-      if (!matched) { ctx.log(`  [SPA] Skip ${symbol}: matched size fail`); return false; }
-
-      ctx.log(`  [SPA] Opening: ${matched.size} ${symbol} ($${matched.notional.toFixed(0)}) ${spotExchange}-spot<>${perpExchange}`);
-
-      // Transfer USDC to spot account (HL/Lighter have separate spot/perp accounts)
-      const tAmt = Math.ceil(matched.notional * 1.02);
-      try {
-        await transferUsdcToSpot(spotAdapter, spotExchange, tAmt);
-        ctx.log(`  [SPA] Transferred $${tAmt} USDC to ${spotExchange} spot`);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        ctx.log(`  [SPA] USDC transfer to spot failed: ${msg}`);
-        this._failCooldown.set(`${symbol}:entry`, Date.now() + 5 * 60 * 1000);
-        return false;
+      if (result.success) {
+        const cur = ctx.state.get("spaPositions") as SpotPerpPosition[];
+        cur.push({ id: genPosId(), symbol, spotExchange, perpExchange, size: result.size!, entryTime: Date.now(), entryRate, fundingHistory: [], lastFundingCheck: 0 });
+        ctx.state.set("spaPositions", cur);
+        ctx.state.set("arbPositions", cur.length);
+        ctx.log(`  [SPA] Opened! (${cur.length}/${p.max_positions})`);
+        return true;
       }
 
-      // Step 1: Buy spot
-      try {
-        await spotAdapter.spotMarketOrder(symbol, "buy", matched.size);
-        logExecution({ type: "arb_entry", exchange: `${spotExchange}-spot`, symbol, side: "buy", size: matched.size, notional: matched.notional, status: "success", dryRun: false, meta: { mode: "spot-perp", leg: "spot" } });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        ctx.log(`  [SPA] Spot buy failed: ${msg}`);
-        try { await transferUsdcToPerp(spotAdapter, spotExchange, tAmt); ctx.log(`  [SPA] Recovered $${tAmt} USDC back to perp`); } catch { /* best effort */ }
-        this._failCooldown.set(`${symbol}:entry`, Date.now() + 5 * 60 * 1000); return false;
-      }
-
-      // Step 2: Short perp
-      try {
-        await perpAdapter.marketOrder(perpSymbol, "sell", matched.size);
-        logExecution({ type: "arb_entry", exchange: perpExchange, symbol, side: "sell", size: matched.size, notional: matched.notional, status: "success", dryRun: false, meta: { mode: "spot-perp", leg: "perp" } });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        ctx.log(`  [SPA] Perp short failed: ${msg} -- ROLLING BACK spot`);
-        try {
-          await spotAdapter.spotMarketOrder(symbol, "sell", matched.size);
-          logExecution({ type: "multi_leg_rollback", exchange: `${spotExchange}-spot`, symbol, side: "sell", size: matched.size, status: "success", dryRun: false });
-          if (sameExchange) { try { await transferUsdcToPerp(spotAdapter, spotExchange, Math.ceil(matched.notional * 1.02)); } catch { /* best effort */ } }
-        } catch (rbErr) {
-          ctx.log(`  [SPA] CRITICAL: Spot rollback failed: ${rbErr instanceof Error ? rbErr.message : String(rbErr)}`);
-        }
-        this._failCooldown.set(`${symbol}:entry`, Date.now() + 5 * 60 * 1000); return false;
-      }
-
-      // Position verification
-      invalidateCache("acct");
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      try {
-        const perpPositions = await perpAdapter.getPositions();
-        const hasPerp = perpPositions.some(x => matchSymbol(x.symbol, perpSymbol) && parseFloat(x.size) > 0);
-        if (!hasPerp) {
-          ctx.log(`  [SPA] WARNING: Perp position not visible (cache delay?)`);
-        }
-      } catch (err) { ctx.log(`  [SPA] Verify error: ${err instanceof Error ? err.message : String(err)}`); }
-
-      // Record position
-      const cur = ctx.state.get("spaPositions") as SpotPerpPosition[];
-      cur.push({ id: genPosId(), symbol, spotExchange, perpExchange, size: matched.size, entryTime: Date.now(), entryRate, fundingHistory: [], lastFundingCheck: 0 });
-      ctx.state.set("spaPositions", cur);
-      ctx.state.set("arbPositions", cur.length);
-      ctx.log(`  [SPA] Opened! (${cur.length}/${p.max_positions})`);
-      return true;
+      this._failCooldown.set(`${symbol}:entry`, Date.now() + 5 * 60 * 1000);
+      return false;
     } catch (err) {
       ctx.log(`  [SPA] Open failed: ${err instanceof Error ? err.message : String(err)}`);
-      this._failCooldown.set(`${symbol}:entry`, Date.now() + 5 * 60 * 1000); return false;
-    }
-  }
-
-  // ── Close position ──
-
-  private async closePosition(pos: SpotPerpPosition, adapters: Map<string, ExchangeAdapter>, ctx: StrategyContext): Promise<boolean> {
-    const spotExAdapter = adapters.get(pos.spotExchange) ?? adapters.get(pos.perpExchange);
-    const perpAdapter = adapters.get(pos.perpExchange);
-    if (!perpAdapter || !spotExAdapter) { ctx.log(`  [SPA] Close: no adapter`); return false; }
-    try {
-      const spotAdapter = await getSpotAdapter(pos.spotExchange, spotExAdapter);
-      if (!spotAdapter) return false;
-
-      // Step 1: Sell spot
-      try { await spotAdapter.spotMarketOrder(pos.symbol, "sell", pos.size); } catch (err) {
-        ctx.log(`  [SPA] Spot sell failed: ${err instanceof Error ? err.message : String(err)}`);
-        this._failCooldown.set(`${pos.symbol}:close`, Date.now() + 5 * 60 * 1000); return false;
-      }
-
-      // Transfer USDC back (same-exchange)
-      if (pos.spotExchange === pos.perpExchange) {
-        try {
-          const perpSym = getPerpSymbol(pos.symbol, pos.perpExchange);
-          const price = await getPriceEstimate(perpAdapter, perpSym, pos.symbol);
-          const proceeds = price * parseFloat(pos.size) * 0.95;
-          if (proceeds > 1) await transferUsdcToPerp(spotAdapter, pos.spotExchange, Math.floor(proceeds));
-        } catch { /* non-fatal */ }
-      }
-
-      // Step 2: Close perp short (reduceOnly)
-      const perpSym = getPerpSymbol(pos.symbol, pos.perpExchange);
-      try {
-        await perpAdapter.marketOrder(perpSym, "buy", pos.size, { reduceOnly: true });
-        logExecution({ type: "arb_close", exchange: pos.perpExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false, meta: { mode: "spot-perp" } });
-        return true;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        // Handle ReduceOnly rejected (position already gone)
-        if (msg.includes("ReduceOnly") || msg.includes("reduceOnly") || msg.includes("-2022")) {
-          ctx.log(`  [SPA] Perp already closed (ReduceOnly rejected)`);
-          return true;
-        }
-        ctx.log(`  [SPA] Perp close failed: ${msg} -- rollback spot`);
-        try { await spotAdapter.spotMarketOrder(pos.symbol, "buy", pos.size); } catch (rbErr) {
-          ctx.log(`  [SPA] CRITICAL: Spot rollback failed: ${rbErr instanceof Error ? rbErr.message : String(rbErr)}`);
-        }
-        this._failCooldown.set(`${pos.symbol}:close`, Date.now() + 5 * 60 * 1000); return false;
-      }
-    } catch (err) { ctx.log(`  [SPA] Close failed: ${err instanceof Error ? err.message : String(err)}`); return false; }
-  }
-
-  // ── Rotate short ──
-
-  private async rotateShort(pos: SpotPerpPosition, newExchange: string, adapters: Map<string, ExchangeAdapter>, ctx: StrategyContext, ratesByExchange: RateMap): Promise<boolean> {
-    const oldAdapter = adapters.get(pos.perpExchange);
-    const newAdapter = adapters.get(newExchange);
-    if (!oldAdapter || !newAdapter) { ctx.log(`  [SPA] Rotation: adapter not found`); return false; }
-    const oldSym = getPerpSymbol(pos.symbol, pos.perpExchange);
-    const newSym = getPerpSymbol(pos.symbol, newExchange);
-    const p = this.params;
-    const newMaxLev = findRate(ratesByExchange, newExchange, newSym)?.maxLeverage ?? findRate(ratesByExchange, newExchange, pos.symbol)?.maxLeverage ?? 1;
-
-    // Set leverage on new exchange
-    try { await newAdapter.setLeverage(newSym, Math.min(p.leverage, newMaxLev), "cross"); } catch (err) {
-      ctx.log(`  [SPA] Rotation setLeverage failed: ${err instanceof Error ? err.message : String(err)}`); return false;
-    }
-
-    // Close old short
-    try {
-      await oldAdapter.marketOrder(oldSym, "buy", pos.size, { reduceOnly: true });
-      logExecution({ type: "arb_close", exchange: pos.perpExchange, symbol: pos.symbol, side: "buy", size: pos.size, status: "success", dryRun: false, meta: { rotation: true } });
-    } catch (err) {
-      ctx.log(`  [SPA] Rotation close failed: ${err instanceof Error ? err.message : String(err)}`);
+      this._failCooldown.set(`${symbol}:entry`, Date.now() + 5 * 60 * 1000);
       return false;
     }
-
-    // Open new short
-    try {
-      await newAdapter.marketOrder(newSym, "sell", pos.size);
-      logExecution({ type: "arb_entry", exchange: newExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "success", dryRun: false, meta: { rotation: true } });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      ctx.log(`  [SPA] Rotation new short failed: ${msg} -- rolling back`);
-      try {
-        await oldAdapter.marketOrder(oldSym, "sell", pos.size);
-        ctx.log(`  [SPA] Rotation rollback OK`);
-        logExecution({ type: "multi_leg_rollback", exchange: pos.perpExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "success", dryRun: false });
-      } catch (rbErr) {
-        ctx.log(`  [SPA] CRITICAL: Rotation rollback failed: ${rbErr instanceof Error ? rbErr.message : String(rbErr)}`);
-        logExecution({ type: "multi_leg_rollback", exchange: pos.perpExchange, symbol: pos.symbol, side: "sell", size: pos.size, status: "failed", error: rbErr instanceof Error ? rbErr.message : String(rbErr), dryRun: false });
-      }
-      return false;
-    }
-
-    pos.perpExchange = newExchange;
-    pos.fundingHistory = [];
-    pos.lastFundingCheck = 0;
-    return true;
   }
 
   // ── Position recovery ──
