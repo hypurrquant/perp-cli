@@ -246,6 +246,12 @@ export class LighterSpotAdapter implements SpotAdapter {
     const baseAmount = Math.round(sizeNum * Math.pow(10, dec.size));
     const priceTicks = Math.round(slippagePrice * Math.pow(10, dec.price));
 
+    // Capture balance BEFORE order
+    const base = resolved.split("/")[0] || symbol;
+    const beforeBals = await this.getSpotBalances();
+    const beforeBal = beforeBals.find(b => b.token.toUpperCase() === base.toUpperCase());
+    const beforeTotal = beforeBal ? parseFloat(beforeBal.total) : 0;
+
     const result = await this._placeOrder({
       marketIndex: marketId,
       baseAmount,
@@ -255,24 +261,13 @@ export class LighterSpotAdapter implements SpotAdapter {
       timeInForce: 0, // IOC
     });
 
-    // Verify fill: check recent spot trades
-    try {
-      const trades = await this._restGetAuth("/trades", {
-        account_index: String(this._lt.accountIndex),
-        market_id: String(marketId),
-        limit: "1",
-      }) as { trades?: Array<Record<string, unknown>> };
-      const recent = (trades.trades ?? [])[0];
-      if (!recent) {
-        console.error(`[lighter-spot] Warning: spot ${side} ${symbol} submitted but no trade found in history`);
-      } else {
-        const tradeTime = Number(recent.timestamp ?? 0) * 1000;
-        if (Date.now() - tradeTime > 30000) {
-          console.error(`[lighter-spot] Warning: spot ${side} ${symbol} latest trade is stale`);
-        }
-      }
-    } catch {
-      // trades query failed — non-blocking, order was submitted
+    // Verify fill: check balance actually changed (lighter sendTx returns 200 even on 0-fill IOC)
+    const afterBals = await this.getSpotBalances();
+    const afterBal = afterBals.find(b => b.token.toUpperCase() === base.toUpperCase());
+    const afterTotal = afterBal ? parseFloat(afterBal.total) : 0;
+    const change = side === "buy" ? afterTotal - beforeTotal : beforeTotal - afterTotal;
+    if (change < sizeNum * 0.5) {
+      throw new Error(`Spot ${side} ${symbol}: order submitted but balance unchanged (before=${beforeTotal}, after=${afterTotal}, expected ~${sizeNum})`);
     }
 
     return result;

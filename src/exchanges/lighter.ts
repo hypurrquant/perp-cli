@@ -534,26 +534,20 @@ export class LighterAdapter implements ExchangeAdapter {
       orderExpiry: 0, // DEFAULT_IOC_EXPIRY
       nonce,
     });
+    // Capture position BEFORE
+    const beforePositions = await this.getPositions();
+    const beforePos = beforePositions.find(p => p.symbol.toUpperCase() === symbol.toUpperCase());
+    const beforeSize = beforePos ? parseFloat(beforePos.size) : 0;
+
     const result = await this.sendTx(signed);
 
-    // Verify fill: check recent trades for this market
-    try {
-      const trades = await this.restGetAuth("/trades", {
-        account_index: String(this._accountIndex),
-        market_id: String(marketIndex),
-        limit: "1",
-      }) as { trades?: Array<Record<string, unknown>> };
-      const recent = (trades.trades ?? [])[0];
-      if (!recent) {
-        console.error(`[lighter] Warning: market ${side} ${symbol} submitted but no trade found in history`);
-      } else {
-        const tradeTime = Number(recent.timestamp ?? 0) * 1000;
-        if (Date.now() - tradeTime > 30000) {
-          console.error(`[lighter] Warning: market ${side} ${symbol} latest trade is stale (${new Date(tradeTime).toISOString()})`);
-        }
-      }
-    } catch {
-      // trades query failed — non-blocking, sendTx succeeded
+    // Verify fill: check position actually changed (lighter sendTx returns 200 even on 0-fill IOC)
+    try { const { invalidateCache } = await import("../cache.js"); invalidateCache("acct"); } catch { /* ignore */ }
+    const afterPositions = await this.getPositions();
+    const afterPos = afterPositions.find(p => p.symbol.toUpperCase() === symbol.toUpperCase());
+    const afterSize = afterPos ? parseFloat(afterPos.size) : 0;
+    if (Math.abs(afterSize - beforeSize) < parseFloat(size) * 0.5) {
+      throw new Error(`Market ${side} ${symbol}: order submitted but position unchanged (before=${beforeSize}, after=${afterSize})`);
     }
 
     return result;
