@@ -412,10 +412,16 @@ export class SpotPerpArbStrategy implements Strategy {
 
       ctx.log(`  [SPA] Opening: ${matched.size} ${symbol} ($${matched.notional.toFixed(0)}) ${spotExchange}-spot<>${perpExchange}`);
 
-      // Transfer USDC to spot (same-exchange)
-      if (sameExchange) {
-        const tAmt = Math.ceil(matched.notional * 1.02);
+      // Transfer USDC to spot account (HL/Lighter have separate spot/perp accounts)
+      const tAmt = Math.ceil(matched.notional * 1.02);
+      try {
         await transferUsdcToSpot(spotAdapter, spotExchange, tAmt);
+        ctx.log(`  [SPA] Transferred $${tAmt} USDC to ${spotExchange} spot`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        ctx.log(`  [SPA] USDC transfer to spot failed: ${msg}`);
+        this._failCooldown.set(`${symbol}:entry`, Date.now() + 5 * 60 * 1000);
+        return false;
       }
 
       // Step 1: Buy spot
@@ -425,7 +431,7 @@ export class SpotPerpArbStrategy implements Strategy {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         ctx.log(`  [SPA] Spot buy failed: ${msg}`);
-        if (sameExchange) { try { await transferUsdcToPerp(spotAdapter, spotExchange, Math.ceil(matched.notional * 1.02)); } catch { /* best effort */ } }
+        try { await transferUsdcToPerp(spotAdapter, spotExchange, tAmt); ctx.log(`  [SPA] Recovered $${tAmt} USDC back to perp`); } catch { /* best effort */ }
         this._failCooldown.set(`${symbol}:entry`, Date.now() + 5 * 60 * 1000); return false;
       }
 
