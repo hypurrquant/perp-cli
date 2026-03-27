@@ -605,7 +605,7 @@ export function registerBotCommands(
 
       // Multi-exchange strategies need all adapters
       let extraAdapters: Map<string, import("../exchanges/index.js").ExchangeAdapter> | undefined;
-      const multiExchangeStrategies = ["funding-auto", "funding-arb", "funding-arb-v2", "basis-arb", "hedge-agent"];
+      const multiExchangeStrategies = ["funding-auto", "funding-arb", "funding-arb-v2", "spot-perp-arb", "basis-arb", "hedge-agent"];
       if (multiExchangeStrategies.includes(strategyName) && getAdapterFor) {
         extraAdapters = new Map();
         for (const ex of ["pacifica", "hyperliquid", "lighter", "aster"]) {
