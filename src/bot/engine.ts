@@ -519,7 +519,9 @@ async function fetchExchangeBalances(
 ): Promise<import("./tui/index.js").ExchangeBalance[]> {
   const adapters: [string, ExchangeAdapter][] = [[primaryAdapter.name, primaryAdapter]];
   if (extraAdapters) {
-    for (const [name, a] of extraAdapters) adapters.push([name, a]);
+    for (const [name, a] of extraAdapters) {
+      if (name !== primaryAdapter.name) adapters.push([name, a]);
+    }
   }
   const results: import("./tui/index.js").ExchangeBalance[] = [];
   await Promise.all(adapters.map(async ([name, a]) => {
@@ -601,7 +603,9 @@ async function fetchAllPositions(
 ): Promise<import("./tui/index.js").Position[]> {
   const adapters: [string, ExchangeAdapter][] = [[primaryAdapter.name, primaryAdapter]];
   if (extraAdapters) {
-    for (const [name, a] of extraAdapters) adapters.push([name, a]);
+    for (const [name, a] of extraAdapters) {
+      if (name !== primaryAdapter.name) adapters.push([name, a]);
+    }
   }
   const all: import("./tui/index.js").Position[][] = [];
   await Promise.all(adapters.map(async ([name, a]) => {

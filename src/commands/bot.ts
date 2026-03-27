@@ -251,7 +251,7 @@ export function registerBotCommands(
   bot
     .command("delta-neutral")
     .description("Spot-long + perp-short delta-neutral funding rate farming")
-    .option("--exchanges <list>", "Comma-separated perp exchange names", "lighter,aster")
+    .option("--exchanges <list>", "Comma-separated perp exchange names", "pacifica,lighter,hyperliquid,aster")
     .option("--min-rate <pct>", "Min annualized rate to enter (%)", "10")
     .option("--close-rate <pct>", "Close when avg rate drops below (%)", "2")
     .option("--size <usd>", "Position size per leg ($)", "50")
