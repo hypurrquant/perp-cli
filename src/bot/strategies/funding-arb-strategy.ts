@@ -347,8 +347,8 @@ export class FundingArbStrategy implements Strategy {
       // Close if funding flipped (losing money) or spread below close threshold
       const minHoldMs = (params.min_hold_hours ?? 2) * 60 * 60 * 1000;
       const holdTime = pos.entryTime > 0 ? Date.now() - pos.entryTime : Infinity;
-      const isFundingFlipped = signedSpread < 0;
-      const shouldClose = isFundingFlipped || (holdTime >= minHoldMs && signedSpread < params.close_spread);
+      const deeplyNegative = signedSpread < -20; // urgent: losing significant funding
+      const shouldClose = deeplyNegative || (holdTime >= minHoldMs && signedSpread < params.close_spread);
       if (shouldClose) {
         // Cooldown: skip if close recently failed for this symbol
         const closeKey = `${pos.symbol}:close`;
