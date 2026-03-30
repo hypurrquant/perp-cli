@@ -7,10 +7,10 @@ import { getFundingHours } from "../../funding.js";
 import { logExecution, pruneExecutionLog } from "../../execution-log.js";
 import { invalidateCache } from "../../cache.js";
 import {
-  type RateEntry, type RateMap,
+  type RateEntry, type RateMap, type FundingScore,
   buildAdapterMap, getSpotAdapter, transferUsdcToSpot, transferUsdcToPerp,
   getPerpSymbol, findRate, matchSymbol, getPriceEstimate, fetchRates,
-  recoverArbPositions,
+  recoverArbPositions, scoreFunding, isPositionGone,
 } from "./funding-arb-utils.js";
 
 // ── V2 Types ──
@@ -26,15 +26,6 @@ interface V2Position {
   entrySpread: number;
   fundingHistory: { time: number; amount: number }[];
   lastFundingCheck: number;
-}
-
-interface FundingScore {
-  symbol: string;
-  exchange: string;
-  avgRate: number;
-  consistency: number;
-  annualized: number;
-  payments: number;
 }
 
 interface V2Params {
@@ -323,7 +314,7 @@ export class FundingArbV2Strategy implements Strategy {
       if (!minEx || !maxEx || minEx === maxEx) continue;
       const spread = (maxH - minH) * 8760 * 100;
       if (spread < p.min_spread) continue;
-      const shortScore = await this.scoreFunding(adapters.get(maxEx)!, sym, maxEx, p.history_periods);
+      const shortScore = await this.scoreFundingLocal(adapters.get(maxEx)!, sym, maxEx, p.history_periods);
       if (shortScore && shortScore.consistency < p.min_consistency) continue;
       scoredOpps.push({ symbol: sym, longExchange: minEx, shortExchange: maxEx, spread, score: shortScore ?? { symbol: sym, exchange: maxEx, avgRate: maxR, consistency: 1, annualized: spread, payments: 0 }, mode: "perp-perp", shortRate: maxR, longRate: minR });
     }
@@ -383,27 +374,8 @@ export class FundingArbV2Strategy implements Strategy {
   // Core scoring / decision methods
   // ═══════════════════════════════════════════════════════════════════
 
-  private async scoreFunding(adapter: ExchangeAdapter, symbol: string, exchange: string, periods: number): Promise<FundingScore | null> {
-    const key = `${exchange}:${symbol}`;
-    const cached = this._fundingScoreCache.get(key);
-    if (cached && Date.now() - cached.ts < 10 * 60 * 1000) return cached.score;
-    try {
-      const history = await adapter.getFundingHistory(symbol, periods);
-      if (history.length < 2) return null;
-      const rates = history.map(h => parseFloat(h.rate));
-      // Compute actual funding period from timestamps (no static map dependency)
-      const times = history.map(h => h.time).sort((a, b) => a - b);
-      let totalInterval = 0;
-      for (let i = 1; i < times.length; i++) totalInterval += times[i] - times[i - 1];
-      const avgIntervalH = totalInterval / (times.length - 1) / 3600000;
-      const fH = avgIntervalH < 1.5 ? 1 : avgIntervalH < 5 ? 4 : 8;
-      const avgRate = rates.reduce((s, r) => s + r, 0) / rates.length;
-      const consistency = rates.filter(r => r > 0).length / rates.length;
-      const annualized = (avgRate / fH) * 8760 * 100;
-      const score: FundingScore = { symbol, exchange, avgRate, consistency, annualized, payments: rates.length };
-      this._fundingScoreCache.set(key, { score, ts: Date.now() });
-      return score;
-    } catch { return null; }
+  private scoreFundingLocal(adapter: ExchangeAdapter, symbol: string, exchange: string, periods: number): Promise<FundingScore | null> {
+    return scoreFunding(adapter, symbol, exchange, periods, this._fundingScoreCache);
   }
 
   private calcSignedSpread(pos: V2Position, ratesByExchange: RateMap): number {
@@ -444,8 +416,8 @@ export class FundingArbV2Strategy implements Strategy {
       const perpSym = getPerpSymbol(symbol, exName);
       const ri = findRate(ratesByExchange, exName, perpSym) ?? findRate(ratesByExchange, exName, symbol);
       if (!ri || ri.rate <= 0) continue;
-      const score = await this.scoreFunding(adapter, perpSym, exName, p.history_periods)
-        ?? await this.scoreFunding(adapter, symbol, exName, p.history_periods);
+      const score = await this.scoreFundingLocal(adapter, perpSym, exName, p.history_periods)
+        ?? await this.scoreFundingLocal(adapter, symbol, exName, p.history_periods);
       if (!score) continue;
       if (!best || score.annualized > best.score.annualized) best = { exchange: exName, rate: ri.rate, score };
     }
@@ -728,7 +700,7 @@ export class FundingArbV2Strategy implements Strategy {
     const longAdapter = adapters.get(pos.longExchange);
     const shortAdapter = adapters.get(pos.shortExchange);
     if (!longAdapter || !shortAdapter) { ctx.log(`  [ARBv2] Close perp-perp: adapters not found`); return false; }
-    const isGone = (msg: string) => msg.includes("ReduceOnly") || msg.includes("reduceOnly") || msg.includes("-2022");
+    const isGone = isPositionGone;
     let closeLongOk = false;
     let longGone = false;
 

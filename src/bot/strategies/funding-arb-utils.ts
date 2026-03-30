@@ -7,6 +7,7 @@ import type { StrategyContext } from "../strategy-types.js";
 import type { ExchangeAdapter } from "../../exchanges/index.js";
 import type { SpotAdapter } from "../../exchanges/spot-interface.js";
 import { getFundingHours } from "../../funding.js";
+import { annualizeHourlyRate } from "../../funding/normalize.js";
 
 // ── Type aliases ──
 
@@ -231,6 +232,57 @@ export async function recoverArbPositions(
   }
 
   return recovered;
+}
+
+// ── Shared scoring types & helpers ──
+
+export interface FundingScore {
+  symbol: string;
+  exchange: string;
+  avgRate: number;
+  consistency: number;
+  annualized: number;
+  payments: number;
+}
+
+/** Returns true if a reduceOnly rejection indicates the position is already gone. */
+export function isPositionGone(msg: string): boolean {
+  return msg.includes("ReduceOnly") || msg.includes("reduceOnly") || msg.includes("-2022");
+}
+
+/** Compute funding period in hours from history timestamps. Falls back to static map. */
+export function computeFundingHoursFromHistory(history: { time: number }[]): number {
+  if (history.length < 2) return getFundingHours("unknown"); // fallback to 1
+  const times = history.map(h => h.time).sort((a, b) => a - b);
+  let totalInterval = 0;
+  for (let i = 1; i < times.length; i++) totalInterval += times[i] - times[i - 1];
+  const avgIntervalH = totalInterval / (times.length - 1) / 3600000;
+  return avgIntervalH < 1.5 ? 1 : avgIntervalH < 5 ? 4 : 8;
+}
+
+/** Score a symbol's funding rate using history. Returns null if insufficient data. */
+export async function scoreFunding(
+  adapter: ExchangeAdapter,
+  symbol: string,
+  exchangeName: string,
+  periods: number,
+  cache?: Map<string, { score: FundingScore; ts: number }>,
+): Promise<FundingScore | null> {
+  const key = `${exchangeName}:${symbol}`;
+  const cached = cache?.get(key);
+  if (cached && Date.now() - cached.ts < 10 * 60 * 1000) return cached.score;
+  try {
+    const history = await adapter.getFundingHistory(symbol, periods);
+    if (history.length < 2) return null;
+    const rates = history.map(h => parseFloat(h.rate));
+    const fH = computeFundingHoursFromHistory(history);
+    const avgRate = rates.reduce((s, r) => s + r, 0) / rates.length;
+    const consistency = rates.filter(r => r > 0).length / rates.length;
+    const annualized = annualizeHourlyRate(avgRate / fH);
+    const score: FundingScore = { symbol, exchange: exchangeName, avgRate, consistency, annualized, payments: rates.length };
+    cache?.set(key, { score, ts: Date.now() });
+    return score;
+  } catch { return null; }
 }
 
 /** Fetch funding rates from an exchange adapter. */

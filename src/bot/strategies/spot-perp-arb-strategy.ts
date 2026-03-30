@@ -14,9 +14,10 @@ import { registerStrategy } from "../strategy-registry.js";
 import { getFundingHours } from "../../funding.js";
 import { pruneExecutionLog } from "../../execution-log.js";
 import {
-  type RateEntry, type RateMap,
+  type RateEntry, type RateMap, type FundingScore,
   buildAdapterMap, getSpotAdapter,
   getPerpSymbol, findRate, matchSymbol, fetchRates,
+  scoreFunding, isPositionGone, computeFundingHoursFromHistory,
 } from "./funding-arb-utils.js";
 import { SpotPerpExecutor } from "./spot-perp-executor.js";
 
@@ -32,11 +33,6 @@ interface SpotPerpArbParams {
   type: "spot-perp-arb"; min_rate: number; close_rate: number; size_usd: number;
   max_positions: number; exchanges: string[]; leverage: number; min_hold_hours: number;
   min_consistency: number; history_periods: number; rotation_threshold: number;
-}
-
-interface FundingScore {
-  symbol: string; exchange: string; avgRate: number;
-  consistency: number; annualized: number; payments: number;
 }
 
 let _posIdCounter = 0;
@@ -335,28 +331,8 @@ export class SpotPerpArbStrategy implements Strategy {
 
   // ── Scoring (decision logic) ──
 
-  private async scoreFunding(adapter: ExchangeAdapter, symbol: string, exchangeName: string): Promise<FundingScore | null> {
-    const p = this.params;
-    const key = `${exchangeName}:${symbol}`;
-    const cached = this._fundingScoreCache.get(key);
-    if (cached && Date.now() - cached.ts < 10 * 60 * 1000) return cached.score;
-    try {
-      const history = await adapter.getFundingHistory(symbol, p.history_periods);
-      if (history.length < 2) return null;
-      const rates = history.map(h => parseFloat(h.rate));
-      // Compute actual funding period from timestamps (no static map dependency)
-      const times = history.map(h => h.time).sort((a, b) => a - b);
-      let totalInterval = 0;
-      for (let i = 1; i < times.length; i++) totalInterval += times[i] - times[i - 1];
-      const avgIntervalH = totalInterval / (times.length - 1) / 3600000;
-      const fH = avgIntervalH < 1.5 ? 1 : avgIntervalH < 5 ? 4 : 8;
-      const avgRate = rates.reduce((s, r) => s + r, 0) / rates.length;
-      const consistency = rates.filter(r => r > 0).length / rates.length;
-      const annualized = (avgRate / fH) * 8760 * 100;
-      const score: FundingScore = { symbol, exchange: exchangeName, avgRate, consistency, annualized, payments: rates.length };
-      this._fundingScoreCache.set(key, { score, ts: Date.now() });
-      return score;
-    } catch { return null; }
+  private scoreFundingLocal(adapter: ExchangeAdapter, symbol: string, exchangeName: string): Promise<FundingScore | null> {
+    return scoreFunding(adapter, symbol, exchangeName, this.params.history_periods, this._fundingScoreCache);
   }
 
   private async findBestPerp(symbol: string, adapters: Map<string, ExchangeAdapter>, ratesByExchange: RateMap): Promise<{ exchange: string; rate: number; score: FundingScore } | null> {
@@ -365,8 +341,8 @@ export class SpotPerpArbStrategy implements Strategy {
       const perpSym = getPerpSymbol(symbol, exName);
       const ri = findRate(ratesByExchange, exName, perpSym) ?? findRate(ratesByExchange, exName, symbol);
       if (!ri || ri.rate <= 0) continue;
-      const score = await this.scoreFunding(adapter, perpSym, exName)
-        ?? await this.scoreFunding(adapter, symbol, exName);
+      const score = await this.scoreFundingLocal(adapter, perpSym, exName)
+        ?? await this.scoreFundingLocal(adapter, symbol, exName);
       if (!score) continue;
       if (!best || score.annualized > best.score.annualized) best = { exchange: exName, rate: ri.rate, score };
     }

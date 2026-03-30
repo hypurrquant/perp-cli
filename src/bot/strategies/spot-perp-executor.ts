@@ -15,6 +15,7 @@ import {
   getSpotAdapter as getSpotAdapterUtil,
   transferUsdcToSpot, transferUsdcToPerp,
   getPerpSymbol, matchSymbol, getPriceEstimate,
+  isPositionGone,
 } from "./funding-arb-utils.js";
 
 // ── Result types ──
@@ -50,10 +51,7 @@ export class SpotPerpExecutor {
     await transferUsdcToPerp(spotAdapter, exchange, amount);
   }
 
-  /** Returns true if a reduceOnly rejection indicates the position is already gone. */
-  private isPositionGone(msg: string): boolean {
-    return msg.includes("ReduceOnly") || msg.includes("reduceOnly") || msg.includes("-2022");
-  }
+  // isPositionGone() is now in funding-arb-utils.ts
 
   /**
    * Full spot-perp entry flow:
@@ -223,7 +221,7 @@ export class SpotPerpExecutor {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         // ReduceOnly rejected = position already gone, proceed to sell spot
-        if (this.isPositionGone(msg)) {
+        if (isPositionGone(msg)) {
           log(`  [SPA] Perp already closed (ReduceOnly rejected)`);
         } else {
           log(`  [SPA] Perp close failed, hedge intact: ${msg}`);
