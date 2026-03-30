@@ -112,10 +112,11 @@ export async function runBot(
     log,
   };
 
-  // Pass extra adapters to strategy context for funding-arb
+  // Pass extra adapters and risk config to strategy context
   if (extraAdapters) {
     strategyCtx.state.set("extraAdapters", extraAdapters);
   }
+  strategyCtx.state.set("riskConfig", config.risk);
 
   const isDryRun = false; // TODO: wire up from config when dry-run mode is added
 

@@ -441,8 +441,25 @@ export class SpotPerpArbStrategy implements Strategy {
         }
       }
 
-      // Size decision
-      let targetSizeUsd = p.size_usd;
+      // Risk policy: enforce max_position_usd from risk config
+      const riskConfig = ctx.state.get("riskConfig") as { max_position_usd?: number } | undefined;
+      const maxTotalPositionUsd = riskConfig?.max_position_usd ?? Infinity;
+      const positions = ctx.state.get("spaPositions") as SpotPerpPosition[];
+      let currentTotalUsd = 0;
+      for (const pos of positions) {
+        const ri = findRate(ratesByExchange, pos.perpExchange, getPerpSymbol(pos.symbol, pos.perpExchange))
+          ?? findRate(ratesByExchange, pos.perpExchange, pos.symbol);
+        const price = ri?.price ?? 0;
+        currentTotalUsd += price * parseFloat(pos.size);
+      }
+      const remainingBudget = maxTotalPositionUsd - currentTotalUsd;
+      if (remainingBudget < 10) {
+        ctx.log(`  [SPA] Skip ${symbol}: risk limit — total positions $${currentTotalUsd.toFixed(0)}/$${maxTotalPositionUsd} (no budget)`);
+        return false;
+      }
+
+      // Size decision (capped by risk budget)
+      let targetSizeUsd = Math.min(p.size_usd, remainingBudget);
       const sameExchange = spotExchange === perpExchange;
       if (sameExchange) {
         const perpBal = await perpAdapter.getBalance();
