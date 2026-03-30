@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Save original process.exit before any SDK (Go WASM) can patch it
+const _origExit = process.exit.bind(process);
 import { config } from "dotenv";
 import { resolve } from "path";
 import { createRequire } from "node:module";
@@ -757,13 +759,13 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
     } catch {
       program.help();
     }
-    setTimeout(() => process.exit(0), 500);
+    setTimeout(() => _origExit(0), 500);
   })();
 } else {
 program.parseAsync().then(() => {
   // Allow a short delay for any pending output, then exit cleanly.
   // Without this, HL SDK's WebSocket keeps the process alive indefinitely.
-  setTimeout(() => process.exit(0), 500);
+  setTimeout(() => _origExit(0), 500);
 }).catch(async (err) => {
   const msg = err instanceof Error ? err.message : String(err);
   if (isJson()) {
@@ -772,6 +774,6 @@ program.parseAsync().then(() => {
   } else {
     console.error(chalk.red(msg));
   }
-  process.exit(1);
+  _origExit(1);
 });
 }
