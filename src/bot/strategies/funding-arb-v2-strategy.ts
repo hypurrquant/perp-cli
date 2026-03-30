@@ -389,9 +389,14 @@ export class FundingArbV2Strategy implements Strategy {
     if (cached && Date.now() - cached.ts < 10 * 60 * 1000) return cached.score;
     try {
       const history = await adapter.getFundingHistory(symbol, periods);
-      if (history.length === 0) return null;
+      if (history.length < 2) return null;
       const rates = history.map(h => parseFloat(h.rate));
-      const fH = getFundingHours(exchange);
+      // Compute actual funding period from timestamps (no static map dependency)
+      const times = history.map(h => h.time).sort((a, b) => a - b);
+      let totalInterval = 0;
+      for (let i = 1; i < times.length; i++) totalInterval += times[i] - times[i - 1];
+      const avgIntervalH = totalInterval / (times.length - 1) / 3600000;
+      const fH = avgIntervalH < 1.5 ? 1 : avgIntervalH < 5 ? 4 : 8;
       const avgRate = rates.reduce((s, r) => s + r, 0) / rates.length;
       const consistency = rates.filter(r => r > 0).length / rates.length;
       const annualized = (avgRate / fH) * 8760 * 100;
