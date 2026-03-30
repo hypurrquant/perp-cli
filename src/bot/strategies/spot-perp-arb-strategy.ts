@@ -12,6 +12,7 @@ import type { Strategy, StrategyContext, StrategyAction, EnrichedSnapshot } from
 import type { ExchangeAdapter } from "../../exchanges/index.js";
 import { registerStrategy } from "../strategy-registry.js";
 import { getFundingHours } from "../../funding.js";
+import { annualizeHourlyRate } from "../../funding/normalize.js";
 import { pruneExecutionLog } from "../../execution-log.js";
 import {
   type RateEntry, type RateMap, type FundingScore,
@@ -230,7 +231,7 @@ export class SpotPerpArbStrategy implements Strategy {
       const currentInfo = findRate(ratesByExchange, pos.perpExchange, getPerpSymbol(pos.symbol, pos.perpExchange))
         ?? findRate(ratesByExchange, pos.perpExchange, pos.symbol);
       if (!currentInfo) continue;
-      const curAnn = (currentInfo.rate / (currentInfo.fundingHours ?? getFundingHours(pos.perpExchange))) * 8760 * 100;
+      const curAnn = annualizeHourlyRate(currentInfo.rate / (currentInfo.fundingHours ?? getFundingHours(pos.perpExchange)));
       if (best.score.annualized - curAnn < p.rotation_threshold) continue;
       ctx.log(`  [SPA] Rotating ${pos.symbol} short: ${pos.perpExchange} (${curAnn.toFixed(1)}%) -> ${best.exchange} (${best.score.annualized.toFixed(1)}%)`);
       const oldAdapter = adapters.get(pos.perpExchange);
@@ -354,7 +355,7 @@ export class SpotPerpArbStrategy implements Strategy {
       ?? findRate(ratesByExchange, pos.perpExchange, pos.symbol);
     if (!ri) return null; // rate unknown — don't assume 0
     const fH = ri.fundingHours ?? getFundingHours(pos.perpExchange);
-    return (ri.rate / fH) * 8760 * 100;
+    return annualizeHourlyRate(ri.rate / fH);
   }
 
   private shouldClose(pos: SpotPerpPosition, ratesByExchange: RateMap, p: SpotPerpArbParams): boolean {
@@ -409,7 +410,7 @@ export class SpotPerpArbStrategy implements Strategy {
           this._failCooldown.set(`${symbol}:entry`, Date.now() + 5 * 60 * 1000);
           return false;
         }
-        const actualAnn = (rateInfo.rate / actualFh) * 8760 * 100;
+        const actualAnn = annualizeHourlyRate(rateInfo.rate / actualFh);
         if (actualAnn < p.min_rate) {
           ctx.log(`  [SPA] Skip ${symbol}: actual rate ${actualAnn.toFixed(1)}% (${actualFh}h funding) below min_rate ${p.min_rate}%`);
           this._failCooldown.set(`${symbol}:entry`, Date.now() + 10 * 60 * 1000);

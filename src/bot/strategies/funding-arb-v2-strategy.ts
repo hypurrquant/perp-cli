@@ -4,6 +4,7 @@ import { registerStrategy } from "../strategy-registry.js";
 import { checkArbLiquidity, checkSpotPerpLiquidity } from "../../liquidity.js";
 import { computeMatchedSize, computeSpotPerpMatchedSize, reconcileArbFills } from "../../arb-sizing.js";
 import { getFundingHours } from "../../funding.js";
+import { annualizeHourlyRate } from "../../funding/normalize.js";
 import { logExecution, pruneExecutionLog } from "../../execution-log.js";
 import { invalidateCache } from "../../cache.js";
 import {
@@ -264,7 +265,7 @@ export class FundingArbV2Strategy implements Strategy {
       const currentInfo = findRate(ratesByExchange, pos.shortExchange, getPerpSymbol(pos.symbol, pos.shortExchange))
         ?? findRate(ratesByExchange, pos.shortExchange, pos.symbol);
       if (!currentInfo) continue;
-      const curAnn = (currentInfo.rate / (currentInfo.fundingHours ?? getFundingHours(pos.shortExchange))) * 8760 * 100;
+      const curAnn = annualizeHourlyRate(currentInfo.rate / (currentInfo.fundingHours ?? getFundingHours(pos.shortExchange)));
       if (best.score.annualized - curAnn < p.rotation_threshold) continue;
       ctx.log(`  [ARBv2] Rotating ${pos.symbol} short: ${pos.shortExchange} (${curAnn.toFixed(1)}%) -> ${best.exchange} (${best.score.annualized.toFixed(1)}%)`);
       const ok = await this.rotateShort(pos, best.exchange, adapters, ctx, ratesByExchange);
@@ -312,7 +313,7 @@ export class FundingArbV2Strategy implements Strategy {
         if (h > maxH) { maxH = h; maxEx = ex; maxR = ri.rate; }
       }
       if (!minEx || !maxEx || minEx === maxEx) continue;
-      const spread = (maxH - minH) * 8760 * 100;
+      const spread = annualizeHourlyRate(maxH - minH);
       if (spread < p.min_spread) continue;
       const shortScore = await this.scoreFundingLocal(adapters.get(maxEx)!, sym, maxEx, p.history_periods);
       if (shortScore && shortScore.consistency < p.min_consistency) continue;
@@ -383,14 +384,14 @@ export class FundingArbV2Strategy implements Strategy {
       const ri = findRate(ratesByExchange, pos.shortExchange, getPerpSymbol(pos.symbol, pos.shortExchange))
         ?? findRate(ratesByExchange, pos.shortExchange, pos.symbol);
       const fH = ri?.fundingHours ?? getFundingHours(pos.shortExchange);
-      return ri ? (ri.rate / fH) * 8760 * 100 : 0;
+      return ri ? annualizeHourlyRate(ri.rate / fH) : 0;
     }
     const li = findRate(ratesByExchange, pos.longExchange, pos.symbol);
     const si = findRate(ratesByExchange, pos.shortExchange, pos.symbol);
     if (!li || !si) return 0;
     const lH = li.rate / (li.fundingHours ?? getFundingHours(pos.longExchange));
     const sH = si.rate / (si.fundingHours ?? getFundingHours(pos.shortExchange));
-    return (sH - lH) * 8760 * 100;
+    return annualizeHourlyRate(sH - lH);
   }
 
   private checkCloseByHistory(pos: V2Position, ratesByExchange: RateMap, p: V2Params): boolean {
