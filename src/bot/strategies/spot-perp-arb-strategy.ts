@@ -460,13 +460,16 @@ export class SpotPerpArbStrategy implements Strategy {
         const sBal = exchangeBalances.get(spotExchange);
         const pBal = exchangeBalances.get(perpExchange);
         if (!sBal || !pBal) return false;
-        // Check spot USDC balance too (already in spot account, no transfer needed)
+        // Check spot USDC balance (only add if separate from perp — skip for unified accounts like HL)
         let spotAvailable = sBal.available;
-        try {
-          const spotBals = await spotAdapter.getSpotBalances();
-          const spotUsdc = spotBals.find(b => b.token.toUpperCase().startsWith("USDC"));
-          if (spotUsdc) spotAvailable += parseFloat(spotUsdc.available);
-        } catch { /* non-critical */ }
+        const isUnified = spotExchange === "hyperliquid"; // HL has unified perp+spot balance
+        if (!isUnified) {
+          try {
+            const spotBals = await spotAdapter.getSpotBalances();
+            const spotUsdc = spotBals.find(b => b.token.toUpperCase().startsWith("USDC"));
+            if (spotUsdc) spotAvailable += parseFloat(spotUsdc.available);
+          } catch { /* non-critical */ }
+        }
         const maxNtl = Math.min(spotAvailable, pBal.available * leverage) * 0.8;
         if (maxNtl < targetSizeUsd) { if (maxNtl < 10) { ctx.log(`  [SPA] Skip ${symbol}: insufficient balance (spot=$${spotAvailable.toFixed(2)}, perp=$${pBal.available.toFixed(2)})`); return false; } targetSizeUsd = Math.floor(maxNtl); }
       }

@@ -151,8 +151,8 @@ export class SpotPerpExecutor {
         const postBals = await spotAdapter.getSpotBalances();
         const bought = postBals.find(b => b.token.toUpperCase().replace(/-SPOT$/, "") === symbol.toUpperCase());
         const boughtAmt = bought ? parseFloat(bought.total) : 0;
-        if (boughtAmt < parseFloat(matched.size) * 0.5) {
-          log(`  [SPA] Spot buy returned OK but ${symbol} balance too low (${boughtAmt.toFixed(4)}) — aborting`);
+        if (boughtAmt < parseFloat(matched.size) * 0.8) {
+          log(`  [SPA] Spot buy returned OK but ${symbol} balance too low (${boughtAmt.toFixed(4)} < ${matched.size} × 80%) — aborting`);
           if (actualTransferred > 0) {
             try { await transferUsdcToPerp(spotAdapter, spotExchange, actualTransferred); } catch { /* best effort */ }
           }
@@ -247,8 +247,8 @@ export class SpotPerpExecutor {
         const postBals = await spotAdapter.getSpotBalances();
         const remaining = postBals.find(b => b.token.toUpperCase().replace(/-SPOT$/, "") === symbol.toUpperCase());
         const remainingAmt = remaining ? parseFloat(remaining.total) : 0;
-        if (remainingAmt >= parseFloat(size) * 0.5) {
-          log(`  [SPA] CRITICAL: Spot sell returned OK but ${symbol} balance unchanged (${remainingAmt.toFixed(4)}) — re-hedging perp`);
+        if (remainingAmt >= parseFloat(size) * 0.8) {
+          log(`  [SPA] CRITICAL: Spot sell returned OK but ${symbol} balance unchanged (${remainingAmt.toFixed(4)} >= ${size} × 80%) — re-hedging perp`);
           try { await perpAdapter.marketOrder(perpSym, "sell", size); } catch (rbErr) {
             log(`  [SPA] CRITICAL: Perp re-hedge failed: ${rbErr instanceof Error ? rbErr.message : String(rbErr)}`);
           }
