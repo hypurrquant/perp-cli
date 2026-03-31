@@ -462,7 +462,7 @@ export class SpotPerpArbStrategy implements Strategy {
         if (!sBal || !pBal) return false;
         // Check spot USDC balance (only add if separate from perp — skip for unified accounts like HL)
         let spotAvailable = sBal.available;
-        const isUnified = spotExchange === "hyperliquid"; // HL has unified perp+spot balance
+        const isUnified = spotExAdapter?.isUnifiedAccount ?? false;
         if (!isUnified) {
           try {
             const spotBals = await spotAdapter.getSpotBalances();

@@ -74,6 +74,8 @@ export interface ExchangeAdapter {
   readonly name: string;
   readonly chain?: string;
   readonly aliases?: readonly string[];
+  /** True if perp and spot share the same balance (e.g., Hyperliquid). False if separate accounts (e.g., Lighter). */
+  readonly isUnifiedAccount?: boolean;
   init?(): Promise<void>;
 
   // ── Market Data ──

@@ -507,7 +507,16 @@ export class FundingArbV2Strategy implements Strategy {
         const sBal = exchangeBalances.get(spotExName);
         const pBal = exchangeBalances.get(opp.shortExchange);
         if (!sBal || !pBal) return false;
-        const maxNtl = Math.min(sBal.available, pBal.available * leverage) * 0.8;
+        let spotAvail = sBal.available;
+        const spotExAdapter = adapters.get(spotExName);
+        if (spotExAdapter && !spotExAdapter.isUnifiedAccount) {
+          try {
+            const sb = await spotAdapter.getSpotBalances();
+            const su = sb.find(b => b.token.toUpperCase().startsWith("USDC"));
+            if (su) spotAvail += parseFloat(su.available);
+          } catch { /* non-critical */ }
+        }
+        const maxNtl = Math.min(spotAvail, pBal.available * leverage) * 0.8;
         if (maxNtl < targetSizeUsd) { if (maxNtl < 10) return false; targetSizeUsd = Math.floor(maxNtl); }
       }
 
@@ -580,15 +589,13 @@ export class FundingArbV2Strategy implements Strategy {
         ctx.log(`  [ARBv2] Spot sell failed: ${err instanceof Error ? err.message : String(err)}`);
         this._failCooldown.set(`${pos.symbol}:close`, Date.now() + 5 * 60 * 1000); return false;
       }
-      // Transfer USDC back (same-exchange)
-      if (spotExName === pos.shortExchange) {
-        try {
-          const perpSym = getPerpSymbol(pos.symbol, pos.shortExchange);
-          const price = await getPriceEstimate(perpAdapter, perpSym, pos.symbol);
-          const proceeds = price * parseFloat(pos.size) * 0.95;
-          if (proceeds > 1) await transferUsdcToPerp(spotAdapter, spotExName, Math.floor(proceeds));
-        } catch { /* non-fatal */ }
-      }
+      // Transfer USDC back to perp (always — not just same-exchange)
+      try {
+        const spotBals = await spotAdapter.getSpotBalances();
+        const usdcBal = spotBals.find(b => b.token.toUpperCase().startsWith("USDC"));
+        const usdcAmt = usdcBal ? parseFloat(usdcBal.total) : 0;
+        if (usdcAmt > 1) await transferUsdcToPerp(spotAdapter, spotExName, Math.floor(usdcAmt));
+      } catch { /* non-fatal */ }
       // Close perp short
       const perpSym = getPerpSymbol(pos.symbol, pos.shortExchange);
       try {

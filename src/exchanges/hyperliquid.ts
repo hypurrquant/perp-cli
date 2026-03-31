@@ -16,6 +16,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   readonly name = "hyperliquid";
   readonly chain = "evm";
   readonly aliases = ["hl"] as const;
+  readonly isUnifiedAccount = true;
   private sdk: Hyperliquid;
   private _address: string;
   private _privateKey: string;
