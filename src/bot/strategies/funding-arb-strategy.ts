@@ -1,12 +1,22 @@
 import type { Strategy, StrategyContext, StrategyAction, EnrichedSnapshot } from "../strategy-types.js";
 import type { FundingArbStrategyParams } from "../config.js";
 import type { ExchangeAdapter } from "../../exchanges/index.js";
-import type { SpotAdapter } from "../../exchanges/spot-interface.js";
 import { registerStrategy } from "../strategy-registry.js";
 import { checkArbLiquidity, checkSpotPerpLiquidity } from "../../liquidity.js";
 import { computeMatchedSize, computeSpotPerpMatchedSize, reconcileArbFills } from "../../arb-sizing.js";
 import { getFundingHours } from "../../funding.js";
 import { logExecution, pruneExecutionLog } from "../../execution-log.js";
+import { annualizeHourlyRate } from "../../funding/normalize.js";
+import {
+  isPositionGone,
+  transferUsdcToSpot,
+  transferUsdcToPerp,
+  getSpotAdapter,
+  getPerpSymbol,
+  findRate,
+  getPriceEstimate,
+  fetchRates,
+} from "./funding-arb-utils.js";
 
 interface ArbOpportunity {
   symbol: string;
@@ -53,7 +63,6 @@ export class FundingArbStrategy implements Strategy {
 
   private _config: Record<string, unknown> = {};
   private _failCooldown = new Map<string, number>(); // "symbol:action" → timestamp of next retry
-  private _spotAdapterCache = new Map<string, SpotAdapter>();
 
   async init(ctx: StrategyContext, _snapshot: EnrichedSnapshot): Promise<void> {
     // Prune old execution logs (keep 30 days)
@@ -266,7 +275,7 @@ export class FundingArbStrategy implements Strategy {
     // Fetch rates — all exchanges if room for new positions, only position exchanges if full
     const ratesByExchange = new Map<string, Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number }>>();
     for (const [name, a] of exchangesToScan) {
-      const rates = await this.fetchRates(a, name);
+      const rates = await fetchRates(a, name);
       const map = new Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number }>();
       for (const r of rates) map.set(r.symbol.toUpperCase(), { rate: r.rate, price: r.price, sizeDecimals: r.sizeDecimals, maxLeverage: r.maxLeverage, fundingHours: r.fundingHours });
       ratesByExchange.set(name, map);
@@ -301,19 +310,19 @@ export class FundingArbStrategy implements Strategy {
       if (p.mode === "spot-perp") {
         // For spot-perp: long side is spot (rate=0), short side is perp
         const perpExchange = p.shortExchange;
-        const perpSymbol = this.getPerpSymbol(p.symbol, perpExchange);
-        const rateInfo = this.findRate(ratesByExchange, perpExchange, perpSymbol)
-          ?? this.findRate(ratesByExchange, perpExchange, p.symbol);
+        const perpSymbol = getPerpSymbol(p.symbol, perpExchange);
+        const rateInfo = findRate(ratesByExchange, perpExchange, perpSymbol)
+          ?? findRate(ratesByExchange, perpExchange, p.symbol);
         const shortRate = rateInfo?.rate;
         const fundingH = rateInfo?.fundingHours ?? getFundingHours(perpExchange);
-        signedSpread = shortRate !== undefined ? (shortRate / fundingH) * 8760 * 100 : 0;
+        signedSpread = shortRate !== undefined ? annualizeHourlyRate(shortRate / fundingH) : 0;
       } else {
-        const longInfo = this.findRate(ratesByExchange, p.longExchange, p.symbol);
-        const shortInfo = this.findRate(ratesByExchange, p.shortExchange, p.symbol);
+        const longInfo = findRate(ratesByExchange, p.longExchange, p.symbol);
+        const shortInfo = findRate(ratesByExchange, p.shortExchange, p.symbol);
         const longHourly = longInfo ? longInfo.rate / (longInfo.fundingHours ?? getFundingHours(p.longExchange)) : undefined;
         const shortHourly = shortInfo ? shortInfo.rate / (shortInfo.fundingHours ?? getFundingHours(p.shortExchange)) : undefined;
         signedSpread = (longHourly !== undefined && shortHourly !== undefined)
-          ? (shortHourly - longHourly) * 8760 * 100
+          ? annualizeHourlyRate(shortHourly - longHourly)
           : 0;
       }
       const sign = signedSpread >= 0 ? "+" : "";
@@ -329,19 +338,19 @@ export class FundingArbStrategy implements Strategy {
 
       if (pos.mode === "spot-perp") {
         const perpExchange = pos.shortExchange;
-        const perpSymbol = this.getPerpSymbol(pos.symbol, perpExchange);
-        const rateInfo = this.findRate(ratesByExchange, perpExchange, perpSymbol)
-          ?? this.findRate(ratesByExchange, perpExchange, pos.symbol);
+        const perpSymbol = getPerpSymbol(pos.symbol, perpExchange);
+        const rateInfo = findRate(ratesByExchange, perpExchange, perpSymbol)
+          ?? findRate(ratesByExchange, perpExchange, pos.symbol);
         if (rateInfo === undefined) continue;
         const fundingH = rateInfo.fundingHours ?? getFundingHours(perpExchange);
-        signedSpread = (rateInfo.rate / fundingH) * 8760 * 100;
+        signedSpread = annualizeHourlyRate(rateInfo.rate / fundingH);
       } else {
-        const longInfo = this.findRate(ratesByExchange, pos.longExchange, pos.symbol);
-        const shortInfo = this.findRate(ratesByExchange, pos.shortExchange, pos.symbol);
+        const longInfo = findRate(ratesByExchange, pos.longExchange, pos.symbol);
+        const shortInfo = findRate(ratesByExchange, pos.shortExchange, pos.symbol);
         if (longInfo === undefined || shortInfo === undefined) continue;
         const longHourly = longInfo.rate / (longInfo.fundingHours ?? getFundingHours(pos.longExchange));
         const shortHourly = shortInfo.rate / (shortInfo.fundingHours ?? getFundingHours(pos.shortExchange));
-        signedSpread = (shortHourly - longHourly) * 8760 * 100;
+        signedSpread = annualizeHourlyRate(shortHourly - longHourly);
       }
 
       // Close if funding flipped (losing money) or spread below close threshold
@@ -365,8 +374,6 @@ export class FundingArbStrategy implements Strategy {
           const longAdapter = adapters.get(pos.longExchange);
           const shortAdapter = adapters.get(pos.shortExchange);
           if (longAdapter && shortAdapter) {
-            const isPositionGone = (msg: string) => msg.includes("ReduceOnly") || msg.includes("reduceOnly") || msg.includes("-2022");
-
             let closeLongOk = false;
             let longPositionGone = false;
             try {
@@ -459,7 +466,7 @@ export class FundingArbStrategy implements Strategy {
       let minRate = 0, maxRate = 0;
 
       for (const exName of scanExchangeNames) {
-        const rateInfo = this.findRate(ratesByExchange, exName, sym);
+        const rateInfo = findRate(ratesByExchange, exName, sym);
         if (!rateInfo) continue;
         const hourlyRate = rateInfo.rate / (rateInfo.fundingHours ?? getFundingHours(exName));
         if (hourlyRate < minHourly) { minHourly = hourlyRate; minExchange = exName; minRate = rateInfo.rate; }
@@ -467,7 +474,7 @@ export class FundingArbStrategy implements Strategy {
       }
 
       if (minExchange && maxExchange && minExchange !== maxExchange) {
-        const spread = (maxHourly - minHourly) * 8760 * 100;
+        const spread = annualizeHourlyRate(maxHourly - minHourly);
         if (spread >= params.min_spread) {
           opportunities.push({
             symbol: sym,
@@ -486,7 +493,7 @@ export class FundingArbStrategy implements Strategy {
     const spotPerpMinSpread = params.spot_perp_min_spread ?? params.min_spread;
     for (const [name, a] of adapters) {
       try {
-        const spotAdapter = await this.getSpotAdapter(name, a);
+        const spotAdapter = await getSpotAdapter(name, a);
         if (!spotAdapter) continue;
 
         const spotMarkets = await spotAdapter.getSpotMarkets();
@@ -503,7 +510,7 @@ export class FundingArbStrategy implements Strategy {
           if (!spotSymbols.has(base)) continue;
 
           const hourlyRate = rate / (rateEntry.fundingHours ?? getFundingHours(name));
-          const annualSpread = hourlyRate * 8760 * 100;
+          const annualSpread = annualizeHourlyRate(hourlyRate);
           if (annualSpread >= spotPerpMinSpread) {
             opportunities.push({
               symbol: base,
@@ -555,13 +562,13 @@ export class FundingArbStrategy implements Strategy {
           const shortAdapter = adapters.get(best.shortExchange);
           if (!longAdapter || !shortAdapter) continue;
 
-          const price = this.findRate(ratesByExchange, best.longExchange, best.symbol)?.price ?? 0;
+          const price = findRate(ratesByExchange, best.longExchange, best.symbol)?.price ?? 0;
           if (price <= 0) continue;
 
           // Determine leverage for this symbol
           const configLeverage = params.leverage ?? 3;
-          const longMaxLev = this.findRate(ratesByExchange, best.longExchange, best.symbol)?.maxLeverage ?? 1;
-          const shortMaxLev = this.findRate(ratesByExchange, best.shortExchange, best.symbol)?.maxLeverage ?? 1;
+          const longMaxLev = findRate(ratesByExchange, best.longExchange, best.symbol)?.maxLeverage ?? 1;
+          const shortMaxLev = findRate(ratesByExchange, best.shortExchange, best.symbol)?.maxLeverage ?? 1;
           const leverage = Math.min(configLeverage, longMaxLev, shortMaxLev);
 
           // Set leverage on both exchanges before ordering
@@ -608,8 +615,8 @@ export class FundingArbStrategy implements Strategy {
           if (!liq.viable) continue;
 
           // Compute matched size (use actual precision from exchange market data)
-          const longDec = this.findRate(ratesByExchange, best.longExchange, best.symbol)?.sizeDecimals;
-          const shortDec = this.findRate(ratesByExchange, best.shortExchange, best.symbol)?.sizeDecimals;
+          const longDec = findRate(ratesByExchange, best.longExchange, best.symbol)?.sizeDecimals;
+          const shortDec = findRate(ratesByExchange, best.shortExchange, best.symbol)?.sizeDecimals;
           let matched = computeMatchedSize(liq.adjustedSizeUsd, price, best.longExchange, best.shortExchange, { longSizeDecimals: longDec, shortSizeDecimals: shortDec });
           if (!matched) {
             ctx.log(`  [ARB] Skip ${best.symbol}: can't compute matched size (min notional or precision issue)`);
@@ -826,7 +833,7 @@ export class FundingArbStrategy implements Strategy {
     }
 
     try {
-      const spotAdapter = await this.getSpotAdapter(exchangeName, perpAdapter);
+      const spotAdapter = await getSpotAdapter(exchangeName, perpAdapter);
       if (!spotAdapter) {
         ctx.log(`  [ARB] Close spot-perp failed: spot adapter not available for ${exchangeName}`);
         return false;
@@ -848,11 +855,11 @@ export class FundingArbStrategy implements Strategy {
 
       // Step 2: Transfer USDC back to perp (use 95% of notional as estimate)
       try {
-        const perpSymbol = this.getPerpSymbol(pos.symbol, pos.shortExchange);
-        const priceEstimate = await this.getPriceEstimate(perpAdapter, perpSymbol, pos.symbol);
+        const perpSymbol = getPerpSymbol(pos.symbol, pos.shortExchange);
+        const priceEstimate = await getPriceEstimate(perpAdapter, perpSymbol, pos.symbol);
         const proceeds = priceEstimate * parseFloat(pos.size) * 0.95;
         if (proceeds > 1) {
-          await this.transferUsdcToPerp(spotAdapter, exchangeName, Math.floor(proceeds));
+          await transferUsdcToPerp(spotAdapter, exchangeName, Math.floor(proceeds));
           ctx.log(`  [ARB] Transferred ~$${Math.floor(proceeds)} USDC back to perp`);
         }
       } catch (err) {
@@ -862,7 +869,7 @@ export class FundingArbStrategy implements Strategy {
       }
 
       // Step 3: Close perp short
-      const perpSymbol = this.getPerpSymbol(pos.symbol, pos.shortExchange);
+      const perpSymbol = getPerpSymbol(pos.symbol, pos.shortExchange);
       try {
         await perpAdapter.marketOrder(perpSymbol, "buy", pos.size, { reduceOnly: true });
         ctx.log(`  [ARB] Closed perp short ${pos.size} ${perpSymbol}`);
@@ -905,7 +912,7 @@ export class FundingArbStrategy implements Strategy {
     }
 
     try {
-      const spotAdapter = await this.getSpotAdapter(exchangeName, perpAdapter);
+      const spotAdapter = await getSpotAdapter(exchangeName, perpAdapter);
       if (!spotAdapter) {
         ctx.log(`  [ARB] Open spot-perp failed: spot adapter not available for ${exchangeName}`);
         return false;
@@ -913,15 +920,15 @@ export class FundingArbStrategy implements Strategy {
 
       // Determine leverage for perp leg
       const configLeverage = params.leverage ?? 3;
-      const perpSymbolUpper = this.getPerpSymbol(opp.symbol, opp.shortExchange).toUpperCase();
-      const perpMaxLev = this.findRate(ratesByExchange, opp.shortExchange, perpSymbolUpper)?.maxLeverage
-        ?? this.findRate(ratesByExchange, opp.shortExchange, opp.symbol.toUpperCase())?.maxLeverage
+      const perpSymbolUpper = getPerpSymbol(opp.symbol, opp.shortExchange).toUpperCase();
+      const perpMaxLev = findRate(ratesByExchange, opp.shortExchange, perpSymbolUpper)?.maxLeverage
+        ?? findRate(ratesByExchange, opp.shortExchange, opp.symbol.toUpperCase())?.maxLeverage
         ?? 1;
       const leverage = Math.min(configLeverage, perpMaxLev);
 
       // Set leverage on perp before ordering
       try {
-        await perpAdapter.setLeverage(this.getPerpSymbol(opp.symbol, opp.shortExchange), leverage, "cross");
+        await perpAdapter.setLeverage(getPerpSymbol(opp.symbol, opp.shortExchange), leverage, "cross");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         ctx.log(`  [ARB] setLeverage failed on ${opp.shortExchange} for ${opp.symbol}: ${msg}`);
@@ -961,8 +968,8 @@ export class FundingArbStrategy implements Strategy {
         return false;
       }
 
-      const perpSymbol = this.getPerpSymbol(opp.symbol, opp.shortExchange);
-      const priceEstimate = await this.getPriceEstimate(perpAdapter, perpSymbol, opp.symbol);
+      const perpSymbol = getPerpSymbol(opp.symbol, opp.shortExchange);
+      const priceEstimate = await getPriceEstimate(perpAdapter, perpSymbol, opp.symbol);
       if (priceEstimate <= 0) {
         ctx.log(`  [ARB] Skip spot-perp ${opp.symbol}: can't determine price`);
         return false;
@@ -989,7 +996,7 @@ export class FundingArbStrategy implements Strategy {
 
       // Step 1: Transfer USDC to spot
       const transferAmt = Math.ceil(matched.notional * 1.02); // slight buffer for price movement
-      await this.transferUsdcToSpot(spotAdapter, exchangeName, transferAmt);
+      await transferUsdcToSpot(spotAdapter, exchangeName, transferAmt);
       ctx.log(`  [ARB] Transferred $${transferAmt} USDC to spot`);
 
       // Step 2: Buy spot
@@ -1002,7 +1009,7 @@ export class FundingArbStrategy implements Strategy {
         const msg = spotErr instanceof Error ? spotErr.message : String(spotErr);
         ctx.log(`  [ARB] Open spot-perp failed (spot buy) for ${opp.symbol}: ${msg}`);
         logExecution({ type: "arb_entry", exchange: opp.longExchange, symbol: opp.symbol, side: "buy", size: matched.size, status: "failed", error: msg, dryRun: false, meta: { mode: "spot-perp", leg: "spot" } });
-        try { await this.transferUsdcToPerp(spotAdapter, exchangeName, transferAmt); ctx.log(`  [ARB] Transferred $${transferAmt} USDC back to perp after spot buy failure`); } catch { /* best effort */ }
+        try { await transferUsdcToPerp(spotAdapter, exchangeName, transferAmt); ctx.log(`  [ARB] Transferred $${transferAmt} USDC back to perp after spot buy failure`); } catch { /* best effort */ }
         return false;
       }
 
@@ -1022,7 +1029,7 @@ export class FundingArbStrategy implements Strategy {
           logExecution({ type: "multi_leg_rollback", exchange: opp.longExchange, symbol: opp.symbol, side: "sell", size: matched.size, status: "success", dryRun: false });
           // Transfer USDC back to perp account
           try {
-            await this.transferUsdcToPerp(spotAdapter, opp.longExchange.replace("-spot", ""), Math.ceil(matched.notional * 1.02));
+            await transferUsdcToPerp(spotAdapter, opp.longExchange.replace("-spot", ""), Math.ceil(matched.notional * 1.02));
           } catch { /* best effort */ }
         } catch (rbErr) {
           const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
@@ -1055,145 +1062,6 @@ export class FundingArbStrategy implements Strategy {
     }
   }
 
-  /** Transfer USDC from perp to spot account (exchange-specific) */
-  private async transferUsdcToSpot(spotAdapter: SpotAdapter, exchangeName: string, amount: number): Promise<void> {
-    if (exchangeName === "hyperliquid") {
-      const { HyperliquidSpotAdapter } = await import("../../exchanges/hyperliquid-spot.js");
-      if (spotAdapter instanceof HyperliquidSpotAdapter) {
-        await spotAdapter.transferUsdcToSpot(amount);
-        return;
-      }
-    } else if (exchangeName === "lighter") {
-      const { LighterSpotAdapter } = await import("../../exchanges/lighter-spot.js");
-      if (spotAdapter instanceof LighterSpotAdapter) {
-        await spotAdapter.transferUsdcToSpot(amount);
-        return;
-      }
-    }
-  }
-
-  /** Transfer USDC from spot to perp account (exchange-specific) */
-  private async transferUsdcToPerp(spotAdapter: SpotAdapter, exchangeName: string, amount: number): Promise<void> {
-    if (exchangeName === "hyperliquid") {
-      const { HyperliquidSpotAdapter } = await import("../../exchanges/hyperliquid-spot.js");
-      if (spotAdapter instanceof HyperliquidSpotAdapter) {
-        await spotAdapter.transferUsdcToPerp(amount);
-        return;
-      }
-    } else if (exchangeName === "lighter") {
-      const { LighterSpotAdapter } = await import("../../exchanges/lighter-spot.js");
-      if (spotAdapter instanceof LighterSpotAdapter) {
-        await spotAdapter.transferUsdcToPerp(amount);
-        return;
-      }
-    }
-  }
-
-  /**
-   * Get spot adapter for a given exchange name + perp adapter instance.
-   * Returns null if the exchange doesn't support spot or instantiation fails.
-   */
-  private async getSpotAdapter(name: string, adapter: ExchangeAdapter): Promise<SpotAdapter | null> {
-    const cached = this._spotAdapterCache.get(name);
-    if (cached) return cached;
-    try {
-      let spot: SpotAdapter | null = null;
-      if (name === "hyperliquid") {
-        const { HyperliquidSpotAdapter } = await import("../../exchanges/hyperliquid-spot.js");
-        const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
-        if (adapter instanceof HyperliquidAdapter) {
-          const instance = new HyperliquidSpotAdapter(adapter);
-          await instance.init();
-          spot = instance;
-        }
-      } else if (name === "lighter") {
-        const { LighterSpotAdapter } = await import("../../exchanges/lighter-spot.js");
-        const { LighterAdapter } = await import("../../exchanges/lighter.js");
-        if (adapter instanceof LighterAdapter) {
-          const instance = new LighterSpotAdapter(adapter);
-          await instance.init();
-          spot = instance;
-        }
-      }
-      if (spot) this._spotAdapterCache.set(name, spot);
-      return spot;
-    } catch { /* not supported */ }
-    return null;
-  }
-
-  /**
-   * Resolve the perp symbol for a given base symbol on an exchange.
-   * HL getPositions() returns symbols like "PURR" or "PURR-PERP" — we normalize here.
-   */
-  private getPerpSymbol(baseSymbol: string, exchangeName: string): string {
-    const base = baseSymbol.replace(/-PERP$/, "").toUpperCase();
-    void exchangeName;
-    return base;
-  }
-
-  /** Look up rate from ratesByExchange, trying symbol, symbol-PERP, and symbol without -PERP */
-  private findRate(ratesByExchange: Map<string, Map<string, { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number }>>, exchange: string, symbol: string): { rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number } | undefined {
-    const map = ratesByExchange.get(exchange);
-    if (!map) return undefined;
-    const upper = symbol.toUpperCase();
-    return map.get(upper)
-      ?? map.get(upper + "-PERP")
-      ?? map.get(upper.replace(/-PERP$/, ""));
-  }
-
-  /**
-   * Get a price estimate for a symbol from the perp adapter.
-   * Tries the base symbol first, then with -PERP suffix.
-   */
-  private async getPriceEstimate(perpAdapter: ExchangeAdapter, perpSymbol: string, fallbackSymbol: string): Promise<number> {
-    try {
-      const markets = await perpAdapter.getMarkets();
-      const market = markets.find(m =>
-        m.symbol.toUpperCase() === perpSymbol.toUpperCase() ||
-        m.symbol.toUpperCase() === fallbackSymbol.toUpperCase() ||
-        m.symbol.toUpperCase() === `${fallbackSymbol.toUpperCase()}-PERP`,
-      );
-      return market ? parseFloat(market.markPrice) : 0;
-    } catch {
-      return 0;
-    }
-  }
-
-  private async fetchRates(
-    adapter: ExchangeAdapter,
-    exchangeName: string,
-  ): Promise<{ symbol: string; rate: number; price: number; sizeDecimals?: number; maxLeverage?: number; fundingHours?: number }[]> {
-    try {
-      const markets = await adapter.getMarkets();
-      const withRates = markets.filter(m => m.fundingRate != null);
-
-      // Bootstrap aster funding hours lazily (1 API call per unknown symbol, cached permanently)
-      if (exchangeName === "aster" && "getFundingHours" in adapter) {
-        const aster = adapter as unknown as { getFundingHours(sym: string): Promise<number> };
-        // Only bootstrap symbols not yet cached (up to 20 per tick to complete faster)
-        const uncached = withRates.filter(m => {
-          const cached = (adapter as any)?._fundingHoursCache?.get?.(m.symbol);
-          return cached === undefined; // only truly uncached, not symbols confirmed as 1h
-        });
-        const toBootstrap = uncached.slice(0, 20);
-        for (const m of toBootstrap) {
-          const fh = await aster.getFundingHours(m.symbol);
-          m.fundingHours = fh;
-        }
-      }
-
-      return withRates.map(m => ({
-        symbol: m.symbol,
-        rate: parseFloat(m.fundingRate!),
-        price: parseFloat(m.markPrice),
-        sizeDecimals: m.sizeDecimals,
-        maxLeverage: m.maxLeverage,
-        fundingHours: m.fundingHours,
-      }));
-    } catch {
-      return [];
-    }
-  }
 }
 
 registerStrategy("funding-arb", (_config) => new FundingArbStrategy());

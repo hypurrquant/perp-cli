@@ -1,7 +1,7 @@
 import type { Strategy, StrategyContext, StrategyAction, EnrichedSnapshot } from "../strategy-types.js";
 import type { ExchangeAdapter } from "../../exchanges/index.js";
 import { registerStrategy } from "../strategy-registry.js";
-import { toHourlyRate, computeAnnualSpread } from "../../funding/normalize.js";
+import { toHourlyRate, computeAnnualSpread, annualizeHourlyRate } from "../../funding/normalize.js";
 
 /**
  * Minimum notional per exchange (USD):
@@ -268,7 +268,7 @@ class FundingAutoStrategy implements Strategy {
         if (!shortInfo) { surviving.push(pos); continue; }
 
         const hourlyRate = toHourlyRate(shortInfo.rate, pos.shortExchange);
-        const annualized = Math.abs(hourlyRate) * 8760 * 100;
+        const annualized = annualizeHourlyRate(Math.abs(hourlyRate));
 
         const pnl = await this.calculateRealPnl(adapters.get(pos.shortExchange)!, pos.symbol);
         pos.accumulatedFunding = pnl.funding;

@@ -612,7 +612,11 @@ export class LighterSpotAdapter implements SpotAdapter {
     const url = new URL(`${baseUrl}/api/v1${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     const res = await fetch(url.toString());
-    if (!res.ok) throw new Error(`GET ${path} failed (${res.status}): ${await res.text()}`);
+    if (!res.ok) {
+      const text = await res.text();
+      const clean = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+      throw new Error(`GET ${path} failed (${res.status}): ${clean}`);
+    }
     return res.json();
   }
 
