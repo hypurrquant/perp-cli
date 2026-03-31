@@ -143,7 +143,10 @@ export class SpotPerpArbStrategy implements Strategy {
         else if (available < 5) ctx.log(`  [SPA] ${name} available $${available.toFixed(2)} too low`);
         else if (marginPct >= 90) ctx.log(`  [SPA] ${name} margin ${marginPct.toFixed(0)}%`);
         else availableAdapters.set(name, a);
-      } catch (err) { ctx.log(`  [SPA] getBalance failed for ${name}: ${err instanceof Error ? err.message : String(err)}`); }
+      } catch (err) {
+        const msg = (err instanceof Error ? err.message : String(err)).slice(0, 120);
+        ctx.log(`  [SPA] getBalance failed for ${name}: ${msg}`);
+      }
     }
 
     const ratesByExchange: RateMap = new Map();

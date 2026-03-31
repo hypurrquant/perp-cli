@@ -528,7 +528,8 @@ export class AsterAdapter implements ExchangeAdapter {
     }
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`${method} ${path} failed (${res.status}): ${text.slice(0, 200)}`);
+      const clean = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+      throw new Error(`${method} ${path} failed (${res.status}): ${clean}`);
     }
     return res.json();
   }
