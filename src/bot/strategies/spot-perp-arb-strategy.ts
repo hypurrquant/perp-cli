@@ -229,7 +229,8 @@ export class SpotPerpArbStrategy implements Strategy {
     for (const pos of currentPositions) {
       const rcd = this._failCooldown.get(`${pos.id}:rotate`) ?? 0;
       if (Date.now() < rcd) continue;
-      const best = await this.findBestPerp(pos.symbol, adapters, ratesByExchange);
+      const candidates = await this.findPerpCandidates(pos.symbol, adapters, ratesByExchange);
+      const best = candidates[0];
       if (!best || best.exchange === pos.perpExchange) continue;
       const currentInfo = findRate(ratesByExchange, pos.perpExchange, getPerpSymbol(pos.symbol, pos.perpExchange))
         ?? findRate(ratesByExchange, pos.perpExchange, pos.symbol);
@@ -280,9 +281,11 @@ export class SpotPerpArbStrategy implements Strategy {
           if (spotExName === "hyperliquid" && !HL_SPOT_WHITELIST.has(base)) continue;
           if (openSymbols.has(base)) continue;
           if (Date.now() < (this._failCooldown.get(`${base}:entry`) ?? 0)) continue;
-          const best = await this.findBestPerp(base, adapters, ratesByExchange);
-          if (!best || best.score.annualized < p.min_rate || best.score.consistency < p.min_consistency) continue;
-          scoredOpps.push({ symbol: base, spotExchange: spotExName, perpExchange: best.exchange, annualized: best.score.annualized, score: best.score });
+          const candidates = await this.findPerpCandidates(base, adapters, ratesByExchange);
+          for (const cand of candidates) {
+            if (cand.score.annualized < p.min_rate || cand.score.consistency < p.min_consistency) continue;
+            scoredOpps.push({ symbol: base, spotExchange: spotExName, perpExchange: cand.exchange, annualized: cand.score.annualized, score: cand.score });
+          }
         }
       } catch { /* no spot */ }
     }
@@ -339,8 +342,9 @@ export class SpotPerpArbStrategy implements Strategy {
     return scoreFunding(adapter, symbol, exchangeName, this.params.history_periods, this._fundingScoreCache);
   }
 
-  private async findBestPerp(symbol: string, adapters: Map<string, ExchangeAdapter>, ratesByExchange: RateMap): Promise<{ exchange: string; rate: number; score: FundingScore } | null> {
-    let best: { exchange: string; rate: number; score: FundingScore } | null = null;
+  /** Find all perp exchanges for a symbol, sorted by annualized rate (highest first). */
+  private async findPerpCandidates(symbol: string, adapters: Map<string, ExchangeAdapter>, ratesByExchange: RateMap): Promise<{ exchange: string; rate: number; score: FundingScore }[]> {
+    const candidates: { exchange: string; rate: number; score: FundingScore }[] = [];
     for (const [exName, adapter] of adapters) {
       const perpSym = getPerpSymbol(symbol, exName);
       const ri = findRate(ratesByExchange, exName, perpSym) ?? findRate(ratesByExchange, exName, symbol);
@@ -348,9 +352,10 @@ export class SpotPerpArbStrategy implements Strategy {
       const score = await this.scoreFundingLocal(adapter, perpSym, exName)
         ?? await this.scoreFundingLocal(adapter, symbol, exName);
       if (!score) continue;
-      if (!best || score.annualized > best.score.annualized) best = { exchange: exName, rate: ri.rate, score };
+      candidates.push({ exchange: exName, rate: ri.rate, score });
     }
-    return best;
+    candidates.sort((a, b) => b.score.annualized - a.score.annualized);
+    return candidates;
   }
 
   private calcAnnualized(pos: SpotPerpPosition, ratesByExchange: RateMap): number | null {

@@ -306,8 +306,14 @@ export async function fetchRates(
       }
     }
 
+    // For non-aster exchanges, set fundingHours from static map if not already set
+    if (exchangeName !== "aster") {
+      const defaultFH = getFundingHours(exchangeName);
+      for (const m of withRates) { if (m.fundingHours == null) m.fundingHours = defaultFH; }
+    }
+
     return withRates
-      .filter(m => m.fundingHours != null) // skip symbols with unknown funding period (aster not yet bootstrapped)
+      .filter(m => m.fundingHours != null) // skip aster symbols with unknown funding period
       .map(m => ({
         symbol: m.symbol,
         rate: parseFloat(m.fundingRate!),
