@@ -233,7 +233,7 @@ const arbConservative: Preset = {
   buildConfig: (exchange, _symbol) => ({
     name: `arb-conservative-${Date.now().toString(36)}`,
     exchange,
-    symbol: "ETH",
+    symbol: "ALL",
     strategy: {
       type: "funding-arb",
       min_spread: 30,
@@ -257,7 +257,7 @@ const arbStandard: Preset = {
   buildConfig: (exchange, _symbol) => ({
     name: `arb-standard-${Date.now().toString(36)}`,
     exchange,
-    symbol: "ETH",
+    symbol: "ALL",
     strategy: {
       type: "funding-arb",
       min_spread: 20,
@@ -281,7 +281,7 @@ const arbAggressive: Preset = {
   buildConfig: (exchange, _symbol) => ({
     name: `arb-aggressive-${Date.now().toString(36)}`,
     exchange,
-    symbol: "ETH",
+    symbol: "ALL",
     strategy: {
       type: "funding-arb",
       min_spread: 10,

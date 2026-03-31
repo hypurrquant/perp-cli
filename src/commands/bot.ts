@@ -200,7 +200,7 @@ export function registerBotCommands(
       const config: import("../bot/config.js").BotConfig = {
         name: `arb-funding-${Date.now().toString(36)}`,
         exchange: primaryAdapter.name,
-        symbol: "ETH", // multi-symbol scanning
+        symbol: "ALL", // multi-symbol scanning
         strategy: {
           type: "funding-arb",
           min_spread: parseFloat(opts.minSpread),
