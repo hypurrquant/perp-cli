@@ -288,7 +288,7 @@ export function registerBotCommands(
       const config: import("../bot/config.js").BotConfig = {
         name: `delta-neutral-${Date.now().toString(36)}`,
         exchange: primaryAdapter.name,
-        symbol: "ETH",
+        symbol: "ALL",
         strategy: {
           type: "spot-perp-arb",
           exchanges: exchangeNames,
