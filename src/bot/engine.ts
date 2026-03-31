@@ -6,6 +6,9 @@ import { getStrategy } from "./strategy-registry.js";
 import type { StrategyAction, StrategyContext, EnrichedSnapshot } from "./strategy-types.js";
 import type { BotTuiState, ExchangeBalance, StateListener, LogListener } from "./tui/index.js";
 import chalk from "chalk";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 // Auto-register built-in strategies
 import "./strategies/grid-strategy.js";
@@ -127,15 +130,26 @@ export async function runBot(
   let tuiUnmount: (() => void) | undefined;
   let paused = false;
 
-  // Wrap log for TUI/JSON modes
+  // Log file: always write to ~/.perp/logs/<bot-name>.log
+  const logDir = join(homedir(), ".perp", "logs");
+  try { mkdirSync(logDir, { recursive: true }); } catch { /* ignore */ }
+  const logFile = join(logDir, `${config.name}.log`);
+  const writeLog = (msg: string) => {
+    const ts = new Date().toISOString();
+    const clean = msg.replace(/\x1b\[[0-9;]*m/g, ""); // strip ANSI colors
+    try { appendFileSync(logFile, `${ts} ${clean}\n`); } catch { /* ignore */ }
+  };
+
+  // Wrap log for TUI/JSON modes + always write to file
   let effectiveLog: BotLog = mode === "json"
-    ? () => {} // JSON mode suppresses console log; NDJSON emitted per tick
+    ? (msg: string) => { writeLog(msg); } // JSON mode suppresses console; still log to file
     : mode === "tui"
-      ? (msg: string) => tuiEmitter.emitLog(msg)
-      : log;
+      ? (msg: string) => { tuiEmitter.emitLog(msg); writeLog(msg); }
+      : (msg: string) => { log(msg); writeLog(msg); };
 
   // Update strategy context to use effective log
   strategyCtx.log = effectiveLog;
+  effectiveLog(`  Log file: ${logFile}`);
 
   if (mode === "tui") {
     try {
