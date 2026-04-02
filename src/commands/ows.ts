@@ -64,6 +64,29 @@ async function getEvmBalances(address: string, isTestnet: boolean) {
   return balances;
 }
 
+// ── OWS CLI subprocess helper ──
+
+async function runOwsCli(args: string[], timeout = 30000): Promise<{ stdout: string; stderr: string }> {
+  const { resolve: pathResolve } = await import("path");
+  const { existsSync } = await import("fs");
+  const { spawnSync } = await import("child_process");
+
+  const owsBin = [
+    pathResolve(process.env.HOME || "~", ".ows", "bin", "ows"),
+    "/usr/local/bin/ows",
+  ].find(p => existsSync(p));
+
+  if (!owsBin) {
+    throw new Error("OWS CLI not found. Install: curl -fsSL https://docs.openwallet.sh/install.sh | bash");
+  }
+
+  const owsEnv = { ...process.env, PATH: `${pathResolve(process.env.HOME || "~", ".ows", "bin")}:${process.env.PATH}` };
+  const proc = spawnSync(owsBin, args, { encoding: "utf-8", timeout, env: owsEnv });
+
+  if (proc.error) throw new Error(`OWS CLI failed: ${proc.error.message}`);
+  return { stdout: (proc.stdout || "").trim(), stderr: (proc.stderr || "").trim() };
+}
+
 // ── Register OWS commands ──
 
 export function registerOwsCommands(program: Command, isJson: () => boolean) {
@@ -689,6 +712,94 @@ export function registerOwsCommands(program: Command, isJson: () => boolean) {
         const msg = e instanceof Error ? e.message : String(e);
         if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
         console.error(chalk.red(`\n  OWS setup error: ${msg}\n`));
+        process.exit(1);
+      }
+    });
+
+  // ── Backup / Restore ──
+
+  ows
+    .command("backup")
+    .description("Backup entire OWS vault (encrypted archive)")
+    .option("-o, --output <path>", "Output file path", `ows-backup-${new Date().toISOString().split("T")[0]}.tar.gz.enc`)
+    .action(async (opts: { output: string }) => {
+      try {
+        const { stdout, stderr } = await runOwsCli(["backup", "--output", opts.output]);
+        if (isJson()) return printJson(jsonOk({ backup: opts.output, output: stderr || stdout }));
+        if (stderr) console.log("\n" + stderr);
+        if (stdout) console.log(stdout);
+        console.log();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
+        console.error(chalk.red(`\n  OWS error: ${msg}\n`));
+        process.exit(1);
+      }
+    });
+
+  ows
+    .command("restore <file>")
+    .description("Restore OWS vault from encrypted backup")
+    .action(async (file: string) => {
+      try {
+        const { stdout, stderr } = await runOwsCli(["restore", "--input", file]);
+        if (isJson()) return printJson(jsonOk({ restored: file, output: stderr || stdout }));
+        if (stderr) console.log("\n" + stderr);
+        if (stdout) console.log(stdout);
+        console.log();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
+        console.error(chalk.red(`\n  OWS error: ${msg}\n`));
+        process.exit(1);
+      }
+    });
+
+  // ── Key Rotation ──
+
+  ows
+    .command("rotate")
+    .description("Rotate wallet keys (create new wallet + transfer assets)")
+    .requiredOption("--from <name>", "Source wallet name")
+    .requiredOption("--to <name>", "Target wallet name (created if not exists)")
+    .option("--chain <chain>", "Chain to rotate on", "evm")
+    .action(async (opts: { from: string; to: string; chain: string }) => {
+      try {
+        const chainMap: Record<string, string> = { evm: "eip155:1", arbitrum: "eip155:42161", base: "eip155:8453", solana: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp" };
+        const chainArg = chainMap[opts.chain] || opts.chain;
+        const { stdout, stderr } = await runOwsCli(["wallet", "rotate", "--from", opts.from, "--to", opts.to, "--chain", chainArg], 120000);
+        if (isJson()) return printJson(jsonOk({ from: opts.from, to: opts.to, chain: chainArg, output: stderr || stdout }));
+        if (stderr) console.log("\n" + stderr);
+        if (stdout) console.log(stdout);
+        console.log();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
+        console.error(chalk.red(`\n  OWS error: ${msg}\n`));
+        process.exit(1);
+      }
+    });
+
+  // ── Pay Discover (x402 service directory) ──
+
+  ows
+    .command("discover")
+    .description("Discover x402-enabled services (Bazaar directory)")
+    .option("-q, --query <search>", "Filter services by keyword")
+    .option("--limit <n>", "Max results", "20")
+    .action(async (opts: { query?: string; limit: string }) => {
+      try {
+        const args = ["pay", "discover", "--limit", opts.limit];
+        if (opts.query) args.push("--query", opts.query);
+        const { stdout, stderr } = await runOwsCli(args);
+        if (isJson()) return printJson(jsonOk({ services: stdout || stderr }));
+        if (stderr) console.log("\n" + stderr);
+        if (stdout) console.log("\n" + stdout);
+        console.log();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
+        console.error(chalk.red(`\n  OWS error: ${msg}\n`));
         process.exit(1);
       }
     });
