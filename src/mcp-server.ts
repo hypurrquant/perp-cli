@@ -1358,7 +1358,7 @@ server.resource(
             use: { usage: "perp wallet use <name>", description: "Set active wallet (OWS or legacy)" },
             remove: { usage: "perp wallet remove <name>", description: "Remove a wallet" },
             rename: { usage: "perp wallet rename <oldName> <newName>", description: "Rename a wallet" },
-            ows: { usage: "perp wallet ows <sub>", description: "OWS vault: create, list, info, delete" },
+            ows: { usage: "perp wallet ows <sub>", description: "OWS vault: create, list, info, delete, policy, key, fund, pay, setup" },
           },
         },
         history: {

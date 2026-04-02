@@ -346,8 +346,8 @@ export function registerWalletCommands(program: Command, isJson: () => boolean) 
   wallet
     .command("import <privateKey>")
     .description("Import a private key into OWS encrypted vault")
-    .option("-n, --name <name>", "Wallet alias name", "imported")
-    .option("-c, --chain <chain>", "Key type: evm (default) or solana", "evm")
+    .option("--name <name>", "Wallet alias name", "imported")
+    .option("--chain <chain>", "Key type: evm (default) or solana", "evm")
     .option("--mnemonic", "Import as mnemonic phrase instead of private key")
     .option("--legacy <chain>", "Legacy mode: import to wallets.json (solana or evm)")
     .action(async (privateKey: string, opts: { name: string; chain: string; mnemonic?: boolean; legacy?: string }) => {
@@ -932,120 +932,5 @@ export function registerWalletCommands(program: Command, isJson: () => boolean) 
         console.log();
       }
     });
-
-  // ── OWS (Open Wallet Standard) integration ──
-
-  const owsCmd = wallet.command("ows").description("Open Wallet Standard (OWS) vault management");
-
-  owsCmd
-    .command("create <name>")
-    .description("Create a new OWS wallet (multi-chain: EVM + Solana)")
-    .option("--words <count>", "Mnemonic word count (12 or 24)", "12")
-    .action(async (name: string, opts: { words: string }) => {
-      try {
-        const ows = loadOws();
-        const w = ows.createWallet(name, "", parseInt(opts.words));
-
-        if (isJson()) return printJson(jsonOk({ id: w.id, name: w.name, accounts: w.accounts, createdAt: w.createdAt }));
-
-        console.log(chalk.cyan.bold("\n  OWS Wallet Created\n"));
-        console.log(`  Name: ${chalk.white.bold(w.name)}`);
-        console.log(`  ID:   ${chalk.gray(w.id)}`);
-        console.log();
-        for (const acct of w.accounts) {
-          const chain = acct.chainId.split(":")[0];
-          console.log(`  ${chalk.cyan(chain.padEnd(10))} ${chalk.green(acct.address)}`);
-        }
-        console.log(chalk.gray(`\n  Vault: ~/.ows/`));
-        console.log(chalk.cyan(`\n  Usage: perp --ows ${name} -e hl account balance\n`));
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
-        console.error(chalk.red(`\n  OWS error: ${msg}\n`));
-        process.exit(1);
-      }
-    });
-
-  owsCmd
-    .command("list")
-    .description("List all OWS wallets in the vault")
-    .action(async () => {
-      try {
-        const ows = loadOws();
-        const wallets = ows.listWallets();
-
-        if (isJson()) return printJson(jsonOk({ wallets }));
-
-        if (wallets.length === 0) {
-          console.log(chalk.gray("\n  No OWS wallets found."));
-          console.log(chalk.gray(`  Create one: ${chalk.cyan("perp wallet ows create <name>")}\n`));
-          return;
-        }
-
-        console.log(chalk.cyan.bold("\n  OWS Vault Wallets\n"));
-        const rows = wallets.map((w: { name: string; id: string; accounts: Array<{ chainId: string; address: string }>; createdAt: string }) => {
-          const evmAddr = w.accounts.find((a: { chainId: string }) => a.chainId.startsWith("eip155:"))?.address ?? "-";
-          const solAddr = w.accounts.find((a: { chainId: string }) => a.chainId.startsWith("solana:"))?.address ?? "-";
-          return [
-            chalk.white.bold(w.name),
-            chalk.green(evmAddr.slice(0, 10) + "..." + evmAddr.slice(-4)),
-            chalk.green(solAddr.slice(0, 6) + "..." + solAddr.slice(-4)),
-            chalk.gray(w.createdAt.split("T")[0]),
-          ];
-        });
-        console.log(makeTable(["Name", "EVM Address", "Solana Address", "Created"], rows));
-        console.log(chalk.gray(`\n  Usage: perp --ows <name> -e <exchange> <command>\n`));
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
-        console.error(chalk.red(`\n  OWS error: ${msg}\n`));
-        process.exit(1);
-      }
-    });
-
-  owsCmd
-    .command("info <name>")
-    .description("Show detailed OWS wallet info")
-    .action(async (name: string) => {
-      try {
-        const ows = loadOws();
-        const w = ows.getWallet(name);
-
-        if (isJson()) return printJson(jsonOk(w));
-
-        console.log(chalk.cyan.bold(`\n  OWS Wallet: ${w.name}\n`));
-        console.log(`  ID:      ${chalk.gray(w.id)}`);
-        console.log(`  Created: ${chalk.gray(w.createdAt)}`);
-        console.log();
-        for (const acct of w.accounts) {
-          console.log(`  ${chalk.cyan(acct.chainId.padEnd(40))} ${chalk.green(acct.address)}`);
-          console.log(`  ${chalk.gray(" ".repeat(40) + acct.derivationPath)}`);
-        }
-        console.log();
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
-        console.error(chalk.red(`\n  OWS error: ${msg}\n`));
-        process.exit(1);
-      }
-    });
-
-  owsCmd
-    .command("delete <name>")
-    .description("Delete an OWS wallet from the vault")
-    .action(async (name: string) => {
-      try {
-        const ows = loadOws();
-        const w = ows.getWallet(name);
-        ows.deleteWallet(name);
-
-        if (isJson()) return printJson(jsonOk({ deleted: name, id: w.id }));
-        console.log(chalk.yellow(`\n  OWS wallet "${name}" deleted from vault.\n`));
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
-        console.error(chalk.red(`\n  OWS error: ${msg}\n`));
-        process.exit(1);
-      }
-    });
 }
+

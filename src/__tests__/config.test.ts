@@ -3,6 +3,12 @@ import { loadPrivateKey, parseSolanaKeypair, isEvmPrivateKey } from "../config.j
 import { Keypair } from "@solana/web3.js";
 import bs58 from "bs58";
 
+// Mock OWS so it doesn't interfere with env var tests
+vi.mock("../settings.js", () => ({
+  loadSettings: () => ({ owsActiveWallet: "", defaultExchange: "" }),
+  saveSettings: () => {},
+}));
+
 describe("isEvmPrivateKey", () => {
   it("returns true for valid EVM private key", () => {
     const key = "0x" + "a".repeat(64);

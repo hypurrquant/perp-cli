@@ -74,6 +74,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   /** Inject an external EVM signer. Call before init() to skip LocalEvmSigner creation. */
   setSigner(signer: EvmSigner): void {
     this._evmSigner = signer;
+    this._address = signer.getAddress();
   }
 
   async init(): Promise<void> {
@@ -85,6 +86,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     // Initialize EVM signer if not externally injected (skip if no key — read-only mode)
     if (!this._evmSigner && this._privateKey) {
       this._evmSigner = await LocalEvmSigner.create(this._privateKey);
+      this._address = this._evmSigner.getAddress();
+    } else if (this._evmSigner && !this._address) {
       this._address = this._evmSigner.getAddress();
     }
 

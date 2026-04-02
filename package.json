@@ -4,7 +4,8 @@
   "description": "Multi-DEX Perpetual Futures CLI - Pacifica, Hyperliquid, Lighter, Aster",
   "bin": {
     "perp": "dist/index.js",
-    "perp-mcp": "dist/mcp-server.js"
+    "perp-mcp": "dist/mcp-server.js",
+    "perp-guardrail": "dist/guardrail/perp-guardrail.js"
   },
   "files": [
     "dist",

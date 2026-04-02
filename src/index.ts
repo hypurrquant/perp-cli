@@ -26,6 +26,7 @@ import { registerManageCommands } from "./commands/manage.js";
 // stream commands removed — WS feeds still used by dashboard/event-stream internally
 import { registerArbCommands } from "./commands/arb.js";
 import { registerWalletCommands } from "./commands/wallet.js";
+import { registerOwsCommands } from "./commands/ows.js";
 import { registerBridgeCommands } from "./commands/bridge.js";
 // deposit + withdraw merged into funds
 import { registerFundsCommands } from "./commands/funds.js";
@@ -274,6 +275,7 @@ registerManageCommands(program, getAdapter, isJson, getPacificaAdapter);
 // stream commands removed
 registerArbCommands(program, isJson, getAdapterForExchange);
 registerWalletCommands(program, isJson);
+registerOwsCommands(program, isJson);
 registerBridgeCommands(program, isJson);
 registerFundsCommands(
   program,

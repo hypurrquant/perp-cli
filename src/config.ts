@@ -67,7 +67,19 @@ export async function loadPrivateKey(exchange: Exchange, pkOverride?: string, wa
   // 1. CLI flag
   if (pkOverride) return pkOverride;
 
-  // 2. Exchange-specific env vars
+  // 2. OWS active wallet (highest priority after explicit flags)
+  try {
+    const { loadSettings } = await import("./settings.js");
+    const settings = loadSettings();
+    if (settings.owsActiveWallet) {
+      const owsKey = resolveOwsWallet(settings.owsActiveWallet);
+      if (owsKey) return owsKey;
+    }
+  } catch {
+    // settings module not available, skip
+  }
+
+  // 3. Exchange-specific env vars
   const envMap: Record<Exchange, string[]> = {
     pacifica: ["PACIFICA_PRIVATE_KEY", "pk"],
     hyperliquid: ["HYPERLIQUID_PRIVATE_KEY", "HL_PRIVATE_KEY"],
@@ -79,20 +91,8 @@ export async function loadPrivateKey(exchange: Exchange, pkOverride?: string, wa
     if (process.env[envVar]) return process.env[envVar]!;
   }
 
-  // 3. Generic fallback
+  // 4. Generic fallback
   if (process.env.PRIVATE_KEY) return process.env.PRIVATE_KEY;
-
-  // 4. OWS active wallet
-  try {
-    const { loadSettings } = await import("./settings.js");
-    const settings = loadSettings();
-    if (settings.owsActiveWallet) {
-      const owsKey = resolveOwsWallet(settings.owsActiveWallet);
-      if (owsKey) return owsKey;
-    }
-  } catch {
-    // settings module not available, skip
-  }
 
   // 5. Legacy: Active wallet from wallets.json
   try {
