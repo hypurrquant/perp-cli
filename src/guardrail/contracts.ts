@@ -70,4 +70,12 @@ export const ALLOWED_CHAINS: string[] = Object.keys(ALLOWED_CONTRACTS);
 export const DEFAULT_LIMITS = {
   max_tx_usd: 1000,
   max_daily_usd: 5000,
+  max_withdraw_usd: 500,
+  max_daily_withdraw_usd: 2000,
 };
+
+// ── Common blocked selectors ──
+export const DANGEROUS_SELECTORS = [
+  "0x095ea7b3",  // approve(address,uint256) — unlimited token approvals
+  "0x23b872dd",  // transferFrom(address,address,uint256)
+];

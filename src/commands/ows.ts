@@ -211,9 +211,12 @@ export function registerOwsCommands(program: Command, isJson: () => boolean) {
     .option("--expires <iso>", "Policy expiry (ISO-8601 timestamp)")
     .option("--executable <path>", "Path to custom policy executable")
     .option("--perp-defaults", "Auto-configure with perp-cli guardrail (DEX contracts + spending limits)")
-    .option("--max-tx-usd <amount>", "Max per-transaction USD (with --perp-defaults)", "1000")
-    .option("--max-daily-usd <amount>", "Max daily spending USD (with --perp-defaults)", "5000")
-    .action(async (opts: { id: string; name: string; chains?: string; expires?: string; executable?: string; perpDefaults?: boolean; maxTxUsd?: string; maxDailyUsd?: string }) => {
+    .option("--max-tx-usd <amount>", "Max per-transaction USD", "1000")
+    .option("--max-daily-usd <amount>", "Max daily spending USD", "5000")
+    .option("--max-withdraw-usd <amount>", "Max per-withdrawal USD", "500")
+    .option("--max-daily-withdraw-usd <amount>", "Max daily withdrawal USD", "2000")
+    .option("--block-approve", "Block approve() and transferFrom() calls")
+    .action(async (opts: { id: string; name: string; chains?: string; expires?: string; executable?: string; perpDefaults?: boolean; maxTxUsd?: string; maxDailyUsd?: string; maxWithdrawUsd?: string; maxDailyWithdrawUsd?: string; blockApprove?: boolean }) => {
       try {
         const o = loadOws();
         const rules: Array<Record<string, unknown>> = [];
@@ -238,7 +241,13 @@ export function registerOwsCommands(program: Command, isJson: () => boolean) {
           } catch {
             executablePath = pathResolve(process.cwd(), "node_modules/.bin/perp-guardrail");
           }
-          config = { max_tx_usd: parseInt(opts.maxTxUsd || "1000"), max_daily_usd: parseInt(opts.maxDailyUsd || "5000") };
+          config = {
+            max_tx_usd: parseInt(opts.maxTxUsd || "1000"),
+            max_daily_usd: parseInt(opts.maxDailyUsd || "5000"),
+            max_withdraw_usd: parseInt(opts.maxWithdrawUsd || "500"),
+            max_daily_withdraw_usd: parseInt(opts.maxDailyWithdrawUsd || "2000"),
+            ...(opts.blockApprove ? { block_selectors: ["0x095ea7b3", "0x23b872dd"] } : {}),
+          };
         }
 
         const policyDef: Record<string, unknown> = {
@@ -660,7 +669,13 @@ export function registerOwsCommands(program: Command, isJson: () => boolean) {
           created_at: new Date().toISOString(),
           rules: [{ type: "allowed_chains", chain_ids: ALLOWED_CHAINS }],
           executable: executablePath,
-          config: { max_tx_usd: parseInt(opts.maxTxUsd), max_daily_usd: parseInt(opts.maxDailyUsd) },
+          config: {
+            max_tx_usd: parseInt(opts.maxTxUsd),
+            max_daily_usd: parseInt(opts.maxDailyUsd),
+            max_withdraw_usd: Math.round(parseInt(opts.maxTxUsd) / 2),
+            max_daily_withdraw_usd: Math.round(parseInt(opts.maxDailyUsd) / 2.5),
+            block_selectors: ["0x095ea7b3", "0x23b872dd"],
+          },
           action: "deny",
         };
         try { o.deletePolicy(policyId); } catch { /* doesn't exist yet */ }
