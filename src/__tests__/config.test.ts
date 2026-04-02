@@ -91,7 +91,7 @@ describe("loadPrivateKey", () => {
   });
 
   it("throws when no key is found", async () => {
-    await expect(loadPrivateKey("pacifica")).rejects.toThrow("No private key configured");
+    await expect(loadPrivateKey("pacifica")).rejects.toThrow("No wallet configured");
   });
 
   it("prefers exchange-specific over generic", async () => {

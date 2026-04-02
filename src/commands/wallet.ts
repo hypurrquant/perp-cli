@@ -2,9 +2,15 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "fs";
 import { resolve } from "path";
+import { createRequire } from "node:module";
 import { formatUsd, makeTable, printJson, jsonOk } from "../utils.js";
 import { EXCHANGE_ENV_MAP, validateKey, loadEnvFile, setEnvVar, ENV_FILE } from "./init.js";
 import { loadSettings, saveSettings } from "../settings.js";
+
+const _require = createRequire(import.meta.url);
+function loadOws(): typeof import("@open-wallet-standard/core") {
+  return _require("@open-wallet-standard/core");
+}
 
 // ── Wallet store ──────────────────────────────────────────────
 
@@ -178,238 +184,274 @@ async function deriveEvmAddress(key: string): Promise<string> {
   return new ethers.Wallet(pk).address;
 }
 
+// ── Legacy helpers ───────────────────────────────────────────
+
+async function _legacyGenerate(chain: string, name: string | undefined, isJson: () => boolean) {
+  if (chain === "solana") {
+    const { Keypair } = await import("@solana/web3.js");
+    const bs58 = (await import("bs58")).default;
+    const keypair = Keypair.generate();
+    const address = keypair.publicKey.toBase58();
+    const privkey = bs58.encode(keypair.secretKey);
+    const walletName = name || "default-sol";
+    const store = loadStore();
+    if (store.wallets[walletName]) { console.error(chalk.red(`\n  Wallet "${walletName}" already exists.\n`)); process.exit(1); }
+    store.wallets[walletName] = { name: walletName, type: "solana", address, privateKey: privkey, createdAt: new Date().toISOString() };
+    if (!store.active.pacifica) store.active.pacifica = walletName;
+    saveStore(store);
+    setEnvVar("PACIFICA_PRIVATE_KEY", privkey);
+    if (isJson()) return printJson(jsonOk({ name: walletName, type: "solana", address, legacy: true }));
+    console.log(chalk.yellow.bold("\n  [Legacy] Solana Wallet Generated\n"));
+    console.log(`  Name:    ${chalk.white.bold(walletName)}`);
+    console.log(`  Address: ${chalk.green(address)}`);
+    console.log(chalk.gray(`  Saved:   ~/.perp/.env + wallets.json (unencrypted)`));
+    console.log(chalk.yellow(`\n  Consider: ${chalk.cyan("perp wallet migrate")} to move to OWS vault\n`));
+  } else if (chain === "evm") {
+    const { ethers } = await import("ethers");
+    const w = ethers.Wallet.createRandom();
+    const walletName = name || "default-evm";
+    const store = loadStore();
+    if (store.wallets[walletName]) { console.error(chalk.red(`\n  Wallet "${walletName}" already exists.\n`)); process.exit(1); }
+    store.wallets[walletName] = { name: walletName, type: "evm", address: w.address, privateKey: w.privateKey, createdAt: new Date().toISOString() };
+    if (!store.active.hyperliquid) store.active.hyperliquid = walletName;
+    if (!store.active.lighter) store.active.lighter = walletName;
+    saveStore(store);
+    setEnvVar("HL_PRIVATE_KEY", w.privateKey);
+    setEnvVar("LIGHTER_PRIVATE_KEY", w.privateKey);
+    if (isJson()) return printJson(jsonOk({ name: walletName, type: "evm", address: w.address, legacy: true }));
+    console.log(chalk.yellow.bold("\n  [Legacy] EVM Wallet Generated\n"));
+    console.log(`  Name:    ${chalk.white.bold(walletName)}`);
+    console.log(`  Address: ${chalk.green(w.address)}`);
+    console.log(chalk.gray(`  Saved:   ~/.perp/.env + wallets.json (unencrypted)`));
+    console.log(chalk.yellow(`\n  Consider: ${chalk.cyan("perp wallet migrate")} to move to OWS vault\n`));
+  } else {
+    console.error(chalk.red(`\n  Unknown chain: ${chain}. Use: solana or evm\n`));
+    process.exit(1);
+  }
+}
+
+async function _legacyImport(chain: string, privateKey: string, name: string, isJson: () => boolean) {
+  if (chain === "solana") {
+    const { Keypair } = await import("@solana/web3.js");
+    const bs58 = (await import("bs58")).default;
+    let address: string, normalizedKey: string;
+    try {
+      try { const bytes = bs58.decode(privateKey); const kp = Keypair.fromSecretKey(bytes); address = kp.publicKey.toBase58(); normalizedKey = bs58.encode(kp.secretKey); }
+      catch { const arr = JSON.parse(privateKey); const kp = Keypair.fromSecretKey(Uint8Array.from(arr)); address = kp.publicKey.toBase58(); normalizedKey = bs58.encode(kp.secretKey); }
+    } catch { console.error(chalk.red("\n  Invalid Solana private key.\n")); process.exit(1); return; }
+    const store = loadStore();
+    if (store.wallets[name]) { console.error(chalk.red(`\n  Wallet "${name}" already exists.\n`)); process.exit(1); }
+    store.wallets[name] = { name, type: "solana", address, privateKey: normalizedKey, createdAt: new Date().toISOString() };
+    if (!store.active.pacifica) store.active.pacifica = name;
+    saveStore(store);
+    setEnvVar("PACIFICA_PRIVATE_KEY", normalizedKey);
+    if (isJson()) return printJson(jsonOk({ name, type: "solana", address, legacy: true }));
+    console.log(chalk.yellow.bold("\n  [Legacy] Solana Key Imported\n"));
+    console.log(`  Name:    ${chalk.white.bold(name)}`);
+    console.log(`  Address: ${chalk.green(address)}\n`);
+  } else if (chain === "evm") {
+    const { ethers } = await import("ethers");
+    const pk = privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
+    let address: string;
+    try { address = new ethers.Wallet(pk).address; } catch { console.error(chalk.red("\n  Invalid EVM private key.\n")); process.exit(1); return; }
+    const store = loadStore();
+    if (store.wallets[name]) { console.error(chalk.red(`\n  Wallet "${name}" already exists.\n`)); process.exit(1); }
+    store.wallets[name] = { name, type: "evm", address, privateKey: pk, createdAt: new Date().toISOString() };
+    if (!store.active.hyperliquid) store.active.hyperliquid = name;
+    if (!store.active.lighter) store.active.lighter = name;
+    saveStore(store);
+    setEnvVar("HL_PRIVATE_KEY", pk);
+    setEnvVar("LIGHTER_PRIVATE_KEY", pk);
+    if (isJson()) return printJson(jsonOk({ name, type: "evm", address, legacy: true }));
+    console.log(chalk.yellow.bold("\n  [Legacy] EVM Key Imported\n"));
+    console.log(`  Name:    ${chalk.white.bold(name)}`);
+    console.log(`  Address: ${chalk.green(address)}\n`);
+  } else {
+    console.error(chalk.red(`\n  Unknown chain: ${chain}. Use: solana or evm\n`));
+    process.exit(1);
+  }
+}
+
 // ── Commands ──────────────────────────────────────────────────
 
 export function registerWalletCommands(program: Command, isJson: () => boolean) {
   const wallet = program.command("wallet").description("Wallet management & on-chain balances");
 
-  // ── generate ──
-
-  const generate = wallet.command("generate").description("Generate a new wallet keypair");
-
-  generate
-    .command("solana")
-    .description("Generate a new Solana keypair")
-    .option("-n, --name <name>", "Wallet alias name", "default-sol")
-    .action(async (opts: { name: string }) => {
-      const { Keypair } = await import("@solana/web3.js");
-      const bs58 = (await import("bs58")).default;
-
-      const keypair = Keypair.generate();
-      const address = keypair.publicKey.toBase58();
-      const privkey = bs58.encode(keypair.secretKey);
-
-      const store = loadStore();
-      if (store.wallets[opts.name]) {
-        console.error(chalk.red(`\n  Wallet "${opts.name}" already exists. Use a different name or 'wallet remove' first.\n`));
-        process.exit(1);
-      }
-
-      store.wallets[opts.name] = {
-        name: opts.name,
-        type: "solana",
-        address,
-        privateKey: privkey,
-        createdAt: new Date().toISOString(),
-      };
-      if (!store.active.pacifica) store.active.pacifica = opts.name;
-      saveStore(store);
-
-      // Also write to .env so loadPrivateKey finds it immediately
-      setEnvVar("PACIFICA_PRIVATE_KEY", privkey);
-
-      if (isJson()) return printJson(jsonOk({ name: opts.name, type: "solana", address }));
-
-      console.log(chalk.cyan.bold("\n  New Solana Wallet\n"));
-      console.log(`  Name:    ${chalk.white.bold(opts.name)}`);
-      console.log(`  Address: ${chalk.green(address)}`);
-      console.log(`  Saved:   ${chalk.gray("~/.perp/.env + wallets.json")}`);
-      if (store.active.pacifica === opts.name) {
-        console.log(chalk.cyan(`\n  Active for: pacifica`));
-      }
-      console.log(chalk.red.bold("\n  Fund this wallet before trading!\n"));
-    });
-
-  generate
-    .command("evm")
-    .description("Generate a new EVM wallet")
-    .option("-n, --name <name>", "Wallet alias name", "default-evm")
-    .action(async (opts: { name: string }) => {
-      const { ethers } = await import("ethers");
-
-      const w = ethers.Wallet.createRandom();
-
-      const store = loadStore();
-      if (store.wallets[opts.name]) {
-        console.error(chalk.red(`\n  Wallet "${opts.name}" already exists. Use a different name or 'wallet remove' first.\n`));
-        process.exit(1);
-      }
-
-      store.wallets[opts.name] = {
-        name: opts.name,
-        type: "evm",
-        address: w.address,
-        privateKey: w.privateKey,
-        createdAt: new Date().toISOString(),
-      };
-      if (!store.active.hyperliquid) store.active.hyperliquid = opts.name;
-      if (!store.active.lighter) store.active.lighter = opts.name;
-      saveStore(store);
-
-      // Also write to .env so loadPrivateKey finds it immediately
-      setEnvVar("HL_PRIVATE_KEY", w.privateKey);
-      setEnvVar("LIGHTER_PRIVATE_KEY", w.privateKey);
-
-      if (isJson()) return printJson(jsonOk({ name: opts.name, type: "evm", address: w.address }));
-
-      console.log(chalk.cyan.bold("\n  New EVM Wallet\n"));
-      console.log(`  Name:    ${chalk.white.bold(opts.name)}`);
-      console.log(`  Address: ${chalk.green(w.address)}`);
-      console.log(`  Saved:   ${chalk.gray("~/.perp/.env + wallets.json")}`);
-      const activeFor = Object.entries(store.active)
-        .filter(([, v]) => v === opts.name)
-        .map(([k]) => k);
-      if (activeFor.length) console.log(chalk.cyan(`\n  Active for: ${activeFor.join(", ")}`));
-      console.log(chalk.red.bold("\n  Fund this wallet before trading!\n"));
-    });
-
-  // ── import ──
-
-  const importCmd = wallet.command("import").description("Import an existing private key");
-
-  importCmd
-    .command("solana <privateKey>")
-    .description("Import a Solana private key (base58 or JSON array)")
-    .option("-n, --name <name>", "Wallet alias name", "imported-sol")
-    .action(async (privateKey: string, opts: { name: string }) => {
-      let address: string;
-      let normalizedKey = privateKey;
-      try {
-        const { Keypair } = await import("@solana/web3.js");
-        const bs58 = (await import("bs58")).default;
-        try {
-          const bytes = bs58.decode(privateKey);
-          const kp = Keypair.fromSecretKey(bytes);
-          address = kp.publicKey.toBase58();
-          normalizedKey = bs58.encode(kp.secretKey);
-        } catch {
-          const arr = JSON.parse(privateKey);
-          const kp = Keypair.fromSecretKey(Uint8Array.from(arr));
-          address = kp.publicKey.toBase58();
-          normalizedKey = bs58.encode(kp.secretKey);
-        }
-      } catch {
-        console.error(chalk.red("\n  Invalid Solana private key.\n"));
-        process.exit(1);
-      }
-
-      const store = loadStore();
-      if (store.wallets[opts.name]) {
-        console.error(chalk.red(`\n  Wallet "${opts.name}" already exists.\n`));
-        process.exit(1);
-      }
-
-      store.wallets[opts.name] = {
-        name: opts.name, type: "solana", address, privateKey: normalizedKey,
-        createdAt: new Date().toISOString(),
-      };
-      if (!store.active.pacifica) store.active.pacifica = opts.name;
-      saveStore(store);
-
-      // Also write to .env so loadPrivateKey finds it immediately
-      setEnvVar("PACIFICA_PRIVATE_KEY", normalizedKey);
-
-      if (isJson()) return printJson(jsonOk({ name: opts.name, type: "solana", address }));
-
-      console.log(chalk.cyan.bold("\n  Solana Wallet Imported\n"));
-      console.log(`  Name:    ${chalk.white.bold(opts.name)}`);
-      console.log(`  Address: ${chalk.green(address)}\n`);
-    });
-
-  importCmd
-    .command("evm <privateKey>")
-    .description("Import an EVM private key (0x hex)")
-    .option("-n, --name <name>", "Wallet alias name", "imported-evm")
-    .action(async (privateKey: string, opts: { name: string }) => {
-      const { ethers } = await import("ethers");
-      const pk = privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
-      let address: string;
-      try {
-        address = new ethers.Wallet(pk).address;
-      } catch {
-        console.error(chalk.red("\n  Invalid EVM private key.\n"));
-        process.exit(1);
-      }
-
-      const store = loadStore();
-      if (store.wallets[opts.name]) {
-        console.error(chalk.red(`\n  Wallet "${opts.name}" already exists.\n`));
-        process.exit(1);
-      }
-
-      store.wallets[opts.name] = {
-        name: opts.name, type: "evm", address, privateKey: pk,
-        createdAt: new Date().toISOString(),
-      };
-      if (!store.active.hyperliquid) store.active.hyperliquid = opts.name;
-      if (!store.active.lighter) store.active.lighter = opts.name;
-      saveStore(store);
-
-      // Also write to .env so loadPrivateKey finds it immediately
-      setEnvVar("HL_PRIVATE_KEY", pk);
-      setEnvVar("LIGHTER_PRIVATE_KEY", pk);
-
-      if (isJson()) return printJson(jsonOk({ name: opts.name, type: "evm", address }));
-
-      console.log(chalk.cyan.bold("\n  EVM Wallet Imported\n"));
-      console.log(`  Name:    ${chalk.white.bold(opts.name)}`);
-      console.log(`  Address: ${chalk.green(address)}\n`);
-    });
-
-  // ── use (set active wallet for exchange) ──
+  // ── generate (OWS — creates multi-chain wallet in encrypted vault) ──
 
   wallet
-    .command("use <name> [exchange]")
-    .description("Set active wallet for exchange (auto-detects if omitted)")
-    .option("--for <exchange>", "Exchange to bind (legacy alias)")
-    .action(async (name: string, exchangeArg: string | undefined, opts: { for?: string }) => {
+    .command("generate [name]")
+    .description("Generate a new wallet (OWS encrypted vault, multi-chain)")
+    .option("--words <count>", "Mnemonic word count (12 or 24)", "12")
+    .option("--show-mnemonic", "Display the mnemonic phrase (CAUTION)")
+    .option("--legacy <chain>", "Legacy mode: generate solana or evm key (unencrypted)")
+    .action(async (name: string | undefined, opts: { words: string; showMnemonic?: boolean; legacy?: string }) => {
+      // Legacy mode for backward compat
+      if (opts.legacy) {
+        return _legacyGenerate(opts.legacy, name, isJson);
+      }
+
+      const walletName = name || "default";
+      try {
+        const ows = loadOws();
+        const w = ows.createWallet(walletName, "", parseInt(opts.words));
+
+        // Set as active wallet
+        const { loadSettings: ls, saveSettings: ss } = await import("../settings.js");
+        const settings = ls();
+        if (!settings.owsActiveWallet) {
+          settings.owsActiveWallet = walletName;
+          ss(settings);
+        }
+
+        if (isJson()) {
+          const data: Record<string, unknown> = {
+            id: w.id, name: w.name, accounts: w.accounts, createdAt: w.createdAt,
+          };
+          if (opts.showMnemonic) data.mnemonic = ows.exportWallet(walletName);
+          return printJson(jsonOk(data));
+        }
+
+        console.log(chalk.cyan.bold("\n  Wallet Created (OWS Encrypted Vault)\n"));
+        console.log(`  Name: ${chalk.white.bold(w.name)}`);
+        console.log(`  ID:   ${chalk.gray(w.id)}`);
+        console.log();
+        const evmAcct = w.accounts.find((a: { chainId: string }) => a.chainId.startsWith("eip155:"));
+        const solAcct = w.accounts.find((a: { chainId: string }) => a.chainId.startsWith("solana:"));
+        if (evmAcct) console.log(`  EVM:    ${chalk.green(evmAcct.address)}`);
+        if (solAcct) console.log(`  Solana: ${chalk.green(solAcct.address)}`);
+        console.log(chalk.gray(`\n  Vault: ~/.ows/ (AES-256-GCM encrypted)`));
+        if (settings.owsActiveWallet === walletName) {
+          console.log(chalk.cyan(`  Active: yes (used by all exchanges)`));
+        }
+        if (opts.showMnemonic) {
+          const mnemonic = ows.exportWallet(walletName);
+          console.log(chalk.red.bold(`\n  Mnemonic: ${mnemonic}`));
+          console.log(chalk.red("  Write this down and store it safely!"));
+        }
+        console.log(chalk.red.bold("\n  Fund this wallet before trading!\n"));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isJson()) {
+          const { jsonError } = await import("../utils.js");
+          return printJson(jsonError("OWS_ERROR", msg));
+        }
+        console.error(chalk.red(`\n  Error: ${msg}\n`));
+        process.exit(1);
+      }
+    });
+
+  // ── import (OWS by default — imports key into encrypted vault) ──
+
+  wallet
+    .command("import <privateKey>")
+    .description("Import a private key into OWS encrypted vault")
+    .option("-n, --name <name>", "Wallet alias name", "imported")
+    .option("-c, --chain <chain>", "Key type: evm (default) or solana", "evm")
+    .option("--mnemonic", "Import as mnemonic phrase instead of private key")
+    .option("--legacy <chain>", "Legacy mode: import to wallets.json (solana or evm)")
+    .action(async (privateKey: string, opts: { name: string; chain: string; mnemonic?: boolean; legacy?: string }) => {
+      // Legacy mode
+      if (opts.legacy) {
+        return _legacyImport(opts.legacy, privateKey, opts.name, isJson);
+      }
+
+      try {
+        const ows = loadOws();
+        let w;
+        if (opts.mnemonic) {
+          w = ows.importWalletMnemonic(opts.name, privateKey);
+        } else {
+          w = ows.importWalletPrivateKey(opts.name, privateKey, "", undefined, opts.chain);
+        }
+
+        // Set as active wallet if none set
+        const { loadSettings: ls, saveSettings: ss } = await import("../settings.js");
+        const settings = ls();
+        if (!settings.owsActiveWallet) {
+          settings.owsActiveWallet = opts.name;
+          ss(settings);
+        }
+
+        if (isJson()) return printJson(jsonOk({
+          id: w.id, name: w.name, accounts: w.accounts,
+        }));
+
+        console.log(chalk.cyan.bold("\n  Key Imported to OWS Vault\n"));
+        console.log(`  Name: ${chalk.white.bold(w.name)}`);
+        const evmAcct = w.accounts.find((a: { chainId: string }) => a.chainId.startsWith("eip155:"));
+        const solAcct = w.accounts.find((a: { chainId: string }) => a.chainId.startsWith("solana:"));
+        if (evmAcct) console.log(`  EVM:    ${chalk.green(evmAcct.address)}`);
+        if (solAcct) console.log(`  Solana: ${chalk.green(solAcct.address)}`);
+        console.log(chalk.gray(`\n  Encrypted in ~/.ows/ vault`));
+        if (settings.owsActiveWallet === opts.name) {
+          console.log(chalk.cyan(`  Active: yes (used by all exchanges)`));
+        }
+        console.log();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isJson()) {
+          const { jsonError } = await import("../utils.js");
+          return printJson(jsonError("OWS_ERROR", msg));
+        }
+        console.error(chalk.red(`\n  Error: ${msg}\n`));
+        process.exit(1);
+      }
+    });
+
+  // ── use (set active wallet — OWS first, legacy fallback) ──
+
+  wallet
+    .command("use <name>")
+    .description("Set active wallet (OWS or legacy)")
+    .action(async (name: string) => {
+      // Try OWS first
+      try {
+        const ows = loadOws();
+        const w = ows.getWallet(name);
+
+        const { loadSettings: ls, saveSettings: ss } = await import("../settings.js");
+        const settings = ls();
+        settings.owsActiveWallet = name;
+        ss(settings);
+
+        const evmAddr = w.accounts.find((a: { chainId: string }) => a.chainId.startsWith("eip155:"))?.address ?? "-";
+        const solAddr = w.accounts.find((a: { chainId: string }) => a.chainId.startsWith("solana:"))?.address ?? "-";
+
+        if (isJson()) return printJson(jsonOk({
+          wallet: name, type: "ows",
+          evm: evmAddr, solana: solAddr,
+          activeFor: "all exchanges",
+        }));
+
+        console.log(chalk.green(`\n  ${chalk.white.bold(name)} is now the active wallet (all exchanges)`));
+        console.log(`  EVM:    ${chalk.green(evmAddr)}`);
+        console.log(`  Solana: ${chalk.green(solAddr)}\n`);
+        return;
+      } catch {
+        // Not an OWS wallet — try legacy
+      }
+
       const store = loadStore();
       const entry = store.wallets[name];
       if (!entry) {
-        console.error(chalk.red(`\n  Wallet "${name}" not found. Run 'perp wallet list' to see available wallets.\n`));
+        console.error(chalk.red(`\n  Wallet "${name}" not found in OWS vault or legacy store.\n`));
+        console.error(chalk.gray(`  Create: perp wallet generate ${name}`));
+        console.error(chalk.gray(`  Import: perp wallet import <key> -n ${name}\n`));
         process.exit(1);
       }
 
-      // Resolve exchange: positional arg > --for flag > auto-detect from wallet type
-      const rawExchange = exchangeArg || opts.for;
-      let exchanges: string[];
-
-      if (rawExchange) {
-        const ex = rawExchange.toLowerCase();
-        const needsSolana = ex === "pacifica";
-        if (needsSolana && entry.type !== "solana") {
-          console.error(chalk.red(`\n  Pacifica requires a Solana wallet. "${name}" is EVM.\n`));
-          process.exit(1);
-        }
-        if (!needsSolana && entry.type !== "evm") {
-          console.error(chalk.red(`\n  ${ex} requires an EVM wallet. "${name}" is Solana.\n`));
-          process.exit(1);
-        }
-        exchanges = [ex];
-      } else {
-        // Auto-detect from wallet type
-        exchanges = entry.type === "solana" ? ["pacifica"] : ["hyperliquid", "lighter"];
-      }
-
+      const exchanges = entry.type === "solana" ? ["pacifica"] : ["hyperliquid", "lighter"];
       for (const exchange of exchanges) {
         store.active[exchange] = name;
       }
       saveStore(store);
 
-      if (isJson()) return printJson(jsonOk({ exchanges, wallet: name, address: entry.address }));
+      if (isJson()) return printJson(jsonOk({ wallet: name, type: "legacy", exchanges, address: entry.address }));
 
       console.log(chalk.green(`\n  ${chalk.white.bold(name)} is now active for ${chalk.cyan(exchanges.join(", "))}`));
-      console.log(chalk.gray(`  Address: ${entry.address}\n`));
+      console.log(chalk.gray(`  Address: ${entry.address}`));
+      console.log(chalk.yellow(`  Note: consider migrating to OWS: perp wallet migrate\n`));
     });
 
   // ── set (configure exchange key → ~/.perp/.env) ──
@@ -548,54 +590,109 @@ export function registerWalletCommands(program: Command, isJson: () => boolean) 
       console.log();
     });
 
-  // ── list ──
+  // ── list (OWS + legacy) ──
 
   wallet
     .command("list")
-    .description("List all saved wallets (legacy wallets.json)")
+    .description("List all wallets (OWS vault + legacy)")
     .action(async () => {
+      const { loadSettings: ls } = await import("../settings.js");
+      const settings = ls();
+      const activeOwsWallet = settings.owsActiveWallet;
+
+      // OWS wallets
+      let owsWallets: Array<{ name: string; id: string; accounts: Array<{ chainId: string; address: string }>; createdAt: string }> = [];
+      try {
+        owsWallets = loadOws().listWallets();
+      } catch { /* OWS not available */ }
+
+      // Legacy wallets
       const store = loadStore();
-      const entries = Object.values(store.wallets);
+      const legacyEntries = Object.values(store.wallets);
 
-      if (isJson()) return printJson(jsonOk({ wallets: store.wallets, active: store.active }));
+      if (isJson()) {
+        return printJson(jsonOk({
+          ows: { wallets: owsWallets, active: activeOwsWallet },
+          legacy: { wallets: store.wallets, active: store.active },
+        }));
+      }
 
-      if (entries.length === 0) {
+      if (owsWallets.length === 0 && legacyEntries.length === 0) {
         console.log(chalk.gray("\n  No wallets found."));
-        console.log(chalk.gray("  Use 'perp wallet generate' or 'perp wallet import' to add one.\n"));
+        console.log(chalk.gray(`  Create: ${chalk.cyan("perp wallet generate [name]")}`));
+        console.log(chalk.gray(`  Import: ${chalk.cyan("perp wallet import <key>")}\n`));
         return;
       }
 
-      // Build reverse map: wallet name -> which exchanges it's active for
-      const activeMap = new Map<string, string[]>();
-      for (const [exchange, walletName] of Object.entries(store.active)) {
-        if (!activeMap.has(walletName)) activeMap.set(walletName, []);
-        activeMap.get(walletName)!.push(exchange);
+      if (owsWallets.length > 0) {
+        console.log(chalk.cyan.bold("\n  OWS Vault Wallets") + chalk.gray("  (encrypted, multi-chain)\n"));
+        const rows = owsWallets.map(w => {
+          const evmAddr = w.accounts.find(a => a.chainId.startsWith("eip155:"))?.address ?? "-";
+          const solAddr = w.accounts.find(a => a.chainId.startsWith("solana:"))?.address ?? "-";
+          const isActive = w.name === activeOwsWallet;
+          return [
+            (isActive ? chalk.cyan("*") + " " : "  ") + chalk.white.bold(w.name),
+            chalk.green(evmAddr.slice(0, 10) + "..." + evmAddr.slice(-4)),
+            chalk.green(solAddr.slice(0, 6) + "..." + solAddr.slice(-4)),
+            chalk.gray(w.createdAt.split("T")[0]),
+          ];
+        });
+        console.log(makeTable(["Name", "EVM Address", "Solana Address", "Created"], rows));
+        if (activeOwsWallet) {
+          console.log(chalk.gray(`  * = active wallet`));
+        }
       }
 
-      console.log(chalk.cyan.bold("\n  Saved Wallets\n"));
-      const rows = entries.map((w) => {
-        const activeFor = activeMap.get(w.name) ?? [];
-        const activeStr = activeFor.length
-          ? chalk.cyan(activeFor.join(", "))
-          : chalk.gray("-");
-        return [
-          chalk.white.bold(w.name),
-          w.type,
-          chalk.green(w.address.slice(0, 10) + "..." + w.address.slice(-6)),
-          activeStr,
-          chalk.gray(w.createdAt.split("T")[0]),
-        ];
-      });
-      console.log(makeTable(["Name", "Type", "Address", "Active For", "Created"], rows));
+      if (legacyEntries.length > 0) {
+        const activeMap = new Map<string, string[]>();
+        for (const [exchange, walletName] of Object.entries(store.active)) {
+          if (!activeMap.has(walletName)) activeMap.set(walletName, []);
+          activeMap.get(walletName)!.push(exchange);
+        }
+
+        console.log(chalk.yellow.bold("\n  Legacy Wallets") + chalk.gray("  (unencrypted, ~/.perp/wallets.json)\n"));
+        const rows = legacyEntries.map(w => {
+          const activeFor = activeMap.get(w.name) ?? [];
+          const activeStr = activeFor.length ? chalk.cyan(activeFor.join(", ")) : chalk.gray("-");
+          return [
+            chalk.white.bold(w.name),
+            w.type,
+            chalk.green(w.address.slice(0, 10) + "..." + w.address.slice(-6)),
+            activeStr,
+            chalk.gray(w.createdAt.split("T")[0]),
+          ];
+        });
+        console.log(makeTable(["Name", "Type", "Address", "Active For", "Created"], rows));
+        console.log(chalk.yellow(`  Tip: migrate to OWS with ${chalk.cyan("perp wallet migrate")}`));
+      }
       console.log();
     });
 
-  // ── remove ──
+  // ── remove (OWS + legacy) ──
 
   wallet
     .command("remove <name>")
-    .description("Remove a saved wallet")
+    .description("Remove a wallet (OWS or legacy)")
     .action(async (name: string) => {
+      // Try OWS first
+      try {
+        const ows = loadOws();
+        const w = ows.getWallet(name);
+        ows.deleteWallet(name);
+
+        // Clear active if this was the active wallet
+        const { loadSettings: ls, saveSettings: ss } = await import("../settings.js");
+        const settings = ls();
+        if (settings.owsActiveWallet === name) {
+          settings.owsActiveWallet = "";
+          ss(settings);
+        }
+
+        if (isJson()) return printJson(jsonOk({ removed: name, id: w.id, type: "ows" }));
+        console.log(chalk.yellow(`\n  OWS wallet "${name}" removed from vault.\n`));
+        return;
+      } catch { /* not in OWS — try legacy */ }
+
       const store = loadStore();
       if (!store.wallets[name]) {
         console.error(chalk.red(`\n  Wallet "${name}" not found.\n`));
@@ -604,16 +701,13 @@ export function registerWalletCommands(program: Command, isJson: () => boolean) 
 
       const address = store.wallets[name].address;
       delete store.wallets[name];
-
-      // Clear active references
       for (const [exchange, walletName] of Object.entries(store.active)) {
         if (walletName === name) delete store.active[exchange];
       }
       saveStore(store);
 
-      if (isJson()) return printJson(jsonOk({ removed: name, address }));
-
-      console.log(chalk.yellow(`\n  Wallet "${name}" removed.`));
+      if (isJson()) return printJson(jsonOk({ removed: name, address, type: "legacy" }));
+      console.log(chalk.yellow(`\n  Legacy wallet "${name}" removed.`));
       console.log(chalk.gray(`  Address was: ${address}\n`));
     });
 
@@ -765,5 +859,193 @@ export function registerWalletCommands(program: Command, isJson: () => boolean) 
       const rows = balances.map((b) => [chalk.white.bold(b.token), b.balance, b.usdValue || chalk.gray("-")]);
       console.log(makeTable(["Token", "Balance", "USD Value"], rows));
       console.log(chalk.gray(`\n  Network: Arbitrum ${opts.testnet ? "Sepolia" : "One"}\n`));
+    });
+
+  // ── migrate (legacy → OWS) ──
+
+  wallet
+    .command("migrate")
+    .description("Migrate legacy wallets (wallets.json) to OWS encrypted vault")
+    .action(async () => {
+      const store = loadStore();
+      const entries = Object.values(store.wallets);
+
+      if (entries.length === 0) {
+        if (isJson()) return printJson(jsonOk({ migrated: 0 }));
+        console.log(chalk.gray("\n  No legacy wallets to migrate.\n"));
+        return;
+      }
+
+      const ows = loadOws();
+      const results: Array<{ name: string; status: string; error?: string }> = [];
+
+      for (const entry of entries) {
+        try {
+          try { ows.getWallet(entry.name); results.push({ name: entry.name, status: "skipped (already in OWS)" }); continue; } catch { /* good — doesn't exist */ }
+
+          const chain = entry.type === "solana" ? "solana" : "evm";
+          let pk = entry.privateKey;
+
+          // OWS expects hex private keys — convert bs58 Solana keys
+          if (chain === "solana" && !pk.startsWith("0x")) {
+            try {
+              const bs58 = (await import("bs58")).default;
+              const bytes = bs58.decode(pk);
+              const keyBytes = bytes.length === 64 ? bytes.slice(0, 32) : bytes;
+              pk = "0x" + Buffer.from(keyBytes).toString("hex");
+            } catch {
+              // If it's already hex or a JSON array, try as-is
+            }
+          }
+
+          ows.importWalletPrivateKey(entry.name, pk, "", undefined, chain);
+          results.push({ name: entry.name, status: "migrated" });
+        } catch (e) {
+          results.push({ name: entry.name, status: "failed", error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      // Set first migrated wallet as active if none set
+      const { loadSettings: ls, saveSettings: ss } = await import("../settings.js");
+      const settings = ls();
+      if (!settings.owsActiveWallet) {
+        const firstMigrated = results.find(r => r.status === "migrated");
+        if (firstMigrated) {
+          settings.owsActiveWallet = firstMigrated.name;
+          ss(settings);
+        }
+      }
+
+      if (isJson()) return printJson(jsonOk({ results }));
+
+      console.log(chalk.cyan.bold("\n  Migration Results\n"));
+      for (const r of results) {
+        const icon = r.status === "migrated" ? chalk.green("OK") : r.status.startsWith("skipped") ? chalk.yellow("SKIP") : chalk.red("FAIL");
+        console.log(`  ${icon}  ${chalk.white.bold(r.name)} — ${r.status}${r.error ? ` (${r.error})` : ""}`);
+      }
+      const migrated = results.filter(r => r.status === "migrated").length;
+      if (migrated > 0) {
+        console.log(chalk.green(`\n  ${migrated} wallet(s) migrated to OWS vault.`));
+        console.log(chalk.gray("  Keys are now encrypted at ~/.ows/"));
+        console.log(chalk.yellow("  You can remove legacy wallets.json after verifying.\n"));
+      } else {
+        console.log();
+      }
+    });
+
+  // ── OWS (Open Wallet Standard) integration ──
+
+  const owsCmd = wallet.command("ows").description("Open Wallet Standard (OWS) vault management");
+
+  owsCmd
+    .command("create <name>")
+    .description("Create a new OWS wallet (multi-chain: EVM + Solana)")
+    .option("--words <count>", "Mnemonic word count (12 or 24)", "12")
+    .action(async (name: string, opts: { words: string }) => {
+      try {
+        const ows = loadOws();
+        const w = ows.createWallet(name, "", parseInt(opts.words));
+
+        if (isJson()) return printJson(jsonOk({ id: w.id, name: w.name, accounts: w.accounts, createdAt: w.createdAt }));
+
+        console.log(chalk.cyan.bold("\n  OWS Wallet Created\n"));
+        console.log(`  Name: ${chalk.white.bold(w.name)}`);
+        console.log(`  ID:   ${chalk.gray(w.id)}`);
+        console.log();
+        for (const acct of w.accounts) {
+          const chain = acct.chainId.split(":")[0];
+          console.log(`  ${chalk.cyan(chain.padEnd(10))} ${chalk.green(acct.address)}`);
+        }
+        console.log(chalk.gray(`\n  Vault: ~/.ows/`));
+        console.log(chalk.cyan(`\n  Usage: perp --ows ${name} -e hl account balance\n`));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
+        console.error(chalk.red(`\n  OWS error: ${msg}\n`));
+        process.exit(1);
+      }
+    });
+
+  owsCmd
+    .command("list")
+    .description("List all OWS wallets in the vault")
+    .action(async () => {
+      try {
+        const ows = loadOws();
+        const wallets = ows.listWallets();
+
+        if (isJson()) return printJson(jsonOk({ wallets }));
+
+        if (wallets.length === 0) {
+          console.log(chalk.gray("\n  No OWS wallets found."));
+          console.log(chalk.gray(`  Create one: ${chalk.cyan("perp wallet ows create <name>")}\n`));
+          return;
+        }
+
+        console.log(chalk.cyan.bold("\n  OWS Vault Wallets\n"));
+        const rows = wallets.map((w: { name: string; id: string; accounts: Array<{ chainId: string; address: string }>; createdAt: string }) => {
+          const evmAddr = w.accounts.find((a: { chainId: string }) => a.chainId.startsWith("eip155:"))?.address ?? "-";
+          const solAddr = w.accounts.find((a: { chainId: string }) => a.chainId.startsWith("solana:"))?.address ?? "-";
+          return [
+            chalk.white.bold(w.name),
+            chalk.green(evmAddr.slice(0, 10) + "..." + evmAddr.slice(-4)),
+            chalk.green(solAddr.slice(0, 6) + "..." + solAddr.slice(-4)),
+            chalk.gray(w.createdAt.split("T")[0]),
+          ];
+        });
+        console.log(makeTable(["Name", "EVM Address", "Solana Address", "Created"], rows));
+        console.log(chalk.gray(`\n  Usage: perp --ows <name> -e <exchange> <command>\n`));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
+        console.error(chalk.red(`\n  OWS error: ${msg}\n`));
+        process.exit(1);
+      }
+    });
+
+  owsCmd
+    .command("info <name>")
+    .description("Show detailed OWS wallet info")
+    .action(async (name: string) => {
+      try {
+        const ows = loadOws();
+        const w = ows.getWallet(name);
+
+        if (isJson()) return printJson(jsonOk(w));
+
+        console.log(chalk.cyan.bold(`\n  OWS Wallet: ${w.name}\n`));
+        console.log(`  ID:      ${chalk.gray(w.id)}`);
+        console.log(`  Created: ${chalk.gray(w.createdAt)}`);
+        console.log();
+        for (const acct of w.accounts) {
+          console.log(`  ${chalk.cyan(acct.chainId.padEnd(40))} ${chalk.green(acct.address)}`);
+          console.log(`  ${chalk.gray(" ".repeat(40) + acct.derivationPath)}`);
+        }
+        console.log();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
+        console.error(chalk.red(`\n  OWS error: ${msg}\n`));
+        process.exit(1);
+      }
+    });
+
+  owsCmd
+    .command("delete <name>")
+    .description("Delete an OWS wallet from the vault")
+    .action(async (name: string) => {
+      try {
+        const ows = loadOws();
+        const w = ows.getWallet(name);
+        ows.deleteWallet(name);
+
+        if (isJson()) return printJson(jsonOk({ deleted: name, id: w.id }));
+        console.log(chalk.yellow(`\n  OWS wallet "${name}" deleted from vault.\n`));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
+        console.error(chalk.red(`\n  OWS error: ${msg}\n`));
+        process.exit(1);
+      }
     });
 }

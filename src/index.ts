@@ -12,7 +12,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import type { Network } from "./pacifica/index.js";
 import { Keypair } from "@solana/web3.js";
-import { tryLoadPrivateKey, parseSolanaKeypair, type Exchange } from "./config.js";
+import { tryLoadPrivateKey, parseSolanaKeypair, isOwsKey, getOwsWalletName, type Exchange } from "./config.js";
 import { PacificaAdapter } from "./exchanges/pacifica.js";
 import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
 // LighterAdapter is lazy-imported to avoid CJS/ESM issues at startup
@@ -69,6 +69,8 @@ program
   .option("--ndjson", "Output newline-delimited JSON (one object per line for streaming)")
   .option("--dry-run", "Simulate trades without executing (log as simulated)")
   .option("-w, --wallet <name>", "Use a specific wallet by name (from 'perp wallet list')")
+  .option("--ows <name>", "Use an OWS (Open Wallet Standard) wallet by name")
+  .option("--ows-key <token>", "OWS API key token (ows_key_...) for policy-gated agent access")
   .option("--dex <name>", "HIP-3 deployed perp dex name (Hyperliquid only)")
   .configureOutput({
     writeErr: (str) => {
@@ -102,9 +104,11 @@ function getExchange(): Exchange {
 
 async function getAdapter(): Promise<ExchangeAdapter> {
   const opts = program.opts();
-  const walletName = opts.wallet as string | undefined;
+  const owsName = opts.ows as string | undefined;
+  const owsKeyToken = (opts.owsKey as string | undefined) || process.env.OWS_API_KEY;
+  const walletName = owsName ? `ows:${owsName}` : (opts.wallet as string | undefined);
 
-  // Skip cache when --wallet is specified (different wallet = different account)
+  // Skip cache when --wallet/--ows is specified (different wallet = different account)
   if (!walletName && _adapter) return _adapter;
 
   const exchange = resolveExchangeAlias(opts.exchange) as Exchange;
@@ -113,6 +117,11 @@ async function getAdapter(): Promise<ExchangeAdapter> {
 
   // Try to load key — null means no key configured (read-only mode)
   const pk = await tryLoadPrivateKey(exchange, opts.privateKey, walletName);
+
+  // OWS wallet detected — use OWS signers instead of raw keys
+  if (pk && isOwsKey(pk)) {
+    return _initWithOws(exchange, getOwsWalletName(pk), isTestnet, opts, owsKeyToken);
+  }
 
   switch (exchange) {
     case "pacifica": {
@@ -184,6 +193,52 @@ async function getAdapter(): Promise<ExchangeAdapter> {
   }
 
   return _adapter;
+}
+
+/** Initialize adapter with OWS wallet signer injection. */
+async function _initWithOws(
+  exchange: Exchange,
+  owsWalletName: string,
+  isTestnet: boolean,
+  opts: Record<string, unknown>,
+  owsKeyToken?: string,
+): Promise<ExchangeAdapter> {
+  const { OwsEvmSigner } = await import("./signer/ows-evm.js");
+  const { OwsSolanaSigner } = await import("./signer/ows-solana.js");
+
+  // If an OWS API key token is provided, use it as passphrase → routes through policy engine
+  const passphrase = owsKeyToken || "";
+
+  switch (exchange) {
+    case "pacifica": {
+      const pacNetwork = (isTestnet ? "testnet" : "mainnet") as Network;
+      const settings = loadSettings();
+      const builderCode = process.env.PACIFICA_BUILDER_CODE || settings.referralCodes.pacifica || "PERPCLI";
+      const dummyKeypair = Keypair.generate();
+      _pacificaAdapter = new PacificaAdapter(dummyKeypair, pacNetwork, builderCode, true);
+      _pacificaAdapter.setSigner(OwsSolanaSigner.create(owsWalletName, passphrase));
+      _adapter = _pacificaAdapter;
+      return _adapter;
+    }
+    case "hyperliquid": {
+      _hlAdapter = new HyperliquidAdapter(undefined, isTestnet);
+      if (opts.dex) _hlAdapter.setDex(opts.dex as string);
+      _hlAdapter.setSigner(OwsEvmSigner.create(owsWalletName, passphrase));
+      await _hlAdapter.init();
+      _adapter = _hlAdapter;
+      return _adapter;
+    }
+    case "lighter": {
+      const { LighterAdapter } = await import("./exchanges/lighter.js");
+      _lighterAdapter = new LighterAdapter("", isTestnet);
+      _lighterAdapter.setSigner(OwsEvmSigner.create(owsWalletName, passphrase));
+      await _lighterAdapter.init();
+      _adapter = _lighterAdapter;
+      return _adapter;
+    }
+    default:
+      throw new Error(`Unknown exchange: ${exchange}`);
+  }
 }
 
 // Sync wrapper for commands that need adapter (lazy init)
@@ -659,6 +714,7 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
       const hasEnvKey = !!(process.env.PRIVATE_KEY || process.env.PACIFICA_PRIVATE_KEY ||
         process.env.HL_PRIVATE_KEY || process.env.HYPERLIQUID_PRIVATE_KEY ||
         process.env.LIGHTER_PRIVATE_KEY);
+      const hasOwsWallet = !!settings.owsActiveWallet;
 
       // ── ASCII banner ──
       const banner = [
@@ -674,9 +730,10 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
       ];
       console.log(banner.join("\n"));
 
-      if (!status.hasWallets && !hasEnvKey && !settings.defaultExchange) {
+      if (!status.hasWallets && !hasEnvKey && !hasOwsWallet && !settings.defaultExchange) {
         // Fresh install — onboarding
         console.log(chalk.yellow.bold("\n  ⚡ Get started:\n"));
+        console.log(`    ${chalk.cyan("perp wallet generate")}            create OWS encrypted wallet`);
         console.log(`    ${chalk.cyan("perp setup")}                      setup wizard`);
         console.log(chalk.gray(`\n  Explore without a wallet:`));
         console.log(`    ${chalk.green("perp market mid BTC")}            quick price check`);

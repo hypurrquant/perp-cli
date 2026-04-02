@@ -1079,11 +1079,11 @@ server.tool(
       } else if (category === "wallet") {
         explanation = {
           command,
-          description: { show: "Show configured wallets with public addresses", list: "List configured wallets", balance: "Check on-chain USDC/SOL/ETH balances", generate: "Generate a new wallet keypair", import: "Import an existing private key", set: "Set private key for an exchange", use: "Set active wallet", remove: "Remove a wallet", rename: "Rename a wallet" }[sub] || `Wallet: ${sub}`,
+          description: { show: "Show configured wallets with public addresses", list: "List all wallets (OWS vault + legacy)", balance: "Check on-chain USDC/SOL/ETH balances", generate: "Generate a new OWS wallet (encrypted, multi-chain)", import: "Import key into OWS vault", migrate: "Migrate legacy wallets to OWS encrypted vault", set: "Set private key for an exchange (legacy)", use: "Set active wallet (OWS or legacy)", remove: "Remove a wallet", rename: "Rename a wallet", ows: "OWS vault management (create, list, info, delete)" }[sub] || `Wallet: ${sub}`,
           parameters: [],
-          risks: sub === "generate" ? ["Store the private key securely — it cannot be recovered"] : sub === "remove" ? ["Wallet will be removed — ensure you have the private key backed up"] : [],
+          risks: sub === "generate" ? ["Save the mnemonic securely — it cannot be recovered. Keys are stored in ~/.ows/ encrypted vault."] : sub === "remove" ? ["Wallet will be removed — ensure you have backups"] : [],
           category: "read",
-          relatedCommands: ["perp wallet show", "perp wallet balance"],
+          relatedCommands: ["perp wallet list", "perp wallet balance", "perp wallet ows list"],
         };
       } else if (category === "backtest") {
         explanation = {
@@ -1346,17 +1346,19 @@ server.resource(
           },
         },
         wallet: {
-          description: "Wallet management",
+          description: "Wallet management (OWS encrypted vault + legacy)",
           subcommands: {
             show: { usage: "perp wallet show", description: "Show configured wallets with public addresses" },
-            list: { usage: "perp wallet list", description: "List wallets" },
+            list: { usage: "perp wallet list", description: "List all wallets (OWS vault + legacy)" },
             balance: { usage: "perp wallet balance [name]", description: "On-chain balances" },
-            generate: { usage: "perp wallet generate solana|evm", description: "Generate new wallet" },
-            import: { usage: "perp wallet import solana|evm <privateKey>", description: "Import existing private key" },
-            set: { usage: "perp wallet set <exchange> <key>", description: "Set private key for exchange" },
-            use: { usage: "perp wallet use <name> [exchange]", description: "Set active wallet" },
+            generate: { usage: "perp wallet generate [name]", description: "Generate new OWS wallet (encrypted, multi-chain)" },
+            import: { usage: "perp wallet import <privateKey>", description: "Import key into OWS vault" },
+            migrate: { usage: "perp wallet migrate", description: "Migrate legacy wallets to OWS vault" },
+            set: { usage: "perp wallet set <exchange> <key>", description: "Set private key for exchange (legacy)" },
+            use: { usage: "perp wallet use <name>", description: "Set active wallet (OWS or legacy)" },
             remove: { usage: "perp wallet remove <name>", description: "Remove a wallet" },
             rename: { usage: "perp wallet rename <oldName> <newName>", description: "Rename a wallet" },
+            ows: { usage: "perp wallet ows <sub>", description: "OWS vault: create, list, info, delete" },
           },
         },
         history: {

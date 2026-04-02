@@ -3,6 +3,9 @@ import bs58 from "bs58";
 import chalk from "chalk";
 import { resolve } from "path";
 import { existsSync, readFileSync } from "fs";
+import { createRequire } from "node:module";
+
+const _require = createRequire(import.meta.url);
 
 export type Exchange = "pacifica" | "hyperliquid" | "lighter" | "aster";
 
@@ -18,9 +21,43 @@ export async function tryLoadPrivateKey(exchange: Exchange, pkOverride?: string,
   }
 }
 
+/**
+ * Resolve an OWS wallet name to a signer-ready marker.
+ * Returns the OWS wallet name prefixed with "ows:" so callers can detect OWS mode.
+ */
+export function resolveOwsWallet(walletName: string): string | null {
+  try {
+    const { getWallet } = _require("@open-wallet-standard/core") as typeof import("@open-wallet-standard/core");
+    getWallet(walletName); // throws if not found
+    return `ows:${walletName}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Check if a key string represents an OWS wallet reference. */
+export function isOwsKey(key: string): boolean {
+  return key.startsWith("ows:");
+}
+
+/** Extract OWS wallet name from an ows: prefixed key string. */
+export function getOwsWalletName(key: string): string {
+  return key.slice(4);
+}
+
 export async function loadPrivateKey(exchange: Exchange, pkOverride?: string, walletName?: string): Promise<string> {
-  // 0. Wallet name override (--wallet flag)
+  // 0a. OWS wallet (--ows flag sets walletName with "ows:" prefix)
+  if (walletName?.startsWith("ows:")) {
+    return walletName; // pass through — adapters detect the ows: prefix
+  }
+
+  // 0b. Wallet name override (--wallet flag) — check OWS first, then local
   if (walletName) {
+    // Try OWS vault
+    const owsKey = resolveOwsWallet(walletName);
+    if (owsKey) return owsKey;
+
+    // Fall back to local wallets
     const { getWalletKeyByName } = await import("./commands/wallet.js");
     const key = getWalletKeyByName(walletName);
     if (!key) throw new Error(`Wallet "${walletName}" not found. Run: perp wallet list`);
@@ -45,7 +82,19 @@ export async function loadPrivateKey(exchange: Exchange, pkOverride?: string, wa
   // 3. Generic fallback
   if (process.env.PRIVATE_KEY) return process.env.PRIVATE_KEY;
 
-  // 4. Active wallet from wallets.json
+  // 4. OWS active wallet
+  try {
+    const { loadSettings } = await import("./settings.js");
+    const settings = loadSettings();
+    if (settings.owsActiveWallet) {
+      const owsKey = resolveOwsWallet(settings.owsActiveWallet);
+      if (owsKey) return owsKey;
+    }
+  } catch {
+    // settings module not available, skip
+  }
+
+  // 5. Legacy: Active wallet from wallets.json
   try {
     const { getActiveWalletKey } = await import("./commands/wallet.js");
     const walletKey = getActiveWalletKey(exchange);
@@ -61,12 +110,12 @@ export async function loadPrivateKey(exchange: Exchange, pkOverride?: string, wa
   }
 
   throw new Error(
-    `No private key configured for ${exchange}.\n\n` +
-      `  Quick start:  ${chalk.cyan("perp setup")}\n\n` +
+    `No wallet configured for ${exchange}.\n\n` +
+      `  Quick start:  ${chalk.cyan("perp wallet generate")}\n\n` +
       `  Or manually:\n` +
-      `    perp wallet set ${exchange} <key>\n` +
-      `    ${envMap[exchange][0]}=<key> (env var)\n` +
-      `    --private-key <key> (per-command)`
+      `    perp wallet import <key>     Import key to OWS vault\n` +
+      `    perp wallet set ${exchange} <key>  Legacy: set env var\n` +
+      `    --private-key <key>          Per-command override`
   );
 }
 

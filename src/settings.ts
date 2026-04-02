@@ -38,6 +38,8 @@ export interface AlertSettings {
 export interface Settings {
   /** Default exchange when -e flag is omitted */
   defaultExchange: string;
+  /** Active OWS wallet name (used when no --ows or --wallet flag) */
+  owsActiveWallet: string;
   /** Enable referral/builder codes (default: false — opt-in only) */
   referrals: boolean;
   /** Per-exchange referral codes (used when referrals=true) */
@@ -59,6 +61,7 @@ export interface Settings {
 
 const DEFAULTS: Settings = {
   defaultExchange: "",
+  owsActiveWallet: "",
   referrals: false,
   referralCodes: {
     pacifica: "",
@@ -97,6 +100,7 @@ export function loadSettings(): Settings {
     }
     return {
       defaultExchange: stored.defaultExchange ?? DEFAULTS.defaultExchange,
+      owsActiveWallet: stored.owsActiveWallet ?? DEFAULTS.owsActiveWallet,
       referrals: stored.referrals ?? DEFAULTS.referrals,
       referralCodes: {
         pacifica: stored.referralCodes?.pacifica ?? DEFAULTS.referralCodes.pacifica,
