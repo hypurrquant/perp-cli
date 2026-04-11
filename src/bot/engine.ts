@@ -2,6 +2,7 @@ import type { ExchangeAdapter } from "../exchanges/index.js";
 import type { BotConfig } from "./config.js";
 import { getMarketSnapshot, evaluateAllConditions, type MarketSnapshot } from "./conditions.js";
 import { updateJobState } from "../jobs.js";
+import { preflightBotPolicy } from "../guardrail/bot-preflight.js";
 import { getStrategy } from "./strategy-registry.js";
 import type { StrategyAction, StrategyContext, EnrichedSnapshot } from "./strategy-types.js";
 import type { BotTuiState, ExchangeBalance, StateListener, LogListener } from "./tui/index.js";
@@ -85,6 +86,21 @@ export async function runBot(
   extraAdapters?: Map<string, ExchangeAdapter>, // for funding-arb (multi-exchange)
   mode: BotOutputMode = "headless",
 ): Promise<{ fills: number; totalPnl: number; runtime: number }> {
+  // Preemptive OWS policy cap — intersect bot config with PERP_POLICY_* env
+  // and any OWS policy limits before the strategy sees them. Fail-open: if
+  // policy lookup errors, we continue with the un-capped config and log a
+  // warning so the operator notices.
+  try {
+    const preflight = await preflightBotPolicy(config);
+    for (const note of preflight.notes) log(note);
+    // Mutate in place so downstream consumers (strategy, TUI, jobs) see the capped values.
+    config.risk = preflight.bot.risk;
+    config.strategy = preflight.bot.strategy;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    log(`[ows-policy] preflight skipped: ${msg}`);
+  }
+
   const state: BotState = {
     phase: "monitoring",
     startTime: Date.now(),
