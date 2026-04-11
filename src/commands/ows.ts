@@ -121,6 +121,54 @@ export function registerOwsCommands(program: Command, isJson: () => boolean) {
       }
     });
 
+  // ── import (alias of `perp wallet import` — keeps the ows tree self-contained) ──
+
+  ows
+    .command("import <secret>")
+    .description("Import a private key or mnemonic into the OWS encrypted vault")
+    .requiredOption("--name <name>", "Wallet alias name")
+    .option("--chain <chain>", "Key type for private-key import: evm (default) or solana", "evm")
+    .option("--mnemonic", "Import <secret> as a mnemonic phrase instead of a hex/bs58 private key")
+    .action(async (secret: string, opts: { name: string; chain: string; mnemonic?: boolean }) => {
+      try {
+        const o = loadOws();
+        const w = opts.mnemonic
+          ? (o as unknown as { importWalletMnemonic: (name: string, phrase: string) => { id: string; name: string; accounts: Array<{ chainId: string; address: string }> } }).importWalletMnemonic(opts.name, secret)
+          : (o as unknown as { importWalletPrivateKey: (name: string, pk: string, pass: string, extra: unknown, chain: string) => { id: string; name: string; accounts: Array<{ chainId: string; address: string }> } }).importWalletPrivateKey(opts.name, secret, "", undefined, opts.chain);
+
+        // Set as active wallet if none set (matches `wallet import` behaviour)
+        const { loadSettings: ls, saveSettings: ss } = await import("../settings.js");
+        const settings = ls();
+        if (!settings.owsActiveWallet) {
+          settings.owsActiveWallet = opts.name;
+          ss(settings);
+        }
+
+        if (isJson()) {
+          return printJson(jsonOk({ id: w.id, name: w.name, accounts: w.accounts, active: settings.owsActiveWallet === opts.name }));
+        }
+
+        console.log(chalk.cyan.bold("\n  Key Imported to OWS Vault\n"));
+        console.log(`  Name: ${chalk.white.bold(w.name)}`);
+        console.log(`  ID:   ${chalk.gray(w.id)}`);
+        console.log();
+        for (const acct of w.accounts) {
+          const chain = acct.chainId.split(":")[0];
+          console.log(`  ${chalk.cyan(chain.padEnd(10))} ${chalk.green(acct.address)}`);
+        }
+        console.log(chalk.gray(`\n  Vault: ~/.ows/ (AES-256-GCM encrypted)`));
+        if (settings.owsActiveWallet === opts.name) {
+          console.log(chalk.cyan(`  Active: yes (used by all exchanges)`));
+        }
+        console.log(chalk.cyan(`\n  Usage: perp --ows ${opts.name} -e hl account balance\n`));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
+        console.error(chalk.red(`\n  OWS error: ${msg}\n`));
+        process.exit(1);
+      }
+    });
+
   ows
     .command("list")
     .description("List all OWS wallets in the vault")
