@@ -344,25 +344,72 @@ export function registerWalletCommands(program: Command, isJson: () => boolean) 
   // ── import (OWS by default — imports key into encrypted vault) ──
 
   wallet
-    .command("import <privateKey>")
-    .description("Import a private key into OWS encrypted vault")
+    .command("import [privateKey]")
+    .description("Import a private key into OWS encrypted vault (use --evm/--solana to import both curves at once)")
     .option("--name <name>", "Wallet alias name", "imported")
-    .option("--chain <chain>", "Key type: evm (default) or solana", "evm")
+    .option("--chain <chain>", "Key type for positional <privateKey>: evm (default) or solana", "evm")
+    .option("--evm <hex>", "EVM (secp256k1) private key — use with --solana to import both curves")
+    .option("--solana <hex>", "Solana (ed25519) private key — use with --evm to import both curves")
     .option("--mnemonic", "Import as mnemonic phrase instead of private key")
     .option("--legacy <chain>", "Legacy mode: import to wallets.json (solana or evm)")
-    .action(async (privateKey: string, opts: { name: string; chain: string; mnemonic?: boolean; legacy?: string }) => {
-      // Legacy mode
+    .action(async (privateKey: string | undefined, opts: { name: string; chain: string; evm?: string; solana?: string; mnemonic?: boolean; legacy?: string }) => {
+      // Legacy mode (positional only)
       if (opts.legacy) {
+        if (!privateKey) {
+          const msg = "--legacy mode requires a positional <privateKey>";
+          if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
+          console.error(chalk.red(`\n  Error: ${msg}\n`));
+          process.exit(1);
+        }
         return _legacyImport(opts.legacy, privateKey, opts.name, isJson);
+      }
+
+      // Validation: input mode is exactly one of (positional | --evm/--solana flags | mnemonic)
+      const hasPositional = !!privateKey;
+      const hasFlagKeys = !!(opts.evm || opts.solana);
+      if (!hasPositional && !hasFlagKeys) {
+        const msg = "Provide a <privateKey> argument OR --evm/--solana flag(s)";
+        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
+        console.error(chalk.red(`\n  Error: ${msg}\n`));
+        process.exit(1);
+      }
+      if (hasPositional && hasFlagKeys) {
+        const msg = "Cannot mix positional <privateKey> with --evm/--solana flags. Use one input style.";
+        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
+        console.error(chalk.red(`\n  Error: ${msg}\n`));
+        process.exit(1);
+      }
+      if (opts.mnemonic && hasFlagKeys) {
+        const msg = "--mnemonic cannot be combined with --evm/--solana";
+        if (isJson()) { const { jsonError } = await import("../utils.js"); return printJson(jsonError("OWS_ERROR", msg)); }
+        console.error(chalk.red(`\n  Error: ${msg}\n`));
+        process.exit(1);
       }
 
       try {
         const ows = loadOws();
         let w;
         if (opts.mnemonic) {
-          w = ows.importWalletMnemonic(opts.name, privateKey);
+          w = ows.importWalletMnemonic(opts.name, privateKey!);
+        } else if (opts.evm && opts.solana) {
+          // Dual-curve: both explicit keys (OWS 1.3+ API — both must be present)
+          w = ows.importWalletPrivateKey(
+            opts.name,
+            "",        // ignored when both secp256k1Key and ed25519Key are provided
+            "",
+            undefined,
+            undefined,
+            opts.evm,
+            opts.solana,
+          );
+        } else if (opts.evm) {
+          // Single EVM via flag — same as positional + --chain evm
+          w = ows.importWalletPrivateKey(opts.name, opts.evm, "", undefined, "evm");
+        } else if (opts.solana) {
+          // Single Solana via flag — same as positional + --chain solana
+          w = ows.importWalletPrivateKey(opts.name, opts.solana, "", undefined, "solana");
         } else {
-          w = ows.importWalletPrivateKey(opts.name, privateKey, "", undefined, opts.chain);
+          w = ows.importWalletPrivateKey(opts.name, privateKey!, "", undefined, opts.chain);
         }
 
         // Set as active wallet if none set
