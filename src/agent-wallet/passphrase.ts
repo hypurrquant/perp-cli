@@ -14,15 +14,15 @@ const REMEDIATION =
  * stdin is non-TTY (AC-16).
  */
 export async function resolvePassphrase(opts: { flag?: string }): Promise<string | null> {
-  // 1. CLI flag
-  if (opts.flag !== undefined && opts.flag !== "") {
+  // 1. CLI flag (allow empty string when explicitly passed via --passphrase '')
+  if (opts.flag !== undefined) {
     return opts.flag;
   }
 
-  // 2. Environment variable
-  const envVal = process.env["OWS_PASSPHRASE"];
-  if (envVal !== undefined && envVal !== "") {
-    return envVal;
+  // 2. Environment variable (allow empty string when explicitly set; treat
+  // unset as absent)
+  if ("OWS_PASSPHRASE" in process.env) {
+    return process.env["OWS_PASSPHRASE"] ?? "";
   }
 
   // 3. stdin pipe — only when stdin is not a TTY

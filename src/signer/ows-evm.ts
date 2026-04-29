@@ -54,11 +54,7 @@ export class OwsEvmSigner implements EvmSigner {
     });
 
     const result = ows.signTypedData(this._walletName, "evm", typedData, this._passphrase);
-
-    // OWS returns hex signature + recoveryId; combine to 65-byte EIP-712 sig
-    const sig = result.signature.startsWith("0x") ? result.signature : `0x${result.signature}`;
-    const v = result.recoveryId !== undefined ? result.recoveryId + 27 : 27;
-    return `${sig}${v.toString(16).padStart(2, "0")}`;
+    return canonicalizeOwsSignature(result);
   }
 
   async signMessage(message: string | Uint8Array): Promise<string> {
@@ -70,11 +66,33 @@ export class OwsEvmSigner implements EvmSigner {
     const encoding = typeof message === "string" ? "utf8" : "hex";
 
     const result = ows.signMessage(this._walletName, "evm", msgStr, this._passphrase, encoding);
-
-    const sig = result.signature.startsWith("0x") ? result.signature : `0x${result.signature}`;
-    const v = result.recoveryId !== undefined ? result.recoveryId + 27 : 27;
-    return `${sig}${v.toString(16).padStart(2, "0")}`;
+    return canonicalizeOwsSignature(result);
   }
+}
+
+/**
+ * Normalize OWS signature output to canonical 65-byte hex (0x-prefixed).
+ *
+ * OWS may return the signature in two shapes depending on version:
+ *   (A) 65-byte hex with v already embedded — use as-is
+ *   (B) 64-byte hex (r+s only) + separate recoveryId — append v
+ *
+ * For shape B, recoveryId may be either canonical (27/28) or raw (0/1).
+ * If raw, add 27 to canonicalize.
+ */
+function canonicalizeOwsSignature(result: { signature: string; recoveryId?: number }): string {
+  const sigHex = result.signature.startsWith("0x") ? result.signature.slice(2) : result.signature;
+  if (sigHex.length === 130) {
+    // Already 65-byte sig with embedded v — trust OWS
+    return `0x${sigHex}`;
+  }
+  if (sigHex.length !== 128) {
+    throw new Error(`Unexpected OWS signature length: ${sigHex.length} hex chars (expected 128 or 130)`);
+  }
+  // 64-byte r+s — append v from recoveryId
+  const rid = result.recoveryId ?? 0;
+  const v = rid >= 27 ? rid : rid + 27;  // accept canonical or raw recoveryId
+  return `0x${sigHex}${v.toString(16).padStart(2, "0")}`;
 }
 
 function inferEip712DomainType(key: string): string {
