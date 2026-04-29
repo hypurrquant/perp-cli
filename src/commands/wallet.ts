@@ -389,6 +389,10 @@ export function registerWalletCommands(
     });
 
   // ── import (OWS by default — imports key into encrypted vault) ──
+  //
+  // Solana key normalization: OWS SDK expects 32-byte hex secret. Phantom
+  // exports base58 (88 chars, 64-byte keypair = secret + public). Auto-detect
+  // base58/JSON-array/hex and normalize to 32-byte hex secret.
 
   wallet
     .command("import [privateKey]")
@@ -396,10 +400,11 @@ export function registerWalletCommands(
     .option("--name <name>", "Wallet alias name", "imported")
     .option("--chain <chain>", "Key type for positional <privateKey>: evm (default) or solana", "evm")
     .option("--evm <hex>", "EVM (secp256k1) private key — use with --solana to import both curves")
-    .option("--solana <hex>", "Solana (ed25519) private key — use with --evm to import both curves")
+    .option("--solana <key>", "Solana (ed25519) private key — accepts hex (64), base58 (Phantom export), or JSON byte array. Use with --evm to import both curves")
     .option("--mnemonic", "Import as mnemonic phrase instead of private key")
+    .option("--passphrase <pp>", "OWS vault encryption passphrase (default: empty / OWS_PASSPHRASE env)")
     .option("--legacy <chain>", "Legacy mode: import to wallets.json (solana or evm)")
-    .action(async (privateKey: string | undefined, opts: { name: string; chain: string; evm?: string; solana?: string; mnemonic?: boolean; legacy?: string }) => {
+    .action(async (privateKey: string | undefined, opts: { name: string; chain: string; evm?: string; solana?: string; mnemonic?: boolean; passphrase?: string; legacy?: string }) => {
       // Legacy mode (positional only)
       if (opts.legacy) {
         if (!privateKey) {
@@ -435,28 +440,63 @@ export function registerWalletCommands(
 
       try {
         const ows = loadOws();
+
+        // Auto-normalize Solana keys: accept hex / base58 (Phantom) / JSON byte array
+        const bs58 = (await import("bs58")).default;
+        const normalizeSolana = (input: string): string => {
+          const s = input.trim();
+          // Already hex (with optional 0x prefix)
+          const hexNoPrefix = s.startsWith("0x") ? s.slice(2) : s;
+          if (/^[0-9a-fA-F]{64}$/.test(hexNoPrefix)) return hexNoPrefix;
+          if (/^[0-9a-fA-F]{128}$/.test(hexNoPrefix)) {
+            return hexNoPrefix.slice(0, 64);  // 64-byte keypair → first 32 bytes secret
+          }
+          // JSON byte array
+          if (s.startsWith("[")) {
+            const arr = JSON.parse(s) as number[];
+            if (arr.length === 64) return Buffer.from(arr.slice(0, 32)).toString("hex");
+            if (arr.length === 32) return Buffer.from(arr).toString("hex");
+            throw new Error(`Invalid Solana JSON byte array length: ${arr.length} (expected 32 or 64)`);
+          }
+          // base58 (Phantom export — typically 87-88 chars for 64-byte keypair)
+          try {
+            const decoded = bs58.decode(s);
+            if (decoded.length === 64) return Buffer.from(decoded.slice(0, 32)).toString("hex");
+            if (decoded.length === 32) return Buffer.from(decoded).toString("hex");
+            throw new Error(`Invalid Solana base58 byte length: ${decoded.length} (expected 32 or 64)`);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`Invalid Solana key — expected hex (64 chars), base58 (Phantom export), or JSON byte array. Inner: ${msg}`);
+          }
+        };
+
+        // Resolve vault passphrase (precedence: --passphrase > OWS_PASSPHRASE env > "")
+        const pp = opts.passphrase
+          ?? (("OWS_PASSPHRASE" in process.env) ? (process.env["OWS_PASSPHRASE"] ?? "") : "");
+
         let w;
         if (opts.mnemonic) {
-          w = ows.importWalletMnemonic(opts.name, privateKey!);
+          w = ows.importWalletMnemonic(opts.name, privateKey!, pp);
         } else if (opts.evm && opts.solana) {
           // Dual-curve: both explicit keys (OWS 1.3+ API — both must be present)
           w = ows.importWalletPrivateKey(
             opts.name,
             "",        // ignored when both secp256k1Key and ed25519Key are provided
-            "",
+            pp,
             undefined,
             undefined,
             opts.evm,
-            opts.solana,
+            normalizeSolana(opts.solana),
           );
         } else if (opts.evm) {
           // Single EVM via flag — same as positional + --chain evm
-          w = ows.importWalletPrivateKey(opts.name, opts.evm, "", undefined, "evm");
+          w = ows.importWalletPrivateKey(opts.name, opts.evm, pp, undefined, "evm");
         } else if (opts.solana) {
           // Single Solana via flag — same as positional + --chain solana
-          w = ows.importWalletPrivateKey(opts.name, opts.solana, "", undefined, "solana");
+          w = ows.importWalletPrivateKey(opts.name, normalizeSolana(opts.solana), pp, undefined, "solana");
         } else {
-          w = ows.importWalletPrivateKey(opts.name, privateKey!, "", undefined, opts.chain);
+          const keyArg = opts.chain === "solana" ? normalizeSolana(privateKey!) : privateKey!;
+          w = ows.importWalletPrivateKey(opts.name, keyArg, pp, undefined, opts.chain);
         }
 
         // Set as active wallet if none set

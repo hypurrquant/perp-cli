@@ -1402,10 +1402,12 @@ async function runApproveFlow(opts: ApproveFlowOpts): Promise<ApproveFlowResult>
   ows.createPolicy(JSON.stringify({
     id: policyId,
     name: `perp-cli-aster-${agentName}`,
-    version: "1",
+    version: 1,
     created_at: nowIso,
-    rules: [{ allowed_chains: ["eip155:56"], expires_at: expiresAtIso }],
+    rules: [{ type: "allowed_chains", chain_ids: ["eip155:56"] }],
+    expires_at: expiresAtIso,
     executable: null,
+    action: "deny",
   }));
 
   // Step 6: Build OWS API key — store only the id, never the token

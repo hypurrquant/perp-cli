@@ -387,8 +387,18 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
   const opts = program.opts();
   const network = opts.network as string;
   const isTestnet = network === "testnet";
-  const walletName = opts.wallet as string | undefined;
+  const owsName = opts.ows as string | undefined;
+  const owsKeyToken = (opts.owsKey as string | undefined) || process.env.OWS_API_KEY;
+  const walletName = owsName ? `ows:${owsName}` : (opts.wallet as string | undefined);
   const pk = await tryLoadPrivateKey(exchange as Exchange, opts.privateKey, walletName);
+
+  // Route through OWS init when pk is an OWS reference (e.g. "ows:main").
+  // Mirrors getAdapter() at the top of this file. Without this, adapters
+  // would try to parse "ows:main" as a raw private key and ethers would
+  // throw "invalid BytesLike value" / parseSolanaKeypair would fail.
+  if (pk && isOwsKey(pk)) {
+    return _initWithOws(exchange as Exchange, getOwsWalletName(pk), isTestnet, opts, owsKeyToken);
+  }
 
   switch (exchange) {
     case "pacifica": {
