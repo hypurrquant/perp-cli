@@ -80,7 +80,7 @@ export class OwsEvmSigner implements EvmSigner {
  * For shape B, recoveryId may be either canonical (27/28) or raw (0/1).
  * If raw, add 27 to canonicalize.
  */
-function canonicalizeOwsSignature(result: { signature: string; recoveryId?: number }): string {
+export function canonicalizeOwsSignature(result: { signature: string; recoveryId?: number }): string {
   const sigHex = result.signature.startsWith("0x") ? result.signature.slice(2) : result.signature;
   if (sigHex.length === 130) {
     // Already 65-byte sig with embedded v — trust OWS

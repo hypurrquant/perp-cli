@@ -127,7 +127,12 @@ beforeEach(() => {
       { chainId: "solana:mainnet", address: "MasterSolanaPubkey11111111111111111111111" },
     ],
   });
-  mockOws.signTypedData.mockReturnValue({ signature: "0xMOCKSIG" });
+  // 64-byte (r+s) hex sig + canonical recoveryId; canonicalizeOwsSignature
+  // appends v=0x1b to produce the 65-byte EIP-712 signature production code expects.
+  mockOws.signTypedData.mockReturnValue({
+    signature: "0x" + "aa".repeat(32) + "bb".repeat(32),
+    recoveryId: 0,
+  });
   mockOws.signMessage.mockReturnValue({ signature: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899" });
 });
 
@@ -372,7 +377,6 @@ describe("perp agent verify", () => {
         return Promise.resolve({ ok: true, json: async () => ({ code: 200, api_keys: [{ api_key_index: 4, public_key: "pk1", nonce: 0, transaction_time: 100 }] }) });
       }
       return Promise.reject(new Error(`Unexpected fetch url: ${url}`));
-      void opts;
     });
 
     const out = await runVerify(["--json", "--master", "main", "--master-address", "0xMASTER0000000000000000000000000000000001", "--account-index", "1"]);
