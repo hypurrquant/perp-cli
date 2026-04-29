@@ -108,6 +108,9 @@ async function getAdapter(): Promise<ExchangeAdapter> {
   const owsName = opts.ows as string | undefined;
   const owsKeyToken = (opts.owsKey as string | undefined) || process.env.OWS_API_KEY;
   const walletName = owsName ? `ows:${owsName}` : (opts.wallet as string | undefined);
+  // Commander's `--no-agent` flag sets opts.agent === false (NOT opts.noAgent).
+  // Normalize so downstream wiring can use a single boolean consistently.
+  const noAgent = opts.agent === false;
 
   // Skip cache when --wallet/--ows is specified (different wallet = different account)
   if (!walletName && _adapter) return _adapter;
@@ -149,7 +152,7 @@ async function getAdapter(): Promise<ExchangeAdapter> {
         const agentSigner = PacOwsSolanaSigner.create(pacAgentMeta.agentWalletName, "");
         _pacificaAdapter.setAgentSigner(pacAgentMeta, agentSigner);
       }
-      if (opts.noAgent) _pacificaAdapter.setNoAgent(true);
+      if (noAgent) _pacificaAdapter.setNoAgent(true);
       _adapter = _pacificaAdapter;
       break;
     }
@@ -192,7 +195,7 @@ async function getAdapter(): Promise<ExchangeAdapter> {
         const agentSigner = HlOwsEvmSigner.create(hlAgentMeta.agentWalletName, "");
         _hlAdapter.setAgentSigner(hlAgentMeta, agentSigner);
       }
-      if (opts.noAgent) _hlAdapter.setNoAgent(true);
+      if (noAgent) _hlAdapter.setNoAgent(true);
       _adapter = _hlAdapter;
       break;
     }
@@ -210,13 +213,13 @@ async function getAdapter(): Promise<ExchangeAdapter> {
       const ltAgentMeta = getLtAgent("lighter");
       const ltAgentApiKey = process.env.LIGHTER_API_KEY ?? "";
       _lighterAdapter = new LighterAdapter(pk ?? "", isTestnet);
-      if (ltAgentMeta && ltAgentApiKey && !opts.noAgent) {
+      if (ltAgentMeta && ltAgentApiKey && !noAgent) {
         // Tier 1 wiring: bind agent meta + L2 key. setupApiKey at approve time
         // saves the L2 hex key to LIGHTER_API_KEY env, so this path activates
         // when the user has both an agent registered and the matching env var.
         _lighterAdapter.setAgentSigner(ltAgentMeta, ltAgentApiKey);
       }
-      if (opts.noAgent) _lighterAdapter.setNoAgent(true);
+      if (noAgent) _lighterAdapter.setNoAgent(true);
       await _lighterAdapter.init();
       if (pk) {
         const ltSettings = loadSettings();
@@ -258,7 +261,7 @@ async function getAdapter(): Promise<ExchangeAdapter> {
         const strat = agentSigningStrategyFor(agentMeta, owsKeyToken ?? "");
         ast.setAgent(agentMeta, strat);
       }
-      if (opts.noAgent) ast.setNoAgent(true);
+      if (noAgent) ast.setNoAgent(true);
       _adapter = ast;
       break;
     }
@@ -282,6 +285,8 @@ async function _initWithOws(
 
   // If an OWS API key token is provided, use it as passphrase → routes through policy engine
   const passphrase = owsKeyToken || "";
+  // Commander's `--no-agent` flag sets opts.agent === false (NOT opts.noAgent).
+  const noAgent = (opts as { agent?: boolean }).agent === false;
 
   switch (exchange) {
     case "pacifica": {
@@ -298,7 +303,7 @@ async function _initWithOws(
         const agentSignerOws = OwsSolanaSigner.create(pacAgentMetaOws.agentWalletName, "");
         _pacificaAdapter.setAgentSigner(pacAgentMetaOws, agentSignerOws);
       }
-      if ((opts as Record<string, unknown>).noAgent) _pacificaAdapter.setNoAgent(true);
+      if (noAgent) _pacificaAdapter.setNoAgent(true);
       _adapter = _pacificaAdapter;
       return _adapter;
     }
@@ -330,7 +335,7 @@ async function _initWithOws(
         const { agentSigningStrategyFor } = await import("./agent-wallet/signing-strategy.js");
         asterOws.setAgent(asterMeta, agentSigningStrategyFor(asterMeta, owsKeyToken ?? ""));
       }
-      if ((opts as Record<string, unknown>).noAgent) asterOws.setNoAgent(true);
+      if (noAgent) asterOws.setNoAgent(true);
       _adapter = asterOws;
       return _adapter;
     }
@@ -390,6 +395,8 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
   const owsName = opts.ows as string | undefined;
   const owsKeyToken = (opts.owsKey as string | undefined) || process.env.OWS_API_KEY;
   const walletName = owsName ? `ows:${owsName}` : (opts.wallet as string | undefined);
+  // Commander's `--no-agent` flag sets opts.agent === false (NOT opts.noAgent).
+  const noAgent = opts.agent === false;
   const pk = await tryLoadPrivateKey(exchange as Exchange, opts.privateKey, walletName);
 
   // Route through OWS init when pk is an OWS reference (e.g. "ows:main").
@@ -418,7 +425,7 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
         const agentSignerEx = PacOwsSolanaSignerEx.create(pacAgentMetaEx.agentWalletName, "");
         _pacificaAdapter.setAgentSigner(pacAgentMetaEx, agentSignerEx);
       }
-      if (opts.noAgent) _pacificaAdapter.setNoAgent(true);
+      if (noAgent) _pacificaAdapter.setNoAgent(true);
       if (!_adapter) _adapter = _pacificaAdapter;
       return _pacificaAdapter;
     }
@@ -455,7 +462,7 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
           const agentSigner2 = HlOwsEvmSigner2.create(hlAgentMeta2.agentWalletName, "");
           _hlAdapter.setAgentSigner(hlAgentMeta2, agentSigner2);
         }
-        if (opts.noAgent) _hlAdapter.setNoAgent(true);
+        if (noAgent) _hlAdapter.setNoAgent(true);
       }
       if (!_adapter) _adapter = _hlAdapter;
       return _hlAdapter;
@@ -467,10 +474,10 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
       const ltAgentMetaEx = getLtAgentEx("lighter");
       const ltAgentApiKeyEx = process.env.LIGHTER_API_KEY ?? "";
       _lighterAdapter = new LighterAdapter(pk ?? "", isTestnet);
-      if (ltAgentMetaEx && ltAgentApiKeyEx && !opts.noAgent) {
+      if (ltAgentMetaEx && ltAgentApiKeyEx && !noAgent) {
         _lighterAdapter.setAgentSigner(ltAgentMetaEx, ltAgentApiKeyEx);
       }
-      if (opts.noAgent) _lighterAdapter.setNoAgent(true);
+      if (noAgent) _lighterAdapter.setNoAgent(true);
       await _lighterAdapter.init();
       if (pk) {
         const s3 = loadSettings();
@@ -512,7 +519,7 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
         const { agentSigningStrategyFor } = await import("./agent-wallet/signing-strategy.js");
         astEx.setAgent(agentMetaEx, agentSigningStrategyFor(agentMetaEx, owsKeyEx ?? ""));
       }
-      if (opts.noAgent) astEx.setNoAgent(true);
+      if (noAgent) astEx.setNoAgent(true);
       if (!_adapter) _adapter = astEx;
       return astEx;
     }

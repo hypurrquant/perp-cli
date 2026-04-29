@@ -764,9 +764,11 @@ export class HyperliquidAdapter implements ExchangeAdapter {
 
   async cancelOrder(symbol: string, orderId: string) {
     this.ensureSigner();
-    // SDK exchange.cancelOrder is unavailable — use raw cancel action via
-    // _signAndSendAction (same as the HIP-3 dex branch). Works for both
-    // standard perps and HIP-3 deployed dexes uniformly.
+    // HL SDK declares exchange.cancelOrder in types but the runtime ExchangeAPI
+    // instance (when constructed with our wallet/agent injection path) does not
+    // expose it as a callable method. Use raw cancel action via _signAndSendAction
+    // instead — same approach as the HIP-3 dex branch — which works uniformly for
+    // standard perps and HIP-3 dexes.
     const assetIndex = await this.getAssetIndex(symbol.toUpperCase());
     const result = await this._signAndSendAction({
       type: "cancel",
@@ -786,24 +788,18 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         })
       : orders;
 
+    // Use _signAndSendAction uniformly for both standard perps and HIP-3 dexes.
+    // SDK exchange.cancelOrder has the same runtime unavailability as single
+    // cancelOrder (see comment there); raw cancel action works for both paths.
     const results = [];
     for (const o of toCancel) {
-      if (this._dex) {
-        const assetIndex = await this.getAssetIndex(o.symbol);
-        results.push(
-          await this._signAndSendAction({
-            type: "cancel",
-            cancels: [{ a: assetIndex, o: parseInt(o.orderId) }],
-          })
-        );
-      } else {
-        results.push(
-          await this.sdk.exchange.cancelOrder({
-            coin: o.symbol,
-            o: parseInt(o.orderId),
-          })
-        );
-      }
+      const assetIndex = await this.getAssetIndex(o.symbol);
+      results.push(
+        await this._signAndSendAction({
+          type: "cancel",
+          cancels: [{ a: assetIndex, o: parseInt(o.orderId) }],
+        })
+      );
     }
     return results;
   }

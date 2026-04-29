@@ -1986,7 +1986,7 @@ async function runPacApproveFlow(opts: PacApproveFlowOpts): Promise<PacApproveFl
     ...bind.payload, // adds agent_wallet
   };
 
-  let asterPostSucceeded = false;
+  let pacPostSucceeded = false;
   let resp: Record<string, unknown> | undefined;
   try {
     const httpRes = await fetch("https://api.pacifica.fi/api/v1/agent/bind", {
@@ -2003,7 +2003,7 @@ async function runPacApproveFlow(opts: PacApproveFlowOpts): Promise<PacApproveFl
           remediation: `Agent address for cleanup: ${agentSolanaAddress}`,
         });
       }
-      asterPostSucceeded = true;
+      pacPostSucceeded = true;
     } else {
       const errText = await httpRes.text().catch(() => "");
       throw new PerpError("APPROVE_PARTIAL", `Pacifica bind_agent_wallet failed (${httpRes.status}): ${errText.slice(0, 200)}`, {
@@ -2041,7 +2041,7 @@ async function runPacApproveFlow(opts: PacApproveFlowOpts): Promise<PacApproveFl
   } catch (persistErr) {
     // Settings persist failed AFTER Pacifica registration succeeded.
     // Best-effort revoke + APPROVE_PARTIAL.
-    if (asterPostSucceeded) {
+    if (pacPostSucceeded) {
       try {
         await revokePacAgent(masterSigner, agentSolanaAddress);
       } catch { /* best effort */ }
@@ -2236,12 +2236,21 @@ async function runLtApproveFlow(opts: LtApproveFlowOpts): Promise<LtApproveFlowR
   // re-derives the L2 private key at trade time by re-running ChangePubKey,
   // which is wasteful. A follow-up should add a "lighter:" chainId binding to
   // OWS or store the raw key in a separate `~/.perp/lighter-agents/<id>.key`
-  // file. For now, the L2 private key from setupApiKey() is held in-memory
-  // ONLY for the duration of this approve call — subsequent trade calls will
-  // need either (a) the legacy LIGHTER_API_KEY env path, or (b) a manual
-  // re-approve to populate the env. This is documented in the changelog.
+  // file. As an interim bridge — used by both the legacy auto-setup at slot 4
+  // (lighter.ts:248) and this agent flow — write the agent's slot/key/account
+  // into ~/.perp/.env so subsequent trade commands have a working signer
+  // without forcing re-approve. Without this step, stale env values from a
+  // previous master would silently route trades to a wrong (or revoked)
+  // account, surfacing as "sendTx failed: invalid signature" only at fill
+  // time.
   const agentWalletName = `agent-lt-${masterName}`;
   void agentWalletName; // wallet bookkeeping only — not used to derive the L2 key
+  try {
+    const { setEnvVar } = await import("../commands/init.js");
+    setEnvVar("LIGHTER_API_KEY", registered.privateKey);
+    setEnvVar("LIGHTER_ACCOUNT_INDEX", String(adapter.accountIndex));
+    setEnvVar("LIGHTER_API_KEY_INDEX", String(chosenSlot));
+  } catch { /* non-critical — env save may fail in some sandboxed contexts */ }
 
   // Step 6: Persist
   try {

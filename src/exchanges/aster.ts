@@ -286,7 +286,8 @@ export class AsterAdapter implements ExchangeAdapter {
       return this._accountCache.data as ExchangeBalance;
     }
     const r = this._resolveSigner();
-    const account = await this._signedGetEip712("/fapi/v2/account", {}, r) as Record<string, unknown>;
+    // v3: /fapi/v2/account is HMAC-only; v3 EIP-712 uses /fapi/v3/accountWithJoinMargin.
+    const account = await this._signedGetEip712("/fapi/v3/accountWithJoinMargin", {}, r) as Record<string, unknown>;
 
     const totalWallet = Number(account.totalWalletBalance ?? 0);
     const unrealizedPnl = Number(account.totalUnrealizedProfit ?? 0);
@@ -308,23 +309,39 @@ export class AsterAdapter implements ExchangeAdapter {
       return this._positionsCache.data as ExchangePosition[];
     }
     const r = this._resolveSigner();
-    const data = await this._signedGetEip712("/fapi/v2/positionRisk", {}, r) as Array<Record<string, unknown>>;
+    // v3: /fapi/v2/positionRisk has no v3 equivalent. Positions live inside
+    // /fapi/v3/accountWithJoinMargin under `positions`. Mark price + liquidation
+    // price are NOT included there — fetch from the public premiumIndex.
+    const account = await this._signedGetEip712("/fapi/v3/accountWithJoinMargin", {}, r) as Record<string, unknown>;
+    const positions = (account.positions as Array<Record<string, unknown>> | undefined) ?? [];
 
-    const result = (data ?? [])
-      .filter((p) => Number(p.positionAmt ?? 0) !== 0)
-      .map((p) => {
-        const amt = Number(p.positionAmt ?? 0);
-        return {
-          symbol: this._fromApi(String(p.symbol ?? "")),
-          side: amt > 0 ? "long" as const : "short" as const,
-          size: String(Math.abs(amt)),
-          entryPrice: String(p.entryPrice ?? "0"),
-          markPrice: String(p.markPrice ?? "0"),
-          liquidationPrice: String(p.liquidationPrice ?? "0"),
-          unrealizedPnl: String(p.unRealizedProfit ?? "0"),
-          leverage: Number(p.leverage ?? 1),
-        };
-      });
+    const open = positions.filter((p) => Number(p.positionAmt ?? 0) !== 0);
+
+    // Fetch mark prices for the open symbols (best-effort; non-fatal on failure)
+    const markMap = new Map<string, string>();
+    if (open.length > 0) {
+      try {
+        const premiums = await this._publicGet("/fapi/v1/premiumIndex") as Array<Record<string, unknown>>;
+        for (const p of premiums ?? []) {
+          markMap.set(String(p.symbol), String(p.markPrice ?? "0"));
+        }
+      } catch { /* non-critical */ }
+    }
+
+    const result = open.map((p) => {
+      const amt = Number(p.positionAmt ?? 0);
+      const apiSym = String(p.symbol ?? "");
+      return {
+        symbol: this._fromApi(apiSym),
+        side: amt > 0 ? "long" as const : "short" as const,
+        size: String(Math.abs(amt)),
+        entryPrice: String(p.entryPrice ?? "0"),
+        markPrice: markMap.get(apiSym) ?? "0",
+        liquidationPrice: "0", // v3 accountWithJoinMargin does not expose this
+        unrealizedPnl: String(p.unrealizedProfit ?? "0"),
+        leverage: Number(p.leverage ?? 1),
+      };
+    });
     this._positionsCache = { data: result, time: Date.now() };
     return result;
   }
@@ -334,7 +351,7 @@ export class AsterAdapter implements ExchangeAdapter {
       return this._ordersCache.data as ExchangeOrder[];
     }
     const r = this._resolveSigner();
-    const orders = await this._signedGetEip712("/fapi/v1/openOrders", {}, r) as Array<Record<string, unknown>>;
+    const orders = await this._signedGetEip712("/fapi/v3/openOrders", {}, r) as Array<Record<string, unknown>>;
 
     const result = (orders ?? []).map((o) => ({
       orderId: String(o.orderId ?? ""),
@@ -363,7 +380,7 @@ export class AsterAdapter implements ExchangeAdapter {
     const allOrders: ExchangeOrder[] = [];
     for (const sym of apiSymbols) {
       try {
-        const orders = await this._signedGetEip712("/fapi/v1/allOrders", {
+        const orders = await this._signedGetEip712("/fapi/v3/allOrders", {
           symbol: sym,
           limit: String(limit),
         }, r) as Array<Record<string, unknown>>;
@@ -394,7 +411,7 @@ export class AsterAdapter implements ExchangeAdapter {
     const allTrades: ExchangeTrade[] = [];
     for (const sym of apiSymbols) {
       try {
-        const trades = await this._signedGetEip712("/fapi/v1/userTrades", {
+        const trades = await this._signedGetEip712("/fapi/v3/userTrades", {
           symbol: sym,
           limit: String(limit),
         }, r) as Array<Record<string, unknown>>;
@@ -416,7 +433,7 @@ export class AsterAdapter implements ExchangeAdapter {
 
   async getFundingPayments(limit = 200): Promise<ExchangeFundingPayment[]> {
     const r = this._resolveSigner();
-    const data = await this._signedGetEip712("/fapi/v1/income", {
+    const data = await this._signedGetEip712("/fapi/v3/income", {
       incomeType: "FUNDING_FEE",
       limit: String(limit),
     }, r) as Array<Record<string, unknown>>;
@@ -452,7 +469,7 @@ export class AsterAdapter implements ExchangeAdapter {
       for (let i = 0; i < 3; i++) {
         await new Promise(res => setTimeout(res, 1000));
         try {
-          const check = await this._signedGetEip712("/fapi/v1/order", {
+          const check = await this._signedGetEip712("/fapi/v3/order", {
             symbol: apiSymbol,
             orderId,
           }, r) as Record<string, unknown>;
@@ -466,7 +483,7 @@ export class AsterAdapter implements ExchangeAdapter {
         }
       }
       try {
-        await this._signedDeleteEip712("/fapi/v1/order", { symbol: apiSymbol, orderId }, r);
+        await this._signedDeleteEip712("/fapi/v3/order", { symbol: apiSymbol, orderId }, r);
       } catch { /* best effort cancel */ }
       throw new Error(`Market ${side} ${symbol}: order not filled after 3s, cancelled (orderId: ${orderId})`);
     }
@@ -535,13 +552,13 @@ export class AsterAdapter implements ExchangeAdapter {
     const r = this._resolveSigner();
     if (marginMode) {
       try {
-        await this._signedPostEip712("/fapi/v1/marginType", {
+        await this._signedPostEip712("/fapi/v3/marginType", {
           symbol: this._toApi(symbol),
           marginType: marginMode === "cross" ? "CROSSED" : "ISOLATED",
         }, r);
       } catch { /* may fail if already set */ }
     }
-    return this._signedPostEip712("/fapi/v1/leverage", {
+    return this._signedPostEip712("/fapi/v3/leverage", {
       symbol: this._toApi(symbol),
       leverage: String(leverage),
     }, r);
@@ -641,18 +658,30 @@ export class AsterAdapter implements ExchangeAdapter {
   // ── Private: EIP-712 signed HTTP helpers ─────────────────────────────────
 
   /**
-   * Sign and POST to a path using EIP-712 Domain B.
-   * Injects user + nonce + signer + signature + signatureChainId into the query string.
+   * Build the canonical signed-request URL per Aster v3 spec.
+   *
+   * Reference: https://github.com/asterdex/api-docs (V3, EN, send_by_url).
+   * The Python reference adds keys to the dict in this exact order:
+   *   nonce, user, signer
+   * then URL-encodes the dict to form the EIP-712 `msg`. After signing,
+   * `&signature=` is appended to the same query string. Authority verification
+   * reconstructs `msg` from the URL query params minus `signature`, so the
+   * signed dict and the URL query string must be byte-identical except for
+   * the appended signature.
+   *
+   * `signatureChainId` is NOT a v3 parameter — it's an artifact of an older
+   * scheme; including it breaks signature verification on every call.
    */
-  private async _signedPostEip712(
-    path: string,
+  private async _buildSignedQueryString(
     params: Record<string, string | number | boolean>,
     resolved: ResolvedSigner,
-  ): Promise<unknown> {
+  ): Promise<string> {
+    // Insertion order (matches Python reference: nonce, user, signer last).
     const fullParams: Record<string, string | number | boolean> = {
       ...params,
-      user: resolved.userAddress,
       nonce: this._nextNonce(),
+      user: resolved.userAddress,
+      signer: resolved.signerAddress,
     };
 
     const typed = buildOrderTypedData(fullParams);
@@ -667,15 +696,21 @@ export class AsterAdapter implements ExchangeAdapter {
     // Normalize: AgentSigningStrategy returns { signature, r, s, v }; EvmSigner returns string
     const sigHex = typeof sigRaw === "string" ? sigRaw : (sigRaw as { signature: string }).signature;
 
-    const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries(fullParams)) {
-      qs.append(k, String(v));
-    }
-    qs.append("signer", resolved.signerAddress);
-    qs.append("signature", sigHex);
-    qs.append("signatureChainId", "1666");
+    // typed.message.msg is the URL-encoded dict in the same order; reuse it
+    // to guarantee the byte-identical query string is sent on the wire.
+    return `${typed.message.msg}&signature=${sigHex}`;
+  }
 
-    const url = `${this._baseUrl}${path}?${qs.toString()}`;
+  /**
+   * Sign and POST to a path using EIP-712 Domain B.
+   */
+  private async _signedPostEip712(
+    path: string,
+    params: Record<string, string | number | boolean>,
+    resolved: ResolvedSigner,
+  ): Promise<unknown> {
+    const qs = await this._buildSignedQueryString(params, resolved);
+    const url = `${this._baseUrl}${path}?${qs}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -693,31 +728,8 @@ export class AsterAdapter implements ExchangeAdapter {
     params: Record<string, string | number | boolean>,
     resolved: ResolvedSigner,
   ): Promise<unknown> {
-    const fullParams: Record<string, string | number | boolean> = {
-      ...params,
-      user: resolved.userAddress,
-      nonce: this._nextNonce(),
-    };
-
-    const typed = buildOrderTypedData(fullParams);
-
-    const sigRaw = await (resolved.signer as AgentSigningStrategy & EvmSigner).signTypedData(
-      typed.domain as Record<string, unknown>,
-      typed.types as unknown as Record<string, Array<{ name: string; type: string }>>,
-      typed.message as Record<string, unknown>,
-    );
-
-    const sigHex = typeof sigRaw === "string" ? sigRaw : (sigRaw as { signature: string }).signature;
-
-    const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries(fullParams)) {
-      qs.append(k, String(v));
-    }
-    qs.append("signer", resolved.signerAddress);
-    qs.append("signature", sigHex);
-    qs.append("signatureChainId", "1666");
-
-    const url = `${this._baseUrl}${path}?${qs.toString()}`;
+    const qs = await this._buildSignedQueryString(params, resolved);
+    const url = `${this._baseUrl}${path}?${qs}`;
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetch(url);
       const result = await this._handleResponse(res, "GET", path, attempt);
@@ -734,31 +746,8 @@ export class AsterAdapter implements ExchangeAdapter {
     params: Record<string, string | number | boolean>,
     resolved: ResolvedSigner,
   ): Promise<unknown> {
-    const fullParams: Record<string, string | number | boolean> = {
-      ...params,
-      user: resolved.userAddress,
-      nonce: this._nextNonce(),
-    };
-
-    const typed = buildOrderTypedData(fullParams);
-
-    const sigRaw = await (resolved.signer as AgentSigningStrategy & EvmSigner).signTypedData(
-      typed.domain as Record<string, unknown>,
-      typed.types as unknown as Record<string, Array<{ name: string; type: string }>>,
-      typed.message as Record<string, unknown>,
-    );
-
-    const sigHex = typeof sigRaw === "string" ? sigRaw : (sigRaw as { signature: string }).signature;
-
-    const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries(fullParams)) {
-      qs.append(k, String(v));
-    }
-    qs.append("signer", resolved.signerAddress);
-    qs.append("signature", sigHex);
-    qs.append("signatureChainId", "1666");
-
-    const url = `${this._baseUrl}${path}?${qs.toString()}`;
+    const qs = await this._buildSignedQueryString(params, resolved);
+    const url = `${this._baseUrl}${path}?${qs}`;
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetch(url, { method: "DELETE" });
       const result = await this._handleResponse(res, "DELETE", path, attempt);

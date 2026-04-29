@@ -108,6 +108,14 @@ export class LighterAdapter implements ExchangeAdapter {
   setSigner(signer: EvmSigner): void {
     this._evmSigner = signer;
     this._address = signer.getAddress();
+    // Reset env-driven accountIndex hint: when the agent flow injects an OWS
+    // signer (different master EVM than whatever produced LIGHTER_ACCOUNT_INDEX
+    // in ~/.perp/.env), the stale env value would otherwise override the API
+    // lookup in init() and cause ChangePubKey to claim the wrong account
+    // (Lighter rejects the L1 sig with code=21504 "fail to l1 signature").
+    // Force a fresh /api/v1/account lookup keyed on the injected signer.
+    this._accountIndexInit = -1;
+    this._accountIndex = -1;
   }
 
   /**
@@ -126,6 +134,11 @@ export class LighterAdapter implements ExchangeAdapter {
   setAgentSigner(meta: AgentMeta, agentApiKey: string): void {
     this._agentMeta = meta;
     this._agentApiKey = agentApiKey;
+    // Reset env-driven accountIndex hint: the agent may belong to a different
+    // Lighter account than the master signer, so any stale LIGHTER_ACCOUNT_INDEX
+    // env value must not override the fresh API lookup triggered by init().
+    this._accountIndexInit = -1;
+    this._accountIndex = -1;
     // Active slot+key swap happens lazily in `_resolveSigner()`/init flows.
   }
 

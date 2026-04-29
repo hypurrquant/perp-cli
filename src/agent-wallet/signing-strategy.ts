@@ -3,14 +3,19 @@ import type { AgentMeta } from "../settings.js";
 /**
  * Interface for agent-key signing strategies.
  * The AsterAdapter consumes this interface, never a concrete class.
+ *
+ * Signature shape mirrors EvmSigner.signTypedData(domain, types, message) so
+ * call sites can cast to `EvmSigner & AgentSigningStrategy` and dispatch
+ * uniformly. The return type differs from EvmSigner (which returns string):
+ * AgentSigningStrategy returns { signature, r, s, v } so callers can pull
+ * raw r/s/v if needed.
  */
 export interface AgentSigningStrategy {
-  signTypedData(typedData: {
-    domain: unknown;
-    types: unknown;
-    primaryType: string;
-    message: unknown;
-  }): Promise<{ signature: string; r: string; s: string; v: number }>;
+  signTypedData(
+    domain: Record<string, unknown>,
+    types: Record<string, Array<{ name: string; type: string }>>,
+    message: Record<string, unknown>,
+  ): Promise<{ signature: string; r: string; s: string; v: number }>;
   getAddress(): string;
 }
 
@@ -34,19 +39,14 @@ export class TokenAsPassphraseStrategy implements AgentSigningStrategy {
     return this._address;
   }
 
-  async signTypedData(typedData: {
-    domain: unknown;
-    types: unknown;
-    primaryType: string;
-    message: unknown;
-  }): Promise<{ signature: string; r: string; s: string; v: number }> {
+  async signTypedData(
+    domain: Record<string, unknown>,
+    types: Record<string, Array<{ name: string; type: string }>>,
+    message: Record<string, unknown>,
+  ): Promise<{ signature: string; r: string; s: string; v: number }> {
     // Lazy import to avoid loading OWS bindings unless this strategy is used
     const { OwsEvmSigner } = await import("../signer/ows-evm.js");
     const signer = OwsEvmSigner.create(this._walletName, this._owsKeyToken);
-
-    const domain = typedData.domain as Record<string, unknown>;
-    const types = typedData.types as Record<string, Array<{ name: string; type: string }>>;
-    const message = typedData.message as Record<string, unknown>;
 
     const hexSig = await signer.signTypedData(domain, types, message);
 
@@ -77,12 +77,11 @@ export class ExplicitTokenStrategy implements AgentSigningStrategy {
     );
   }
 
-  async signTypedData(_typedData: {
-    domain: unknown;
-    types: unknown;
-    primaryType: string;
-    message: unknown;
-  }): Promise<{ signature: string; r: string; s: string; v: number }> {
+  async signTypedData(
+    _domain: Record<string, unknown>,
+    _types: Record<string, Array<{ name: string; type: string }>>,
+    _message: Record<string, unknown>,
+  ): Promise<{ signature: string; r: string; s: string; v: number }> {
     throw new Error(
       "ExplicitTokenStrategy.signTypedData(): not implemented — pending Step 0a spike outcome",
     );
