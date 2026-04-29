@@ -794,7 +794,8 @@ export class LighterAdapter implements ExchangeAdapter {
     const { baseAmount } = this.toTicks(symbol, parseFloat(size), 0);
     const { priceTicks: triggerTicks } = this.toTicks(symbol, 0, parseFloat(triggerPrice));
 
-    // If limitPrice given → stop-limit (type 0, GTT), else stop-market (type 1, IOC)
+    // STOP_LOSS = 2 (market-on-trigger), STOP_LOSS_LIMIT = 3 (limit-on-trigger)
+    // (regular orderType 0/1 don't accept triggerPrice — WASM signer rejects)
     const isMarket = !opts?.limitPrice;
     let priceTicks: number;
     if (isMarket) {
@@ -811,11 +812,11 @@ export class LighterAdapter implements ExchangeAdapter {
       baseAmount,
       price: Math.max(priceTicks, 1),
       isAsk: side === "sell" ? 1 : 0,
-      orderType: isMarket ? 1 : 0,
+      orderType: isMarket ? 2 : 3,  // STOP_LOSS (market) or STOP_LOSS_LIMIT
       timeInForce: isMarket ? 0 : 1, // IOC for market, GTT for limit
       reduceOnly: opts?.reduceOnly ? 1 : 0,
       triggerPrice: triggerTicks,
-      orderExpiry: isMarket ? 0 : -1,
+      orderExpiry: -1,  // stop orders sit until trigger
       nonce,
     });
     return this.sendTx(signed);

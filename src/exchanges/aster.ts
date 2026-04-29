@@ -766,11 +766,14 @@ export class AsterAdapter implements ExchangeAdapter {
     }
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw classifyError(new Error(`${method} ${path} failed (${res.status}): ${text.slice(0, 200)}`), "aster");
+      const s = classifyError(new Error(`${method} ${path} failed (${res.status}): ${text.slice(0, 200)}`), "aster");
+      throw new PerpError(s.code, s.message, { exchange: s.exchange });
     }
     const json = await res.json() as { code?: string | number; msg?: string };
     if (json.code !== undefined && json.code !== "000000" && json.code !== 200) {
-      throw classifyError(new Error(json.msg ?? String(json.code)), "aster");
+      const rawMsg = typeof json.msg === "string" ? json.msg : JSON.stringify(json);
+      const s = classifyError(new Error(rawMsg), "aster");
+      throw new PerpError(s.code, s.message, { exchange: s.exchange });
     }
     return json;
   }

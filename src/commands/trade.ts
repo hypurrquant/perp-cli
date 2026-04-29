@@ -671,7 +671,11 @@ export function registerTradeCommands(
             meta: { action: "scale-tp", pct: level.pct, reduceOnly: true },
           });
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = err instanceof Error
+            ? err.message
+            : (err && typeof err === "object")
+              ? ((err as { message?: string }).message ?? JSON.stringify(err))
+              : String(err);
           logExecution({
             type: "limit_order", exchange: adapter.name, symbol: sym,
             side: closeSide, size: levelSize, price: level.price,
@@ -1151,7 +1155,11 @@ export function registerTradeCommands(
             meta: { action: "scale-in", pct: level.pct },
           });
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = err instanceof Error
+            ? err.message
+            : (err && typeof err === "object")
+              ? ((err as { message?: string }).message ?? JSON.stringify(err))
+              : String(err);
           logExecution({
             type: "limit_order", exchange: adapter.name, symbol: sym,
             side: s, size: level.size, price: level.price,
