@@ -10,6 +10,9 @@ import type {
 } from "./interface.js";
 import type { EvmSigner } from "../signer/index.js";
 import { LocalEvmSigner } from "../signer/index.js";
+import type { AgentMeta } from "../settings.js";
+import { isExpired } from "../agent-wallet/expiry.js";
+import { PerpError } from "../errors.js";
 
 import type { WasmSignerClient as WasmSignerClientType } from "lighter-ts-sdk";
 
@@ -43,6 +46,17 @@ export class LighterAdapter implements ExchangeAdapter {
   private _marketsCache: ExchangeMarketInfo[] | null = null;
   private _marketsCacheTime = 0;
   private static readonly CACHE_TTL = 30_000;
+
+  // ── 3-tier signer state (Phase 2d) ──
+  /** Tier 1 metadata (Phase 2d). When set + not expired + !_useNoAgent, agent
+   *  apiKeyIndex/publicKey/accountIndex take priority over master/PK env. */
+  private _agentMeta?: AgentMeta;
+  /** Tier 1 secp256k1 hex private key (40 bytes) for the agent slot. Lighter
+   *  has no OWS curve binding for raw L2 keys; this is held in-memory only when
+   *  passed by the caller (e.g. immediately after `setupApiKey()` or via env). */
+  private _agentApiKey?: string;
+  /** --no-agent bypass flag. */
+  private _useNoAgent = false;
 
   /**
    * @param evmKey    EVM private key (0x-prefixed, 32 bytes) — for deposits & key registration
@@ -96,7 +110,92 @@ export class LighterAdapter implements ExchangeAdapter {
     this._address = signer.getAddress();
   }
 
+  /**
+   * Tier 1: inject a Lighter agent's slot+L2 key (Phase 2d).
+   *
+   * Caller supplies the AgentMeta (settings.agents.lighter[name]) plus the
+   * 40-byte L2 private key (hex). Adapter swaps `_apiKey`/`_apiKeyIndex` to
+   * the agent's slot/key so all subsequent `signCreateOrder`/`signCancelOrder`
+   * etc. flow through the agent identity.
+   *
+   * NOTE: when the agent path is active, `_address` (master EVM) is left
+   * unchanged because Lighter REST queries (account, balance, positions) use
+   * `account_index` not address. The L1 EVM identity is irrelevant for the
+   * hot-path; only the L2 secp256k1 key is consulted.
+   */
+  setAgentSigner(meta: AgentMeta, agentApiKey: string): void {
+    this._agentMeta = meta;
+    this._agentApiKey = agentApiKey;
+    // Active slot+key swap happens lazily in `_resolveSigner()`/init flows.
+  }
+
+  /** Bypass Tier 1 (agent) — used for `--no-agent` flag. */
+  setNoAgent(noAgent: boolean): void {
+    this._useNoAgent = noAgent;
+  }
+
+  /** Which signer tier is currently active (for debug/diagnostics). */
+  get activeSignerTier(): "agent" | "master" | "pk" | null {
+    try {
+      return this._resolveSigner().tier;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Resolve the active signer tier across three tiers (Phase 2d).
+   *
+   * Tier 1 (agent): active when AgentMeta + agent L2 key set, not expired,
+   *   and `--no-agent` NOT set. The actual swap of `_apiKeyIndex`/`_apiKey`
+   *   happens in `init()` (or via `_activateAgentTier()` post-init).
+   * Tier 2 (master): active when an OWS master EVM signer was injected via
+   *   `setSigner()`. Used for the L1 ChangePubKey path (auto-setup at slot 4).
+   * Tier 3 (pk): active when constructor was supplied an evmKey. Same role
+   *   as Tier 2 — signs L1 ChangePubKey for auto-setup.
+   *
+   * Lighter is unique among the 4 DEXs in that the actual order-signing is
+   * always done by the L2 secp256k1 key (`_apiKey`), regardless of tier. The
+   * tiers differ in WHICH L2 key is loaded: Tier 1 uses the agent's slot/key
+   * from AgentMeta; Tier 2/3 use whatever the env/auto-setup produced.
+   */
+  private _resolveSigner(): { tier: "agent" | "master" | "pk" } {
+    if (!this._useNoAgent && this._agentMeta && this._agentApiKey) {
+      if (isExpired(this._agentMeta)) {
+        // Skip Tier 1 only if Tier 2/3 available; otherwise throw AGENT_EXPIRED
+        if (!this._evmSigner && !this._evmKey) {
+          throw new PerpError("AGENT_EXPIRED", "Agent wallet has expired", {
+            remediation: "perp wallet agent approve lighter --rotate",
+          });
+        }
+        // fall through
+      } else {
+        return { tier: "agent" };
+      }
+    }
+    if (this._evmSigner) return { tier: "master" };
+    if (this._evmKey) return { tier: "pk" };
+    throw new PerpError("NO_SIGNER_AVAILABLE", "No signing path configured for Lighter", {
+      remediation: "Run one of: (a) perp wallet agent approve lighter --master <wallet>; (b) perp wallet generate && perp -e lighter --ows <wallet>; (c) export LIGHTER_PRIVATE_KEY=0x...",
+    });
+  }
+
   async init(): Promise<void> {
+    // Phase 2d: when an agent is registered (Tier 1), swap _apiKey/_apiKeyIndex
+    // to the agent's slot/key BEFORE any of the existing init logic runs.
+    // This ensures the WASM client at lines 178-185 below is created with the
+    // agent's credentials, not the env-driven LIGHTER_API_KEY.
+    if (!this._useNoAgent && this._agentMeta && this._agentApiKey && !isExpired(this._agentMeta)) {
+      this._apiKey = this._agentApiKey;
+      if (typeof this._agentMeta.apiKeyIndex === "number") {
+        this._apiKeyIndex = this._agentMeta.apiKeyIndex;
+      }
+      if (typeof this._agentMeta.accountIndex === "number") {
+        this._accountIndex = this._agentMeta.accountIndex;
+        this._accountIndexInit = this._agentMeta.accountIndex;
+      }
+    }
+
     // Initialize EVM signer if not externally injected (skip if no key — read-only mode)
     if (!this._evmSigner && this._evmKey) {
       this._evmSigner = await LocalEvmSigner.create(this._evmKey);
@@ -110,7 +209,7 @@ export class LighterAdapter implements ExchangeAdapter {
       await this._refreshMarketMap();
       return;
     }
-    // If accountIndex is already known (from env/opts), skip API lookup entirely
+    // If accountIndex is already known (from env/opts/agent meta), skip API lookup entirely
     if (this._accountIndexInit >= 0) {
       this._accountIndex = this._accountIndexInit;
     } else {
@@ -154,7 +253,7 @@ export class LighterAdapter implements ExchangeAdapter {
       } catch (e) {
         // Auto-setup failed — log the error and continue in read-only mode
         const msg = e instanceof Error ? e.message : String(e);
-        console.error(`[lighter] API key auto-setup failed: ${msg}. Trading will be read-only. Run 'perp -e lighter manage setup-api-key' to retry.`);
+        console.error(`[lighter] API key auto-setup failed: ${msg}. Trading will be read-only. Run 'perp wallet agent approve lighter' to register an agent.`);
       }
     }
 
@@ -164,7 +263,7 @@ export class LighterAdapter implements ExchangeAdapter {
       let cleanKey = this._apiKey.trim().replace(/['"` \t\n\r.]/g, "");
       if (cleanKey.startsWith("0x")) cleanKey = cleanKey.slice(2);
       if (cleanKey.length > 0 && !/^[0-9a-fA-F]+$/.test(cleanKey)) {
-        console.error(`[lighter] API key contains invalid chars (expected hex). Check LIGHTER_API_KEY in ~/.perp/.env or run 'perp -e lighter manage setup-api-key' to regenerate.`);
+        console.error(`[lighter] API key contains invalid chars (expected hex). Check LIGHTER_API_KEY in ~/.perp/.env or run 'perp wallet agent approve lighter' to regenerate.`);
         this._apiKey = "";
       } else if (cleanKey.length === 0) {
         this._apiKey = "";
@@ -1148,8 +1247,8 @@ export class LighterAdapter implements ExchangeAdapter {
   private ensureSigner(): void {
     if (this._readOnly || this._accountIndex < 0 || !this._signer) {
       throw new Error(
-        "This command requires a Lighter API key. Run `perp -e lighter manage setup-api-key` first, " +
-        "then set LIGHTER_API_KEY in your .env"
+        "This command requires a Lighter API key. Run `perp wallet agent approve lighter` first, " +
+        "or set LIGHTER_API_KEY in your .env."
       );
     }
   }

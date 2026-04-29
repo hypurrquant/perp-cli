@@ -41,12 +41,12 @@ else
   add_check "wallet" "fail" "No wallet configured — run: perp wallet set <exchange> <key>"
 fi
 
-# 3. Exchange connectivity
-HEALTH_OUT=$($PERP --json agent ping 2>/dev/null || echo '{"ok":false}')
+# 3. Exchange connectivity (proxy via unauthenticated market prices fetch)
+HEALTH_OUT=$($PERP --json market prices 2>/dev/null || echo '{"ok":false}')
 if echo "$HEALTH_OUT" | grep -q '"ok":true'; then
-  add_check "connectivity" "pass" "Exchanges reachable"
+  add_check "connectivity" "pass" "Exchange reachable"
 else
-  add_check "connectivity" "warn" "Some exchanges unreachable"
+  add_check "connectivity" "warn" "Exchange unreachable"
 fi
 
 # 4. Portfolio & balances

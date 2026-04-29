@@ -38,8 +38,8 @@ fi
 # 2. Run appropriate scan
 SCAN_RESULT=$($PERP --json arb scan --mode "$MODE" --min "$MIN_SPREAD" 2>/dev/null || echo '{"ok":false}')
 
-# 3. Get exchange health for context
-HEALTH=$($PERP --json agent ping 2>/dev/null || echo '{"ok":false}')
+# 3. Get exchange health for context (proxy via market prices fetch)
+HEALTH=$($PERP --json market prices 2>/dev/null || echo '{"ok":false}')
 
 if $JSON_MODE; then
   cat <<EOF

@@ -1,21 +1,43 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "perp-cli",
-  "description": "Multi-DEX perpetual futures trading CLI for AI agents",
+  "description": "Multi-DEX perpetual futures trading CLI + MCP server for AI agents",
   "owner": {
     "name": "HypurrQuant",
-    "email": "hypurrquant@proton.me"
+    "email": "hypurrquant@proton.me",
+    "url": "https://github.com/hypurrquant"
   },
   "plugins": [
     {
       "name": "perp-cli",
-      "description": "Trade, bridge, arbitrage, and manage positions across Pacifica, Hyperliquid, and Lighter exchanges via perp-cli",
+      "description": "Trade, bridge, arbitrage, and manage perp positions across 4 DEXes (Pacifica, Hyperliquid, Lighter, Aster) via natural language. Ships an MCP server with 18 tools / 3 resources / 2 prompts and an agentskills.io-compatible Skill bundle.",
+      "version": "0.11.0",
+      "author": {
+        "name": "HypurrQuant",
+        "email": "hypurrquant@proton.me"
+      },
       "source": "./",
-      "strict": false,
+      "category": "trading",
+      "homepage": "https://github.com/hypurrquant/perp-cli",
+      "tags": [
+        "mcp",
+        "trading",
+        "perp",
+        "perpetual-futures",
+        "defi",
+        "hyperliquid",
+        "pacifica",
+        "lighter",
+        "aster",
+        "ai-agent",
+        "funding-arb",
+        "skill"
+      ],
       "skills": [
         "./skills/perp-cli"
       ],
-      "category": "development"
+      "strict": false
     }
-  ]
+  ],
+  "version": "0.11.0"
 }

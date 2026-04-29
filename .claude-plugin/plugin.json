@@ -1,0 +1,32 @@
+{
+  "name": "perp-cli",
+  "version": "0.11.0",
+  "description": "Multi-DEX perpetual futures CLI + MCP server for AI agents — Pacifica (Solana), Hyperliquid (HyperEVM), Lighter (Ethereum), Aster (BNB Chain). Trade, bridge, arb, and manage positions via natural language.",
+  "author": {
+    "name": "HypurrQuant",
+    "email": "hypurrquant@proton.me",
+    "url": "https://github.com/hypurrquant"
+  },
+  "repository": "https://github.com/hypurrquant/perp-cli",
+  "homepage": "https://github.com/hypurrquant/perp-cli",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "mcp",
+    "perp",
+    "perpetual-futures",
+    "trading",
+    "defi",
+    "hyperliquid",
+    "pacifica",
+    "lighter",
+    "aster",
+    "ai-agent",
+    "funding-rate",
+    "arbitrage"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "strict": false
+}

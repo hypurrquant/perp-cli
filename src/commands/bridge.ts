@@ -17,11 +17,11 @@ import {
 } from "../bridge-engine.js";
 import type { Exchange } from "../config.js";
 
-export function registerBridgeCommands(
-  program: Command,
+export function registerFundsBridgeCommands(
+  parent: Command,
   isJson: () => boolean
 ) {
-  const bridge = program.command("bridge").description("Cross-chain USDC bridge (deBridge DLN). See also: perp funds bridge (CCTP V2)");
+  const bridge = parent.command("bridge").description("Cross-chain USDC bridge (multi-provider: cctp, relay, debridge — auto-cheapest)");
 
   // ── bridge chains ──
 
@@ -116,7 +116,7 @@ export function registerBridgeCommands(
         }
       }
       console.log();
-      console.log(chalk.gray(`  Execute with: perp bridge send --from ${srcChain} --to ${dstChain} --amount ${opts.amount}`));
+      console.log(chalk.gray(`  Execute with: perp funds bridge send --from ${srcChain} --to ${dstChain} --amount ${opts.amount}`));
       console.log(chalk.gray(`  Pick provider: --provider cctp|relay|debridge\n`));
     });
 
@@ -423,7 +423,7 @@ export function registerBridgeCommands(
         console.log(chalk.green(`  USDC arrived on ${dstExchange}!`));
       }
       console.log(chalk.gray(`\n  After arrival, deposit into ${dstExchange}:`));
-      console.log(chalk.gray(`  perp deposit ${dstExchange} ${opts.amount}\n`));
+      console.log(chalk.gray(`  perp funds deposit ${dstExchange} ${opts.amount}\n`));
     });
 
   // ── bridge status ──

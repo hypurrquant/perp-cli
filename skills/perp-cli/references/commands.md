@@ -69,7 +69,11 @@ perp --json trade market <SYM> buy <SIZE> --split   # split via market command f
 perp --json trade market <SYM> buy <SIZE> --split --max-slippage 0.5
 ```
 
-## Funds (Deposit, Withdraw, Transfer, Bridge)
+## Funds (Deposit, Withdraw, Transfer, Bridge, Rebalance)
+
+All fund movement lives under `perp funds`.
+
+### Exchange in/out
 ```bash
 perp --json funds deposit pacifica <AMOUNT>
 perp --json funds deposit hyperliquid <AMOUNT>
@@ -79,19 +83,26 @@ perp --json funds deposit lighter info                      # all Lighter deposi
 perp --json funds withdraw pacifica <AMOUNT>
 perp --json funds withdraw hyperliquid <AMOUNT>
 perp --json funds withdraw lighter <AMOUNT>
-perp --json funds transfer <AMOUNT> <ADDRESS>     # HL internal transfer (instant)
-perp --json funds bridge --from <CHAIN> --to <CHAIN> --amount <AMT> --recipient <ADDR>  # CCTP bridge
-perp --json funds bridge-status --hash <HASH>     # check CCTP bridge status
-perp --json funds info                            # combined deposit & withdrawal info
+perp --json funds transfer <AMOUNT> <ADDRESS>               # HL internal transfer (instant)
+perp --json funds info                                      # combined routes & limits
 ```
 
-## Bridge (Cross-chain USDC)
+### Cross-chain bridge (multi-provider router: cctp / relay / debridge — auto-cheapest)
 ```bash
-perp --json bridge chains                   # supported chains
-perp --json bridge quote --from <CHAIN> --to <CHAIN> --amount <AMT>
-perp --json bridge send --from <CHAIN> --to <CHAIN> --amount <AMT>
-perp --json bridge exchange --from <EX> --to <EX> --amount <AMT>
-perp --json bridge status <ORDER_ID>
+perp --json funds bridge chains                   # supported chains
+perp --json funds bridge quote --from <CHAIN> --to <CHAIN> --amount <AMT>
+perp --json funds bridge send --from <CHAIN> --to <CHAIN> --amount <AMT>           # auto-cheapest
+perp --json funds bridge send --from <CHAIN> --to <CHAIN> --amount <AMT> --provider cctp
+perp --json funds bridge exchange --from <EX> --to <EX> --amount <AMT>             # between exchanges
+perp --json funds bridge status <ORDER_ID>
+```
+
+### Inter-exchange rebalance (orchestrated withdraw → bridge → deposit)
+```bash
+perp --json funds rebalance check                            # balances across exchanges
+perp --json funds rebalance plan                             # compute optimal moves
+perp --json funds rebalance execute --auto-bridge            # withdraw → bridge → deposit
+perp --json funds rebalance execute --withdraw-only          # only withdraw, manual rest
 ```
 
 ## Arbitrage
@@ -137,7 +148,6 @@ perp --json risk liquidation-distance       # % distance from liquidation for AL
 perp --json risk limits                     # view current risk limits
 perp --json risk limits --min-liq-distance 30 --max-leverage 5  # set risk limits
 perp --json risk check --notional 1000 --leverage 3  # pre-trade risk check
-perp --json agent ping                      # exchange connectivity & latency
 perp --json history summary                 # trading performance
 perp --json history pnl                     # P&L breakdown by exchange
 perp --json history funding                 # funding payment aggregation
@@ -148,24 +158,34 @@ perp --json history perf --period summary   # performance summary stats
 perp --json history list                    # execution audit trail
 ```
 
-## Automated Strategies (bot — 19 strategies)
+## Automated Strategies (strategy — 19 algorithms + nested scripted plans)
 ```bash
-perp --json bot list-strategies                              # list all 19 strategies
-perp --json bot run <STRATEGY> [SYMBOL]                      # run any registered strategy
-perp --json bot run funding-auto                             # multi-exchange funding arb (no symbol needed)
-perp --json bot apex [SYMBOL]                                # APEX autonomous orchestrator (Radar+Pulse+Guard)
-perp --json bot reflect                                      # trading performance analysis (win rate, fees, PnL)
-perp --json bot preset-list                                  # list strategy presets
-perp --json bot preset <NAME> [SYMBOL]                       # run from preset
-perp --json bot twap <SYMBOL> <SIDE> <SIZE> <DURATION>       # TWAP execution
-perp --json bot grid <SYMBOL> --range <PCT> --grids <N> --size <USD>
-perp --json bot dca <SYMBOL> <SIDE> <AMOUNT> <INTERVAL>
-perp --json bot trailing-stop <SYMBOL>                       # trailing stop with callback %
-perp --json bot funding-arb                                  # auto funding arb
-perp --json bot quick-grid <SYMBOL>                          # quick grid bot
-perp --json bot quick-arb                                    # quick arb bot
-perp --json jobs list                                        # list running jobs
-perp --json jobs stop <ID>                                   # stop a job
+perp --json strategy list-strategies                         # list all 19 strategies
+perp --json strategy run <STRATEGY> [SYMBOL]                 # run any registered strategy
+perp --json strategy run funding-auto                        # multi-exchange funding arb (no symbol needed)
+perp --json strategy apex [SYMBOL]                           # APEX autonomous orchestrator (Radar+Pulse+Guard)
+perp --json strategy reflect                                 # trading performance analysis (win rate, fees, PnL)
+perp --json strategy preset-list                             # list strategy presets
+perp --json strategy preset <NAME> [SYMBOL]                  # run from preset
+perp --json strategy twap <SYMBOL> <SIDE> <SIZE> <DURATION>  # TWAP execution
+perp --json strategy grid <SYMBOL> --range <PCT> --grids <N> --size <USD>
+perp --json strategy dca <SYMBOL> <SIDE> <AMOUNT> <INTERVAL>
+perp --json strategy trailing-stop <SYMBOL>                  # trailing stop with callback %
+perp --json strategy funding-arb                             # auto funding arb
+perp --json strategy quick-grid <SYMBOL>                     # quick grid bot
+perp --json strategy quick-arb                               # quick arb bot
+
+# Scripted execution plans (one-shot multi-step)
+perp --json strategy plan example                            # show plan format
+perp --json strategy plan validate <FILE>                    # validate plan
+perp --json strategy plan execute <FILE> --dry-run           # dry-run plan
+
+# Background process supervisor (tmux)
+perp --json background list                                  # list running jobs
+perp --json background stop <ID>                             # stop a job
+perp --json background logs <ID>                             # view job logs
+perp --json background remove <ID>                           # remove a job entry
+perp --json background clean                                 # remove all stopped/done jobs
 ```
 
 ### Available Strategies
@@ -175,10 +195,11 @@ Arbitrage: `funding-arb`, `funding-auto`, `basis-arb`
 Infrastructure: `hedge-agent`, `rfq-agent`, `claude-agent`
 Classic: `grid`, `dca`, `twap`, `apex`
 
-## Command Discovery
+## Agent Wallet Management
 ```bash
-perp schema                       # Full CLI schema as JSON
-perp agent capabilities           # High-level capability list
-perp agent plan "<goal>"          # Suggest command sequence for a goal
-perp agent ping                   # Health check all exchanges
+perp wallet agent approve <exchange> [--master <name>]   # Register an agent wallet
+perp wallet agent list [exchange]                        # List registered agents
+perp wallet agent revoke <exchange> <agentName>          # Revoke an agent
+perp wallet agent rotate <exchange> [agentName]          # Revoke + re-approve same name
+perp wallet agent verify [exchange] [agentName]          # Verify via DEX query API
 ```

@@ -1656,7 +1656,7 @@ export function registerArbManageCommands(
       if (opts.dryRun) {
         console.log(chalk.yellow("\n  [DRY RUN] No transfers executed.\n"));
       } else {
-        console.log(chalk.yellow("\n  To execute, use: perp rebalance execute --auto-bridge\n"));
+        console.log(chalk.yellow("\n  To execute, use: perp funds rebalance execute --auto-bridge\n"));
       }
     });
 

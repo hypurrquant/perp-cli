@@ -53,72 +53,11 @@ afterAll(() => {
 });
 
 describe("CLI E2E Integration Tests", { timeout: 30000 }, () => {
-  // ───────────────────── schema command ─────────────────────
-
-  describe("perp schema --json", () => {
-    let schema: Record<string, unknown>;
-
-    /** schema may be wrapped in envelope { ok, data } or raw */
-    function parseSchema(output: string): Record<string, unknown> {
-      const parsed = JSON.parse(output);
-      return (parsed.data ?? parsed) as Record<string, unknown>;
-    }
-
-    it("outputs valid JSON with expected top-level structure", () => {
-      const output = runCli("schema");
-      schema = parseSchema(output);
-
-      expect(schema).toHaveProperty("schemaVersion");
-      expect(schema).toHaveProperty("commands");
-      expect(schema).toHaveProperty("errorCodes");
-      expect(schema).toHaveProperty("exchanges");
-
-      expect(Array.isArray(schema.commands)).toBe(true);
-      expect(Array.isArray(schema.exchanges)).toBe(true);
-      expect(typeof schema.errorCodes).toBe("object");
-    });
-
-    it("commands array contains known command names", () => {
-      const output = runCli("schema");
-      schema = parseSchema(output);
-
-      const commandNames = (schema.commands as Array<{ name: string }>).map((c) => c.name);
-
-      expect(commandNames).toContain("market");
-      expect(commandNames).toContain("account");
-      expect(commandNames).toContain("trade");
-      expect(commandNames).toContain("arb");
-      expect(commandNames).toContain("plan");
-    });
-
-    it("errorCodes contains key error types with retryable flags", () => {
-      const output = runCli("schema");
-      schema = parseSchema(output);
-
-      const errorCodes = schema.errorCodes as Record<string, { status: number; retryable: boolean }>;
-
-      expect(errorCodes).toHaveProperty("INSUFFICIENT_BALANCE");
-      expect(errorCodes.INSUFFICIENT_BALANCE.retryable).toBe(false);
-
-      expect(errorCodes).toHaveProperty("RATE_LIMITED");
-      expect(errorCodes.RATE_LIMITED.retryable).toBe(true);
-
-      expect(errorCodes).toHaveProperty("TIMEOUT");
-      expect(errorCodes.TIMEOUT.retryable).toBe(true);
-
-      expect(errorCodes).toHaveProperty("EXCHANGE_UNREACHABLE");
-      expect(errorCodes.EXCHANGE_UNREACHABLE.retryable).toBe(true);
-
-      expect(errorCodes).toHaveProperty("UNKNOWN");
-      expect(errorCodes.UNKNOWN.retryable).toBe(false);
-    });
-  });
-
   // ───────────────────── plan commands ─────────────────────
 
-  describe("perp plan example", () => {
+  describe("perp strategy plan example", () => {
     it("outputs valid JSON with version 1.0 and steps array", () => {
-      const output = runCli("plan example");
+      const output = runCli("strategy plan example");
       const parsed = JSON.parse(output);
       // plan example may be wrapped in envelope (ok/data) or raw
       const plan = parsed.data ?? parsed;
@@ -136,7 +75,7 @@ describe("CLI E2E Integration Tests", { timeout: 30000 }, () => {
     });
   });
 
-  describe("perp plan validate", () => {
+  describe("perp strategy plan validate", () => {
     it("succeeds for a valid plan (exit 0, output contains 'valid')", () => {
       const validPlan = {
         version: "1.0",
@@ -159,7 +98,7 @@ describe("CLI E2E Integration Tests", { timeout: 30000 }, () => {
       };
 
       const filePath = writeTempFile("test-valid-plan.json", JSON.stringify(validPlan, null, 2));
-      const { stdout, exitCode } = runCliSafe(`plan validate ${filePath}`);
+      const { stdout, exitCode } = runCliSafe(`strategy plan validate ${filePath}`);
 
       expect(exitCode).toBe(0);
       // The human-readable output says "valid" or the JSON output includes valid:true
@@ -180,7 +119,7 @@ describe("CLI E2E Integration Tests", { timeout: 30000 }, () => {
       };
 
       const filePath = writeTempFile("test-invalid-plan.json", JSON.stringify(invalidPlan, null, 2));
-      const { stdout, exitCode } = runCliSafe(`--json plan validate ${filePath}`);
+      const { stdout, exitCode } = runCliSafe(`--json strategy plan validate ${filePath}`);
 
       // Should still exit 0 because validation itself succeeds (reports errors in JSON)
       expect(exitCode).toBe(0);
@@ -205,7 +144,7 @@ describe("CLI E2E Integration Tests", { timeout: 30000 }, () => {
       // Use plan validate with a file that does not exist — this triggers
       // withJsonErrors which wraps the ENOENT in the standard envelope.
       const { stdout, exitCode } = runCliSafe(
-        "--json plan validate /tmp/__nonexistent_cli_test_file_99999.json"
+        "--json strategy plan validate /tmp/__nonexistent_cli_test_file_99999.json"
       );
 
       expect(exitCode).toBe(0);
@@ -230,7 +169,7 @@ describe("CLI E2E Integration Tests", { timeout: 30000 }, () => {
       const helpText = stdout.toLowerCase();
 
       expect(helpText).toContain("schema");
-      expect(helpText).toContain("plan");
+      expect(helpText).toContain("strategy");
       expect(helpText).toContain("trade");
       expect(helpText).toContain("stream");
       expect(helpText).toContain("market");

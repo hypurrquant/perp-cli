@@ -368,8 +368,8 @@ export function registerArbAutoCommands(
         console.log(chalk.green(`\n  Funding arb bot started in background.`));
         console.log(`  ID: ${chalk.white.bold(job.id)}`);
         console.log(`  Min spread: ${opts.minSpread}% | Size: $${opts.size}`);
-        console.log(`  Logs: ${chalk.gray(`perp jobs logs ${job.id}`)}`);
-        console.log(`  Stop: ${chalk.gray(`perp jobs stop ${job.id}`)}\n`);
+        console.log(`  Logs: ${chalk.gray(`perp background logs ${job.id}`)}`);
+        console.log(`  Stop: ${chalk.gray(`perp background stop ${job.id}`)}\n`);
         return;
       }
 

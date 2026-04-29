@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "perp-cli": {
+      "command": "npx",
+      "args": ["-y", "-p", "perp-cli@latest", "perp-mcp"]
+    }
+  }
+}

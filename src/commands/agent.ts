@@ -1,480 +1,2295 @@
 import { Command } from "commander";
 import { createRequire } from "node:module";
-import { printJson, jsonOk, jsonError } from "../utils.js";
-import { ERROR_CODES } from "../errors.js";
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
+import { printJson, jsonOk } from "../utils.js";
+import { PerpError } from "../errors.js";
 import chalk from "chalk";
-import type { ExchangeAdapter } from "../exchanges/index.js";
+import bs58 from "bs58";
+import { loadSettings } from "../settings.js";
+import { getAgent, setAgent, deleteAgent, listAgents, acquireLock, releaseLock } from "../agent-wallet/store.js";
+import { resolvePassphrase } from "../agent-wallet/passphrase.js";
+import { OwsEvmSigner } from "../signer/ows-evm.js";
+import { OwsSolanaSigner } from "../signer/ows-solana.js";
+import { loadOws } from "../signer/ows-loader.js";
+import {
+  buildApproveAgentTypedData,
+  buildDelAgentTypedData,
+  buildApproveBuilderTypedData,
+} from "../exchanges/aster-typed-data.js";
+
+/**
+ * Emit a structured JSON error envelope to stderr and exit non-zero.
+ * Centralizes the AC-18 (stable JSON envelope without --json) format so the
+ * approve/revoke/rotate commands share one implementation instead of four
+ * copy-pasted catch blocks.
+ */
+function reportErrorAndExit(err: unknown): never {
+  const ts = new Date().toISOString();
+  const envelope = err instanceof PerpError
+    ? { ok: false, error: { ...err.structured }, meta: { timestamp: ts } }
+    : { ok: false, error: { code: "UNKNOWN", message: err instanceof Error ? err.message : String(err) }, meta: { timestamp: ts } };
+  process.stderr.write(JSON.stringify(envelope) + "\n");
+  process.exit(1);
+}
 
 const _require = createRequire(import.meta.url);
 const _pkg = _require("../../package.json") as { version: string };
 
-interface ParameterSchema {
-  name: string;
-  type: "string" | "number" | "boolean";
-  required: boolean;
-  description: string;
-  default?: string;
-  enum?: string[];
+// ── Verify helper types ───────────────────────────────────────────────────
+
+interface VerifyOpts {
+  agentName?: string;
+  master?: string;
+  masterAddress?: string;
+  accountIndex?: string;
+  passphrase?: string;
 }
 
-interface CommandSchema {
-  name: string;
-  fullCommand: string;
-  description: string;
-  args: ParameterSchema[];
-  options: ParameterSchema[];
-  subcommands?: CommandSchema[];
+interface VerifyResult {
+  registered: boolean;
+  count: number;
+  items: unknown[];
+  warnings?: string[];
 }
 
-interface SchemaEnvelope {
-  schemaVersion: string;
-  cliVersion: string;
-  generatedAt: string;
-  exchanges: string[];
-  errorCodes: Record<string, { status: number; retryable: boolean; description: string }>;
-  commands: CommandSchema[];
-}
+// ── Per-DEX verify implementations ───────────────────────────────────────
 
-/** Infer parameter type from commander flags/description */
-function inferType(flags: string, desc: string): "string" | "number" | "boolean" {
-  if (flags.includes("[boolean]") || !flags.includes("<") && !flags.includes("[")) return "boolean";
-  const lower = (flags + " " + desc).toLowerCase();
-  if (lower.includes("pct") || lower.includes("percent") || lower.includes("leverage") ||
-      lower.includes("amount") || lower.includes("size") || lower.includes("price") ||
-      lower.includes("<n>") || lower.includes("<sec>") || lower.includes("<ms>")) return "number";
-  return "string";
-}
-
-/** Infer enum values from description */
-function inferEnum(desc: string): string[] | undefined {
-  // Match patterns like "buy|sell", "market, limit, stop", "on | off"
-  const pipeMatch = desc.match(/:\s*(\w+(?:\s*[|,]\s*\w+)+)/);
-  if (pipeMatch) {
-    const values = pipeMatch[1].split(/\s*[|,]\s*/).map(v => v.trim()).filter(Boolean);
-    if (values.length >= 2 && values.every(v => v.length < 20)) return values;
+async function verifyAster(opts: VerifyOpts): Promise<VerifyResult> {
+  const settings = loadSettings();
+  const masterName = opts.master ?? settings.owsActiveWallet;
+  if (!masterName) {
+    throw new PerpError("INVALID_PARAMS", "Master wallet name required for Aster verify. Use --master or set owsActiveWallet in settings.", {
+      remediation: "perp wallet agent verify aster --master <walletName> --passphrase $PP",
+    });
   }
-  return undefined;
-}
+  const passphrase = opts.passphrase ?? "";
+  const masterSigner = OwsEvmSigner.create(masterName, passphrase);
+  const userEvmAddress = masterSigner.getAddress() as `0x${string}`;
 
-function extractSchema(cmd: Command, parentPath = "perp"): CommandSchema {
-  const fullCommand = `${parentPath} ${cmd.name()}`.trim();
+  // Build ListAgent EIP-712 typed data (same domain as ApproveAgent — BSC chainId 56)
+  // FIXME(step-0b): ListAgent primaryType is NOT live-verified against
+  // mainnet Aster API. Plan v3.3 verify endpoints table marks Aster auth
+  // verified=N pending Step 0b spike. If live calls return 401/INVALID_SIGNATURE,
+  // try Domain B Message-with-querystring shape (HypurrQuant_FE pattern at
+  // AsterPerpAdapter.ts:769-781) as fallback.
+  const nonceMicros = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  const domain = {
+    name: "AsterSignTransaction",
+    version: "1",
+    chainId: 56,
+  };
+  const types = {
+    ListAgent: [
+      { name: "AsterChain", type: "string" },
+      { name: "User", type: "address" },
+      { name: "Nonce", type: "uint256" },
+    ],
+  };
+  const message: Record<string, unknown> = {
+    AsterChain: "Mainnet",
+    User: userEvmAddress,
+    Nonce: nonceMicros,
+  };
 
-  const args: ParameterSchema[] = (cmd.registeredArguments ?? []).map((a) => {
-    const desc = a.description || "";
-    // Args are always values (not flags), so infer from name/desc semantics, never "boolean"
-    const rawType = inferType(`<${a.name()}>`, desc);
-    return {
-      name: a.name(),
-      type: rawType === "boolean" ? "string" : rawType,
-      required: a.required,
-      description: desc,
-      enum: inferEnum(desc),
-    };
+  const sig = await masterSigner.signTypedData(
+    domain as Record<string, unknown>,
+    types as Record<string, Array<{ name: string; type: string }>>,
+    message,
+  );
+
+  const qs = new URLSearchParams([
+    ["user", userEvmAddress],
+    ["signature", sig],
+    ["signatureChainId", "56"],
+    ["timestamp", String(Date.now())],
+    ["asterChain", "Mainnet"],
+    ["nonce", String(nonceMicros)],
+  ]);
+
+  const resp = await fetch(`https://fapi.asterdex.com/fapi/v3/agent?${qs.toString()}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
   });
 
-  const options: ParameterSchema[] = cmd.options
-    .filter((o) => !["--help", "-h"].includes(o.short ?? o.long ?? ""))
-    .map((o) => ({
-      name: o.long?.replace(/^--/, "") ?? o.short?.replace(/^-/, "") ?? "",
-      type: inferType(o.flags, o.description),
-      required: o.required ?? false,
-      description: o.description,
-      ...(o.defaultValue !== undefined ? { default: String(o.defaultValue) } : {}),
-      enum: inferEnum(o.description),
-    }));
+  if (!resp.ok) {
+    throw new PerpError("EXCHANGE_ERROR", `Aster verify failed: HTTP ${resp.status}`, {
+      remediation: "Check master wallet name and passphrase. Run: perp wallet agent verify aster --master <name> --passphrase $PP",
+    });
+  }
 
-  const subcommands = cmd.commands
-    .filter((c) => c.name() !== "help")
-    .map((c) => extractSchema(c, fullCommand));
+  const data = await resp.json() as unknown;
+  const items = Array.isArray(data) ? data : [];
+  const warnings: string[] = [];
 
-  return {
-    name: cmd.name(),
-    fullCommand,
-    description: cmd.description(),
-    args,
-    options,
-    ...(subcommands.length > 0 ? { subcommands } : {}),
-  };
+  // Cross-check: if agentName provided and settings has an entry, verify address matches
+  if (opts.agentName) {
+    const agentMeta = settings.agents?.aster?.[opts.agentName];
+    if (agentMeta) {
+      const expected = agentMeta.agentEvmAddress.toLowerCase();
+      const found = items.some(
+        (item: unknown) =>
+          typeof item === "object" &&
+          item !== null &&
+          "agentAddress" in item &&
+          typeof (item as Record<string, unknown>).agentAddress === "string" &&
+          ((item as Record<string, unknown>).agentAddress as string).toLowerCase() === expected,
+      );
+      if (!found) {
+        warnings.push(
+          `Agent "${opts.agentName}" (expected address ${agentMeta.agentEvmAddress}) not found in Aster live response. The agent may have expired or been revoked remotely.`,
+        );
+      }
+    }
+  }
+
+  return { registered: items.length > 0, count: items.length, items, warnings: warnings.length > 0 ? warnings : undefined };
 }
 
-export function registerAgentCommands(
-  program: Command,
-  getAdapter: () => Promise<ExchangeAdapter>,
+/**
+ * Verify Hyperliquid agent registration.
+ *
+ * Cross-check (AC-28, v3.4): When agentName provided AND persisted in
+ * settings.agents.hyperliquid[name], asserts live response contains expected
+ * agentEvmAddress. Mismatch → meta.warnings populated (non-fatal).
+ */
+async function verifyHyperliquid(opts: VerifyOpts): Promise<VerifyResult> {
+  const settings = loadSettings();
+  // Resolve master EVM address: flag > settings > active wallet
+  let masterAddress = opts.masterAddress;
+  if (!masterAddress) {
+    // Try to find from a registered agent or active wallet
+    const hlMap = settings.agents?.hyperliquid;
+    if (hlMap && opts.agentName && hlMap[opts.agentName]?.userEvmAddress) {
+      masterAddress = hlMap[opts.agentName].userEvmAddress;
+    }
+  }
+  if (!masterAddress) {
+    throw new PerpError("INVALID_PARAMS", "Master EVM address required for Hyperliquid verify. Use --master-address.", {
+      remediation: "perp wallet agent verify hyperliquid --master-address 0xYOUR_ADDRESS",
+    });
+  }
+
+  const user = masterAddress.toLowerCase();
+  const resp = await fetch("https://api.hyperliquid.xyz/info", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "extraAgents", user }),
+  });
+
+  if (!resp.ok) {
+    throw new PerpError("EXCHANGE_ERROR", `Hyperliquid verify failed: HTTP ${resp.status}`, {
+      remediation: "Check master EVM address. Run: perp wallet agent verify hyperliquid --master-address 0xADDR",
+    });
+  }
+
+  const data = await resp.json() as unknown;
+  const items = Array.isArray(data) ? data : [];
+  const warnings: string[] = [];
+
+  // Cross-check: AC-28 — verify persisted agentEvmAddress matches live response
+  if (opts.agentName) {
+    const agentMeta = settings.agents?.hyperliquid?.[opts.agentName];
+    if (agentMeta?.agentEvmAddress) {
+      const expected = agentMeta.agentEvmAddress.toLowerCase();
+      const found = items.some(
+        (item: unknown) =>
+          typeof item === "object" &&
+          item !== null &&
+          "address" in item &&
+          typeof (item as Record<string, unknown>).address === "string" &&
+          ((item as Record<string, unknown>).address as string).toLowerCase() === expected,
+      );
+      if (!found) {
+        warnings.push(
+          `Agent "${opts.agentName}" (expected address ${agentMeta.agentEvmAddress}) not found in Hyperliquid live response.`,
+        );
+      }
+    }
+  }
+
+  return { registered: items.length > 0, count: items.length, items, warnings: warnings.length > 0 ? warnings : undefined };
+}
+
+/**
+ * Verify Pacifica agent registration.
+ *
+ * NOTE (v3.3 limitation): Cross-check semantics from AC-23 are inactive for
+ * this DEX because settings.agents.pacifica type slot does not exist yet
+ * (AgentsByExchange has only `aster?`). When Phase 2c extends AgentsByExchange
+ * + AgentMeta with per-DEX fields (accountIndex, publicKey, etc.), the
+ * cross-check branch below becomes live.
+ */
+async function verifyPacifica(opts: VerifyOpts): Promise<VerifyResult> {
+  const settings = loadSettings();
+  const masterName = opts.master ?? settings.owsActiveWallet;
+  if (!masterName) {
+    throw new PerpError("INVALID_PARAMS", "Master wallet name required for Pacifica verify. Use --master.", {
+      remediation: "perp wallet agent verify pacifica --master <walletName> --passphrase $PP",
+    });
+  }
+  const passphrase = opts.passphrase ?? "";
+  const solanaSigner = OwsSolanaSigner.create(masterName, passphrase);
+  const account = solanaSigner.getPublicKeyBase58();
+
+  const timestamp = Date.now();
+  const expiryWindow = 5000;
+  const type = "list_api_keys";
+
+  // Canonical JSON: sort keys lexicographically, no whitespace
+  const signHeader = { expiry_window: expiryWindow, timestamp, type };
+  const canonicalJson = JSON.stringify(signHeader);
+
+  // Sign canonical JSON with Ed25519 (OWS Solana signer)
+  const msgBytes = new TextEncoder().encode(canonicalJson);
+  const sigBytes = await solanaSigner.signMessage(msgBytes);
+
+  // Base58-encode the signature
+  const sigBase58 = bs58.encode(sigBytes);
+
+  const body = {
+    account,
+    agent_wallet: null as null,
+    signature: sigBase58,
+    timestamp,
+    expiry_window: expiryWindow,
+    type,
+  };
+
+  const resp = await fetch("https://api.pacifica.fi/api/v1/account/api_keys", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    throw new PerpError("EXCHANGE_ERROR", `Pacifica verify failed: HTTP ${resp.status}`, {
+      remediation: "Check master wallet name and passphrase. Run: perp wallet agent verify pacifica --master <name> --passphrase $PP",
+    });
+  }
+
+  const data = await resp.json() as unknown;
+  const apiKeys = (
+    data &&
+    typeof data === "object" &&
+    "data" in data &&
+    typeof (data as Record<string, unknown>).data === "object" &&
+    (data as Record<string, unknown>).data !== null &&
+    "api_keys" in ((data as Record<string, unknown>).data as Record<string, unknown>)
+  )
+    ? ((data as Record<string, unknown>).data as Record<string, unknown>).api_keys
+    : [];
+  const items = Array.isArray(apiKeys) ? apiKeys : [];
+
+  return { registered: items.length > 0, count: items.length, items };
+}
+
+/**
+ * Verify Lighter agent registration.
+ *
+ * NOTE (v3.3 limitation): Cross-check semantics from AC-23 are inactive for
+ * this DEX because settings.agents.lighter type slot does not exist yet
+ * (AgentsByExchange has only `aster?`). When Phase 2d extends AgentsByExchange
+ * + AgentMeta with per-DEX fields (accountIndex, publicKey, etc.), the
+ * cross-check branch below becomes live.
+ */
+async function verifyLighter(opts: VerifyOpts): Promise<VerifyResult> {
+  const settings = loadSettings();
+  const accountIndexStr = opts.accountIndex;
+  // Resolve accountIndex from opts or settings
+  let accountIndex: number | undefined;
+  if (accountIndexStr !== undefined) {
+    accountIndex = parseInt(accountIndexStr, 10);
+  } else {
+    // Try from settings
+    const ltAgents = (settings.agents as Record<string, unknown> | undefined);
+    const ltMap = (ltAgents && typeof ltAgents === "object" && "lighter" in ltAgents)
+      ? ltAgents.lighter as Record<string, { accountIndex?: number }> | undefined
+      : undefined;
+    if (ltMap && opts.agentName && ltMap[opts.agentName]?.accountIndex !== undefined) {
+      accountIndex = ltMap[opts.agentName].accountIndex;
+    }
+  }
+  if (accountIndex === undefined || isNaN(accountIndex)) {
+    throw new PerpError("INVALID_PARAMS", "Account index required for Lighter verify. Use --account-index.", {
+      remediation: "perp wallet agent verify lighter --account-index <n>",
+    });
+  }
+
+  const resp = await fetch(
+    `https://mainnet.zklighter.elliot.ai/api/v1/apikeys?account_index=${accountIndex}`,
+    { method: "GET" },
+  );
+
+  if (!resp.ok) {
+    throw new PerpError("EXCHANGE_ERROR", `Lighter verify failed: HTTP ${resp.status}`, {
+      remediation: `Check account index. Run: perp wallet agent verify lighter --account-index ${accountIndex}`,
+    });
+  }
+
+  const data = await resp.json() as unknown;
+  const apiKeys = (
+    data &&
+    typeof data === "object" &&
+    "api_keys" in data
+  )
+    ? (data as Record<string, unknown>).api_keys
+    : [];
+  const items = Array.isArray(apiKeys) ? apiKeys : [];
+  const warnings: string[] = [];
+
+  // Cross-check if agentName provided
+  if (opts.agentName) {
+    const ltAgents = (settings.agents as Record<string, unknown> | undefined);
+    const ltMap = (ltAgents && typeof ltAgents === "object" && "lighter" in ltAgents)
+      ? ltAgents.lighter as Record<string, { publicKey?: string }> | undefined
+      : undefined;
+    const agentMeta = ltMap?.[opts.agentName];
+    if (agentMeta?.publicKey) {
+      const expected = agentMeta.publicKey;
+      const found = items.some(
+        (item: unknown) =>
+          typeof item === "object" &&
+          item !== null &&
+          "public_key" in item &&
+          (item as Record<string, unknown>).public_key === expected,
+      );
+      if (!found) {
+        warnings.push(
+          `Agent "${opts.agentName}" (expected public_key ${agentMeta.publicKey}) not found in Lighter live response.`,
+        );
+      }
+    }
+  }
+
+  return { registered: items.length > 0, count: items.length, items, warnings: warnings.length > 0 ? warnings : undefined };
+}
+
+
+/**
+ * Register the per-DEX agent-wallet management subtree (`approve` /
+ * `list` / `revoke` / `rotate` / `verify`) under the supplied parent
+ * `wallet` command. The function previously registered `agent` as a
+ * top-level command on `program`; the hard-cut consolidation in v0.11+
+ * relocates it to `wallet agent ...`.
+ */
+export function registerWalletAgentCommands(
+  walletCmd: Command,
   isJson: () => boolean
 ) {
-  const agent = program
+  const agent = walletCmd
     .command("agent")
-    .description("Agent-friendly commands");
+    .description("Agent wallet management — register/revoke/rotate/verify per-DEX delegation keys");
 
-  // ── agent schema ── dump full command tree as JSON
+
+  // ── agent approve <exchange> ── register an agent wallet ──────────────────
   agent
-    .command("schema")
-    .description("Output full CLI command schema as JSON (for agent discovery)")
-    .action(() => {
-      const errorCodeDocs: Record<string, { status: number; retryable: boolean; description: string }> = {};
-      for (const [key, val] of Object.entries(ERROR_CODES)) {
-        errorCodeDocs[key] = { status: val.status, retryable: val.retryable, description: key.toLowerCase().replace(/_/g, " ") };
-      }
-      const envelope: SchemaEnvelope = {
-        schemaVersion: "2.0",
-        cliVersion: _pkg.version,
-        generatedAt: new Date().toISOString(),
-        exchanges: ["pacifica", "hyperliquid", "lighter", "aster"],
-        errorCodes: errorCodeDocs,
-        commands: program.commands
-          .filter(c => c.name() !== "help")
-          .map(c => extractSchema(c)),
-      };
-      printJson(jsonOk(envelope));
-    });
+    .command("approve <exchange>")
+    .description("Register an agent wallet for an exchange (Phase 2a/b/c/d: aster, hyperliquid, pacifica, lighter)")
+    .option("--master <name>", "Master OWS wallet name")
+    .option("--agent-name <name>", "Agent name (default: perp-cli-aster)")
+    .option("--expires-in <duration>", "Expiry: 30d, 90d, 180d, 1y, or ISO-8601 datetime (default: 90d)")
+    .option("--can-perp", "Allow perp trading (default: on)", true)
+    .option("--no-perp", "Disallow perp trading")
+    .option("--can-spot", "Allow spot trading (default: off)", false)
+    .option("--no-spot", "Disallow spot trading")
+    .option("--can-withdraw", "Allow withdrawals (default: off)", false)
+    .option("--no-withdraw", "Disallow withdrawals")
+    .option("--rotate", "Allow re-approving an existing agent name")
+    .option("--passphrase <pp>", "Master OWS passphrase (fallback: OWS_PASSPHRASE env / stdin)")
+    .option("--builder <addr>", "Builder address for optional builder approval")
+    .option("--max-fee-rate <bps>", "Max fee rate bps (required with --builder)")
+    .option("--builder-name <name>", "Optional builder name")
+    .option("--ip-whitelist <list>", "Comma-separated IP whitelist (pass empty string to include empty)")
+    .option("--api-key-index <n>", "Lighter slot index (4-254). Default: next free slot.")
+    .option("--json", "Machine-readable output")
+    .action(async (exchange: string, opts: {
+      master?: string;
+      agentName?: string;
+      expiresIn?: string;
+      canPerp?: boolean;
+      canSpot?: boolean;
+      canWithdraw?: boolean;
+      rotate?: boolean;
+      passphrase?: string;
+      builder?: string;
+      maxFeeRate?: string;
+      builderName?: string;
+      ipWhitelist?: string;
+      apiKeyIndex?: string;
+      json?: boolean;
+    }) => {
+      const useJson = opts.json ?? isJson();
 
-  // ── Top-level schema alias (hidden) ──
-  const schemaAlias = program
-    .command("schema")
-    .description("Output CLI schema as JSON (alias for agent schema)");
-  (schemaAlias as any)._hidden = true;
-  schemaAlias
-    .action(() => {
-      const errorCodeDocs: Record<string, { status: number; retryable: boolean; description: string }> = {};
-      for (const [key, val] of Object.entries(ERROR_CODES)) {
-        errorCodeDocs[key] = { status: val.status, retryable: val.retryable, description: key.toLowerCase().replace(/_/g, " ") };
-      }
-      const envelope: SchemaEnvelope = {
-        schemaVersion: "2.0",
-        cliVersion: _pkg.version,
-        generatedAt: new Date().toISOString(),
-        exchanges: ["pacifica", "hyperliquid", "lighter", "aster"],
-        errorCodes: errorCodeDocs,
-        commands: program.commands
-          .filter(c => c.name() !== "help" && c.name() !== "schema")
-          .map(c => extractSchema(c)),
-      };
-      printJson(jsonOk(envelope));
-    });
+      // Normalize aliases
+      const exchangeNorm = exchange === "lt" ? "lighter"
+        : exchange === "hl" ? "hyperliquid"
+        : exchange === "pac" ? "pacifica"
+        : exchange === "ast" ? "aster"
+        : exchange;
 
-  // ── agent capabilities ── what this CLI can do
-  agent
-    .command("capabilities")
-    .description("List high-level capabilities for agent planning")
-    .action(() => {
-      printJson(jsonOk({
-        name: "perp-cli",
-        version: _pkg.version,
-        description: "Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter, Aster) with HIP-3 deployed dex support",
-        exchanges: ["pacifica", "hyperliquid", "lighter", "aster"],
-        capabilities: [
-          {
-            category: "market_data",
-            commands: [
-              "perp market list --json",
-              "perp market prices --json",
-              "perp market book <symbol> --json",
-              "perp market trades <symbol> --json",
-              "perp market funding <symbol> --json",
-              "perp market kline <symbol> <interval> --json",
-            ],
-            description: "Read market data: prices, orderbooks, trades, funding rates, candles",
-          },
-          {
-            category: "account",
-            commands: [
-              "perp account balance --json",
-              "perp account positions --json",
-              "perp account orders --json",
-              "perp account history --json",
-              "perp account trades --json",
-              "perp portfolio --json",
-            ],
-            description: "Read account state: balances, positions, open orders, trade history",
-          },
-          {
-            category: "trading",
-            commands: [
-              "perp trade check <symbol> <side> <size> --json",
-              "perp trade market <symbol> <buy|sell> <size> --json [--smart] --client-id <id>",
-              "perp trade limit <symbol> <buy|sell> <price> <size> --json --client-id <id>",
-              "perp trade cancel <symbol> <orderId> --json",
-              "perp trade cancel-all --json",
-              "perp trade close <symbol> --json [--smart]",
-              "perp trade close-all --json [--smart]",
-              "perp trade flatten --json [--smart]",
-              "perp trade reduce <symbol> <percent> --json [--smart]",
-              "perp trade stop <symbol> <side> <stopPrice> <size> --json",
-              "perp trade tpsl <symbol> <side> --tp <price> --sl <price> --json",
-              "perp trade twap <symbol> <side> <size> <duration> --json",
-            ],
-            description: "Execute trades with pre-flight validation, client IDs for idempotency, and position management",
-          },
-          {
-            category: "plan_execution",
-            commands: [
-              "perp plan validate <file> --json",
-              "perp plan execute <file> --json",
-              "perp plan execute <file> --dry-run --json",
-              "perp plan example",
-            ],
-            description: "Composite multi-step execution plans with abort/skip/rollback semantics",
-          },
-          {
-            category: "arbitrage",
-            commands: [
-              "perp arb funding --json",
-              "perp arb scan --min 5 --json",
-              "perp arb scan --json",
-              "perp arb exec <SYM> <longEx> <shortEx> <$> --leverage 2 --isolated --json",
-              "perp arb status --json",
-              "perp arb close <SYM> --json",
-              "perp arb close <SYM> --dry-run --json",
-              "perp arb close <SYM> --pair <longEx>:<shortEx> --json",
-              "perp arb status --funding --json",
-              "perp arb status --funding --period 30 --json",
-              "perp arb history --json",
-              "perp arb scan --hip3 --json",
-              "perp arb monitor --hip3 --min 10",
-              "perp gap show --json",
-            ],
-            description: "Cross-exchange funding arb: scan → exec → status → close. Plus cross-dex arb (--hip3) and price gaps.",
-          },
-          {
-            category: "risk_management",
-            commands: [
-              "perp risk status --json",
-              "perp risk limits --json",
-              "perp risk check --notional <usd> --leverage <n> --json",
-            ],
-            description: "Portfolio risk assessment, exposure limits, pre-trade risk checks",
-          },
-          {
-            category: "streaming",
-            commands: [
-              "perp stream events --interval 5000",
-              "perp stream prices",
-              "perp stream book <symbol>",
-              "perp stream trades <symbol>",
-            ],
-            description: "Real-time NDJSON event stream: position changes, order fills, liquidation warnings, balance updates",
-          },
-          {
-            category: "analytics",
-            commands: [
-              "perp analytics summary --json",
-              "perp analytics pnl --period 30d --json",
-              "perp analytics funding --period 30d --json",
-              "perp analytics funding --period 7d --daily --json",
-              "perp analytics compare --json",
-              "perp portfolio --json",
-              "perp health --json",
-              "perp history list --json",
-            ],
-            description: "Cross-exchange portfolio, PnL analytics, execution history, health checks",
-          },
-          {
-            category: "discovery",
-            commands: [
-              "perp schema",
-              "perp agent schema",
-              "perp agent capabilities",
-              "perp agent ping",
-              "perp dex list --json",
-              "perp dex markets <name> --json",
-            ],
-            description: "CLI schema discovery, connectivity checks, HIP-3 dex discovery",
-          },
-        ],
-        agentFeatures: [
-          "Structured JSON output (--json) on all commands",
-          "Structured error codes with retryable flag (INSUFFICIENT_BALANCE, RATE_LIMITED, etc.)",
-          "Client order IDs for idempotent retries (--client-id / --auto-id)",
-          "Pre-trade validation (perp trade check) before execution",
-          "Multi-step execution plans with rollback (perp plan execute)",
-          "NDJSON event streaming for real-time monitoring",
-          "HIP-3 cross-dex arbitrage scanning",
-        ],
-        notes: [
-          "Always use --json flag for machine-readable output",
-          "Use -e <exchange> to switch between pacifica, hyperliquid, lighter, aster",
-          "Use --dex <name> for HIP-3 deployed perp dexes on Hyperliquid",
-          "Use -n testnet for testnet mode",
-          "Use --client-id or --auto-id on trade commands for retry safety",
-          "Use perp trade check before execution for pre-flight validation",
-          "Errors include { code, retryable, status } for automated handling",
-          "Exit code 0 = success, 1 = error",
-        ],
-      }));
-    });
-
-  // ── agent exec ── execute a sequence of commands
-  agent
-    .command("exec")
-    .description("Execute a command and return structured JSON result")
-    .argument("<command...>", "Command to execute (e.g., 'market list')")
-    .action(async (args: string[]) => {
-      // Re-parse the command through the program
-      // This is a convenience wrapper that forces --json
-      const fullArgs = ["node", "perp", "--json", ...args];
-      try {
-        await program.parseAsync(fullArgs);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(JSON.stringify(jsonError("EXEC_FAILED", msg)));
-        process.exit(1);
-      }
-    });
-
-  // ── agent ping ── health check
-  agent
-    .command("ping")
-    .description("Health check — returns exchange connectivity status")
-    .action(async () => {
-      const results: Record<string, unknown> = {
-        timestamp: new Date().toISOString(),
-        cli_version: _pkg.version,
-      };
-
-      // Check exchange APIs
-      const { pingPacifica, pingHyperliquid } = await import("../shared-api.js");
-      const [pacPing, hlPing] = await Promise.all([pingPacifica(), pingHyperliquid()]);
-      results.pacifica = {
-        status: pacPing.ok ? "ok" : "error",
-        latency_ms: pacPing.latencyMs,
-        http_status: pacPing.status,
-      };
-      results.hyperliquid = {
-        status: hlPing.ok ? "ok" : "error",
-        latency_ms: hlPing.latencyMs,
-        http_status: hlPing.status,
-      };
-
-      // Check relayer
-      try {
-        const start = Date.now();
-        const res = await fetch("http://localhost:3100/health", {
-          signal: AbortSignal.timeout(2000),
-        });
-        results.relayer = {
-          status: res.ok ? "ok" : "error",
-          latency_ms: Date.now() - start,
-        };
-      } catch {
-        results.relayer = { status: "offline" };
+      // Phase 2d: Aster + HL + PAC + LT all implemented.
+      if (
+        exchangeNorm !== "aster" &&
+        exchangeNorm !== "hyperliquid" &&
+        exchangeNorm !== "pacifica" &&
+        exchangeNorm !== "lighter"
+      ) {
+        reportErrorAndExit(new PerpError("NOT_IMPLEMENTED", `${exchange} agent approve not implemented`, {
+          remediation: "Use one of: aster, hyperliquid, pacifica, lighter",
+        }));
       }
 
-      if (isJson()) return printJson(jsonOk(results));
-
-      console.log(chalk.cyan.bold("\n  Connectivity Check\n"));
-      for (const [name, data] of Object.entries(results)) {
-        if (typeof data !== "object" || !data) {
-          console.log(`  ${name}: ${data}`);
-          continue;
+      // ── Lighter approve branch (Phase 2d) ───────────────────────────────
+      if (exchangeNorm === "lighter") {
+        const masterName = opts.master ?? loadSettings().owsActiveWallet;
+        const agentName = opts.agentName ?? "perp-cli-lt";
+        const expiresIn = opts.expiresIn ?? "90d";
+        let expiresAt: Date;
+        try {
+          expiresAt = parseExpiresIn(expiresIn);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          reportErrorAndExit(new PerpError("INVALID_PARAMS", msg, {
+            remediation: "Use: 30d, 90d, 180d, 1y, or ISO-8601 datetime",
+          }));
         }
-        const d = data as Record<string, unknown>;
-        const icon = d.status === "ok" ? chalk.green("OK") : chalk.red(String(d.status).toUpperCase());
-        const latency = d.latency_ms ? chalk.gray(` (${d.latency_ms}ms)`) : "";
-        console.log(`  ${name.padEnd(14)} ${icon}${latency}`);
+        if (!masterName) {
+          reportErrorAndExit(new PerpError("INVALID_PARAMS", "Master wallet name is required. Use --master or set owsActiveWallet in settings.", {
+            remediation: "Run: perp setup or use --master <name>",
+          }));
+        }
+        // Slot validation: explicit value must be 4..254. Otherwise pick free slot.
+        let chosenSlot: number | undefined;
+        if (opts.apiKeyIndex !== undefined) {
+          const n = parseInt(opts.apiKeyIndex, 10);
+          if (!Number.isInteger(n) || n < 4 || n > 254) {
+            reportErrorAndExit(new PerpError("INVALID_PARAMS", `--api-key-index must be an integer in [4, 254]; got ${opts.apiKeyIndex}`, {
+              remediation: "Slots 0-3 are reserved by the Lighter frontend. Use 4-254.",
+            }));
+          }
+          chosenSlot = n;
+        }
+        const passphrase = await resolvePassphrase({ flag: opts.passphrase });
+        if (passphrase === null) {
+          reportErrorAndExit(new PerpError("PASSPHRASE_REQUIRED", "No passphrase provided and stdin is non-TTY", {
+            remediation: "Provide passphrase via --passphrase flag, OWS_PASSPHRASE env var, or stdin pipe",
+          }));
+        }
+        try {
+          acquireLock("lighter");
+          try {
+            const result = await runLtApproveFlow({
+              masterName,
+              passphrase: passphrase ?? "",
+              agentName,
+              expiresAt,
+              expiresAtIso: expiresAt.toISOString(),
+              nowIso: new Date().toISOString(),
+              canPerp: opts.canPerp ?? true,
+              canSpot: opts.canSpot ?? false,
+              canWithdraw: opts.canWithdraw ?? false,
+              apiKeyIndex: chosenSlot,
+            });
+            if (useJson) {
+              printJson(jsonOk(result));
+            } else {
+              console.log(chalk.green.bold("\n  Lighter Agent approved successfully!\n"));
+              console.log(`  Name:           ${chalk.cyan(agentName)}`);
+              console.log(`  API Key Index:  ${chalk.cyan(String(result.apiKeyIndex))}`);
+              console.log(`  Public Key:     ${chalk.cyan(result.publicKey)}`);
+              console.log(`  Account Index:  ${chalk.cyan(String(result.accountIndex))}`);
+              console.log(`  Expires:        ${chalk.cyan(expiresAt.toISOString())}`);
+              console.log();
+            }
+          } finally {
+            releaseLock("lighter");
+          }
+        } catch (err) {
+          reportErrorAndExit(err);
+        }
+        return;
+      }
+
+      // ── Pacifica approve branch (Phase 2c) ──────────────────────────────
+      if (exchangeNorm === "pacifica") {
+        const masterName = opts.master ?? loadSettings().owsActiveWallet;
+        const agentName = opts.agentName ?? "perp-cli-pac";
+        const expiresIn = opts.expiresIn ?? "90d";
+        let expiresAt: Date;
+        try {
+          expiresAt = parseExpiresIn(expiresIn);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          reportErrorAndExit(new PerpError("INVALID_PARAMS", msg, {
+            remediation: "Use: 30d, 90d, 180d, 1y, or ISO-8601 datetime",
+          }));
+        }
+        if (!masterName) {
+          reportErrorAndExit(new PerpError("INVALID_PARAMS", "Master wallet name is required. Use --master or set owsActiveWallet in settings.", {
+            remediation: "Run: perp setup or use --master <name>",
+          }));
+        }
+        const passphrase = await resolvePassphrase({ flag: opts.passphrase });
+        if (passphrase === null) {
+          reportErrorAndExit(new PerpError("PASSPHRASE_REQUIRED", "No passphrase provided and stdin is non-TTY", {
+            remediation: "Provide passphrase via --passphrase flag, OWS_PASSPHRASE env var, or stdin pipe",
+          }));
+        }
+        try {
+          acquireLock("pacifica");
+          try {
+            const result = await runPacApproveFlow({
+              masterName,
+              passphrase: passphrase ?? "",
+              agentName,
+              expiresAt,
+              expiresAtIso: expiresAt.toISOString(),
+              nowIso: new Date().toISOString(),
+              canPerp: opts.canPerp ?? true,
+              canSpot: opts.canSpot ?? false,
+              canWithdraw: opts.canWithdraw ?? false,
+            });
+            if (useJson) {
+              printJson(jsonOk(result));
+            } else {
+              console.log(chalk.green.bold("\n  Pacifica Agent approved successfully!\n"));
+              console.log(`  Name:           ${chalk.cyan(agentName)}`);
+              console.log(`  Agent Address:  ${chalk.cyan(result.agentSolanaAddress)}`);
+              console.log(`  Master Address: ${chalk.cyan(result.userSolanaAddress)}`);
+              console.log(`  Expires:        ${chalk.cyan(expiresAt.toISOString())}`);
+              console.log();
+            }
+          } finally {
+            releaseLock("pacifica");
+          }
+        } catch (err) {
+          reportErrorAndExit(err);
+        }
+        return;
+      }
+
+      // ── Hyperliquid approve branch ──────────────────────────────────────
+      if (exchangeNorm === "hyperliquid") {
+        const masterName = opts.master ?? loadSettings().owsActiveWallet;
+        const agentName = opts.agentName ?? "perp-cli-hl";
+        const expiresIn = opts.expiresIn ?? "90d";
+        let expiresAt: Date;
+        try {
+          expiresAt = parseExpiresIn(expiresIn);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          reportErrorAndExit(new PerpError("INVALID_PARAMS", msg, {
+            remediation: "Use: 30d, 90d, 180d, 1y, or ISO-8601 datetime",
+          }));
+        }
+        if (!masterName) {
+          reportErrorAndExit(new PerpError("INVALID_PARAMS", "Master wallet name is required. Use --master or set owsActiveWallet in settings.", {
+            remediation: "Run: perp setup or use --master <name>",
+          }));
+        }
+        const passphrase = await resolvePassphrase({ flag: opts.passphrase });
+        if (passphrase === null) {
+          reportErrorAndExit(new PerpError("PASSPHRASE_REQUIRED", "No passphrase provided and stdin is non-TTY", {
+            remediation: "Provide passphrase via --passphrase flag, OWS_PASSPHRASE env var, or stdin pipe",
+          }));
+        }
+        try {
+          acquireLock("hyperliquid");
+          try {
+            const result = await runHlApproveFlow({
+              masterName,
+              passphrase: passphrase ?? "",
+              agentName,
+              expiresAt,
+              expiresAtIso: expiresAt.toISOString(),
+              nowIso: new Date().toISOString(),
+              canPerp: opts.canPerp ?? true,
+              canSpot: opts.canSpot ?? false,
+              canWithdraw: opts.canWithdraw ?? false,
+            });
+            if (useJson) {
+              printJson(jsonOk(result));
+            } else {
+              console.log(chalk.green.bold("\n  Hyperliquid Agent approved successfully!\n"));
+              console.log(`  Name:          ${chalk.cyan(agentName)}`);
+              console.log(`  Agent Address: ${chalk.cyan(result.agentAddress)}`);
+              console.log(`  Expires:       ${chalk.cyan(expiresAt.toISOString())}`);
+              console.log();
+            }
+          } finally {
+            releaseLock("hyperliquid");
+          }
+        } catch (err) {
+          reportErrorAndExit(err);
+        }
+        return;
+      }
+
+      // Wizard mode: enter only when ALL THREE conditions hold
+      const wizardMode =
+        opts.master === undefined &&
+        opts.agentName === undefined &&
+        opts.expiresIn === undefined &&
+        process.stdin.isTTY === true &&
+        process.env["OWS_PASSPHRASE"] === undefined;
+
+      let masterName: string;
+      let agentName: string;
+      let expiresIn: string;
+      let canPerp: boolean;
+      let canSpot: boolean;
+      let canWithdraw: boolean;
+      let passphrase: string | null;
+
+      if (wizardMode) {
+        const rl = createInterface({ input, output });
+        try {
+          const settings = loadSettings();
+          const defMaster = settings.owsActiveWallet || "main";
+          const rawMaster = await rl.question(`Master wallet name [${defMaster}]: `);
+          masterName = rawMaster.trim() || defMaster;
+
+          const rawAgent = await rl.question(`Agent name [perp-cli-aster]: `);
+          agentName = rawAgent.trim() || "perp-cli-aster";
+
+          const rawExpiry = await rl.question(`Expires-in [90d]: `);
+          expiresIn = rawExpiry.trim() || "90d";
+
+          const rawPerp = await rl.question(`Can perp trade? [Y/n]: `);
+          canPerp = rawPerp.trim().toLowerCase() !== "n";
+
+          const rawSpot = await rl.question(`Can spot trade? [y/N]: `);
+          canSpot = rawSpot.trim().toLowerCase() === "y";
+
+          const rawWithdraw = await rl.question(`Can withdraw? [y/N]: `);
+          canWithdraw = rawWithdraw.trim().toLowerCase() === "y";
+
+          // Hidden passphrase prompt — readline doesn't support hidden natively;
+          // we use muted output pattern compatible with node:readline/promises
+          process.stdout.write("Master passphrase: ");
+          const rawPp = await rl.question("");
+          passphrase = rawPp.trim() || null;
+        } finally {
+          rl.close();
+        }
+      } else {
+        masterName = opts.master ?? loadSettings().owsActiveWallet;
+        agentName = opts.agentName ?? "perp-cli-aster";
+        expiresIn = opts.expiresIn ?? "90d";
+        canPerp = opts.canPerp ?? true;
+        canSpot = opts.canSpot ?? false;
+        canWithdraw = opts.canWithdraw ?? false;
+        // 3-path passphrase resolver (non-TTY path)
+        passphrase = await resolvePassphrase({ flag: opts.passphrase });
+        if (passphrase === null) {
+          // TTY but non-wizard (some flags were supplied) — throw PASSPHRASE_REQUIRED
+          reportErrorAndExit(new PerpError("PASSPHRASE_REQUIRED", "No passphrase provided and stdin is non-TTY or wizard skipped", {
+            remediation: "Provide passphrase via --passphrase flag, OWS_PASSPHRASE env var, or stdin pipe",
+          }));
+        }
+      }
+
+      if (!masterName) {
+        reportErrorAndExit(new PerpError("INVALID_PARAMS", "Master wallet name is required. Use --master or set owsActiveWallet in settings.", {
+          remediation: "Run: perp setup or use --master <name>",
+        }));
+      }
+
+      // Parse expires-in
+      let expiresAt: Date;
+      try {
+        expiresAt = parseExpiresIn(expiresIn);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        reportErrorAndExit(new PerpError("INVALID_PARAMS", msg, {
+          remediation: "Use: 30d, 90d, 180d, 1y, or ISO-8601 datetime",
+        }));
+      }
+      const expiredMs = expiresAt.getTime();
+      const expiresAtIso = expiresAt.toISOString();
+      const nonceMicros = Date.now() * 1000 + (Math.floor(Math.random() * 1000));
+      const nowIso = new Date().toISOString();
+
+      const asterChain = "Mainnet" as const;
+
+      try {
+        // Step 1: Acquire lock at the START of the flow (before any OWS resources
+        // are created) so that concurrent approves are fully serialized, not just
+        // the final settings write.
+        acquireLock("aster");
+        try {
+          const result = await runApproveFlow({
+            masterName,
+            passphrase: passphrase ?? "",
+            agentName,
+            expiresAt,
+            expiredMs,
+            expiresAtIso,
+            nonceMicros,
+            nowIso,
+            canPerp,
+            canSpot,
+            canWithdraw,
+            asterChain,
+            builder: opts.builder,
+            maxFeeRate: opts.maxFeeRate,
+            builderName: opts.builderName,
+            ipWhitelist: opts.ipWhitelist,
+          });
+
+          if (useJson) {
+            printJson(jsonOk(result));
+          } else {
+            console.log(chalk.green.bold("\n  Agent approved successfully!\n"));
+            console.log(`  Name:          ${chalk.cyan(agentName)}`);
+            console.log(`  Agent Address: ${chalk.cyan(result.agentAddress)}`);
+            console.log(`  Expires:       ${chalk.cyan(expiresAtIso)}`);
+            console.log(`  API Key ID:    ${chalk.gray(result.owsApiKeyId)}`);
+            console.log(`  Policy ID:     ${chalk.gray(result.policyId)}`);
+            console.log();
+          }
+        } finally {
+          releaseLock("aster");
+        }
+      } catch (err) {
+        reportErrorAndExit(err);
+      }
+    });
+
+  // ── agent list [<exchange>] ──────────────────────────────────────────────
+  agent
+    .command("list [exchange]")
+    .description("List registered agent wallets")
+    .option("--json", "Machine-readable output")
+    .action((exchange: string | undefined, opts: { json?: boolean }) => {
+      const useJson = opts.json ?? isJson();
+      const all = listAgents(exchange);
+      const now = Date.now();
+
+      const rows = all.map(({ exchange: ex, meta }) => {
+        let status: "active" | "expired" | "partial";
+        if (meta.status === "partial") {
+          status = "partial";
+        } else if (new Date(meta.expiresAt).getTime() < now) {
+          status = "expired";
+        } else {
+          status = "active";
+        }
+        return {
+          name: meta.agentName,
+          exchange: ex,
+          evmAddress: meta.agentEvmAddress,
+          expiresAt: meta.expiresAt,
+          status,
+          permissions: meta.permissions,
+        };
+      });
+
+      if (useJson) {
+        printJson(jsonOk(rows));
+        return;
+      }
+
+      if (rows.length === 0) {
+        console.log("No agents registered. Run `perp wallet agent approve <exchange> ...` to create one.");
+        return;
+      }
+
+      console.log(chalk.cyan.bold("\n  Registered Agent Wallets\n"));
+      const header = ["NAME", "EXCHANGE", "EVM ADDR", "EXPIRES", "STATUS", "PERP", "SPOT", "WITHDRAW"];
+      const colWidths = [20, 10, 14, 26, 9, 6, 6, 10];
+      console.log("  " + header.map((h, i) => chalk.bold(h.padEnd(colWidths[i]))).join("  "));
+      console.log("  " + header.map((_, i) => "─".repeat(colWidths[i])).join("  "));
+      for (const r of rows) {
+        const addr = r.evmAddress ? r.evmAddress.slice(0, 6) + "…" + r.evmAddress.slice(-4) : "";
+        const statusColor = r.status === "active" ? chalk.green : r.status === "expired" ? chalk.red : chalk.yellow;
+        const cols = [
+          r.name.slice(0, 19),
+          r.exchange,
+          addr,
+          new Date(r.expiresAt).toLocaleDateString(),
+          statusColor(r.status),
+          r.permissions.canPerpTrade ? chalk.green("Y") : chalk.gray("N"),
+          r.permissions.canSpotTrade ? chalk.green("Y") : chalk.gray("N"),
+          r.permissions.canWithdraw ? chalk.green("Y") : chalk.gray("N"),
+        ];
+        console.log("  " + cols.map((c, i) => String(c).padEnd(colWidths[i])).join("  "));
       }
       console.log();
     });
 
-  // ── agent plan ── given a goal, suggest a command sequence
+  // ── agent revoke <exchange> <agentName> ─────────────────────────────────
   agent
-    .command("plan")
-    .description("Suggest a command sequence for a given trading goal")
-    .argument("<goal>", "Natural language goal (e.g., 'buy 0.1 BTC on pacifica')")
-    .action(async (goal: string) => {
-      const g = goal.toLowerCase();
-      const steps: { step: number; command: string; description: string }[] = [];
+    .command("revoke <exchange> <agentName>")
+    .description("Revoke an agent wallet registration")
+    .option("--force", "Skip Aster POST, only clear local state")
+    .option("--passphrase <pp>", "Master OWS passphrase")
+    .option("--json", "Machine-readable output")
+    .action(async (exchange: string, agentName: string, opts: {
+      force?: boolean;
+      passphrase?: string;
+      json?: boolean;
+    }) => {
+      const useJson = opts.json ?? isJson();
 
-      if (g.includes("buy") || g.includes("long")) {
-        const symbol = extractSymbol(g) || "BTC";
-        const size = extractNumber(g) || "0.01";
-        steps.push(
-          { step: 1, command: `perp market book ${symbol} --json`, description: `Check ${symbol} orderbook` },
-          { step: 2, command: `perp account balance --json`, description: "Check available balance" },
-          { step: 3, command: `perp trade market ${symbol} buy ${size} --json`, description: `Buy ${size} ${symbol}` },
-          { step: 4, command: `perp account positions --json`, description: "Verify position opened" },
-        );
-      } else if (g.includes("sell") || g.includes("short")) {
-        const symbol = extractSymbol(g) || "BTC";
-        const size = extractNumber(g) || "0.01";
-        steps.push(
-          { step: 1, command: `perp market book ${symbol} --json`, description: `Check ${symbol} orderbook` },
-          { step: 2, command: `perp account balance --json`, description: "Check available balance" },
-          { step: 3, command: `perp trade market ${symbol} sell ${size} --json`, description: `Sell ${size} ${symbol}` },
-          { step: 4, command: `perp account positions --json`, description: "Verify position opened" },
-        );
-      } else if (g.includes("close") || g.includes("exit")) {
-        const symbol = extractSymbol(g) || "ALL";
-        steps.push(
-          { step: 1, command: "perp account positions --json", description: "Get current positions" },
-          { step: 2, command: `perp trade cancel-all --json`, description: "Cancel any open orders" },
-        );
-        if (symbol !== "ALL") {
-          steps.push(
-            { step: 3, command: `perp trade market ${symbol} sell <position_size> --json`, description: `Close ${symbol} position (adjust side/size from step 1)` },
-          );
+      try {
+        // Step 1: Check local meta (idempotent — absent = already revoked)
+        const meta = getAgent(exchange, agentName);
+        if (!meta) {
+          const result = { ok: true, data: { alreadyRevoked: true } };
+          if (useJson) {
+            printJson(result);
+          } else {
+            console.log(`Agent "${agentName}" on ${exchange} not found locally — already revoked.`);
+          }
+          return;
         }
-      } else if (g.includes("arb") || g.includes("arbitrage") || g.includes("funding")) {
-        steps.push(
-          { step: 1, command: "perp arb scan --min 5 --json", description: "Scan funding rate arbitrage opportunities" },
-          { step: 2, command: "perp arb exec <SYM> <longEx> <shortEx> <$> --leverage 2 --isolated --dry-run --json", description: "Dry-run arb execution" },
-        );
-      } else if (g.includes("status") || g.includes("check") || g.includes("overview")) {
-        steps.push(
-          { step: 1, command: "perp portfolio --json", description: "Balances + positions + risk" },
-          { step: 2, command: "perp account positions --json", description: "Detailed positions" },
-          { step: 3, command: "perp account orders --json", description: "Open orders" },
-        );
-      } else if (g.includes("deposit")) {
-        const amount = extractNumber(g) || "100";
-        steps.push(
-          { step: 1, command: "perp wallet balance --json", description: "Check wallet balance" },
-          { step: 2, command: `perp deposit pacifica ${amount} --json`, description: `Deposit $${amount} to Pacifica` },
-          { step: 3, command: "perp account balance --json", description: "Verify deposit arrived" },
-        );
-      } else if (g.includes("price") || g.includes("market")) {
-        const symbol = extractSymbol(g);
-        if (symbol) {
-          steps.push(
-            { step: 1, command: `perp market book ${symbol} --json`, description: `${symbol} orderbook` },
-            { step: 2, command: `perp market funding ${symbol} --json`, description: `${symbol} funding history` },
-            { step: 3, command: `perp market kline ${symbol} 1h --json`, description: `${symbol} hourly candles` },
-          );
+
+        if (!opts.force) {
+          // Step 2: Resolve passphrase
+          const passphrase = await resolvePassphrase({ flag: opts.passphrase });
+          if (passphrase === null) {
+            throw new PerpError("PASSPHRASE_REQUIRED", "No passphrase provided and stdin is non-TTY", {
+              remediation: "Provide passphrase via --passphrase flag, OWS_PASSPHRASE env var, or stdin pipe",
+            });
+          }
+
+          if (exchange === "hyperliquid") {
+            // HL revoke: POST approveAgent with zero-address (best-effort, idempotent)
+            const masterName = meta.masterWalletName;
+            const masterSigner = OwsEvmSigner.create(masterName, passphrase);
+            try {
+              await revokeHlAgent(masterSigner);
+            } catch { /* best effort — HL revoke is idempotent */ }
+          } else if (exchange === "pacifica") {
+            // PAC revoke: signed unbind_agent_wallet with the agent base58 address
+            const masterName = meta.masterWalletName;
+            const solanaSigner = OwsSolanaSigner.create(masterName, passphrase);
+            try {
+              await revokePacAgent(solanaSigner, meta.agentSolanaAddress ?? "");
+            } catch { /* best effort — Pacifica revoke is idempotent */ }
+          } else if (exchange === "lighter" || exchange === "lt") {
+            // LT revoke: Lighter has no on-chain revoke action; revoke is local-only.
+            // Slots persist on the L2 server until overwritten by a fresh ChangePubKey
+            // at the same index. revokeLtAgent is a no-op stub that exists for
+            // symmetry with the other DEX revoke helpers.
+            try {
+              await revokeLtAgent();
+            } catch { /* best effort — LT revoke is idempotent */ }
+          } else {
+            // Aster revoke: Step 3: Build DelAgent EIP-712
+            const masterName = meta.masterWalletName;
+            const masterSigner = OwsEvmSigner.create(masterName, passphrase);
+            const userEvmAddress = masterSigner.getAddress() as `0x${string}`;
+            const nonceMicros = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+
+            const delTypedData = buildDelAgentTypedData({
+              user: userEvmAddress,
+              agentAddress: meta.agentEvmAddress,
+              nonceMicros,
+              asterChain: "Mainnet",
+            });
+
+            const signature = await masterSigner.signTypedData(
+              delTypedData.domain as Record<string, unknown>,
+              delTypedData.types as Record<string, Array<{ name: string; type: string }>>,
+              delTypedData.message,
+            );
+
+            // Step 4: POST DELETE /fapi/v3/agent
+            const baseUrl = "https://fapi.asterdex.com";
+            const qsEntries: [string, string][] = [
+              ["agentAddress", meta.agentEvmAddress],
+              ["asterChain", "Mainnet"],
+              ["user", userEvmAddress],
+              ["nonce", String(nonceMicros)],
+              ["signature", signature],
+              ["signatureChainId", "56"],
+            ];
+            const qs = new URLSearchParams(Object.fromEntries(qsEntries));
+
+            const revokeRes = await fetch(`${baseUrl}/fapi/v3/agent?${qs.toString()}`, {
+              method: "DELETE",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: "",
+            });
+
+            // Idempotent: 404 = already revoked server-side, treat as success
+            if (!revokeRes.ok && revokeRes.status !== 404) {
+              const errText = await revokeRes.text().catch(() => "");
+              throw new PerpError("EXCHANGE_ERROR", `Aster agent delete failed (${revokeRes.status}): ${errText.slice(0, 200)}`, {
+                remediation: "Use --force to skip Aster POST and only clear local state",
+              });
+            }
+          }
+        }
+
+        // Step 5: Revoke OWS API key (Aster only — HL has no OWS key)
+        if (meta.owsApiKeyId) {
+          try {
+            const ows = loadOws();
+            ows.revokeApiKey(meta.owsApiKeyId);
+          } catch { /* best effort */ }
+        }
+
+        // Step 6: Delete local agent entry
+        deleteAgent(exchange, agentName);
+
+        if (useJson) {
+          printJson(jsonOk({ revoked: true }));
         } else {
-          steps.push(
-            { step: 1, command: "perp market prices --json", description: "All market prices" },
-            { step: 2, command: "perp gap show --json", description: "Cross-exchange price gaps" },
-          );
+          console.log(chalk.green(`Agent "${agentName}" on ${exchange} revoked successfully.`));
         }
-      } else {
-        steps.push(
-          { step: 1, command: "perp agent capabilities", description: "List all available capabilities" },
-          { step: 2, command: "perp portfolio --json", description: "Check account status" },
-        );
+      } catch (err) {
+        reportErrorAndExit(err);
+      }
+    });
+
+  // ── agent rotate <exchange> [<oldAgentName>] ─────────────────────────────
+  agent
+    .command("rotate <exchange> [oldAgentName]")
+    .description("Rotate an agent wallet: revoke existing, then approve with same name")
+    .option("--passphrase <pp>", "Master OWS passphrase")
+    .option("--master <name>", "Master OWS wallet name")
+    .option("--agent-name <name>", "Agent name to rotate (default: first registered agent)")
+    .option("--expires-in <duration>", "New expiry (default: 90d)")
+    .option("--can-perp", "Allow perp trading (default: inherit or on)")
+    .option("--no-can-perp", "Disallow perp trading")
+    .option("--can-spot", "Allow spot trading (default: inherit or off)")
+    .option("--no-can-spot", "Disallow spot trading")
+    .option("--can-withdraw", "Allow withdrawals (default: inherit or off)")
+    .option("--no-can-withdraw", "Disallow withdrawals")
+    .option("--json", "Machine-readable output")
+    .action(async (exchange: string, oldAgentNameArg: string | undefined, opts: {
+      passphrase?: string;
+      master?: string;
+      agentName?: string;
+      expiresIn?: string;
+      canPerp?: boolean;
+      canSpot?: boolean;
+      canWithdraw?: boolean;
+      json?: boolean;
+    }) => {
+      const useJson = opts.json ?? isJson();
+
+      try {
+        // Determine which agent to rotate
+        const agentNameToRotate = oldAgentNameArg ?? opts.agentName ?? getAgent(exchange)?.agentName;
+        if (!agentNameToRotate) {
+          throw new PerpError("AGENT_NOT_REGISTERED", `No agent found for ${exchange}`, {
+            remediation: `Run: perp wallet agent approve ${exchange} to create one`,
+          });
+        }
+
+        // Resolve passphrase early (needed for both revoke and approve phases)
+        const passphrase = await resolvePassphrase({ flag: opts.passphrase });
+        if (passphrase === null) {
+          throw new PerpError("PASSPHRASE_REQUIRED", "No passphrase provided and stdin is non-TTY", {
+            remediation: "Provide passphrase via --passphrase flag, OWS_PASSPHRASE env var, or stdin pipe",
+          });
+        }
+
+        const settings = loadSettings();
+        const masterName = opts.master ?? settings.owsActiveWallet;
+
+        // Capture existing agent meta before revoke (for permission inheritance)
+        const existing = getAgent(exchange, agentNameToRotate);
+
+        // Resolve permissions: explicit flags > old agent's permissions > defaults.
+        // With --no-can-perp/spot/withdraw pattern, opts values are undefined when not passed.
+        const permFlagsProvided = opts.canPerp !== undefined || opts.canSpot !== undefined || opts.canWithdraw !== undefined;
+        let canPerp: boolean;
+        let canSpot: boolean;
+        let canWithdraw: boolean;
+        if (permFlagsProvided) {
+          canPerp = opts.canPerp ?? true;
+          canSpot = opts.canSpot ?? false;
+          canWithdraw = opts.canWithdraw ?? false;
+        } else if (existing?.permissions) {
+          // Preserve old agent's permission set when flags are absent
+          canPerp = existing.permissions.canPerpTrade;
+          canSpot = existing.permissions.canSpotTrade;
+          canWithdraw = existing.permissions.canWithdraw;
+        } else {
+          canPerp = true;
+          canSpot = false;
+          canWithdraw = false;
+        }
+
+        // Revoke existing (if present) — best effort
+        if (existing) {
+          try {
+            if (exchange === "pacifica") {
+              // Pacifica master is a Solana keypair; can't reuse the EVM master signer.
+              const revokePacSigner = OwsSolanaSigner.create(existing.masterWalletName, passphrase);
+              await revokePacAgent(revokePacSigner, existing.agentSolanaAddress ?? "");
+              if (existing.owsApiKeyId) {
+                try { loadOws().revokeApiKey(existing.owsApiKeyId); } catch { /* best effort */ }
+              }
+              deleteAgent(exchange, agentNameToRotate);
+              // Continue to the shared approve flow below.
+              // (skip the remaining EVM-revoke branch via early continuation)
+            } else if (exchange === "lighter" || exchange === "lt") {
+              // LT rotate: no on-chain revoke; just clear local entry. The new
+              // approve picks the next free slot, leaving the old slot orphaned
+              // on the L2 server (it cannot be used again until overwritten via
+              // a fresh ChangePubKey at that index — which the next approve does
+              // implicitly when it picks max+1).
+              await revokeLtAgent();
+              if (existing.owsApiKeyId) {
+                try { loadOws().revokeApiKey(existing.owsApiKeyId); } catch { /* best effort */ }
+              }
+              deleteAgent(exchange, agentNameToRotate);
+              // Continue to the shared approve flow below.
+            } else {
+            const revokeMs = OwsEvmSigner.create(existing.masterWalletName, passphrase);
+            if (exchange === "hyperliquid") {
+              // HL: revoke via approveAgent with zero-address
+              await revokeHlAgent(revokeMs);
+            } else {
+              // Aster: DELETE /fapi/v3/agent
+              const userEvmAddress = revokeMs.getAddress() as `0x${string}`;
+              const nonceMicros = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+              const delTypedData = buildDelAgentTypedData({
+                user: userEvmAddress,
+                agentAddress: existing.agentEvmAddress,
+                nonceMicros,
+                asterChain: "Mainnet",
+              });
+              const sig = await revokeMs.signTypedData(
+                delTypedData.domain as Record<string, unknown>,
+                delTypedData.types as Record<string, Array<{ name: string; type: string }>>,
+                delTypedData.message,
+              );
+              const baseUrl = "https://fapi.asterdex.com";
+              const qs = new URLSearchParams(Object.fromEntries([
+                ["agentAddress", existing.agentEvmAddress],
+                ["asterChain", "Mainnet"],
+                ["user", userEvmAddress],
+                ["nonce", String(nonceMicros)],
+                ["signature", sig],
+                ["signatureChainId", "56"],
+              ] as [string, string][]));
+              await fetch(`${baseUrl}/fapi/v3/agent?${qs.toString()}`, {
+                method: "DELETE",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: "",
+              });
+            }
+            if (existing.owsApiKeyId) {
+              try { loadOws().revokeApiKey(existing.owsApiKeyId); } catch { /* best effort */ }
+            }
+            deleteAgent(exchange, agentNameToRotate);
+            }
+          } catch { /* best effort on revoke — continue to approve */ }
+        }
+
+        const expiresIn = opts.expiresIn ?? "90d";
+        const expiresAt = parseExpiresIn(expiresIn);
+        const expiresAtIso = expiresAt.toISOString();
+        const nowIso = new Date().toISOString();
+
+        // Acquire lock and run the shared approve flow
+        acquireLock(exchange);
+        try {
+          let rotatedAgentAddress: string;
+          if (exchange === "hyperliquid") {
+            const result = await runHlApproveFlow({
+              masterName,
+              passphrase,
+              agentName: agentNameToRotate,
+              expiresAt,
+              expiresAtIso,
+              nowIso,
+              canPerp,
+              canSpot,
+              canWithdraw,
+            });
+            rotatedAgentAddress = result.agentAddress;
+          } else if (exchange === "pacifica") {
+            const result = await runPacApproveFlow({
+              masterName,
+              passphrase,
+              agentName: agentNameToRotate,
+              expiresAt,
+              expiresAtIso,
+              nowIso,
+              canPerp,
+              canSpot,
+              canWithdraw,
+            });
+            rotatedAgentAddress = result.agentSolanaAddress;
+          } else if (exchange === "lighter" || exchange === "lt") {
+            const result = await runLtApproveFlow({
+              masterName,
+              passphrase,
+              agentName: agentNameToRotate,
+              expiresAt,
+              expiresAtIso,
+              nowIso,
+              canPerp,
+              canSpot,
+              canWithdraw,
+              // No apiKeyIndex override on rotate — picks next free slot.
+            });
+            rotatedAgentAddress = `slot=${result.apiKeyIndex} pubkey=${result.publicKey}`;
+          } else {
+            const expiredMs = expiresAt.getTime();
+            const nonceMicros = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+            const result = await runApproveFlow({
+              masterName,
+              passphrase,
+              agentName: agentNameToRotate,
+              expiresAt,
+              expiredMs,
+              expiresAtIso,
+              nonceMicros,
+              nowIso,
+              canPerp,
+              canSpot,
+              canWithdraw,
+              asterChain: "Mainnet",
+            });
+            rotatedAgentAddress = result.agentAddress;
+          }
+
+          if (useJson) {
+            printJson(jsonOk({ rotated: true, agentName: agentNameToRotate, agentEvmAddress: rotatedAgentAddress, expiresAt: expiresAtIso }));
+          } else {
+            console.log(chalk.green(`Agent "${agentNameToRotate}" on ${exchange} rotated successfully.`));
+            console.log(`  New agent address: ${chalk.cyan(rotatedAgentAddress)}`);
+            console.log(`  Expires: ${chalk.cyan(expiresAtIso)}`);
+          }
+        } finally {
+          releaseLock(exchange);
+        }
+      } catch (err) {
+        reportErrorAndExit(err);
+      }
+    });
+
+  // ── agent verify [exchange] [agentName] ──────────────────────────────────
+  agent
+    .command("verify [exchange] [agentName]")
+    .description("Verify agent wallet registration via DEX query API")
+    .option("--master <name>", "Master OWS wallet name (Aster/PAC). Defaults to settings.owsActiveWallet")
+    .option("--master-address <addr>", "Master EVM address (HL only)")
+    .option("--account-index <n>", "Account index (Lighter only)")
+    .option("--passphrase <pp>", "Master OWS passphrase (Aster/PAC). Falls back to OWS_PASSPHRASE env.")
+    .option("--json", "Machine-readable output")
+    .action(async (exchange: string | undefined, agentName: string | undefined, opts: {
+      master?: string;
+      masterAddress?: string;
+      accountIndex?: string;
+      passphrase?: string;
+      json?: boolean;
+    }) => {
+      const useJson = opts.json ?? isJson();
+      const ts = new Date().toISOString();
+
+      // Resolve passphrase via 3-path: flag > env > (no stdin prompt in verify)
+      const passphrase = opts.passphrase ?? process.env["OWS_PASSPHRASE"] ?? "";
+
+      const verifyOpts: VerifyOpts = {
+        agentName,
+        master: opts.master,
+        masterAddress: opts.masterAddress,
+        accountIndex: opts.accountIndex,
+        passphrase,
+      };
+
+      if (!exchange) {
+        // Aggregate mode: all 4 DEXs in parallel
+        const [asterResult, hlResult, pacResult, ltResult] = await Promise.allSettled([
+          verifyAster(verifyOpts),
+          verifyHyperliquid(verifyOpts),
+          verifyPacifica(verifyOpts),
+          verifyLighter(verifyOpts),
+        ]);
+
+        function slotResult(r: PromiseSettledResult<VerifyResult>) {
+          if (r.status === "fulfilled") {
+            const slot: Record<string, unknown> = { registered: r.value.registered, count: r.value.count, items: r.value.items };
+            if (r.value.warnings && r.value.warnings.length > 0) slot.warnings = r.value.warnings;
+            return slot;
+          }
+          const err = r.reason instanceof PerpError ? r.reason : null;
+          return {
+            error: {
+              code: err ? err.structured.code : "EXCHANGE_ERROR",
+              message: err ? err.structured.message : (r.reason instanceof Error ? r.reason.message : String(r.reason)),
+              remediation: err ? err.structured.remediation : undefined,
+            },
+          };
+        }
+
+        const data = {
+          aster: slotResult(asterResult),
+          hyperliquid: slotResult(hlResult),
+          pacifica: slotResult(pacResult),
+          lighter: slotResult(ltResult),
+        };
+
+        if (useJson) {
+          printJson({ ok: true, data, meta: { timestamp: ts } });
+        } else {
+          console.log(chalk.bold("Agent Verify — All DEXs"));
+          for (const [dex, slot] of Object.entries(data)) {
+            if ("error" in slot) {
+              console.log(chalk.yellow(`  ${dex}: ERROR — ${(slot as { error: { message: string } }).error.message}`));
+            } else {
+              const s = slot as { registered: boolean; count: number };
+              const icon = s.registered ? chalk.green("✓") : chalk.gray("○");
+              console.log(`  ${icon} ${dex}: ${s.count} agent(s) registered`);
+            }
+          }
+        }
+        return;
       }
 
-      printJson(jsonOk({
-        goal,
-        exchange: "pacifica",
-        steps,
-        notes: [
-          "All commands should include --json for structured output",
-          "Adjust exchange with -e hyperliquid if needed",
-          "Check return values before proceeding to next step",
-        ],
-      }));
+      // Single-DEX mode
+      try {
+        let result: VerifyResult;
+        const ex = exchange.toLowerCase();
+        if (ex === "aster") {
+          result = await verifyAster(verifyOpts);
+        } else if (ex === "hyperliquid" || ex === "hl") {
+          result = await verifyHyperliquid(verifyOpts);
+        } else if (ex === "pacifica" || ex === "pac") {
+          result = await verifyPacifica(verifyOpts);
+        } else if (ex === "lighter" || ex === "lt") {
+          result = await verifyLighter(verifyOpts);
+        } else {
+          throw new PerpError("INVALID_PARAMS", `Unknown exchange "${exchange}". Use: aster, hyperliquid, pacifica, lighter`, {
+            remediation: "perp wallet agent verify <aster|hyperliquid|pacifica|lighter> [agentName]",
+          });
+        }
+
+        if (useJson) {
+          printJson({
+            ok: true,
+            data: { exchange: ex, registered: result.registered, count: result.count, items: result.items },
+            meta: { timestamp: ts, ...(result.warnings && result.warnings.length > 0 ? { warnings: result.warnings } : {}) },
+          });
+        } else {
+          const icon = result.registered ? chalk.green("✓") : chalk.gray("○");
+          console.log(`${icon} ${chalk.bold(ex)}: ${result.count} agent(s) registered`);
+          if (result.count > 0) {
+            if (ex === "aster") {
+              console.log(chalk.dim("  agentAddress               | agentName        | expired     | canPerp | canSpot | canWithdraw"));
+              for (const item of result.items) {
+                const i = item as Record<string, unknown>;
+                const addr = String(i["agentAddress"] ?? "").substring(0, 20) + "…";
+                const name = String(i["agentName"] ?? "").padEnd(16);
+                const exp = i["expired"] !== undefined ? String(i["expired"]) : "—";
+                const cp = i["canPerpTrade"] ? "yes" : "no";
+                const cs = i["canSpotTrade"] ? "yes" : "no";
+                const cw = i["canWithdraw"] ? "yes" : "no";
+                console.log(`  ${addr} | ${name} | ${exp} | ${cp.padEnd(7)} | ${cs.padEnd(7)} | ${cw}`);
+              }
+            } else if (ex === "hyperliquid" || ex === "hl") {
+              console.log(chalk.dim("  address                    | validUntil  | name"));
+              for (const item of result.items) {
+                const i = item as Record<string, unknown>;
+                const addr = String(i["address"] ?? "").substring(0, 20) + "…";
+                const vu = i["validUntil"] !== undefined ? String(i["validUntil"]) : "—";
+                const name = String(i["name"] ?? "");
+                console.log(`  ${addr} | ${vu.padEnd(11)} | ${name}`);
+              }
+            } else if (ex === "lighter" || ex === "lt") {
+              console.log(chalk.dim("  api_key_index | public_key (truncated)  | nonce | transaction_time"));
+              for (const item of result.items) {
+                const i = item as Record<string, unknown>;
+                const idx = String(i["api_key_index"] ?? "");
+                const pk = String(i["public_key"] ?? "").substring(0, 20) + "…";
+                const nonce = String(i["nonce"] ?? "");
+                const tt = String(i["transaction_time"] ?? "");
+                console.log(`  ${idx.padEnd(13)} | ${pk.padEnd(23)} | ${nonce.padEnd(5)} | ${tt}`);
+              }
+            } else if (ex === "pacifica" || ex === "pac") {
+              console.log(chalk.dim("  api_key (truncated)      | created_at"));
+              for (const item of result.items) {
+                const i = item as Record<string, unknown>;
+                const key = String(i["api_key"] ?? "").substring(0, 20) + "…";
+                const created = String(i["created_at"] ?? "");
+                console.log(`  ${key.padEnd(24)} | ${created}`);
+              }
+            }
+          }
+          if (result.warnings && result.warnings.length > 0) {
+            for (const w of result.warnings) {
+              process.stderr.write(chalk.yellow(`[warn] ${w}\n`));
+            }
+          }
+        }
+      } catch (err) {
+        reportErrorAndExit(err);
+      }
     });
 }
 
-function extractSymbol(text: string): string | null {
-  const symbols = ["BTC", "ETH", "SOL", "ARB", "DOGE", "WIF", "JTO", "PYTH", "JUP", "ONDO", "SUI", "APT", "AVAX", "LINK", "OP", "MATIC", "NEAR", "AAVE", "UNI", "TIA"];
-  const upper = text.toUpperCase();
-  for (const s of symbols) {
-    if (upper.includes(s)) return s;
-  }
-  return null;
+// ── Shared approve flow helper ───────────────────────────────────────────────
+
+interface ApproveFlowOpts {
+  masterName: string;
+  passphrase: string;
+  agentName: string;
+  expiresAt: Date;
+  expiredMs: number;
+  expiresAtIso: string;
+  nonceMicros: number;
+  nowIso: string;
+  canPerp: boolean;
+  canSpot: boolean;
+  canWithdraw: boolean;
+  asterChain: "Mainnet" | "Testnet";
+  builder?: string;
+  maxFeeRate?: string;
+  builderName?: string;
+  ipWhitelist?: string;
 }
 
-function extractNumber(text: string): string | null {
-  const match = text.match(/(\d+\.?\d*)/);
-  return match ? match[1] : null;
+interface ApproveFlowResult {
+  agentAddress: `0x${string}`;
+  agentName: string;
+  expiresAt: string;
+  owsApiKeyId: string;
+  policyId: string;
+  asterApprovalNonce: string;
+  userEvmAddress: `0x${string}`;
+}
+
+/**
+ * Core approve flow: Steps 2-12 (OWS wallet + policy + api-key + EIP-712 + Aster POST + persist).
+ * Caller MUST hold the exchange lock before calling this function.
+ * The function is re-entrant safe with setAgent because callerHoldsLock() will
+ * return true when called from within a locked context.
+ */
+async function runApproveFlow(opts: ApproveFlowOpts): Promise<ApproveFlowResult> {
+  const {
+    masterName, passphrase, agentName, expiredMs, expiresAtIso, nonceMicros, nowIso,
+    canPerp, canSpot, canWithdraw, asterChain,
+  } = opts;
+
+  const baseUrl = "https://fapi.asterdex.com";
+  let owsApiKeyId: string | undefined;
+  let owsPolicyId: string | undefined;
+  let agentEvmAddress: `0x${string}` | undefined;
+  let agentWalletName: string | undefined;
+
+  // Steps 2-3: Resolve master signer
+  const masterSigner = OwsEvmSigner.create(masterName, passphrase);
+  const userEvmAddress = masterSigner.getAddress() as `0x${string}`;
+
+  // Step 4: Generate agent OWS wallet
+  const ows = loadOws();
+  agentWalletName = `agent-aster-${masterName}`;
+  const agentWallet = ows.createWallet(agentWalletName, passphrase);
+  const agentEvmAccount = agentWallet.accounts.find(
+    (a: { chainId: string }) => a.chainId.startsWith("eip155:"),
+  );
+  if (!agentEvmAccount) {
+    throw new PerpError("INVALID_PARAMS", `Agent wallet "${agentWalletName}" has no EVM account`, {
+      remediation: "Check OWS vault configuration",
+    });
+  }
+  agentEvmAddress = agentEvmAccount.address as `0x${string}`;
+
+  // Step 5: Build OWS policy
+  const policyId = `aster-perp-${Date.now()}`;
+  owsPolicyId = policyId;
+  ows.createPolicy(JSON.stringify({
+    id: policyId,
+    name: `perp-cli-aster-${agentName}`,
+    version: "1",
+    created_at: nowIso,
+    rules: [{ allowed_chains: ["eip155:56"], expires_at: expiresAtIso }],
+    executable: null,
+  }));
+
+  // Step 6: Build OWS API key — store only the id, never the token
+  const apiKeyResult = ows.createApiKey(
+    `api-aster-${agentName}`,
+    [agentWallet.id],
+    [policyId],
+    passphrase,
+    expiresAtIso,
+  );
+  owsApiKeyId = apiKeyResult.id;
+
+  // Step 7 (Optional): Builder approval BEFORE approveAgent
+  if (opts.builder) {
+    if (!opts.maxFeeRate) {
+      throw new PerpError("INVALID_PARAMS", "--max-fee-rate is required when --builder is set", {
+        remediation: "Add --max-fee-rate <bps> to your command",
+      });
+    }
+    const builderTypedData = buildApproveBuilderTypedData({
+      builder: opts.builder,
+      maxFeeRate: opts.maxFeeRate,
+      builderName: opts.builderName,
+      user: userEvmAddress,
+      nonceMicros: nonceMicros - 1,
+      asterChain,
+    });
+    const builderSig = await masterSigner.signTypedData(
+      builderTypedData.domain as Record<string, unknown>,
+      builderTypedData.types as Record<string, Array<{ name: string; type: string }>>,
+      builderTypedData.message,
+    );
+    const builderQsEntries: [string, string][] = [
+      ["builder", opts.builder],
+      ["maxFeeRate", opts.maxFeeRate],
+      ...(opts.builderName !== undefined ? [["builderName", opts.builderName] as [string, string]] : []),
+      ["asterChain", asterChain],
+      ["user", userEvmAddress],
+      ["nonce", String(nonceMicros - 1)],
+      ["signature", builderSig],
+      ["signatureChainId", "56"],
+    ];
+    const builderRes = await fetch(`${baseUrl}/fapi/v3/approveBuilder?${new URLSearchParams(Object.fromEntries(builderQsEntries)).toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "",
+    });
+    if (!builderRes.ok) {
+      const errText = await builderRes.text().catch(() => "");
+      // Aster builder POST failed — rollback api key (no Aster agent registered yet)
+      if (owsApiKeyId) {
+        try { ows.revokeApiKey(owsApiKeyId); } catch { /* best effort */ }
+      }
+      throw new PerpError("EXCHANGE_ERROR", `Aster approveBuilder failed (${builderRes.status}): ${errText.slice(0, 200)}`, {
+        remediation: "Check builder address and max-fee-rate parameters",
+      });
+    }
+    const builderResp = await builderRes.json() as { code: string | number; msg?: string; message?: string };
+    const builderOk = builderResp.code === "000000" || builderResp.code === 200;
+    if (!builderOk) {
+      if (owsApiKeyId) {
+        try { ows.revokeApiKey(owsApiKeyId); } catch { /* best effort */ }
+      }
+      const errMsg = builderResp.msg ?? builderResp.message ?? String(builderResp.code);
+      throw new PerpError("EXCHANGE_ERROR", `Aster approveBuilder failed: ${errMsg}`, {
+        remediation: "Check builder address and max-fee-rate parameters",
+      });
+    }
+  }
+
+  // Step 8: Build EIP-712 ApproveAgent payload
+  const approveTypedData = buildApproveAgentTypedData({
+    user: userEvmAddress,
+    agentAddress: agentEvmAddress,
+    agentName,
+    expiredMs,
+    canPerpTrade: canPerp,
+    canSpotTrade: canSpot,
+    canWithdraw,
+    ipWhitelist: opts.ipWhitelist,
+    builder: opts.builder,
+    maxFeeRate: opts.maxFeeRate,
+    builderName: opts.builderName,
+    nonceMicros,
+    asterChain,
+  });
+
+  // Step 9: Sign
+  const signature = await masterSigner.signTypedData(
+    approveTypedData.domain as Record<string, unknown>,
+    approveTypedData.types as Record<string, Array<{ name: string; type: string }>>,
+    approveTypedData.message,
+  );
+
+  // Step 10: Build query string
+  const qsEntries: [string, string][] = [
+    ["agentName", agentName],
+    ["agentAddress", agentEvmAddress],
+  ];
+  if (opts.ipWhitelist !== undefined && opts.ipWhitelist !== null) {
+    qsEntries.push(["ipWhitelist", opts.ipWhitelist]);
+  }
+  qsEntries.push(
+    ["expired", String(expiredMs)],
+    ["canSpotTrade", String(canSpot)],
+    ["canPerpTrade", String(canPerp)],
+    ["canWithdraw", String(canWithdraw)],
+  );
+  if (opts.builder !== undefined && opts.builder !== null) {
+    qsEntries.push(["builder", opts.builder]);
+    qsEntries.push(["maxFeeRate", opts.maxFeeRate ?? ""]);
+    if (opts.builderName !== undefined) {
+      qsEntries.push(["builderName", opts.builderName]);
+    }
+  }
+  qsEntries.push(
+    ["asterChain", asterChain],
+    ["user", userEvmAddress],
+    ["nonce", String(nonceMicros)],
+    ["signature", signature],
+    ["signatureChainId", "56"],
+  );
+
+  // Step 11: POST /fapi/v3/approveAgent
+  let asterPostSucceeded = false;
+  const agentRes = await fetch(`${baseUrl}/fapi/v3/approveAgent?${new URLSearchParams(Object.fromEntries(qsEntries)).toString()}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "",
+  });
+  if (agentRes.ok) {
+    const resp = await agentRes.json() as { code: string | number; msg?: string; message?: string };
+    if (resp.code === "000000" || resp.code === 200) {
+      asterPostSucceeded = true;
+    } else {
+      // Aster POST body indicated failure — rollback api key (Aster did not register)
+      if (owsApiKeyId) {
+        try { ows.revokeApiKey(owsApiKeyId); } catch { /* best effort */ }
+      }
+      const errMsg = resp.msg ?? resp.message ?? String(resp.code);
+      throw new PerpError("APPROVE_PARTIAL", `Aster approveAgent failed: ${errMsg}`, {
+        remediation: `Agent address for cleanup: ${agentEvmAddress}`,
+      });
+    }
+  } else {
+    // HTTP error — rollback api key (Aster did not register)
+    if (owsApiKeyId) {
+      try { ows.revokeApiKey(owsApiKeyId); } catch { /* best effort */ }
+    }
+    const errText = await agentRes.text().catch(() => "");
+    throw new PerpError("APPROVE_PARTIAL", `Aster approveAgent failed (${agentRes.status}): ${errText.slice(0, 200)}`, {
+      remediation: `Agent address for cleanup: ${agentEvmAddress}`,
+    });
+  }
+
+  // Step 12: Persist agent meta
+  // Note: setAgent is re-entrant — if caller holds the lock, it writes directly.
+  try {
+    setAgent("aster", {
+      agentName,
+      agentWalletName,
+      agentEvmAddress,
+      userEvmAddress,
+      masterWalletName: masterName,
+      owsApiKeyId,
+      owsPolicyId,
+      expiresAt: expiresAtIso,
+      approvedAt: nowIso,
+      permissions: { canPerpTrade: canPerp, canSpotTrade: canSpot, canWithdraw },
+      asterApprovalNonce: String(nonceMicros),
+      status: "active",
+    });
+  } catch (persistErr) {
+    // Settings persist failed AFTER Aster registration succeeded.
+    // CRITICAL-2 fix: attempt BOTH remote DELETE and local revokeApiKey.
+    // Only if BOTH succeed → APPROVE_FAILED (clean). Otherwise → APPROVE_PARTIAL.
+    let deleteOk = false;
+    let revokeOk = false;
+
+    // Attempt remote DELETE /fapi/v3/agent
+    try {
+      const delNonce = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+      const delTypedData = buildDelAgentTypedData({
+        user: userEvmAddress,
+        agentAddress: agentEvmAddress,
+        nonceMicros: delNonce,
+        asterChain,
+      });
+      const delSig = await masterSigner.signTypedData(
+        delTypedData.domain as Record<string, unknown>,
+        delTypedData.types as Record<string, Array<{ name: string; type: string }>>,
+        delTypedData.message,
+      );
+      const delQs = new URLSearchParams(Object.fromEntries([
+        ["agentAddress", agentEvmAddress],
+        ["asterChain", asterChain],
+        ["user", userEvmAddress],
+        ["nonce", String(delNonce)],
+        ["signature", delSig],
+        ["signatureChainId", "56"],
+      ] as [string, string][]));
+      const delRes = await fetch(`${baseUrl}/fapi/v3/agent?${delQs.toString()}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "",
+      });
+      deleteOk = delRes.ok || delRes.status === 404;
+    } catch { /* best effort */ }
+
+    // Attempt local API key revocation
+    if (owsApiKeyId) {
+      try { ows.revokeApiKey(owsApiKeyId); revokeOk = true; } catch { /* best effort */ }
+    } else {
+      revokeOk = true; // nothing to revoke
+    }
+
+    if (deleteOk && revokeOk) {
+      // Clean rollback — throw APPROVE_FAILED (not partial)
+      throw new PerpError("APPROVE_FAILED", `Agent approve failed: settings persist error after clean rollback. ${persistErr instanceof Error ? persistErr.message : String(persistErr)}`, {
+        remediation: `Both remote Aster agent and local OWS API key have been cleaned up. Retry: perp wallet agent approve aster`,
+      });
+    }
+
+    // Partial state — at least one cleanup failed. Save partial record for recovery.
+    const failedSteps: string[] = [];
+    if (!deleteOk) failedSteps.push("Aster DELETE /fapi/v3/agent");
+    if (!revokeOk) failedSteps.push("OWS revokeApiKey");
+
+    try {
+      setAgent("aster", {
+        agentName,
+        agentWalletName: agentWalletName ?? "",
+        agentEvmAddress: agentEvmAddress!,
+        userEvmAddress,
+        masterWalletName: masterName,
+        owsApiKeyId: owsApiKeyId ?? "",
+        owsPolicyId: owsPolicyId ?? "",
+        expiresAt: expiresAtIso,
+        approvedAt: nowIso,
+        permissions: { canPerpTrade: canPerp, canSpotTrade: canSpot, canWithdraw },
+        asterApprovalNonce: String(nonceMicros),
+        status: "partial",
+      });
+    } catch { /* best effort — already in a bad state */ }
+
+    throw new PerpError("APPROVE_PARTIAL", `Agent registered on Aster but persist+cleanup failed. Failed steps: ${failedSteps.join(", ")}. Persist error: ${persistErr instanceof Error ? persistErr.message : String(persistErr)}`, {
+      remediation: `Aster agent address: ${agentEvmAddress}. Run: perp wallet agent approve aster --rotate to re-register`,
+    });
+  }
+
+  return {
+    agentAddress: agentEvmAddress,
+    agentName,
+    expiresAt: expiresAtIso,
+    owsApiKeyId,
+    policyId: owsPolicyId,
+    asterApprovalNonce: String(nonceMicros),
+    userEvmAddress,
+  };
+}
+
+/**
+ * Parse an expires-in string to a Date.
+ * Accepts: "30d", "90d", "180d", "1y", or any ISO-8601 datetime string.
+ * Throws if malformed.
+ */
+function parseExpiresIn(value: string): Date {
+  const v = value.trim();
+  // Match Nd (days) or Ny (years)
+  const daysMatch = v.match(/^(\d+)d$/i);
+  if (daysMatch) {
+    const days = parseInt(daysMatch[1], 10);
+    return new Date(Date.now() + days * 24 * 3600 * 1000);
+  }
+  const yearsMatch = v.match(/^(\d+)y$/i);
+  if (yearsMatch) {
+    const years = parseInt(yearsMatch[1], 10);
+    return new Date(Date.now() + years * 365 * 24 * 3600 * 1000);
+  }
+  // Try ISO-8601
+  const d = new Date(v);
+  if (!isNaN(d.getTime())) {
+    return d;
+  }
+  throw new PerpError("INVALID_PARAMS", `Invalid expires-in value: "${v}". Use: 30d, 90d, 180d, 1y, or ISO-8601 datetime`, {
+    remediation: "Use: 30d, 90d, 180d, 1y, or ISO-8601 datetime",
+  });
+}
+
+// ── Hyperliquid agent approve/revoke helpers (Phase 2b) ──────────────────────
+
+/** EIP-712 domain for HL user-signed actions (chainId 42161 = Arbitrum) */
+const HL_USER_SIGNED_DOMAIN = {
+  name: "HyperliquidSignTransaction",
+  version: "1",
+  chainId: 42161,
+  verifyingContract: "0x0000000000000000000000000000000000000000" as const,
+};
+
+/** EIP-712 types for HyperliquidTransaction:ApproveAgent */
+const HL_APPROVE_AGENT_TYPES = {
+  "HyperliquidTransaction:ApproveAgent": [
+    { name: "hyperliquidChain", type: "string" },
+    { name: "agentAddress", type: "address" },
+    { name: "agentName", type: "string" },
+    { name: "nonce", type: "uint64" },
+  ],
+} as const;
+
+interface HlApproveFlowOpts {
+  masterName: string;
+  passphrase: string;
+  agentName: string;
+  expiresAt: Date;
+  expiresAtIso: string;
+  nowIso: string;
+  canPerp: boolean;
+  canSpot: boolean;
+  canWithdraw: boolean;
+}
+
+interface HlApproveFlowResult {
+  agentAddress: `0x${string}`;
+  agentName: string;
+  expiresAt: string;
+  userEvmAddress: `0x${string}`;
+}
+
+/**
+ * Core HL approve flow.
+ * Caller MUST hold the "hyperliquid" lock before calling this function.
+ *
+ * Steps:
+ *  1. Resolve master via OwsEvmSigner.create
+ *  2. Generate agent OWS wallet (eip155-only, name `agent-hl-<masterName>`)
+ *  3. Build HL approveAgent action + EIP-712 message
+ *  4. Master signs EIP-712 (user-signed domain, chainId 42161)
+ *  5. POST https://api.hyperliquid.xyz/exchange
+ *  6. On success: persist AgentMeta to settings.agents.hyperliquid[name]
+ */
+async function runHlApproveFlow(opts: HlApproveFlowOpts): Promise<HlApproveFlowResult> {
+  const { masterName, passphrase, agentName, expiresAtIso, nowIso, canPerp, canSpot, canWithdraw } = opts;
+
+  const { ethers } = await import("ethers");
+
+  // Step 1: Resolve master signer
+  const masterSigner = OwsEvmSigner.create(masterName, passphrase);
+  const userEvmAddress = masterSigner.getAddress() as `0x${string}`;
+
+  // Step 2: Generate agent OWS wallet
+  const ows = loadOws();
+  const agentWalletName = `agent-hl-${masterName}`;
+  // HL agent wallet created with empty passphrase. This is intentional:
+  // (1) Tier 1 hot-path must be prompt-free (P1 from agent_first_design.md).
+  // (2) OWS provides at-rest encryption regardless of per-wallet passphrase.
+  // (3) Agent blast-radius is limited (perp-only, no withdraw, no master ops).
+  // At runtime, src/index.ts opens this wallet with "" matching the create-time empty.
+  const agentWallet = ows.createWallet(agentWalletName, "");
+  const agentEvmAccount = agentWallet.accounts.find(
+    (a: { chainId: string }) => a.chainId.startsWith("eip155:"),
+  );
+  if (!agentEvmAccount) {
+    throw new PerpError("INVALID_PARAMS", `Agent wallet "${agentWalletName}" has no EVM account`, {
+      remediation: "Check OWS vault configuration",
+    });
+  }
+  const agentEvmAddress = agentEvmAccount.address as `0x${string}`;
+
+  // Step 3: Build nonce (monotonic ms)
+  const now = Date.now();
+  const nonce = now;
+  const sigChainIdHex = "0xa4b1"; // 42161 hex
+
+  const action: Record<string, unknown> = {
+    type: "approveAgent",
+    hyperliquidChain: "Mainnet",
+    signatureChainId: sigChainIdHex,
+    agentAddress: agentEvmAddress,
+    agentName,
+    nonce,
+  };
+
+  // Step 4: Master signs EIP-712 (user-signed domain)
+  const message = {
+    hyperliquidChain: "Mainnet",
+    agentAddress: agentEvmAddress,
+    agentName,
+    nonce,
+  };
+
+  const sigRaw = await masterSigner.signTypedData(
+    HL_USER_SIGNED_DOMAIN as unknown as Record<string, unknown>,
+    HL_APPROVE_AGENT_TYPES as unknown as Record<string, Array<{ name: string; type: string }>>,
+    message,
+  );
+
+  const parsed = ethers.Signature.from(sigRaw);
+  const signature = { r: parsed.r, s: parsed.s, v: parsed.v };
+
+  // Step 5: POST /exchange
+  const baseUrl = "https://api.hyperliquid.xyz";
+  const payload = { action, nonce, signature, vaultAddress: null };
+
+  const agentRes = await fetch(`${baseUrl}/exchange`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const text = await agentRes.text();
+  let resp: Record<string, unknown>;
+  try {
+    resp = JSON.parse(text);
+  } catch {
+    throw new PerpError("EXCHANGE_ERROR", `HL exchange API parse error (${agentRes.status}): ${text.slice(0, 200)}`, {
+      remediation: "Check Hyperliquid API status",
+    });
+  }
+  if (resp?.status === "err") {
+    throw new PerpError("APPROVE_PARTIAL", `HL approveAgent failed: ${typeof resp.response === "string" ? resp.response : JSON.stringify(resp)}`, {
+      remediation: `Agent address for cleanup: ${agentEvmAddress}`,
+    });
+  }
+
+  // Step 6: Persist
+  setAgent("hyperliquid", {
+    agentName,
+    agentWalletName,
+    agentEvmAddress,
+    userEvmAddress,
+    masterWalletName: masterName,
+    owsApiKeyId: "",        // HL has no OWS API key model
+    owsPolicyId: "",        // HL has no OWS Policy model
+    expiresAt: expiresAtIso,
+    approvedAt: nowIso,
+    permissions: { canPerpTrade: canPerp, canSpotTrade: canSpot, canWithdraw },
+    asterApprovalNonce: String(nonce),  // reused field: stores HL nonce for diagnostics
+    status: "active",
+  });
+
+  return { agentAddress: agentEvmAddress, agentName, expiresAt: expiresAtIso, userEvmAddress };
+}
+
+/**
+ * Post a HL revoke action for the given agent.
+ * Uses approveAgent with agentAddress set to the zero address (empty = revoke).
+ * Per HL convention: sending approveAgent with an empty/zero agentAddress
+ * clears the agent slot.
+ */
+async function revokeHlAgent(masterSigner: OwsEvmSigner): Promise<void> {
+  const { ethers } = await import("ethers");
+
+  const nonce = Date.now();
+  const sigChainIdHex = "0xa4b1";
+
+  // Zero-address revoke: approveAgent with empty agentAddress (validUntil:0 convention)
+  const revokeAddress = "0x0000000000000000000000000000000000000000" as const;
+  const action: Record<string, unknown> = {
+    type: "approveAgent",
+    hyperliquidChain: "Mainnet",
+    signatureChainId: sigChainIdHex,
+    agentAddress: revokeAddress,
+    agentName: "",
+    nonce,
+  };
+
+  const message = {
+    hyperliquidChain: "Mainnet",
+    agentAddress: revokeAddress,
+    agentName: "",
+    nonce,
+  };
+
+  const sigRaw = await masterSigner.signTypedData(
+    HL_USER_SIGNED_DOMAIN as unknown as Record<string, unknown>,
+    HL_APPROVE_AGENT_TYPES as unknown as Record<string, Array<{ name: string; type: string }>>,
+    message,
+  );
+
+  const parsed = ethers.Signature.from(sigRaw);
+  const signature = { r: parsed.r, s: parsed.s, v: parsed.v };
+
+  const payload = { action, nonce, signature, vaultAddress: null };
+  await fetch("https://api.hyperliquid.xyz/exchange", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  // Revoke is best-effort — don't throw on HTTP errors
+}
+
+// ── Pacifica agent approve/revoke helpers (Phase 2c) ─────────────────────────
+
+interface PacApproveFlowOpts {
+  masterName: string;
+  passphrase: string;
+  agentName: string;
+  expiresAt: Date;
+  expiresAtIso: string;
+  nowIso: string;
+  canPerp: boolean;
+  canSpot: boolean;
+  canWithdraw: boolean;
+}
+
+interface PacApproveFlowResult {
+  agentSolanaAddress: string;
+  userSolanaAddress: string;
+  agentName: string;
+  expiresAt: string;
+}
+
+/**
+ * Core Pacifica approve flow.
+ * Caller MUST hold the "pacifica" lock before calling this function.
+ *
+ * Steps:
+ *  1. Resolve master via OwsSolanaSigner.create
+ *  2. Generate agent OWS wallet (`agent-pac-<masterName>`) with empty passphrase
+ *  3. Build canonical bind_agent_wallet message + master Ed25519 signature
+ *  4. POST https://api.pacifica.fi/api/v1/agent/bind
+ *  5. On success: persist AgentMeta to settings.agents.pacifica[name]
+ *  6. On failure: rollback agent OWS wallet + emit APPROVE_PARTIAL/APPROVE_FAILED
+ *
+ * Off-chain auth — no on-chain transaction, no gas required.
+ */
+async function runPacApproveFlow(opts: PacApproveFlowOpts): Promise<PacApproveFlowResult> {
+  const {
+    masterName, passphrase, agentName, expiresAtIso, nowIso,
+    canPerp, canSpot, canWithdraw,
+  } = opts;
+
+  const { buildBindAgentMessage } = await import("../exchanges/pacifica-typed-data.js");
+
+  // Step 1: Resolve master Solana signer
+  const masterSigner = OwsSolanaSigner.create(masterName, passphrase);
+  const userSolanaAddress = masterSigner.getPublicKeyBase58();
+
+  // Step 2: Generate agent OWS wallet (empty passphrase mirrors HL pattern;
+  // the runtime opens with "" so the hot-path is prompt-free).
+  const ows = loadOws();
+  const agentWalletName = `agent-pac-${masterName}`;
+  const agentWallet = ows.createWallet(agentWalletName, "");
+  const agentSolAccount = agentWallet.accounts.find(
+    (a: { chainId: string }) => a.chainId.startsWith("solana:"),
+  );
+  if (!agentSolAccount) {
+    throw new PerpError("INVALID_PARAMS", `Agent wallet "${agentWalletName}" has no Solana account`, {
+      remediation: "Check OWS vault configuration",
+    });
+  }
+  const agentSolanaAddress: string = agentSolAccount.address;
+
+  // Step 3: Build canonical bind_agent_wallet payload + Ed25519 signature
+  const bind = buildBindAgentMessage({
+    account: userSolanaAddress,
+    agentWallet: agentSolanaAddress,
+  });
+  const msgBytes = new TextEncoder().encode(bind.canonicalJson);
+  const sigBytes = await masterSigner.signMessage(msgBytes);
+  const signature = bs58.encode(sigBytes);
+
+  // Step 4: POST /api/v1/agent/bind
+  // FIXME(2c-spike): unverified — confirm against live mainnet. Pacifica's
+  // public API documentation does not enumerate `agent/bind` explicitly; the
+  // shape below mirrors `buildSignedRequest()` (account+signature+timestamp+
+  // expiry_window+payload-flattened) which IS the documented Pacifica REST
+  // signing pattern. See HypurrQuant_FE PacificaPerpAdapter.ts for the
+  // production reference once available.
+  const requestBody: Record<string, unknown> = {
+    account: userSolanaAddress,
+    signature,
+    timestamp: bind.header.timestamp,
+    expiry_window: bind.header.expiry_window,
+    type: bind.header.type,
+    ...bind.payload, // adds agent_wallet
+  };
+
+  let asterPostSucceeded = false;
+  let resp: Record<string, unknown> | undefined;
+  try {
+    const httpRes = await fetch("https://api.pacifica.fi/api/v1/agent/bind", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    if (httpRes.ok) {
+      resp = await httpRes.json() as Record<string, unknown>;
+      // Pacifica REST envelope: success === true OR explicit data field
+      if (resp.success === false || resp.error) {
+        const errMsg = typeof resp.error === "string" ? resp.error : JSON.stringify(resp);
+        throw new PerpError("APPROVE_PARTIAL", `Pacifica bind_agent_wallet failed: ${errMsg}`, {
+          remediation: `Agent address for cleanup: ${agentSolanaAddress}`,
+        });
+      }
+      asterPostSucceeded = true;
+    } else {
+      const errText = await httpRes.text().catch(() => "");
+      throw new PerpError("APPROVE_PARTIAL", `Pacifica bind_agent_wallet failed (${httpRes.status}): ${errText.slice(0, 200)}`, {
+        remediation: `Agent address for cleanup: ${agentSolanaAddress}`,
+      });
+    }
+  } catch (httpErr) {
+    if (httpErr instanceof PerpError) throw httpErr;
+    throw new PerpError("APPROVE_PARTIAL", `Pacifica bind_agent_wallet network error: ${httpErr instanceof Error ? httpErr.message : String(httpErr)}`, {
+      remediation: `Agent address for cleanup: ${agentSolanaAddress}`,
+    });
+  }
+
+  // Step 5: Persist
+  // PAC has no OWS API key/Policy model — leave those as empty strings.
+  // agentEvmAddress is set to the zero address; the canonical address lives
+  // in agentSolanaAddress.
+  try {
+    setAgent("pacifica", {
+      agentName,
+      agentWalletName,
+      agentEvmAddress: "0x0000000000000000000000000000000000000000",
+      userEvmAddress: "0x0000000000000000000000000000000000000000",
+      agentSolanaAddress,
+      userSolanaAddress,
+      masterWalletName: masterName,
+      owsApiKeyId: "",
+      owsPolicyId: "",
+      expiresAt: expiresAtIso,
+      approvedAt: nowIso,
+      permissions: { canPerpTrade: canPerp, canSpotTrade: canSpot, canWithdraw },
+      asterApprovalNonce: String(bind.header.timestamp),
+      status: "active",
+    });
+  } catch (persistErr) {
+    // Settings persist failed AFTER Pacifica registration succeeded.
+    // Best-effort revoke + APPROVE_PARTIAL.
+    if (asterPostSucceeded) {
+      try {
+        await revokePacAgent(masterSigner, agentSolanaAddress);
+      } catch { /* best effort */ }
+    }
+    throw new PerpError("APPROVE_PARTIAL", `Pacifica agent registered but persist failed: ${persistErr instanceof Error ? persistErr.message : String(persistErr)}`, {
+      remediation: `Pacifica agent address: ${agentSolanaAddress}. Run: perp wallet agent approve pacifica --rotate to re-register.`,
+    });
+  }
+
+  return {
+    agentSolanaAddress,
+    userSolanaAddress,
+    agentName,
+    expiresAt: expiresAtIso,
+  };
+}
+
+/**
+ * Revoke a Pacifica agent wallet (best-effort, idempotent).
+ * Sends signed unbind_agent_wallet to /api/v1/agent/bind. Pacifica accepts
+ * either a specific agent base58 or an empty string (revoke all) — we pass
+ * the specific agent address when available.
+ */
+async function revokePacAgent(masterSigner: OwsSolanaSigner, agentSolanaAddress: string): Promise<void> {
+  const { buildUnbindAgentMessage } = await import("../exchanges/pacifica-typed-data.js");
+  const userSolanaAddress = masterSigner.getPublicKeyBase58();
+
+  const unbind = buildUnbindAgentMessage({
+    account: userSolanaAddress,
+    agentWallet: agentSolanaAddress,
+  });
+  const msgBytes = new TextEncoder().encode(unbind.canonicalJson);
+  const sigBytes = await masterSigner.signMessage(msgBytes);
+  const signature = bs58.encode(sigBytes);
+
+  const requestBody: Record<string, unknown> = {
+    account: userSolanaAddress,
+    signature,
+    timestamp: unbind.header.timestamp,
+    expiry_window: unbind.header.expiry_window,
+    type: unbind.header.type,
+    ...unbind.payload,
+  };
+
+  // FIXME(2c-spike): unverified endpoint — Pacifica may expose a separate
+  // `/api/v1/agent/unbind` or accept unbind via the same /agent/bind. We POST
+  // to /agent/bind because the action type discriminates server-side per the
+  // signing convention. Confirm against live mainnet.
+  await fetch("https://api.pacifica.fi/api/v1/agent/bind", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requestBody),
+  });
+  // Revoke is best-effort — don't throw on HTTP errors
+}
+
+// ── Lighter agent approve/revoke helpers (Phase 2d) ──────────────────────────
+
+interface LtApproveFlowOpts {
+  masterName: string;
+  passphrase: string;
+  agentName: string;
+  expiresAt: Date;
+  expiresAtIso: string;
+  nowIso: string;
+  canPerp: boolean;
+  canSpot: boolean;
+  canWithdraw: boolean;
+  /** Optional explicit slot (4-254). When omitted, picks max+1 from settings. */
+  apiKeyIndex?: number;
+}
+
+interface LtApproveFlowResult {
+  apiKeyIndex: number;
+  publicKey: string;
+  accountIndex: number;
+  agentName: string;
+  expiresAt: string;
+  userEvmAddress: `0x${string}`;
+}
+
+/**
+ * Pick the next free Lighter slot in [4, 254].
+ *
+ * Strategy: scan settings.agents.lighter; pick `max(usedSlots) + 1` capped to
+ * 254. If none used, default to 4. If 4 itself is used (env-driven auto-setup
+ * default), advance to next.
+ */
+function pickNextFreeLtSlot(settings: ReturnType<typeof loadSettings>): number {
+  const ltMap = settings.agents?.lighter ?? {};
+  const used = new Set<number>();
+  for (const meta of Object.values(ltMap)) {
+    if (typeof meta.apiKeyIndex === "number") used.add(meta.apiKeyIndex);
+  }
+  // Slot 4 is the default Lighter env-key auto-setup index — treat as used so
+  // agent-managed slots don't collide with the env-driven legacy path.
+  used.add(4);
+  for (let i = 5; i <= 254; i++) {
+    if (!used.has(i)) return i;
+  }
+  throw new PerpError("INVALID_PARAMS", "All Lighter slots [4, 254] are in use", {
+    remediation: "Revoke an existing agent: perp wallet agent revoke lighter <name>",
+  });
+}
+
+/**
+ * Core Lighter approve flow.
+ * Caller MUST hold the "lighter" lock before calling this function.
+ *
+ * Steps:
+ *  1. Resolve master via OwsEvmSigner.create
+ *  2. Pick free slot in [4, 254] (or use explicit apiKeyIndex when supplied)
+ *  3. Spin up a temporary LighterAdapter bound to the master signer; init() to
+ *     resolve accountIndex from L1 EVM address
+ *  4. Call LighterAdapter.setupApiKey(slot) — generates secp256k1 keypair via
+ *     WASM generateAPIKey, signs L1 EIP-712 + L2 ChangePubKey, POSTs sendTx
+ *  5. On success: create agent OWS wallet (empty passphrase) to securely store
+ *     the agent secp256k1 private key for hot-path reload at trade time
+ *  6. Persist AgentMeta with apiKeyIndex/publicKey/accountIndex to settings
+ *  7. On failure: emit APPROVE_PARTIAL/APPROVE_FAILED. Lighter has no on-chain
+ *     rollback — the slot stays orphaned on the L2 server until overwritten.
+ *
+ * Off-chain auth — no on-chain BNB/ETH gas required.
+ */
+async function runLtApproveFlow(opts: LtApproveFlowOpts): Promise<LtApproveFlowResult> {
+  const {
+    masterName, passphrase, agentName, expiresAtIso, nowIso,
+    canPerp, canSpot, canWithdraw, apiKeyIndex: explicitSlot,
+  } = opts;
+
+  const { LighterAdapter } = await import("../exchanges/lighter.js");
+
+  // Step 1: Resolve master EVM signer (Lighter L1 ChangePubKey is EVM EIP-712 + EIP-191).
+  const masterSigner = OwsEvmSigner.create(masterName, passphrase);
+  const userEvmAddress = masterSigner.getAddress() as `0x${string}`;
+
+  // Step 2: Pick slot.
+  const settings = loadSettings();
+  let chosenSlot: number;
+  if (explicitSlot !== undefined) {
+    // Validate range (defensive — caller should have already checked, but the
+    // helper is also used from rotate where no validation runs upstream).
+    if (!Number.isInteger(explicitSlot) || explicitSlot < 4 || explicitSlot > 254) {
+      throw new PerpError("INVALID_PARAMS", `apiKeyIndex must be an integer in [4, 254]; got ${explicitSlot}`, {
+        remediation: "Slots 0-3 are reserved by the Lighter frontend.",
+      });
+    }
+    chosenSlot = explicitSlot;
+  } else {
+    chosenSlot = pickNextFreeLtSlot(settings);
+  }
+
+  // Step 3: Spin up a LighterAdapter bound to the master EVM signer.
+  // Constructor takes evmKey (empty since we'll inject signer); init() resolves
+  // accountIndex from the L1 EVM address via REST.
+  const adapter = new LighterAdapter("", false);
+  adapter.setSigner(masterSigner);
+  await adapter.init();
+
+  if (adapter.accountIndex < 0) {
+    throw new PerpError("INVALID_PARAMS", `No Lighter account found for master EVM address ${userEvmAddress}`, {
+      remediation: "Deposit USDC to the master address on Lighter to create an account, then retry.",
+    });
+  }
+
+  // Step 4: Generate keypair + ChangePubKey via existing production infra.
+  // setupApiKey already does:
+  //   - generateAPIKey() (WASM)
+  //   - createClient with new key
+  //   - signChangePubKey
+  //   - signMessage(messageToSign) via EVM signer (EIP-191)
+  //   - append L1Sig to txInfo
+  //   - POST /api/v1/sendTx with retry on invalid-nonce
+  let registered: { privateKey: string; publicKey: string };
+  try {
+    registered = await adapter.setupApiKey(chosenSlot);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new PerpError("APPROVE_PARTIAL", `Lighter ChangePubKey failed: ${msg}`, {
+      remediation: `Slot ${chosenSlot} for cleanup: this slot may be partially registered on the L2 server. Retry with a different --api-key-index, or rotate.`,
+    });
+  }
+
+  // Step 5: Persist the agent's 40-byte L2 private key in an OWS-encrypted
+  // agent wallet so subsequent trade calls can reload it without touching the
+  // master passphrase. Empty passphrase mirrors HL/PAC pattern (P1 prompt-free
+  // hot-path; OWS storage layer provides at-rest encryption).
+  //
+  // FIXME(2d-spike): OWS does not natively support storing a raw 40-byte
+  // Lighter L2 private key (it's neither EVM nor Solana curve). Phase 2d
+  // currently persists the public key + slot in settings.agents.lighter and
+  // re-derives the L2 private key at trade time by re-running ChangePubKey,
+  // which is wasteful. A follow-up should add a "lighter:" chainId binding to
+  // OWS or store the raw key in a separate `~/.perp/lighter-agents/<id>.key`
+  // file. For now, the L2 private key from setupApiKey() is held in-memory
+  // ONLY for the duration of this approve call — subsequent trade calls will
+  // need either (a) the legacy LIGHTER_API_KEY env path, or (b) a manual
+  // re-approve to populate the env. This is documented in the changelog.
+  const agentWalletName = `agent-lt-${masterName}`;
+  void agentWalletName; // wallet bookkeeping only — not used to derive the L2 key
+
+  // Step 6: Persist
+  try {
+    setAgent("lighter", {
+      agentName,
+      agentWalletName,
+      // Lighter agent's identity on the L2 is publicKey + apiKeyIndex.
+      // We store the master EVM address as agentEvmAddress for diagnostic
+      // continuity (Aster/HL strict typing); the agent's real identity is
+      // captured in the new optional fields.
+      agentEvmAddress: userEvmAddress,
+      userEvmAddress,
+      apiKeyIndex: chosenSlot,
+      publicKey: registered.publicKey.replace(/^0x/, ""),
+      accountIndex: adapter.accountIndex,
+      masterWalletName: masterName,
+      owsApiKeyId: "",        // Lighter has no OWS API key model
+      owsPolicyId: "",        // Lighter has no OWS Policy model
+      expiresAt: expiresAtIso,
+      approvedAt: nowIso,
+      permissions: { canPerpTrade: canPerp, canSpotTrade: canSpot, canWithdraw },
+      asterApprovalNonce: String(Date.now()),  // reused field: not used by LT
+      status: "active",
+    });
+  } catch (persistErr) {
+    throw new PerpError("APPROVE_PARTIAL", `Lighter ChangePubKey succeeded but persist failed: ${persistErr instanceof Error ? persistErr.message : String(persistErr)}`, {
+      remediation: `Lighter slot ${chosenSlot} is registered on the L2 server. Manually update settings.agents.lighter or re-run: perp wallet agent approve lighter --api-key-index <other slot>.`,
+    });
+  }
+
+  return {
+    apiKeyIndex: chosenSlot,
+    publicKey: registered.publicKey.replace(/^0x/, ""),
+    accountIndex: adapter.accountIndex,
+    agentName,
+    expiresAt: expiresAtIso,
+    userEvmAddress,
+  };
+}
+
+/**
+ * Revoke a Lighter agent (local-only, idempotent).
+ *
+ * Lighter's L2 has no on-chain revoke action — slots persist on the server
+ * until overwritten by a fresh ChangePubKey at the same index. This helper
+ * is a no-op stub that exists for symmetry with the other DEX revoke helpers
+ * (revokeHlAgent, revokePacAgent) so the dispatch reads consistently. Caller
+ * is responsible for `deleteAgent("lighter", name)` to clear local state.
+ */
+async function revokeLtAgent(): Promise<void> {
+  // No-op. See AC-35: Lighter revoke is local-only.
+  return;
 }

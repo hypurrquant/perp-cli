@@ -11,6 +11,8 @@ import type {
 } from "./interface.js";
 import type { EvmSigner } from "../signer/index.js";
 import { LocalEvmSigner } from "../signer/index.js";
+import type { AgentMeta } from "../settings.js";
+import { PerpError } from "../errors.js";
 
 export class HyperliquidAdapter implements ExchangeAdapter {
   readonly name = "hyperliquid";
@@ -21,7 +23,10 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   private _address: string;
   private _privateKey: string;
   private _testnet: boolean;
-  private _evmSigner?: EvmSigner;
+  private _evmSigner?: EvmSigner;          // Tier 2: OWS master
+  private _agentSigner?: EvmSigner;         // Tier 1: agent OWS wallet
+  private _agentMeta?: AgentMeta;           // Tier 1 metadata
+  private _useNoAgent: boolean = false;     // --no-agent bypass flag
   private _assetMap: Map<string, number> = new Map();
   private _assetMapReverse: Map<number, string> = new Map();
   private _szDecimalsMap: Map<string, number> = new Map(); // symbol → szDecimals
@@ -75,6 +80,78 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   setSigner(signer: EvmSigner): void {
     this._evmSigner = signer;
     this._address = signer.getAddress();
+  }
+
+  /** Tier 1: inject agent OWS wallet signer. */
+  setAgentSigner(meta: AgentMeta, signer: EvmSigner): void {
+    this._agentMeta = meta;
+    this._agentSigner = signer;
+  }
+
+  /** Bypass Tier 1 (agent) — use for --no-agent flag. */
+  setNoAgent(noAgent: boolean): void {
+    this._useNoAgent = noAgent;
+  }
+
+  /** True only when ALL THREE tiers are unconfigured. */
+  get isReadOnly(): boolean {
+    return !this._agentSigner && !this._evmSigner && !this._privateKey;
+  }
+
+  /** Which signer tier is currently active (for debug/diagnostics). */
+  get activeSignerTier(): "agent" | "master" | "pk" | null {
+    try {
+      return this._resolveSigner().tier;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Resolve the active signer across three tiers. */
+  private _resolveSigner(): { tier: "agent" | "master" | "pk"; signer: EvmSigner } {
+    // Tier 1: agent (when registered, not expired, --no-agent NOT set)
+    if (!this._useNoAgent && this._agentSigner && this._agentMeta) {
+      const expiresAt = new Date(this._agentMeta.expiresAt).getTime();
+      const expired = expiresAt < Date.now();
+      if (expired) {
+        // Skip Tier 1 only if Tier 2/3 available; otherwise throw AGENT_EXPIRED
+        if (!this._evmSigner && !this._privateKey) {
+          throw new PerpError("AGENT_EXPIRED", "Agent wallet has expired", {
+            remediation: "perp wallet agent approve hyperliquid --rotate",
+          });
+        }
+        // fall through to Tier 2/3
+      } else {
+        return { tier: "agent", signer: this._agentSigner };
+      }
+    }
+
+    // Tier 2: OWS master (_evmSigner set via setSigner)
+    if (this._evmSigner) {
+      return { tier: "master", signer: this._evmSigner };
+    }
+
+    // Tier 3: PK direct (_privateKey → _evmSigner created in init())
+    // After init(), PK is reflected in _evmSigner. But if init() hasn't run
+    // yet, _privateKey is non-empty. Either way this path is reachable only
+    // if _evmSigner is set, so Tier 2 catches it. This guard is for the edge
+    // case where init() failed but _privateKey is set — throw a clear error.
+    if (this._privateKey) {
+      throw new PerpError(
+        "NO_SIGNER_AVAILABLE",
+        "Hyperliquid adapter has a private key but init() has not been called",
+        { remediation: "Call adapter.init() before using mutating methods" },
+      );
+    }
+
+    // No signer at any tier
+    throw new PerpError(
+      "NO_SIGNER_AVAILABLE",
+      "No signing path configured for Hyperliquid",
+      {
+        remediation: "Run one of: (a) perp wallet agent approve hyperliquid --master <wallet>; (b) perp wallet generate && perp -e hyperliquid --ows <wallet>; (c) export PRIVATE_KEY=0x...",
+      },
+    );
   }
 
   async init(): Promise<void> {
@@ -515,9 +592,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Bypasses the SDK entirely — works for order, batchModify, twapOrder, etc.
    */
   private ensureSigner(): void {
-    if (!this._evmSigner) {
-      throw new Error("No private key configured. Run: perp setup");
-    }
+    // Resolves across all tiers; throws PerpError if none available
+    this._resolveSigner();
   }
 
   /**
@@ -551,7 +627,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   private async _signAndSendAction(action: Record<string, unknown>): Promise<unknown> {
-    this.ensureSigner();
+    const { signer } = this._resolveSigner();
     const { encode } = await import("@msgpack/msgpack");
     const { ethers, keccak256 } = await import("ethers");
 
@@ -596,7 +672,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       connectionId: hash,
     };
 
-    const sig = await this._evmSigner!.signTypedData(phantomDomain, agentTypes, phantomAgent);
+    const sig = await signer.signTypedData(phantomDomain, agentTypes, phantomAgent);
     const parsed = ethers.Signature.from(sig);
 
     const payload = {

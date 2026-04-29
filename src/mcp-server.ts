@@ -576,22 +576,22 @@ server.tool(
         if (g.includes("grid")) {
           steps.push(
             { step: 1, command: `perp -e ${ex} --json market book ${symbol}`, description: "Check current price" },
-            { step: 2, command: `perp -e ${ex} --json bot quick-grid ${symbol}`, description: "Start grid bot", dangerous: true },
-            { step: 3, command: "perp --json jobs list", description: "Verify bot is running" },
+            { step: 2, command: `perp -e ${ex} --json strategy quick-grid ${symbol}`, description: "Start grid bot", dangerous: true },
+            { step: 3, command: "perp --json background list", description: "Verify bot is running" },
           );
         } else if (g.includes("dca")) {
           const amount = extractNumber(g) || "<amount>";
           const side = g.includes("sell") || g.includes("short") ? "sell" : "buy";
           steps.push(
             { step: 1, command: `perp -e ${ex} --json account balance`, description: "Check available balance" },
-            { step: 2, command: `perp -e ${ex} --json bot quick-dca ${symbol} ${side} ${amount} <interval>`, description: "Start DCA bot", dangerous: true },
-            { step: 3, command: "perp --json jobs list", description: "Verify bot is running" },
+            { step: 2, command: `perp -e ${ex} --json strategy quick-dca ${symbol} ${side} ${amount} <interval>`, description: "Start DCA bot", dangerous: true },
+            { step: 3, command: "perp --json background list", description: "Verify bot is running" },
           );
         } else {
           steps.push(
-            { step: 1, command: "perp --json bot preset-list", description: "List available bot presets" },
-            { step: 2, command: `perp -e ${ex} --json bot quick-arb`, description: "Start arb bot", dangerous: true },
-            { step: 3, command: "perp --json jobs list", description: "Verify bot is running" },
+            { step: 1, command: "perp --json strategy preset-list", description: "List available bot presets" },
+            { step: 2, command: `perp -e ${ex} --json strategy quick-arb`, description: "Start arb bot", dangerous: true },
+            { step: 3, command: "perp --json background list", description: "Verify bot is running" },
           );
         }
       } else if (g.includes("backtest")) {
@@ -659,7 +659,7 @@ server.tool(
         );
       } else if (g.includes("job") || g.includes("running") || g.includes("background")) {
         steps.push(
-          { step: 1, command: "perp --json jobs list", description: "List running background jobs" },
+          { step: 1, command: "perp --json background list", description: "List running background jobs" },
         );
       } else if (g.includes("dex") || g.includes("hip-3") || g.includes("hip3")) {
         steps.push(
@@ -668,9 +668,9 @@ server.tool(
         );
       } else if (g.includes("plan") || g.includes("composite") || g.includes("multi-step")) {
         steps.push(
-          { step: 1, command: "perp plan example", description: "Show example execution plan format" },
-          { step: 2, command: "perp --json plan validate <file>", description: "Validate plan file" },
-          { step: 3, command: "perp --json plan execute <file> --dry-run", description: "Dry-run the plan", dangerous: true },
+          { step: 1, command: "perp strategy plan example", description: "Show example execution plan format" },
+          { step: 2, command: "perp --json strategy plan validate <file>", description: "Validate plan file" },
+          { step: 3, command: "perp --json strategy plan execute <file> --dry-run", description: "Dry-run the plan", dangerous: true },
         );
       } else if (g.includes("status") || g.includes("check") || g.includes("overview") || g.includes("portfolio")) {
         steps.push(
@@ -734,9 +734,8 @@ server.tool(
         );
       } else {
         steps.push(
-          { step: 1, command: "perp agent capabilities", description: "List all available CLI capabilities" },
-          { step: 2, command: `perp -e ${ex} --json status`, description: "Check account status" },
-          { step: 3, command: "perp --json agent ping", description: "Check exchange connectivity" },
+          { step: 1, command: `perp -e ${ex} --json status`, description: "Check account status" },
+          { step: 2, command: `perp -e ${ex} --json account balance`, description: "Check exchange connectivity via balance fetch" },
         );
       }
 
@@ -1037,7 +1036,7 @@ server.tool(
           parameters: [],
           risks: sub === "send" || sub === "exchange" ? ["Transfers real funds cross-chain — verify addresses carefully"] : [],
           category: sub === "send" || sub === "exchange" ? "write" : "read",
-          relatedCommands: ["perp bridge chains", "perp bridge quote"],
+          relatedCommands: ["perp funds bridge chains", "perp funds bridge quote"],
         };
       } else if (category === "funds") {
         const sub = args[1]; // deposit or withdraw
@@ -1058,14 +1057,14 @@ server.tool(
           category: "read",
           relatedCommands: ["perp account positions", "perp portfolio"],
         };
-      } else if (category === "bot" || category === "run") {
+      } else if (category === "strategy" || category === "run") {
         explanation = {
           command,
           description: `Automated strategy: ${sub}. Runs as a background job.`,
           parameters: args.slice(2).map((a, i) => ({ name: `arg${i}`, value: a, description: "See --help" })),
-          risks: ["Runs automated trades — monitor with 'perp jobs list'", "Use --dry-run to simulate first"],
+          risks: ["Runs automated trades — monitor with 'perp background list'", "Use --dry-run to simulate first"],
           category: "write",
-          relatedCommands: ["perp jobs list", "perp jobs stop"],
+          relatedCommands: ["perp background list", "perp background stop"],
         };
       } else if (category === "history") {
         explanation = {
@@ -1079,11 +1078,11 @@ server.tool(
       } else if (category === "wallet") {
         explanation = {
           command,
-          description: { show: "Show configured wallets with public addresses", list: "List all wallets (OWS vault + legacy)", balance: "Check on-chain USDC/SOL/ETH balances", generate: "Generate a new OWS wallet (encrypted, multi-chain)", import: "Import key into OWS vault", migrate: "Migrate legacy wallets to OWS encrypted vault", set: "Set private key for an exchange (legacy)", use: "Set active wallet (OWS or legacy)", remove: "Remove a wallet", rename: "Rename a wallet", ows: "OWS vault management (create, list, info, delete)" }[sub] || `Wallet: ${sub}`,
+          description: { show: "Show configured wallets with public addresses", list: "List all wallets (OWS vault + legacy)", balance: "Check on-chain USDC/SOL/ETH balances", generate: "Generate a new OWS wallet (encrypted, multi-chain)", import: "Import key into OWS vault", migrate: "Migrate legacy wallets to OWS encrypted vault", set: "Set private key for an exchange (legacy)", use: "Set active wallet (OWS or legacy)", remove: "Remove a wallet", rename: "Rename a wallet", policy: "OWS signing policy: create/list/show/delete", key: "OWS API key: create/list/revoke", agent: "DEX-side agent delegation: approve/list/revoke/rotate/verify", deposit: "MoonPay multi-chain deposit (auto-converts to USDC)", setup: "One-click setup: wallet + guardrail policy + agent API key", backup: "Backup encrypted OWS vault", restore: "Restore OWS vault from encrypted backup", rotate: "Rotate wallet keys (new wallet + transfer assets)" }[sub] || `Wallet: ${sub}`,
           parameters: [],
           risks: sub === "generate" ? ["Save the mnemonic securely — it cannot be recovered. Keys are stored in ~/.ows/ encrypted vault."] : sub === "remove" ? ["Wallet will be removed — ensure you have backups"] : [],
           category: "read",
-          relatedCommands: ["perp wallet list", "perp wallet balance", "perp wallet ows list"],
+          relatedCommands: ["perp wallet list", "perp wallet balance", "perp wallet agent list"],
         };
       } else if (category === "backtest") {
         explanation = {
@@ -1104,14 +1103,14 @@ server.tool(
           relatedCommands: ["perp settings show"],
         };
       } else {
-        const writeCommands = new Set(["trade", "funds", "manage", "rebalance"]);
+        const writeCommands = new Set(["trade", "funds", "manage"]);
         explanation = {
           command,
           description: `CLI command: ${command}. Run 'perp ${category} --help' for detailed usage.`,
           parameters: args.slice(1).map((a, i) => ({ name: `arg${i}`, value: a, description: "See --help for details" })),
           risks: writeCommands.has(category) ? ["This command may modify account state — review carefully"] : [],
           category: writeCommands.has(category) ? "write" : "read",
-          relatedCommands: ["perp agent capabilities", "perp schema"],
+          relatedCommands: [`perp ${category} --help`],
         };
       }
 
@@ -1318,35 +1317,28 @@ server.resource(
             check: { usage: "perp risk check --notional <usd> --leverage <n>", description: "Pre-trade risk check" },
           },
         },
-        bridge: {
-          description: "Cross-chain USDC bridge",
+        strategy: {
+          description: "Trading strategies — long-running bot algorithms + one-shot scripted plans",
           subcommands: {
-            chains: { usage: "perp bridge chains", description: "Supported chains" },
-            quote: { usage: "perp bridge quote --from <chain> --to <chain> --amount <n>", description: "Get quote" },
-            send: { usage: "perp bridge send --from <chain> --to <chain> --amount <n>", description: "Execute bridge" },
-            exchange: { usage: "perp bridge exchange --from <ex> --to <ex> --amount <n>", description: "Bridge between exchanges" },
-            status: { usage: "perp bridge status <orderId>", description: "Track bridge status" },
-          },
-        },
-        bot: {
-          description: "Automated trading bots",
-          subcommands: {
-            start: { usage: "perp bot start <config>", description: "Start bot from config file" },
-            twap: { usage: "perp bot twap <symbol> <side> <size> <duration>", description: "TWAP execution" },
-            grid: { usage: "perp bot grid <symbol> --range <pct> --grids <n> --size <usd>", description: "Grid trading bot" },
-            dca: { usage: "perp bot dca <symbol> <side> <amount> <interval>", description: "DCA bot" },
-            "funding-arb": { usage: "perp bot funding-arb", description: "Funding arb bot" },
-            "trailing-stop": { usage: "perp bot trailing-stop <symbol>", description: "Trailing stop bot" },
-            "quick-grid": { usage: "perp bot quick-grid <symbol>", description: "Quick grid bot" },
-            "quick-dca": { usage: "perp bot quick-dca <symbol> <side> <amount> <interval>", description: "Quick DCA bot" },
-            "quick-arb": { usage: "perp bot quick-arb", description: "Quick arb bot" },
-            "preset-list": { usage: "perp bot preset-list", description: "List available bot presets" },
-            preset: { usage: "perp bot preset <name> [symbol]", description: "Run a bot preset" },
-            example: { usage: "perp bot example", description: "Show example bot config" },
+            start: { usage: "perp strategy start <config>", description: "Start bot from config file" },
+            twap: { usage: "perp strategy twap <symbol> <side> <size> <duration>", description: "TWAP execution" },
+            grid: { usage: "perp strategy grid <symbol> --range <pct> --grids <n> --size <usd>", description: "Grid trading bot" },
+            dca: { usage: "perp strategy dca <symbol> <side> <amount> <interval>", description: "DCA bot" },
+            "funding-arb": { usage: "perp strategy funding-arb", description: "Funding arb bot" },
+            "trailing-stop": { usage: "perp strategy trailing-stop <symbol>", description: "Trailing stop bot" },
+            "quick-grid": { usage: "perp strategy quick-grid <symbol>", description: "Quick grid bot" },
+            "quick-dca": { usage: "perp strategy quick-dca <symbol> <side> <amount> <interval>", description: "Quick DCA bot" },
+            "quick-arb": { usage: "perp strategy quick-arb", description: "Quick arb bot" },
+            "preset-list": { usage: "perp strategy preset-list", description: "List available bot presets" },
+            preset: { usage: "perp strategy preset <name> [symbol]", description: "Run a bot preset" },
+            example: { usage: "perp strategy example", description: "Show example bot config" },
+            "plan validate": { usage: "perp strategy plan validate <file>", description: "Validate scripted execution plan" },
+            "plan execute": { usage: "perp strategy plan execute <file>", description: "Execute scripted plan" },
+            "plan example": { usage: "perp strategy plan example", description: "Show plan format" },
           },
         },
         wallet: {
-          description: "Wallet management (OWS encrypted vault + legacy)",
+          description: "Wallet management (OWS encrypted vault + legacy + agent delegation + lifecycle)",
           subcommands: {
             show: { usage: "perp wallet show", description: "Show configured wallets with public addresses" },
             list: { usage: "perp wallet list", description: "List all wallets (OWS vault + legacy)" },
@@ -1358,7 +1350,14 @@ server.resource(
             use: { usage: "perp wallet use <name>", description: "Set active wallet (OWS or legacy)" },
             remove: { usage: "perp wallet remove <name>", description: "Remove a wallet" },
             rename: { usage: "perp wallet rename <oldName> <newName>", description: "Rename a wallet" },
-            ows: { usage: "perp wallet ows <sub>", description: "OWS vault: create, list, info, delete, policy, key, fund, pay, setup" },
+            policy: { usage: "perp wallet policy <create|list|show|delete>", description: "OWS signing policies (guardrails for agent signing)" },
+            key: { usage: "perp wallet key <create|list|revoke>", description: "OWS API keys (scoped agent access tokens)" },
+            agent: { usage: "perp wallet agent <approve|list|revoke|rotate|verify>", description: "DEX-side agent wallet delegation (per-exchange)" },
+            deposit: { usage: "perp wallet deposit <walletName>", description: "MoonPay multi-chain deposit (auto-converts to USDC)" },
+            setup: { usage: "perp wallet setup", description: "One-click: wallet + guardrail policy + agent API key" },
+            backup: { usage: "perp wallet backup", description: "Backup encrypted OWS vault" },
+            restore: { usage: "perp wallet restore <file>", description: "Restore OWS vault from encrypted backup" },
+            rotate: { usage: "perp wallet rotate --from <a> --to <b>", description: "Rotate wallet keys (create new + transfer assets)" },
           },
         },
         history: {
@@ -1384,44 +1383,37 @@ server.resource(
             grid: { usage: "perp backtest grid", description: "Backtest grid strategy" },
           },
         },
-        plan: {
-          description: "Composite multi-step execution plans",
+        background: {
+          description: "Background process supervisor (tmux sessions for strategies, alerts, etc.)",
           subcommands: {
-            validate: { usage: "perp plan validate <file>", description: "Validate plan" },
-            execute: { usage: "perp plan execute <file>", description: "Execute plan" },
-            example: { usage: "perp plan example", description: "Show plan format" },
-          },
-        },
-        rebalance: {
-          description: "Cross-exchange balance rebalancing",
-          subcommands: {
-            check: { usage: "perp rebalance check", description: "Check distribution" },
-            plan: { usage: "perp rebalance plan", description: "Generate plan" },
-            execute: { usage: "perp rebalance execute", description: "Execute rebalance" },
-          },
-        },
-        jobs: {
-          description: "Background job management",
-          subcommands: {
-            list: { usage: "perp jobs list", description: "List running jobs" },
-            stop: { usage: "perp jobs stop <id>", description: "Stop a job" },
-            logs: { usage: "perp jobs logs <id>", description: "View job logs" },
+            list: { usage: "perp background list", description: "List running jobs" },
+            stop: { usage: "perp background stop <id>", description: "Stop a job" },
+            logs: { usage: "perp background logs <id>", description: "View job logs" },
+            remove: { usage: "perp background remove <id>", description: "Remove a job entry and its logs" },
+            clean: { usage: "perp background clean", description: "Remove all stopped/done jobs" },
           },
         },
         funds: {
-          usage: "perp funds <deposit|withdraw|transfer|bridge> ...",
-          description: "Deposit, withdraw, bridge & transfer funds",
+          usage: "perp funds <deposit|withdraw|transfer|bridge|rebalance|info> ...",
+          description: "Fund movement — deposit, withdraw, transfer, cross-chain bridge, inter-exchange rebalance",
           subcommands: {
-            "deposit <exchange> <amount>": "Deposit USDC to exchange",
-            "withdraw <exchange> <amount>": "Withdraw USDC from exchange",
-            "transfer <amount> <address>": "HL internal transfer",
-            "bridge --from <chain> --to <chain> --amount <n> --recipient <addr>": "CCTP bridge",
-            info: "Show all deposit/withdraw routes & limits",
+            "deposit <exchange> <amount>": "Deposit USDC to exchange (pacifica, hyperliquid, lighter)",
+            "withdraw <exchange> <amount>": "Withdraw USDC from exchange (pacifica, hyperliquid, lighter)",
+            "transfer <amount> <address>": "HL internal transfer (instant)",
+            "bridge chains": "List supported chains and USDC addresses",
+            "bridge quote --from <chain> --to <chain> --amount <n>": "Get bridge quotes from all providers",
+            "bridge send --from <chain> --to <chain> --amount <n> [--provider cctp|relay|debridge]": "Execute bridge (auto-cheapest by default)",
+            "bridge exchange --from <ex> --to <ex> --amount <n>": "Bridge USDC between exchanges (shortcut)",
+            "bridge status <orderId>": "Check bridge order status",
+            "rebalance check": "Show balances across exchanges",
+            "rebalance plan": "Calculate optimal rebalancing moves",
+            "rebalance execute [--auto-bridge]": "Execute rebalancing (withdraw → bridge → deposit)",
+            info: "Show all deposit/withdraw/bridge/rebalance routes & limits",
           },
         },
         portfolio: { usage: "perp portfolio", description: "Cross-exchange portfolio summary" },
         status: { usage: "perp portfolio", description: "Full account overview" },
-        health: { usage: "perp agent ping", description: "Exchange connectivity check" },
+        health: { usage: "perp account balance --json", description: "Exchange connectivity check via balance fetch" },
         settings: {
           description: "CLI settings",
           subcommands: {
@@ -1429,16 +1421,7 @@ server.resource(
             referrals: { usage: "perp settings referrals on|off", description: "Toggle referral codes (no extra fees)" },
           },
         },
-        agent: {
-          description: "Agent discovery & execution",
-          subcommands: {
-            schema: { usage: "perp agent schema", description: "Full CLI schema as JSON" },
-            capabilities: { usage: "perp agent capabilities", description: "Capability list" },
-            plan: { usage: "perp agent plan '<goal>'", description: "Suggest commands for goal" },
-            exec: { usage: "perp agent exec <command...>", description: "Execute with JSON output" },
-            ping: { usage: "perp agent ping", description: "Health check" },
-          },
-        },
+        // `agent` is now `wallet agent ...` — see `wallet.subcommands.agent` above.
       },
       tips: [
         "Always use --json for structured output when automating",

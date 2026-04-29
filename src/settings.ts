@@ -35,6 +35,66 @@ export interface AlertSettings {
   cooldownMin: number;
 }
 
+export interface AgentMeta {
+  agentName: string;
+  agentWalletName: string;
+  /**
+   * EVM address of the agent wallet (required for Aster + Hyperliquid).
+   * For Pacifica (Phase 2c): kept as a sentinel zero-address since the
+   * curve is Solana/Ed25519; the canonical address lives in
+   * `agentSolanaAddress`. For Lighter (Phase 2d): populated with the master
+   * EVM address (since L1 ChangePubKey is signed by the master EVM key); the
+   * canonical agent identity lives in `publicKey + apiKeyIndex`.
+   * The `0x${string}` literal is preserved to avoid disrupting Aster/HL strict typing.
+   */
+  agentEvmAddress: `0x${string}`;
+  /** EVM address of the master/owner wallet — required as `user` field in Aster/HL requests. Populated by `agent approve` (Step 4). */
+  userEvmAddress: `0x${string}`;
+  /**
+   * Solana base58 public key of the agent wallet (Phase 2c — Pacifica only).
+   * Optional for Aster/HL since they live on EVM curves.
+   */
+  agentSolanaAddress?: string;
+  /**
+   * Solana base58 public key of the master/owner wallet (Phase 2c — Pacifica only).
+   * Optional for Aster/HL.
+   */
+  userSolanaAddress?: string;
+  /**
+   * Lighter slot index (Phase 2d — Lighter only).
+   * Range: [4, 254] inclusive. Slots 0-3 are reserved by the Lighter frontend.
+   * Selected at approve time as `max(existing slots) + 1`.
+   */
+  apiKeyIndex?: number;
+  /**
+   * Lighter agent secp256k1 public key (hex, no `0x` prefix) (Phase 2d — Lighter only).
+   * Canonical identity for the Lighter L2 hot-path. Cross-checked against
+   * `GET /api/v1/apikeys?account_index=N` during `wallet agent verify lighter`.
+   */
+  publicKey?: string;
+  /**
+   * Lighter L2 account index (Phase 2d — Lighter only).
+   * Resolved at approve time from L1 EVM address via the Lighter REST API
+   * and cached so subsequent verify/trade calls don't need to re-query.
+   */
+  accountIndex?: number;
+  masterWalletName: string;
+  owsApiKeyId: string;
+  owsPolicyId: string;
+  expiresAt: string;
+  approvedAt: string;
+  permissions: { canPerpTrade: boolean; canSpotTrade: boolean; canWithdraw: boolean };
+  asterApprovalNonce: string;
+  status?: "active" | "partial";
+}
+
+export interface AgentsByExchange {
+  aster?: Record<string, AgentMeta>;
+  hyperliquid?: Record<string, AgentMeta>;  // NEW v3.4
+  pacifica?: Record<string, AgentMeta>;     // NEW v3.5
+  lighter?: Record<string, AgentMeta>;      // NEW v3.6
+}
+
 export interface Settings {
   /** Default exchange when -e flag is omitted */
   defaultExchange: string;
@@ -57,6 +117,8 @@ export interface Settings {
   fees: Record<string, ExchangeFees>;
   /** Alert configuration */
   alerts: AlertSettings;
+  /** OWS-native agent wallets registered per exchange (Phase 2a: Aster only) */
+  agents?: AgentsByExchange;
 }
 
 const DEFAULTS: Settings = {
@@ -119,6 +181,7 @@ export function loadSettings(): Settings {
         cooldownMin: stored.alerts?.cooldownMin ?? DEFAULTS.alerts.cooldownMin,
       },
       fees,
+      agents: stored.agents && typeof stored.agents === "object" ? stored.agents : undefined,
     };
   } catch {
     return { ...DEFAULTS, referralCodes: { ...DEFAULTS.referralCodes }, fees: { ...DEFAULTS.fees }, alerts: { ...DEFAULTS.alerts } };

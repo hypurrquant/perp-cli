@@ -6,14 +6,15 @@ import { loadBotConfig, parseStrategy, quickGridConfig, quickDCAConfig, runBot, 
 import type { BotOutputMode } from "../bot/index.js";
 import { updateJobState } from "../jobs.js";
 import { runTWAP, runFundingArb, runGrid, runDCA, runTrailingStop } from "../strategies/index.js";
+import { registerStrategyPlanCommands } from "./plan.js";
 
-export function registerBotCommands(
+export function registerStrategyCommands(
   program: Command,
   getAdapter: () => Promise<ExchangeAdapter>,
   getAdapterFor: (exchange: string) => Promise<ExchangeAdapter>,
   isJson: () => boolean,
 ) {
-  const bot = program.command("bot").description("Automated trading bots with condition monitoring & risk management");
+  const bot = program.command("strategy").description("Trading strategies — long-running bot algorithms + one-shot scripted plans");
 
   // ── bot start <config> ──
 
@@ -364,9 +365,9 @@ export function registerBotCommands(
         console.log();
       }
 
-      console.log(chalk.gray(`  Usage: perp bot preset <name> <symbol>`));
-      console.log(chalk.gray(`         perp bot preset grid-standard ETH`));
-      console.log(chalk.gray(`         perp bot preset arb-conservative --background\n`));
+      console.log(chalk.gray(`  Usage: perp strategy preset <name> <symbol>`));
+      console.log(chalk.gray(`         perp strategy preset grid-standard ETH`));
+      console.log(chalk.gray(`         perp strategy preset arb-conservative --background\n`));
     });
 
   // ── bot preset <name> <symbol> ──
@@ -381,7 +382,7 @@ export function registerBotCommands(
       const preset = getPreset(name);
       if (!preset) {
         console.error(chalk.red(`\n  Unknown preset: "${name}"`));
-        console.error(chalk.gray(`  Run 'perp bot preset-list' to see available presets.\n`));
+        console.error(chalk.gray(`  Run 'perp strategy preset-list' to see available presets.\n`));
         return;
       }
 
@@ -579,7 +580,7 @@ export function registerBotCommands(
 
   bot
     .command("run [strategy] [symbol]")
-    .description("Run a strategy (use 'perp bot list-strategies' to see all). Symbol optional for multi-symbol strategies.")
+    .description("Run a strategy (use 'perp strategy list-strategies' to see all). Symbol optional for multi-symbol strategies.")
     .option("--config <path>", "YAML/JSON config file")
     .option("--headless", "Run without TUI dashboard")
     .option("--param <key=value>", "Strategy parameter (repeatable)", (val: string, acc: string[]) => [...acc, val], [] as string[])
@@ -602,7 +603,7 @@ export function registerBotCommands(
         }
         console.log(chalk.cyan.bold("\n  Available Strategies:\n"));
         for (const s of available) console.log(`    ${chalk.green(s)}`);
-        console.log(chalk.gray(`\n  Usage: perp bot run <strategy> [symbol]\n`));
+        console.log(chalk.gray(`\n  Usage: perp strategy run <strategy> [symbol]\n`));
         return;
       }
       const sym = symbol?.toUpperCase() || "ALL";
@@ -619,7 +620,7 @@ export function registerBotCommands(
           return process.exit(1);
         }
         console.error(chalk.red(`\n  Error: The '${strategyName}' strategy requires a <symbol> argument.`));
-        console.error(chalk.gray(`  Usage: perp bot run ${strategyName} <symbol>\n`));
+        console.error(chalk.gray(`  Usage: perp strategy run ${strategyName} <symbol>\n`));
         return process.exit(1);
       }
 
@@ -722,7 +723,7 @@ export function registerBotCommands(
             { name: "eth-dca-dip", type: "dca", file: "~/.perp/bots/eth-dca.yaml", config: { exchange: "hyperliquid", symbol: "ETH", strategy: { type: "dca", amount: 0.01, interval_sec: 3600, total_orders: 24 }, entry_conditions: [{ type: "price_below", value: 2500 }], exit_conditions: [{ type: "price_above", value: 2800 }], risk: { max_drawdown: 100, max_daily_loss: 50 } } },
             { name: "funding-arb", type: "funding-arb", file: "~/.perp/bots/funding-arb.yaml", config: { exchange: "hyperliquid", symbol: "ETH", strategy: { type: "funding-arb", min_spread: 20, close_spread: 5, size_usd: 100, max_positions: 3, exchanges: ["pacifica", "hyperliquid"] }, entry_conditions: [{ type: "always", value: 0 }], risk: { max_drawdown: 200, max_daily_loss: 50 } } },
           ],
-          usage: ["perp bot start ~/.perp/bots/eth-grid.yaml", "perp bot start ~/.perp/bots/eth-grid.yaml --background"],
+          usage: ["perp strategy start ~/.perp/bots/eth-grid.yaml", "perp strategy start ~/.perp/bots/eth-grid.yaml --background"],
         }));
         return;
       }
@@ -741,12 +742,15 @@ export function registerBotCommands(
       console.log(chalk.gray(`  Save to ~/.perp/bots/funding-arb.yaml:\n`));
       console.log(`${ARB_EXAMPLE}\n`);
 
-      console.log(chalk.gray(`  Usage: perp bot start ~/.perp/bots/eth-grid.yaml`));
-      console.log(chalk.gray(`         perp bot start ~/.perp/bots/eth-grid.yaml --background\n`));
+      console.log(chalk.gray(`  Usage: perp strategy start ~/.perp/bots/eth-grid.yaml`));
+      console.log(chalk.gray(`         perp strategy start ~/.perp/bots/eth-grid.yaml --background\n`));
     });
 
   // Strategy subcommands: twap, funding-arb, grid, dca, trailing-stop
   registerRunSubcommands(bot, getAdapter, getAdapterFor, isJson);
+
+  // Nested scripted plans: `perp strategy plan {validate|execute|example}`
+  registerStrategyPlanCommands(bot, getAdapter, isJson);
 }
 
 function makeLog(): (msg: string) => void {
@@ -765,8 +769,8 @@ function resolveOutputMode(isJson: () => boolean, headless?: boolean): BotOutput
 function printBotJobStarted(name: string, jobId: string) {
   console.log(chalk.green(`\n  Bot "${name}" started in background.`));
   console.log(`  Job ID: ${chalk.white.bold(jobId)}`);
-  console.log(`  Logs:   ${chalk.gray(`perp jobs logs ${jobId} -f`)}`);
-  console.log(`  Stop:   ${chalk.gray(`perp jobs stop ${jobId}`)}\n`);
+  console.log(`  Logs:   ${chalk.gray(`perp background logs ${jobId} -f`)}`);
+  console.log(`  Stop:   ${chalk.gray(`perp background stop ${jobId}`)}\n`);
 }
 
 // ── Example YAML configs ──

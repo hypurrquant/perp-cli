@@ -44,132 +44,6 @@ function runCliSafe(args: string): { stdout: string; stderr: string; exitCode: n
 
 describe("New Commands E2E Integration", { timeout: 30000 }, () => {
   // ══════════════════════════════════════════════════════════
-  // api-spec — no adapter needed
-  // ══════════════════════════════════════════════════════════
-
-  describe("perp api-spec", () => {
-    let spec: Record<string, unknown>;
-
-    it("outputs valid JSON envelope with ok:true", () => {
-      const output = runCli("api-spec");
-      spec = JSON.parse(output);
-
-      expect(spec.ok).toBe(true);
-      expect(spec.data).toBeDefined();
-      expect(spec.meta).toBeDefined();
-      expect((spec.meta as Record<string, unknown>).timestamp).toBeDefined();
-    });
-
-    it("data contains name, version, commands, errorCodes", () => {
-      const output = runCli("api-spec");
-      spec = JSON.parse(output);
-      const data = spec.data as Record<string, unknown>;
-
-      expect(data.name).toBe("perp");
-      expect(data.version).toBeDefined();
-      expect(data.description).toBeDefined();
-      expect(Array.isArray(data.commands)).toBe(true);
-      expect(typeof data.errorCodes).toBe("object");
-      expect(Array.isArray(data.exchanges)).toBe(true);
-      expect(Array.isArray(data.tips)).toBe(true);
-    });
-
-    it("commands include all major command groups with subcommands", () => {
-      const output = runCli("api-spec");
-      spec = JSON.parse(output);
-      const data = spec.data as Record<string, unknown>;
-      const commands = data.commands as Array<{ name: string; subcommands?: unknown[] }>;
-      const names = commands.map((c) => c.name);
-
-      expect(names).toContain("market");
-      expect(names).toContain("account");
-      expect(names).toContain("trade");
-      expect(names).toContain("arb");
-      expect(names).toContain("status");
-      expect(names).toContain("health");
-      expect(names).toContain("portfolio");
-      expect(names).toContain("risk");
-      expect(names).toContain("api-spec");
-
-      // market should have subcommands including mid
-      const market = commands.find((c) => c.name === "market");
-      expect(market?.subcommands).toBeDefined();
-      const marketSubs = (market!.subcommands as Array<{ name: string }>).map((s) => s.name);
-      expect(marketSubs).toContain("mid");
-      expect(marketSubs).toContain("list");
-      expect(marketSubs).toContain("info");
-      expect(marketSubs).toContain("book");
-
-      // account should have margin subcommand
-      const account = commands.find((c) => c.name === "account");
-      const accountSubs = (account!.subcommands as Array<{ name: string }>).map((s) => s.name);
-      expect(accountSubs).toContain("margin");
-      expect(accountSubs).toContain("info");
-      expect(accountSubs).toContain("positions");
-
-      // trade should have status and fills subcommands
-      const trade = commands.find((c) => c.name === "trade");
-      const tradeSubs = (trade!.subcommands as Array<{ name: string }>).map((s) => s.name);
-      expect(tradeSubs).toContain("status");
-      expect(tradeSubs).toContain("fills");
-    });
-
-    it("errorCodes have consistent structure", () => {
-      const output = runCli("api-spec");
-      spec = JSON.parse(output);
-      const data = spec.data as Record<string, unknown>;
-      const errorCodes = data.errorCodes as Record<string, { status: number; retryable: boolean; description: string }>;
-
-      const codes = Object.keys(errorCodes);
-      expect(codes.length).toBeGreaterThanOrEqual(15);
-
-      for (const [code, info] of Object.entries(errorCodes)) {
-        expect(typeof info.status).toBe("number");
-        expect(typeof info.retryable).toBe("boolean");
-        expect(typeof info.description).toBe("string");
-        expect(info.description.length).toBeGreaterThan(0);
-
-        // HTTP status codes should be in valid range
-        expect(info.status).toBeGreaterThanOrEqual(400);
-        expect(info.status).toBeLessThanOrEqual(599);
-      }
-
-      // Retryable codes should have 5xx status
-      expect(errorCodes.EXCHANGE_UNREACHABLE.retryable).toBe(true);
-      expect(errorCodes.RATE_LIMITED.retryable).toBe(true);
-      expect(errorCodes.TIMEOUT.retryable).toBe(true);
-
-      // Non-retryable codes
-      expect(errorCodes.INVALID_PARAMS.retryable).toBe(false);
-      expect(errorCodes.INSUFFICIENT_BALANCE.retryable).toBe(false);
-    });
-
-    it("globalOptions include --json, --exchange, --dry-run", () => {
-      const output = runCli("api-spec");
-      spec = JSON.parse(output);
-      const data = spec.data as Record<string, unknown>;
-      const opts = data.globalOptions as Array<{ flags: string }>;
-      const allFlags = opts.map((o) => o.flags).join(" ");
-
-      expect(allFlags).toContain("--json");
-      expect(allFlags).toContain("--exchange");
-      expect(allFlags).toContain("--dry-run");
-      expect(allFlags).toContain("--dex");
-    });
-
-    it("tips array includes referral nudge", () => {
-      const output = runCli("api-spec");
-      spec = JSON.parse(output);
-      const data = spec.data as Record<string, unknown>;
-      const tips = data.tips as string[];
-
-      expect(tips.length).toBeGreaterThanOrEqual(5);
-      const joined = tips.join("\n");
-      expect(joined).toContain("referrals");
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════
   // market mid — uses HL mainnet read-only (public data)
   // ══════════════════════════════════════════════════════════
 
@@ -236,7 +110,7 @@ describe("New Commands E2E Integration", { timeout: 30000 }, () => {
 
     it("plan validate with nonexistent file returns structured error", () => {
       const { stdout } = runCliSafe(
-        "--json plan validate /tmp/__nonexistent_99999.json"
+        "--json strategy plan validate /tmp/__nonexistent_99999.json"
       );
       const parsed = JSON.parse(stdout);
 

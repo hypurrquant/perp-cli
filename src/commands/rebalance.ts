@@ -12,12 +12,12 @@ import {
 import { EXCHANGE_TO_CHAIN, executeBestBridge } from "../bridge-engine.js";
 import { loadPrivateKey, parseSolanaKeypair, type Exchange } from "../config.js";
 
-export function registerRebalanceCommands(
-  program: Command,
+export function registerFundsRebalanceCommands(
+  parent: Command,
   getAdapterForExchange: (exchange: string) => Promise<ExchangeAdapter>,
   isJson: () => boolean
 ) {
-  const rebalance = program.command("rebalance").description("Cross-exchange balance management");
+  const rebalance = parent.command("rebalance").description("Cross-exchange balance management");
 
   // ── rebalance check ──
 
@@ -137,7 +137,7 @@ export function registerRebalanceCommands(
         console.log();
       }
 
-      console.log(chalk.yellow(`  To execute: perp rebalance execute --exchanges ${opts.exchanges}\n`));
+      console.log(chalk.yellow(`  To execute: perp funds rebalance execute --exchanges ${opts.exchanges}\n`));
     });
 
   // ── rebalance execute ──
@@ -247,13 +247,13 @@ export function registerRebalanceCommands(
             moveResults.push({ from: move.from, to: move.to, amount: move.amount, status: "bridged", txHash: result.txHash });
           } catch (err) {
             console.error(chalk.red(`    Bridge failed: ${err instanceof Error ? err.message : err}`));
-            if (!isJson()) console.log(chalk.yellow(`    Manual fallback: perp bridge exchange --from ${move.from} --to ${move.to} --amount ${move.amount}\n`));
+            if (!isJson()) console.log(chalk.yellow(`    Manual fallback: perp funds bridge exchange --from ${move.from} --to ${move.to} --amount ${move.amount}\n`));
             moveResults.push({ from: move.from, to: move.to, amount: move.amount, status: "bridge_failed", error: err instanceof Error ? err.message : String(err) });
           }
         } else {
           if (!isJson()) {
             console.log(chalk.gray(`    Step 2: Bridge needed.`));
-            console.log(chalk.gray(`    Run: perp bridge exchange --from ${move.from} --to ${move.to} --amount ${move.amount}`));
+            console.log(chalk.gray(`    Run: perp funds bridge exchange --from ${move.from} --to ${move.to} --amount ${move.amount}`));
             console.log();
           }
           moveResults.push({ from: move.from, to: move.to, amount: move.amount, status: "needs_bridge" });
@@ -261,7 +261,7 @@ export function registerRebalanceCommands(
       }
 
       if (isJson()) return printJson(jsonOk({ status: "executed", moves: moveResults }));
-      console.log(chalk.cyan("  Rebalance initiated. Monitor progress with 'perp rebalance check'.\n"));
+      console.log(chalk.cyan("  Rebalance initiated. Monitor progress with 'perp funds rebalance check'.\n"));
     });
 }
 

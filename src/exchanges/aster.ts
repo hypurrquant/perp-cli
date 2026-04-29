@@ -1,10 +1,17 @@
 /**
- * Aster DEX adapter — Binance Futures API compatible REST wrapper.
+ * Aster DEX adapter — EIP-712 three-tier signer routing (v3.2).
+ *
+ * Signer priority:
+ *   Tier 1 — Agent OWS wallet  (registered + not expired + no --no-agent)
+ *   Tier 2 — OWS master wallet (--ows / owsActiveWallet)
+ *   Tier 3 — PK direct         (--private-key / PRIVATE_KEY / ASTER_PRIVATE_KEY)
+ *
+ * HMAC paths fully removed (see Step 3 plan — all Binance-compat HMAC code deleted).
+ *
  * Docs: https://docs.asterdex.com/product/aster-perpetuals/api/api-documentation
  * Base: https://fapi.asterdex.com
  */
 
-import { createHmac } from "node:crypto";
 import type {
   ExchangeAdapter,
   ExchangeMarketInfo,
@@ -15,37 +22,114 @@ import type {
   ExchangeFundingPayment,
   ExchangeKline,
 } from "./interface.js";
+import type { EvmSigner } from "../signer/interface.js";
+import type { AgentMeta } from "../settings.js";
+import type { AgentSigningStrategy } from "../agent-wallet/signing-strategy.js";
+import { isExpired } from "../agent-wallet/expiry.js";
+import { classifyError, PerpError } from "../errors.js";
+import { buildOrderTypedData } from "./aster-typed-data.js";
+
+// ── ResolvedSigner type ────────────────────────────────────────────────────────
+
+type ResolvedSigner = {
+  tier: "agent" | "master" | "pk";
+  signer: EvmSigner | AgentSigningStrategy;
+  /** EVM address that will appear in the `signer` field of Aster requests */
+  signerAddress: string;
+  /** EVM address of the owner/master — used as `user` field in Aster requests */
+  userAddress: string;
+};
+
+// ── AsterAdapter ──────────────────────────────────────────────────────────────
 
 export class AsterAdapter implements ExchangeAdapter {
   readonly name = "aster";
   readonly chain = "bnb";
   readonly aliases = ["ast"] as const;
 
-  private _apiKey: string;
-  private _apiSecret: string;
   private _baseUrl: string;
   private _testnet: boolean;
+
+  // Signer tiers
+  private _agentMeta?: AgentMeta;
+  private _agentSigner?: AgentSigningStrategy; // Tier 1
+  private _masterSigner?: EvmSigner;           // Tier 2
+  private _pkSigner?: EvmSigner;               // Tier 3
+  private _useNoAgent = false;
+  /** PK held between ctor and init() since LocalEvmSigner.create() is async */
+  private _pendingPk?: string;
+
+  // Cache
   private _marketsCache: ExchangeMarketInfo[] | null = null;
   private _marketsCacheTime = 0;
   private _fundingHoursCache = new Map<string, number>();
   private _accountCache: { data: unknown; time: number } | null = null;
   private _positionsCache: { data: unknown; time: number } | null = null;
   private _ordersCache: { data: unknown; time: number } | null = null;
-  private static readonly CACHE_TTL = 30_000; // 30 seconds (markets)
-  private static readonly ACCOUNT_CACHE_TTL = 5_000; // 5 seconds (account/positions/orders)
+  private static readonly CACHE_TTL = 30_000;
+  private static readonly ACCOUNT_CACHE_TTL = 5_000;
 
-  constructor(apiKey?: string, apiSecret?: string, testnet = false) {
-    this._apiKey = apiKey || process.env.ASTER_API_KEY || "";
-    this._apiSecret = apiSecret || process.env.ASTER_API_SECRET || "";
+  // Nonce counter — ensures microsecond-precision uniqueness within process
+  private _nonceCounter = 0;
+
+  constructor(privateKey?: string, testnet = false) {
     this._testnet = testnet;
     this._baseUrl = testnet
       ? (process.env.ASTER_TESTNET_URL || "https://testnet.asterdex.com")
       : "https://fapi.asterdex.com";
+    if (privateKey) {
+      this._pendingPk = privateKey;
+    }
   }
 
-  get isReadOnly(): boolean {
-    return !this._apiKey || !this._apiSecret;
+  // ── Lifecycle ──
+
+  async init(): Promise<void> {
+    // Verify connectivity by fetching server time
+    await this._publicGet("/fapi/v1/time");
+
+    // Build LocalEvmSigner from ctor PK now that we're in an async context
+    if (this._pendingPk) {
+      const { LocalEvmSigner } = await import("../signer/index.js");
+      this._pkSigner = await LocalEvmSigner.create(this._pendingPk);
+      this._pendingPk = undefined;
+    }
   }
+
+  // ── Signer injection ──
+
+  setAgent(meta: AgentMeta, strategy: AgentSigningStrategy): void {
+    this._agentMeta = meta;
+    this._agentSigner = strategy;
+  }
+
+  setMasterSigner(signer: EvmSigner): void {
+    this._masterSigner = signer;
+  }
+
+  setPkSigner(signer: EvmSigner): void {
+    this._pkSigner = signer;
+  }
+
+  setNoAgent(noAgent: boolean): void {
+    this._useNoAgent = noAgent;
+  }
+
+  // ── Status accessors ──
+
+  get isReadOnly(): boolean {
+    return !this._agentSigner && !this._masterSigner && !this._pkSigner;
+  }
+
+  get activeSignerTier(): "agent" | "master" | "pk" | null {
+    try {
+      return this._resolveSigner().tier;
+    } catch {
+      return null;
+    }
+  }
+
+  // ── Symbol helpers ──
 
   /** CLI symbol → Aster API symbol (ETH → ETHUSDT) */
   private _toApi(symbol: string): string {
@@ -59,14 +143,9 @@ export class AsterAdapter implements ExchangeAdapter {
     return symbol.replace(/USDT$/, "").replace(/BUSD$/, "");
   }
 
-  async init(): Promise<void> {
-    // Verify connectivity by fetching server time
-    await this._publicGet("/fapi/v1/time");
-  }
-
   // ── Market Data ──
 
-  /** Get funding interval for a symbol (lazy bootstrap — queries on first access, cached permanently). */
+  /** Get funding interval for a symbol (lazy bootstrap). */
   async getFundingHours(symbol: string): Promise<number | undefined> {
     const key = symbol.toUpperCase();
     const cached = this._fundingHoursCache.get(key);
@@ -83,12 +162,10 @@ export class AsterAdapter implements ExchangeAdapter {
       }
     } catch { /* non-critical */ }
 
-    // Don't cache a default — let strategy skip this symbol until real data is available
     return undefined;
   }
 
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
-    // Return cached result if fresh
     if (this._marketsCache && Date.now() - this._marketsCacheTime < AsterAdapter.CACHE_TTL) {
       return this._marketsCache;
     }
@@ -103,7 +180,6 @@ export class AsterAdapter implements ExchangeAdapter {
       tickerMap.set(String(t.symbol), t);
     }
 
-    // Also fetch premium index for mark/index/funding
     let premiumMap = new Map<string, Record<string, unknown>>();
     try {
       const premiums = await this._publicGet("/fapi/v1/premiumIndex") as Array<Record<string, unknown>>;
@@ -113,34 +189,30 @@ export class AsterAdapter implements ExchangeAdapter {
     const tradingSymbols = (info?.symbols ?? [])
       .filter((s) => String(s.contractType) === "PERPETUAL" && String(s.status) === "TRADING");
 
-    // OI is fetched lazily per symbol (see getMarketInfo) to avoid 300+ API calls
-    const result = tradingSymbols
-      .map((s) => {
-        const sym = String(s.symbol);
-        const ticker = tickerMap.get(sym);
-        const premium = premiumMap.get(sym);
-        const maxLev = Number(s.maxLeverage ?? 50);
+    const result = tradingSymbols.map((s) => {
+      const sym = String(s.symbol);
+      const ticker = tickerMap.get(sym);
+      const premium = premiumMap.get(sym);
+      const maxLev = Number(s.maxLeverage ?? 50);
 
-        const lotFilter = (s.filters as Array<Record<string, unknown>> | undefined)
-          ?.find(f => f.filterType === "LOT_SIZE");
+      const lotFilter = (s.filters as Array<Record<string, unknown>> | undefined)
+        ?.find(f => f.filterType === "LOT_SIZE");
 
-        // Use cached funding interval if available (populated by getFundingHours()).
-        // If not yet bootstrapped, fundingHours = undefined → strategy must skip this symbol.
-        const fundingHours = this._fundingHoursCache.get(this._fromApi(sym));
+      const fundingHours = this._fundingHoursCache.get(this._fromApi(sym));
 
-        return {
-          symbol: this._fromApi(sym),
-          markPrice: String(premium?.markPrice ?? ticker?.lastPrice ?? "0"),
-          indexPrice: String(premium?.indexPrice ?? "0"),
-          fundingRate: premium?.lastFundingRate != null ? String(premium.lastFundingRate) : null,
-          volume24h: String(ticker?.quoteVolume ?? ticker?.volume ?? "0"),
-          openInterest: "0",
-          maxLeverage: maxLev,
-          sizeDecimals: s.quantityPrecision != null ? Number(s.quantityPrecision) : undefined,
-          stepSize: lotFilter?.stepSize != null ? String(lotFilter.stepSize) : undefined,
-          fundingHours,
-        };
-      });
+      return {
+        symbol: this._fromApi(sym),
+        markPrice: String(premium?.markPrice ?? ticker?.lastPrice ?? "0"),
+        indexPrice: String(premium?.indexPrice ?? "0"),
+        fundingRate: premium?.lastFundingRate != null ? String(premium.lastFundingRate) : null,
+        volume24h: String(ticker?.quoteVolume ?? ticker?.volume ?? "0"),
+        openInterest: "0",
+        maxLeverage: maxLev,
+        sizeDecimals: s.quantityPrecision != null ? Number(s.quantityPrecision) : undefined,
+        stepSize: lotFilter?.stepSize != null ? String(lotFilter.stepSize) : undefined,
+        fundingHours,
+      };
+    });
 
     this._marketsCache = result;
     this._marketsCacheTime = Date.now();
@@ -213,7 +285,8 @@ export class AsterAdapter implements ExchangeAdapter {
     if (this._accountCache && Date.now() - this._accountCache.time < AsterAdapter.ACCOUNT_CACHE_TTL) {
       return this._accountCache.data as ExchangeBalance;
     }
-    const account = await this._signedGet("/fapi/v2/account") as Record<string, unknown>;
+    const r = this._resolveSigner();
+    const account = await this._signedGetEip712("/fapi/v2/account", {}, r) as Record<string, unknown>;
 
     const totalWallet = Number(account.totalWalletBalance ?? 0);
     const unrealizedPnl = Number(account.totalUnrealizedProfit ?? 0);
@@ -234,7 +307,8 @@ export class AsterAdapter implements ExchangeAdapter {
     if (this._positionsCache && Date.now() - this._positionsCache.time < AsterAdapter.ACCOUNT_CACHE_TTL) {
       return this._positionsCache.data as ExchangePosition[];
     }
-    const data = await this._signedGet("/fapi/v2/positionRisk") as Array<Record<string, unknown>>;
+    const r = this._resolveSigner();
+    const data = await this._signedGetEip712("/fapi/v2/positionRisk", {}, r) as Array<Record<string, unknown>>;
 
     const result = (data ?? [])
       .filter((p) => Number(p.positionAmt ?? 0) !== 0)
@@ -259,7 +333,8 @@ export class AsterAdapter implements ExchangeAdapter {
     if (this._ordersCache && Date.now() - this._ordersCache.time < AsterAdapter.ACCOUNT_CACHE_TTL) {
       return this._ordersCache.data as ExchangeOrder[];
     }
-    const orders = await this._signedGet("/fapi/v1/openOrders") as Array<Record<string, unknown>>;
+    const r = this._resolveSigner();
+    const orders = await this._signedGetEip712("/fapi/v1/openOrders", {}, r) as Array<Record<string, unknown>>;
 
     const result = (orders ?? []).map((o) => ({
       orderId: String(o.orderId ?? ""),
@@ -276,23 +351,22 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   async getOrderHistory(limit = 30): Promise<ExchangeOrder[]> {
-    // allOrders requires symbol — get from positions or recent trades
     const positions = await this.getPositions();
     const apiSymbols = new Set(positions.map(p => this._toApi(p.symbol)));
     if (apiSymbols.size === 0) {
-      // Fallback: query the most common perp symbols when no open positions exist
       for (const s of ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]) {
         apiSymbols.add(s);
       }
     }
 
+    const r = this._resolveSigner();
     const allOrders: ExchangeOrder[] = [];
     for (const sym of apiSymbols) {
       try {
-        const orders = await this._signedGet("/fapi/v1/allOrders", {
+        const orders = await this._signedGetEip712("/fapi/v1/allOrders", {
           symbol: sym,
           limit: String(limit),
-        }) as Array<Record<string, unknown>>;
+        }, r) as Array<Record<string, unknown>>;
 
         for (const o of orders ?? []) {
           allOrders.push({
@@ -316,13 +390,14 @@ export class AsterAdapter implements ExchangeAdapter {
     const apiSymbols = new Set(positions.map(p => this._toApi(p.symbol)));
     if (apiSymbols.size === 0) apiSymbols.add("BTCUSDT");
 
+    const r = this._resolveSigner();
     const allTrades: ExchangeTrade[] = [];
     for (const sym of apiSymbols) {
       try {
-        const trades = await this._signedGet("/fapi/v1/userTrades", {
+        const trades = await this._signedGetEip712("/fapi/v1/userTrades", {
           symbol: sym,
           limit: String(limit),
-        }) as Array<Record<string, unknown>>;
+        }, r) as Array<Record<string, unknown>>;
 
         for (const t of trades ?? []) {
           allTrades.push({
@@ -340,10 +415,11 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   async getFundingPayments(limit = 200): Promise<ExchangeFundingPayment[]> {
-    const data = await this._signedGet("/fapi/v1/income", {
+    const r = this._resolveSigner();
+    const data = await this._signedGetEip712("/fapi/v1/income", {
       incomeType: "FUNDING_FEE",
       limit: String(limit),
-    }) as Array<Record<string, unknown>>;
+    }, r) as Array<Record<string, unknown>>;
 
     return (data ?? []).map((f) => ({
       time: Number(f.time ?? 0),
@@ -355,51 +431,48 @@ export class AsterAdapter implements ExchangeAdapter {
   // ── Trading ──
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts?: { reduceOnly?: boolean }): Promise<unknown> {
+    const r = this._resolveSigner();
     const apiSymbol = this._toApi(symbol);
-    const params: Record<string, string> = {
+    const params: Record<string, string | number | boolean> = {
       symbol: apiSymbol,
       side: side.toUpperCase(),
       type: "MARKET",
       quantity: size,
     };
     if (opts?.reduceOnly) params.reduceOnly = "true";
-    const result = await this._signedPost("/fapi/v1/order", params);
-    const r = result as Record<string, unknown>;
-    const executedQty = Number(r.executedQty ?? 0);
-    const orderId = String(r.orderId ?? "");
 
-    // If immediately filled, return
-    if (executedQty > 0 && r.status === "FILLED") return result;
+    const result = await this._signedPostEip712("/fapi/v3/order", params, r);
+    const ro = result as Record<string, unknown>;
+    const executedQty = Number(ro.executedQty ?? 0);
+    const orderId = String(ro.orderId ?? "");
 
-    // status=NEW: order accepted but not yet filled — poll for up to 3 seconds
-    if (r.status === "NEW" && orderId) {
+    if (executedQty > 0 && ro.status === "FILLED") return result;
+
+    if (ro.status === "NEW" && orderId) {
       for (let i = 0; i < 3; i++) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(res => setTimeout(res, 1000));
         try {
-          const check = await this._signedGet("/fapi/v1/order", {
+          const check = await this._signedGetEip712("/fapi/v1/order", {
             symbol: apiSymbol,
             orderId,
-          }) as Record<string, unknown>;
+          }, r) as Record<string, unknown>;
           const filledQty = Number(check.executedQty ?? 0);
-          if (filledQty > 0) return check; // filled
+          if (filledQty > 0) return check;
           if (check.status === "CANCELED" || check.status === "EXPIRED" || check.status === "REJECTED") {
             throw new Error(`Market ${side} ${symbol}: order ${check.status} (orderId: ${orderId})`);
           }
         } catch (e) {
           if (e instanceof Error && e.message.startsWith("Market ")) throw e;
-          // query failed, retry
         }
       }
-      // Still not filled after 3s — cancel and throw
       try {
-        await this._signedDelete("/fapi/v1/order", { symbol: apiSymbol, orderId });
+        await this._signedDeleteEip712("/fapi/v1/order", { symbol: apiSymbol, orderId }, r);
       } catch { /* best effort cancel */ }
       throw new Error(`Market ${side} ${symbol}: order not filled after 3s, cancelled (orderId: ${orderId})`);
     }
 
-    // executedQty === 0 with non-NEW status
     if (executedQty === 0) {
-      throw new Error(`Market ${side} ${symbol}: order accepted but 0 filled (status: ${r.status}, orderId: ${orderId})`);
+      throw new Error(`Market ${side} ${symbol}: order accepted but 0 filled (status: ${ro.status}, orderId: ${orderId})`);
     }
     return result;
   }
@@ -411,7 +484,8 @@ export class AsterAdapter implements ExchangeAdapter {
     size: string,
     opts?: { reduceOnly?: boolean; tif?: string },
   ): Promise<unknown> {
-    const params: Record<string, string> = {
+    const r = this._resolveSigner();
+    const params: Record<string, string | number | boolean> = {
       symbol: this._toApi(symbol),
       side: side.toUpperCase(),
       type: "LIMIT",
@@ -420,7 +494,7 @@ export class AsterAdapter implements ExchangeAdapter {
       timeInForce: opts?.tif?.toUpperCase() || "GTC",
     };
     if (opts?.reduceOnly) params.reduceOnly = "true";
-    return this._signedPost("/fapi/v1/order", params);
+    return this._signedPostEip712("/fapi/v3/order", params, r);
   }
 
   async editOrder(symbol: string, orderId: string, price: string, size: string): Promise<unknown> {
@@ -434,44 +508,43 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   async cancelOrder(symbol: string, orderId: string): Promise<unknown> {
-    return this._signedDelete("/fapi/v1/order", {
+    const r = this._resolveSigner();
+    return this._signedDeleteEip712("/fapi/v3/order", {
       symbol: this._toApi(symbol),
       orderId,
-    });
+    }, r);
   }
 
   async cancelAllOrders(symbol?: string): Promise<unknown> {
+    const r = this._resolveSigner();
     if (!symbol) {
-      // Cancel all for all symbols with open orders
       const orders = await this.getOpenOrders();
       const apiSymbols = new Set(orders.map(o => this._toApi(o.symbol)));
       const results = [];
       for (const sym of apiSymbols) {
-        results.push(await this._signedDelete("/fapi/v1/allOpenOrders", { symbol: sym }));
+        results.push(await this._signedDeleteEip712("/fapi/v3/allOpenOrders", { symbol: sym }, r));
       }
       return results;
     }
-    return this._signedDelete("/fapi/v1/allOpenOrders", { symbol: this._toApi(symbol) });
+    return this._signedDeleteEip712("/fapi/v3/allOpenOrders", { symbol: this._toApi(symbol) }, r);
   }
 
   // ── Risk ──
 
   async setLeverage(symbol: string, leverage: number, marginMode?: "cross" | "isolated"): Promise<unknown> {
-    // Set margin type first if specified
+    const r = this._resolveSigner();
     if (marginMode) {
       try {
-        await this._signedPost("/fapi/v1/marginType", {
+        await this._signedPostEip712("/fapi/v1/marginType", {
           symbol: this._toApi(symbol),
           marginType: marginMode === "cross" ? "CROSSED" : "ISOLATED",
-        });
-      } catch {
-        // May fail if already set — non-critical
-      }
+        }, r);
+      } catch { /* may fail if already set */ }
     }
-    return this._signedPost("/fapi/v1/leverage", {
+    return this._signedPostEip712("/fapi/v1/leverage", {
       symbol: this._toApi(symbol),
       leverage: String(leverage),
-    });
+    }, r);
   }
 
   async stopOrder(
@@ -481,7 +554,8 @@ export class AsterAdapter implements ExchangeAdapter {
     triggerPrice: string,
     opts?: { limitPrice?: string; reduceOnly?: boolean },
   ): Promise<unknown> {
-    const params: Record<string, string> = {
+    const r = this._resolveSigner();
+    const params: Record<string, string | number | boolean> = {
       symbol: this._toApi(symbol),
       side: side.toUpperCase(),
       quantity: size,
@@ -493,31 +567,226 @@ export class AsterAdapter implements ExchangeAdapter {
       params.timeInForce = "GTC";
     }
     if (opts?.reduceOnly) params.reduceOnly = "true";
-    return this._signedPost("/fapi/v1/order", params);
+    return this._signedPostEip712("/fapi/v3/order", params, r);
   }
 
-  // ── Withdraw (unified interface) ──
+  // ── Withdraw (master-only: never delegates to agent or PK) ──
 
   async withdraw(amount: string, _destination: string, _opts?: { assetId?: number; routeType?: number }): Promise<unknown> {
-    // Aster withdrawal is via separate spot/wallet API, not futures API
+    if (!this._masterSigner) {
+      throw new PerpError(
+        "NO_SIGNER_AVAILABLE",
+        "Aster withdrawal requires OWS master wallet (--ows). Agent and PK signers cannot authorize withdrawals.",
+        {
+          remediation: "Use: perp -e aster --ows <walletName> funds withdraw",
+        },
+      );
+    }
+    // Aster withdrawal via spot/wallet API (not futures API) — not yet implemented.
     throw new Error("Aster withdrawal requires the spot API (not available in futures mode). Use the Aster web UI to withdraw.");
   }
 
-  // ── Internal HTTP helpers ──
+  // ── Private: signer resolution ────────────────────────────────────────────
 
-  private _sign(params: Record<string, string>): string {
-    params.timestamp = String(Date.now());
-    params.recvWindow = "5000";
-    const queryString = Object.entries(params)
-      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
-      .join("&");
-    const signature = createHmac("sha256", this._apiSecret)
-      .update(queryString)
-      .digest("hex");
-    return `${queryString}&signature=${signature}`;
+  private _resolveSigner(): ResolvedSigner {
+    // Tier 1: agent (when registered, not expired, --no-agent NOT set)
+    if (!this._useNoAgent && this._agentSigner && this._agentMeta) {
+      if (isExpired(this._agentMeta)) {
+        // Skip Tier 1 only if Tier 2/3 available; otherwise throw AGENT_EXPIRED
+        if (!this._masterSigner && !this._pkSigner) {
+          throw new PerpError("AGENT_EXPIRED", "Agent wallet has expired", {
+            remediation: "perp wallet agent approve aster --rotate",
+          });
+        }
+        // fall through to Tier 2/3
+      } else {
+        return {
+          tier: "agent",
+          signer: this._agentSigner,
+          signerAddress: this._agentMeta.agentEvmAddress,
+          userAddress: this._agentMeta.userEvmAddress,
+        };
+      }
+    }
+
+    // Tier 2: OWS master
+    if (this._masterSigner) {
+      const addr = this._masterSigner.getAddress();
+      return { tier: "master", signer: this._masterSigner, signerAddress: addr, userAddress: addr };
+    }
+
+    // Tier 3: PK direct
+    if (this._pkSigner) {
+      const addr = this._pkSigner.getAddress();
+      return { tier: "pk", signer: this._pkSigner, signerAddress: addr, userAddress: addr };
+    }
+
+    // No signer at any tier
+    throw new PerpError(
+      "NO_SIGNER_AVAILABLE",
+      "No signing path configured for Aster",
+      {
+        remediation: "Run one of: (a) perp wallet agent approve aster --master <wallet>; (b) perp wallet generate && perp -e aster --ows <wallet>; (c) export ASTER_PRIVATE_KEY=0x...",
+      },
+    );
   }
 
-  /** Handle 429 rate limit with retry */
+  // ── Private: nonce ────────────────────────────────────────────────────────
+
+  private _nextNonce(): string {
+    const ms = Date.now() * 1000 + (++this._nonceCounter % 1000);
+    return String(ms);
+  }
+
+  // ── Private: EIP-712 signed HTTP helpers ─────────────────────────────────
+
+  /**
+   * Sign and POST to a path using EIP-712 Domain B.
+   * Injects user + nonce + signer + signature + signatureChainId into the query string.
+   */
+  private async _signedPostEip712(
+    path: string,
+    params: Record<string, string | number | boolean>,
+    resolved: ResolvedSigner,
+  ): Promise<unknown> {
+    const fullParams: Record<string, string | number | boolean> = {
+      ...params,
+      user: resolved.userAddress,
+      nonce: this._nextNonce(),
+    };
+
+    const typed = buildOrderTypedData(fullParams);
+
+    // Sign via the appropriate signer type
+    const sigRaw = await (resolved.signer as AgentSigningStrategy & EvmSigner).signTypedData(
+      typed.domain as Record<string, unknown>,
+      typed.types as unknown as Record<string, Array<{ name: string; type: string }>>,
+      typed.message as Record<string, unknown>,
+    );
+
+    // Normalize: AgentSigningStrategy returns { signature, r, s, v }; EvmSigner returns string
+    const sigHex = typeof sigRaw === "string" ? sigRaw : (sigRaw as { signature: string }).signature;
+
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(fullParams)) {
+      qs.append(k, String(v));
+    }
+    qs.append("signer", resolved.signerAddress);
+    qs.append("signature", sigHex);
+    qs.append("signatureChainId", "1666");
+
+    const url = `${this._baseUrl}${path}?${qs.toString()}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "",
+    });
+
+    return this._handleEip712Response(res, "POST", path);
+  }
+
+  /**
+   * Sign and GET from a path using EIP-712 Domain B.
+   */
+  private async _signedGetEip712(
+    path: string,
+    params: Record<string, string | number | boolean>,
+    resolved: ResolvedSigner,
+  ): Promise<unknown> {
+    const fullParams: Record<string, string | number | boolean> = {
+      ...params,
+      user: resolved.userAddress,
+      nonce: this._nextNonce(),
+    };
+
+    const typed = buildOrderTypedData(fullParams);
+
+    const sigRaw = await (resolved.signer as AgentSigningStrategy & EvmSigner).signTypedData(
+      typed.domain as Record<string, unknown>,
+      typed.types as unknown as Record<string, Array<{ name: string; type: string }>>,
+      typed.message as Record<string, unknown>,
+    );
+
+    const sigHex = typeof sigRaw === "string" ? sigRaw : (sigRaw as { signature: string }).signature;
+
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(fullParams)) {
+      qs.append(k, String(v));
+    }
+    qs.append("signer", resolved.signerAddress);
+    qs.append("signature", sigHex);
+    qs.append("signatureChainId", "1666");
+
+    const url = `${this._baseUrl}${path}?${qs.toString()}`;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await fetch(url);
+      const result = await this._handleResponse(res, "GET", path, attempt);
+      if (result !== null) return result;
+    }
+    throw new Error(`GET ${path} failed: max retries exceeded`);
+  }
+
+  /**
+   * Sign and DELETE from a path using EIP-712 Domain B.
+   */
+  private async _signedDeleteEip712(
+    path: string,
+    params: Record<string, string | number | boolean>,
+    resolved: ResolvedSigner,
+  ): Promise<unknown> {
+    const fullParams: Record<string, string | number | boolean> = {
+      ...params,
+      user: resolved.userAddress,
+      nonce: this._nextNonce(),
+    };
+
+    const typed = buildOrderTypedData(fullParams);
+
+    const sigRaw = await (resolved.signer as AgentSigningStrategy & EvmSigner).signTypedData(
+      typed.domain as Record<string, unknown>,
+      typed.types as unknown as Record<string, Array<{ name: string; type: string }>>,
+      typed.message as Record<string, unknown>,
+    );
+
+    const sigHex = typeof sigRaw === "string" ? sigRaw : (sigRaw as { signature: string }).signature;
+
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(fullParams)) {
+      qs.append(k, String(v));
+    }
+    qs.append("signer", resolved.signerAddress);
+    qs.append("signature", sigHex);
+    qs.append("signatureChainId", "1666");
+
+    const url = `${this._baseUrl}${path}?${qs.toString()}`;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await fetch(url, { method: "DELETE" });
+      const result = await this._handleResponse(res, "DELETE", path, attempt);
+      if (result !== null) return result;
+    }
+    throw new Error(`DELETE ${path} failed: max retries exceeded`);
+  }
+
+  // ── Private: HTTP response handling ──────────────────────────────────────
+
+  private async _handleEip712Response(res: Response, method: string, path: string): Promise<unknown> {
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get("Retry-After") || "5", 10);
+      await new Promise(r => setTimeout(r, Math.min(retryAfter * 1000, 30000)));
+      throw new Error(`${method} ${path} rate limited`);
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw classifyError(new Error(`${method} ${path} failed (${res.status}): ${text.slice(0, 200)}`), "aster");
+    }
+    const json = await res.json() as { code?: string | number; msg?: string };
+    if (json.code !== undefined && json.code !== "000000" && json.code !== 200) {
+      throw classifyError(new Error(json.msg ?? String(json.code)), "aster");
+    }
+    return json;
+  }
+
+  /** Handle 429 rate limit with retry — used by GET/DELETE multi-attempt loops */
   private async _handleResponse(res: Response, method: string, path: string, attempt = 0): Promise<unknown> {
     if (res.status === 429) {
       if (attempt >= 2) throw new Error(`${method} ${path} rate limited after ${attempt + 1} attempts`);
@@ -545,51 +814,5 @@ export class AsterAdapter implements ExchangeAdapter {
       if (result !== null) return result;
     }
     throw new Error(`GET ${path} failed: max retries exceeded`);
-  }
-
-  private async _signedGet(path: string, params: Record<string, string> = {}): Promise<unknown> {
-    if (this.isReadOnly) throw new Error("No API key configured for Aster. Set ASTER_API_KEY and ASTER_API_SECRET in ~/.perp/.env");
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const signed = this._sign({ ...params });
-      const url = `${this._baseUrl}${path}?${signed}`;
-      const res = await fetch(url, {
-        headers: { "X-MBX-APIKEY": this._apiKey },
-      });
-      const result = await this._handleResponse(res, "GET", path, attempt);
-      if (result !== null) return result;
-    }
-    throw new Error(`GET ${path} failed: max retries exceeded`);
-  }
-
-  private async _signedPost(path: string, params: Record<string, string> = {}): Promise<unknown> {
-    if (this.isReadOnly) throw new Error("No API key configured for Aster. Set ASTER_API_KEY and ASTER_API_SECRET in ~/.perp/.env");
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const signed = this._sign({ ...params });
-      const res = await fetch(`${this._baseUrl}${path}`, {
-        method: "POST",
-        headers: {
-          "X-MBX-APIKEY": this._apiKey,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: signed,
-      });
-      const result = await this._handleResponse(res, "POST", path, attempt);
-      if (result !== null) return result;
-    }
-    throw new Error(`POST ${path} failed: max retries exceeded`);
-  }
-
-  private async _signedDelete(path: string, params: Record<string, string> = {}): Promise<unknown> {
-    if (this.isReadOnly) throw new Error("No API key configured for Aster. Set ASTER_API_KEY and ASTER_API_SECRET in ~/.perp/.env");
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const signed = this._sign({ ...params });
-      const res = await fetch(`${this._baseUrl}${path}?${signed}`, {
-        method: "DELETE",
-        headers: { "X-MBX-APIKEY": this._apiKey },
-      });
-      const result = await this._handleResponse(res, "DELETE", path, attempt);
-      if (result !== null) return result;
-    }
-    throw new Error(`DELETE ${path} failed: max retries exceeded`);
   }
 }

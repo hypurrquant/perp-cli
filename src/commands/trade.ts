@@ -429,8 +429,8 @@ export function registerTradeCommands(
         console.log(chalk.green(`\n  TWAP job started in background.`));
         console.log(`  ID: ${chalk.white.bold(job.id)}`);
         console.log(`  Session: ${job.tmuxSession}`);
-        console.log(`  Logs: ${chalk.gray(`perp jobs logs ${job.id}`)}`);
-        console.log(`  Stop: ${chalk.gray(`perp jobs stop ${job.id}`)}\n`);
+        console.log(`  Logs: ${chalk.gray(`perp background logs ${job.id}`)}`);
+        console.log(`  Stop: ${chalk.gray(`perp background stop ${job.id}`)}\n`);
         return;
       }
 
@@ -781,7 +781,7 @@ export function registerTradeCommands(
       }
     });
 
-  // grid/dca moved to 'perp bot grid' / 'perp bot dca'
+  // grid/dca moved to 'perp strategy grid' / 'perp strategy dca'
 
   // ── Position Management Shortcuts ──
 
@@ -1176,7 +1176,7 @@ export function registerTradeCommands(
       console.log();
     });
 
-  // grid/dca/trailing-stop moved to 'perp bot'
+  // grid/dca/trailing-stop moved to 'perp strategy'
 
   // ── PnL Tracker ──
 

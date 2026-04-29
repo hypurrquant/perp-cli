@@ -192,7 +192,7 @@ export async function runFundingArb(
                 for (const move of plan.moves) {
                   log(`[ARB]   $${move.amount} ${move.from} → ${move.to}`);
                 }
-                log(`[ARB] Run 'perp rebalance execute' to rebalance.`);
+                log(`[ARB] Run 'perp funds rebalance execute' to rebalance.`);
               }
             }
           }

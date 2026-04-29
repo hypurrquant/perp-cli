@@ -12,6 +12,19 @@ export const ERROR_CODES = {
   RISK_VIOLATION: { code: "RISK_VIOLATION", status: 403, retryable: false },
   DUPLICATE_ORDER: { code: "DUPLICATE_ORDER", status: 409, retryable: false },
 
+  // Agent-wallet error codes (OWS / Phase 2a)
+  NO_SIGNER_AVAILABLE:  { code: "NO_SIGNER_AVAILABLE",  status: 401, retryable: false },
+  AGENT_NOT_REGISTERED: { code: "AGENT_NOT_REGISTERED", status: 401, retryable: false },
+  AGENT_EXPIRED:        { code: "AGENT_EXPIRED",        status: 401, retryable: false },
+  POLICY_DENIED:        { code: "POLICY_DENIED",        status: 403, retryable: false },
+  KEY_NOT_FOUND:        { code: "KEY_NOT_FOUND",        status: 404, retryable: false },
+  WALLET_LOCKED:        { code: "WALLET_LOCKED",        status: 423, retryable: false },
+  APPROVE_PARTIAL:      { code: "APPROVE_PARTIAL",      status: 500, retryable: false },
+  APPROVE_FAILED:       { code: "APPROVE_FAILED",       status: 500, retryable: false },
+  LOCK_HELD:            { code: "LOCK_HELD",            status: 423, retryable: true, retryAfterMs: 5000 },
+  PASSPHRASE_REQUIRED:  { code: "PASSPHRASE_REQUIRED",  status: 401, retryable: false },
+  NOT_IMPLEMENTED:      { code: "NOT_IMPLEMENTED",      status: 501, retryable: false },
+
   // 5xx - System / transient errors
   EXCHANGE_UNREACHABLE: { code: "EXCHANGE_UNREACHABLE", status: 503, retryable: true },
   RATE_LIMITED: { code: "RATE_LIMITED", status: 429, retryable: true, retryAfterMs: 1000 },
@@ -32,6 +45,8 @@ export interface StructuredError {
   retryAfterMs?: number;
   exchange?: string;
   details?: Record<string, unknown>;
+  /** Actionable hint for automated callers (AC-19) */
+  remediation?: string;
 }
 
 /**
@@ -58,6 +73,40 @@ export function classifyError(err: unknown, exchange?: string): StructuredError 
   if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("etimedout")) {
     return { ...ERROR_CODES.TIMEOUT, message, exchange };
   }
+  // OWS / agent-wallet specific matchers — MUST precede generic "sign" / "not found" blocks
+  // so "wallet is locked, cannot sign" → WALLET_LOCKED (not SIGNATURE_FAILED)
+  // and "key not found" → KEY_NOT_FOUND (not SYMBOL_NOT_FOUND / default)
+  if (lower.includes("policy denied") || (lower.includes("policy") && lower.includes("denied"))) {
+    return { ...ERROR_CODES.POLICY_DENIED, message, exchange };
+  }
+  if (lower.includes("wallet is locked") || lower.includes("wallet locked")) {
+    return { ...ERROR_CODES.WALLET_LOCKED, message, exchange };
+  }
+  if (lower.includes("key not found") || lower.includes("api key not found")) {
+    return { ...ERROR_CODES.KEY_NOT_FOUND, message, exchange };
+  }
+  if (lower.includes("no signer") || lower.includes("signer unavailable") || lower.includes("no auth")) {
+    return { ...ERROR_CODES.NO_SIGNER_AVAILABLE, message, exchange };
+  }
+  if (lower.includes("agent not registered")) {
+    return { ...ERROR_CODES.AGENT_NOT_REGISTERED, message, exchange };
+  }
+  if (lower.includes("agent expired") || lower.includes("agent has expired")) {
+    return { ...ERROR_CODES.AGENT_EXPIRED, message, exchange };
+  }
+  if (lower.includes("lock held") || lower.includes("lockfile held")) {
+    return { ...ERROR_CODES.LOCK_HELD, message, exchange };
+  }
+  if (lower.includes("passphrase required") || lower.includes("passphrase missing")) {
+    return { ...ERROR_CODES.PASSPHRASE_REQUIRED, message, exchange };
+  }
+  if (lower.includes("partial") && (lower.includes("approve") || lower.includes("approval"))) {
+    return { ...ERROR_CODES.APPROVE_PARTIAL, message, exchange };
+  }
+  if (lower.includes("approve_failed") || (lower.includes("approve failed") && lower.includes("clean"))) {
+    return { ...ERROR_CODES.APPROVE_FAILED, message, exchange };
+  }
+
   if (lower.includes("not found") && (lower.includes("symbol") || lower.includes("market") || lower.includes("asset"))) {
     return { ...ERROR_CODES.SYMBOL_NOT_FOUND, message, exchange };
   }
@@ -97,6 +146,15 @@ export class PerpError extends Error {
   constructor(code: ErrorCode, message: string, details?: Record<string, unknown>) {
     super(message);
     this.name = "PerpError";
-    this.structured = { ...ERROR_CODES[code], message, details };
+    // Lift `remediation` from details to top-level StructuredError field (AC-19)
+    const remediation = details?.remediation as string | undefined;
+    const strippedDetails = details ? { ...details } : undefined;
+    if (strippedDetails) delete strippedDetails.remediation;
+    this.structured = {
+      ...ERROR_CODES[code],
+      message,
+      ...(remediation !== undefined ? { remediation } : {}),
+      ...(strippedDetails && Object.keys(strippedDetails).length > 0 ? { details: strippedDetails } : {}),
+    };
   }
 }

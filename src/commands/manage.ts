@@ -1,17 +1,16 @@
 import { Command } from "commander";
 import type { ExchangeAdapter } from "../exchanges/index.js";
 import { printJson, jsonOk, jsonError } from "../utils.js";
-import { setEnvVar } from "./init.js";
 import chalk from "chalk";
-import { hasPacificaSdk, hasLighterAccount } from "../exchanges/capabilities.js";
+import { hasPacificaSdk } from "../exchanges/capabilities.js";
 
-export function registerManageCommands(
-  program: Command,
+export function registerWalletManageCommands(
+  parent: Command,
   getAdapter: () => Promise<ExchangeAdapter>,
   isJson: () => boolean,
   getPacificaAdapter: () => unknown
 ) {
-  const manage = program.command("manage").description("Exchange account settings (margin, subaccount, API keys, builder)");
+  const manage = parent.command("manage").description("Exchange account settings (margin, subaccount, API keys, builder) — Pacifica + Lighter");
 
   // Ensure adapter is initialized before accessing PacificaAdapter
   async function pac() {
@@ -102,62 +101,10 @@ export function registerManageCommands(
       console.log(chalk.green(`\n  Transferred $${amount}.\n`));
     });
 
-  // Agent wallets
-  const agent = manage.command("agent").description("Agent wallet management");
-
-  agent
-    .command("bind <wallet>")
-    .description("Bind an agent wallet")
-    .action(async (wallet: string) => {
-      const a = await pac();
-      const result = await a.sdk.bindAgentWallet(
-        wallet,
-        a.publicKey,
-        a.signer
-      );
-      if (isJson()) return printJson(jsonOk(result));
-      console.log(chalk.green(`\n  Agent wallet ${wallet} bound.\n`));
-    });
-
-  agent
-    .command("list")
-    .description("List agent wallets")
-    .action(async () => {
-      const a = await pac();
-      const result = await a.sdk.listAgentWallets(
-        a.publicKey,
-        a.signer
-      );
-      if (isJson()) return printJson(jsonOk(result));
-      console.log(JSON.stringify(result, null, 2));
-    });
-
-  agent
-    .command("revoke <wallet>")
-    .description("Revoke an agent wallet")
-    .action(async (wallet: string) => {
-      const a = await pac();
-      const result = await a.sdk.revokeAgentWallet(
-        wallet,
-        a.publicKey,
-        a.signer
-      );
-      if (isJson()) return printJson(jsonOk(result));
-      console.log(chalk.green(`\n  Agent wallet ${wallet} revoked.\n`));
-    });
-
-  agent
-    .command("revoke-all")
-    .description("Revoke all agent wallets")
-    .action(async () => {
-      const a = await pac();
-      const result = await a.sdk.revokeAllAgentWallets(
-        a.publicKey,
-        a.signer
-      );
-      if (isJson()) return printJson(jsonOk(result));
-      console.log(chalk.green("\n  All agent wallets revoked.\n"));
-    });
+  // Legacy `manage agent` removed in v0.12 (Phase 2c) — superseded by the
+  // unified `wallet agent {approve,revoke,rotate,list,verify} pacifica` flow.
+  // The unified command tree provides 3-tier signer routing, expiry tracking,
+  // and OWS at-rest encryption. See `wallet agent approve pacifica --help`.
 
   // Lake (liquidity vaults)
   const lake = manage.command("lake").description("Lake (liquidity vault) management");
@@ -360,47 +307,9 @@ export function registerManageCommands(
       console.log(chalk.green(`\n  API key revoked.\n`));
     });
 
-  // === Lighter API Key Setup ===
-  manage
-    .command("setup-api-key")
-    .description("Generate & register a Lighter API key (required for trading)")
-    .option("--key-index <n>", "API key index (4-254, default: 4)", "4")
-    .action(async (opts: { keyIndex: string }) => {
-      const adapter = await getAdapter();
-      if (!hasLighterAccount(adapter)) {
-        throw new Error("This command requires --exchange lighter");
-      }
-
-      const keyIndex = parseInt(opts.keyIndex);
-      if (!isJson()) {
-        console.log(chalk.cyan.bold("\n  Lighter API Key Setup\n"));
-        console.log(chalk.gray(`  Account: ${adapter.address} (index: ${adapter.accountIndex})`));
-        console.log(chalk.gray(`  API Key Index: ${keyIndex}\n`));
-        console.log(chalk.gray("  Generating key pair + registering on-chain...\n"));
-      }
-
-      const { privateKey, publicKey } = await adapter.setupApiKey(keyIndex);
-
-      // Auto-save to .env
-      setEnvVar("LIGHTER_API_KEY", privateKey);
-      setEnvVar("LIGHTER_ACCOUNT_INDEX", String(adapter.accountIndex));
-      setEnvVar("LIGHTER_API_KEY_INDEX", String(keyIndex));
-
-      if (isJson()) {
-        return printJson(jsonOk({
-          privateKey,
-          publicKey,
-          address: adapter.address,
-          accountIndex: adapter.accountIndex,
-          apiKeyIndex: keyIndex,
-          savedToEnv: true,
-        }));
-      }
-
-      console.log(chalk.green("  API Key Registered & saved to ~/.perp/.env\n"));
-      console.log(`  ${chalk.bold("Private Key:")} ${privateKey}`);
-      console.log(`  ${chalk.bold("Public Key:")}  ${publicKey}`);
-      console.log(`  ${chalk.bold("Account:")}     ${adapter.accountIndex}`);
-      console.log();
-    });
+  // Legacy `manage setup-api-key` removed in v0.12 (Phase 2d) — superseded by
+  // the unified `wallet agent approve lighter` flow. The agent flow provides
+  // 3-tier signer routing, expiry tracking, free-slot picking, and AgentMeta
+  // persistence. The auto-setup path in LighterAdapter.init() remains as the
+  // env-key fallback for users who haven't run the unified command yet.
 }

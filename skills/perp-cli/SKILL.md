@@ -99,20 +99,30 @@ perp --json arb close ETH                   # sells spot + buys back perp
 
 Spot exchanges: HL, LT. Pacifica and Aster are perp-only.
 
-## Bot Engine (19 Strategies)
+## Strategy Engine (19 bot algorithms + nested scripted plans)
 
 ```bash
-perp bot list-strategies                              # list all 19 strategies
-perp bot run <strategy> [symbol]                      # run any registered strategy
-perp bot run funding-auto                             # multi-exchange funding arb
-perp bot apex [symbol]                                # APEX orchestrator (Radar+Pulse+Guard)
-perp bot reflect                                      # performance analysis (win rate, fees, PnL)
-perp bot preset-list                                  # list strategy presets
-perp bot preset <name> [symbol]                       # run from preset
-perp bot start <config.yaml>                          # start from YAML/JSON config
-perp bot quick-grid <symbol>                          # quick grid bot
-perp bot quick-dca <symbol> <side> <amount> <interval>
-perp bot quick-arb                                    # quick funding arb
+perp strategy list-strategies                         # list all 19 strategies
+perp strategy run <strategy> [symbol]                 # run any registered strategy
+perp strategy run funding-auto                        # multi-exchange funding arb
+perp strategy apex [symbol]                           # APEX orchestrator (Radar+Pulse+Guard)
+perp strategy reflect                                 # performance analysis (win rate, fees, PnL)
+perp strategy preset-list                             # list strategy presets
+perp strategy preset <name> [symbol]                  # run from preset
+perp strategy start <config.yaml>                     # start from YAML/JSON config
+perp strategy quick-grid <symbol>                     # quick grid bot
+perp strategy quick-dca <symbol> <side> <amount> <interval>
+perp strategy quick-arb                               # quick funding arb
+
+# Scripted plans (one-shot multi-step execution)
+perp strategy plan example                            # show plan format
+perp --json strategy plan validate <file>             # validate before run
+perp --json strategy plan execute <file> --dry-run    # dry-run plan
+
+# Background process supervisor (tmux)
+perp background list                                  # list running jobs
+perp background stop <id>                             # stop a job
+perp background logs <id> -f                          # follow logs
 ```
 
 **Strategies:** grid, dca, funding-arb, funding-arb-v2, funding-auto, basis-arb, simple-mm, engine-mm, avellaneda-mm, regime-mm, grid-mm, liquidation-mm, momentum-breakout, mean-reversion, aggressive-taker, hedge-agent, rfq-agent, claude-agent, apex
@@ -136,7 +146,6 @@ perp --json -e <EX> trade cancel <SYM>                  # cancel all orders for 
 ## Agent Tools
 
 ```bash
-perp --json agent schema                          # discover all commands (don't guess)
 perp --json -e <EX> trade check <SYM> <SIDE> <SIZE>  # pre-validate trade
 perp --json portfolio                              # balances + positions + risk level
 perp --json --fields totalEquity,positions portfolio  # filtered output
@@ -172,7 +181,7 @@ Response format: `{ "ok": true, "data": {...} }` or `{ "ok": false, "error": { "
 | `SYMBOL_NOT_FOUND` | `market list` to verify symbol |
 | `SIZE_TOO_SMALL` | `market info <SYM>` for min size |
 | `DUPLICATE_ORDER` | already submitted — check positions |
-| Lighter `invalid signature` | `manage setup-api-key` to regenerate |
+| Lighter `invalid signature` | `perp wallet agent approve lighter` to regenerate |
 
 ## Examples
 

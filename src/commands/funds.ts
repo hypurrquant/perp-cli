@@ -5,6 +5,8 @@ import type { ExchangeAdapter } from "../exchanges/index.js";
 import type { Network } from "../pacifica/index.js";
 import { logExecution } from "../execution-log.js";
 import { hasPacificaSdk, hasEvmAddress, isWithdrawCapable, isUsdTransferCapable, hasLighterAccount } from "../exchanges/capabilities.js";
+import { registerFundsBridgeCommands } from "./bridge.js";
+import { registerFundsRebalanceCommands } from "./rebalance.js";
 
 const DEFAULT_RELAYER = "http://localhost:3100";
 
@@ -25,9 +27,10 @@ export function registerFundsCommands(
   program: Command,
   getAdapter: () => Promise<ExchangeAdapter>,
   isJson: () => boolean,
-  getNetwork: () => Network
+  getNetwork: () => Network,
+  getAdapterForExchange: (exchange: string) => Promise<ExchangeAdapter>
 ) {
-  const funds = program.command("funds").description("Deposit, withdraw, bridge & transfer funds");
+  const funds = program.command("funds").description("Fund movement — deposit, withdraw, transfer, bridge, rebalance");
 
   // ═══════════════════════════════════════════════════════
   //  DEPOSIT
@@ -739,70 +742,6 @@ export function registerFundsCommands(
     });
 
   // ═══════════════════════════════════════════════════════
-  //  BRIDGE (CCTP)
-  // ═══════════════════════════════════════════════════════
-
-  funds
-    .command("bridge")
-    .description("Bridge USDC between chains via CCTP V2. See also: perp bridge (deBridge DLN)")
-    .requiredOption("--from <chain>", "Source chain (arbitrum, ethereum)")
-    .requiredOption("--to <chain>", "Destination chain (arbitrum, ethereum, solana)")
-    .requiredOption("--amount <amount>", "USDC amount")
-    .requiredOption("--recipient <address>", "Recipient address on destination chain")
-    .action(async (opts: { from: string; to: string; amount: string; recipient: string }) => {
-      const amountNum = parseFloat(opts.amount);
-      if (isNaN(amountNum) || amountNum <= 0) throw new Error("Invalid amount");
-
-      if (await relayerAvailable()) {
-        if (!isJson()) console.log(chalk.cyan(`\n  Bridging $${formatUsd(amountNum)} USDC via CCTP V2 (${opts.from} → ${opts.to})...\n`));
-
-        const res = await fetch(`${getRelayerUrl()}/bridge/cctp`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fromChain: opts.from,
-            toChain: opts.to,
-            amount: amountNum,
-            recipient: opts.recipient,
-          }),
-        });
-
-        const result = (await res.json()) as Record<string, unknown>;
-        if (!res.ok) throw new Error(String(result.error || "CCTP bridge failed"));
-
-        if (isJson()) return printJson(jsonOk(result));
-        console.log(chalk.green(`  Burn TX submitted!`));
-        console.log(`  TX Hash:      ${result.txHash}`);
-        console.log(`  Message Hash: ${result.messageHash}`);
-        console.log(chalk.gray(`\n  Waiting for Circle attestation (~1-3 min)...`));
-        console.log(chalk.gray(`  Check: perp funds bridge-status --hash ${result.messageHash}\n`));
-      } else {
-        if (isJson()) {
-          printJson(jsonError("RELAYER_UNAVAILABLE", "CCTP bridge requires relayer server. Start: cd packages/relayer && pnpm start"));
-          process.exit(1);
-        }
-        console.error(chalk.red("\n  CCTP bridge requires relayer server."));
-        console.error(chalk.gray("  Start: cd packages/relayer && pnpm start\n"));
-        process.exit(1);
-      }
-    });
-
-  funds
-    .command("bridge-status")
-    .description("Check CCTP bridge status")
-    .requiredOption("--hash <messageHash>", "Message hash from bridge TX")
-    .action(async (opts: { hash: string }) => {
-      const res = await fetch(`${getRelayerUrl()}/bridge/cctp/status/${opts.hash}`);
-      const result = (await res.json()) as Record<string, unknown>;
-
-      if (isJson()) return printJson(jsonOk(result));
-      console.log(chalk.cyan.bold("\n  CCTP Bridge Status\n"));
-      console.log(`  Status:      ${result.status === "complete" ? chalk.green("complete") : chalk.yellow(String(result.status))}`);
-      if (result.attestation) console.log(`  Attestation: ${chalk.gray("received")}`);
-      console.log();
-    });
-
-  // ═══════════════════════════════════════════════════════
   //  INFO (combined deposit + withdraw)
   // ═══════════════════════════════════════════════════════
 
@@ -876,10 +815,24 @@ export function registerFundsCommands(
       console.log(`  Speed: instant  |  Fee: none`);
       console.log(`  Command: ${chalk.green("perp -e hl funds transfer <amount> <address>")}`);
 
-      console.log(chalk.white.bold("\n  CCTP Bridge") + chalk.gray(" (Cross-chain USDC)"));
-      console.log(`  Routes:  Arbitrum ↔ Ethereum ↔ Solana`);
-      console.log(`  Command: ${chalk.green("perp funds bridge --from arbitrum --to solana --amount 100 --recipient <addr>")}`);
+      console.log(chalk.white.bold("\n  Cross-chain Bridge") + chalk.gray(" (multi-provider: cctp, relay, debridge)"));
+      console.log(`  Routes:  Solana, Arbitrum, Base, Avalanche, Ethereum`);
+      console.log(`  Quote:   ${chalk.green("perp funds bridge quote --from <chain> --to <chain> --amount <n>")}`);
+      console.log(`  Send:    ${chalk.green("perp funds bridge send --from <chain> --to <chain> --amount <n>")}`);
+      console.log(`  Between exchanges: ${chalk.green("perp funds bridge exchange --from <ex> --to <ex> --amount <n>")}`);
+
+      console.log(chalk.white.bold("\n  Inter-exchange Rebalance") + chalk.gray(" (orchestrated withdraw → bridge → deposit)"));
+      console.log(`  Check:   ${chalk.green("perp funds rebalance check")}`);
+      console.log(`  Plan:    ${chalk.green("perp funds rebalance plan")}`);
+      console.log(`  Execute: ${chalk.green("perp funds rebalance execute --auto-bridge")}`);
 
       console.log(chalk.gray("\n  Use --no-relay to skip relayer and pay gas yourself.\n"));
     });
+
+  // ═══════════════════════════════════════════════════════
+  //  NESTED SUBTREES — bridge (multi-provider) + rebalance
+  // ═══════════════════════════════════════════════════════
+
+  registerFundsBridgeCommands(funds, isJson);
+  registerFundsRebalanceCommands(funds, getAdapterForExchange, isJson);
 }

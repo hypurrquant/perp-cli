@@ -19,7 +19,7 @@ npx -y perp-cli --json portfolio
 - **4 Exchanges** — trade, bridge, arbitrage across Pacifica, Hyperliquid, Lighter, Aster
 - **Funding Rate Arb** — perp-perp + spot-perp scan & one-command dual-leg execution
 - **Portfolio** — single call returns balances, positions, risk level across all exchanges
-- **Funds** — deposit, withdraw, CCTP bridge, internal transfer in one group
+- **Funds** — deposit, withdraw, transfer, multi-provider bridge (cctp/relay/debridge), inter-exchange rebalance — all in one group
 - **Bots** — TWAP, grid, DCA, trailing-stop with background job management
 - **Agent-First Design** — `--json`, `--fields`, `--ndjson`, `--dry-run`, runtime schema introspection
 - **Safety** — pre-trade validation, response sanitization, client-id deduplication
@@ -42,7 +42,7 @@ perp wallet show
 
 Same EVM key works for both Hyperliquid and Lighter.
 
-> **Lighter API Key Index:** Indexes 0–3 are reserved by Lighter's frontend (web/mobile). perp-cli defaults to index `4`. Override with `LIGHTER_API_KEY_INDEX` env var or `--key-index` flag on `manage setup-api-key`. Valid range: 4–254.
+> **Lighter API Key Index:** Indexes 0–3 are reserved by Lighter's frontend (web/mobile). perp-cli defaults to index `4`. Override with `LIGHTER_API_KEY_INDEX` env var, or use `perp wallet agent approve lighter --api-key-index <n>` for managed agent slots. Valid range: 4–254.
 
 ## Command Groups
 
@@ -52,9 +52,8 @@ Same EVM key works for both Hyperliquid and Lighter.
 | `account` | Balance, positions, orders, margin |
 | `trade` | Market/limit/stop orders, close, scale, split execution |
 | `arb` | Funding rate arb — scan, exec, close, monitor (perp-perp & spot-perp) |
-| `bot` | 19 strategies, APEX orchestrator, REFLECT analytics, presets |
-| `funds` | Deposit, withdraw, transfer, CCTP bridge |
-| `bridge` | Cross-chain USDC bridge (deBridge DLN) |
+| `strategy` | 19 bot algorithms (grid, dca, twap, APEX, REFLECT, presets) + nested scripted plans |
+| `funds` | Deposit, withdraw, transfer, cross-chain bridge (multi-provider), inter-exchange rebalance |
 | `risk` | Risk limits, liquidation distance, guardrails |
 | `wallet` | Multi-wallet management & on-chain balances |
 | `history` | Execution log, PnL, performance breakdown |
@@ -63,9 +62,7 @@ Same EVM key works for both Hyperliquid and Lighter.
 | `dashboard` | Live web dashboard |
 | `settings` | CLI settings (referrals, defaults) |
 | `backtest` | Strategy backtesting |
-| `plan` | Multi-step composite execution plans |
-| `rebalance` | Cross-exchange balance management |
-| `jobs` | Background job management (tmux) |
+| `background` | Background process supervisor (tmux sessions for strategies, alerts, etc.) |
 | `alerts` | Telegram funding rate alerts with background daemon |
 | `agent` | Schema introspection, capabilities, health check |
 | `setup` | Interactive setup wizard (alias: `init`) |
@@ -117,28 +114,39 @@ perp --json arb exec <SYM> spot:<exch> <perpEx> <$>  # spot+perp entry
 perp --json arb config                               # show arb defaults
 perp --json arb history                              # past arb trade performance (alias: log)
 
-# Funds (deposit, withdraw, transfer)
+# Funds (deposit, withdraw, transfer, bridge, rebalance)
 perp --json funds deposit hyperliquid 100
 perp --json funds withdraw pacifica 50
-perp --json funds transfer 100 <ADDRESS>             # HL internal transfer
+perp --json funds transfer 100 <ADDRESS>             # HL internal transfer (instant)
+perp --json funds bridge quote --from solana --to arbitrum --amount 100
+perp --json funds bridge send --from solana --to arbitrum --amount 100   # auto-cheapest provider
+perp --json funds bridge exchange --from pacifica --to hyperliquid --amount 100
+perp --json funds rebalance check                    # balances across exchanges
+perp --json funds rebalance plan                     # compute optimal moves
+perp --json funds rebalance execute --auto-bridge    # withdraw → bridge → deposit
 perp --json funds info                               # all routes & limits
 
 # Risk
 perp --json risk limits --max-leverage 5
 perp --json risk liquidation-distance
 
-# Bots (19 strategies)
-perp bot list-strategies                             # list all available strategies
-perp bot run <strategy> [symbol]                     # run any strategy
-perp bot apex [symbol]                               # APEX autonomous orchestrator
-perp bot reflect                                     # trading performance analysis
-perp bot preset-list                                 # list strategy presets
-perp --json bot twap <SYM> buy <SIZE> 30m
-perp --json bot grid <SYM> --range 5 --grids 10 --size 100
+# Strategies (19 bot algorithms + nested scripted plans)
+perp strategy list-strategies                        # list all available strategies
+perp strategy run <strategy> [symbol]                # run any strategy
+perp strategy apex [symbol]                          # APEX autonomous orchestrator
+perp strategy reflect                                # trading performance analysis
+perp strategy preset-list                            # list strategy presets
+perp --json strategy twap <SYM> buy <SIZE> 30m
+perp --json strategy grid <SYM> --range 5 --grids 10 --size 100
+perp strategy plan example                           # scripted multi-step plan format
+perp --json strategy plan validate <FILE>            # validate scripted plan
+perp --json strategy plan execute <FILE> --dry-run   # dry-run scripted plan
 
-# Bridge (cross-chain USDC)
-perp --json bridge quote --from solana --to arbitrum --amount 100
-perp --json bridge send --from solana --to arbitrum --amount 100
+# Background process supervisor (tmux)
+perp background list                                 # list running jobs
+perp background stop <ID>                            # stop a job
+perp background logs <ID> -f                         # follow logs
+
 ```
 
 ## Telegram Alerts
@@ -230,9 +238,6 @@ Built following [agent-first CLI principles](https://justin.poehnelt.com/posts/r
 # Every command returns structured JSON envelope
 perp --json portfolio
 # → { "ok": true, "data": {...}, "meta": { "timestamp": "..." } }
-
-# Runtime schema introspection (don't guess commands — query this)
-perp --json agent schema
 
 # Filter output to specific fields (saves tokens)
 perp --json --fields totalEquity,risk portfolio

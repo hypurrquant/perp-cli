@@ -5,12 +5,12 @@ import { printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import { validatePlan, executePlan, type ExecutionPlan } from "../plan-executor.js";
 import chalk from "chalk";
 
-export function registerPlanCommands(
-  program: Command,
+export function registerStrategyPlanCommands(
+  parent: Command,
   getAdapter: () => Promise<ExchangeAdapter>,
   isJson: () => boolean,
 ) {
-  const plan = program.command("plan").description("Composite execution plans (multi-step atomic operations)");
+  const plan = parent.command("plan").description("Composite execution plans (multi-step atomic operations)");
 
   // ── plan validate ──
   plan

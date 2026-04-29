@@ -5,11 +5,11 @@ import chalk from "chalk";
 import { existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 
-export function registerJobsCommands(
+export function registerBackgroundCommands(
   program: Command,
   isJson: () => boolean
 ) {
-  const jobs = program.command("jobs").description("Background job management (tmux)");
+  const jobs = program.command("background").description("Background process supervisor (tmux sessions for strategies, alerts, etc.)");
 
   jobs
     .command("list", { isDefault: true })

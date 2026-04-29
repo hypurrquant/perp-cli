@@ -81,12 +81,14 @@ perp --json arb scan --min 5
 ```
 
 ### Lighter API Key Setup
-Lighter uses a separate API key for trading, but **this is handled automatically**.
-When `LIGHTER_PRIVATE_KEY` is set (env var or `wallet set`), the CLI auto-generates and saves the API key on first use.
+Lighter uses a separate API key for trading. There are two paths:
 
-If auto-setup fails (e.g. no ETH for gas on Lighter chain), retry manually:
+1. **Auto-setup (default)**: When `LIGHTER_PRIVATE_KEY` is set (env var or `wallet set`), the CLI auto-generates and saves the API key (slot 4) on first use.
+2. **Managed agent (recommended for long-running agents)**: `perp wallet agent approve lighter --master <wallet> --api-key-index <slot>` registers a per-agent slot (4-254) with explicit expiry tracking + 3-tier signer routing.
+
+If auto-setup fails (e.g. transient network error), retry manually:
 ```bash
-perp --json -e lighter manage setup-api-key
+perp --json wallet agent approve lighter --master <wallet>
 ```
 
 ### Using the Same EVM Key for Multiple Exchanges

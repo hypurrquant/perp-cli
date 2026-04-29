@@ -12,15 +12,30 @@ import type {
 } from "./interface.js";
 import type { SolanaSigner } from "../signer/index.js";
 import { LocalSolanaSigner } from "../signer/index.js";
+import type { AgentMeta } from "../settings.js";
+import { isExpired } from "../agent-wallet/expiry.js";
+import { PerpError } from "../errors.js";
 
 export class PacificaAdapter implements ExchangeAdapter {
   readonly name = "pacifica";
   readonly chain = "solana";
   readonly aliases = ["pac"] as const;
   private client: PacificaClient;
+  /** Tier 3: PK direct (constructor-supplied keypair). */
   private _solanaSigner: SolanaSigner;
+  /** Tier 2: OWS master signer (set via setSigner). */
+  private _masterSigner?: SolanaSigner;
+  /** Tier 1: agent OWS signer (Phase 2c). */
+  private _agentSigner?: SolanaSigner;
+  /** Tier 1 metadata. */
+  private _agentMeta?: AgentMeta;
+  /** --no-agent bypass flag. */
+  private _useNoAgent = false;
+  /** True when adapter was constructed without a real PK (read-only). */
   private _hasRealKey: boolean;
+  /** Public Solana base58 of the active signer (`_resolveSigner().address`). */
   private account: string;
+  /** Bound `signMessage` for the active signer (Phase 2c routes through `_resolveSigner`). */
   private signMessage: (msg: Uint8Array) => Promise<Uint8Array>;
   private _marketsCache: ExchangeMarketInfo[] | null = null;
   private _marketsCacheTime = 0;
@@ -31,20 +46,104 @@ export class PacificaAdapter implements ExchangeAdapter {
     this._hasRealKey = hasRealKey;
     this.account = this._solanaSigner.getPublicKeyBase58();
     this.client = new PacificaClient({ network, builderCode });
-    this.signMessage = (msg) => this._solanaSigner.signMessage(msg);
+    // Hot-path methods always go through `_resolveSigner()` so the bound
+    // `signMessage` reflects the highest-priority active tier.
+    this.signMessage = (msg) => this._resolveSigner().signer.signMessage(msg);
   }
 
   private ensureSigner(): void {
-    if (!this._hasRealKey) {
-      throw new Error("No private key configured. Run: perp setup");
+    // Resolves across all tiers; throws PerpError if none available.
+    this._resolveSigner();
+  }
+
+  /**
+   * Inject an external Solana signer (Tier 2 — OWS master).
+   * Backward-compatible: existing callers (e.g. `perp -e pacifica --ows ...`
+   * in `_initWithOws`) continue to work; the master signer is what
+   * `_resolveSigner()` falls back to when no agent is registered.
+   */
+  setSigner(signer: SolanaSigner): void {
+    this._masterSigner = signer;
+    this._solanaSigner = signer;
+    this.account = signer.getPublicKeyBase58();
+    this._hasRealKey = true;
+    this.signMessage = (msg) => this._resolveSigner().signer.signMessage(msg);
+  }
+
+  /** Tier 1: inject agent OWS Solana signer (Phase 2c). */
+  setAgentSigner(meta: AgentMeta, signer: SolanaSigner): void {
+    this._agentMeta = meta;
+    this._agentSigner = signer;
+    // The `account` field is the master Solana address (used in REST envelopes
+    // as the `account` key) — agent path puts the master in `account` and the
+    // agent in `agent_wallet`. Capture the master Solana address from the
+    // AgentMeta so REST flows can reference it.
+    if (meta.userSolanaAddress) {
+      this.account = meta.userSolanaAddress;
     }
   }
 
-  /** Inject an external Solana signer. */
-  setSigner(signer: SolanaSigner): void {
-    this._solanaSigner = signer;
-    this.account = signer.getPublicKeyBase58();
-    this.signMessage = (msg) => this._solanaSigner.signMessage(msg);
+  /** Bypass Tier 1 (agent) — used for `--no-agent` flag. */
+  setNoAgent(noAgent: boolean): void {
+    this._useNoAgent = noAgent;
+  }
+
+  /** True only when ALL THREE tiers are unconfigured. */
+  get isReadOnly(): boolean {
+    return !this._agentSigner && !this._masterSigner && !this._hasRealKey;
+  }
+
+  /** Which signer tier is currently active (for debug/diagnostics). */
+  get activeSignerTier(): "agent" | "master" | "pk" | null {
+    try {
+      return this._resolveSigner().tier;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Resolve the active signer across three tiers. Mirrors AsterAdapter._resolveSigner. */
+  private _resolveSigner(): { tier: "agent" | "master" | "pk"; signer: SolanaSigner; address: string } {
+    // Tier 1: agent (when registered, not expired, --no-agent NOT set)
+    if (!this._useNoAgent && this._agentSigner && this._agentMeta) {
+      if (isExpired(this._agentMeta)) {
+        // Skip Tier 1 only if Tier 2/3 available; otherwise throw AGENT_EXPIRED
+        if (!this._masterSigner && !this._hasRealKey) {
+          throw new PerpError("AGENT_EXPIRED", "Agent wallet has expired", {
+            remediation: "perp wallet agent approve pacifica --rotate",
+          });
+        }
+        // fall through to Tier 2/3
+      } else {
+        return { tier: "agent", signer: this._agentSigner, address: this._agentSigner.getPublicKeyBase58() };
+      }
+    }
+
+    // Tier 2: OWS master
+    if (this._masterSigner) {
+      return { tier: "master", signer: this._masterSigner, address: this._masterSigner.getPublicKeyBase58() };
+    }
+
+    // Tier 3: PK direct
+    if (this._hasRealKey) {
+      // Guard: legacy test fixtures (e.g. bugfix-v042.test.ts) construct adapters
+      // via `Object.create(PacificaAdapter.prototype)` and only set `_hasRealKey = true`
+      // — `_solanaSigner` is undefined in that case. Fall back to the cached
+      // `account` field when available.
+      const address = this._solanaSigner
+        ? this._solanaSigner.getPublicKeyBase58()
+        : this.account;
+      return { tier: "pk", signer: this._solanaSigner, address };
+    }
+
+    // No signer at any tier
+    throw new PerpError(
+      "NO_SIGNER_AVAILABLE",
+      "No signing path configured for Pacifica",
+      {
+        remediation: "Run one of: (a) perp wallet agent approve pacifica --master <wallet>; (b) perp wallet generate && perp -e pacifica --ows <wallet>; (c) export PACIFICA_PRIVATE_KEY=...",
+      },
+    );
   }
 
   /** Access the underlying Keypair (only available with LocalSolanaSigner). */

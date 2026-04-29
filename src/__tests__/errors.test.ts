@@ -120,10 +120,13 @@ describe("ERROR_CODES coverage", () => {
     }
   });
 
-  it("retryable codes are all 5xx or 429", () => {
-    for (const val of Object.values(ERROR_CODES)) {
-      if (val.retryable) {
-        expect(val.status).toBeGreaterThanOrEqual(429);
+  it("retryable codes are all 4xx (≥429 or 423 LOCK_HELD) or 5xx", () => {
+    for (const val of Object.entries(ERROR_CODES)) {
+      const [key, entry] = val;
+      if (entry.retryable) {
+        // LOCK_HELD uses 423 (Locked) by design — it is retryable after a short wait
+        const allowed = entry.status === 423 || entry.status >= 429;
+        expect(allowed, `${key} has retryable=true but unexpected status ${entry.status}`).toBe(true);
       }
     }
   });

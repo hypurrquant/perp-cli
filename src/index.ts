@@ -22,28 +22,26 @@ import { resolveExchangeName } from "./exchanges/registry.js";
 import { registerMarketCommands } from "./commands/market.js";
 import { registerAccountCommands } from "./commands/account.js";
 import { registerTradeCommands } from "./commands/trade.js";
-import { registerManageCommands } from "./commands/manage.js";
+// manage commands now register under `wallet manage ...` via registerWalletCommands.
 // stream commands removed — WS feeds still used by dashboard/event-stream internally
 import { registerArbCommands } from "./commands/arb.js";
 import { registerWalletCommands } from "./commands/wallet.js";
-import { registerOwsCommands } from "./commands/ows.js";
-import { registerBridgeCommands } from "./commands/bridge.js";
-// deposit + withdraw merged into funds
+// bridge + rebalance now nested under `funds` — registered inside registerFundsCommands.
 import { registerFundsCommands } from "./commands/funds.js";
 // alert commands removed
 import { registerArbAutoCommands } from "./commands/arb-auto.js";
 import { registerArbManageCommands } from "./commands/arb/index.js";
-import { registerAgentCommands } from "./commands/agent.js";
-import { registerRebalanceCommands } from "./commands/rebalance.js";
-import { registerBotCommands } from "./commands/bot.js";
+// Agent commands now register under `wallet agent ...` via registerWalletCommands.
+import { registerStrategyCommands } from "./commands/bot.js";
 import { registerRiskCommands } from "./commands/risk.js";
 import { registerHistoryCommands } from "./commands/history.js";
 import { registerSettingsCommands } from "./commands/settings.js";
 // dex commands merged into market (hip3) — use --dex flag for markets/balance
-import { registerPlanCommands } from "./commands/plan.js";
+// `plan` is no longer top-level — registered as `strategy plan` inside
+// registerStrategyCommands.
 // funding merged into arb.ts
 import { registerBacktestCommands } from "./commands/backtest.js";
-import { registerDashboardCommands } from "./commands/dashboard.js";
+import { registerPortfolioCommand } from "./commands/portfolio.js";
 import { registerInitCommand, EXCHANGE_ENV_MAP, validateKey } from "./commands/init.js";
 import { registerAlertCommands } from "./commands/alerts.js";
 import { loadSettings, saveSettings } from "./settings.js";
@@ -72,6 +70,8 @@ program
   .option("-w, --wallet <name>", "Use a specific wallet by name (from 'perp wallet list')")
   .option("--ows <name>", "Use an OWS (Open Wallet Standard) wallet by name")
   .option("--ows-key <token>", "OWS API key token (ows_key_...) for policy-gated agent access")
+  .option("--no-agent", "Bypass agent wallet routing for this run; falls back to OWS master or PK direct")
+  .option("--passphrase <pp>", "Master OWS passphrase (also accepts OWS_PASSPHRASE env or stdin)")
   .option("--dex <name>", "HIP-3 deployed perp dex name (Hyperliquid only)")
   .configureOutput({
     writeErr: (str) => {
@@ -131,6 +131,25 @@ async function getAdapter(): Promise<ExchangeAdapter> {
       const settings = loadSettings();
       const builderCode = process.env.PACIFICA_BUILDER_CODE || settings.referralCodes.pacifica || "PERPCLI";
       _pacificaAdapter = new PacificaAdapter(keypair, pacNetwork, builderCode, !!pk);
+      // Tier 2: OWS master if --ows or settings.owsActiveWallet (Phase 2c)
+      const pacOwsName = owsName || _settings.owsActiveWallet;
+      if (pacOwsName && !pk) {
+        const { OwsSolanaSigner } = await import("./signer/ows-solana.js");
+        const { resolvePassphrase } = await import("./agent-wallet/passphrase.js");
+        const pp = await resolvePassphrase({ flag: opts.passphrase as string | undefined });
+        if (pp !== null) _pacificaAdapter.setSigner(OwsSolanaSigner.create(pacOwsName, pp));
+      }
+      // Tier 1: agent if registered (Phase 2c)
+      const { getAgent: getPacAgent } = await import("./agent-wallet/store.js");
+      const pacAgentMeta = getPacAgent("pacifica");
+      if (pacAgentMeta) {
+        const { OwsSolanaSigner: PacOwsSolanaSigner } = await import("./signer/ows-solana.js");
+        // Pacifica agent wallet was created with empty passphrase (see runPacApproveFlow);
+        // open with "" to match. Agent at-rest encryption handled by OWS storage layer.
+        const agentSigner = PacOwsSolanaSigner.create(pacAgentMeta.agentWalletName, "");
+        _pacificaAdapter.setAgentSigner(pacAgentMeta, agentSigner);
+      }
+      if (opts.noAgent) _pacificaAdapter.setNoAgent(true);
       _adapter = _pacificaAdapter;
       break;
     }
@@ -155,12 +174,49 @@ async function getAdapter(): Promise<ExchangeAdapter> {
           }
         }
       }
+      // Tier 2: OWS master if --ows or settings.owsActiveWallet
+      const hlOwsName = owsName || _settings.owsActiveWallet;
+      if (hlOwsName && !pk) {
+        const { OwsEvmSigner } = await import("./signer/ows-evm.js");
+        const { resolvePassphrase } = await import("./agent-wallet/passphrase.js");
+        const pp = await resolvePassphrase({ flag: opts.passphrase as string | undefined });
+        if (pp !== null) _hlAdapter.setSigner(OwsEvmSigner.create(hlOwsName, pp));
+      }
+      // Tier 1: agent if registered
+      const { getAgent: getHlAgent } = await import("./agent-wallet/store.js");
+      const hlAgentMeta = getHlAgent("hyperliquid");
+      if (hlAgentMeta) {
+        const { OwsEvmSigner: HlOwsEvmSigner } = await import("./signer/ows-evm.js");
+        // HL agent wallet was created with empty passphrase (see runHlApproveFlow);
+        // open with "" to match. Agent at-rest encryption handled by OWS storage layer.
+        const agentSigner = HlOwsEvmSigner.create(hlAgentMeta.agentWalletName, "");
+        _hlAdapter.setAgentSigner(hlAgentMeta, agentSigner);
+      }
+      if (opts.noAgent) _hlAdapter.setNoAgent(true);
       _adapter = _hlAdapter;
       break;
     }
     case "lighter": {
       const { LighterAdapter } = await import("./exchanges/lighter.js");
+      // Phase 2d: when an agent is registered AND not bypassed, the agent's
+      // L2 secp256k1 key + slot must be loaded BEFORE init() so the WASM client
+      // is created with the agent identity. We can't get the agent L2 key from
+      // disk (Lighter has no OWS curve binding for raw L2 keys); instead Phase
+      // 2d expects users to keep `LIGHTER_API_KEY` env in sync with the
+      // settings.agents.lighter[name].apiKeyIndex slot via `wallet agent
+      // approve lighter` (which sets the env), or to re-run approve when
+      // rotating. The adapter prefers agent meta over env when both exist.
+      const { getAgent: getLtAgent } = await import("./agent-wallet/store.js");
+      const ltAgentMeta = getLtAgent("lighter");
+      const ltAgentApiKey = process.env.LIGHTER_API_KEY ?? "";
       _lighterAdapter = new LighterAdapter(pk ?? "", isTestnet);
+      if (ltAgentMeta && ltAgentApiKey && !opts.noAgent) {
+        // Tier 1 wiring: bind agent meta + L2 key. setupApiKey at approve time
+        // saves the L2 hex key to LIGHTER_API_KEY env, so this path activates
+        // when the user has both an agent registered and the matching env var.
+        _lighterAdapter.setAgentSigner(ltAgentMeta, ltAgentApiKey);
+      }
+      if (opts.noAgent) _lighterAdapter.setNoAgent(true);
       await _lighterAdapter.init();
       if (pk) {
         const ltSettings = loadSettings();
@@ -184,8 +240,25 @@ async function getAdapter(): Promise<ExchangeAdapter> {
     }
     case "aster": {
       const { AsterAdapter } = await import("./exchanges/aster.js");
-      const ast = new AsterAdapter(undefined, undefined, isTestnet);
+      const ast = new AsterAdapter(pk ?? undefined, isTestnet);  // Tier 3 from PK
       await ast.init();
+      // Tier 2: OWS master if --ows or settings.owsActiveWallet
+      const asterOwsName = owsName || _settings.owsActiveWallet;
+      if (asterOwsName) {
+        const { OwsEvmSigner } = await import("./signer/ows-evm.js");
+        const { resolvePassphrase } = await import("./agent-wallet/passphrase.js");
+        const pp = await resolvePassphrase({ flag: opts.passphrase as string | undefined });
+        if (pp !== null) ast.setMasterSigner(OwsEvmSigner.create(asterOwsName, pp));
+      }
+      // Tier 1: agent if registered
+      const { getAgent: getAsterAgent } = await import("./agent-wallet/store.js");
+      const agentMeta = getAsterAgent("aster");
+      if (agentMeta) {
+        const { agentSigningStrategyFor } = await import("./agent-wallet/signing-strategy.js");
+        const strat = agentSigningStrategyFor(agentMeta, owsKeyToken ?? "");
+        ast.setAgent(agentMeta, strat);
+      }
+      if (opts.noAgent) ast.setNoAgent(true);
       _adapter = ast;
       break;
     }
@@ -218,6 +291,14 @@ async function _initWithOws(
       const dummyKeypair = Keypair.generate();
       _pacificaAdapter = new PacificaAdapter(dummyKeypair, pacNetwork, builderCode, true);
       _pacificaAdapter.setSigner(OwsSolanaSigner.create(owsWalletName, passphrase));
+      // Tier 1: agent if registered (Phase 2c)
+      const { getAgent: getPacAgentOws } = await import("./agent-wallet/store.js");
+      const pacAgentMetaOws = getPacAgentOws("pacifica");
+      if (pacAgentMetaOws) {
+        const agentSignerOws = OwsSolanaSigner.create(pacAgentMetaOws.agentWalletName, "");
+        _pacificaAdapter.setAgentSigner(pacAgentMetaOws, agentSignerOws);
+      }
+      if ((opts as Record<string, unknown>).noAgent) _pacificaAdapter.setNoAgent(true);
       _adapter = _pacificaAdapter;
       return _adapter;
     }
@@ -235,6 +316,22 @@ async function _initWithOws(
       _lighterAdapter.setSigner(OwsEvmSigner.create(owsWalletName, passphrase));
       await _lighterAdapter.init();
       _adapter = _lighterAdapter;
+      return _adapter;
+    }
+    case "aster": {
+      const { AsterAdapter } = await import("./exchanges/aster.js");
+      const asterOws = new AsterAdapter(undefined, isTestnet);
+      await asterOws.init();
+      asterOws.setMasterSigner(OwsEvmSigner.create(owsWalletName, passphrase));
+      // Optionally also set agent if registered
+      const { getAgent: getAsterAgentOws } = await import("./agent-wallet/store.js");
+      const asterMeta = getAsterAgentOws("aster");
+      if (asterMeta) {
+        const { agentSigningStrategyFor } = await import("./agent-wallet/signing-strategy.js");
+        asterOws.setAgent(asterMeta, agentSigningStrategyFor(asterMeta, owsKeyToken ?? ""));
+      }
+      if ((opts as Record<string, unknown>).noAgent) asterOws.setNoAgent(true);
+      _adapter = asterOws;
       return _adapter;
     }
     default:
@@ -271,17 +368,16 @@ function getHLAdapter(): HyperliquidAdapter {
 registerMarketCommands(program, getAdapter, isJson, getAdapterForExchange);
 registerAccountCommands(program, getAdapter, isJson, getAdapterForExchange);
 registerTradeCommands(program, getAdapter, isJson, isDryRun, getAdapterForExchange);
-registerManageCommands(program, getAdapter, isJson, getPacificaAdapter);
+// manage tree wired inside registerWalletCommands below.
 // stream commands removed
 registerArbCommands(program, isJson, getAdapterForExchange);
-registerWalletCommands(program, isJson);
-registerOwsCommands(program, isJson);
-registerBridgeCommands(program, isJson);
+registerWalletCommands(program, isJson, getAdapter, getPacificaAdapter);
 registerFundsCommands(
   program,
   getAdapter,
   isJson,
-  () => program.opts().network as Network
+  () => program.opts().network as Network,
+  getAdapterForExchange
 );
 // alert commands removed
 
@@ -302,6 +398,17 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
       const s1 = loadSettings();
       const builderCode = process.env.PACIFICA_BUILDER_CODE || s1.referralCodes.pacifica || "PERPCLI";
       _pacificaAdapter = new PacificaAdapter(keypair, pacNetwork, builderCode, !!pk);
+      // Tier 1: agent if registered (Phase 2c)
+      const { getAgent: getPacAgentEx } = await import("./agent-wallet/store.js");
+      const pacAgentMetaEx = getPacAgentEx("pacifica");
+      if (pacAgentMetaEx) {
+        const { OwsSolanaSigner: PacOwsSolanaSignerEx } = await import("./signer/ows-solana.js");
+        // Pacifica agent wallet was created with empty passphrase (see runPacApproveFlow);
+        // open with "" to match. Agent at-rest encryption handled by OWS storage layer.
+        const agentSignerEx = PacOwsSolanaSignerEx.create(pacAgentMetaEx.agentWalletName, "");
+        _pacificaAdapter.setAgentSigner(pacAgentMetaEx, agentSignerEx);
+      }
+      if (opts.noAgent) _pacificaAdapter.setNoAgent(true);
       if (!_adapter) _adapter = _pacificaAdapter;
       return _pacificaAdapter;
     }
@@ -327,13 +434,33 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
           }
         }
       }
+      // Tier 1: agent if registered
+      {
+        const { getAgent: getHlAgent2 } = await import("./agent-wallet/store.js");
+        const hlAgentMeta2 = getHlAgent2("hyperliquid");
+        if (hlAgentMeta2) {
+          const { OwsEvmSigner: HlOwsEvmSigner2 } = await import("./signer/ows-evm.js");
+          // HL agent wallet was created with empty passphrase (see runHlApproveFlow);
+          // open with "" to match. Agent at-rest encryption handled by OWS storage layer.
+          const agentSigner2 = HlOwsEvmSigner2.create(hlAgentMeta2.agentWalletName, "");
+          _hlAdapter.setAgentSigner(hlAgentMeta2, agentSigner2);
+        }
+        if (opts.noAgent) _hlAdapter.setNoAgent(true);
+      }
       if (!_adapter) _adapter = _hlAdapter;
       return _hlAdapter;
     }
     case "lighter": {
       if (_lighterAdapter) return _lighterAdapter;
       const { LighterAdapter } = await import("./exchanges/lighter.js");
+      const { getAgent: getLtAgentEx } = await import("./agent-wallet/store.js");
+      const ltAgentMetaEx = getLtAgentEx("lighter");
+      const ltAgentApiKeyEx = process.env.LIGHTER_API_KEY ?? "";
       _lighterAdapter = new LighterAdapter(pk ?? "", isTestnet);
+      if (ltAgentMetaEx && ltAgentApiKeyEx && !opts.noAgent) {
+        _lighterAdapter.setAgentSigner(ltAgentMetaEx, ltAgentApiKeyEx);
+      }
+      if (opts.noAgent) _lighterAdapter.setNoAgent(true);
       await _lighterAdapter.init();
       if (pk) {
         const s3 = loadSettings();
@@ -357,9 +484,27 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
     }
     case "aster": {
       const { AsterAdapter } = await import("./exchanges/aster.js");
-      const ast = new AsterAdapter(undefined, undefined, isTestnet);
-      await ast.init();
-      return ast;
+      const astEx = new AsterAdapter(pk ?? undefined, isTestnet);
+      await astEx.init();
+      // Tier 2: OWS master if --ows or settings.owsActiveWallet
+      const asterExOwsName = (opts.ows as string | undefined) || _settings.owsActiveWallet;
+      if (asterExOwsName) {
+        const { OwsEvmSigner } = await import("./signer/ows-evm.js");
+        const { resolvePassphrase } = await import("./agent-wallet/passphrase.js");
+        const pp = await resolvePassphrase({ flag: opts.passphrase as string | undefined });
+        if (pp !== null) astEx.setMasterSigner(OwsEvmSigner.create(asterExOwsName, pp));
+      }
+      // Tier 1: agent if registered
+      const owsKeyEx = (opts.owsKey as string | undefined) || process.env.OWS_API_KEY;
+      const { getAgent: getAsterAgentEx } = await import("./agent-wallet/store.js");
+      const agentMetaEx = getAsterAgentEx("aster");
+      if (agentMetaEx) {
+        const { agentSigningStrategyFor } = await import("./agent-wallet/signing-strategy.js");
+        astEx.setAgent(agentMetaEx, agentSigningStrategyFor(agentMetaEx, owsKeyEx ?? ""));
+      }
+      if (opts.noAgent) astEx.setNoAgent(true);
+      if (!_adapter) _adapter = astEx;
+      return astEx;
     }
     default:
       throw new Error(`Unknown exchange: ${exchange}`);
@@ -382,319 +527,29 @@ async function getHLAdapterForDex(dex: string): Promise<HyperliquidAdapter> {
 
 registerArbAutoCommands(program, getAdapterForExchange, isJson, getHLAdapterForDex);
 registerArbManageCommands(program, getAdapterForExchange, isJson);
-registerAgentCommands(program, getAdapter, isJson);
-// withdraw merged into funds
-registerRebalanceCommands(program, getAdapterForExchange, isJson);
+// `agent` is no longer top-level — registered as `wallet agent` inside
+// registerWalletCommands above.
+// withdraw merged into funds.
+// `rebalance` is no longer top-level — registered as `funds rebalance` inside
+// registerFundsCommands above.
 
-// Jobs & strategies
-import { registerJobsCommands } from "./commands/jobs.js";
-registerJobsCommands(program, isJson);
-registerBotCommands(program, getAdapter, getAdapterForExchange, isJson);
+// Background processes & strategies
+import { registerBackgroundCommands } from "./commands/jobs.js";
+registerBackgroundCommands(program, isJson);
+registerStrategyCommands(program, getAdapter, getAdapterForExchange, isJson);
 
 // Agent-friendly commands
 registerRiskCommands(program, getAdapterForExchange, isJson);
 registerHistoryCommands(program, isJson, getAdapterForExchange);
 registerSettingsCommands(program, isJson, getAdapterForExchange);
 // dex commands removed — use 'market hip3' + --dex flag
-registerPlanCommands(program, getAdapter, isJson);
+// `plan` is no longer top-level — registered as `strategy plan` inside
+// registerStrategyCommands above.
 // funding merged into arb — registerFundingCommands removed
 registerBacktestCommands(program, isJson);
-registerDashboardCommands(program, getAdapterForExchange, isJson, getHLAdapterForDex);
+registerPortfolioCommand(program, getAdapterForExchange, isJson, _pkg.version, getHLAdapterForDex);
 registerInitCommand(program);
 registerAlertCommands(program, isJson);
-
-// Agent discovery: perp api-spec — deprecated, use 'perp agent schema'
-const apiSpecCmd = program
-  .command("api-spec")
-  .description("Use 'perp agent schema'")
-  .action(async () => {
-    const { jsonOk, printJson } = await import("./utils.js");
-    const { getCliSpec } = await import("./cli-spec.js");
-    printJson(jsonOk(getCliSpec(program)));
-  });
-(apiSpecCmd as any)._hidden = true;
-
-// Unified dashboard: balances + positions + top arb opportunities
-program.command("status")
-  .description("Unified dashboard: balances, positions, and top arb opportunities")
-  .option("--health", "Check connectivity only")
-  .action(async (opts: { health?: boolean }) => {
-    if (opts.health) { const { runHealthCheck } = await import("./commands/risk.js"); return runHealthCheck(isJson); }
-    const json = isJson();
-    const { formatUsd, formatPnl, makeTable, printJson, jsonOk, withJsonErrors } = await import("./utils.js");
-    const { fetchAllFundingRates, TOP_SYMBOLS } = await import("./funding-rates.js");
-    const { saveFundingSnapshot, getHistoricalRates } = await import("./funding-history.js");
-
-    await withJsonErrors(json, async () => {
-      const EX_LIST = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
-      const exAbbr = (e: string) => e === "pacifica" ? "PAC" : e === "hyperliquid" ? "HL" : e === "lighter" ? "LT" : "AST";
-
-      // Fetch balances + positions + spot balances + arb scan in parallel
-      type SpotHolding = { token: string; total: string; available: string; held: string; valueUsd: number };
-      const snapshotPromises = EX_LIST.map(async (ex) => {
-        try {
-          const adapter = await getAdapterForExchange(ex);
-          const [balance, positions, orders] = await Promise.all([
-            adapter.getBalance(), adapter.getPositions(), adapter.getOpenOrders(),
-          ]);
-          // Fetch spot balances for HL and LT (Pacifica is perp-only)
-          let spotHoldings: SpotHolding[] = [];
-          let isUnified = false;
-          try {
-            if (ex === "hyperliquid") {
-              const { HyperliquidSpotAdapter } = await import("./exchanges/hyperliquid-spot.js");
-              const hlSpot = new HyperliquidSpotAdapter(adapter as HyperliquidAdapter);
-              await hlSpot.init();
-              const [raw, markets] = await Promise.all([hlSpot.getSpotBalances(), hlSpot.getSpotMarkets()]);
-              const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
-              const strip = (t: string) => t.replace(/-SPOT$/i, "").toUpperCase();
-              spotHoldings = raw.filter(b => Number(b.total) > 0).map(b => {
-                const base = strip(b.token);
-                return { ...b, valueUsd: base === "USDC" ? Number(b.total) : (priceMap.get(base) ?? 0) * Number(b.total) };
-              });
-              isUnified = !(adapter as HyperliquidAdapter).dex;
-            } else if (ex === "lighter") {
-              const { LighterAdapter } = await import("./exchanges/lighter.js");
-              const { LighterSpotAdapter } = await import("./exchanges/lighter-spot.js");
-              const ltSpot = new LighterSpotAdapter(adapter as InstanceType<typeof LighterAdapter>);
-              await ltSpot.init();
-              const [raw, markets] = await Promise.all([ltSpot.getSpotBalances(), ltSpot.getSpotMarkets()]);
-              const priceMap = new Map(markets.map(m => [m.baseToken.toUpperCase(), Number(m.markPrice)]));
-              spotHoldings = raw.filter(b => Number(b.total) > 0).map(b => ({
-                ...b,
-                valueUsd: b.token === "USDC" || b.token === "USDC_SPOT" ? Number(b.total) : (priceMap.get(b.token.toUpperCase()) ?? 0) * Number(b.total),
-              }));
-            }
-          } catch { /* spot not available */ }
-          return { exchange: ex, connected: true, balance, positions, openOrders: orders.length, spotHoldings, isUnified, error: undefined as string | undefined };
-        } catch (err) {
-          return { exchange: ex, connected: false, balance: null as null, positions: [] as never[], openOrders: 0, spotHoldings: [] as SpotHolding[], isUnified: false, error: err instanceof Error ? err.message : String(err) };
-        }
-      });
-
-      const arbPromise = fetchAllFundingRates({ symbols: TOP_SYMBOLS, minSpread: 0 }).catch(() => null);
-      const [snapshots, arbSnapshot] = await Promise.all([Promise.all(snapshotPromises), arbPromise]);
-
-      // Save funding snapshot for sparkline history
-      if (arbSnapshot) {
-        try { const allRates = arbSnapshot.symbols.flatMap(s => s.rates); if (allRates.length > 0) saveFundingSnapshot(allRates); } catch { /* */ }
-      }
-
-      // Build totals (include non-USDC spot value for unified accounts)
-      let totalEquity = 0;
-      let totalSpotValue = 0;
-      type PosWithEx = { symbol: string; exchange: string; side: string; size: string; entryPrice: string; markPrice: string; unrealizedPnl: string; leverage: number };
-      const allPositions: PosWithEx[] = [];
-      const allSpotHoldings: (SpotHolding & { exchange: string })[] = [];
-      for (const s of snapshots) {
-        if (s.balance) totalEquity += Number(s.balance.equity);
-        for (const p of s.positions) allPositions.push({ ...p, exchange: s.exchange });
-        // For unified accounts (HL), USDC is already in perp equity — only add non-USDC spot
-        const displaySpot = s.isUnified
-          ? s.spotHoldings.filter(b => b.token.replace(/-SPOT$/i, "").toUpperCase() !== "USDC")
-          : s.spotHoldings;
-        const spotVal = displaySpot.reduce((sum, b) => sum + b.valueUsd, 0);
-        totalSpotValue += spotVal;
-        totalEquity += spotVal;
-        for (const b of displaySpot) allSpotHoldings.push({ ...b, exchange: s.exchange });
-      }
-
-      // Top arb
-      const topArb = arbSnapshot
-        ? arbSnapshot.symbols.filter(s => s.maxSpreadAnnual >= 5).sort((a, b) => b.maxSpreadAnnual - a.maxSpreadAnnual).slice(0, 5)
-        : [];
-
-      // Risk
-      const marginUsed = snapshots.reduce((s, x) => s + (x.balance ? Number(x.balance.marginUsed) : 0), 0);
-      const marginPct = totalEquity > 0 ? (marginUsed / totalEquity) * 100 : 0;
-      const riskLevel = marginPct < 30 ? "LOW" : marginPct < 60 ? "MEDIUM" : "HIGH";
-
-      if (json) {
-        const now = new Date();
-        const h24 = new Date(now.getTime() - 24 * 3600_000);
-        return printJson(jsonOk({
-          version: _pkg.version,
-          totalEquity,
-          riskLevel,
-          exchanges: snapshots.map(s => ({
-            name: s.exchange, connected: s.connected,
-            equity: s.balance ? Number(s.balance.equity) : 0,
-            available: s.balance ? Number(s.balance.available) : 0,
-            spotHoldings: s.spotHoldings.filter(b => Number(b.total) > 0).map(b => ({
-              token: b.token, total: b.total, available: b.available, valueUsd: b.valueUsd,
-            })),
-          })),
-          totalSpotValue,
-          positions: allPositions,
-          topArbOpportunities: await (async () => {
-            const { getHistoricalAverages: getAvgs } = await import("./funding-history.js");
-            const syms = topArb.map(a => a.symbol);
-            const avgs = syms.length > 0 ? getAvgs(syms, ["hyperliquid", "pacifica", "lighter"]) : new Map();
-            return topArb.map(a => {
-              const bestEx = a.rates.find(r => r.exchange === "hyperliquid")?.exchange ?? a.rates[0]?.exchange ?? "hyperliquid";
-              const avg = avgs.get(`${a.symbol}:${bestEx}`);
-              return {
-                symbol: a.symbol, spreadAnnual: a.maxSpreadAnnual,
-                direction: `${exAbbr(a.shortExchange)}>${exAbbr(a.longExchange)}`,
-                avg24h: avg?.avg24h != null ? Math.abs(avg.avg24h) * 8760 * 100 : null,
-                avg7d: avg?.avg7d != null ? Math.abs(avg.avg7d) * 8760 * 100 : null,
-                rateHistory: getHistoricalRates(a.symbol, bestEx, h24, now).map(h => ({ ts: h.ts, hourlyRate: h.hourlyRate })),
-              };
-            });
-          })(),
-        }));
-      }
-
-      // ── Terminal UI ──
-      console.log(chalk.cyan.bold(`\n  perp-cli v${_pkg.version}`) + chalk.gray(` — ${snapshots.filter(s => s.connected).length} exchanges connected\n`));
-
-      // Balance bars + Top Arb side by side
-      const now = new Date();
-      const h24 = new Date(now.getTime() - 24 * 3600_000);
-
-      // Left column: Balances (perp + spot per exchange)
-      // Compute per-exchange totals: perp equity + non-USDC spot (unified) or all spot
-      const exTotals = snapshots.map(s => {
-        if (!s.connected || !s.balance) return { total: 0, margin: 0, equity: 0 };
-        const equity = Number(s.balance.equity);
-        const margin = Number(s.balance.marginUsed);
-        const displaySpot = s.isUnified
-          ? s.spotHoldings.filter(b => b.token.replace(/-SPOT$/i, "").toUpperCase() !== "USDC")
-          : s.spotHoldings;
-        const spotVal = displaySpot.reduce((sum, b) => sum + b.valueUsd, 0);
-        return { total: equity + spotVal, margin, equity };
-      });
-
-      const balLines: string[] = [];
-      balLines.push(chalk.white.bold(" Balances"));
-      for (let i = 0; i < snapshots.length; i++) {
-        const s = snapshots[i];
-        if (!s.connected) { balLines.push(` ${chalk.gray(exAbbr(s.exchange).padEnd(4))} ${chalk.red("disconnected")}`); continue; }
-        const { total, margin, equity } = exTotals[i];
-        const usagePct = equity > 0 ? (margin / equity) * 100 : 0;
-        const barFull = Math.min(20, Math.round(usagePct / 5));
-        const usageColor = usagePct < 30 ? chalk.green : usagePct < 60 ? chalk.yellow : chalk.red;
-        const bar = usageColor("\u2588".repeat(barFull)) + chalk.gray("\u2591".repeat(20 - barFull));
-        balLines.push(` ${chalk.white.bold(exAbbr(s.exchange).padEnd(4))} $${formatUsd(total).padEnd(9)} ${bar} ${usagePct.toFixed(0)}% used`);
-      }
-      // Spot holdings (non-USDC tokens with value)
-      const displaySpotHoldings = allSpotHoldings.filter(b => {
-        const tk = b.token.replace(/[-_]SPOT$/i, "").toUpperCase();
-        return tk !== "USDC";
-      });
-      if (displaySpotHoldings.length > 0) {
-        balLines.push("");
-        balLines.push(chalk.white.bold(" Spot Holdings"));
-        for (const b of displaySpotHoldings) {
-          const token = b.token.replace(/-SPOT$/i, "");
-          const ex = exAbbr(b.exchange);
-          balLines.push(` ${chalk.gray(ex.padEnd(4))} ${chalk.white.bold(token.padEnd(6))} ${b.total.padEnd(12)} ${chalk.gray(`$${formatUsd(b.valueUsd)}`)}`);
-        }
-      }
-
-      const riskColor = riskLevel === "LOW" ? chalk.green : riskLevel === "MEDIUM" ? chalk.yellow : chalk.red;
-      balLines.push(` ${"─".repeat(44)}`);
-      balLines.push(` ${chalk.cyan.bold("Total")} ${chalk.cyan.bold(`$${formatUsd(totalEquity)}`.padEnd(9))}    Risk: ${riskColor(riskLevel)}`);
-
-      // Right column: Top Arb Opportunities (with 24h/7d averages from local history — 0 API calls)
-      const { getHistoricalAverages } = await import("./funding-history.js");
-      const arbSymbols = topArb.map(a => a.symbol);
-      const arbExchanges = ["hyperliquid", "pacifica", "lighter"];
-      const histAvgs = arbSymbols.length > 0 ? getHistoricalAverages(arbSymbols, arbExchanges) : new Map();
-
-      const arbLines: string[] = [];
-      arbLines.push(chalk.white.bold(" Top Arb Opportunities"));
-      if (topArb.length > 0) {
-        //          SYMBOL   SPREAD   24h   TREND     7d     DIR
-        arbLines.push(chalk.gray(" " + "".padEnd(8) + "now".padEnd(9) + "24h".padEnd(7) + "".padEnd(9) + "7d".padEnd(7)));
-        for (const a of topArb) {
-          const spreadColor = a.maxSpreadAnnual >= 100 ? chalk.green.bold : a.maxSpreadAnnual >= 30 ? chalk.green : chalk.yellow;
-          const dir = `${exAbbr(a.shortExchange)}>${exAbbr(a.longExchange)}`;
-          const bestEx = a.rates.find(r => r.exchange === "hyperliquid")?.exchange ?? a.rates[0]?.exchange ?? "hyperliquid";
-
-          // 24h trend arrow
-          const history = getHistoricalRates(a.symbol, bestEx, h24, now);
-          let trend = "";
-          if (history.length >= 2) {
-            const oldAnn = Math.abs(history[0].hourlyRate) * 8760 * 100;
-            const newAnn = Math.abs(history[history.length - 1].hourlyRate) * 8760 * 100;
-            const delta = newAnn - oldAnn;
-            const abs = Math.abs(delta);
-            trend = abs < 1 ? chalk.gray(`\u2500${abs.toFixed(0)}%`)
-              : delta > 0 ? chalk.red(`\u25B2+${abs.toFixed(0)}%`)
-              : chalk.green(`\u25BC-${abs.toFixed(0)}%`);
-          }
-
-          // 24h and 7d averages (annualized from hourly)
-          const avg = histAvgs.get(`${a.symbol}:${bestEx}`);
-          const avg24h = avg?.avg24h != null ? `${(Math.abs(avg.avg24h) * 8760 * 100).toFixed(0)}%` : "-";
-          const avg7d = avg?.avg7d != null ? `${(Math.abs(avg.avg7d) * 8760 * 100).toFixed(0)}%` : "-";
-
-          arbLines.push(` ${chalk.white.bold(a.symbol.padEnd(8))} ${spreadColor(`${a.maxSpreadAnnual.toFixed(1)}%`.padEnd(9))}${chalk.gray(avg24h.padEnd(7))}${trend.padEnd(9)}${chalk.gray(avg7d.padEnd(7))}${chalk.gray(dir)}`);
-        }
-      } else {
-        arbLines.push(chalk.gray(" No opportunities above 5%"));
-      }
-
-      // Print layout — side-by-side if terminal is wide enough, else stacked
-      const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, "");
-      const termW = process.stdout.columns || 80;
-      const SIDE_BY_SIDE_MIN = 100; // 2 indent + 1 + 46 + 1 + 48 + 1
-
-      if (termW >= SIDE_BY_SIDE_MIN) {
-        const LEFT_W = 46;
-        const RIGHT_W = 48;
-        const maxLines = Math.max(balLines.length, arbLines.length);
-        console.log(`  ${"┌"}${"─".repeat(LEFT_W)}${"┬"}${"─".repeat(RIGHT_W)}${"┐"}`);
-        for (let i = 0; i < maxLines; i++) {
-          const left = balLines[i] ?? "";
-          const right = arbLines[i] ?? "";
-          const leftPad = LEFT_W - stripAnsi(left).length;
-          const rightPad = RIGHT_W - stripAnsi(right).length;
-          console.log(`  \u2502${left}${" ".repeat(Math.max(0, leftPad))}\u2502${right}${" ".repeat(Math.max(0, rightPad))}\u2502`);
-        }
-        console.log(`  ${"└"}${"─".repeat(LEFT_W)}${"┴"}${"─".repeat(RIGHT_W)}${"┘"}`);
-      } else {
-        // Stacked layout for narrow terminals
-        const boxW = Math.min(termW - 4, 74); // 2 indent + 2 borders
-        const printBox = (lines: string[]) => {
-          console.log(`  ${"┌"}${"─".repeat(boxW)}${"┐"}`);
-          for (const line of lines) {
-            const pad = boxW - stripAnsi(line).length;
-            console.log(`  \u2502${line}${" ".repeat(Math.max(0, pad))}\u2502`);
-          }
-          console.log(`  ${"└"}${"─".repeat(boxW)}${"┘"}`);
-        };
-        printBox(balLines);
-        console.log();
-        printBox(arbLines);
-      }
-
-      // Positions
-      if (allPositions.length > 0) {
-        console.log(chalk.white.bold("\n  Positions"));
-        const posRows = allPositions.map(p => {
-          const sideColor = p.side === "long" ? chalk.green : chalk.red;
-          const notional = Math.abs(Number(p.size) * Number(p.markPrice));
-          const levStr = p.leverage > 0 ? `${p.leverage}x` : "-";
-          const warn = p.leverage >= 5 ? chalk.red(" \u26A0") : "";
-          return [
-            chalk.white.bold(p.symbol.replace("-PERP", "")),
-            chalk.gray(exAbbr(p.exchange)),
-            sideColor(p.side.toUpperCase()),
-            p.size,
-            `$${formatUsd(p.entryPrice)}\u2192$${formatUsd(p.markPrice)}`,
-            formatPnl(p.unrealizedPnl),
-            `$${formatUsd(notional)}`,
-            levStr + warn,
-          ];
-        });
-        console.log(makeTable(["Symbol", "Ex", "Side", "Size", "Entry\u2192Mark", "uPnL", "Notional", "Lev"], posRows));
-      } else {
-        console.log(chalk.gray("\n  No open positions.\n"));
-      }
-    });
-  });
 
 // Switch shared API URLs if --network testnet is used
 program.hook("preAction", () => {
@@ -811,8 +666,8 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
         console.log(`    ${chalk.green("perp portfolio")}             balances + positions + risk`);
         console.log(`    ${chalk.green("perp arb scan")}              funding arbitrage opportunities`);
         console.log(`    ${chalk.green("perp arb status")}            open arb positions + PnL`);
-        console.log(`    ${chalk.green("perp status")}                full dashboard`);
-        console.log(`    ${chalk.green("perp dashboard")}             live web monitoring`);
+        console.log(`    ${chalk.green("perp portfolio --arb")}       full dashboard (balances + arb top 5)`);
+        console.log(`    ${chalk.green("perp portfolio --serve")}     live web monitoring`);
         console.log(`    ${chalk.green("perp --help")}                all commands\n`);
       }
     } catch {
