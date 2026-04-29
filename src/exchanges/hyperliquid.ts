@@ -764,21 +764,13 @@ export class HyperliquidAdapter implements ExchangeAdapter {
 
   async cancelOrder(symbol: string, orderId: string) {
     this.ensureSigner();
-    if (this._dex) {
-      // HIP-3 dex: use raw cancel action with global asset index
-      const assetIndex = await this.getAssetIndex(symbol.toUpperCase());
-      const result = await this._signAndSendAction({
-        type: "cancel",
-        cancels: [{ a: assetIndex, o: parseInt(orderId) }],
-      });
-      await this._invalidateAccountCache();
-      return result;
-    }
-    // HL SDK expects coin in "ETH-PERP" format (internal symbol convention)
-    const resolved = this.resolveSymbol(symbol);
-    const result = await this.sdk.exchange.cancelOrder({
-      coin: resolved,
-      o: parseInt(orderId),
+    // SDK exchange.cancelOrder is unavailable — use raw cancel action via
+    // _signAndSendAction (same as the HIP-3 dex branch). Works for both
+    // standard perps and HIP-3 deployed dexes uniformly.
+    const assetIndex = await this.getAssetIndex(symbol.toUpperCase());
+    const result = await this._signAndSendAction({
+      type: "cancel",
+      cancels: [{ a: assetIndex, o: parseInt(orderId) }],
     });
     await this._invalidateAccountCache();
     return result;
