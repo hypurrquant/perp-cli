@@ -266,6 +266,10 @@ describe("Test 3: LT approve rejects --api-key-index 3 (reserved)", () => {
       stderrOutput.push(String(chunk));
       return true;
     });
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      stderrOutput.push(String(chunk));
+      return true;
+    });
     vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as never);
 
     const prog = makeProgram();
@@ -300,6 +304,10 @@ describe("Test 4: LT approve rejects --api-key-index 255", () => {
 
     const stderrOutput: string[] = [];
     vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      stderrOutput.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
       stderrOutput.push(String(chunk));
       return true;
     });
@@ -613,6 +621,10 @@ describe("Test 15: LT approve APPROVE_PARTIAL when ChangePubKey fails", () => {
 
     const stderrOutput: string[] = [];
     vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      stderrOutput.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
       stderrOutput.push(String(chunk));
       return true;
     });

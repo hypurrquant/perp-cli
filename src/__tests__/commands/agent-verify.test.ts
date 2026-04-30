@@ -180,8 +180,8 @@ describe("perp agent verify", () => {
     expect(json.data.exchange).toBe("aster");
   });
 
-  // 2. Aster auth — signature AND signatureChainId=56 in query string
-  it("aster auth — request URL contains signature and signatureChainId=56", async () => {
+  // 2. Aster auth — nonce/user/signer/signature in query string (adapter shape)
+  it("aster auth — request URL contains nonce, user, signer, and signature", async () => {
     initSettings();
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -192,8 +192,12 @@ describe("perp agent verify", () => {
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const callUrl = mockFetch.mock.calls[0][0] as string;
-    expect(callUrl).toContain("signatureChainId=56");
+    expect(callUrl).toContain("nonce=");
+    expect(callUrl).toContain("user=");
+    expect(callUrl).toContain("signer=");
     expect(callUrl).toContain("signature=");
+    // signatureChainId is intentionally absent — it breaks the signature shape
+    expect(callUrl).not.toContain("signatureChainId=");
   });
 
   // 3. HL happy path — registered:true, correct body shape

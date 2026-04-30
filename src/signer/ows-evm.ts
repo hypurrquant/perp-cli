@@ -53,7 +53,7 @@ export class OwsEvmSigner implements EvmSigner {
       message: value,
     });
 
-    const result = ows.signTypedData(this._walletName, "evm", typedData, this._passphrase);
+    const result = ows.signTypedData(this._walletName, "ethereum", typedData, this._passphrase);
     return canonicalizeOwsSignature(result);
   }
 
@@ -65,7 +65,7 @@ export class OwsEvmSigner implements EvmSigner {
       : Buffer.from(message).toString("hex");
     const encoding = typeof message === "string" ? "utf8" : "hex";
 
-    const result = ows.signMessage(this._walletName, "evm", msgStr, this._passphrase, encoding);
+    const result = ows.signMessage(this._walletName, "ethereum", msgStr, this._passphrase, encoding);
     return canonicalizeOwsSignature(result);
   }
 }

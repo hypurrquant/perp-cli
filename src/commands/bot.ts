@@ -465,6 +465,7 @@ export function registerStrategyCommands(
 
   bot
     .command("list-strategies")
+    .alias("list")
     .description("List all available trading strategies")
     .action(async () => {
       await import("../bot/engine.js");

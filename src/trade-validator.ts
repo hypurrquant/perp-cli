@@ -53,13 +53,25 @@ export async function validateTrade(
   const warnings: string[] = [];
   const sym = params.symbol.toUpperCase();
 
-  // Fetch market data, balance, positions, orderbook in parallel
+  // Fetch market data, balance, positions, orderbook in parallel.
+  // Track getMarkets failure separately — distinguishing "no markets returned"
+  // from "symbol not found" prevents misclassifying init/network errors as
+  // validation failures.
+  let marketsError: string | null = null;
   const [markets, balance, positions, orderbook] = await Promise.all([
-    adapter.getMarkets().catch(() => [] as ExchangeMarketInfo[]),
+    adapter.getMarkets().catch((e: unknown) => {
+      marketsError = e instanceof Error ? e.message : String(e);
+      return [] as ExchangeMarketInfo[];
+    }),
     adapter.getBalance().catch(() => ({ equity: "0", available: "0", marginUsed: "0", unrealizedPnl: "0" })),
     adapter.getPositions().catch(() => []),
     params.type !== "limit" ? adapter.getOrderbook(sym).catch(() => ({ bids: [] as [string, string][], asks: [] as [string, string][] })) : Promise.resolve({ bids: [] as [string, string][], asks: [] as [string, string][] }),
   ]);
+
+  if (markets.length === 0 && marketsError) {
+    checks.push({ check: "symbol_valid", passed: false, message: `Failed to load markets from ${adapter.name}: ${marketsError}` });
+    return { valid: false, checks, warnings, timestamp: new Date().toISOString() };
+  }
 
   // 1. Symbol validity (handle BTC vs BTC-PERP suffix variants)
   const market = markets.find(m => {

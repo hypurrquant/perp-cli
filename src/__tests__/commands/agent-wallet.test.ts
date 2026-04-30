@@ -560,9 +560,9 @@ describe("Test 10: Partial-approve recovery", () => {
     Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
     vi.stubEnv("OWS_PASSPHRASE", "testpass");
 
-    const stderrOutput: string[] = [];
-    vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
-      stderrOutput.push(String(chunk));
+    const stdoutOutput: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      stdoutOutput.push(String(chunk));
       return true;
     });
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as never);
@@ -585,13 +585,13 @@ describe("Test 10: Partial-approve recovery", () => {
     // revokeApiKey was attempted (rollback)
     expect(mockOws.revokeApiKey).toHaveBeenCalled();
 
-    // APPROVE_PARTIAL error surfaced to stderr
-    const stderrStr = stderrOutput.join("");
-    expect(stderrStr).toContain("APPROVE_PARTIAL");
+    // APPROVE_PARTIAL envelope surfaced on stdout (machine-readable error path)
+    const stdoutStr = stdoutOutput.join("");
+    expect(stdoutStr).toContain("APPROVE_PARTIAL");
 
     vi.spyOn(settingsModule, "saveSettings").mockRestore();
     exitSpy.mockRestore();
-    vi.spyOn(process.stderr, "write").mockRestore();
+    vi.spyOn(process.stdout, "write").mockRestore();
   });
 });
 
@@ -699,48 +699,42 @@ describe("Test 14: No-prompts allowlist invariant", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test 15: Stable JSON envelope on stderr without --json
+// Test 15: Stable JSON envelope on stdout (machine-readable error path)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("Test 15: Stable JSON envelope on stderr without --json", () => {
-  it("error path WITHOUT --json emits JSON envelope on stderr", async () => {
-    // Use TTY=true so resolvePassphrase returns null (no stdin read attempted)
-    // but wizard mode is NOT triggered because --master flag IS provided
-    // → PASSPHRASE_REQUIRED thrown by the non-wizard path
+describe("Test 15: Stable JSON envelope on stdout without --json", () => {
+  it("error path emits JSON envelope on stdout (not stderr) for machine consumers", async () => {
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
     delete process.env["OWS_PASSPHRASE"];
 
-    const stderrOutput: string[] = [];
-    vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
-      stderrOutput.push(String(chunk));
+    const stdoutOutput: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      stdoutOutput.push(String(chunk));
       return true;
     });
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as never);
 
     const prog = makeProgram();
     try {
-      // --master provided (bypasses wizard) but no passphrase + TTY returns null → PASSPHRASE_REQUIRED
       await prog.parseAsync([
         "node", "perp", "wallet", "agent", "approve", "aster",
         "--master", "main",
         "--agent-name", "test",
         "--expires-in", "90d",
-        // no --passphrase, no OWS_PASSPHRASE → resolvePassphrase returns null → PASSPHRASE_REQUIRED
       ]);
     } catch { /* expected */ }
 
-    const stderrStr = stderrOutput.join("");
-    expect(stderrStr.length).toBeGreaterThan(0);
+    const stdoutStr = stdoutOutput.join("");
+    expect(stdoutStr.length).toBeGreaterThan(0);
 
-    // Must be parseable JSON with the envelope shape
-    const parsed = JSON.parse(stderrStr.trim());
+    const parsed = JSON.parse(stdoutStr.trim());
     expect(parsed.ok).toBe(false);
     expect(parsed.error).toHaveProperty("code");
     expect(parsed.error).toHaveProperty("message");
     expect(parsed.meta).toHaveProperty("timestamp");
 
     exitSpy.mockRestore();
-    vi.spyOn(process.stderr, "write").mockRestore();
+    vi.spyOn(process.stdout, "write").mockRestore();
   });
 });
 
@@ -913,6 +907,7 @@ describe("Test 19: createApiKey throws BEFORE Aster POST", () => {
 
     const stderrOutput: string[] = [];
     vi.spyOn(process.stderr, "write").mockImplementation((chunk) => { stderrOutput.push(String(chunk)); return true; });
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => { stderrOutput.push(String(chunk)); return true; });
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as never);
 
     const prog = makeProgram();
@@ -1009,6 +1004,7 @@ describe("Test 21: APPROVE_FAILED clean-rollback path", () => {
 
     const stderrOutput: string[] = [];
     vi.spyOn(process.stderr, "write").mockImplementation((chunk) => { stderrOutput.push(String(chunk)); return true; });
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => { stderrOutput.push(String(chunk)); return true; });
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as never);
 
     const prog = makeProgram();
@@ -1065,6 +1061,7 @@ describe("Test 22: Lock scope regression", () => {
 
     const stderrOutput: string[] = [];
     vi.spyOn(process.stderr, "write").mockImplementation((chunk) => { stderrOutput.push(String(chunk)); return true; });
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => { stderrOutput.push(String(chunk)); return true; });
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as never);
 
     const prog = makeProgram();
@@ -1123,6 +1120,7 @@ describe("Test 23: rotate rollback (Aster POST fails)", () => {
 
     const stderrOutput: string[] = [];
     vi.spyOn(process.stderr, "write").mockImplementation((chunk) => { stderrOutput.push(String(chunk)); return true; });
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => { stderrOutput.push(String(chunk)); return true; });
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as never);
 
     const prog = makeProgram();

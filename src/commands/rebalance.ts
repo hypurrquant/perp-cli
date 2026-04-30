@@ -28,16 +28,18 @@ export function registerFundsRebalanceCommands(
     .action(async (opts: { exchanges: string }) => {
       const exchangeNames = opts.exchanges.split(",").map((e) => e.trim());
       const adapters = new Map<string, ExchangeAdapter>();
+      const unavailable: Array<{ exchange: string; error: string }> = [];
 
       for (const name of exchangeNames) {
         try {
           adapters.set(name, await getAdapterForExchange(name));
-        } catch {
-          // skip unavailable
+        } catch (e) {
+          unavailable.push({ exchange: name, error: e instanceof Error ? e.message : String(e) });
         }
       }
 
       if (adapters.size === 0) {
+        if (isJson()) return printJson(jsonOk({ snapshots: [], unavailable }));
         console.error(chalk.red("\n  No exchanges available. Check credentials.\n"));
         return;
       }
@@ -45,7 +47,7 @@ export function registerFundsRebalanceCommands(
       if (!isJson()) console.log(chalk.cyan("\n  Fetching balances across exchanges...\n"));
       const snapshots = await fetchAllBalances(adapters);
 
-      if (isJson()) return printJson(jsonOk(snapshots));
+      if (isJson()) return printJson(jsonOk({ snapshots, unavailable }));
 
       const totalEquity = snapshots.reduce((s, e) => s + e.equity, 0);
       const totalAvailable = snapshots.reduce((s, e) => s + e.available, 0);
@@ -83,16 +85,18 @@ export function registerFundsRebalanceCommands(
     .action(async (opts: { exchanges: string; minMove: string; reserve: string }) => {
       const exchangeNames = opts.exchanges.split(",").map((e) => e.trim());
       const adapters = new Map<string, ExchangeAdapter>();
+      const unavailable: Array<{ exchange: string; error: string }> = [];
 
       for (const name of exchangeNames) {
         try {
           adapters.set(name, await getAdapterForExchange(name));
-        } catch {
-          // skip unavailable
+        } catch (e) {
+          unavailable.push({ exchange: name, error: e instanceof Error ? e.message : String(e) });
         }
       }
 
       if (adapters.size < 2) {
+        if (isJson()) return printJson(jsonOk({ moves: [], unavailable, error: "Need at least 2 exchanges for rebalancing" }));
         console.error(chalk.red("\n  Need at least 2 exchanges for rebalancing.\n"));
         return;
       }
@@ -104,7 +108,7 @@ export function registerFundsRebalanceCommands(
         reserve: parseFloat(opts.reserve),
       });
 
-      if (isJson()) return printJson(jsonOk(plan));
+      if (isJson()) return printJson(jsonOk({ ...plan, unavailable }));
 
       // Show current state
       const rows = plan.snapshots.map((s) => {

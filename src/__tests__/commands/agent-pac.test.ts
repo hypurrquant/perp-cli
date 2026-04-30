@@ -534,6 +534,10 @@ describe("Test 14: PAC approve rollback on POST failure", () => {
       stderrOutput.push(String(chunk));
       return true;
     });
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      stderrOutput.push(String(chunk));
+      return true;
+    });
     vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as never);
 
     const prog = makeProgram();

@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+// MUST be first import — installs a stderr filter for --json mode so SDK
+// startup banners don't leak into machine output. ESM hoists all static
+// imports to the top, but executes them in source order, so this side-effect
+// import runs before any DEX SDK is loaded.
+import "./_stderr-filter.js";
+
 // Save original process.exit before any SDK (Go WASM) can patch it
 const _origExit = process.exit.bind(process);
 import { config } from "dotenv";

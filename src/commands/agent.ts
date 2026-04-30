@@ -19,17 +19,16 @@ import {
 } from "../exchanges/aster-typed-data.js";
 
 /**
- * Emit a structured JSON error envelope to stderr and exit non-zero.
- * Centralizes the AC-18 (stable JSON envelope without --json) format so the
- * approve/revoke/rotate commands share one implementation instead of four
- * copy-pasted catch blocks.
+ * Emit a structured JSON error envelope to stdout and exit non-zero.
+ * Stdout (not stderr) so machine consumers can read the envelope from a
+ * single stream — matches the rest of the CLI's --json error path.
  */
 function reportErrorAndExit(err: unknown): never {
   const ts = new Date().toISOString();
   const envelope = err instanceof PerpError
     ? { ok: false, error: { ...err.structured }, meta: { timestamp: ts } }
     : { ok: false, error: { code: "UNKNOWN", message: err instanceof Error ? err.message : String(err) }, meta: { timestamp: ts } };
-  process.stderr.write(JSON.stringify(envelope) + "\n");
+  process.stdout.write(JSON.stringify(envelope) + "\n");
   process.exit(1);
 }
 
@@ -67,53 +66,30 @@ async function verifyAster(opts: VerifyOpts): Promise<VerifyResult> {
   const masterSigner = OwsEvmSigner.create(masterName, passphrase);
   const userEvmAddress = masterSigner.getAddress() as `0x${string}`;
 
-  // Build ListAgent EIP-712 typed data (same domain as ApproveAgent — BSC chainId 56)
-  // FIXME(step-0b): ListAgent primaryType is NOT live-verified against
-  // mainnet Aster API. Plan v3.3 verify endpoints table marks Aster auth
-  // verified=N pending Step 0b spike. If live calls return 401/INVALID_SIGNATURE,
-  // try Domain B Message-with-querystring shape (HypurrQuant_FE pattern at
-  // AsterPerpAdapter.ts:769-781) as fallback.
+  // Aster v3 universal signing: Domain B EIP-712 over urlencoded msg with
+  // nonce/user/signer appended last (matches AsterAdapter._buildSignedQueryString).
+  const { buildOrderTypedData } = await import("../exchanges/aster-typed-data.js");
   const nonceMicros = Date.now() * 1000 + Math.floor(Math.random() * 1000);
-  const domain = {
-    name: "AsterSignTransaction",
-    version: "1",
-    chainId: 56,
+  const fullParams = {
+    nonce: nonceMicros,
+    user: userEvmAddress,
+    signer: userEvmAddress,
   };
-  const types = {
-    ListAgent: [
-      { name: "AsterChain", type: "string" },
-      { name: "User", type: "address" },
-      { name: "Nonce", type: "uint256" },
-    ],
-  };
-  const message: Record<string, unknown> = {
-    AsterChain: "Mainnet",
-    User: userEvmAddress,
-    Nonce: nonceMicros,
-  };
-
+  const typed = buildOrderTypedData(fullParams);
   const sig = await masterSigner.signTypedData(
-    domain as Record<string, unknown>,
-    types as Record<string, Array<{ name: string; type: string }>>,
-    message,
+    typed.domain as Record<string, unknown>,
+    typed.types as unknown as Record<string, Array<{ name: string; type: string }>>,
+    typed.message as Record<string, unknown>,
   );
 
-  const qs = new URLSearchParams([
-    ["user", userEvmAddress],
-    ["signature", sig],
-    ["signatureChainId", "56"],
-    ["timestamp", String(Date.now())],
-    ["asterChain", "Mainnet"],
-    ["nonce", String(nonceMicros)],
-  ]);
-
-  const resp = await fetch(`https://fapi.asterdex.com/fapi/v3/agent?${qs.toString()}`, {
+  const resp = await fetch(`https://fapi.asterdex.com/fapi/v3/agent?${typed.message.msg}&signature=${sig}`, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
   });
 
   if (!resp.ok) {
-    throw new PerpError("EXCHANGE_ERROR", `Aster verify failed: HTTP ${resp.status}`, {
+    const body = await resp.text().catch(() => "");
+    throw new PerpError("EXCHANGE_ERROR", `Aster verify failed: HTTP ${resp.status}: ${body.slice(0, 200)}`, {
       remediation: "Check master wallet name and passphrase. Run: perp wallet agent verify aster --master <name> --passphrase $PP",
     });
   }
@@ -155,13 +131,17 @@ async function verifyAster(opts: VerifyOpts): Promise<VerifyResult> {
  */
 async function verifyHyperliquid(opts: VerifyOpts): Promise<VerifyResult> {
   const settings = loadSettings();
-  // Resolve master EVM address: flag > settings > active wallet
+  // Resolve master EVM address: flag > named agent's userEvmAddress > first registered agent
   let masterAddress = opts.masterAddress;
   if (!masterAddress) {
-    // Try to find from a registered agent or active wallet
     const hlMap = settings.agents?.hyperliquid;
-    if (hlMap && opts.agentName && hlMap[opts.agentName]?.userEvmAddress) {
-      masterAddress = hlMap[opts.agentName].userEvmAddress;
+    if (hlMap) {
+      if (opts.agentName && hlMap[opts.agentName]?.userEvmAddress) {
+        masterAddress = hlMap[opts.agentName].userEvmAddress;
+      } else {
+        const first = Object.values(hlMap)[0];
+        if (first?.userEvmAddress) masterAddress = first.userEvmAddress;
+      }
     }
   }
   if (!masterAddress) {
@@ -263,7 +243,8 @@ async function verifyPacifica(opts: VerifyOpts): Promise<VerifyResult> {
   });
 
   if (!resp.ok) {
-    throw new PerpError("EXCHANGE_ERROR", `Pacifica verify failed: HTTP ${resp.status}`, {
+    const body = await resp.text().catch(() => "");
+    throw new PerpError("EXCHANGE_ERROR", `Pacifica verify failed: HTTP ${resp.status}: ${body.slice(0, 200)}`, {
       remediation: "Check master wallet name and passphrase. Run: perp wallet agent verify pacifica --master <name> --passphrase $PP",
     });
   }
@@ -296,18 +277,19 @@ async function verifyPacifica(opts: VerifyOpts): Promise<VerifyResult> {
 async function verifyLighter(opts: VerifyOpts): Promise<VerifyResult> {
   const settings = loadSettings();
   const accountIndexStr = opts.accountIndex;
-  // Resolve accountIndex from opts or settings
+  // Resolve accountIndex: flag > named agent > first registered agent
   let accountIndex: number | undefined;
   if (accountIndexStr !== undefined) {
     accountIndex = parseInt(accountIndexStr, 10);
   } else {
-    // Try from settings
-    const ltAgents = (settings.agents as Record<string, unknown> | undefined);
-    const ltMap = (ltAgents && typeof ltAgents === "object" && "lighter" in ltAgents)
-      ? ltAgents.lighter as Record<string, { accountIndex?: number }> | undefined
-      : undefined;
-    if (ltMap && opts.agentName && ltMap[opts.agentName]?.accountIndex !== undefined) {
-      accountIndex = ltMap[opts.agentName].accountIndex;
+    const ltMap = settings.agents?.lighter;
+    if (ltMap) {
+      if (opts.agentName && ltMap[opts.agentName]?.accountIndex !== undefined) {
+        accountIndex = ltMap[opts.agentName].accountIndex;
+      } else {
+        const first = Object.values(ltMap)[0];
+        if (first?.accountIndex !== undefined) accountIndex = first.accountIndex;
+      }
     }
   }
   if (accountIndex === undefined || isNaN(accountIndex)) {

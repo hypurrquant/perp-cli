@@ -387,14 +387,11 @@ export function registerRiskCommands(
       });
     });
 
-  // ── deprecated: health (merged into risk) ──
-  const healthCmd = program
+  program
     .command("health")
-    .description("Use 'perp status --health'")
+    .description("Adapter health check across all 4 DEX")
     .action(async () => {
-      if (!isJson()) console.log(chalk.yellow("  Use 'perp status --health' instead.\n"));
       await runHealthCheck(isJson);
     });
-  (healthCmd as any)._hidden = true;
 
 }

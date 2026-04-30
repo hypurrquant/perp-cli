@@ -87,28 +87,32 @@ export function registerSettingsCommands(
     });
 
   // ── settings fees ──
+  // Bare `settings fees` shows current tiers (same as `settings fees show`).
+  const showFees = async () => {
+    await withJsonErrors(isJson(), async () => {
+      const s = loadSettings();
+      if (isJson()) return printJson(jsonOk(s.fees));
+
+      console.log(chalk.cyan.bold("\n  Exchange Fee Tiers\n"));
+      for (const [ex, fee] of Object.entries(s.fees)) {
+        const tPct = (fee.taker * 100).toFixed(4);
+        const mPct = (fee.maker * 100).toFixed(4);
+        console.log(`  ${ex.padEnd(14)} taker: ${chalk.yellow(tPct + "%")}  maker: ${chalk.green(mPct + "%")}`);
+      }
+      console.log(chalk.gray(`\n  Sync from exchanges: perp settings fees sync`));
+      console.log(chalk.gray(`  Manual set: perp settings fees set <exchange> <taker> <maker>\n`));
+    });
+  };
+
   const fees = settings
     .command("fees")
-    .description("Show or sync exchange fee tiers");
+    .description("Show or sync exchange fee tiers (default action: show)")
+    .action(showFees);
 
   fees
     .command("show")
     .description("Show current fee tiers")
-    .action(async () => {
-      await withJsonErrors(isJson(), async () => {
-        const s = loadSettings();
-        if (isJson()) return printJson(jsonOk(s.fees));
-
-        console.log(chalk.cyan.bold("\n  Exchange Fee Tiers\n"));
-        for (const [ex, fee] of Object.entries(s.fees)) {
-          const tPct = (fee.taker * 100).toFixed(4);
-          const mPct = (fee.maker * 100).toFixed(4);
-          console.log(`  ${ex.padEnd(14)} taker: ${chalk.yellow(tPct + "%")}  maker: ${chalk.green(mPct + "%")}`);
-        }
-        console.log(chalk.gray(`\n  Sync from exchanges: perp settings fees sync`));
-        console.log(chalk.gray(`  Manual set: perp settings fees set <exchange> <taker> <maker>\n`));
-      });
-    });
+    .action(showFees);
 
   fees
     .command("sync")
