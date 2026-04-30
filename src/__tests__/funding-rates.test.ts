@@ -56,7 +56,10 @@ function setupMockFetch(opts: {
     if (urlStr.includes("pacifica.fi")) {
       if (opts.pacError) throw new Error("Pacifica API error");
       return {
+        ok: true,
+        status: 200,
         json: async () => makePacificaResponse(opts.pac ?? []),
+        text: async () => JSON.stringify(makePacificaResponse(opts.pac ?? [])),
       };
     }
 
@@ -65,7 +68,10 @@ function setupMockFetch(opts: {
       if (opts.hlError) throw new Error("HL API error");
       const hl = opts.hl ?? { assets: [], ctxs: [] };
       return {
+        ok: true,
+        status: 200,
         json: async () => makeHyperliquidResponse(hl.assets, hl.ctxs),
+        text: async () => JSON.stringify(makeHyperliquidResponse(hl.assets, hl.ctxs)),
       };
     }
 
@@ -74,14 +80,20 @@ function setupMockFetch(opts: {
       if (opts.ltError) throw new Error("Lighter API error");
       const lt = opts.lt ?? { details: [], funding: [] };
       return {
+        ok: true,
+        status: 200,
         json: async () => ({ order_book_details: lt.details }),
+        text: async () => JSON.stringify({ order_book_details: lt.details }),
       };
     }
     if (urlStr.includes("zklighter") && urlStr.includes("funding-rates")) {
       if (opts.ltError) throw new Error("Lighter API error");
       const lt = opts.lt ?? { details: [], funding: [] };
       return {
+        ok: true,
+        status: 200,
         json: async () => ({ funding_rates: lt.funding.map(fr => ({ exchange: "lighter", ...fr })) }),
+        text: async () => JSON.stringify({ funding_rates: lt.funding.map(fr => ({ exchange: "lighter", ...fr })) }),
       };
     }
 

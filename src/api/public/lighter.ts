@@ -31,6 +31,11 @@ export function fetchLighterOrderBookDetails(): Promise<LighterMarketDetail[]> {
   // 0 price downstream.
   return withCache("pub:lt:orderBookDetails", TTL_MARKET, async () => {
     const res = await fetch(`${LIGHTER_API_URL}/api/v1/orderBookDetails`);
+    if (!res.ok) {
+      let body = "";
+      try { body = await res.text(); } catch { /* ignore */ }
+      throw new Error(`Lighter orderBookDetails returned HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+    }
     const json = await res.json() as Record<string, unknown>;
     const details = (json.order_book_details ?? []) as Array<Record<string, unknown>>;
     const out: LighterMarketDetail[] = [];
@@ -51,11 +56,17 @@ export function fetchLighterOrderBookDetailsRaw(): Promise<unknown> {
   // SSOT rule #2: caller (arb / arb-auto) is responsible for error handling.
   // Removed silent `.catch(() => null)` so a network failure surfaces as a
   // rejected Promise instead of being indistinguishable from "API returned no
-  // markets". Callers should wrap with Promise.allSettled to keep multi-DEX
-  // comparisons working when one DEX is down.
-  return withCache("pub:lt:orderBookDetails:raw", TTL_MARKET, () =>
-    fetch(`${LIGHTER_API_URL}/api/v1/orderBookDetails`).then(r => r.json()),
-  );
+  // markets". Non-2xx responses are also rejected so a 5xx JSON body cannot
+  // fulfill as if it were valid data.
+  return withCache("pub:lt:orderBookDetails:raw", TTL_MARKET, async () => {
+    const res = await fetch(`${LIGHTER_API_URL}/api/v1/orderBookDetails`);
+    if (!res.ok) {
+      let body = "";
+      try { body = await res.text(); } catch { /* ignore */ }
+      throw new Error(`Lighter orderBookDetails returned HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+    }
+    return res.json();
+  });
 }
 
 export function fetchLighterFundingRates(): Promise<LighterFundingEntry[]> {
@@ -67,6 +78,11 @@ export function fetchLighterFundingRates(): Promise<LighterFundingEntry[]> {
   // documented price-source preference, NOT an error fallback).
   return withCache("pub:lt:fundingRates", TTL_MARKET, async () => {
     const res = await fetch(`${LIGHTER_API_URL}/api/v1/funding-rates`);
+    if (!res.ok) {
+      let body = "";
+      try { body = await res.text(); } catch { /* ignore */ }
+      throw new Error(`Lighter funding-rates returned HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+    }
     const json = await res.json() as Record<string, unknown>;
     const list = (json.funding_rates ?? []) as Array<Record<string, unknown>>;
     const entries: LighterFundingEntry[] = [];
@@ -95,9 +111,15 @@ export function fetchLighterFundingRates(): Promise<LighterFundingEntry[]> {
 
 export function fetchLighterFundingRatesRaw(): Promise<unknown> {
   // SSOT rule #2: error must propagate; see fetchLighterOrderBookDetailsRaw.
-  return withCache("pub:lt:fundingRates:raw", TTL_MARKET, () =>
-    fetch(`${LIGHTER_API_URL}/api/v1/funding-rates`).then(r => r.json()),
-  );
+  return withCache("pub:lt:fundingRates:raw", TTL_MARKET, async () => {
+    const res = await fetch(`${LIGHTER_API_URL}/api/v1/funding-rates`);
+    if (!res.ok) {
+      let body = "";
+      try { body = await res.text(); } catch { /* ignore */ }
+      throw new Error(`Lighter funding-rates returned HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+    }
+    return res.json();
+  });
 }
 
 export function parseLighterRaw(

@@ -11,12 +11,20 @@ interface HyperliquidAsset {
 
 // ── Internal ──
 
-function hlPost(type: string): Promise<unknown> {
-  return fetch(HYPERLIQUID_API_URL, {
+async function hlPost(type: string): Promise<unknown> {
+  // SSOT rule #2: a non-2xx response is a real failure, not "no rows".
+  // Throw with the HTTP status + body so the caller surfaces the real reason.
+  const res = await fetch(HYPERLIQUID_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type }),
-  }).then(r => r.json());
+  });
+  if (!res.ok) {
+    let body = "";
+    try { body = await res.text(); } catch { /* ignore body-read failure */ }
+    throw new Error(`Hyperliquid info ${type} returned HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+  }
+  return res.json();
 }
 
 // ── Fetchers ──

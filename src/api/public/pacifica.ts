@@ -17,6 +17,11 @@ export function fetchPacificaPrices(): Promise<PacificaAsset[]> {
   // missing/invalid mark or funding so a 0 doesn't reach downstream paths.
   return withCache("pub:pac:prices", TTL_MARKET, async () => {
     const res = await fetch(PACIFICA_API_URL);
+    if (!res.ok) {
+      let body = "";
+      try { body = await res.text(); } catch { /* ignore */ }
+      throw new Error(`Pacifica prices returned HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+    }
     const json = await res.json();
     const data = (json as Record<string, unknown>).data ?? json;
     if (!Array.isArray(data)) return [];
@@ -48,10 +53,17 @@ export function fetchPacificaPricesRaw(): Promise<unknown> {
   // SSOT rule #2: caller is responsible for error handling. Removed silent
   // `.catch(() => null)` so a network failure surfaces as a rejected Promise.
   // Callers should wrap with Promise.allSettled to keep multi-DEX comparisons
-  // running when one DEX is down.
-  return withCache("pub:pac:prices:raw", TTL_MARKET, () =>
-    fetch(PACIFICA_API_URL).then(r => r.json()),
-  );
+  // running when one DEX is down. Non-2xx responses are also rejected so a
+  // 5xx JSON body cannot fulfill as if it were valid data.
+  return withCache("pub:pac:prices:raw", TTL_MARKET, async () => {
+    const res = await fetch(PACIFICA_API_URL);
+    if (!res.ok) {
+      let body = "";
+      try { body = await res.text(); } catch { /* ignore */ }
+      throw new Error(`Pacifica prices returned HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+    }
+    return res.json();
+  });
 }
 
 export function parsePacificaRaw(raw: unknown): { rates: Map<string, number>; prices: Map<string, number> } {
