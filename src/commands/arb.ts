@@ -88,30 +88,41 @@ async function fetchAsterRates(): Promise<FundingRate[]> {
 }
 
 async function fetchLighterRates(): Promise<FundingRate[]> {
-  try {
-    const [details, funding] = await Promise.all([
-      fetchLighterOrderBookDetails(),
-      fetchLighterFundingRates(),
-    ]);
+  // SSOT rule #2: error must propagate. Caller (handleBasisScan) uses
+  // Promise.allSettled to keep multi-DEX comparison alive when one DEX is
+  // down, with explicit stderr logging.
+  const [details, funding] = await Promise.all([
+    fetchLighterOrderBookDetails(),
+    fetchLighterFundingRates(),
+  ]);
 
-    const priceMap = new Map(details.map(d => [d.marketId, d.lastTradePrice]));
-    const symMap = new Map(details.map(d => [d.marketId, d.symbol]));
+  const priceMap = new Map(details.map(d => [d.marketId, d.lastTradePrice]));
+  const symMap = new Map(details.map(d => [d.marketId, d.symbol]));
 
-    const rates: FundingRate[] = [];
-    for (const fr of funding) {
-      const symbol = fr.symbol || symMap.get(fr.marketId);
-      if (!symbol) continue;
-      rates.push({
-        exchange: "lighter",
-        symbol,
-        fundingRate: fr.rate,
-        markPrice: fr.markPrice || priceMap.get(fr.marketId) || 0,
-      });
+  const rates: FundingRate[] = [];
+  for (const fr of funding) {
+    const symbol = fr.symbol || symMap.get(fr.marketId);
+    if (!symbol) continue;
+    // Prefer fr.markPrice; fall back to orderBook last-trade as documented
+    // price-source preference (NOT error fallback). Skip if neither resolves
+    // — never publish a 0 markPrice downstream.
+    const directMark = fr.markPrice;
+    const fallbackMark = priceMap.get(fr.marketId);
+    let markPrice: number | undefined;
+    if (directMark !== null && Number.isFinite(directMark) && directMark > 0) {
+      markPrice = directMark;
+    } else if (fallbackMark !== undefined && Number.isFinite(fallbackMark) && fallbackMark > 0) {
+      markPrice = fallbackMark;
     }
-    return rates;
-  } catch {
-    return [];
+    if (markPrice === undefined || !Number.isFinite(fr.rate)) continue;
+    rates.push({
+      exchange: "lighter",
+      symbol,
+      fundingRate: fr.rate,
+      markPrice,
+    });
   }
+  return rates;
 }
 
 // annualize moved to ../funding.ts — use annualizeRate() / computeAnnualSpread()
@@ -424,7 +435,28 @@ export async function handleRates(isJson: () => boolean, opts: { symbol?: string
 
 export async function handleBasisScan(isJson: () => boolean, opts: { minBasis: string; symbol?: string }): Promise<void> {
   if (!isJson()) console.log(chalk.cyan("  Fetching prices for basis calculation...\n"));
-  const [pacRates, hlRates, ltRates, astRates] = await Promise.all([fetchPacificaRates(), fetchHyperliquidRates(), fetchLighterRates(), fetchAsterRates()]);
+  // SSOT rule #2: each DEX is independent. allSettled keeps the comparison
+  // alive when one DEX errors out, while rejection reasons get logged to
+  // stderr (explicit failure, never silent [] downgrade).
+  const settled = await Promise.allSettled([
+    fetchPacificaRates(),
+    fetchHyperliquidRates(),
+    fetchLighterRates(),
+    fetchAsterRates(),
+  ]);
+  const labels = ["pacifica", "hyperliquid", "lighter", "aster"];
+  for (let i = 0; i < settled.length; i++) {
+    const r = settled[i];
+    if (r.status === "rejected") {
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      // eslint-disable-next-line no-console
+      console.error(`[basis-scan] ${labels[i]} fetch failed: ${reason}`);
+    }
+  }
+  const pacRates = settled[0].status === "fulfilled" ? settled[0].value : [];
+  const hlRates = settled[1].status === "fulfilled" ? settled[1].value : [];
+  const ltRates = settled[2].status === "fulfilled" ? settled[2].value : [];
+  const astRates = settled[3].status === "fulfilled" ? settled[3].value : [];
   const exchangePrices = new Map<string, Map<string, number>>();
   const filterSymbol = opts.symbol?.toUpperCase();
   for (const r of [...pacRates, ...hlRates, ...ltRates, ...astRates]) {
