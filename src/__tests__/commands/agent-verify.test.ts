@@ -153,43 +153,16 @@ function initSettings(extra: Record<string, unknown> = {}) {
 
 describe("perp agent verify", () => {
 
-  // 1. Aster local-cache verify (live API path is unsupported per FE pattern)
-  it("aster — returns local cache from settings.agents.aster with unsupported-warning", async () => {
-    const settings = loadSettings();
-    const agents = {
-      aster: {
-        "perp-cli-aster": {
-          agentName: "perp-cli-aster",
-          agentWalletName: "agent-aster-main",
-          agentEvmAddress: "0xAGENT0000000000000000000000000000000001" as `0x${string}`,
-          userEvmAddress: "0xMASTER0000000000000000000000000000000001" as `0x${string}`,
-          masterWalletName: "main",
-          owsApiKeyId: "k",
-          owsPolicyId: "p",
-          expiresAt: new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString(),
-          approvedAt: new Date().toISOString(),
-          permissions: { canPerpTrade: true, canSpotTrade: false, canWithdraw: false },
-          asterApprovalNonce: "1",
-          status: "active" as const,
-        },
-      },
-    };
-    saveSettings({ ...settings, owsActiveWallet: "main", agents } as ReturnType<typeof loadSettings>);
-
+  // 1. Aster verify is NOT_IMPLEMENTED (no-fallback policy: throw, don't synthesize)
+  it("aster — throws NOT_IMPLEMENTED with remediation pointing to wallet agent list", async () => {
+    initSettings();
     const out = await runVerify(["aster", "--json"]);
     const json = JSON.parse(out.stdout.join(""));
-    expect(json.ok).toBe(true);
-    expect(json.data.registered).toBe(true);
-    expect(json.data.count).toBe(1);
-    expect(json.data.items[0]).toMatchObject({
-      agentAddress: "0xAGENT0000000000000000000000000000000001",
-      canPerpTrade: true,
-      source: "local-cache",
-    });
-    expect(json.data.exchange).toBe("aster");
-    // No live HTTP call should be made
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("NOT_IMPLEMENTED");
+    expect(json.error.message).toMatch(/aster.*not supported|live.*agent verify.*not supported/i);
+    expect(json.error.remediation).toContain("perp wallet agent list aster");
     expect(mockFetch).not.toHaveBeenCalled();
-    expect(json.meta.warnings.join(" ")).toMatch(/unsupported|local cache/i);
   });
 
   // 3. HL happy path — registered:true, correct body shape
@@ -315,63 +288,11 @@ describe("perp agent verify", () => {
     expect(headers?.["authorization"]).toBeUndefined();
   });
 
-  // 9. Aster — agentName not in local cache surfaces "no local entry" warning
-  it("aster agentName not in local cache — meta.warnings includes 'no local entry'", async () => {
-    const settings = loadSettings();
-    const agents = {
-      aster: {
-        agent1: {
-          agentName: "agent1",
-          agentWalletName: "agent-aster-main",
-          agentEvmAddress: "0xEXPECTED000000000000000000000000000000001" as `0x${string}`,
-          userEvmAddress: "0xMASTER0000000000000000000000000000000001" as `0x${string}`,
-          masterWalletName: "main",
-          owsApiKeyId: "key-001",
-          owsPolicyId: "policy-001",
-          expiresAt: new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString(),
-          approvedAt: new Date().toISOString(),
-          permissions: { canPerpTrade: true, canSpotTrade: false, canWithdraw: false },
-          asterApprovalNonce: "12345000000",
-          status: "active" as const,
-        },
-      },
-    };
-    saveSettings({ ...settings, owsActiveWallet: "main", agents } as ReturnType<typeof loadSettings>);
-
-    // Ask about an agent name that isn't in the cache
-    const out = await runVerify(["aster", "missing-agent", "--json"]);
-    const json = JSON.parse(out.stdout.join(""));
-    expect(json.ok).toBe(true);
-    expect(json.meta.warnings).toBeDefined();
-    expect(json.meta.warnings.some((w: string) => /no local entry/i.test(w))).toBe(true);
-  });
-
-  // 10. Aggregate happy — all 4 DEXs, 4-key data object
-  it("aggregate happy path — 4-key data object with registered/count/items per DEX", async () => {
-    // Aster slot reads from settings.agents.aster (live API path is unsupported)
-    const settings = loadSettings();
-    const agents = {
-      aster: {
-        a: {
-          agentName: "a",
-          agentWalletName: "agent-aster-main",
-          agentEvmAddress: "0xA000000000000000000000000000000000000001" as `0x${string}`,
-          userEvmAddress: "0xMASTER0000000000000000000000000000000001" as `0x${string}`,
-          masterWalletName: "main",
-          owsApiKeyId: "k",
-          owsPolicyId: "p",
-          expiresAt: new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString(),
-          approvedAt: new Date().toISOString(),
-          permissions: { canPerpTrade: true, canSpotTrade: false, canWithdraw: false },
-          asterApprovalNonce: "1",
-          status: "active" as const,
-        },
-      },
-    };
-    saveSettings({ ...settings, owsActiveWallet: "main", agents } as ReturnType<typeof loadSettings>);
+  // 10. Aggregate happy — Aster slot is always NOT_IMPLEMENTED error per no-fallback rule;
+  //     HL/PAC/LT slots succeed via live fetch.
+  it("aggregate happy path — aster slot is NOT_IMPLEMENTED error, others ok", async () => {
+    initSettings();
     mockFetch.mockReset();
-
-    // Route remaining DEXs by URL so order of parallel fetch calls doesn't matter
     mockFetch.mockImplementation((url: string) => {
       if (typeof url === "string" && url.includes("hyperliquid.xyz")) {
         return Promise.resolve({ ok: true, json: async () => [{ address: "0xB", validUntil: 9999, name: "b" }] });
@@ -392,18 +313,19 @@ describe("perp agent verify", () => {
     expect(json.data).toHaveProperty("hyperliquid");
     expect(json.data).toHaveProperty("pacifica");
     expect(json.data).toHaveProperty("lighter");
-    expect((json.data.aster as Record<string, unknown>).registered).toBe(true);
-    expect((json.data.aster as Record<string, unknown>).count).toBe(1);
+    // Aster is NOT_IMPLEMENTED (intentional throw — no fallback)
+    expect(json.data.aster).toHaveProperty("error");
+    expect((json.data.aster as { error: { code: string } }).error.code).toBe("NOT_IMPLEMENTED");
+    // Others are live-verified
+    expect((json.data.hyperliquid as Record<string, unknown>).registered).toBe(true);
+    expect((json.data.pacifica as Record<string, unknown>).registered).toBe(true);
+    expect((json.data.lighter as Record<string, unknown>).registered).toBe(true);
   });
 
-  // 11. Aggregate partial failure — one DEX fails, others succeed
-  it("aggregate partial failure — lighter 500 → error slot, others ok, top-level ok:true", async () => {
-    // Aster reads from settings; clear cache so registered:false
-    const settings = loadSettings();
-    saveSettings({ ...settings, owsActiveWallet: "main", agents: { aster: {} } } as ReturnType<typeof loadSettings>);
+  // 11. Aggregate partial failure — lighter network error; aster always NOT_IMPLEMENTED
+  it("aggregate partial failure — aster NOT_IMPLEMENTED + lighter network error coexist", async () => {
+    initSettings();
     mockFetch.mockReset();
-
-    // Route by URL; lighter throws network error. (Aster is not fetched.)
     mockFetch.mockImplementation((url: string) => {
       if (typeof url === "string" && url.includes("hyperliquid.xyz")) {
         return Promise.resolve({ ok: true, json: async () => [] });
@@ -420,31 +342,13 @@ describe("perp agent verify", () => {
     const out = await runVerify(["--json", "--master", "main", "--master-address", "0xMASTER0000000000000000000000000000000001", "--account-index", "1"]);
     const json = JSON.parse(out.stdout.join(""));
     expect(json.ok).toBe(true);
-    // lighter slot should have error
+    expect(json.data.aster).toHaveProperty("error");
+    expect((json.data.aster as { error: { code: string } }).error.code).toBe("NOT_IMPLEMENTED");
     expect(json.data.lighter).toHaveProperty("error");
     expect((json.data.lighter as { error: { message: string } }).error.message).toMatch(/network error/i);
-    // aster (empty cache), hl, pacifica should be ok (registered:false, count:0)
-    expect((json.data.aster as Record<string, unknown>).count).toBe(0);
-    expect((json.data.aster as Record<string, unknown>).registered).toBe(false);
   });
 
-  // 12. Empty result → registered=false, count=0, items=[]
-  it("aster empty cache — registered=false, count=0, items=[], no fetch", async () => {
-    const settings = loadSettings();
-    saveSettings({ ...settings, owsActiveWallet: "main", agents: { aster: {} } } as ReturnType<typeof loadSettings>);
-    mockFetch.mockReset();
-
-    const out = await runVerify(["aster", "--json"]);
-    const json = JSON.parse(out.stdout.join(""));
-    expect(json.ok).toBe(true);
-    expect(json.data.registered).toBe(false);
-    expect(json.data.count).toBe(0);
-    expect(json.data.items).toEqual([]);
-    expect(mockFetch).not.toHaveBeenCalled();
-    expect(json.meta.warnings.join(" ")).toMatch(/non-authoritative|local cache/i);
-  });
-
-  // 13. JSON envelope shape — meta.timestamp is ISO-8601
+  // 13. JSON envelope shape — meta.timestamp is ISO-8601 (use HL since Aster throws)
   it("JSON envelope — meta.timestamp is ISO-8601 string", async () => {
     initSettings();
     mockFetch.mockResolvedValueOnce({
@@ -452,7 +356,7 @@ describe("perp agent verify", () => {
       json: async () => [],
     });
 
-    const out = await runVerify(["aster", "--json", "--master", "main"]);
+    const out = await runVerify(["hyperliquid", "--json", "--master-address", "0xMASTER0000000000000000000000000000000001"]);
     const json = JSON.parse(out.stdout.join(""));
     expect(json.meta).toBeDefined();
     expect(typeof json.meta.timestamp).toBe("string");
@@ -462,89 +366,13 @@ describe("perp agent verify", () => {
     expect(isNaN(Date.parse(json.meta.timestamp))).toBe(false);
   });
 
-  // 14. Aster non-JSON text output renders expiry (regression: text reader uses `expired`, not `expiresAt`)
-  it("aster text output renders expired ms — not '—'", async () => {
-    const expiresAt = new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString();
-    const expiresMs = Date.parse(expiresAt);
-    const settings = loadSettings();
-    const agents = {
-      aster: {
-        "perp-cli-aster": {
-          agentName: "perp-cli-aster",
-          agentWalletName: "agent-aster-main",
-          agentEvmAddress: "0xAGENT0000000000000000000000000000000001" as `0x${string}`,
-          userEvmAddress: "0xMASTER0000000000000000000000000000000001" as `0x${string}`,
-          masterWalletName: "main",
-          owsApiKeyId: "k",
-          owsPolicyId: "p",
-          expiresAt,
-          approvedAt: new Date().toISOString(),
-          permissions: { canPerpTrade: true, canSpotTrade: false, canWithdraw: false },
-          asterApprovalNonce: "1",
-          status: "active" as const,
-        },
-      },
-    };
-    saveSettings({ ...settings, owsActiveWallet: "main", agents } as ReturnType<typeof loadSettings>);
-
-    // No --json: text output
+  // 14. Aster non-JSON text output surfaces NOT_IMPLEMENTED + remediation
+  it("aster text output prints NOT_IMPLEMENTED error with remediation", async () => {
+    initSettings();
     const out = await runVerify(["aster"]);
-    const text = out.stdout.join("");
-    // Renderer reads `expired` (ms epoch) — value should be the parsed ms, NOT "—"
-    expect(text).toContain(String(expiresMs));
-    expect(text).not.toMatch(/\| {2}—/);
-  });
-
-  // 14b. Aggregate text mode surfaces per-DEX warnings (regression: warnings were dropped)
-  it("aggregate text mode includes per-DEX warnings", async () => {
-    const settings = loadSettings();
-    saveSettings({ ...settings, owsActiveWallet: "main", agents: { aster: {} } } as ReturnType<typeof loadSettings>);
-    mockFetch.mockReset();
-    mockFetch.mockImplementation((url: string) => {
-      if (url.includes("hyperliquid.xyz")) return Promise.resolve({ ok: true, json: async () => [] });
-      if (url.includes("pacifica.fi")) return Promise.resolve({ ok: true, json: async () => ({ success: true, data: { api_keys: [] } }) });
-      if (url.includes("zklighter")) return Promise.resolve({ ok: true, json: async () => ({ code: 200, api_keys: [] }) });
-      return Promise.reject(new Error(`Unexpected fetch url: ${url}`));
-    });
-
-    // No --json: text output (aggregate over all 4 DEX)
-    const out = await runVerify(["--master", "main", "--master-address", "0xMASTER0000000000000000000000000000000001", "--account-index", "1"]);
-    const text = out.stdout.join("");
-    // Aster warning must appear in text output
-    expect(text).toMatch(/non-authoritative|local cache/i);
-    expect(text).toContain("[warn]");
-  });
-
-  // 15. Aster locally-expired cache surfaces warning
-  it("aster locally-expired entry → meta.warnings flags expiry", async () => {
-    const expiresAt = new Date(Date.now() - 24 * 3600 * 1000).toISOString(); // 1 day ago
-    const settings = loadSettings();
-    const agents = {
-      aster: {
-        "stale-agent": {
-          agentName: "stale-agent",
-          agentWalletName: "agent-aster-main",
-          agentEvmAddress: "0xAGENT0000000000000000000000000000000099" as `0x${string}`,
-          userEvmAddress: "0xMASTER0000000000000000000000000000000001" as `0x${string}`,
-          masterWalletName: "main",
-          owsApiKeyId: "k",
-          owsPolicyId: "p",
-          expiresAt,
-          approvedAt: new Date(Date.now() - 91 * 24 * 3600 * 1000).toISOString(),
-          permissions: { canPerpTrade: true, canSpotTrade: false, canWithdraw: false },
-          asterApprovalNonce: "1",
-          status: "active" as const,
-        },
-      },
-    };
-    saveSettings({ ...settings, owsActiveWallet: "main", agents } as ReturnType<typeof loadSettings>);
-
-    const out = await runVerify(["aster", "--json"]);
-    const json = JSON.parse(out.stdout.join(""));
-    expect(json.meta.warnings.some((w: string) => /locally expired/i.test(w))).toBe(true);
-    // Pin the refresh hint format so the `perp` prefix can't regress (codex 3rd-pass followup)
-    const hintWarning = json.meta.warnings.find((w: string) => /locally expired/i.test(w)) as string;
-    expect(hintWarning).toContain("perp wallet agent rotate aster stale-agent");
+    const combined = out.stdout.concat(out.stderr).join("");
+    expect(combined).toMatch(/NOT_IMPLEMENTED|not supported/i);
+    expect(combined).toContain("perp wallet agent list aster");
   });
 
 });

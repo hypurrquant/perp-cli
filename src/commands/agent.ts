@@ -55,57 +55,23 @@ interface VerifyResult {
 // ── Per-DEX verify implementations ───────────────────────────────────────
 
 async function verifyAster(_opts: VerifyOpts): Promise<VerifyResult> {
-  // Live-verify-not-available: no verified master-signing path exists for
-  // Aster's `/fapi/v3/agent` listing endpoint. The HypurrQuant_FE reference
-  // codebase confirms this: master signing is used ONLY for one-time
-  // approveAgent/approveBuilder operations; all other signed requests use the
-  // agent key (`signer=agent`, not `signer=master`). FE doesn't call /agent
-  // listing at all (AsterSnapshotter notes Aster has no REST endpoint for
-  // approved-agent listing).
+  // No-fallback policy (CLAUDE.md SSOT rule #2): Aster has no verified
+  // master-signing path for `/fapi/v3/agent`. The HypurrQuant_FE reference
+  // confirms Aster has no REST endpoint to list approved agents at all —
+  // master signing is used only for one-time approveAgent/approveBuilder.
   //
-  // Result: this command reports LOCAL CACHE state from `settings.agents.aster`,
-  // which is non-authoritative. Remote drift (manual revoke from Aster UI,
-  // out-of-band expiry, etc.) is NOT detected. To restore live verify later,
-  // capture browser traffic from fapi.asterdex.com or compare a viem signature
-  // byte-for-byte against a known-valid wallet's request.
-  const settings = loadSettings();
-  const asterAgents = settings.agents?.aster ?? {};
-  const now = Date.now();
-  const items: Array<Record<string, unknown>> = Object.values(asterAgents).map(meta => {
-    const expiresMs = meta.expiresAt ? Date.parse(meta.expiresAt) : 0;
-    return {
-      agentName: meta.agentName,
-      agentAddress: meta.agentEvmAddress,
-      // Both keys: `expired` (ms epoch — used by text renderer) AND `expiresAt` (ISO).
-      expired: Number.isFinite(expiresMs) && expiresMs > 0 ? expiresMs : 0,
-      expiresAt: meta.expiresAt,
-      canPerpTrade: meta.permissions?.canPerpTrade ?? false,
-      canSpotTrade: meta.permissions?.canSpotTrade ?? false,
-      canWithdraw: meta.permissions?.canWithdraw ?? false,
-      source: "local-cache",
-    };
-  });
-
-  const warnings: string[] = [
-    "Aster live verify is unsupported — result is non-authoritative local cache from settings.agents.aster. Remote drift (manual revoke, out-of-band expiry) will NOT be detected.",
-  ];
-
-  // Surface locally-expired entries
-  for (const item of items) {
-    const expired = item.expired as number;
-    if (expired > 0 && expired < now) {
-      warnings.push(`Agent "${item.agentName}" locally expired at ${item.expiresAt} (${Math.floor((now - expired) / 86400000)}d ago). Refresh via 'perp wallet agent rotate aster ${item.agentName}'.`);
-    }
-  }
-
-  if (_opts.agentName) {
-    const found = items.some(i => i.agentName === _opts.agentName);
-    if (!found) {
-      warnings.push(`No local entry for agent "${_opts.agentName}".`);
-    }
-  }
-
-  return { registered: items.length > 0, count: items.length, items, warnings };
+  // Returning local cache as if it were verified live state would be a
+  // fallback (silent substitution masquerading as success). The SSOT rule
+  // bans that pattern: failure must propagate, not get hidden behind a
+  // synthesized success envelope. Throw NOT_IMPLEMENTED with explicit
+  // remediation pointing to local-cache surfaces.
+  throw new PerpError(
+    "NOT_IMPLEMENTED",
+    "Aster live agent verify is not supported (no verified master-signing path; FE reference also lacks this endpoint).",
+    {
+      remediation: "Use 'perp wallet agent list aster' to inspect local cache, or 'perp wallet agent rotate aster <name>' to refresh on-chain.",
+    },
+  );
 }
 
 /**
