@@ -231,7 +231,7 @@ describe("smartOrder", () => {
     expect(result.price).toBe("1.4");
   });
 
-  it("does not fallback on embedded error when fallback=false", async () => {
+  it("throws on embedded reject when fallback=false (SSOT rule #2)", async () => {
     const hlResponse = {
       status: "ok",
       response: {
@@ -244,10 +244,34 @@ describe("smartOrder", () => {
     const adapter = mockAdapter({
       limitOrder: vi.fn().mockResolvedValue(hlResponse),
     });
-    const result = await smartOrder(adapter, "BTC", "sell", "0.1", { fallback: false });
 
-    // Without fallback, returns the IOC result as-is (caller handles error)
-    expect(result.method).toBe("limit_ioc");
+    // SSOT rule #2: an embedded exchange-level reject must surface as a
+    // thrown error — silently returning method=limit_ioc would let callers
+    // treat the rejected order as a successful fill.
+    await expect(
+      smartOrder(adapter, "BTC", "sell", "0.1", { fallback: false }),
+    ).rejects.toThrow(/Order could not immediately match/);
+    expect(adapter.marketOrder).not.toHaveBeenCalled();
+  });
+
+  it("throws on embedded reject by default (SSOT rule #2)", async () => {
+    // Same scenario as above but without explicit fallback — verify default is opt-out.
+    const hlResponse = {
+      status: "ok",
+      response: {
+        type: "order",
+        data: {
+          statuses: [{ error: "Order could not immediately match" }],
+        },
+      },
+    };
+    const adapter = mockAdapter({
+      limitOrder: vi.fn().mockResolvedValue(hlResponse),
+    });
+
+    await expect(
+      smartOrder(adapter, "BTC", "sell", "0.1"),
+    ).rejects.toThrow(/Order could not immediately match/);
     expect(adapter.marketOrder).not.toHaveBeenCalled();
   });
 });

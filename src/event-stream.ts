@@ -102,9 +102,20 @@ export async function startEventStream(
       }
 
       // Closed positions
+      // SSOT rule #2: emit realizedPnl explicitly so position-history can
+      // require the field. We can't reach back into the exchange to fetch the
+      // true realized P&L from a polling stream — but the last unrealized
+      // snapshot before the position disappears is the closest proxy and
+      // becomes realized at close. Surfacing it under realizedPnl makes the
+      // contract explicit.
       for (const [sym, prev] of prevPositions) {
         if (!currentPositions.has(sym)) {
-          emit({ type: "position_closed", exchange: adapter.name, timestamp: ts, data: { ...prev } });
+          emit({
+            type: "position_closed",
+            exchange: adapter.name,
+            timestamp: ts,
+            data: { ...prev, realizedPnl: prev.unrealizedPnl },
+          });
         }
       }
 

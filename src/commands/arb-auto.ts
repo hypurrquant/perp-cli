@@ -1669,10 +1669,25 @@ export function registerArbAutoCommands(
 
       if (longOk && shortOk) {
         // 6. Verify both positions actually exist (some exchanges return success but silently reject)
-        const [longPositions, shortPositions] = await Promise.all([
-          longAdapter.getPositions().catch(() => []),
-          shortAdapter.getPositions().catch(() => []),
+        // SSOT rule #2: distinguish "API error" from "no position opened".
+        // Previously `.catch(() => [])` collapsed both into the same code path,
+        // so a transient verify-side network blip would be misclassified as a
+        // silent exchange reject and trigger an unnecessary rollback.
+        const [longSettled, shortSettled] = await Promise.allSettled([
+          longAdapter.getPositions(),
+          shortAdapter.getPositions(),
         ]);
+        if (longSettled.status === "rejected" || shortSettled.status === "rejected") {
+          const longErr = longSettled.status === "rejected" ? (longSettled.reason instanceof Error ? longSettled.reason.message : String(longSettled.reason)) : "ok";
+          const shortErr = shortSettled.status === "rejected" ? (shortSettled.reason instanceof Error ? shortSettled.reason.message : String(shortSettled.reason)) : "ok";
+          throw new Error(
+            `arb-auto: cannot verify post-fill positions for ${sym} ` +
+            `(long ${longExch}: ${longErr}; short ${shortExch}: ${shortErr}). ` +
+            `Refusing to silently misclassify API failure as a silent reject.`,
+          );
+        }
+        const longPositions = longSettled.value;
+        const shortPositions = shortSettled.value;
         const longPos = longPositions.find(p => p.symbol.toUpperCase().startsWith(sym));
         const shortPos = shortPositions.find(p => p.symbol.toUpperCase().startsWith(sym));
 

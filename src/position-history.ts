@@ -302,7 +302,12 @@ export function attachPositionLogger(
 
       const openedAt = tracked?.openedAt ?? ts;
       const duration = new Date(ts).getTime() - new Date(openedAt).getTime();
-      const realizedPnl = requireNumericString(data.realizedPnl ?? data.unrealizedPnl, "realizedPnl", "closed", exchange, symbol);
+      // SSOT rule #2: do NOT alias unrealizedPnl as realizedPnl. They mean
+      // different things: unrealizedPnl is the snapshot before close, and on
+      // a real close event the upstream adapter must emit realizedPnl
+      // explicitly. Aliasing them would have a flat-close (realizedPnl=0)
+      // pretend to be the last unrealized number from the previous tick.
+      const realizedPnl = requireNumericString(data.realizedPnl, "realizedPnl", "closed", exchange, symbol);
 
       logPosition({
         id: tracked?.id ?? genId(),

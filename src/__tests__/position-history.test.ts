@@ -355,7 +355,7 @@ describe("attachPositionLogger", () => {
       type: "position_closed",
       exchange: "test-ex",
       timestamp: closeTime.toISOString(),
-      data: { symbol: "SOL", side: "long", size: "100", entryPrice: "150", unrealizedPnl: "50" },
+      data: { symbol: "SOL", side: "long", size: "100", entryPrice: "150", unrealizedPnl: "50", realizedPnl: "50" },
     });
 
     const closed = readPositionHistory({ status: "closed" });
@@ -388,7 +388,7 @@ describe("attachPositionLogger", () => {
       type: "position_closed",
       exchange: "ex",
       timestamp: ts,
-      data: { symbol: "BTC", side: "long", size: "0.1", entryPrice: "65000", unrealizedPnl: "100" },
+      data: { symbol: "BTC", side: "long", size: "0.1", entryPrice: "65000", unrealizedPnl: "100", realizedPnl: "100" },
     });
 
     const all = readPositionHistory({ exchange: "ex" });
@@ -408,12 +408,41 @@ describe("attachPositionLogger", () => {
       type: "position_closed",
       exchange: "test",
       timestamp: new Date().toISOString(),
-      data: { symbol: "BTC", side: "long", size: "0.1", entryPrice: "65000", unrealizedPnl: "0" },
+      data: { symbol: "BTC", side: "long", size: "0.1", entryPrice: "65000", unrealizedPnl: "0", realizedPnl: "0" },
     });
 
     const closed = readPositionHistory({ status: "closed" });
     expect(closed).toHaveLength(1);
     // Duration should be undefined since we don't know when it opened
+  });
+
+  it("throws on position_closed missing realizedPnl (SSOT rule #2)", () => {
+    const wrapped = attachPositionLogger(() => {});
+
+    // SSOT rule #2: refuse to silently default realizedPnl to 0 or alias
+    // unrealizedPnl into it. The upstream stream must emit realizedPnl on
+    // close.
+    expect(() =>
+      wrapped({
+        type: "position_closed",
+        exchange: "test",
+        timestamp: new Date().toISOString(),
+        data: { symbol: "BTC", side: "long", size: "0.1", entryPrice: "65000", unrealizedPnl: "50" },
+      }),
+    ).toThrow(/missing\/invalid realizedPnl/);
+  });
+
+  it("throws on position_opened missing side (SSOT rule #2)", () => {
+    const wrapped = attachPositionLogger(() => {});
+
+    expect(() =>
+      wrapped({
+        type: "position_opened",
+        exchange: "test",
+        timestamp: new Date().toISOString(),
+        data: { symbol: "BTC", size: "0.1", entryPrice: "65000", unrealizedPnl: "0" } as Record<string, unknown>,
+      }),
+    ).toThrow(/missing\/invalid side/);
   });
 
   it("should not log non-position events", () => {

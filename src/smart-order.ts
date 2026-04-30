@@ -112,6 +112,29 @@ function hasOrderError(result: unknown): boolean {
 }
 
 /**
+ * Best-effort extraction of the embedded reject reason for the thrown error
+ * message. Falls back to JSON.stringify so the caller always gets actionable
+ * context.
+ */
+function describeOrderError(result: unknown): string {
+  if (!result || typeof result !== "object") return String(result);
+  const r = result as Record<string, unknown>;
+  const resp = r.response as Record<string, unknown> | undefined;
+  const data = resp?.data as Record<string, unknown> | undefined;
+  const statuses = data?.statuses as Record<string, unknown>[] | undefined;
+  if (Array.isArray(statuses) && statuses.length > 0 && statuses[0].error) {
+    return String(statuses[0].error);
+  }
+  if (typeof r.error === "string") return r.error;
+  if (typeof r.message === "string") return r.message;
+  try {
+    return JSON.stringify(result);
+  } catch {
+    return String(result);
+  }
+}
+
+/**
  * Execute a smart order at best bid/ask + 1 tick.
  * Drop-in replacement for `adapter.marketOrder()`.
  */
@@ -157,15 +180,21 @@ export async function smartOrder(
 
     // Check for exchange-level rejection inside a "success" response
     // (e.g., Hyperliquid returns { status: "ok", response: { data: { statuses: [{ error: "..." }] } } })
-    if (fallback && hasOrderError(result)) {
-      const fallbackResult = await adapter.marketOrder(symbol, side, size);
-      return {
-        result: fallbackResult,
-        method: "market_fallback",
-        price: formattedPrice,
-        bestBookPrice: bestEntry[0],
-        tickSize: tick.toFixed(decimals),
-      };
+    // SSOT rule #2: when fallback is opt-out (default), an embedded reject
+    // must throw — otherwise the caller would silently receive a "limit_ioc"
+    // result for a rejected order and treat the failure as success.
+    if (hasOrderError(result)) {
+      if (fallback) {
+        const fallbackResult = await adapter.marketOrder(symbol, side, size);
+        return {
+          result: fallbackResult,
+          method: "market_fallback",
+          price: formattedPrice,
+          bestBookPrice: bestEntry[0],
+          tickSize: tick.toFixed(decimals),
+        };
+      }
+      throw new Error(`smartOrder: exchange rejected IOC limit (${describeOrderError(result)})`);
     }
 
     return {
