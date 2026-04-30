@@ -398,14 +398,13 @@ describe("perp agent verify", () => {
 
   // 11. Aggregate partial failure — one DEX fails, others succeed
   it("aggregate partial failure — lighter 500 → error slot, others ok, top-level ok:true", async () => {
-    initSettings();
+    // Aster reads from settings; clear cache so registered:false
+    const settings = loadSettings();
+    saveSettings({ ...settings, owsActiveWallet: "main", agents: { aster: {} } } as ReturnType<typeof loadSettings>);
     mockFetch.mockReset();
 
-    // Route by URL; lighter throws network error
+    // Route by URL; lighter throws network error. (Aster is not fetched.)
     mockFetch.mockImplementation((url: string) => {
-      if (typeof url === "string" && url.includes("asterdex.com")) {
-        return Promise.resolve({ ok: true, json: async () => [] });
-      }
       if (typeof url === "string" && url.includes("hyperliquid.xyz")) {
         return Promise.resolve({ ok: true, json: async () => [] });
       }
@@ -424,24 +423,25 @@ describe("perp agent verify", () => {
     // lighter slot should have error
     expect(json.data.lighter).toHaveProperty("error");
     expect((json.data.lighter as { error: { message: string } }).error.message).toMatch(/network error/i);
-    // aster, hl, pacifica should be ok (registered:false, count:0)
+    // aster (empty cache), hl, pacifica should be ok (registered:false, count:0)
     expect((json.data.aster as Record<string, unknown>).count).toBe(0);
+    expect((json.data.aster as Record<string, unknown>).registered).toBe(false);
   });
 
   // 12. Empty result → registered=false, count=0, items=[]
-  it("empty result — registered=false, count=0, items=[]", async () => {
-    initSettings();
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => [],
-    });
+  it("aster empty cache — registered=false, count=0, items=[], no fetch", async () => {
+    const settings = loadSettings();
+    saveSettings({ ...settings, owsActiveWallet: "main", agents: { aster: {} } } as ReturnType<typeof loadSettings>);
+    mockFetch.mockReset();
 
-    const out = await runVerify(["aster", "--json", "--master", "main"]);
+    const out = await runVerify(["aster", "--json"]);
     const json = JSON.parse(out.stdout.join(""));
     expect(json.ok).toBe(true);
     expect(json.data.registered).toBe(false);
     expect(json.data.count).toBe(0);
     expect(json.data.items).toEqual([]);
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(json.meta.warnings.join(" ")).toMatch(/non-authoritative|local cache/i);
   });
 
   // 13. JSON envelope shape — meta.timestamp is ISO-8601
@@ -460,6 +460,68 @@ describe("perp agent verify", () => {
     expect(json.meta.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     // Must be parseable as a date
     expect(isNaN(Date.parse(json.meta.timestamp))).toBe(false);
+  });
+
+  // 14. Aster non-JSON text output renders expiry (regression: text reader uses `expired`, not `expiresAt`)
+  it("aster text output renders expired ms — not '—'", async () => {
+    const expiresAt = new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString();
+    const expiresMs = Date.parse(expiresAt);
+    const settings = loadSettings();
+    const agents = {
+      aster: {
+        "perp-cli-aster": {
+          agentName: "perp-cli-aster",
+          agentWalletName: "agent-aster-main",
+          agentEvmAddress: "0xAGENT0000000000000000000000000000000001" as `0x${string}`,
+          userEvmAddress: "0xMASTER0000000000000000000000000000000001" as `0x${string}`,
+          masterWalletName: "main",
+          owsApiKeyId: "k",
+          owsPolicyId: "p",
+          expiresAt,
+          approvedAt: new Date().toISOString(),
+          permissions: { canPerpTrade: true, canSpotTrade: false, canWithdraw: false },
+          asterApprovalNonce: "1",
+          status: "active" as const,
+        },
+      },
+    };
+    saveSettings({ ...settings, owsActiveWallet: "main", agents } as ReturnType<typeof loadSettings>);
+
+    // No --json: text output
+    const out = await runVerify(["aster"]);
+    const text = out.stdout.join("");
+    // Renderer reads `expired` (ms epoch) — value should be the parsed ms, NOT "—"
+    expect(text).toContain(String(expiresMs));
+    expect(text).not.toMatch(/\| {2}—/);
+  });
+
+  // 15. Aster locally-expired cache surfaces warning
+  it("aster locally-expired entry → meta.warnings flags expiry", async () => {
+    const expiresAt = new Date(Date.now() - 24 * 3600 * 1000).toISOString(); // 1 day ago
+    const settings = loadSettings();
+    const agents = {
+      aster: {
+        "stale-agent": {
+          agentName: "stale-agent",
+          agentWalletName: "agent-aster-main",
+          agentEvmAddress: "0xAGENT0000000000000000000000000000000099" as `0x${string}`,
+          userEvmAddress: "0xMASTER0000000000000000000000000000000001" as `0x${string}`,
+          masterWalletName: "main",
+          owsApiKeyId: "k",
+          owsPolicyId: "p",
+          expiresAt,
+          approvedAt: new Date(Date.now() - 91 * 24 * 3600 * 1000).toISOString(),
+          permissions: { canPerpTrade: true, canSpotTrade: false, canWithdraw: false },
+          asterApprovalNonce: "1",
+          status: "active" as const,
+        },
+      },
+    };
+    saveSettings({ ...settings, owsActiveWallet: "main", agents } as ReturnType<typeof loadSettings>);
+
+    const out = await runVerify(["aster", "--json"]);
+    const json = JSON.parse(out.stdout.join(""));
+    expect(json.meta.warnings.some((w: string) => /locally expired/i.test(w))).toBe(true);
   });
 
 });

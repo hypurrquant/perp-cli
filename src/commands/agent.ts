@@ -54,39 +54,54 @@ interface VerifyResult {
 
 // ── Per-DEX verify implementations ───────────────────────────────────────
 
-async function verifyAster(opts: VerifyOpts): Promise<VerifyResult> {
-  // Live-verify-not-supported: Aster's `/fapi/v3/agent` endpoint rejects every
-  // signed master payload we've tried (Domain A ListAgent, Domain A Message,
-  // Domain A + asterChain, Domain B Message). The HypurrQuant_FE reference
-  // codebase NEVER calls this endpoint either — it signs only with the agent
-  // private key (raw secp256k1 + viem) for all reads/trades, and uses local
-  // state to know which agents are active.
+async function verifyAster(_opts: VerifyOpts): Promise<VerifyResult> {
+  // Live-verify-not-available: no verified master-signing path exists for
+  // Aster's `/fapi/v3/agent` listing endpoint. The HypurrQuant_FE reference
+  // codebase confirms this: master signing is used ONLY for one-time
+  // approveAgent/approveBuilder operations; all other signed requests use the
+  // agent key (`signer=agent`, not `signer=master`). FE doesn't call /agent
+  // listing at all (AsterSnapshotter notes Aster has no REST endpoint for
+  // approved-agent listing).
   //
-  // Master OWS signing for Aster is therefore unverified across BOTH codebases,
-  // and there's no published endpoint spec to debug against. We mirror the FE
-  // behavior here: report local cache state and document live-verify as
-  // unsupported. To restore live verify, either capture web-UI traffic against
-  // fapi.asterdex.com or get the spec from the Aster team.
+  // Result: this command reports LOCAL CACHE state from `settings.agents.aster`,
+  // which is non-authoritative. Remote drift (manual revoke from Aster UI,
+  // out-of-band expiry, etc.) is NOT detected. To restore live verify later,
+  // capture browser traffic from fapi.asterdex.com or compare a viem signature
+  // byte-for-byte against a known-valid wallet's request.
   const settings = loadSettings();
   const asterAgents = settings.agents?.aster ?? {};
-  const items: Array<Record<string, unknown>> = Object.values(asterAgents).map(meta => ({
-    agentName: meta.agentName,
-    agentAddress: meta.agentEvmAddress,
-    expiresAt: meta.expiresAt,
-    canPerpTrade: meta.permissions?.canPerpTrade ?? false,
-    canSpotTrade: meta.permissions?.canSpotTrade ?? false,
-    canWithdraw: meta.permissions?.canWithdraw ?? false,
-    source: "local-cache",
-  }));
+  const now = Date.now();
+  const items: Array<Record<string, unknown>> = Object.values(asterAgents).map(meta => {
+    const expiresMs = meta.expiresAt ? Date.parse(meta.expiresAt) : 0;
+    return {
+      agentName: meta.agentName,
+      agentAddress: meta.agentEvmAddress,
+      // Both keys: `expired` (ms epoch — used by text renderer) AND `expiresAt` (ISO).
+      expired: Number.isFinite(expiresMs) && expiresMs > 0 ? expiresMs : 0,
+      expiresAt: meta.expiresAt,
+      canPerpTrade: meta.permissions?.canPerpTrade ?? false,
+      canSpotTrade: meta.permissions?.canSpotTrade ?? false,
+      canWithdraw: meta.permissions?.canWithdraw ?? false,
+      source: "local-cache",
+    };
+  });
 
-  const warnings = [
-    "Aster live verify is unsupported (master OWS sig path unverified; FE reference also avoids this endpoint). Showing local cache from settings.agents.aster.",
+  const warnings: string[] = [
+    "Aster live verify is unsupported — result is non-authoritative local cache from settings.agents.aster. Remote drift (manual revoke, out-of-band expiry) will NOT be detected.",
   ];
 
-  if (opts.agentName) {
-    const found = items.some(i => i.agentName === opts.agentName);
+  // Surface locally-expired entries
+  for (const item of items) {
+    const expired = item.expired as number;
+    if (expired > 0 && expired < now) {
+      warnings.push(`Agent "${item.agentName}" locally expired at ${item.expiresAt} (${Math.floor((now - expired) / 86400000)}d ago). Refresh via 'wallet agent rotate aster ${item.agentName}'.`);
+    }
+  }
+
+  if (_opts.agentName) {
+    const found = items.some(i => i.agentName === _opts.agentName);
     if (!found) {
-      warnings.push(`No local entry for agent "${opts.agentName}".`);
+      warnings.push(`No local entry for agent "${_opts.agentName}".`);
     }
   }
 
