@@ -1,5 +1,5 @@
 import type { ExchangeAdapter } from "../exchanges/index.js";
-import { symbolMatch } from "../utils.js";
+import { symbolMatch, logSettledRejections } from "../utils.js";
 import { updateJobState } from "../jobs.js";
 import { fetchAllBalances, computeRebalancePlan, hasEnoughBalance, type ExchangeBalanceSnapshot } from "../rebalance.js";
 import { checkArbLiquidity } from "../liquidity.js";
@@ -82,16 +82,7 @@ async function fetchAllRates(): Promise<FundingRate[]> {
     })(),
   ]);
 
-  const labels = ["pacifica", "hyperliquid", "lighter"];
-  const settled = [pacRates, hlRates, ltRates];
-  for (let i = 0; i < settled.length; i++) {
-    const r = settled[i];
-    if (r.status === "rejected") {
-      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
-      // eslint-disable-next-line no-console
-      console.error(`[funding-arb] ${labels[i]} rates fetch failed: ${reason}`);
-    }
-  }
+  logSettledRejections([pacRates, hlRates, ltRates], ["pacifica", "hyperliquid", "lighter"], "funding-arb");
 
   return [
     ...(pacRates.status === "fulfilled" ? pacRates.value : []),

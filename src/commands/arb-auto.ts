@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { formatUsd, printJson, jsonOk, makeTable } from "../utils.js";
+import { formatUsd, printJson, jsonOk, makeTable, logSettledRejections } from "../utils.js";
 import type { ExchangeAdapter } from "../exchanges/index.js";
 import { computeExecutableSize } from "../liquidity.js";
 import { computeMatchedSize, computeSpotPerpMatchedSize } from "../arb/index.js";
@@ -210,15 +210,7 @@ async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
     fetchLighterFundingRatesRaw(),
     fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()) as Promise<Array<Record<string, unknown>>>,
   ]);
-  const dexLabels = ["pacifica", "hyperliquid", "lighter:orderbook", "lighter:funding", "aster:premiumIndex"];
-  for (let i = 0; i < settled.length; i++) {
-    const r = settled[i];
-    if (r.status === "rejected") {
-      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
-      // eslint-disable-next-line no-console
-      console.error(`[arb-auto] ${dexLabels[i]} fetch failed: ${reason}`);
-    }
-  }
+  logSettledRejections(settled, ["pacifica", "hyperliquid", "lighter:orderbook", "lighter:funding", "aster:premiumIndex"], "arb-auto");
   const pacRes = settled[0].status === "fulfilled" ? settled[0].value : null;
   const hlRes = settled[1].status === "fulfilled" ? settled[1].value : null;
   const ltDetailsRes = settled[2].status === "fulfilled" ? settled[2].value : null;

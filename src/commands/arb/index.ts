@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { makeTable, formatUsd, formatPnl, printJson, jsonOk } from "../../utils.js";
+import { makeTable, formatUsd, formatPnl, printJson, jsonOk, logSettledRejections } from "../../utils.js";
 import { SPOT_PERP_TOKEN_MAP, type ExchangeAdapter, type ExchangePosition, type SpotBalance } from "../../exchanges/index.js";
 import { readExecutionLog, logExecution, type ExecutionRecord } from "../../execution-log.js";
 import { toHourlyRate, computeAnnualSpread } from "../../funding.js";
@@ -128,15 +128,7 @@ async function fetchFundingRatesMap(): Promise<Map<string, { exchange: string; r
     fetchLighterFundingRates(),
     fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()) as Promise<Array<Record<string, unknown>>>,
   ]);
-  const labels = ["pacifica", "hyperliquid", "lighter:orderbook", "lighter:funding", "aster:premiumIndex"];
-  for (let i = 0; i < settled.length; i++) {
-    const r = settled[i];
-    if (r.status === "rejected") {
-      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
-      // eslint-disable-next-line no-console
-      console.error(`[arb] ${labels[i]} fetch failed: ${reason}`);
-    }
-  }
+  logSettledRejections(settled, ["pacifica", "hyperliquid", "lighter:orderbook", "lighter:funding", "aster:premiumIndex"], "arb");
   const pacAssets = settled[0].status === "fulfilled" ? settled[0].value : [];
   const hlAssets = settled[1].status === "fulfilled" ? settled[1].value : [];
   const ltDetails = settled[2].status === "fulfilled" ? settled[2].value : [];

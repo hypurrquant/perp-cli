@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { makeTable, formatUsd, formatPercent, formatPnl, printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
+import { makeTable, formatUsd, formatPercent, formatPnl, printJson, jsonOk, jsonError, withJsonErrors, logSettledRejections } from "../utils.js";
 import chalk from "chalk";
 import { annualizeRate, computeAnnualSpread, toHourlyRate, estimateHourlyFunding, annualizeHourlyRate } from "../funding.js";
 import {
@@ -162,15 +162,7 @@ export async function fetchAllPrices(): Promise<PriceSnapshot[]> {
     fetchHyperliquidAllMidsRaw(),
     fetchLighterOrderBookDetailsRaw(),
   ]);
-  const dexLabels = ["pacifica", "hyperliquid", "lighter:orderbook"];
-  for (let i = 0; i < settled.length; i++) {
-    const r = settled[i];
-    if (r.status === "rejected") {
-      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
-      // eslint-disable-next-line no-console
-      console.error(`[arb] ${dexLabels[i]} fetch failed: ${reason}`);
-    }
-  }
+  logSettledRejections(settled, ["pacifica", "hyperliquid", "lighter:orderbook"], "arb");
   const pacRes = settled[0].status === "fulfilled" ? settled[0].value : null;
   const hlRes = settled[1].status === "fulfilled" ? settled[1].value : null;
   const ltRes = settled[2].status === "fulfilled" ? settled[2].value : null;
@@ -444,15 +436,7 @@ export async function handleBasisScan(isJson: () => boolean, opts: { minBasis: s
     fetchLighterRates(),
     fetchAsterRates(),
   ]);
-  const labels = ["pacifica", "hyperliquid", "lighter", "aster"];
-  for (let i = 0; i < settled.length; i++) {
-    const r = settled[i];
-    if (r.status === "rejected") {
-      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
-      // eslint-disable-next-line no-console
-      console.error(`[basis-scan] ${labels[i]} fetch failed: ${reason}`);
-    }
-  }
+  logSettledRejections(settled, ["pacifica", "hyperliquid", "lighter", "aster"], "basis-scan");
   const pacRates = settled[0].status === "fulfilled" ? settled[0].value : [];
   const hlRates = settled[1].status === "fulfilled" ? settled[1].value : [];
   const ltRates = settled[2].status === "fulfilled" ? settled[2].value : [];

@@ -1,4 +1,5 @@
 import { PACIFICA_API_URL } from "./urls.js";
+import { assertOk } from "./_http.js";
 import { withCache, TTL_MARKET } from "../../cache.js";
 
 // ── Types ──
@@ -17,11 +18,7 @@ export function fetchPacificaPrices(): Promise<PacificaAsset[]> {
   // missing/invalid mark or funding so a 0 doesn't reach downstream paths.
   return withCache("pub:pac:prices", TTL_MARKET, async () => {
     const res = await fetch(PACIFICA_API_URL);
-    if (!res.ok) {
-      let body = "";
-      try { body = await res.text(); } catch { /* ignore */ }
-      throw new Error(`Pacifica prices returned HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
-    }
+    await assertOk(res, "Pacifica prices");
     const json = await res.json();
     const data = (json as Record<string, unknown>).data ?? json;
     if (!Array.isArray(data)) return [];
@@ -57,11 +54,7 @@ export function fetchPacificaPricesRaw(): Promise<unknown> {
   // 5xx JSON body cannot fulfill as if it were valid data.
   return withCache("pub:pac:prices:raw", TTL_MARKET, async () => {
     const res = await fetch(PACIFICA_API_URL);
-    if (!res.ok) {
-      let body = "";
-      try { body = await res.text(); } catch { /* ignore */ }
-      throw new Error(`Pacifica prices returned HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
-    }
+    await assertOk(res, "Pacifica prices");
     return res.json();
   });
 }

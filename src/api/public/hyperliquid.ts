@@ -1,4 +1,5 @@
 import { HYPERLIQUID_API_URL } from "./urls.js";
+import { assertOk } from "./_http.js";
 import { withCache, TTL_MARKET } from "../../cache.js";
 
 // ── Types ──
@@ -12,18 +13,13 @@ interface HyperliquidAsset {
 // ── Internal ──
 
 async function hlPost(type: string): Promise<unknown> {
-  // SSOT rule #2: a non-2xx response is a real failure, not "no rows".
-  // Throw with the HTTP status + body so the caller surfaces the real reason.
+  // SSOT rule #2: a non-2xx response is a real failure, not "no rows" — see assertOk.
   const res = await fetch(HYPERLIQUID_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type }),
   });
-  if (!res.ok) {
-    let body = "";
-    try { body = await res.text(); } catch { /* ignore body-read failure */ }
-    throw new Error(`Hyperliquid info ${type} returned HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
-  }
+  await assertOk(res, `Hyperliquid info ${type}`);
   return res.json();
 }
 

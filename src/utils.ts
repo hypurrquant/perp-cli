@@ -257,3 +257,27 @@ export async function withJsonErrors<T>(
     return undefined;
   }
 }
+
+/**
+ * Log each rejected outcome from Promise.allSettled to stderr with a
+ * per-source label. SSOT rule #2 helper: turn a quiet rejection inside a
+ * multi-DEX comparison into an explicit one-line failure on stderr.
+ *
+ * @param settled  Outcomes from Promise.allSettled.
+ * @param labels   Source label per index (e.g. ["pacifica", "hyperliquid", ...]).
+ * @param prefix   Bracketed prefix prepended to each line (e.g. "arb-auto").
+ */
+export function logSettledRejections(
+  settled: PromiseSettledResult<unknown>[],
+  labels: string[],
+  prefix: string,
+): void {
+  for (let i = 0; i < settled.length; i++) {
+    const r = settled[i];
+    if (r.status === "rejected") {
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      // eslint-disable-next-line no-console
+      console.error(`[${prefix}] ${labels[i] ?? `index-${i}`} fetch failed: ${reason}`);
+    }
+  }
+}
