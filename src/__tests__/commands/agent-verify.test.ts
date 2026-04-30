@@ -542,6 +542,9 @@ describe("perp agent verify", () => {
     const out = await runVerify(["aster", "--json"]);
     const json = JSON.parse(out.stdout.join(""));
     expect(json.meta.warnings.some((w: string) => /locally expired/i.test(w))).toBe(true);
+    // Pin the refresh hint format so the `perp` prefix can't regress (codex 3rd-pass followup)
+    const hintWarning = json.meta.warnings.find((w: string) => /locally expired/i.test(w)) as string;
+    expect(hintWarning).toContain("perp wallet agent rotate aster stale-agent");
   });
 
 });
