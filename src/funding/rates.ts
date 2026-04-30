@@ -95,6 +95,9 @@ async function fetchHyperliquidRates(): Promise<ExchangeFundingRate[]> {
 }
 
 async function fetchLighterRates(): Promise<ExchangeFundingRate[]> {
+  // Outer try/catch returning [] is intentional graceful degradation; see
+  // fetchAsterRates for the same pattern. Inside, SSOT rule #2 applies —
+  // skip rows whose mark price cannot be resolved instead of 0-coercing.
   try {
     const [details, funding] = await Promise.all([
       fetchLighterOrderBookDetails(),
@@ -104,19 +107,32 @@ async function fetchLighterRates(): Promise<ExchangeFundingRate[]> {
     const priceMap = new Map(details.map(d => [d.marketId, d.lastTradePrice]));
     const symMap = new Map(details.map(d => [d.marketId, d.symbol]));
 
-    return funding.map(fr => {
+    const out: ExchangeFundingRate[] = [];
+    for (const fr of funding) {
       const symbol = fr.symbol || symMap.get(fr.marketId) || "";
+      if (!symbol) continue;
       const rate = fr.rate;
-      const hourly = toHourlyRate(rate, "lighter");
-      return {
+      // Prefer fr.markPrice; fall back to orderBook last-trade as a documented
+      // price-source preference (NOT an error fallback).
+      const directMark = fr.markPrice;
+      const fallbackMark = priceMap.get(fr.marketId);
+      let markPrice: number | undefined;
+      if (directMark !== null && Number.isFinite(directMark) && directMark > 0) {
+        markPrice = directMark;
+      } else if (fallbackMark !== undefined && Number.isFinite(fallbackMark) && fallbackMark > 0) {
+        markPrice = fallbackMark;
+      }
+      if (!Number.isFinite(rate) || markPrice === undefined) continue;
+      out.push({
         exchange: "lighter" as const,
         symbol,
         fundingRate: rate,
-        hourlyRate: hourly,
+        hourlyRate: toHourlyRate(rate, "lighter"),
         annualizedPct: annualizeRate(rate, "lighter"),
-        markPrice: fr.markPrice || priceMap.get(fr.marketId) || 0,
-      };
-    });
+        markPrice,
+      });
+    }
+    return out;
   } catch {
     return [];
   }

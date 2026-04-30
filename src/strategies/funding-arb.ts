@@ -42,6 +42,9 @@ interface ArbPosition {
 }
 
 async function fetchAllRates(): Promise<FundingRate[]> {
+  // SSOT rule #2: each DEX is independent. allSettled keeps the comparison
+  // alive when one DEX errors out, while rejection reasons get logged to
+  // stderr (explicit failure, never silent).
   const [pacRates, hlRates, ltRates] = await Promise.allSettled([
     fetchPacificaPrices().then(assets => assets.map(p => ({
       exchange: "pacifica", symbol: p.symbol, fundingRate: p.funding, markPrice: p.mark,
@@ -56,14 +59,39 @@ async function fetchAllRates(): Promise<FundingRate[]> {
       ]);
       const priceMap = new Map(details.map(d => [d.marketId, d.lastTradePrice]));
       const symMap = new Map(details.map(d => [d.marketId, d.symbol]));
-      return funding.map(fr => ({
-        exchange: "lighter",
-        symbol: fr.symbol || symMap.get(fr.marketId) || "",
-        fundingRate: fr.rate,
-        markPrice: fr.markPrice || priceMap.get(fr.marketId) || 0,
-      }));
+      const out: FundingRate[] = [];
+      for (const fr of funding) {
+        const symbol = fr.symbol || symMap.get(fr.marketId) || "";
+        if (!symbol) continue;
+        // Prefer fr.markPrice; fall back to orderBook last-trade as documented
+        // price source preference (NOT an error fallback).
+        const directMark = fr.markPrice;
+        const fallbackMark = priceMap.get(fr.marketId);
+        let markPrice: number | undefined;
+        if (directMark !== null && Number.isFinite(directMark) && directMark > 0) {
+          markPrice = directMark;
+        } else if (fallbackMark !== undefined && Number.isFinite(fallbackMark) && fallbackMark > 0) {
+          markPrice = fallbackMark;
+        }
+        // SSOT rule #2: skip rows whose mark price cannot be resolved at all
+        // — never publish a 0 mark price downstream.
+        if (markPrice === undefined) continue;
+        out.push({ exchange: "lighter", symbol, fundingRate: fr.rate, markPrice });
+      }
+      return out;
     })(),
   ]);
+
+  const labels = ["pacifica", "hyperliquid", "lighter"];
+  const settled = [pacRates, hlRates, ltRates];
+  for (let i = 0; i < settled.length; i++) {
+    const r = settled[i];
+    if (r.status === "rejected") {
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      // eslint-disable-next-line no-console
+      console.error(`[funding-arb] ${labels[i]} rates fetch failed: ${reason}`);
+    }
+  }
 
   return [
     ...(pacRates.status === "fulfilled" ? pacRates.value : []),

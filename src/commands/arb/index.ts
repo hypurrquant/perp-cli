@@ -153,11 +153,23 @@ async function fetchFundingRatesMap(): Promise<Map<string, { exchange: string; r
   for (const h of hlAssets) addRate(h.symbol, "hyperliquid", h.funding, h.markPx);
 
   // Lighter: join details + funding by marketId
+  // SSOT rule #2: skip rows whose mark price cannot be resolved (no 0 fallback).
+  // Prefer fr.markPrice; fall back to orderBook last-trade as documented
+  // price-source preference (NOT error fallback).
   const ltPriceMap = new Map(ltDetails.map(d => [d.marketId, d.lastTradePrice]));
   const ltSymMap = new Map(ltDetails.map(d => [d.marketId, d.symbol]));
   for (const fr of ltFunding) {
     const sym = fr.symbol || ltSymMap.get(fr.marketId) || "";
-    const mp = fr.markPrice || ltPriceMap.get(fr.marketId) || 0;
+    if (!sym) continue;
+    const directMark = fr.markPrice;
+    const fallbackMark = ltPriceMap.get(fr.marketId);
+    let mp: number | undefined;
+    if (directMark !== null && Number.isFinite(directMark) && directMark > 0) {
+      mp = directMark;
+    } else if (fallbackMark !== undefined && Number.isFinite(fallbackMark) && fallbackMark > 0) {
+      mp = fallbackMark;
+    }
+    if (mp === undefined || !Number.isFinite(fr.rate)) continue;
     addRate(sym, "lighter", fr.rate, mp);
   }
 

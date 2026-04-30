@@ -407,8 +407,27 @@ export async function getDebridgeQuote(
 
   const estimation = quote.estimation as Record<string, unknown>;
   const dstOut = estimation?.dstChainTokenOut as Record<string, unknown>;
-  const amountOut = Number(dstOut?.recommendedAmount ?? dstOut?.amount ?? 0) / 1e6;
-  const fulfillDelay = Number((quote.order as Record<string, unknown>)?.approximateFulfillmentDelay ?? 10);
+  // SSOT rule #2: bridge quote drives the user's expected amount-out. A
+  // missing/malformed dstChainTokenOut.amount must surface as a thrown error,
+  // never coerce silently to 0 (which would back-fill amountIn as fee and
+  // silently misrepresent the cost).
+  const dstAmountRaw = dstOut?.recommendedAmount ?? dstOut?.amount;
+  const dstAmountNumber = Number(dstAmountRaw);
+  if (dstAmountRaw === undefined || !Number.isFinite(dstAmountNumber)) {
+    throw new Error(
+      `deBridge quote missing dstChainTokenOut.recommendedAmount/amount ` +
+      `(received ${JSON.stringify(dstAmountRaw)}); refusing silent 0 fallback. ` +
+      `Raw estimation=${JSON.stringify(estimation)}`,
+    );
+  }
+  const amountOut = dstAmountNumber / 1e6;
+  const order = quote.order as Record<string, unknown> | undefined;
+  const fulfillDelayRaw = Number(order?.approximateFulfillmentDelay);
+  // approximateFulfillmentDelay is documented as nice-to-have telemetry;
+  // when omitted, default to 10 (deBridge's published median for healthy
+  // routes). This is a documented telemetry default, NOT an error fallback —
+  // it does not affect the user's bridge amount/fee math.
+  const fulfillDelay = Number.isFinite(fulfillDelayRaw) ? fulfillDelayRaw : 10;
 
   return {
     provider: "debridge",
@@ -1751,21 +1770,43 @@ export async function getRelayQuote(
   const details = data.details as Record<string, unknown> | undefined;
   const fees = data.fees as Record<string, unknown> | undefined;
 
+  // SSOT rule #2: refuse to fabricate amountOut/fee from `0 || subtractFee`
+  // back-fill. If Relay didn't quote a real amount-out + relayer fee, the
+  // user's bridge cost is unknown — surface the gap.
   const currencyOut = details?.currencyOut as Record<string, unknown> | undefined;
-  const amountOut = Number(currencyOut?.amountFormatted ?? 0);
+  const amountFormattedRaw = currencyOut?.amountFormatted;
+  const amountOut = Number(amountFormattedRaw);
+  if (amountFormattedRaw === undefined || !Number.isFinite(amountOut)) {
+    throw new Error(
+      `Relay quote missing details.currencyOut.amountFormatted ` +
+      `(received ${JSON.stringify(amountFormattedRaw)}); refusing silent 0 fallback. ` +
+      `Raw details=${JSON.stringify(details)}`,
+    );
+  }
 
   const relayerFee = fees?.relayer as Record<string, unknown> | undefined;
-  const feeUsd = Number(relayerFee?.amountUsd ?? 0);
+  const feeUsdRaw = relayerFee?.amountUsd;
+  const feeUsd = Number(feeUsdRaw);
+  if (feeUsdRaw === undefined || !Number.isFinite(feeUsd)) {
+    throw new Error(
+      `Relay quote missing fees.relayer.amountUsd ` +
+      `(received ${JSON.stringify(feeUsdRaw)}); refusing silent 0 fallback. ` +
+      `Raw fees=${JSON.stringify(fees)}`,
+    );
+  }
 
-  const timeEstimate = Number(details?.timeEstimate ?? 30);
+  // timeEstimate is telemetry only; default 30s is documented Relay median
+  // for healthy routes. Telemetry default, not error fallback.
+  const timeEstimateRaw = Number(details?.timeEstimate);
+  const timeEstimate = Number.isFinite(timeEstimateRaw) ? timeEstimateRaw : 30;
 
   return {
     provider: "relay",
     srcChain,
     dstChain,
     amountIn: amountUsdc,
-    amountOut: amountOut || (amountUsdc - feeUsd),
-    fee: feeUsd || (amountUsdc - amountOut),
+    amountOut,
+    fee: feeUsd,
     estimatedTime: timeEstimate,
     gasIncluded: true,
     gasNote: "Relay solver handles destination execution",

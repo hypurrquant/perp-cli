@@ -22,22 +22,22 @@ function hlPost(type: string): Promise<unknown> {
 // ── Fetchers ──
 
 export function fetchHyperliquidMeta(): Promise<HyperliquidAsset[]> {
+  // SSOT rule #2: error must propagate. Row-level skipping handles missing
+  // markPx / funding so a 0 doesn't reach downstream comparisons.
   return withCache("pub:hl:metaAndAssetCtxs", TTL_MARKET, async () => {
-    try {
-      const json = await hlPost("metaAndAssetCtxs") as unknown[];
-      const universe = ((json[0] ?? {}) as Record<string, unknown>).universe ?? [];
-      const ctxs = (json[1] ?? []) as Record<string, unknown>[];
-      return (universe as Record<string, unknown>[]).map((asset, i) => {
-        const ctx = (ctxs[i] ?? {}) as Record<string, unknown>;
-        return {
-          symbol: String(asset.name ?? ""),
-          funding: Number(ctx.funding ?? 0),
-          markPx: Number(ctx.markPx ?? 0),
-        };
-      });
-    } catch {
-      return [];
-    }
+    const json = await hlPost("metaAndAssetCtxs") as unknown[];
+    const universe = ((json[0] ?? {}) as Record<string, unknown>).universe ?? [];
+    const ctxs = (json[1] ?? []) as Record<string, unknown>[];
+    const out: HyperliquidAsset[] = [];
+    (universe as Record<string, unknown>[]).forEach((asset, i) => {
+      const ctx = (ctxs[i] ?? {}) as Record<string, unknown>;
+      const symbol = String(asset.name ?? "");
+      const funding = Number(ctx.funding);
+      const markPx = Number(ctx.markPx);
+      if (!symbol || !Number.isFinite(funding) || !Number.isFinite(markPx) || markPx <= 0) return;
+      out.push({ symbol, funding, markPx });
+    });
+    return out;
   });
 }
 
@@ -62,9 +62,11 @@ export function parseHyperliquidMetaRaw(raw: unknown): { rates: Map<string, numb
     const ctx = (ctxs[i] ?? {}) as Record<string, unknown>;
     const sym = String(a.name ?? "");
     if (!sym) return;
-    rates.set(sym, Number(ctx.funding ?? 0));
-    const mp = Number(ctx.markPx ?? 0);
-    if (mp > 0) prices.set(sym, mp);
+    // SSOT rule #2: skip rows missing a real funding rate; never publish 0.
+    const funding = Number(ctx.funding);
+    if (Number.isFinite(funding)) rates.set(sym, funding);
+    const mp = Number(ctx.markPx);
+    if (Number.isFinite(mp) && mp > 0) prices.set(sym, mp);
   });
   return { rates, prices };
 }

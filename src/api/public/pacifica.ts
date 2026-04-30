@@ -13,21 +13,34 @@ interface PacificaAsset {
 // ── Fetchers ──
 
 export function fetchPacificaPrices(): Promise<PacificaAsset[]> {
+  // SSOT rule #2: error must propagate. Row-level skipping is applied for
+  // missing/invalid mark or funding so a 0 doesn't reach downstream paths.
   return withCache("pub:pac:prices", TTL_MARKET, async () => {
-    try {
-      const res = await fetch(PACIFICA_API_URL);
-      const json = await res.json();
-      const data = (json as Record<string, unknown>).data ?? json;
-      if (!Array.isArray(data)) return [];
-      return data.map((p: Record<string, unknown>) => ({
-        symbol: String(p.symbol ?? ""),
-        funding: Number(p.next_funding ?? p.funding ?? 0),
-        mark: Number(p.mark ?? 0),
-        nextFunding: p.next_funding ? Number(p.next_funding) : undefined,
-      }));
-    } catch {
-      return [];
+    const res = await fetch(PACIFICA_API_URL);
+    const json = await res.json();
+    const data = (json as Record<string, unknown>).data ?? json;
+    if (!Array.isArray(data)) return [];
+    const out: PacificaAsset[] = [];
+    for (const p of data as Record<string, unknown>[]) {
+      const symbol = String(p.symbol ?? "");
+      const fundingRaw = p.next_funding ?? p.funding;
+      const funding = Number(fundingRaw);
+      const mark = Number(p.mark);
+      if (!symbol || fundingRaw === undefined || !Number.isFinite(funding) || !Number.isFinite(mark) || mark <= 0) {
+        continue;
+      }
+      const nextFundingRaw = p.next_funding;
+      const nextFundingNumber = Number(nextFundingRaw);
+      out.push({
+        symbol,
+        funding,
+        mark,
+        nextFunding: nextFundingRaw !== undefined && Number.isFinite(nextFundingNumber)
+          ? nextFundingNumber
+          : undefined,
+      });
     }
+    return out;
   });
 }
 
@@ -49,9 +62,15 @@ export function parsePacificaRaw(raw: unknown): { rates: Map<string, number>; pr
   for (const p of data as Record<string, unknown>[]) {
     const sym = String(p.symbol ?? "");
     if (!sym) continue;
-    rates.set(sym, Number(p.next_funding ?? p.funding ?? 0));
-    const mark = Number(p.mark ?? p.price ?? 0);
-    if (mark > 0) prices.set(sym, mark);
+    // SSOT rule #2: skip rows missing real funding/mark; never publish 0.
+    const fundingRaw = p.next_funding ?? p.funding;
+    const fundingNumber = Number(fundingRaw);
+    if (fundingRaw !== undefined && Number.isFinite(fundingNumber)) {
+      rates.set(sym, fundingNumber);
+    }
+    const markCandidates = [Number(p.mark), Number(p.price)];
+    const mark = markCandidates.find(v => Number.isFinite(v) && v > 0);
+    if (mark !== undefined) prices.set(sym, mark);
   }
   return { rates, prices };
 }
