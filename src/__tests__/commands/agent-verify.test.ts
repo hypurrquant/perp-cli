@@ -153,51 +153,43 @@ function initSettings(extra: Record<string, unknown> = {}) {
 
 describe("perp agent verify", () => {
 
-  // 1. Aster happy path
-  it("aster happy path — registered:true, count:1, raw item preserved", async () => {
-    initSettings();
-    const asterItem = {
-      agentAddress: "0xAGENT0000000000000000000000000000000001",
-      agentName: "perp-cli-aster",
-      ipWhitelist: [],
-      expired: 9999999999000,
-      canSpotTrade: false,
-      canPerpTrade: true,
-      canWithdraw: false,
+  // 1. Aster local-cache verify (live API path is unsupported per FE pattern)
+  it("aster — returns local cache from settings.agents.aster with unsupported-warning", async () => {
+    const settings = loadSettings();
+    const agents = {
+      aster: {
+        "perp-cli-aster": {
+          agentName: "perp-cli-aster",
+          agentWalletName: "agent-aster-main",
+          agentEvmAddress: "0xAGENT0000000000000000000000000000000001" as `0x${string}`,
+          userEvmAddress: "0xMASTER0000000000000000000000000000000001" as `0x${string}`,
+          masterWalletName: "main",
+          owsApiKeyId: "k",
+          owsPolicyId: "p",
+          expiresAt: new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString(),
+          approvedAt: new Date().toISOString(),
+          permissions: { canPerpTrade: true, canSpotTrade: false, canWithdraw: false },
+          asterApprovalNonce: "1",
+          status: "active" as const,
+        },
+      },
     };
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => [asterItem],
-    });
+    saveSettings({ ...settings, owsActiveWallet: "main", agents } as ReturnType<typeof loadSettings>);
 
-    const out = await runVerify(["aster", "--json", "--master", "main"]);
+    const out = await runVerify(["aster", "--json"]);
     const json = JSON.parse(out.stdout.join(""));
     expect(json.ok).toBe(true);
     expect(json.data.registered).toBe(true);
     expect(json.data.count).toBe(1);
-    expect(json.data.items[0]).toMatchObject({ agentAddress: "0xAGENT0000000000000000000000000000000001" });
-    expect(json.data.items[0]).toMatchObject({ canPerpTrade: true });
-    expect(json.data.exchange).toBe("aster");
-  });
-
-  // 2. Aster auth — nonce/user/signer/signature in query string (adapter shape)
-  it("aster auth — request URL contains nonce, user, signer, and signature", async () => {
-    initSettings();
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => [],
+    expect(json.data.items[0]).toMatchObject({
+      agentAddress: "0xAGENT0000000000000000000000000000000001",
+      canPerpTrade: true,
+      source: "local-cache",
     });
-
-    await runVerify(["aster", "--json", "--master", "main"]);
-
-    expect(mockFetch).toHaveBeenCalledOnce();
-    const callUrl = mockFetch.mock.calls[0][0] as string;
-    expect(callUrl).toContain("nonce=");
-    expect(callUrl).toContain("user=");
-    expect(callUrl).toContain("signer=");
-    expect(callUrl).toContain("signature=");
-    // signatureChainId is intentionally absent — it breaks the signature shape
-    expect(callUrl).not.toContain("signatureChainId=");
+    expect(json.data.exchange).toBe("aster");
+    // No live HTTP call should be made
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(json.meta.warnings.join(" ")).toMatch(/unsupported|local cache/i);
   });
 
   // 3. HL happy path — registered:true, correct body shape
@@ -323,9 +315,8 @@ describe("perp agent verify", () => {
     expect(headers?.["authorization"]).toBeUndefined();
   });
 
-  // 9. Mismatch warning — agentEvmAddress in settings doesn't match live response
-  it("mismatch warning — meta.warnings includes mismatch string", async () => {
-    // Pre-populate settings with a known agent address
+  // 9. Aster — agentName not in local cache surfaces "no local entry" warning
+  it("aster agentName not in local cache — meta.warnings includes 'no local entry'", async () => {
     const settings = loadSettings();
     const agents = {
       aster: {
@@ -347,30 +338,41 @@ describe("perp agent verify", () => {
     };
     saveSettings({ ...settings, owsActiveWallet: "main", agents } as ReturnType<typeof loadSettings>);
 
-    // Mock returns a DIFFERENT address
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => [{ agentAddress: "0xDIFFERENT00000000000000000000000000000001", agentName: "agent1", expired: 9999999999000, canSpotTrade: false, canPerpTrade: true, canWithdraw: false }],
-    });
-
-    const out = await runVerify(["aster", "agent1", "--json", "--master", "main"]);
+    // Ask about an agent name that isn't in the cache
+    const out = await runVerify(["aster", "missing-agent", "--json"]);
     const json = JSON.parse(out.stdout.join(""));
     expect(json.ok).toBe(true);
     expect(json.meta.warnings).toBeDefined();
-    expect(json.meta.warnings.length).toBeGreaterThan(0);
-    expect(json.meta.warnings[0]).toMatch(/mismatch|not found/i);
+    expect(json.meta.warnings.some((w: string) => /no local entry/i.test(w))).toBe(true);
   });
 
   // 10. Aggregate happy — all 4 DEXs, 4-key data object
   it("aggregate happy path — 4-key data object with registered/count/items per DEX", async () => {
-    initSettings();
+    // Aster slot reads from settings.agents.aster (live API path is unsupported)
+    const settings = loadSettings();
+    const agents = {
+      aster: {
+        a: {
+          agentName: "a",
+          agentWalletName: "agent-aster-main",
+          agentEvmAddress: "0xA000000000000000000000000000000000000001" as `0x${string}`,
+          userEvmAddress: "0xMASTER0000000000000000000000000000000001" as `0x${string}`,
+          masterWalletName: "main",
+          owsApiKeyId: "k",
+          owsPolicyId: "p",
+          expiresAt: new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString(),
+          approvedAt: new Date().toISOString(),
+          permissions: { canPerpTrade: true, canSpotTrade: false, canWithdraw: false },
+          asterApprovalNonce: "1",
+          status: "active" as const,
+        },
+      },
+    };
+    saveSettings({ ...settings, owsActiveWallet: "main", agents } as ReturnType<typeof loadSettings>);
     mockFetch.mockReset();
 
-    // Route by URL so order of parallel fetch calls doesn't matter
-    mockFetch.mockImplementation((url: string, opts?: RequestInit) => {
-      if (typeof url === "string" && url.includes("asterdex.com")) {
-        return Promise.resolve({ ok: true, json: async () => [{ agentAddress: "0xA", agentName: "a", expired: 0, canSpotTrade: false, canPerpTrade: true, canWithdraw: false }] });
-      }
+    // Route remaining DEXs by URL so order of parallel fetch calls doesn't matter
+    mockFetch.mockImplementation((url: string) => {
       if (typeof url === "string" && url.includes("hyperliquid.xyz")) {
         return Promise.resolve({ ok: true, json: async () => [{ address: "0xB", validUntil: 9999, name: "b" }] });
       }
@@ -390,7 +392,6 @@ describe("perp agent verify", () => {
     expect(json.data).toHaveProperty("hyperliquid");
     expect(json.data).toHaveProperty("pacifica");
     expect(json.data).toHaveProperty("lighter");
-    // aster should succeed
     expect((json.data.aster as Record<string, unknown>).registered).toBe(true);
     expect((json.data.aster as Record<string, unknown>).count).toBe(1);
   });

@@ -55,88 +55,42 @@ interface VerifyResult {
 // ── Per-DEX verify implementations ───────────────────────────────────────
 
 async function verifyAster(opts: VerifyOpts): Promise<VerifyResult> {
+  // Live-verify-not-supported: Aster's `/fapi/v3/agent` endpoint rejects every
+  // signed master payload we've tried (Domain A ListAgent, Domain A Message,
+  // Domain A + asterChain, Domain B Message). The HypurrQuant_FE reference
+  // codebase NEVER calls this endpoint either — it signs only with the agent
+  // private key (raw secp256k1 + viem) for all reads/trades, and uses local
+  // state to know which agents are active.
+  //
+  // Master OWS signing for Aster is therefore unverified across BOTH codebases,
+  // and there's no published endpoint spec to debug against. We mirror the FE
+  // behavior here: report local cache state and document live-verify as
+  // unsupported. To restore live verify, either capture web-UI traffic against
+  // fapi.asterdex.com or get the spec from the Aster team.
   const settings = loadSettings();
-  const masterName = opts.master ?? settings.owsActiveWallet;
-  if (!masterName) {
-    throw new PerpError("INVALID_PARAMS", "Master wallet name required for Aster verify. Use --master or set owsActiveWallet in settings.", {
-      remediation: "perp wallet agent verify aster --master <walletName> --passphrase $PP",
-    });
-  }
-  const passphrase = opts.passphrase ?? "";
-  const masterSigner = OwsEvmSigner.create(masterName, passphrase);
-  const userEvmAddress = masterSigner.getAddress() as `0x${string}`;
+  const asterAgents = settings.agents?.aster ?? {};
+  const items: Array<Record<string, unknown>> = Object.values(asterAgents).map(meta => ({
+    agentName: meta.agentName,
+    agentAddress: meta.agentEvmAddress,
+    expiresAt: meta.expiresAt,
+    canPerpTrade: meta.permissions?.canPerpTrade ?? false,
+    canSpotTrade: meta.permissions?.canSpotTrade ?? false,
+    canWithdraw: meta.permissions?.canWithdraw ?? false,
+    source: "local-cache",
+  }));
 
-  // Aster v3 universal signing: Domain B EIP-712 over urlencoded msg with
-  // nonce/user/signer appended last (matches AsterAdapter._buildSignedQueryString).
-  //
-  // FIXME(aster-verify-live): /fapi/v3/agent + /openOrders (master tier) both
-  // return "Signature check failed" using master OWS signing. Investigated 4
-  // sig variants in spike (2026-04-30): Domain A ListAgent, Domain A Message,
-  // Domain A Message + asterChain param, Domain B Message — all rejected.
-  //
-  // Live order placement WORKS via Tier-1 agent signing (agent key signs over
-  // Domain B), so the EIP-712 path is correct in principle. Master OWS signing
-  // for Aster has never been live-validated — `--no-agent` mode also fails
-  // identically. Possible root causes:
-  //   - OWS native signTypedData produces signatures Aster rejects (different
-  //     EIP712Domain serialization or recoveryId convention)
-  //   - The endpoint requires extra query params (agentName, account, etc.)
-  //   - Aster's master verification on /agent uses an undocumented sig scheme
-  // Aster v3 docs do NOT publish this endpoint. To resolve, capture live UI
-  // traffic against fapi.asterdex.com or consult the Aster team. For now,
-  // use `wallet agent list` (local cache) to verify registered agents.
-  const { buildOrderTypedData } = await import("../exchanges/aster-typed-data.js");
-  const nonceMicros = Date.now() * 1000 + Math.floor(Math.random() * 1000);
-  const fullParams = {
-    nonce: nonceMicros,
-    user: userEvmAddress,
-    signer: userEvmAddress,
-  };
-  const typed = buildOrderTypedData(fullParams);
-  const sig = await masterSigner.signTypedData(
-    typed.domain as Record<string, unknown>,
-    typed.types as unknown as Record<string, Array<{ name: string; type: string }>>,
-    typed.message as Record<string, unknown>,
-  );
+  const warnings = [
+    "Aster live verify is unsupported (master OWS sig path unverified; FE reference also avoids this endpoint). Showing local cache from settings.agents.aster.",
+  ];
 
-  const resp = await fetch(`https://fapi.asterdex.com/fapi/v3/agent?${typed.message.msg}&signature=${sig}`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw new PerpError("EXCHANGE_ERROR", `Aster verify failed: HTTP ${resp.status}: ${body.slice(0, 200)}`, {
-      remediation: "Check master wallet name and passphrase. Run: perp wallet agent verify aster --master <name> --passphrase $PP",
-    });
-  }
-
-  const data = await resp.json() as unknown;
-  const items = Array.isArray(data) ? data : [];
-  const warnings: string[] = [];
-
-  // Cross-check: if agentName provided and settings has an entry, verify address matches
   if (opts.agentName) {
-    const agentMeta = settings.agents?.aster?.[opts.agentName];
-    if (agentMeta) {
-      const expected = agentMeta.agentEvmAddress.toLowerCase();
-      const found = items.some(
-        (item: unknown) =>
-          typeof item === "object" &&
-          item !== null &&
-          "agentAddress" in item &&
-          typeof (item as Record<string, unknown>).agentAddress === "string" &&
-          ((item as Record<string, unknown>).agentAddress as string).toLowerCase() === expected,
-      );
-      if (!found) {
-        warnings.push(
-          `Agent "${opts.agentName}" (expected address ${agentMeta.agentEvmAddress}) not found in Aster live response. The agent may have expired or been revoked remotely.`,
-        );
-      }
+    const found = items.some(i => i.agentName === opts.agentName);
+    if (!found) {
+      warnings.push(`No local entry for agent "${opts.agentName}".`);
     }
   }
 
-  return { registered: items.length > 0, count: items.length, items, warnings: warnings.length > 0 ? warnings : undefined };
+  return { registered: items.length > 0, count: items.length, items, warnings };
 }
 
 /**
