@@ -85,50 +85,55 @@ async function getCctpRelayFee(
   useForwarding: boolean = false,
   amountUsdc: number = 100,
 ): Promise<{ maxFee: bigint; feeUsdc: number; forwardingAvailable: boolean }> {
-  try {
-    const qs = useForwarding ? "?forward=true" : "";
-    const res = await fetch(`${CCTP_FEE_API}/${srcDomain}/${dstDomain}${qs}`);
-    if (res.ok) {
-      const body = await res.json();
-      // Check for forwarding error response
-      if (body && typeof body === "object" && "error" in body) {
-        if (useForwarding) return getCctpRelayFee(srcDomain, dstDomain, finalityThreshold, false, amountUsdc);
-      }
-      const schedules = body as Array<{
-        finalityThreshold: number;
-        minimumFee: number; // basis points (e.g. 1.3 = 0.013%)
-        forwardFee?: { low: number; med: number; high: number }; // USDC subunits
-      }>;
-      const schedule = schedules.find(s => s.finalityThreshold === finalityThreshold) ?? schedules[0];
-      if (schedule) {
-        // Protocol fee: minimumFee is in basis points → actual fee = amount × bps / 10000
-        const amountSubunits = BigInt(Math.round(amountUsdc * 1e6));
-        const bpsRounded = BigInt(Math.round(schedule.minimumFee * 100));
-        const protocolFee = (amountSubunits * bpsRounded) / 1_000_000n;
-        // Add 20% buffer per Circle docs recommendation
-        const protocolFeeBuffered = (protocolFee * 120n) / 100n;
-
-        if (schedule.forwardFee) {
-          // Forwarding: protocol fee + forwarding service fee
-          const forwardFeeSubunits = BigInt(schedule.forwardFee.high);
-          const totalMaxFee = protocolFeeBuffered + forwardFeeSubunits;
-          const totalFeeUsdc = Number(totalMaxFee) / 1e6;
-          return { maxFee: totalMaxFee, feeUsdc: totalFeeUsdc, forwardingAvailable: true };
-        }
-
-        // No forwarding — protocol fee only (or minimal for standard to incentivize relay)
-        if (protocolFeeBuffered > 0n) {
-          return { maxFee: protocolFeeBuffered, feeUsdc: Number(protocolFeeBuffered) / 1e6, forwardingAvailable: false };
-        }
-        // Standard (free): set small maxFee to incentivize relay
-        return { maxFee: 10000n, feeUsdc: 0.01, forwardingAvailable: false }; // $0.01
-      }
-    }
-  } catch {
-    // fallback
+  // SSOT rule #2: Circle's CCTP fee schedule is the SSOT for bridge cost.
+  // Previously a fetch failure returned a hardcoded $0.50 / $0.25 fallback —
+  // that silently set maxFee at a guess, which can either burn user dollars
+  // (over-fee) or get the bridge stuck (under-fee). Errors must propagate so
+  // the caller can decide whether to retry or abort.
+  const qs = useForwarding ? "?forward=true" : "";
+  const res = await fetch(`${CCTP_FEE_API}/${srcDomain}/${dstDomain}${qs}`);
+  if (!res.ok) {
+    throw new Error(`CCTP fee API ${srcDomain}→${dstDomain} returned HTTP ${res.status}`);
   }
-  const fallback = finalityThreshold === 1000 ? 0.50 : 0.25;
-  return { maxFee: BigInt(Math.round(fallback * 1e6)), feeUsdc: fallback, forwardingAvailable: useForwarding };
+  const body = await res.json();
+  // Check for forwarding error response — caller can request without forwarding
+  if (body && typeof body === "object" && "error" in body) {
+    if (useForwarding) return getCctpRelayFee(srcDomain, dstDomain, finalityThreshold, false, amountUsdc);
+    throw new Error(`CCTP fee API ${srcDomain}→${dstDomain} returned error: ${JSON.stringify(body)}`);
+  }
+  const schedules = body as Array<{
+    finalityThreshold: number;
+    minimumFee: number; // basis points (e.g. 1.3 = 0.013%)
+    forwardFee?: { low: number; med: number; high: number }; // USDC subunits
+  }>;
+  // Prefer exact finalityThreshold match; otherwise pick the first scheduled
+  // tier (Circle returns Standard + Fast in one envelope). The "first" choice
+  // is documented behavior, not error fallback.
+  const schedule = schedules.find(s => s.finalityThreshold === finalityThreshold) ?? schedules[0];
+  if (!schedule) {
+    throw new Error(`CCTP fee API ${srcDomain}→${dstDomain} returned no fee schedule`);
+  }
+  // Protocol fee: minimumFee is in basis points → actual fee = amount × bps / 10000
+  const amountSubunits = BigInt(Math.round(amountUsdc * 1e6));
+  const bpsRounded = BigInt(Math.round(schedule.minimumFee * 100));
+  const protocolFee = (amountSubunits * bpsRounded) / 1_000_000n;
+  // Add 20% buffer per Circle docs recommendation
+  const protocolFeeBuffered = (protocolFee * 120n) / 100n;
+
+  if (schedule.forwardFee) {
+    // Forwarding: protocol fee + forwarding service fee
+    const forwardFeeSubunits = BigInt(schedule.forwardFee.high);
+    const totalMaxFee = protocolFeeBuffered + forwardFeeSubunits;
+    const totalFeeUsdc = Number(totalMaxFee) / 1e6;
+    return { maxFee: totalMaxFee, feeUsdc: totalFeeUsdc, forwardingAvailable: true };
+  }
+
+  // No forwarding — protocol fee only (or minimal for standard to incentivize relay)
+  if (protocolFeeBuffered > 0n) {
+    return { maxFee: protocolFeeBuffered, feeUsdc: Number(protocolFeeBuffered) / 1e6, forwardingAvailable: false };
+  }
+  // Standard (free): set small maxFee to incentivize relay (documented Circle pattern)
+  return { maxFee: 10000n, feeUsdc: 0.01, forwardingAvailable: false }; // $0.01
 }
 
 // ── Balance Check ──

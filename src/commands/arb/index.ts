@@ -118,13 +118,30 @@ function formatDuration(ms: number): string {
 async function fetchFundingRatesMap(): Promise<Map<string, { exchange: string; rate: number; markPrice: number }[]>> {
   const rateMap = new Map<string, { exchange: string; rate: number; markPrice: number }[]>();
 
-  const [pacAssets, hlAssets, ltDetails, ltFunding, asterPremiums] = await Promise.all([
+  // SSOT rule #2: each DEX is independent. allSettled keeps the comparison
+  // alive when one DEX errors out, while rejection reasons get logged to
+  // stderr (explicit failure, never silent .catch(() => [])).
+  const settled = await Promise.allSettled([
     fetchPacificaPrices(),
     fetchHyperliquidMeta(),
     fetchLighterOrderBookDetails(),
     fetchLighterFundingRates(),
-    fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()).catch(() => []) as Promise<Array<Record<string, unknown>>>,
+    fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()) as Promise<Array<Record<string, unknown>>>,
   ]);
+  const labels = ["pacifica", "hyperliquid", "lighter:orderbook", "lighter:funding", "aster:premiumIndex"];
+  for (let i = 0; i < settled.length; i++) {
+    const r = settled[i];
+    if (r.status === "rejected") {
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      // eslint-disable-next-line no-console
+      console.error(`[arb] ${labels[i]} fetch failed: ${reason}`);
+    }
+  }
+  const pacAssets = settled[0].status === "fulfilled" ? settled[0].value : [];
+  const hlAssets = settled[1].status === "fulfilled" ? settled[1].value : [];
+  const ltDetails = settled[2].status === "fulfilled" ? settled[2].value : [];
+  const ltFunding = settled[3].status === "fulfilled" ? settled[3].value : [];
+  const asterPremiums = settled[4].status === "fulfilled" ? settled[4].value : [];
 
   const addRate = (sym: string, exchange: string, rate: number, markPrice: number) => {
     if (!sym) return;
@@ -145,10 +162,15 @@ async function fetchFundingRatesMap(): Promise<Map<string, { exchange: string; r
   }
 
   // Aster: premiumIndex
-  for (const p of asterPremiums ?? []) {
+  // SSOT rule #2: skip rows missing markPrice / lastFundingRate instead of
+  // 0-coercing — a 0 markPrice would corrupt downstream sizing.
+  for (const p of asterPremiums) {
     const rawSym = String(p.symbol ?? "");
     if (!rawSym.endsWith("USDT")) continue;
-    addRate(rawSym.replace(/USDT$/, ""), "aster", Number(p.lastFundingRate ?? 0), Number(p.markPrice ?? 0));
+    const fundingRate = Number(p.lastFundingRate);
+    const markPrice = Number(p.markPrice);
+    if (!Number.isFinite(fundingRate) || !Number.isFinite(markPrice) || markPrice <= 0) continue;
+    addRate(rawSym.replace(/USDT$/, ""), "aster", fundingRate, markPrice);
   }
 
   return rateMap;

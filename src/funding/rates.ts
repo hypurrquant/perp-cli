@@ -123,6 +123,12 @@ async function fetchLighterRates(): Promise<ExchangeFundingRate[]> {
 }
 
 async function fetchAsterRates(): Promise<ExchangeFundingRate[]> {
+  // Outer try/catch returning [] is intentional graceful degradation: when
+  // the entire endpoint is unreachable, the cross-DEX comparison should
+  // continue with the remaining venues.
+  // Inside the try block, SSOT rule #2 applies — refuse to silently 0-coerce
+  // missing markPrice / lastFundingRate, since those values feed downstream
+  // sizing and any 0 corrupts the comparison.
   try {
     const [premiums, tickers] = await Promise.all([
       fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()) as Promise<Array<Record<string, unknown>>>,
@@ -131,26 +137,37 @@ async function fetchAsterRates(): Promise<ExchangeFundingRate[]> {
 
     const priceMap = new Map<string, number>();
     for (const t of tickers ?? []) {
-      priceMap.set(String(t.symbol), Number(t.lastPrice ?? 0));
+      const last = Number(t.lastPrice);
+      if (Number.isFinite(last) && last > 0) priceMap.set(String(t.symbol), last);
     }
 
-    return (premiums ?? [])
-      .filter(p => String(p.symbol ?? "").endsWith("USDT"))
-      .map(p => {
-        const rawSymbol = String(p.symbol ?? "");
-        const symbol = rawSymbol.replace(/USDT$/, "");
-        const rate = Number(p.lastFundingRate ?? 0);
-        const hourly = toHourlyRate(rate, "aster");
-        return {
-          exchange: "aster" as const,
-          symbol,
-          fundingRate: rate,
-          hourlyRate: hourly,
-          annualizedPct: annualizeRate(rate, "aster"),
-          markPrice: Number(p.markPrice ?? priceMap.get(rawSymbol) ?? 0),
-          nextFundingTime: Number(p.nextFundingTime ?? 0),
-        };
+    const out: ExchangeFundingRate[] = [];
+    for (const p of premiums ?? []) {
+      const rawSymbol = String(p.symbol ?? "");
+      if (!rawSymbol.endsWith("USDT")) continue;
+      const fundingRate = Number(p.lastFundingRate);
+      // Prefer premiumIndex.markPrice; fall back to ticker.lastPrice as a
+      // documented price-source preference (NOT an error fallback).
+      const markFromPremium = Number(p.markPrice);
+      const markPrice = Number.isFinite(markFromPremium) && markFromPremium > 0
+        ? markFromPremium
+        : priceMap.get(rawSymbol);
+      if (!Number.isFinite(fundingRate) || markPrice === undefined || !Number.isFinite(markPrice) || markPrice <= 0) {
+        continue;
+      }
+      const symbol = rawSymbol.replace(/USDT$/, "");
+      const nextFundingTimeRaw = Number(p.nextFundingTime);
+      out.push({
+        exchange: "aster" as const,
+        symbol,
+        fundingRate,
+        hourlyRate: toHourlyRate(fundingRate, "aster"),
+        annualizedPct: annualizeRate(fundingRate, "aster"),
+        markPrice,
+        nextFundingTime: Number.isFinite(nextFundingTimeRaw) ? nextFundingTimeRaw : 0,
       });
+    }
+    return out;
   } catch {
     return [];
   }

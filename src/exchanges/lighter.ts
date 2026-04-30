@@ -1235,7 +1235,17 @@ export class LighterAdapter implements ExchangeAdapter {
       account_index: String(this._accountIndex),
       api_key_index: String(this._apiKeyIndex),
     }) as { nonce?: number; next_nonce?: number };
-    return res.nonce ?? res.next_nonce ?? 0;
+    const nonce = res.nonce ?? res.next_nonce;
+    // SSOT rule #2: refuse to silently default to nonce 0. A stale or
+    // missing nonce will cause Lighter to reject the tx with cryptic errors
+    // and the user has no way to diagnose the upstream failure.
+    if (nonce === undefined || !Number.isFinite(nonce) || nonce < 0) {
+      throw new Error(
+        `Lighter /nextNonce returned no valid nonce for account_index=${this._accountIndex} ` +
+        `api_key_index=${this._apiKeyIndex}; raw response=${JSON.stringify(res)}`,
+      );
+    }
+    return nonce;
   }
 
   private async signOrder(params: {
@@ -1265,11 +1275,18 @@ export class LighterAdapter implements ExchangeAdapter {
   private async sendTx(signed: WasmTxResponse): Promise<unknown> {
     if (signed.error) throw new Error(`Signer error: ${signed.error}`);
     if (!signed.txInfo) throw new Error("Signer returned empty txInfo");
+    // SSOT rule #2: refuse to silently default txType to 0 — different tx
+    // types (createOrder=14, cancelOrder=15, updateLeverage=20, etc.) need
+    // different routing on Lighter's side, and a 0 either rejects with a
+    // generic error or silently misroutes.
+    if (signed.txType === undefined || !Number.isFinite(signed.txType)) {
+      throw new Error(`Lighter signer returned no txType (received ${signed.txType}); refusing to send with default 0.`);
+    }
     const res = await fetch(`${this._baseUrl}/api/v1/sendTx`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        tx_type: String(signed.txType ?? 0),
+        tx_type: String(signed.txType),
         tx_info: signed.txInfo,
       }),
     });
@@ -1361,11 +1378,19 @@ export class LighterAdapter implements ExchangeAdapter {
     const { privateKey, publicKey } = await LighterAdapter.generateApiKey();
 
     // 2. Get nonce from API
+    // SSOT rule #2: refuse to silently default to nonce 0 — see getNextNonce.
     const nonceRes = await this.restGet("/nextNonce", {
       account_index: String(this._accountIndex),
       api_key_index: String(apiKeyIndex),
     }) as { nonce?: number; next_nonce?: number };
-    const nonce = nonceRes.nonce ?? nonceRes.next_nonce ?? 0;
+    const nonce = nonceRes.nonce ?? nonceRes.next_nonce;
+    if (nonce === undefined || !Number.isFinite(nonce) || nonce < 0) {
+      throw new Error(
+        `Lighter /nextNonce returned no valid nonce for ChangePubKey ` +
+        `(account_index=${this._accountIndex} api_key_index=${apiKeyIndex}); ` +
+        `raw response=${JSON.stringify(nonceRes)}`,
+      );
+    }
 
     // 3. Create signer client with new key and sign ChangePubKey
     const client = await LighterAdapter.getWasmClient();
@@ -1398,11 +1423,15 @@ export class LighterAdapter implements ExchangeAdapter {
     txInfo.L1Sig = l1Sig;
 
     // 6. Submit to Lighter API
+    // SSOT rule #2: refuse to silently default txType to 0 — see sendTx.
+    if (signed.txType === undefined || !Number.isFinite(signed.txType)) {
+      throw new Error(`Lighter signChangePubKey returned no txType (received ${signed.txType}); refusing to send with default 0.`);
+    }
     const sendRes = await fetch(`${this._baseUrl}/api/v1/sendTx`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        tx_type: String(signed.txType ?? 0),
+        tx_type: String(signed.txType),
         tx_info: JSON.stringify(txInfo),
       }),
     });
@@ -1427,7 +1456,14 @@ export class LighterAdapter implements ExchangeAdapter {
             account_index: String(this._accountIndex),
             api_key_index: String(apiKeyIndex),
           }) as { nonce?: number; next_nonce?: number };
-          const freshNonce = (freshNonceRes.nonce ?? freshNonceRes.next_nonce ?? nonce) + attempt;
+          const freshNonceCandidate = freshNonceRes.nonce ?? freshNonceRes.next_nonce;
+          if (freshNonceCandidate === undefined || !Number.isFinite(freshNonceCandidate) || freshNonceCandidate < 0) {
+            // SSOT rule #2: refuse to silently fall back to the original nonce.
+            // Skip the retry attempt and surface the upstream nonce-fetch failure.
+            lastError = `fresh /nextNonce returned no valid nonce (raw=${JSON.stringify(freshNonceRes)})`;
+            continue;
+          }
+          const freshNonce = freshNonceCandidate + attempt;
 
           const retrySigned = await client.signChangePubKey({
             pubkey: publicKey, nonce: freshNonce, apiKeyIndex, accountIndex: this._accountIndex,
@@ -1436,13 +1472,17 @@ export class LighterAdapter implements ExchangeAdapter {
             lastError = retrySigned.error ?? "incomplete response";
             continue;
           }
+          if (retrySigned.txType === undefined || !Number.isFinite(retrySigned.txType)) {
+            lastError = `signChangePubKey retry returned no txType (received ${retrySigned.txType})`;
+            continue;
+          }
           const retryTxInfo = JSON.parse(retrySigned.txInfo);
           retryTxInfo.L1Sig = await this._evmSigner!.signMessage(retrySigned.messageToSign);
           const retryRes = await fetch(`${this._baseUrl}/api/v1/sendTx`, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({
-              tx_type: String(retrySigned.txType ?? 0),
+              tx_type: String(retrySigned.txType),
               tx_info: JSON.stringify(retryTxInfo),
             }),
           });

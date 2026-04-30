@@ -1471,11 +1471,29 @@ server.tool(
       const existingPos = positions.find(p => p.symbol.toUpperCase().includes(symbol.toUpperCase()));
 
       // Run validation
+      // SSOT rule #2: validation failure must surface as a structured invalid
+      // result, NOT be swallowed into a fake `{ valid: true }`. The previous
+      // shape silently green-lit trades when the underlying balance/orderbook
+      // fetches errored out.
       let validation;
+      // For a preview the user has not yet committed leverage, so 1x is the
+      // documented default exposed in the preview shape (no silent fallback —
+      // the caller can override via existingPos.leverage when re-entering an
+      // open position).
+      const previewLeverage = existingPos?.leverage ?? 1;
       try {
-        validation = await validateTrade(adapter, { symbol, side, size: Number(size), leverage: existingPos?.leverage ?? 1 });
-      } catch {
-        validation = { valid: true, checks: [], warnings: ["Validation unavailable — proceed with caution"] };
+        validation = await validateTrade(adapter, { symbol, side, size: Number(size), leverage: previewLeverage });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        validation = {
+          valid: false,
+          checks: [{
+            check: "symbol_valid",
+            passed: false,
+            message: `Validation could not run: ${msg}`,
+          }],
+          warnings: [],
+        };
       }
 
       const preview = {
