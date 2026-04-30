@@ -888,7 +888,31 @@ export function registerWalletCommands(
       if (name) {
         entry = store.wallets[name];
         if (!entry) {
-          console.error(chalk.red(`\n  Wallet "${name}" not found.\n`));
+          // Try OWS vault before failing — balance only needs address + chain type
+          try {
+            const { loadOws } = await import("../signer/ows-loader.js");
+            const ows = loadOws();
+            const owsWallet = ows.getWallet(name);
+            const evmAccount = owsWallet.accounts.find((a: { chainId: string }) => a.chainId.startsWith("eip155:"));
+            const solAccount = owsWallet.accounts.find((a: { chainId: string }) => a.chainId.startsWith("solana:"));
+            const account = evmAccount ?? solAccount;
+            if (account) {
+              entry = {
+                name,
+                type: evmAccount ? "evm" : "solana",
+                address: account.address,
+                privateKey: "",  // OWS wallet — PK stays encrypted in vault
+                createdAt: new Date().toISOString(),
+              };
+            }
+          } catch { /* not in OWS either */ }
+        }
+        if (!entry) {
+          if (isJson()) {
+            printJson({ ok: false, error: { code: "KEY_NOT_FOUND", message: `Wallet "${name}" not found in OWS vault or legacy store.` }, meta: { timestamp: new Date().toISOString() } });
+          } else {
+            console.error(chalk.red(`\n  Wallet "${name}" not found.\n`));
+          }
           process.exit(1);
         }
       } else {
