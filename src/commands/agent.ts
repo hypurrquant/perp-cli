@@ -67,7 +67,19 @@ async function verifyAster(opts: VerifyOpts): Promise<VerifyResult> {
   const userEvmAddress = masterSigner.getAddress() as `0x${string}`;
 
   // Aster v3 universal signing: Domain B EIP-712 over urlencoded msg with
-  // nonce/user/signer appended last (matches AsterAdapter._buildSignedQueryString).
+  // nonce/user/signer appended last (matches AsterAdapter._buildSignedQueryString
+  // — same pattern that successfully signs /fapi/v3/openOrders, /accountWithJoinMargin,
+  // /allOrders, etc.).
+  //
+  // FIXME(aster-verify-live): Aster /fapi/v3/agent currently 400s with
+  // "Signature check failed" using this shape, even though the same shape works
+  // for other signed GETs. Possible causes:
+  //   - Endpoint expects DELETE/POST only (GET may be revoke-only)
+  //   - Endpoint requires extra query params (agentName?, account?)
+  //   - Different sig domain (try Domain A "Aster" + chainId 56 ApproveAgent-style)
+  // Aster v3 docs do NOT publish this endpoint; needs Aster team / SDK
+  // reference to resolve. For now, use `wallet agent list` (local cache) to
+  // verify registered agents.
   const { buildOrderTypedData } = await import("../exchanges/aster-typed-data.js");
   const nonceMicros = Date.now() * 1000 + Math.floor(Math.random() * 1000);
   const fullParams = {
