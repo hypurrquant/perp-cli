@@ -94,7 +94,7 @@ async function verifyAster(_opts: VerifyOpts): Promise<VerifyResult> {
   for (const item of items) {
     const expired = item.expired as number;
     if (expired > 0 && expired < now) {
-      warnings.push(`Agent "${item.agentName}" locally expired at ${item.expiresAt} (${Math.floor((now - expired) / 86400000)}d ago). Refresh via 'wallet agent rotate aster ${item.agentName}'.`);
+      warnings.push(`Agent "${item.agentName}" locally expired at ${item.expiresAt} (${Math.floor((now - expired) / 86400000)}d ago). Refresh via 'perp wallet agent rotate aster ${item.agentName}'.`);
     }
   }
 
@@ -1207,9 +1207,12 @@ export function registerWalletAgentCommands(
             if ("error" in slot) {
               console.log(chalk.yellow(`  ${dex}: ERROR — ${(slot as { error: { message: string } }).error.message}`));
             } else {
-              const s = slot as { registered: boolean; count: number };
+              const s = slot as { registered: boolean; count: number; warnings?: string[] };
               const icon = s.registered ? chalk.green("✓") : chalk.gray("○");
               console.log(`  ${icon} ${dex}: ${s.count} agent(s) registered`);
+              for (const w of s.warnings ?? []) {
+                console.log(chalk.yellow(`      [warn] ${w}`));
+              }
             }
           }
         }

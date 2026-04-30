@@ -495,6 +495,26 @@ describe("perp agent verify", () => {
     expect(text).not.toMatch(/\| {2}—/);
   });
 
+  // 14b. Aggregate text mode surfaces per-DEX warnings (regression: warnings were dropped)
+  it("aggregate text mode includes per-DEX warnings", async () => {
+    const settings = loadSettings();
+    saveSettings({ ...settings, owsActiveWallet: "main", agents: { aster: {} } } as ReturnType<typeof loadSettings>);
+    mockFetch.mockReset();
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes("hyperliquid.xyz")) return Promise.resolve({ ok: true, json: async () => [] });
+      if (url.includes("pacifica.fi")) return Promise.resolve({ ok: true, json: async () => ({ success: true, data: { api_keys: [] } }) });
+      if (url.includes("zklighter")) return Promise.resolve({ ok: true, json: async () => ({ code: 200, api_keys: [] }) });
+      return Promise.reject(new Error(`Unexpected fetch url: ${url}`));
+    });
+
+    // No --json: text output (aggregate over all 4 DEX)
+    const out = await runVerify(["--master", "main", "--master-address", "0xMASTER0000000000000000000000000000000001", "--account-index", "1"]);
+    const text = out.stdout.join("");
+    // Aster warning must appear in text output
+    expect(text).toMatch(/non-authoritative|local cache/i);
+    expect(text).toContain("[warn]");
+  });
+
   // 15. Aster locally-expired cache surfaces warning
   it("aster locally-expired entry → meta.warnings flags expiry", async () => {
     const expiresAt = new Date(Date.now() - 24 * 3600 * 1000).toISOString(); // 1 day ago
