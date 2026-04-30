@@ -55,17 +55,33 @@ async function fetchHyperliquidRates(): Promise<FundingRate[]> {
 }
 
 async function fetchAsterRates(): Promise<FundingRate[]> {
+  // SSOT rule #2: do NOT silently coerce missing markPrice / lastFundingRate
+  // to 0 — that would corrupt comparisons against other DEXs. Skip symbols
+  // whose Aster row is malformed instead. The outer try/catch is intentional:
+  // if the entire endpoint fails, the arb command can still compare the
+  // remaining DEXs (graceful degradation is an explicit caller-facing
+  // behavior, not a silent data substitution).
   try {
     const premiums = await fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()) as Array<Record<string, unknown>>;
-    return (premiums ?? [])
-      .filter(p => String(p.symbol ?? "").endsWith("USDT"))
-      .map(p => ({
+    const out: FundingRate[] = [];
+    for (const p of premiums ?? []) {
+      const rawSym = String(p.symbol ?? "");
+      if (!rawSym.endsWith("USDT")) continue;
+      const fundingRate = Number(p.lastFundingRate);
+      const markPrice = Number(p.markPrice);
+      const nextFunding = Number(p.nextFundingTime);
+      if (!Number.isFinite(fundingRate) || !Number.isFinite(markPrice) || markPrice <= 0) {
+        continue;
+      }
+      out.push({
         exchange: "aster",
-        symbol: String(p.symbol ?? "").replace(/USDT$/, ""),
-        fundingRate: Number(p.lastFundingRate ?? 0),
-        markPrice: Number(p.markPrice ?? 0),
-        nextFunding: Number(p.nextFundingTime ?? 0),
-      }));
+        symbol: rawSym.replace(/USDT$/, ""),
+        fundingRate,
+        markPrice,
+        nextFunding: Number.isFinite(nextFunding) ? nextFunding : 0,
+      });
+    }
+    return out;
   } catch {
     return [];
   }
@@ -127,11 +143,26 @@ export interface PriceSnapshot {
 }
 
 export async function fetchAllPrices(): Promise<PriceSnapshot[]> {
-  const [pacRes, hlRes, ltRes] = await Promise.all([
+  // SSOT rule #2: each DEX is independent. allSettled keeps the comparison
+  // alive when one DEX errors out, while rejection reasons get logged to
+  // stderr (explicit failure, never silent).
+  const settled = await Promise.allSettled([
     fetchPacificaPricesRaw(),
     fetchHyperliquidAllMidsRaw(),
     fetchLighterOrderBookDetailsRaw(),
   ]);
+  const dexLabels = ["pacifica", "hyperliquid", "lighter:orderbook"];
+  for (let i = 0; i < settled.length; i++) {
+    const r = settled[i];
+    if (r.status === "rejected") {
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      // eslint-disable-next-line no-console
+      console.error(`[arb] ${dexLabels[i]} fetch failed: ${reason}`);
+    }
+  }
+  const pacRes = settled[0].status === "fulfilled" ? settled[0].value : null;
+  const hlRes = settled[1].status === "fulfilled" ? settled[1].value : null;
+  const ltRes = settled[2].status === "fulfilled" ? settled[2].value : null;
 
   const { prices: pacPrices } = parsePacificaRaw(pacRes);
 

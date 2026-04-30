@@ -200,27 +200,55 @@ export function isSpreadReversed(
 }
 
 async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
-  const [pacRes, hlRes, ltDetailsRes, ltFundingRes, astPremiums] = await Promise.all([
+  // SSOT rule #2: each DEX fetch is independent. allSettled lets us keep the
+  // multi-DEX comparison alive when one DEX errors out, while the rejection
+  // reasons get logged to stderr (explicit failure, never silent).
+  const settled = await Promise.allSettled([
     fetchPacificaPricesRaw(),
     fetchHyperliquidMetaRaw(),
     fetchLighterOrderBookDetailsRaw(),
     fetchLighterFundingRatesRaw(),
-    fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()).catch(() => []) as Promise<Array<Record<string, unknown>>>,
+    fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()) as Promise<Array<Record<string, unknown>>>,
   ]);
+  const dexLabels = ["pacifica", "hyperliquid", "lighter:orderbook", "lighter:funding", "aster:premiumIndex"];
+  for (let i = 0; i < settled.length; i++) {
+    const r = settled[i];
+    if (r.status === "rejected") {
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      // eslint-disable-next-line no-console
+      console.error(`[arb-auto] ${dexLabels[i]} fetch failed: ${reason}`);
+    }
+  }
+  const pacRes = settled[0].status === "fulfilled" ? settled[0].value : null;
+  const hlRes = settled[1].status === "fulfilled" ? settled[1].value : null;
+  const ltDetailsRes = settled[2].status === "fulfilled" ? settled[2].value : null;
+  const ltFundingRes = settled[3].status === "fulfilled" ? settled[3].value : null;
+  const astPremiums = settled[4].status === "fulfilled" ? settled[4].value as Array<Record<string, unknown>> : [];
 
   const { rates: pacRates, prices: pacPrices } = parsePacificaRaw(pacRes);
   const { rates: hlRates, prices: hlPrices } = parseHyperliquidMetaRaw(hlRes);
   const { rates: ltRates, prices: ltPrices } = parseLighterRaw(ltDetailsRes, ltFundingRes);
 
-  // Aster: parse premiumIndex
+  // Aster: parse premiumIndex.
+  // SSOT rule #2: never silently coerce missing markPrice/lastFundingRate to 0
+  // — a 0 markPrice corrupts every downstream sizing calculation, and a 0
+  // funding rate flips the symbol off the arb radar without explanation.
+  // Skip the symbol entirely if either field is missing or non-finite.
   const astRates = new Map<string, number>();
   const astPrices = new Map<string, number>();
   for (const p of astPremiums ?? []) {
     const rawSym = String(p.symbol ?? "");
     if (!rawSym.endsWith("USDT")) continue;
     const sym = rawSym.replace(/USDT$/, "");
-    astRates.set(sym, Number(p.lastFundingRate ?? 0));
-    astPrices.set(sym, Number(p.markPrice ?? 0));
+    const fundingRate = Number(p.lastFundingRate);
+    const markPrice = Number(p.markPrice);
+    if (!Number.isFinite(fundingRate) || !Number.isFinite(markPrice) || markPrice <= 0) {
+      // Aster premiumIndex omitted or returned non-numeric values for this
+      // symbol; skip rather than poison downstream math with a 0.
+      continue;
+    }
+    astRates.set(sym, fundingRate);
+    astPrices.set(sym, markPrice);
   }
 
   const snapshots: FundingSnapshot[] = [];

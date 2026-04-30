@@ -42,8 +42,12 @@ export function fetchHyperliquidMeta(): Promise<HyperliquidAsset[]> {
 }
 
 export function fetchHyperliquidMetaRaw(): Promise<unknown> {
+  // SSOT rule #2: caller is responsible for error handling. Removed silent
+  // `.catch(() => null)` so a network failure surfaces as a rejected Promise.
+  // Callers should wrap with Promise.allSettled to keep multi-DEX comparisons
+  // running when one DEX is down.
   return withCache("pub:hl:metaAndAssetCtxs:raw", TTL_MARKET, () =>
-    hlPost("metaAndAssetCtxs").catch(() => null),
+    hlPost("metaAndAssetCtxs"),
   );
 }
 
@@ -66,8 +70,9 @@ export function parseHyperliquidMetaRaw(raw: unknown): { rates: Map<string, numb
 }
 
 export function fetchHyperliquidAllMidsRaw(): Promise<unknown> {
+  // SSOT rule #2: error must propagate; see fetchHyperliquidMetaRaw.
   return withCache("pub:hl:allMids:raw", TTL_MARKET, () =>
-    hlPost("allMids").catch(() => null),
+    hlPost("allMids"),
   );
 }
 

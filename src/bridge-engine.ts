@@ -39,6 +39,23 @@ const RPC_URLS: Record<string, string> = {
   hyperliquid: "https://rpc.hyperliquid.xyz/evm",
 };
 
+/**
+ * Look up an RPC URL for a chain. SSOT rule #2: refuse to silently fall
+ * through to the Arbitrum RPC for unknown chain names — that masked routing
+ * bugs that sent transactions to the wrong network.
+ */
+function requireRpcUrl(chain: string): string {
+  const url = RPC_URLS[chain];
+  if (!url) {
+    throw new Error(
+      `No RPC URL configured for chain="${chain}". ` +
+      `Known chains: ${Object.keys(RPC_URLS).join(", ")}. ` +
+      `Refusing to silently fall through to the Arbitrum RPC.`,
+    );
+  }
+  return url;
+}
+
 // ── CCTP V2 Forwarding Service ──
 // Circle Forwarding Service: Circle handles dst chain mint for you.
 // Use depositForBurnWithHook + forward hook data → no manual receiveMessage needed.
@@ -512,7 +529,7 @@ async function submitSolanaTransaction(tx: Record<string, unknown>, signerKey: s
 async function submitEvmTransaction(tx: Record<string, unknown>, privateKey: string, chain: string): Promise<string> {
   const { ethers } = await import("ethers");
 
-  const rpc = RPC_URLS[chain] ?? RPC_URLS.arbitrum;
+  const rpc = requireRpcUrl(chain);
   const provider = new ethers.JsonRpcProvider(rpc);
   const wallet = new ethers.Wallet(privateKey, provider);
 
@@ -1001,7 +1018,7 @@ async function executeCctpEvmToHyperCore(
 ): Promise<BridgeResult> {
   const { ethers } = await import("ethers");
 
-  const srcRpc = RPC_URLS[srcChain] ?? RPC_URLS.arbitrum;
+  const srcRpc = requireRpcUrl(srcChain);
   const srcProvider = new ethers.JsonRpcProvider(srcRpc);
   const srcWallet = new ethers.Wallet(signerKey, srcProvider);
 
@@ -1122,7 +1139,7 @@ async function executeCctpEvmToEvm(
 ): Promise<BridgeResult> {
   const { ethers } = await import("ethers");
 
-  const srcRpc = RPC_URLS[srcChain] ?? RPC_URLS.arbitrum;
+  const srcRpc = requireRpcUrl(srcChain);
   const srcProvider = new ethers.JsonRpcProvider(srcRpc);
   const srcWallet = new ethers.Wallet(signerKey, srcProvider);
 
@@ -1363,7 +1380,7 @@ async function executeCctpEvmToSolana(
 ): Promise<BridgeResult> {
   const { ethers } = await import("ethers");
 
-  const srcRpc = RPC_URLS[srcChain] ?? RPC_URLS.arbitrum;
+  const srcRpc = requireRpcUrl(srcChain);
   const srcProvider = new ethers.JsonRpcProvider(srcRpc);
   const srcWallet = new ethers.Wallet(signerKey, srcProvider);
 

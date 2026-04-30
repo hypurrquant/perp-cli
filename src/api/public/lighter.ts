@@ -36,8 +36,13 @@ export function fetchLighterOrderBookDetails(): Promise<LighterMarketDetail[]> {
 }
 
 export function fetchLighterOrderBookDetailsRaw(): Promise<unknown> {
+  // SSOT rule #2: caller (arb / arb-auto) is responsible for error handling.
+  // Removed silent `.catch(() => null)` so a network failure surfaces as a
+  // rejected Promise instead of being indistinguishable from "API returned no
+  // markets". Callers should wrap with Promise.allSettled to keep multi-DEX
+  // comparisons working when one DEX is down.
   return withCache("pub:lt:orderBookDetails:raw", TTL_MARKET, () =>
-    fetch(`${LIGHTER_API_URL}/api/v1/orderBookDetails`).then(r => r.json()).catch(() => null),
+    fetch(`${LIGHTER_API_URL}/api/v1/orderBookDetails`).then(r => r.json()),
   );
 }
 
@@ -65,8 +70,9 @@ export function fetchLighterFundingRates(): Promise<LighterFundingEntry[]> {
 }
 
 export function fetchLighterFundingRatesRaw(): Promise<unknown> {
+  // SSOT rule #2: error must propagate; see fetchLighterOrderBookDetailsRaw.
   return withCache("pub:lt:fundingRates:raw", TTL_MARKET, () =>
-    fetch(`${LIGHTER_API_URL}/api/v1/funding-rates`).then(r => r.json()).catch(() => null),
+    fetch(`${LIGHTER_API_URL}/api/v1/funding-rates`).then(r => r.json()),
   );
 }
 

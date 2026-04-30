@@ -587,18 +587,31 @@ export class LighterSpotAdapter implements SpotAdapter {
       account_index: String(this._lt.accountIndex),
       api_key_index: String(apiKeyIndex),
     }) as { nonce?: number; next_nonce?: number };
-    return res.nonce ?? res.next_nonce ?? 0;
+    const nonce = res.nonce ?? res.next_nonce;
+    // SSOT rule #2: refuse to silently default to nonce 0. A stale or missing
+    // nonce will cause Lighter to reject the tx with cryptic errors and the
+    // user has no way to diagnose the upstream failure.
+    if (nonce === undefined || !Number.isFinite(nonce) || nonce < 0) {
+      throw new Error(
+        `Lighter /nextNonce returned no valid nonce for account_index=${this._lt.accountIndex} ` +
+        `api_key_index=${apiKeyIndex}; raw response=${JSON.stringify(res)}`,
+      );
+    }
+    return nonce;
   }
 
   private async _sendTx(signed: { txType?: number; txInfo?: string; error?: string }): Promise<unknown> {
     if (signed.error) throw new Error(`Signer error: ${signed.error}`);
     if (!signed.txInfo) throw new Error("Signer returned empty txInfo");
+    if (signed.txType === undefined || !Number.isFinite(signed.txType)) {
+      throw new Error(`Lighter signer returned no txType (received ${signed.txType}); refusing to send with default 0.`);
+    }
     const baseUrl = (this._lt as unknown as { _baseUrl: string })._baseUrl;
     const res = await fetch(`${baseUrl}/api/v1/sendTx`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        tx_type: String(signed.txType ?? 0),
+        tx_type: String(signed.txType),
         tx_info: signed.txInfo,
       }),
     });

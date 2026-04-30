@@ -626,35 +626,41 @@ describe("validateTrade — error resilience", () => {
     expect(result.checks[0].passed).toBe(false);
   });
 
-  it("handles getBalance failure gracefully", async () => {
+  it("propagates getBalance failure (SSOT rule #2: no silent default)", async () => {
     const adapter = mockAdapter({
       getBalance: vi.fn().mockRejectedValue(new Error("auth error")),
     });
-    const result = await validateTrade(adapter, {
+    // Per SSOT rule #2 the error must surface, not be swallowed into a
+    // {available:"0"} default that pretends the user has $0.
+    await expect(validateTrade(adapter, {
       symbol: "BTC",
       side: "buy",
       size: 0.01,
-    });
-    // Balance defaults to 0 available → balance check fails for non-zero orders
-    const balCheck = result.checks.find(c => c.check === "balance_sufficient");
-    expect(balCheck).toBeDefined();
-    // available = 0, marginRequired = 600/20=30, so should fail
-    expect(balCheck?.passed).toBe(false);
+    })).rejects.toThrow(/auth error/);
   });
 
-  it("handles getOrderbook failure gracefully", async () => {
+  it("propagates getOrderbook failure (SSOT rule #2: no silent default)", async () => {
     const adapter = mockAdapter({
       getOrderbook: vi.fn().mockRejectedValue(new Error("timeout")),
     });
-    const result = await validateTrade(adapter, {
+    // Per SSOT rule #2 the error must surface, not be swallowed into an
+    // empty book that silently passes the liquidity check.
+    await expect(validateTrade(adapter, {
       symbol: "BTC",
       side: "buy",
       size: 0.01,
+    })).rejects.toThrow(/timeout/);
+  });
+
+  it("propagates getPositions failure (SSOT rule #2: no silent default)", async () => {
+    const adapter = mockAdapter({
+      getPositions: vi.fn().mockRejectedValue(new Error("position-stream-down")),
     });
-    // Orderbook defaults to empty → liquidity check skipped
-    const liqCheck = result.checks.find(c => c.check === "liquidity_ok");
-    expect(liqCheck?.passed).toBe(true);
-    expect(liqCheck?.message).toContain("skipped");
+    await expect(validateTrade(adapter, {
+      symbol: "BTC",
+      side: "buy",
+      size: 0.01,
+    })).rejects.toThrow(/position-stream-down/);
   });
 });
 

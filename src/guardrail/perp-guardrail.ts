@@ -85,7 +85,17 @@ function isWithdrawTx(data?: string): boolean {
 }
 
 function evaluate(ctx: PolicyContext): PolicyResult {
-  const config = ctx.policy_config ?? {};
+  // SSOT rule #2: policy_config must be explicitly supplied. A missing
+  // policy_config previously fell through to silent defaults — that is a
+  // safety-critical fallback (the user might assume their custom limits are
+  // active when in fact only baked-in defaults are). Fail closed instead.
+  if (!ctx.policy_config) {
+    return deny(
+      "policy_config missing from PolicyContext; refusing to fall through to baked-in defaults. " +
+      "Caller must supply policy_config explicitly (max_tx_usd, max_daily_usd, etc.).",
+    );
+  }
+  const config = ctx.policy_config;
   const maxTxUsd = config.max_tx_usd ?? DEFAULT_LIMITS.max_tx_usd;
   const maxDailyUsd = config.max_daily_usd ?? DEFAULT_LIMITS.max_daily_usd;
   const maxWithdrawUsd = config.max_withdraw_usd ?? maxTxUsd;

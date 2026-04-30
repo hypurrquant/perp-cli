@@ -54,18 +54,20 @@ export async function validateTrade(
   const sym = params.symbol.toUpperCase();
 
   // Fetch market data, balance, positions, orderbook in parallel.
-  // Track getMarkets failure separately — distinguishing "no markets returned"
-  // from "symbol not found" prevents misclassifying init/network errors as
-  // validation failures.
+  // SSOT rule #2: errors must propagate, never silently substitute defaults.
+  // getMarkets retains a tracked-error wrapper so the failed-load case surfaces
+  // a structured symbol_valid check (not a generic exception).
   let marketsError: string | null = null;
   const [markets, balance, positions, orderbook] = await Promise.all([
     adapter.getMarkets().catch((e: unknown) => {
       marketsError = e instanceof Error ? e.message : String(e);
       return [] as ExchangeMarketInfo[];
     }),
-    adapter.getBalance().catch(() => ({ equity: "0", available: "0", marginUsed: "0", unrealizedPnl: "0" })),
-    adapter.getPositions().catch(() => []),
-    params.type !== "limit" ? adapter.getOrderbook(sym).catch(() => ({ bids: [] as [string, string][], asks: [] as [string, string][] })) : Promise.resolve({ bids: [] as [string, string][], asks: [] as [string, string][] }),
+    adapter.getBalance(),
+    adapter.getPositions(),
+    params.type !== "limit"
+      ? adapter.getOrderbook(sym)
+      : Promise.resolve({ bids: [] as [string, string][], asks: [] as [string, string][] }),
   ]);
 
   if (markets.length === 0 && marketsError) {
@@ -86,9 +88,21 @@ export async function validateTrade(
   }
 
   const markPrice = Number(market.markPrice);
+  if (params.type === "limit" && (params.price === undefined || !Number.isFinite(params.price))) {
+    throw new Error(`Limit order requires explicit price (received ${params.price}); refusing silent mark-price substitution.`);
+  }
+  if (markPrice <= 0 && params.price === undefined) {
+    throw new Error(`No mark price available for ${sym} on ${adapter.name} and no override price supplied; cannot validate trade.`);
+  }
   const price = params.price ?? markPrice;
   const notional = params.size * price;
+  if (params.leverage !== undefined && (!Number.isFinite(params.leverage) || params.leverage <= 0)) {
+    throw new Error(`Leverage must be a positive number (received ${params.leverage}).`);
+  }
   const leverage = params.leverage ?? market.maxLeverage;
+  if (!Number.isFinite(leverage) || leverage <= 0) {
+    throw new Error(`No usable leverage for ${sym} (resolved=${leverage}); supply params.leverage explicitly.`);
+  }
   const marginRequired = notional / leverage;
 
   // 2. Balance check

@@ -52,6 +52,35 @@ function genId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * Validate position side from a stream event. SSOT rule #2: the stream must
+ * deliver a real side, never silently default to "long" — defaulting can flip
+ * a short into a long in the position history and corrupt P&L analytics.
+ */
+function requireSide(value: unknown, eventType: string, exchange: string, symbol: string): "long" | "short" {
+  if (value === "long" || value === "short") return value;
+  throw new Error(
+    `position_${eventType} for ${exchange}:${symbol} has missing/invalid side ` +
+    `(received ${JSON.stringify(value)}); refusing to silently default. ` +
+    `Fix the upstream adapter to emit { side: "long" | "short" } on every event.`
+  );
+}
+
+/**
+ * Validate a stringified numeric field from a stream event. SSOT rule #2: do
+ * NOT silently default missing realizedPnl to "0", because we cannot
+ * distinguish "trade closed flat" from "adapter forgot the field".
+ */
+function requireNumericString(value: unknown, fieldName: string, eventType: string, exchange: string, symbol: string): string {
+  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  throw new Error(
+    `position_${eventType} for ${exchange}:${symbol} has missing/invalid ${fieldName} ` +
+    `(received ${JSON.stringify(value)}); refusing to silently default. ` +
+    `Fix the upstream adapter to emit a numeric ${fieldName}.`
+  );
+}
+
 /** Append a position record to the log */
 export function logPosition(record: PositionRecord): void {
   ensureDir();
@@ -214,7 +243,10 @@ export function attachPositionLogger(
     if (event.type === "position_opened") {
       const id = genId();
       const symbol = String(data.symbol ?? "");
-      const side = String(data.side ?? "long") as "long" | "short";
+      if (!symbol) {
+        throw new Error(`position_opened on ${exchange} missing symbol; refusing to silently default. Raw data: ${JSON.stringify(data)}`);
+      }
+      const side = requireSide(data.side, "opened", exchange, symbol);
       const key = `${exchange}:${symbol}`;
 
       openPositions.set(key, { id, openedAt: ts, entryPrice: String(data.entryPrice ?? "") });
@@ -233,10 +265,16 @@ export function attachPositionLogger(
       });
     } else if (event.type === "position_updated") {
       const symbol = String(data.symbol ?? "");
-      const side = String(data.side ?? "long") as "long" | "short";
+      if (!symbol) {
+        throw new Error(`position_updated on ${exchange} missing symbol; refusing to silently default. Raw data: ${JSON.stringify(data)}`);
+      }
+      const side = requireSide(data.side, "updated", exchange, symbol);
       const key = `${exchange}:${symbol}`;
       const tracked = openPositions.get(key);
 
+      // tracked?.id ?? genId() is NOT a fallback in the SSOT sense: it covers the
+      // legitimate case where the stream delivers an update for a position the
+      // logger never saw open (out-of-order delivery, mid-session attach).
       logPosition({
         id: tracked?.id ?? genId(),
         exchange,
@@ -255,13 +293,16 @@ export function attachPositionLogger(
       });
     } else if (event.type === "position_closed") {
       const symbol = String(data.symbol ?? "");
-      const side = String(data.side ?? "long") as "long" | "short";
+      if (!symbol) {
+        throw new Error(`position_closed on ${exchange} missing symbol; refusing to silently default. Raw data: ${JSON.stringify(data)}`);
+      }
+      const side = requireSide(data.side, "closed", exchange, symbol);
       const key = `${exchange}:${symbol}`;
       const tracked = openPositions.get(key);
 
       const openedAt = tracked?.openedAt ?? ts;
       const duration = new Date(ts).getTime() - new Date(openedAt).getTime();
-      const realizedPnl = String(data.unrealizedPnl ?? "0");
+      const realizedPnl = requireNumericString(data.realizedPnl ?? data.unrealizedPnl, "realizedPnl", "closed", exchange, symbol);
 
       logPosition({
         id: tracked?.id ?? genId(),

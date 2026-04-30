@@ -16,7 +16,10 @@
  * - Saves 5-50+ bps vs raw market orders on thin books
  * - Predictable execution price
  *
- * Fallback: if the IOC limit fails, falls back to market order.
+ * SSOT rule #2: silent fallback is forbidden. The opt-in `fallback: true` flag
+ * is preserved for callers that explicitly want best-effort market substitution
+ * after IOC reject, but the DEFAULT is `false` — failure must surface as a
+ * thrown error, never a silent market sweep.
  */
 
 import type { ExchangeAdapter } from "./exchanges/index.js";
@@ -24,7 +27,10 @@ import type { ExchangeAdapter } from "./exchanges/index.js";
 export interface SmartOrderOpts {
   /** Extra ticks of tolerance beyond best price. Default: 1 */
   tickTolerance?: number;
-  /** Fall back to market order if IOC limit fails. Default: true */
+  /**
+   * Opt-in: fall back to market order if IOC limit fails.
+   * SSOT rule #2 default: `false` — failure throws unless caller explicitly opts in.
+   */
   fallback?: boolean;
   /** Reduce only flag for closing positions. Default: false */
   reduceOnly?: boolean;
@@ -116,7 +122,7 @@ export async function smartOrder(
   size: string,
   opts: SmartOrderOpts = {},
 ): Promise<SmartOrderResult> {
-  const { tickTolerance = 1, fallback = true, reduceOnly = false } = opts;
+  const { tickTolerance = 1, fallback = false, reduceOnly = false } = opts;
 
   // 1. Fetch orderbook
   const book = await adapter.getOrderbook(symbol);

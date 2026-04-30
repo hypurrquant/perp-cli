@@ -32,8 +32,12 @@ export function fetchPacificaPrices(): Promise<PacificaAsset[]> {
 }
 
 export function fetchPacificaPricesRaw(): Promise<unknown> {
+  // SSOT rule #2: caller is responsible for error handling. Removed silent
+  // `.catch(() => null)` so a network failure surfaces as a rejected Promise.
+  // Callers should wrap with Promise.allSettled to keep multi-DEX comparisons
+  // running when one DEX is down.
   return withCache("pub:pac:prices:raw", TTL_MARKET, () =>
-    fetch(PACIFICA_API_URL).then(r => r.json()).catch(() => null),
+    fetch(PACIFICA_API_URL).then(r => r.json()),
   );
 }
 

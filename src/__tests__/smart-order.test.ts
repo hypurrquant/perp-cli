@@ -63,17 +63,29 @@ describe("smartOrder", () => {
     );
   });
 
-  it("falls back to market order when IOC limit fails", async () => {
+  it("falls back to market order when IOC limit fails (opt-in)", async () => {
     const adapter = mockAdapter({
       limitOrder: vi.fn().mockRejectedValue(new Error("Rejected")),
     });
-    const result = await smartOrder(adapter, "BTC", "buy", "0.1");
+    const result = await smartOrder(adapter, "BTC", "buy", "0.1", { fallback: true });
 
     expect(result.method).toBe("market_fallback");
     expect(adapter.marketOrder).toHaveBeenCalledWith("BTC", "buy", "0.1");
   });
 
-  it("throws when IOC limit fails and fallback=false", async () => {
+  it("throws by default when IOC limit fails (SSOT rule #2)", async () => {
+    const adapter = mockAdapter({
+      limitOrder: vi.fn().mockRejectedValue(new Error("Rejected")),
+    });
+
+    // Default behavior: fallback opt-in, error must propagate.
+    await expect(
+      smartOrder(adapter, "BTC", "buy", "0.1"),
+    ).rejects.toThrow("Rejected");
+    expect(adapter.marketOrder).not.toHaveBeenCalled();
+  });
+
+  it("throws when IOC limit fails and fallback=false (explicit)", async () => {
     const adapter = mockAdapter({
       limitOrder: vi.fn().mockRejectedValue(new Error("Rejected")),
     });
@@ -84,30 +96,54 @@ describe("smartOrder", () => {
     expect(adapter.marketOrder).not.toHaveBeenCalled();
   });
 
-  it("falls back to market when orderbook has no asks (buy)", async () => {
+  it("falls back to market when orderbook has no asks and fallback=true", async () => {
     const adapter = mockAdapter({
       getOrderbook: vi.fn().mockResolvedValue({
         bids: [["100.50", "10"]],
         asks: [],
       }),
     });
-    const result = await smartOrder(adapter, "BTC", "buy", "0.1");
+    const result = await smartOrder(adapter, "BTC", "buy", "0.1", { fallback: true });
 
     expect(result.method).toBe("market_fallback");
     expect(adapter.marketOrder).toHaveBeenCalled();
   });
 
-  it("falls back to market when orderbook has no bids (sell)", async () => {
+  it("throws by default when orderbook has no asks (SSOT rule #2)", async () => {
+    const adapter = mockAdapter({
+      getOrderbook: vi.fn().mockResolvedValue({
+        bids: [["100.50", "10"]],
+        asks: [],
+      }),
+    });
+    await expect(smartOrder(adapter, "BTC", "buy", "0.1"))
+      .rejects.toThrow(/No asks in orderbook/);
+    expect(adapter.marketOrder).not.toHaveBeenCalled();
+  });
+
+  it("falls back to market when orderbook has no bids and fallback=true", async () => {
     const adapter = mockAdapter({
       getOrderbook: vi.fn().mockResolvedValue({
         bids: [],
         asks: [["100.60", "10"]],
       }),
     });
-    const result = await smartOrder(adapter, "BTC", "sell", "0.1");
+    const result = await smartOrder(adapter, "BTC", "sell", "0.1", { fallback: true });
 
     expect(result.method).toBe("market_fallback");
     expect(adapter.marketOrder).toHaveBeenCalled();
+  });
+
+  it("throws by default when orderbook has no bids (SSOT rule #2)", async () => {
+    const adapter = mockAdapter({
+      getOrderbook: vi.fn().mockResolvedValue({
+        bids: [],
+        asks: [["100.60", "10"]],
+      }),
+    });
+    await expect(smartOrder(adapter, "BTC", "sell", "0.1"))
+      .rejects.toThrow(/No bids in orderbook/);
+    expect(adapter.marketOrder).not.toHaveBeenCalled();
   });
 
   it("uses custom tick tolerance", async () => {
@@ -159,7 +195,7 @@ describe("smartOrder", () => {
     expect(result.tickSize).toBe("1");
   });
 
-  it("falls back when IOC succeeds but response contains error (e.g., HL)", async () => {
+  it("falls back when IOC succeeds but response contains error (e.g., HL) — opt-in", async () => {
     // Hyperliquid returns success at HTTP level but embeds error in statuses
     const hlResponse = {
       status: "ok",
@@ -173,7 +209,7 @@ describe("smartOrder", () => {
     const adapter = mockAdapter({
       limitOrder: vi.fn().mockResolvedValue(hlResponse),
     });
-    const result = await smartOrder(adapter, "BTC", "sell", "0.1");
+    const result = await smartOrder(adapter, "BTC", "sell", "0.1", { fallback: true });
 
     expect(result.method).toBe("market_fallback");
     expect(adapter.marketOrder).toHaveBeenCalledWith("BTC", "sell", "0.1");
