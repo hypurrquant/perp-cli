@@ -120,12 +120,6 @@ describe("New Commands E2E Integration", { timeout: 30000 }, () => {
       expect(parsed.meta.timestamp).toBeDefined();
     });
 
-    it.skip("api-spec always returns ok:true even without --json flag", () => {
-      // SKIPPED: api-spec was removed in CLI consolidation refactor (commit c8bc7e4).
-      const output = runCli("api-spec");
-      const parsed = JSON.parse(output);
-      expect(parsed.ok).toBe(true);
-    });
   });
 
   // ══════════════════════════════════════════════════════════

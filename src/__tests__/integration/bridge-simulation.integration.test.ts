@@ -18,12 +18,12 @@ import {
   CCTP_DOMAINS,
   CHAIN_IDS,
   USDC_ADDRESSES,
-  EVM_TOKEN_MINTER_V2,
 } from "../../bridge-engine.js";
 
 // V2 contract addresses (same on all EVM chains per Circle docs)
 const EVM_TOKEN_MESSENGER_V2 = "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d";
 const EVM_MESSAGE_TRANSMITTER_V2 = "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64";
+const EVM_TOKEN_MINTER_V2 = "0xfd78EE919681417d192449715b2594ab58f5D002";
 
 // Solana CCTP V2 programs
 const CCTP_SOLANA_TMM = "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe";

@@ -486,9 +486,10 @@ export class LighterAdapter implements ExchangeAdapter {
         const maxLev = imf > 0 ? Math.floor(10000 / imf) : 50;
         const fr = fundingRates.get(d.symbol);
         const dec = this._marketDecimals.get(d.symbol.toUpperCase());
+        const fundingMark = fr && Number(fr.markPrice) > 0 ? fr.markPrice : null;
         markets.push({
           symbol: d.symbol,
-          markPrice: fr?.markPrice ?? String(d.last_trade_price ?? 0),
+          markPrice: fundingMark ?? String(d.last_trade_price ?? 0),
           indexPrice: String(d.last_trade_price ?? 0),
           fundingRate: fr?.rate ?? null,
           volume24h: String(d.daily_quote_token_volume ?? 0),

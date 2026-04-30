@@ -14,7 +14,7 @@ import "dotenv/config";
 import { execSync } from "child_process";
 import { describe, it, expect } from "vitest";
 
-const CLI_CWD = "/Users/hik/Documents/GitHub/pacifica/packages/cli";
+const CLI_CWD = process.cwd();
 const CLI_CMD = "npx tsx src/index.ts";
 
 function runCliSafe(args: string): { stdout: string; stderr: string; exitCode: number } {
@@ -82,22 +82,19 @@ describe("JSON Envelope Consistency", { timeout: 30000 }, () => {
   // ── Commands that require no adapter (always work) ──
 
   describe("no-adapter commands", () => {
-    it("api-spec: valid success envelope", () => {
-      const { stdout } = runCliSafe("--json api-spec");
-      const env = validateEnvelope(stdout, "api-spec");
+    it("health: valid success envelope", () => {
+      const { stdout } = runCliSafe("--json health");
+      const env = validateEnvelope(stdout, "health");
       expect(env.ok).toBe(true);
     });
 
-    it("plan example: valid JSON output", () => {
-      const { stdout } = runCliSafe("--json plan example");
+    it("strategy plan example: valid JSON output", () => {
+      const { stdout } = runCliSafe("--json strategy plan example");
       const parsed = JSON.parse(stdout);
-      // plan example wraps in envelope in --json mode
       if (parsed.ok !== undefined) {
-        // Envelope mode
         expect(parsed.ok).toBe(true);
         expect(parsed.data).toBeDefined();
       } else {
-        // Raw plan JSON (legacy)
         expect(parsed.steps || parsed.version).toBeDefined();
       }
     });
@@ -113,22 +110,18 @@ describe("JSON Envelope Consistency", { timeout: 30000 }, () => {
       expect(env.error!.code).toBe("CLI_ERROR");
     });
 
-    it("plan validate with bad file: error envelope", () => {
-      const { stdout } = runCliSafe("--json plan validate /tmp/__no_file_here_99.json");
-      const env = validateEnvelope(stdout, "plan validate bad file");
+    it("strategy plan validate with bad file: error envelope", () => {
+      const { stdout } = runCliSafe("--json strategy plan validate /tmp/__no_file_here_99.json");
+      const env = validateEnvelope(stdout, "strategy plan validate bad file");
       expect(env.ok).toBe(false);
       expect(env.error!.message).toBeTruthy();
     });
 
     it("stdout has no extra text before/after JSON", () => {
-      const { stdout } = runCliSafe("--json api-spec");
-      // Trim whitespace, should start with { and end with }
+      const { stdout } = runCliSafe("--json health");
       const trimmed = stdout.trim();
       expect(trimmed.startsWith("{")).toBe(true);
       expect(trimmed.endsWith("}")).toBe(true);
-      // No extra lines
-      const lines = trimmed.split("\n").filter((l) => l.trim().length > 0);
-      // All lines should be part of the JSON (indented)
       const reparsed = JSON.parse(trimmed);
       expect(reparsed.ok).toBeDefined();
     });
@@ -179,13 +172,13 @@ describe("JSON Envelope Consistency", { timeout: 30000 }, () => {
       expect(data.asks).toBeDefined();
     });
 
-    it("account balance: success envelope with balance", () => {
-      const { stdout } = runCliSafe("--json -e hyperliquid account balance");
-      const env = validateEnvelope(stdout, "account balance");
+    it("account pnl: success envelope with equity", () => {
+      const { stdout } = runCliSafe("--json -e hyperliquid account pnl");
+      const env = validateEnvelope(stdout, "account pnl");
       expect(env.ok).toBe(true);
       const data = env.data as Record<string, unknown>;
       expect(data.equity).toBeDefined();
-      expect(data.available).toBeDefined();
+      expect(data.realizedPnl).toBeDefined();
     });
 
     it("account positions: success envelope with array", () => {
@@ -202,15 +195,16 @@ describe("JSON Envelope Consistency", { timeout: 30000 }, () => {
       expect(Array.isArray(env.data)).toBe(true);
     });
 
-    it("status: success envelope with exchange, balance, positions, orders", () => {
-      const { stdout } = runCliSafe("--json -e hyperliquid status");
-      const env = validateEnvelope(stdout, "status");
+    it("portfolio: success envelope with exchanges array", () => {
+      const { stdout } = runCliSafe("--json -e hyperliquid portfolio");
+      const env = validateEnvelope(stdout, "portfolio");
       expect(env.ok).toBe(true);
       const data = env.data as Record<string, unknown>;
-      expect(data.exchange).toBe("hyperliquid");
-      expect(data.balance).toBeDefined();
-      expect(data.positions).toBeDefined();
-      expect(data.orders).toBeDefined();
+      expect(Array.isArray(data.exchanges)).toBe(true);
+      const hl = (data.exchanges as Array<Record<string, unknown>>).find(e => e.name === "hyperliquid");
+      expect(hl).toBeDefined();
+      expect(hl!.perp).toBeDefined();
+      expect(hl!.positions).toBeDefined();
     });
 
     it("account margin XYZFAKE: POSITION_NOT_FOUND error envelope", () => {

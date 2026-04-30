@@ -61,15 +61,19 @@ async function ltGetRetry(path: string, params: Record<string, string> = {}, ret
 
 describe("Cross-validate: Hyperliquid Spot Adapter", () => {
 
-  it("spot market list matches raw spotMetaAndAssetCtxs API", async () => {
-    // Raw API
-    const rawMeta = await hlPost("spotMetaAndAssetCtxs") as [
-      {
-        tokens: Array<{ name: string; index: number }>;
-        universe: Array<{ name: string; tokens: [number, number]; index: number; szDecimals?: number }>;
-      },
-      Array<Record<string, unknown>>,
-    ];
+  it("spot market list matches raw spotMetaAndAssetCtxs + allMids API", async () => {
+    // Raw API: spotMetaAndAssetCtxs gives universe + szDecimals; allMids is what
+    // HyperliquidSpotAdapter actually consumes for prices (NOT markPx/midPx).
+    const [rawMeta, allMids] = await Promise.all([
+      hlPost("spotMetaAndAssetCtxs") as Promise<[
+        {
+          tokens: Array<{ name: string; index: number }>;
+          universe: Array<{ name: string; tokens: [number, number]; index: number }>;
+        },
+        Array<Record<string, unknown>>,
+      ]>,
+      hlPost("allMids") as Promise<Record<string, string>>,
+    ]);
 
     expect(rawMeta).toBeTruthy();
     expect(rawMeta[0]?.universe?.length).toBeGreaterThan(0);
@@ -84,23 +88,22 @@ describe("Cross-validate: Hyperliquid Spot Adapter", () => {
       }
     }
 
-    // Build spot market list from raw API
-    const rawSpotMarkets = rawMeta[0].universe.map((u, i) => {
+    // Build USDC-paired spot markets, with markPrice from allMids (matching adapter source)
+    const rawSpotMarkets = rawMeta[0].universe.map(u => {
       const baseToken = tokenNames.get(u.tokens[0]) ?? "";
-      const ctx = rawMeta[1]?.[i] ?? {};
+      const quoteToken = tokenNames.get(u.tokens[1]) ?? "";
       return {
         baseToken,
-        markPrice: Number((ctx as Record<string, unknown>).markPx ?? (ctx as Record<string, unknown>).midPx ?? 0),
+        quoteToken,
+        markPrice: Number(allMids[u.name] ?? 0),
         szDecimals: tokenSzDec.get(u.tokens[0]) ?? 2,
       };
-    }).filter(m => m.baseToken);
+    }).filter(m => m.baseToken && m.quoteToken === "USDC");
 
     // Adapter
     const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
     const { HyperliquidSpotAdapter } = await import("../../exchanges/hyperliquid-spot.js");
 
-    // We can test without private key for read-only operations
-    // Use a dummy key if none available
     const pk = process.env.HYPERLIQUID_PRIVATE_KEY || process.env.HL_PRIVATE_KEY || process.env.PRIVATE_KEY
       || "0x0000000000000000000000000000000000000000000000000000000000000001";
     const hlAdapter = new HyperliquidAdapter(pk);
@@ -109,21 +112,14 @@ describe("Cross-validate: Hyperliquid Spot Adapter", () => {
     await spotAdapter.init();
 
     const adapterMarkets = await spotAdapter.getSpotMarkets();
-
-    // Adapter should return spot markets
     expect(adapterMarkets.length).toBeGreaterThan(0);
 
-    // Compare a few known spot tokens
     for (const rawMarket of rawSpotMarkets.slice(0, 5)) {
-      if (!rawMarket.baseToken || rawMarket.baseToken === "USDC") continue;
-
       const adapterMarket = adapterMarkets.find(m => m.baseToken === rawMarket.baseToken);
-      if (!adapterMarket) continue; // some markets may not be in adapter yet
+      if (!adapterMarket) continue;
 
-      // Size decimals should match
       expect(adapterMarket.sizeDecimals).toBe(rawMarket.szDecimals);
 
-      // Mark price should be close (within 2% — timing differences)
       const adapterPrice = Number(adapterMarket.markPrice);
       if (rawMarket.markPrice > 0 && adapterPrice > 0) {
         const pctDiff = Math.abs(adapterPrice - rawMarket.markPrice) / rawMarket.markPrice * 100;
