@@ -994,3 +994,78 @@ describe("no unexpected extra adapter calls", () => {
     expect(adapter.editOrder).not.toHaveBeenCalled();
   });
 });
+
+// ══════════════════════════════════════════════════════════════
+// 14. Scale-in / scale-tp catch handlers — non-Error throws
+//     surface real message instead of "[object Object]"
+// ══════════════════════════════════════════════════════════════
+
+describe("scale-in catch handler — robust error formatting", () => {
+  it("logs JSON-stringified .message when err is { message: { nested } }", async () => {
+    const adapter = mockAdapter({
+      limitOrder: vi.fn().mockRejectedValue({ message: { nested: "fail", code: 7 } }),
+    });
+    await run(adapter, ["trade", "scale-in", "BTC", "buy", "--levels", "5000:100", "--size", "0.001"]);
+
+    const failedCalls = vi.mocked(logExecution).mock.calls
+      .map(c => c[0] as { status?: string; error?: string })
+      .filter(c => c.status === "failed");
+    expect(failedCalls.length).toBeGreaterThan(0);
+    for (const call of failedCalls) {
+      expect(call.error).not.toBe("[object Object]");
+      expect(call.error).toContain("nested");
+    }
+  });
+
+  it("logs JSON-stringified err when err has no .message (plain structured object)", async () => {
+    const adapter = mockAdapter({
+      limitOrder: vi.fn().mockRejectedValue({ code: "FATAL", reason: "oops" }),
+    });
+    await run(adapter, ["trade", "scale-in", "BTC", "buy", "--levels", "5000:100", "--size", "0.001"]);
+
+    const failedCalls = vi.mocked(logExecution).mock.calls
+      .map(c => c[0] as { status?: string; error?: string })
+      .filter(c => c.status === "failed");
+    expect(failedCalls.length).toBeGreaterThan(0);
+    for (const call of failedCalls) {
+      expect(call.error).not.toBe("[object Object]");
+      expect(call.error).toContain("FATAL");
+    }
+  });
+
+  it("preserves message string when err is { message: 'plain string' }", async () => {
+    const adapter = mockAdapter({
+      limitOrder: vi.fn().mockRejectedValue({ message: "real error", code: "X" }),
+    });
+    await run(adapter, ["trade", "scale-in", "BTC", "buy", "--levels", "5000:100", "--size", "0.001"]);
+
+    const failedCalls = vi.mocked(logExecution).mock.calls
+      .map(c => c[0] as { status?: string; error?: string })
+      .filter(c => c.status === "failed");
+    expect(failedCalls.length).toBeGreaterThan(0);
+    for (const call of failedCalls) {
+      expect(call.error).toBe("real error");
+    }
+  });
+});
+
+describe("scale-tp catch handler — robust error formatting", () => {
+  it("logs JSON-stringified .message when limitOrder rejects with object .message", async () => {
+    const adapter = mockAdapter({
+      getPositions: vi.fn().mockResolvedValue([
+        { symbol: "BTC", side: "long", size: "1", entryPrice: "60000", markPrice: "61000", liquidationPrice: "50000", unrealizedPnl: "1000", leverage: 10 },
+      ]),
+      limitOrder: vi.fn().mockRejectedValue({ message: { server: "down", code: 503 } }),
+    });
+    await run(adapter, ["trade", "scale-tp", "BTC", "--levels", "70000:100"]);
+
+    const failedCalls = vi.mocked(logExecution).mock.calls
+      .map(c => c[0] as { status?: string; error?: string })
+      .filter(c => c.status === "failed");
+    expect(failedCalls.length).toBeGreaterThan(0);
+    for (const call of failedCalls) {
+      expect(call.error).not.toBe("[object Object]");
+      expect(call.error).toContain("server");
+    }
+  });
+});

@@ -50,11 +50,29 @@ export interface StructuredError {
 }
 
 /**
+ * Extract a human-readable message from any thrown value.
+ * Handles Error instances, plain objects with a `.message` field (string OR object),
+ * and circular-safe stringification fallback.
+ */
+export function extractErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object") {
+    const m = (err as { message?: unknown }).message;
+    if (typeof m === "string") return m;
+    if (m !== undefined) {
+      try { return JSON.stringify(m); } catch { /* circular */ }
+    }
+    try { return JSON.stringify(err); } catch { /* circular */ }
+  }
+  return String(err);
+}
+
+/**
  * Classify an error from any exchange into a structured error code.
  * Pattern-matches on error messages to detect known error types.
  */
 export function classifyError(err: unknown, exchange?: string): StructuredError {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = extractErrorMessage(err);
   const lower = message.toLowerCase();
 
   // Margin-specific checks first (before generic "insufficient" catch)

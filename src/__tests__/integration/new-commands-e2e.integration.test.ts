@@ -10,7 +10,7 @@ import "dotenv/config";
 import { execSync } from "child_process";
 import { describe, it, expect } from "vitest";
 
-const CLI_CWD = "/Users/hik/Documents/GitHub/pacifica/packages/cli";
+const CLI_CWD = process.cwd();
 const CLI_CMD = "npx tsx src/index.ts";
 
 function runCli(args: string): string {
@@ -120,7 +120,8 @@ describe("New Commands E2E Integration", { timeout: 30000 }, () => {
       expect(parsed.meta.timestamp).toBeDefined();
     });
 
-    it("api-spec always returns ok:true even without --json flag", () => {
+    it.skip("api-spec always returns ok:true even without --json flag", () => {
+      // SKIPPED: api-spec was removed in CLI consolidation refactor (commit c8bc7e4).
       const output = runCli("api-spec");
       const parsed = JSON.parse(output);
       expect(parsed.ok).toBe(true);

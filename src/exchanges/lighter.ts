@@ -24,6 +24,42 @@ interface WasmTxResponse {
   error?: string;
 }
 
+/** Lighter trigger orderType enum (matches WASM signer). */
+export const LIGHTER_ORDER_TYPE = {
+  STOP_LOSS: 2,
+  STOP_LOSS_LIMIT: 3,
+  TAKE_PROFIT: 4,
+  TAKE_PROFIT_LIMIT: 5,
+} as const;
+
+export type LighterTriggerOrderType =
+  | typeof LIGHTER_ORDER_TYPE.STOP_LOSS
+  | typeof LIGHTER_ORDER_TYPE.STOP_LOSS_LIMIT
+  | typeof LIGHTER_ORDER_TYPE.TAKE_PROFIT
+  | typeof LIGHTER_ORDER_TYPE.TAKE_PROFIT_LIMIT;
+
+/**
+ * Pick Lighter trigger orderType from side, trigger price, and current mark.
+ *
+ * STOP_LOSS protects against adverse moves; TAKE_PROFIT locks in favorable moves.
+ *   buy + trigger >= mark  → STOP_LOSS  (close short on rise / breakout entry)
+ *   buy + trigger <  mark  → TAKE_PROFIT (close short on fall)
+ *   sell + trigger <= mark → STOP_LOSS  (close long on fall)
+ *   sell + trigger >  mark → TAKE_PROFIT (close long on rise)
+ *
+ * Tied trigger==mark is classified as STOP_LOSS — the protective default.
+ */
+export function classifyTriggerOrderType(
+  side: "buy" | "sell",
+  triggerPrice: number,
+  markPrice: number,
+  isMarket: boolean,
+): LighterTriggerOrderType {
+  const isStopLoss = side === "buy" ? triggerPrice >= markPrice : triggerPrice <= markPrice;
+  if (isStopLoss) return isMarket ? LIGHTER_ORDER_TYPE.STOP_LOSS : LIGHTER_ORDER_TYPE.STOP_LOSS_LIMIT;
+  return isMarket ? LIGHTER_ORDER_TYPE.TAKE_PROFIT : LIGHTER_ORDER_TYPE.TAKE_PROFIT_LIMIT;
+}
+
 export class LighterAdapter implements ExchangeAdapter {
   readonly name = "lighter";
   readonly chain = "ethereum";
@@ -794,17 +830,18 @@ export class LighterAdapter implements ExchangeAdapter {
     const { baseAmount } = this.toTicks(symbol, parseFloat(size), 0);
     const { priceTicks: triggerTicks } = this.toTicks(symbol, 0, parseFloat(triggerPrice));
 
-    // STOP_LOSS = 2 (market-on-trigger), STOP_LOSS_LIMIT = 3 (limit-on-trigger)
-    // (regular orderType 0/1 don't accept triggerPrice — WASM signer rejects)
+    const triggerNum = parseFloat(triggerPrice);
+    const markPrice = await this.getMarkPrice(symbol);
     const isMarket = !opts?.limitPrice;
     let priceTicks: number;
     if (isMarket) {
-      const markPrice = await this.getMarkPrice(symbol);
       const slippagePrice = side === "buy" ? markPrice * 2 : markPrice * 0.5;
       priceTicks = this.toTicks(symbol, 0, slippagePrice).priceTicks;
     } else {
       priceTicks = this.toTicks(symbol, 0, parseFloat(opts!.limitPrice!)).priceTicks;
     }
+
+    const orderType = classifyTriggerOrderType(side, triggerNum, markPrice, isMarket);
 
     const signed = await this.signOrder({
       marketIndex,
@@ -812,11 +849,11 @@ export class LighterAdapter implements ExchangeAdapter {
       baseAmount,
       price: Math.max(priceTicks, 1),
       isAsk: side === "sell" ? 1 : 0,
-      orderType: isMarket ? 2 : 3,  // STOP_LOSS (market) or STOP_LOSS_LIMIT
+      orderType,
       timeInForce: isMarket ? 0 : 1, // IOC for market, GTT for limit
       reduceOnly: opts?.reduceOnly ? 1 : 0,
       triggerPrice: triggerTicks,
-      orderExpiry: -1,  // stop orders sit until trigger
+      orderExpiry: -1,  // matches Lighter SDK DEFAULT_28_DAY_ORDER_EXPIRY for trigger orders
       nonce,
     });
     return this.sendTx(signed);

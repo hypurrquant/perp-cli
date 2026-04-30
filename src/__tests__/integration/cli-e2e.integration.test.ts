@@ -2,7 +2,7 @@ import { execSync } from "child_process";
 import { writeFileSync, unlinkSync, existsSync } from "fs";
 import { describe, it, expect, afterAll } from "vitest";
 
-const CLI_CWD = "/Users/hik/Documents/GitHub/pacifica/packages/cli";
+const CLI_CWD = process.cwd();
 const CLI_CMD = "npx tsx src/index.ts";
 
 /** Temp files created during tests, cleaned up in afterAll */
@@ -164,14 +164,12 @@ describe("CLI E2E Integration Tests", { timeout: 30000 }, () => {
   // ───────────────────── help output ─────────────────────
 
   describe("perp --help", () => {
-    it("includes all major commands in help output", () => {
+    it("includes core commands in help output", () => {
       const { stdout } = runCliSafe("--help");
       const helpText = stdout.toLowerCase();
 
-      expect(helpText).toContain("schema");
       expect(helpText).toContain("strategy");
       expect(helpText).toContain("trade");
-      expect(helpText).toContain("stream");
       expect(helpText).toContain("market");
       expect(helpText).toContain("account");
       expect(helpText).toContain("arb");

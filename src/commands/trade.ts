@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import type { ExchangeAdapter } from "../exchanges/index.js";
 import { printJson, errorAndExit, withJsonErrors, jsonOk, jsonError, symbolMatch, formatUsd } from "../utils.js";
+import { extractErrorMessage } from "../errors.js";
 import { logExecution } from "../execution-log.js";
 import { validateTrade } from "../trade-validator.js";
 import { generateClientId, logClientId, isOrderDuplicate } from "../client-id-tracker.js";
@@ -121,7 +122,7 @@ export function registerTradeCommands(
         logExecution({
           type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(),
           side: s, size, status: "failed", dryRun: false,
-          error: err instanceof Error ? err.message : String(err),
+          error: extractErrorMessage(err),
           meta: { ...(clientId ? { clientOrderId: clientId } : {}), ...(opts.smart ? { smart: true } : {}) },
         });
         throw err;
@@ -167,7 +168,7 @@ export function registerTradeCommands(
         }
         logExecution({ type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "buy", size, status: "success", dryRun: false, meta: opts.smart ? { smart: true } : undefined });
       } catch (err) {
-        logExecution({ type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "buy", size, status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err) });
+        logExecution({ type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "buy", size, status: "failed", dryRun: false, error: extractErrorMessage(err) });
         throw err;
       }
       if (isJson()) return printJson(jsonOk(clientId ? { ...result as object, clientOrderId: clientId } : result));
@@ -201,7 +202,7 @@ export function registerTradeCommands(
         }
         logExecution({ type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "sell", size, status: "success", dryRun: false, meta: opts.smart ? { smart: true } : undefined });
       } catch (err) {
-        logExecution({ type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "sell", size, status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err) });
+        logExecution({ type: "market_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: "sell", size, status: "failed", dryRun: false, error: extractErrorMessage(err) });
         throw err;
       }
       if (isJson()) return printJson(jsonOk(clientId ? { ...result as object, clientOrderId: clientId } : result));
@@ -296,7 +297,7 @@ export function registerTradeCommands(
         logExecution({
           type: "limit_order", exchange: adapter.name, symbol: symbol.toUpperCase(),
           side: s, size, price, status: "failed", dryRun: false,
-          error: err instanceof Error ? err.message : String(err),
+          error: extractErrorMessage(err),
           meta: clientId ? { clientOrderId: clientId } : undefined,
         });
         throw err;
@@ -331,7 +332,7 @@ export function registerTradeCommands(
           if (isJson()) return printJson(jsonOk(result));
           console.log(chalk.green(`\n  Order ${oid} cancelled on ${adapter.name}.\n`));
         } catch (err) {
-          logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err), meta: { orderId: oid } });
+          logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "failed", dryRun: false, error: extractErrorMessage(err), meta: { orderId: oid } });
           throw err;
         }
         return;
@@ -359,7 +360,7 @@ export function registerTradeCommands(
           if (isJson()) return printJson(jsonOk(result));
           console.log(chalk.green(`\n  Order ${oid} cancelled on ${adapter.name}.\n`));
         } catch (err) {
-          logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err), meta: { orderId: oid } });
+          logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "failed", dryRun: false, error: extractErrorMessage(err), meta: { orderId: oid } });
           throw err;
         }
       } else {
@@ -380,7 +381,7 @@ export function registerTradeCommands(
           if (isJson()) return printJson(jsonOk({ cancelled: true, symbol, count: matching.length, result }));
           console.log(chalk.green(`\n  ${matching.length} order(s) for ${symbol} cancelled on ${adapter.name}.\n`));
         } catch (err) {
-          logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err), meta: { bySymbol: true } });
+          logExecution({ type: "cancel", exchange: adapter.name, symbol, side: "cancel", size: "0", status: "failed", dryRun: false, error: extractErrorMessage(err), meta: { bySymbol: true } });
           throw err;
         }
       }
@@ -505,7 +506,7 @@ export function registerTradeCommands(
         );
         logExecution({ type: "stop_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: s, size, price: stopPrice, status: "success", dryRun: false });
       } catch (err) {
-        logExecution({ type: "stop_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: s, size, price: stopPrice, status: "failed", dryRun: false, error: err instanceof Error ? err.message : String(err) });
+        logExecution({ type: "stop_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: s, size, price: stopPrice, status: "failed", dryRun: false, error: extractErrorMessage(err) });
         throw err;
       }
 
@@ -671,11 +672,7 @@ export function registerTradeCommands(
             meta: { action: "scale-tp", pct: level.pct, reduceOnly: true },
           });
         } catch (err) {
-          const msg = err instanceof Error
-            ? err.message
-            : (err && typeof err === "object")
-              ? ((err as { message?: string }).message ?? JSON.stringify(err))
-              : String(err);
+          const msg = extractErrorMessage(err);
           logExecution({
             type: "limit_order", exchange: adapter.name, symbol: sym,
             side: closeSide, size: levelSize, price: level.price,
@@ -778,7 +775,7 @@ export function registerTradeCommands(
         logExecution({
           type: "rebalance", exchange: adapter.name, symbol: symbol.toUpperCase(), side: mode,
           size: leverage, status: "failed", dryRun: false,
-          error: err instanceof Error ? err.message : String(err),
+          error: extractErrorMessage(err),
           meta: { action: "set_leverage", leverage: parseInt(leverage), mode },
         });
         throw err;
@@ -1155,11 +1152,7 @@ export function registerTradeCommands(
             meta: { action: "scale-in", pct: level.pct },
           });
         } catch (err) {
-          const msg = err instanceof Error
-            ? err.message
-            : (err && typeof err === "object")
-              ? ((err as { message?: string }).message ?? JSON.stringify(err))
-              : String(err);
+          const msg = extractErrorMessage(err);
           logExecution({
             type: "limit_order", exchange: adapter.name, symbol: sym,
             side: s, size: level.size, price: level.price,
