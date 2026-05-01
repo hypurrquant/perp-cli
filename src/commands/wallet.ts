@@ -622,31 +622,15 @@ export function registerWalletCommands(
       const aliases: Record<string, string> = { hl: "hyperliquid", pac: "pacifica", lt: "lighter", ast: "aster" };
       const resolved = aliases[exchange.toLowerCase()] || exchange.toLowerCase();
 
-      // v0.12.4: Aster legacy HMAC API-key path is removed entirely. Plan v3.0
-      // de-wired the runtime/signing surface but left the wallet set entry
-      // accepting keys that no longer drive any signing path. Fail loudly
-      // (SSOT Rule #2) and point at the agent flow.
-      if (resolved === "aster") {
-        const msg = "'wallet set aster' is removed in v0.13. Use 'wallet agent approve aster' instead.";
-        const remediation = "perp wallet agent approve aster --master <wallet>";
-        if (isJson()) {
-          const { jsonError } = await import("../utils.js");
-          return printJson(jsonError("INVALID_PARAMS", msg, { details: { remediation } }));
-        }
-        console.error(chalk.red(`\n  ${msg}`));
-        console.error(chalk.gray(`  Run: ${remediation}\n`));
-        process.exit(1);
-      }
-
       const info = EXCHANGE_ENV_MAP[resolved];
 
       if (!info) {
         if (isJson()) {
           const { jsonError } = await import("../utils.js");
-          return printJson(jsonError("INVALID_PARAMS", `Unknown exchange: ${exchange}. Use: pacifica, hyperliquid, lighter (or hl, pac, lt). For Aster: 'perp wallet agent approve aster'.`));
+          return printJson(jsonError("INVALID_PARAMS", `Unknown exchange: ${exchange}. Use: pacifica, hyperliquid, lighter, aster (or hl, pac, lt, ast).`));
         }
         console.error(chalk.red(`\n  Unknown exchange: ${exchange}`));
-        console.error(chalk.gray(`  Use: pacifica, hyperliquid, lighter (or hl, pac, lt). For Aster: 'perp wallet agent approve aster'.\n`));
+        console.error(chalk.gray(`  Use: pacifica, hyperliquid, lighter, aster (or hl, pac, lt, ast).\n`));
         process.exit(1);
       }
 

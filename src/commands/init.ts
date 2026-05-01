@@ -79,15 +79,17 @@ function askChoice(rl: ReturnType<typeof createInterface>, question: string, cho
 
 // ── Exchange → env var mapping ────────────────────────────────
 
-// Aster removed in v0.12.4: legacy HMAC API-key signing path was retired in
-// Plan v3.0. New users must onboard via `perp wallet agent approve aster`
-// (off-chain agent wallet, same flow as HL/PAC/LT). The setup wizard
-// surfaces a redirect when Aster is selected; `wallet set aster <key>`
-// throws INVALID_PARAMS pointing at the agent flow.
+// v0.12.4 retired the legacy HMAC ASTER_API_KEY/SECRET path (Plan v3.0).
+// v0.12.6 restores Aster as a normal EVM exchange: `ASTER_PRIVATE_KEY`
+// (Tier 3 PK direct path) is collected like HL/LT, and the agent flow
+// (`wallet agent approve aster`) is the recommended Tier 1 onboarding.
+// Removing Aster entirely was over-correction — the entry must exist so
+// `wallet import` / `wallet set` / setup wizard treat all 4 DEX uniformly.
 export const EXCHANGE_ENV_MAP: Record<string, { envKey: string; envKeySecret?: string; chain: "solana" | "evm" | "apikey"; label: string }> = {
   pacifica: { envKey: "PACIFICA_PRIVATE_KEY", chain: "solana", label: "Pacifica (Solana)" },
   hyperliquid: { envKey: "HL_PRIVATE_KEY", chain: "evm", label: "Hyperliquid (EVM)" },
   lighter: { envKey: "LIGHTER_PRIVATE_KEY", chain: "evm", label: "Lighter (EVM)" },
+  aster: { envKey: "ASTER_PRIVATE_KEY", chain: "evm", label: "Aster (BNB Chain)" },
 };
 
 // ── Validate keys ─────────────────────────────────────────────
@@ -199,26 +201,10 @@ export function registerInitCommand(program: Command) {
         console.log();
 
         const exchangeChoice = await ask(rl, "  Which exchange(s)? (1,2,3,4 or 'all'): ");
-        const selectedRaw = parseExchangeChoice(exchangeChoice);
-
-        // v0.12.4: legacy Aster HMAC API-key path is removed. The wizard can
-        // no longer collect ASTER_API_KEY/ASTER_API_SECRET — Aster onboarding
-        // is now exclusively via `perp wallet agent approve aster --master`.
-        // Print a redirect and drop Aster from the env-write set.
-        const asterRequested = selectedRaw.includes("aster");
-        const selected = selectedRaw.filter((e) => e !== "aster");
-        if (asterRequested) {
-          console.log(chalk.yellow.bold("\n  Aster onboarding is via agent wallet (no API keys):"));
-          console.log(`    ${chalk.green("perp wallet agent approve aster --master <name>")}`);
-          console.log(chalk.gray("  Run that after this wizard completes.\n"));
-        }
+        const selected = parseExchangeChoice(exchangeChoice);
 
         if (selected.length === 0) {
-          if (asterRequested) {
-            console.log(chalk.gray("  No additional exchanges to configure here. See the Aster instructions above.\n"));
-          } else {
-            console.log(chalk.red("\n  No exchanges selected.\n"));
-          }
+          console.log(chalk.red("\n  No exchanges selected.\n"));
           rl.close();
           return;
         }
