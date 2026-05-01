@@ -69,9 +69,19 @@ export function extractErrorMessage(err: unknown): string {
 
 /**
  * Classify an error from any exchange into a structured error code.
- * Pattern-matches on error messages to detect known error types.
+ *
+ * If the input is already a PerpError, return its structured payload verbatim
+ * — the typed code and remediation are the source of truth and must not be
+ * re-derived from message text. Pattern-matching only kicks in for plain
+ * Error instances or unknown thrown values. Codex v0.12.12 final QA #2.
  */
 export function classifyError(err: unknown, exchange?: string): StructuredError {
+  if (err instanceof PerpError) {
+    // Preserve the PerpError's typed shape; only fill in `exchange` if the
+    // caller provided one and the error didn't already attach it.
+    const ex = (err.structured.exchange ?? exchange);
+    return ex !== undefined ? { ...err.structured, exchange: ex } : { ...err.structured };
+  }
   const message = extractErrorMessage(err);
   const lower = message.toLowerCase();
 

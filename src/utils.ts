@@ -194,6 +194,8 @@ export interface ApiResponse<T = unknown> {
     status?: number;
     retryable?: boolean;
     retryAfterMs?: number;
+    /** Actionable hint for automated callers (Codex v0.12.12 final QA #2). */
+    remediation?: string;
     details?: Record<string, unknown>;
   };
   meta?: { exchange?: string; timestamp: string; duration_ms?: number };
@@ -217,6 +219,7 @@ export function jsonError(
     retryable?: boolean;
     retryAfterMs?: number;
     details?: Record<string, unknown>;
+    remediation?: string;
   },
 ): ApiResponse<never> {
   return {
@@ -227,6 +230,7 @@ export function jsonError(
       ...(meta?.status !== undefined ? { status: meta.status } : {}),
       ...(meta?.retryable !== undefined ? { retryable: meta.retryable } : {}),
       ...(meta?.retryAfterMs !== undefined ? { retryAfterMs: meta.retryAfterMs } : {}),
+      ...(meta?.remediation !== undefined ? { remediation: meta.remediation } : {}),
       ...(meta?.details ? { details: meta.details } : {}),
     },
     meta: { timestamp: new Date().toISOString(), ...meta },
@@ -235,6 +239,11 @@ export function jsonError(
 
 /** Execute a command action with structured error handling.
  *  In JSON mode, errors are returned as JSON instead of crashing.
+ *
+ *  PerpError-typed throws are preserved end-to-end: their `code`,
+ *  `remediation`, and other StructuredError fields surface in the JSON
+ *  envelope's `error` block so machine consumers (agents / MCP / automation)
+ *  receive actionable hints. Codex v0.12.12 final QA #2.
  */
 export async function withJsonErrors<T>(
   isJson: boolean,
@@ -250,9 +259,14 @@ export async function withJsonErrors<T>(
         status: classified.status,
         retryable: classified.retryable,
         retryAfterMs: classified.retryAfterMs,
+        remediation: classified.remediation,
+        details: classified.details,
       })));
     } else {
       console.error(chalk.red(`Error: ${classified.message}`));
+      if (classified.remediation) {
+        console.error(chalk.yellow(`Remediation: ${classified.remediation}`));
+      }
     }
     return undefined;
   }

@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { classifyError, PerpError, ERROR_CODES, type ErrorCode } from "../errors.js";
+import { jsonError, withJsonErrors } from "../utils.js";
 
 describe("classifyError — pattern matching", () => {
   it("classifies insufficient balance errors", () => {
@@ -129,5 +130,152 @@ describe("ERROR_CODES coverage", () => {
         expect(allowed, `${key} has retryable=true but unexpected status ${entry.status}`).toBe(true);
       }
     }
+  });
+});
+
+// ─── Codex v0.12.12 final QA #2: classifyError preserves PerpError ────────
+// Previously classifyError ignored err instanceof PerpError and re-derived
+// the code from message text — so a typed PerpError("NOT_IMPLEMENTED", ...,
+// {remediation}) became {code: "SIGNATURE_FAILED"} with no remediation.
+describe("classifyError — PerpError preservation (C2)", () => {
+  it("preserves NOT_IMPLEMENTED code and remediation from PerpError", () => {
+    const err = new PerpError(
+      "NOT_IMPLEMENTED",
+      "Aster requires agent for signed paths",
+      { remediation: "perp wallet agent approve aster --master <wallet>" },
+    );
+    const r = classifyError(err);
+    expect(r.code).toBe("NOT_IMPLEMENTED");
+    expect(r.message).toBe("Aster requires agent for signed paths");
+    expect(r.remediation).toBe("perp wallet agent approve aster --master <wallet>");
+    expect(r.status).toBe(501);
+  });
+
+  it("preserves AGENT_EXPIRED code from PerpError without re-deriving from text", () => {
+    // Message would normally pattern-match "expire" → but that pattern doesn't
+    // exist in classifyError; the real risk is a typed error getting mapped
+    // to UNKNOWN. Verify the typed code wins regardless.
+    const err = new PerpError(
+      "AGENT_EXPIRED",
+      "Agent has expired (rotate via --rotate)",
+      { remediation: "perp wallet agent approve aster --rotate" },
+    );
+    const r = classifyError(err, "aster");
+    expect(r.code).toBe("AGENT_EXPIRED");
+    expect(r.exchange).toBe("aster");
+    expect(r.remediation).toBe("perp wallet agent approve aster --rotate");
+  });
+
+  it("PerpError with details preserves details field", () => {
+    const err = new PerpError(
+      "INSUFFICIENT_BALANCE",
+      "Not enough USDC",
+      { required: 100, available: 50 },
+    );
+    const r = classifyError(err);
+    expect(r.code).toBe("INSUFFICIENT_BALANCE");
+    expect(r.details?.required).toBe(100);
+    expect(r.details?.available).toBe(50);
+  });
+
+  it("PerpError without remediation does not surface a remediation field", () => {
+    const err = new PerpError("TIMEOUT", "Request timed out");
+    const r = classifyError(err);
+    expect(r.code).toBe("TIMEOUT");
+    expect(r.remediation).toBeUndefined();
+  });
+
+  it("plain Error still falls through to message-pattern classification", () => {
+    // Regression guard: PerpError check must NOT swallow plain Error
+    const r = classifyError(new Error("Insufficient balance"));
+    expect(r.code).toBe("INSUFFICIENT_BALANCE");
+  });
+
+  it("classifyError fills in exchange from caller arg when PerpError didn't set one", () => {
+    const errNoEx = new PerpError("NOT_IMPLEMENTED", "test");
+    const r = classifyError(errNoEx, "hyperliquid");
+    expect(r.code).toBe("NOT_IMPLEMENTED");
+    expect(r.exchange).toBe("hyperliquid");
+  });
+});
+
+// ─── jsonError + withJsonErrors envelope serialization (C2) ───────────────
+describe("jsonError envelope — remediation surfaced at error.* (C2)", () => {
+  it("includes remediation at top level of error block when provided", () => {
+    const env = jsonError("NOT_IMPLEMENTED", "Aster requires agent", {
+      status: 501,
+      retryable: false,
+      remediation: "perp wallet agent approve aster --master <wallet>",
+    });
+    expect(env.ok).toBe(false);
+    expect(env.error?.code).toBe("NOT_IMPLEMENTED");
+    expect(env.error?.message).toBe("Aster requires agent");
+    expect(env.error?.remediation).toBe("perp wallet agent approve aster --master <wallet>");
+    expect(env.error?.status).toBe(501);
+    expect(env.error?.retryable).toBe(false);
+  });
+
+  it("omits remediation field when not provided", () => {
+    const env = jsonError("TIMEOUT", "Request timed out", { status: 504, retryable: true });
+    expect(env.error?.remediation).toBeUndefined();
+  });
+});
+
+describe("withJsonErrors — PerpError end-to-end (C2)", () => {
+  let logSpy: ReturnType<typeof vi.spyOn>;
+  let errSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+    errSpy.mockRestore();
+  });
+
+  it("thrown PerpError surfaces correct code AND remediation in JSON envelope", async () => {
+    await withJsonErrors(true, async () => {
+      throw new PerpError(
+        "NOT_IMPLEMENTED",
+        "Aster requires agent for signed paths",
+        { remediation: "perp wallet agent approve aster --master <wallet>" },
+      );
+    });
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const printed = String(logSpy.mock.calls[0][0]);
+    const parsed = JSON.parse(printed) as { ok: boolean; error: { code: string; message: string; remediation?: string } };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error.code).toBe("NOT_IMPLEMENTED");
+    expect(parsed.error.message).toBe("Aster requires agent for signed paths");
+    expect(parsed.error.remediation).toBe("perp wallet agent approve aster --master <wallet>");
+  });
+
+  it("non-JSON mode prints both message and remediation when present", async () => {
+    await withJsonErrors(false, async () => {
+      throw new PerpError(
+        "AGENT_EXPIRED",
+        "Agent expired",
+        { remediation: "perp wallet agent approve aster --rotate" },
+      );
+    });
+
+    expect(logSpy).not.toHaveBeenCalled();
+    const all = errSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(all).toContain("Agent expired");
+    expect(all).toContain("Remediation: perp wallet agent approve aster --rotate");
+  });
+
+  it("plain Error in JSON mode classifies via message and emits envelope without remediation", async () => {
+    await withJsonErrors(true, async () => {
+      throw new Error("Insufficient balance");
+    });
+
+    const printed = String(logSpy.mock.calls[0][0]);
+    const parsed = JSON.parse(printed) as { error: { code: string; remediation?: string } };
+    expect(parsed.error.code).toBe("INSUFFICIENT_BALANCE");
+    expect(parsed.error.remediation).toBeUndefined();
   });
 });
