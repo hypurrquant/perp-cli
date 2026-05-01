@@ -19,8 +19,27 @@ export function registerAccountCommands(
 ) {
   const account = program.command("account").description("Account commands");
 
-  // ── Single exchange balance fetch (used by both single + multi mode) ──
-
+  // ── balance alias → redirect to portfolio (renamed in v0.12) ──
+  // Users who type `perp account balance` get a structured pointer instead of
+  // "unknown command". Per Rule #2 we don't silently retarget — we tell the
+  // user what to run and exit non-zero so scripts can detect the rename.
+  account
+    .command("balance")
+    .description("[renamed] Use 'perp portfolio' (exchange-aggregated) or 'perp portfolio -e <ex>'")
+    .action(async () => {
+      const msg = "'account balance' was renamed in v0.12 — use 'portfolio' instead.";
+      const remediation = "perp portfolio                      # all exchanges\nperp portfolio -e <exchange>        # single exchange detail";
+      if (isJson()) {
+        const { jsonError } = await import("../utils.js");
+        const { printJson } = await import("../utils.js");
+        printJson(jsonError("INVALID_PARAMS", msg, { details: { remediation } }));
+        process.exit(1);
+      }
+      const chalk = (await import("chalk")).default;
+      console.error(chalk.yellow(`\n  ${msg}`));
+      console.error(chalk.gray(`  Run: ${remediation}\n`));
+      process.exit(1);
+    });
 
   // ── HIP-3 dex helper: fetch data from all deployed dexes in parallel ──
 
