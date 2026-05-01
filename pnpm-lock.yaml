@@ -54,7 +54,7 @@ importers:
         specifier: ^3.1.0
         version: 3.1.0(ink@6.8.0(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(utf-8-validate@6.0.6))(react@19.2.4)
       lighter-ts-sdk:
-        specifier: ^1.0.10
+        specifier: 1.0.10
         version: 1.0.10(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
       react:
         specifier: ^19.2.4
