@@ -680,9 +680,11 @@ describe("Test 13: Passphrase non-TTY no creds", () => {
 describe("Test 14: No-prompts allowlist invariant", () => {
   it("grep createInterface|readline in src/commands/*.ts returns only allowlisted files", async () => {
     const { execSync } = await import("child_process");
+    // Use cwd-relative path so this works both locally and in CI
+    // (CI runner has a different absolute path than developer machines).
     const result = execSync(
-      "grep -lE 'createInterface|readline' /Users/hik/Documents/GitHub/perp-cli/src/commands/*.ts 2>/dev/null || true",
-      { encoding: "utf-8" },
+      "grep -lE 'createInterface|readline' src/commands/*.ts 2>/dev/null || true",
+      { encoding: "utf-8", cwd: process.cwd() },
     ).trim();
 
     const files = result.split("\n").filter(Boolean).map(f => f.split("/").pop()!);
