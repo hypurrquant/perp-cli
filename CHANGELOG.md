@@ -4,13 +4,15 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.12.8] — 2026-05-01
+
 ### Added
-- `perp wallet manage account-mode <unified|standard|portfolio>` — set HL account abstraction mode via `userSetAbstraction` action (master-signed)
-- `perp account balance` redirect — friendly pointer to `perp portfolio` (renamed in v0.12)
-- `CHANGELOG.md` (this file)
+- `perp wallet manage account-mode [<unified|standard|portfolio>]` — set or query HL account abstraction mode via `userSetAbstraction` action (master-signed). No-arg form prints current mode without changing it.
+- `perp account balance` redirect — friendly pointer to `perp portfolio` (renamed in v0.12), exits 1 with remediation instead of "unknown command".
+- `CHANGELOG.md` — Keep a Changelog format; v0.12.0 onward documented.
 
 ### Changed
-- TBD per pending v0.12.8 commits
+- `HyperliquidAdapter.setAddress(address)` — read-only path lets the show branch query `userAbstraction` without unlocking the master key.
 
 ## [0.12.7] — 2026-05-01
 
@@ -83,7 +85,8 @@ Tagged but never published to npm — paused for the SKILL.md version-sync findi
 ### Security
 - Lighter L2 slot key is no longer stored in `.env` plaintext. Aligned with Aster/HL/PAC agents which were already in OWS vault.
 
-[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.7...HEAD
+[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.8...HEAD
+[0.12.8]: https://github.com/hypurrquant/perp-cli/compare/v0.12.7...v0.12.8
 [0.12.7]: https://github.com/hypurrquant/perp-cli/compare/v0.12.6...v0.12.7
 [0.12.6]: https://github.com/hypurrquant/perp-cli/compare/v0.12.5...v0.12.6
 [0.12.5]: https://github.com/hypurrquant/perp-cli/compare/v0.12.3...v0.12.5
