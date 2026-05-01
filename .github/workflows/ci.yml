@@ -35,26 +35,51 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Type check
+      - name: Type check (tsc strict)
         run: pnpm run build
 
       - name: Unit tests
         run: pnpm test
 
+      - name: Integration tests (mainnet public read-only — non-fatal)
+        # Hits live HL/PAC/LT/Aster public APIs (market list, prices, funding).
+        # Marked continue-on-error: a single venue outage shouldn't block CI.
+        # Failure surfaces as a yellow check; investigate manually if persistent.
+        continue-on-error: true
+        run: pnpm test:integration
+
       - name: Package smoke test
         run: |
+          set -euxo pipefail
           pnpm pack
           TARBALL=$(ls perp-cli-*.tgz)
-          # Verify both bins exist in the package
+          # Verify all bins exist in the package
           tar -tzf "$TARBALL" | grep 'dist/index.js'
           tar -tzf "$TARBALL" | grep 'dist/mcp-server.js'
+          tar -tzf "$TARBALL" | grep 'dist/guardrail/perp-guardrail.js'
+          # Verify SKILL bundle ships (agent surface)
+          tar -tzf "$TARBALL" | grep 'skills/perp-cli/SKILL.md'
           # Install and verify bins actually run
           mkdir -p /tmp/smoke-test
           cd /tmp/smoke-test
           npm init -y > /dev/null 2>&1
           npm install "$GITHUB_WORKSPACE/$TARBALL" > /dev/null 2>&1
-          npx perp --help
-          npx perp-mcp --help || true
+          # --version must match package.json (catches sync-skill-version /
+          # build mismatch silently shipping a stale dist)
+          INSTALLED_VERSION=$(npx perp --version)
+          EXPECTED_VERSION=$(node -p "require('$GITHUB_WORKSPACE/package.json').version")
+          if [ "$INSTALLED_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "::error::Version mismatch: installed=$INSTALLED_VERSION expected=$EXPECTED_VERSION"
+            exit 1
+          fi
+          npx perp --help > /dev/null
+          # MCP server JSONRPC initialize ping (catches startup regressions
+          # like missing tools/resources/prompts capabilities or import errors).
+          INIT_REQ='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}'
+          INIT_RESP=$(echo "$INIT_REQ" | timeout 10 npx perp-mcp 2>/dev/null | head -1)
+          echo "MCP initialize response: $INIT_RESP"
+          echo "$INIT_RESP" | grep -q '"result"' || { echo "::error::MCP initialize failed"; exit 1; }
+          echo "$INIT_RESP" | grep -q "\"version\":\"$EXPECTED_VERSION\"" || { echo "::error::MCP version mismatch"; exit 1; }
 
   release:
     name: GitHub Release
