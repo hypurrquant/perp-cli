@@ -5,7 +5,7 @@ allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*)"
 license: MIT
 metadata:
   author: hypurrquant
-  version: "0.7.7"
+  version: "0.12.5"
 ---
 
 # perp-cli Agent Guide
@@ -41,7 +41,7 @@ Multi-DEX perpetual futures CLI + MCP server — Pacifica (Solana), Hyperliquid 
 ## Install
 
 ```bash
-perp --version 2>/dev/null  # check if exists (must be >= 0.7.7)
+perp --version 2>/dev/null  # check if exists (must be >= 0.12.5)
 npm install -g perp-cli@latest 2>/dev/null || npx -y perp-cli@latest --json --version
 ```
 
