@@ -80,11 +80,15 @@ export async function loadPrivateKey(exchange: Exchange, pkOverride?: string, wa
   }
 
   // 3. Exchange-specific env vars
+  // v0.12.4: Aster's ASTER_API_KEY entry is removed — the legacy HMAC
+  // signing path was retired in Plan v3.0. Aster onboarding is now via
+  // `perp wallet agent approve aster` (off-chain agent wallet); the runtime
+  // adapter pulls credentials from the agent store, not the env.
   const envMap: Record<Exchange, string[]> = {
     pacifica: ["PACIFICA_PRIVATE_KEY", "pk"],
     hyperliquid: ["HYPERLIQUID_PRIVATE_KEY", "HL_PRIVATE_KEY"],
     lighter: ["LIGHTER_PRIVATE_KEY"],
-    aster: ["ASTER_API_KEY"],
+    aster: [],
   };
 
   for (const envVar of envMap[exchange]) {

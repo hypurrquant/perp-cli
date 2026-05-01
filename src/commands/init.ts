@@ -79,11 +79,15 @@ function askChoice(rl: ReturnType<typeof createInterface>, question: string, cho
 
 // ── Exchange → env var mapping ────────────────────────────────
 
+// Aster removed in v0.12.4: legacy HMAC API-key signing path was retired in
+// Plan v3.0. New users must onboard via `perp wallet agent approve aster`
+// (off-chain agent wallet, same flow as HL/PAC/LT). The setup wizard
+// surfaces a redirect when Aster is selected; `wallet set aster <key>`
+// throws INVALID_PARAMS pointing at the agent flow.
 export const EXCHANGE_ENV_MAP: Record<string, { envKey: string; envKeySecret?: string; chain: "solana" | "evm" | "apikey"; label: string }> = {
   pacifica: { envKey: "PACIFICA_PRIVATE_KEY", chain: "solana", label: "Pacifica (Solana)" },
   hyperliquid: { envKey: "HL_PRIVATE_KEY", chain: "evm", label: "Hyperliquid (EVM)" },
   lighter: { envKey: "LIGHTER_PRIVATE_KEY", chain: "evm", label: "Lighter (EVM)" },
-  aster: { envKey: "ASTER_API_KEY", envKeySecret: "ASTER_API_SECRET", chain: "apikey", label: "Aster (BNB Chain)" },
 };
 
 // ── Validate keys ─────────────────────────────────────────────
@@ -191,14 +195,30 @@ export function registerInitCommand(program: Command) {
         console.log(`    1) ${chalk.cyan("Pacifica")}    ${chalk.gray("— Solana perps (USDC on Solana)")}`);
         console.log(`    2) ${chalk.cyan("Hyperliquid")} ${chalk.gray("— EVM perps (USDC on Arbitrum)")}`);
         console.log(`    3) ${chalk.cyan("Lighter")}     ${chalk.gray("— EVM perps (USDC on Ethereum/Arb)")}`);
-        console.log(`    4) ${chalk.cyan("Aster")}       ${chalk.gray("— BNB Chain perps (API key + secret)")}`);
+        console.log(`    4) ${chalk.cyan("Aster")}       ${chalk.gray("— BNB Chain perps (use 'wallet agent approve aster')")}`);
         console.log();
 
         const exchangeChoice = await ask(rl, "  Which exchange(s)? (1,2,3,4 or 'all'): ");
-        const selected = parseExchangeChoice(exchangeChoice);
+        const selectedRaw = parseExchangeChoice(exchangeChoice);
+
+        // v0.12.4: legacy Aster HMAC API-key path is removed. The wizard can
+        // no longer collect ASTER_API_KEY/ASTER_API_SECRET — Aster onboarding
+        // is now exclusively via `perp wallet agent approve aster --master`.
+        // Print a redirect and drop Aster from the env-write set.
+        const asterRequested = selectedRaw.includes("aster");
+        const selected = selectedRaw.filter((e) => e !== "aster");
+        if (asterRequested) {
+          console.log(chalk.yellow.bold("\n  Aster onboarding is via agent wallet (no API keys):"));
+          console.log(`    ${chalk.green("perp wallet agent approve aster --master <name>")}`);
+          console.log(chalk.gray("  Run that after this wizard completes.\n"));
+        }
 
         if (selected.length === 0) {
-          console.log(chalk.red("\n  No exchanges selected.\n"));
+          if (asterRequested) {
+            console.log(chalk.gray("  No additional exchanges to configure here. See the Aster instructions above.\n"));
+          } else {
+            console.log(chalk.red("\n  No exchanges selected.\n"));
+          }
           rl.close();
           return;
         }
@@ -207,7 +227,6 @@ export function registerInitCommand(program: Command) {
         // EVM exchanges can share the same key
         const evmExchanges = selected.filter((e) => EXCHANGE_ENV_MAP[e].chain === "evm");
         const solExchanges = selected.filter((e) => EXCHANGE_ENV_MAP[e].chain === "solana");
-        const apikeyExchanges = selected.filter((e) => EXCHANGE_ENV_MAP[e].chain === "apikey");
         const newEnv = { ...env };
 
         if (evmExchanges.length > 0) {
@@ -261,27 +280,9 @@ export function registerInitCommand(program: Command) {
           }
         }
 
-        if (apikeyExchanges.length > 0) {
-          for (const ex of apikeyExchanges) {
-            const info = EXCHANGE_ENV_MAP[ex];
-            console.log(chalk.cyan.bold(`\n  ${info.label} API Credentials`));
-            const apiKey = await ask(rl, `  ${info.label} API key: `);
-            if (!apiKey) { console.log(chalk.gray("  Skipped.")); continue; }
-            const { valid, address } = await validateKey("apikey", apiKey);
-            if (!valid) { console.log(chalk.red("  Invalid API key (must be at least 16 chars), skipped.")); continue; }
-            newEnv[info.envKey] = apiKey;
-            console.log(`  ${chalk.green("OK")} ${chalk.gray(address)}`);
-            if (info.envKeySecret) {
-              const secret = await ask(rl, `  ${info.label} API secret: `);
-              if (secret) {
-                newEnv[info.envKeySecret] = secret;
-                console.log(`  ${chalk.green("OK")} secret saved`);
-              } else {
-                console.log(chalk.yellow("  No secret provided — some operations may fail."));
-              }
-            }
-          }
-        }
+        // v0.12.4: API-key (Aster legacy HMAC) onboarding removed from the
+        // wizard. Aster users follow the redirect above to
+        // `perp wallet agent approve aster`.
 
         // Default exchange
         const settings = loadSettings();
