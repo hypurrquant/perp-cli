@@ -300,7 +300,7 @@ export function registerAlertCommands(program: Command, isJson: () => boolean) {
         // Pass through env vars for keys
         // L2 agent key + indices now live in ~/.perp keystore + settings.agents (SSOT Rule #3),
         // not env. Only Tier 3 master PKs need passthrough.
-        const envKeys = ["LIGHTER_PRIVATE_KEY", "HL_PRIVATE_KEY", "PACIFICA_PRIVATE_KEY", "PRIVATE_KEY"];
+        const envKeys = ["LIGHTER_PRIVATE_KEY", "HL_PRIVATE_KEY", "PACIFICA_PRIVATE_KEY", "ASTER_PRIVATE_KEY", "PRIVATE_KEY"];
         const envStr = envKeys.filter(k => process.env[k]).map(k => `${k}='${process.env[k]}'`).join(" ");
 
         const cmd = `${envStr} ${nodeCmd} ${cliPath} ${args}`;
