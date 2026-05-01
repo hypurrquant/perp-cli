@@ -705,17 +705,17 @@ server.tool(
         );
       } else if (g.includes("status") || g.includes("check") || g.includes("overview") || g.includes("portfolio")) {
         steps.push(
-          { step: 1, command: `perp -e ${ex} --json status`, description: "Full account overview" },
+          { step: 1, command: `perp -e ${ex} --json portfolio`, description: "Single-exchange portfolio overview" },
           { step: 2, command: `perp -e ${ex} --json account positions`, description: "Detailed positions" },
           { step: 3, command: `perp -e ${ex} --json account orders`, description: "Open orders" },
-          { step: 4, command: "perp --json portfolio", description: "Cross-exchange portfolio summary" },
+          { step: 4, command: "perp --json portfolio --arb", description: "Cross-exchange portfolio + top arb opportunities" },
         );
       } else if (g.includes("deposit")) {
         const amount = extractNumber(g) || "<amount>";
         steps.push(
           { step: 1, command: "perp --json wallet balance", description: "Check wallet balance" },
           { step: 2, command: `perp --json funds deposit ${ex} ${amount}`, description: `Deposit $${amount} to ${ex}`, dangerous: true },
-          { step: 3, command: `perp -e ${ex} --json account balance`, description: "Verify deposit arrived" },
+          { step: 3, command: `perp -e ${ex} --json portfolio`, description: "Verify deposit arrived" },
         );
       } else if (g.includes("withdraw")) {
         const amount = extractNumber(g) || "<amount>";
@@ -765,8 +765,8 @@ server.tool(
         );
       } else {
         steps.push(
-          { step: 1, command: `perp -e ${ex} --json status`, description: "Check account status" },
-          { step: 2, command: `perp -e ${ex} --json account balance`, description: "Check exchange connectivity via balance fetch" },
+          { step: 1, command: `perp -e ${ex} --json portfolio`, description: "Check account overview" },
+          { step: 2, command: `perp --json portfolio --health --exchanges ${ex}`, description: "Check exchange connectivity" },
         );
       }
 
@@ -1271,10 +1271,10 @@ server.resource(
     const schema = {
       schemaVersion: "2.0",
       name: "perp",
-      description: "Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter)",
-      exchanges: ["pacifica", "hyperliquid", "lighter"],
+      description: "Multi-DEX Perpetual Futures CLI (Pacifica, Hyperliquid, Lighter, Aster)",
+      exchanges: ["pacifica", "hyperliquid", "lighter", "aster"],
       globalFlags: [
-        { flag: "-e, --exchange <name>", description: "Exchange to use (pacifica, hyperliquid, lighter)", default: "pacifica" },
+        { flag: "-e, --exchange <name>", description: "Exchange to use (pacifica, hyperliquid, lighter, aster)", default: "pacifica" },
         { flag: "--json", description: "Output as JSON for structured parsing" },
         { flag: "-n, --network <net>", description: "Network: mainnet or testnet", default: "mainnet" },
         { flag: "--dry-run", description: "Simulate without executing (for trade commands)" },
@@ -1296,7 +1296,7 @@ server.resource(
         account: {
           description: "Account data (read-only)",
           subcommands: {
-            info: { usage: "perp account balance", description: "Balance, equity, margin, PnL" },
+            info: { usage: "perp portfolio -e <exchange>", description: "Single-exchange balance, equity, margin, PnL" },
             positions: { usage: "perp account positions", description: "Open positions" },
             orders: { usage: "perp account orders", description: "Open/pending orders" },
             history: { usage: "perp account history", description: "Order history" },
@@ -1456,7 +1456,7 @@ server.resource(
         },
         portfolio: { usage: "perp portfolio", description: "Cross-exchange portfolio summary" },
         status: { usage: "perp portfolio", description: "Full account overview" },
-        health: { usage: "perp account balance --json", description: "Exchange connectivity check via balance fetch" },
+        health: { usage: "perp portfolio --health", description: "Exchange connectivity check" },
         settings: {
           description: "CLI settings",
           subcommands: {
@@ -1665,7 +1665,7 @@ server.tool(
   },
   async ({ period, exchange: exFilter, symbol: symFilter }) => {
     try {
-      const exchanges = exFilter ? [exFilter] : ["pacifica", "hyperliquid", "lighter"];
+      const exchanges = exFilter ? [exFilter] : ["pacifica", "hyperliquid", "lighter", "aster"];
       const periodMatch = period.match(/^(\d+)(d|w|m)$/);
       const sinceMs = periodMatch
         ? Date.now() - parseInt(periodMatch[1]) * ({ d: 86400000, w: 604800000, m: 2592000000 }[periodMatch[2]] ?? 86400000)
@@ -1744,7 +1744,7 @@ server.tool(
   },
   async ({ period, exchange: exFilter }) => {
     try {
-      const exchanges = exFilter ? [exFilter] : ["pacifica", "hyperliquid", "lighter"];
+      const exchanges = exFilter ? [exFilter] : ["pacifica", "hyperliquid", "lighter", "aster"];
       const periodMatch = period.match(/^(\d+)(d|w|m)$/);
       const sinceMs = periodMatch
         ? Date.now() - parseInt(periodMatch[1]) * ({ d: 86400000, w: 604800000, m: 2592000000 }[periodMatch[2]] ?? 86400000)
@@ -1861,7 +1861,7 @@ server.resource(
   { mimeType: "application/json", description: "Live cross-exchange prices for all perpetual futures markets" },
   async () => {
     const prices: Record<string, Record<string, string>> = {};
-    await Promise.allSettled(["pacifica", "hyperliquid", "lighter"].map(async (ex) => {
+    await Promise.allSettled(["pacifica", "hyperliquid", "lighter", "aster"].map(async (ex) => {
       try {
         const adapter = await getOrCreateAdapter(ex);
         const markets = await adapter.getMarkets();
@@ -1938,7 +1938,8 @@ server.prompt(
 ## Supported Exchanges
 - **pacifica** (Solana) — SOL-based perpetual futures
 - **hyperliquid** (HyperEVM) — Low-fee perpetuals with HIP-3 DEXes
-- **lighter** (Ethereum) — Ethereum-based perpetual futures`,
+- **lighter** (Ethereum) — Ethereum-based perpetual futures
+- **aster** (BNB Chain) — BNB Chain perpetual futures`,
       },
     }],
   }),
