@@ -753,30 +753,67 @@ export class AsterAdapter implements ExchangeAdapter {
    * Unlike public GETs, signed GETs route through _handleAsterResponse so
    * venue JSON error envelopes ({code, msg}) are not silently treated as
    * success (SSOT Rule #2).
+   *
+   * Retries up to 3 attempts with exponential backoff (2s/4s/8s) on HTTP 429
+   * rate-limit. Each retry rebuilds a fresh signed query string (new nonce
+   * + signature) — Aster reuses recent nonces strictly, so reusing a stale
+   * one would itself be rejected. Non-429 venue errors throw immediately.
    */
   private async _signedGetEip712(
     path: string,
     params: Record<string, string | number | boolean>,
     resolved: ResolvedSigner,
   ): Promise<unknown> {
-    const qs = await this._buildSignedQueryString(params, resolved);
-    const url = `${this._baseUrl}${path}?${qs}`;
-    const res = await fetch(url);
-    return this._handleAsterResponse(res, "GET", path);
+    return this._signedRequestWithRetry("GET", path, params, resolved);
   }
 
   /**
    * Sign and DELETE from a path using EIP-712 Domain B.
+   * Same retry behavior as _signedGetEip712.
    */
   private async _signedDeleteEip712(
     path: string,
     params: Record<string, string | number | boolean>,
     resolved: ResolvedSigner,
   ): Promise<unknown> {
-    const qs = await this._buildSignedQueryString(params, resolved);
-    const url = `${this._baseUrl}${path}?${qs}`;
-    const res = await fetch(url, { method: "DELETE" });
-    return this._handleAsterResponse(res, "DELETE", path);
+    return this._signedRequestWithRetry("DELETE", path, params, resolved);
+  }
+
+  /** Shared GET/DELETE retry loop with fresh-nonce per attempt. */
+  private async _signedRequestWithRetry(
+    method: "GET" | "DELETE",
+    path: string,
+    params: Record<string, string | number | boolean>,
+    resolved: ResolvedSigner,
+  ): Promise<unknown> {
+    const MAX_ATTEMPTS = 3;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      // Rebuild signed query string with fresh nonce on each attempt.
+      const qs = await this._buildSignedQueryString(params, resolved);
+      const url = `${this._baseUrl}${path}?${qs}`;
+      const res = await fetch(url, method === "DELETE" ? { method: "DELETE" } : undefined);
+      // 429 → backoff + retry. All other paths (including non-429 venue
+      // errors wrapped in HTTP 200 with code≠0) throw immediately via
+      // _handleAsterResponse — no silent fallback (Rule #2).
+      if (res.status === 429 && attempt < MAX_ATTEMPTS - 1) {
+        const backoffMs = 2000 * Math.pow(2, attempt); // 2s, 4s, 8s
+        await new Promise((r) => setTimeout(r, backoffMs));
+        continue;
+      }
+      try {
+        return await this._handleAsterResponse(res, method, path);
+      } catch (e) {
+        lastErr = e;
+        if (res.status === 429 && attempt < MAX_ATTEMPTS - 1) {
+          const backoffMs = 2000 * Math.pow(2, attempt);
+          await new Promise((r) => setTimeout(r, backoffMs));
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw lastErr;
   }
 
   // ── Private: HTTP response handling ──────────────────────────────────────
