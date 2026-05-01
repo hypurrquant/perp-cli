@@ -605,7 +605,7 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
       const settings = loadSettings();
       const hasEnvKey = !!(process.env.PRIVATE_KEY || process.env.PACIFICA_PRIVATE_KEY ||
         process.env.HL_PRIVATE_KEY || process.env.HYPERLIQUID_PRIVATE_KEY ||
-        process.env.LIGHTER_PRIVATE_KEY);
+        process.env.LIGHTER_PRIVATE_KEY || process.env.ASTER_PRIVATE_KEY);
       const hasOwsWallet = !!settings.owsActiveWallet;
 
       // ── ASCII banner ──
