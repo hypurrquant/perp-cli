@@ -2162,32 +2162,19 @@ async function runLtApproveFlow(opts: LtApproveFlowOpts): Promise<LtApproveFlowR
     });
   }
 
-  // Step 5: Persist the agent's 40-byte L2 private key in an OWS-encrypted
-  // agent wallet so subsequent trade calls can reload it without touching the
-  // master passphrase. Empty passphrase mirrors HL/PAC pattern (P1 prompt-free
-  // hot-path; OWS storage layer provides at-rest encryption).
+  // Step 5: Persist the agent's 40-byte L2 private key (SSOT Rule #3 —
+  // encrypted at-rest in `~/.perp/lighter-agents/<accountIndex>-<slot>.json`).
   //
-  // FIXME(2d-spike): OWS does not natively support storing a raw 40-byte
-  // Lighter L2 private key (it's neither EVM nor Solana curve). Phase 2d
-  // currently persists the public key + slot in settings.agents.lighter and
-  // re-derives the L2 private key at trade time by re-running ChangePubKey,
-  // which is wasteful. A follow-up should add a "lighter:" chainId binding to
-  // OWS or store the raw key in a separate `~/.perp/lighter-agents/<id>.key`
-  // file. As an interim bridge — used by both the legacy auto-setup at slot 4
-  // (lighter.ts:248) and this agent flow — write the agent's slot/key/account
-  // into ~/.perp/.env so subsequent trade commands have a working signer
-  // without forcing re-approve. Without this step, stale env values from a
-  // previous master would silently route trades to a wrong (or revoked)
-  // account, surfacing as "sendTx failed: invalid signature" only at fill
-  // time.
+  // Lighter's L2 secp256k1 key is a non-OWS-native curve, so it cannot live in
+  // `~/.ows/wallets/`. The keystore module mirrors OWS's AES-256-GCM + scrypt
+  // scheme and uses an empty passphrase — same threat model as HL/PAC agents
+  // (file mode 0600 + obfuscation, NOT cryptographic strength against a local
+  // attacker). `accountIndex` and `apiKeyIndex` already live in
+  // settings.agents.lighter[name], so they don't need to be duplicated in env.
   const agentWalletName = `agent-lt-${masterName}`;
   void agentWalletName; // wallet bookkeeping only — not used to derive the L2 key
-  try {
-    const { setEnvVar } = await import("../commands/init.js");
-    setEnvVar("LIGHTER_API_KEY", registered.privateKey);
-    setEnvVar("LIGHTER_ACCOUNT_INDEX", String(adapter.accountIndex));
-    setEnvVar("LIGHTER_API_KEY_INDEX", String(chosenSlot));
-  } catch { /* non-critical — env save may fail in some sandboxed contexts */ }
+  const { saveLighterKey } = await import("../agent-wallet/lighter-keystore.js");
+  saveLighterKey(adapter.accountIndex, chosenSlot, registered.privateKey, "");
 
   // Step 6: Persist
   try {

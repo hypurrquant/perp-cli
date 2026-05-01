@@ -170,7 +170,9 @@ export function removeJob(id: string): boolean {
  */
 function buildEnvString(): string {
   const keys = [
-    "LIGHTER_PRIVATE_KEY", "LIGHTER_API_KEY", "LIGHTER_ACCOUNT_INDEX", "LIGHTER_API_KEY_INDEX",
+    // L2 agent key now lives in ~/.perp/lighter-agents/*.json (SSOT Rule #3),
+    // accountIndex/apiKeyIndex live in settings.agents.lighter — none need env passthrough.
+    "LIGHTER_PRIVATE_KEY",
     "PRIVATE_KEY", "pk",
     "PACIFICA_BUILDER_CODE", "NEXT_PUBLIC_BUILDER_CODE",
     "HL_REFERRAL_CODE", "LIGHTER_REFERRAL_CODE",

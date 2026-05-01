@@ -340,7 +340,7 @@ export function registerSettingsCommands(
         console.log(`  Address: ${chalk.gray(address)}`);
         console.log(`  File:    ${chalk.gray("~/.perp/.env")}\n`);
       } else {
-        // Raw env var (e.g. LIGHTER_API_KEY, custom vars)
+        // Raw env var (e.g. LIGHTER_REFERRAL_CODE, custom vars)
         setEnvVar(name, value);
 
         if (isJson()) return printJson(jsonOk({ key: name, file: ENV_FILE }));

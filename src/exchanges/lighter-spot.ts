@@ -542,7 +542,7 @@ export class LighterSpotAdapter implements SpotAdapter {
     timeInForce: number;
   }): Promise<{ clientOrderIndex: number; [key: string]: unknown }> {
     if (this._lt.isReadOnly) {
-      throw new Error("Spot trading requires a Lighter API key. Run `perp wallet agent approve lighter` first, or set LIGHTER_API_KEY in your .env.");
+      throw new Error("Spot trading requires a Lighter API key. Run `perp wallet agent approve lighter` to register an agent.");
     }
     const nonce = await this._getNextNonce();
     const signer = this._lt.signer;

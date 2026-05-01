@@ -99,11 +99,14 @@ export class LighterAdapter implements ExchangeAdapter {
    * @param testnet   Use testnet (chain ID 300) instead of mainnet (chain ID 304)
    * @param opts      Optional: apiKey (40-byte Lighter signing key), accountIndex
    */
-  constructor(evmKey: string, testnet = false, opts?: { apiKey?: string; accountIndex?: number }) {
+  constructor(evmKey: string, testnet = false, opts?: { apiKey?: string; accountIndex?: number; apiKeyIndex?: number }) {
     this._evmKey = evmKey;
-    this._apiKey = opts?.apiKey || process.env.LIGHTER_API_KEY || "";
-    this._accountIndexInit = opts?.accountIndex ?? parseInt(process.env.LIGHTER_ACCOUNT_INDEX || "-1");
-    this._apiKeyIndex = parseInt(process.env.LIGHTER_API_KEY_INDEX || "4");
+    // SSOT Rule #3: L2 API key is no longer read from env. Caller must inject
+    // via opts.apiKey (Tier 1 agent path uses setAgentSigner; auto-setup at
+    // init() runs ChangePubKey when apiKey is empty AND we have an EVM key).
+    this._apiKey = opts?.apiKey ?? "";
+    this._accountIndexInit = opts?.accountIndex ?? -1;
+    this._apiKeyIndex = opts?.apiKeyIndex ?? 4;
     this._address = "";
     this._testnet = testnet;
     this._readOnly = !this._apiKey;
@@ -144,12 +147,11 @@ export class LighterAdapter implements ExchangeAdapter {
   setSigner(signer: EvmSigner): void {
     this._evmSigner = signer;
     this._address = signer.getAddress();
-    // Reset env-driven accountIndex hint: when the agent flow injects an OWS
-    // signer (different master EVM than whatever produced LIGHTER_ACCOUNT_INDEX
-    // in ~/.perp/.env), the stale env value would otherwise override the API
-    // lookup in init() and cause ChangePubKey to claim the wrong account
-    // (Lighter rejects the L1 sig with code=21504 "fail to l1 signature").
-    // Force a fresh /api/v1/account lookup keyed on the injected signer.
+    // Reset any caller-supplied accountIndex hint: when the agent flow injects
+    // an OWS signer that differs from the constructor-time master, force a
+    // fresh /api/v1/account lookup keyed on the injected signer. Without this
+    // reset, a stale account index would route ChangePubKey to the wrong
+    // account (Lighter rejects the L1 sig with code=21504 "fail to l1 signature").
     this._accountIndexInit = -1;
     this._accountIndex = -1;
   }
@@ -170,9 +172,9 @@ export class LighterAdapter implements ExchangeAdapter {
   setAgentSigner(meta: AgentMeta, agentApiKey: string): void {
     this._agentMeta = meta;
     this._agentApiKey = agentApiKey;
-    // Reset env-driven accountIndex hint: the agent may belong to a different
-    // Lighter account than the master signer, so any stale LIGHTER_ACCOUNT_INDEX
-    // env value must not override the fresh API lookup triggered by init().
+    // Reset any prior accountIndex hint: the agent may belong to a different
+    // Lighter account than the master signer, so any stale value must not
+    // override the AgentMeta-derived accountIndex applied in init().
     this._accountIndexInit = -1;
     this._accountIndex = -1;
     // Active slot+key swap happens lazily in `_resolveSigner()`/init flows.
@@ -231,9 +233,10 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async init(): Promise<void> {
     // Phase 2d: when an agent is registered (Tier 1), swap _apiKey/_apiKeyIndex
-    // to the agent's slot/key BEFORE any of the existing init logic runs.
-    // This ensures the WASM client at lines 178-185 below is created with the
-    // agent's credentials, not the env-driven LIGHTER_API_KEY.
+    // to the agent's slot/key BEFORE any of the existing init logic runs. This
+    // ensures the WASM client below is created with the agent's credentials.
+    // The agent L2 key is loaded from the encrypted keystore by the caller and
+    // injected via setAgentSigner() — never read from env (SSOT Rule #3).
     if (!this._useNoAgent && this._agentMeta && this._agentApiKey && !isExpired(this._agentMeta)) {
       this._apiKey = this._agentApiKey;
       if (typeof this._agentMeta.apiKeyIndex === "number") {
@@ -292,13 +295,12 @@ export class LighterAdapter implements ExchangeAdapter {
         // setupApiKey already configured the static WASM client — reuse it
         this._signer = LighterAdapter._wasmClient!;
         signerReady = true;
-        // Save to .env for future use
+        // SSOT Rule #3: persist L2 key to encrypted keystore so subsequent
+        // process invocations can reload it without re-running ChangePubKey.
         try {
-          const { setEnvVar } = await import("../commands/init.js");
-          setEnvVar("LIGHTER_API_KEY", apiKey);
-          setEnvVar("LIGHTER_ACCOUNT_INDEX", String(this._accountIndex));
-          setEnvVar("LIGHTER_API_KEY_INDEX", String(autoKeyIndex));
-        } catch { /* non-critical — env save may fail in some contexts */ }
+          const { saveLighterKey } = await import("../agent-wallet/lighter-keystore.js");
+          saveLighterKey(this._accountIndex, autoKeyIndex, apiKey, "");
+        } catch { /* non-critical — keystore save may fail in some contexts */ }
       } catch (e) {
         // Auto-setup failed — log the error and continue in read-only mode
         const msg = e instanceof Error ? e.message : String(e);
@@ -312,13 +314,13 @@ export class LighterAdapter implements ExchangeAdapter {
       let cleanKey = this._apiKey.trim().replace(/['"` \t\n\r.]/g, "");
       if (cleanKey.startsWith("0x")) cleanKey = cleanKey.slice(2);
       if (cleanKey.length > 0 && !/^[0-9a-fA-F]+$/.test(cleanKey)) {
-        console.error(`[lighter] API key contains invalid chars (expected hex). Check LIGHTER_API_KEY in ~/.perp/.env or run 'perp wallet agent approve lighter' to regenerate.`);
+        console.error(`[lighter] API key contains invalid chars (expected hex). Run 'perp wallet agent approve lighter' to register an agent.`);
         this._apiKey = "";
       } else if (cleanKey.length === 0) {
         this._apiKey = "";
       } else if (this._accountIndex < 0) {
         // Account lookup failed or returned no accounts — cannot initialize WASM signer
-        console.error(`[lighter] Account index not available (got ${this._accountIndex}). Trading will be read-only. Ensure the wallet has a Lighter account or set LIGHTER_ACCOUNT_INDEX.`);
+        console.error(`[lighter] Account index not available (got ${this._accountIndex}). Trading will be read-only. Ensure the wallet has a Lighter account, or run 'perp wallet agent approve lighter' to register an agent.`);
         this._apiKey = "";
       } else {
         this._apiKey = cleanKey;
@@ -1316,8 +1318,7 @@ export class LighterAdapter implements ExchangeAdapter {
   private ensureSigner(): void {
     if (this._readOnly || this._accountIndex < 0 || !this._signer) {
       throw new Error(
-        "This command requires a Lighter API key. Run `perp wallet agent approve lighter` first, " +
-        "or set LIGHTER_API_KEY in your .env."
+        "This command requires a Lighter API key. Run `perp wallet agent approve lighter` to register an agent."
       );
     }
   }
@@ -1371,7 +1372,7 @@ export class LighterAdapter implements ExchangeAdapter {
       throw new Error("No EVM private key configured. Run: perp setup");
     }
     if (this._accountIndex < 0) {
-      throw new Error("Account index not available. Call init() first or set LIGHTER_ACCOUNT_INDEX.");
+      throw new Error("Account index not available. Call init() first.");
     }
 
     // 1. Generate key pair

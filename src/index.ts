@@ -11,9 +11,12 @@ import { config } from "dotenv";
 import { resolve } from "path";
 import { createRequire } from "node:module";
 
-// Load ~/.perp/.env first (global), then CWD .env (overrides)
+// SSOT Rule #3: load only ~/.perp/.env. The CWD .env auto-load was removed
+// because it caused master-address pollution when run from a project tree
+// containing leftover dev keys (`wallet show` returned env-derived addresses
+// instead of the OWS active wallet's). If you need ad-hoc env overrides,
+// export them in your shell — keystore is the canonical source.
 config({ path: resolve(process.env.HOME || "~", ".perp", ".env") });
-config();
 import { Command } from "commander";
 import chalk from "chalk";
 import type { Network } from "./pacifica/index.js";
@@ -207,23 +210,19 @@ async function getAdapter(): Promise<ExchangeAdapter> {
     }
     case "lighter": {
       const { LighterAdapter } = await import("./exchanges/lighter.js");
-      // Phase 2d: when an agent is registered AND not bypassed, the agent's
-      // L2 secp256k1 key + slot must be loaded BEFORE init() so the WASM client
-      // is created with the agent identity. We can't get the agent L2 key from
-      // disk (Lighter has no OWS curve binding for raw L2 keys); instead Phase
-      // 2d expects users to keep `LIGHTER_API_KEY` env in sync with the
-      // settings.agents.lighter[name].apiKeyIndex slot via `wallet agent
-      // approve lighter` (which sets the env), or to re-run approve when
-      // rotating. The adapter prefers agent meta over env when both exist.
+      // Phase 2d (SSOT Rule #3): when an agent is registered AND not bypassed,
+      // load the agent's L2 secp256k1 key from the encrypted keystore at
+      // ~/.perp/lighter-agents/<accountIndex>-<slot>.json BEFORE init() so the
+      // WASM client is created with the agent identity. Missing keystore →
+      // loadLighterKey throws LIGHTER_KEYSTORE_NOT_FOUND with remediation
+      // (no fallback to env per SSOT Rule #2).
       const { getAgent: getLtAgent } = await import("./agent-wallet/store.js");
       const ltAgentMeta = getLtAgent("lighter");
-      const ltAgentApiKey = process.env.LIGHTER_API_KEY ?? "";
       _lighterAdapter = new LighterAdapter(pk ?? "", isTestnet);
-      if (ltAgentMeta && ltAgentApiKey && !noAgent) {
-        // Tier 1 wiring: bind agent meta + L2 key. setupApiKey at approve time
-        // saves the L2 hex key to LIGHTER_API_KEY env, so this path activates
-        // when the user has both an agent registered and the matching env var.
-        _lighterAdapter.setAgentSigner(ltAgentMeta, ltAgentApiKey);
+      if (ltAgentMeta && !noAgent) {
+        const { loadLighterKey } = await import("./agent-wallet/lighter-keystore.js");
+        const ltL2Key = loadLighterKey(ltAgentMeta.accountIndex!, ltAgentMeta.apiKeyIndex!, "");
+        _lighterAdapter.setAgentSigner(ltAgentMeta, ltL2Key);
       }
       if (noAgent) _lighterAdapter.setNoAgent(true);
       await _lighterAdapter.init();
@@ -478,10 +477,12 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
       const { LighterAdapter } = await import("./exchanges/lighter.js");
       const { getAgent: getLtAgentEx } = await import("./agent-wallet/store.js");
       const ltAgentMetaEx = getLtAgentEx("lighter");
-      const ltAgentApiKeyEx = process.env.LIGHTER_API_KEY ?? "";
       _lighterAdapter = new LighterAdapter(pk ?? "", isTestnet);
-      if (ltAgentMetaEx && ltAgentApiKeyEx && !noAgent) {
-        _lighterAdapter.setAgentSigner(ltAgentMetaEx, ltAgentApiKeyEx);
+      if (ltAgentMetaEx && !noAgent) {
+        // SSOT Rule #3: load agent L2 key from encrypted keystore — no env fallback.
+        const { loadLighterKey } = await import("./agent-wallet/lighter-keystore.js");
+        const ltL2KeyEx = loadLighterKey(ltAgentMetaEx.accountIndex!, ltAgentMetaEx.apiKeyIndex!, "");
+        _lighterAdapter.setAgentSigner(ltAgentMetaEx, ltL2KeyEx);
       }
       if (noAgent) _lighterAdapter.setNoAgent(true);
       await _lighterAdapter.init();

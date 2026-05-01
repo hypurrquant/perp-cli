@@ -641,9 +641,11 @@ export function registerWalletCommands(
           await adapter.init();
           const apiKeyIndex = 4;
           const { privateKey: apiKey } = await adapter.setupApiKey(apiKeyIndex);
-          setEnvVar("LIGHTER_API_KEY", apiKey);
-          setEnvVar("LIGHTER_ACCOUNT_INDEX", String(adapter.accountIndex));
-          setEnvVar("LIGHTER_API_KEY_INDEX", String(apiKeyIndex));
+          // SSOT Rule #3: persist L2 key in encrypted keystore.
+          // accountIndex/apiKeyIndex live in settings.agents.lighter and don't
+          // need env duplication.
+          const { saveLighterKey } = await import("../agent-wallet/lighter-keystore.js");
+          saveLighterKey(adapter.accountIndex, apiKeyIndex, apiKey, "");
           lighterApiSetup = { apiKey, accountIndex: adapter.accountIndex };
         } catch (e) {
           lighterApiSetup = { error: e instanceof Error ? e.message : String(e) };
@@ -705,16 +707,42 @@ export function registerWalletCommands(
         results.push({ name: entry.name, address: valid ? address : "(invalid key)", source: entry.source });
       }
 
+      // SSOT Rule #3: surface OWS active wallet's publicAddresses so agents and
+      // commands like `wallet agent verify` can read the master EVM/Solana
+      // addresses without relying on env-derived keys.
+      const settings = loadSettings();
+      const activeOwsName = settings.owsActiveWallet;
+      let owsActive: { name: string; evmAddress: string | null; solanaAddress: string | null } | null = null;
+      if (activeOwsName) {
+        try {
+          const w = loadOws().getWallet(activeOwsName);
+          const evm = w.accounts.find(a => a.chainId.startsWith("eip155:"))?.address ?? null;
+          const sol = w.accounts.find(a => a.chainId.startsWith("solana:"))?.address ?? null;
+          owsActive = { name: activeOwsName, evmAddress: evm, solanaAddress: sol };
+        } catch {
+          // OWS unavailable or wallet missing — leave owsActive null. SSOT Rule #2:
+          // no fallback to env-derived addresses for the OWS slot.
+          owsActive = { name: activeOwsName, evmAddress: null, solanaAddress: null };
+        }
+      }
+
       if (isJson()) {
         const data = results.map((r) => ({ exchange: r.name, address: r.address, source: r.source }));
-        return printJson(jsonOk({ envFile: ENV_FILE, exchanges: data }));
+        return printJson(jsonOk({ envFile: ENV_FILE, owsActive, exchanges: data }));
       }
 
       console.log(chalk.cyan.bold("\n  Configured Wallets\n"));
 
-      if (results.length === 0) {
+      if (owsActive) {
+        console.log(`  ${chalk.cyan("OWS Active".padEnd(14))} ${chalk.white.bold(owsActive.name)}`);
+        if (owsActive.evmAddress) console.log(`  ${chalk.cyan("  EVM".padEnd(14))} ${chalk.green(owsActive.evmAddress)}`);
+        if (owsActive.solanaAddress) console.log(`  ${chalk.cyan("  Solana".padEnd(14))} ${chalk.green(owsActive.solanaAddress)}`);
+        console.log();
+      }
+
+      if (results.length === 0 && !owsActive) {
         console.log(chalk.gray("  No keys configured."));
-        console.log(chalk.gray(`  Run ${chalk.cyan("perp setup")} or ${chalk.cyan("perp wallet set <exchange> <key>")}\n`));
+        console.log(chalk.gray(`  Run ${chalk.cyan("perp setup")} or ${chalk.cyan("perp wallet generate")}\n`));
         return;
       }
 
