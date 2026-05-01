@@ -779,14 +779,18 @@ export class AsterAdapter implements ExchangeAdapter {
     return this._signedRequestWithRetry("DELETE", path, params, resolved);
   }
 
-  /** Shared GET/DELETE retry loop with fresh-nonce per attempt. */
+  /** Shared GET/DELETE retry loop with fresh-nonce per attempt.
+   *
+   *  Total 4 attempts: initial + 3 retries with backoffs 2s, 4s, 8s.
+   *  Codex v0.12.12 final QA #3: previously MAX_ATTEMPTS = 3 truncated the
+   *  documented curve so the 8s backoff was never reachable in practice. */
   private async _signedRequestWithRetry(
     method: "GET" | "DELETE",
     path: string,
     params: Record<string, string | number | boolean>,
     resolved: ResolvedSigner,
   ): Promise<unknown> {
-    const MAX_ATTEMPTS = 3;
+    const MAX_ATTEMPTS = 4;
     let lastErr: unknown;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       // Rebuild signed query string with fresh nonce on each attempt.
