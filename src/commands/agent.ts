@@ -1266,6 +1266,67 @@ export function registerWalletAgentCommands(
     });
 }
 
+// ── Pre-venue rollback helpers ───────────────────────────────────────────────
+//
+// When `wallet agent approve <dex>` fails BEFORE the venue accepted the agent
+// (HTTP error, body-code rejection, parse error, network drop), the locally
+// generated `agent-<dex>-<master>` OWS wallet is orphaned in `~/.ows/wallets/`.
+// Retry collides with "wallet name already exists". These helpers auto-delete
+// the orphan and produce an actionable remediation string.
+//
+// Post-venue (persist-only) failures must NOT use these — those leave a
+// status:"partial" record so the user can still revoke venue-side state.
+
+/**
+ * Best-effort delete of an orphan local OWS wallet. Returns true on success,
+ * false on failure (also logs the failure to stderr per SSOT Rule #2: rollback
+ * failures must not silently mask the original error). The caller threads the
+ * boolean into the user-visible remediation.
+ */
+function tryDeleteOrphanWallet(
+  ows: { deleteWallet: (name: string) => void },
+  walletName: string | undefined,
+): boolean {
+  if (!walletName) return false;
+  try {
+    ows.deleteWallet(walletName);
+    return true;
+  } catch (cleanupErr) {
+    // Don't swallow — surface the rollback failure on stderr so the user can
+    // see exactly what's stuck. Original error still propagates from caller.
+    process.stderr.write(
+      `[warn] failed to clean up orphan wallet "${walletName}": ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}\n`,
+    );
+    return false;
+  }
+}
+
+/**
+ * Build an actionable remediation message for pre-venue approve failures.
+ * On clean rollback: tells the user to deposit + retry the canonical
+ * `wallet agent approve <dex> --master <master>` command (no manual steps).
+ * On rollback failure: tells the user to manually delete the orphan wallet
+ * before retrying. The agent address is appended for diagnostic purposes
+ * (some users may need it for the venue UI).
+ */
+function buildPreVenueRemediation(opts: {
+  cleanupOk: boolean;
+  dex: "hyperliquid" | "pacifica" | "aster";
+  masterName: string;
+  agentAddress: string;
+  hint?: string;
+}): string {
+  const { cleanupOk, dex, masterName, agentAddress, hint } = opts;
+  const retry = `perp wallet agent approve ${dex} --master ${masterName}`;
+  const head = cleanupOk
+    ? `Local agent wallet cleaned up. Deposit funds and retry: ${retry}`
+    : `Manual cleanup required — local agent wallet may still exist. Run: perp wallet remove agent-${dex === "hyperliquid" ? "hl" : dex === "pacifica" ? "pac" : "aster"}-${masterName}, then retry: ${retry}`;
+  const parts = [head];
+  if (hint) parts.push(hint);
+  parts.push(`Agent address (diagnostic): ${agentAddress}`);
+  return parts.join(" | ");
+}
+
 // ── Shared approve flow helper ───────────────────────────────────────────────
 
 interface ApproveFlowOpts {
@@ -1394,10 +1455,12 @@ async function runApproveFlow(opts: ApproveFlowOpts): Promise<ApproveFlowResult>
     });
     if (!builderRes.ok) {
       const errText = await builderRes.text().catch(() => "");
-      // Aster builder POST failed — rollback api key (no Aster agent registered yet)
+      // Aster builder POST failed — pre-venue (no Aster agent registered yet).
+      // Rollback both: api key + orphan local OWS wallet.
       if (owsApiKeyId) {
         try { ows.revokeApiKey(owsApiKeyId); } catch { /* best effort */ }
       }
+      tryDeleteOrphanWallet(ows, agentWalletName);
       throw new PerpError("EXCHANGE_ERROR", `Aster approveBuilder failed (${builderRes.status}): ${errText.slice(0, 200)}`, {
         remediation: "Check builder address and max-fee-rate parameters",
       });
@@ -1408,6 +1471,7 @@ async function runApproveFlow(opts: ApproveFlowOpts): Promise<ApproveFlowResult>
       if (owsApiKeyId) {
         try { ows.revokeApiKey(owsApiKeyId); } catch { /* best effort */ }
       }
+      tryDeleteOrphanWallet(ows, agentWalletName);
       const errMsg = builderResp.msg ?? builderResp.message ?? String(builderResp.code);
       throw new PerpError("EXCHANGE_ERROR", `Aster approveBuilder failed: ${errMsg}`, {
         remediation: "Check builder address and max-fee-rate parameters",
@@ -1480,23 +1544,30 @@ async function runApproveFlow(opts: ApproveFlowOpts): Promise<ApproveFlowResult>
     if (resp.code === "000000" || resp.code === 200) {
       asterPostSucceeded = true;
     } else {
-      // Aster POST body indicated failure — rollback api key (Aster did not register)
+      // Aster POST body indicated failure — pre-venue (Aster did not register).
+      // Rollback both api key + orphan local OWS wallet.
       if (owsApiKeyId) {
         try { ows.revokeApiKey(owsApiKeyId); } catch { /* best effort */ }
       }
+      const cleanupOk = tryDeleteOrphanWallet(ows, agentWalletName);
       const errMsg = resp.msg ?? resp.message ?? String(resp.code);
       throw new PerpError("APPROVE_PARTIAL", `Aster approveAgent failed: ${errMsg}`, {
-        remediation: `Agent address for cleanup: ${agentEvmAddress}`,
+        remediation: buildPreVenueRemediation({
+          cleanupOk, dex: "aster", masterName, agentAddress: agentEvmAddress,
+        }),
       });
     }
   } else {
-    // HTTP error — rollback api key (Aster did not register)
+    // HTTP error — pre-venue (Aster did not register). Rollback both.
     if (owsApiKeyId) {
       try { ows.revokeApiKey(owsApiKeyId); } catch { /* best effort */ }
     }
+    const cleanupOk = tryDeleteOrphanWallet(ows, agentWalletName);
     const errText = await agentRes.text().catch(() => "");
     throw new PerpError("APPROVE_PARTIAL", `Aster approveAgent failed (${agentRes.status}): ${errText.slice(0, 200)}`, {
-      remediation: `Agent address for cleanup: ${agentEvmAddress}`,
+      remediation: buildPreVenueRemediation({
+        cleanupOk, dex: "aster", masterName, agentAddress: agentEvmAddress,
+      }),
     });
   }
 
@@ -1759,13 +1830,26 @@ async function runHlApproveFlow(opts: HlApproveFlowOpts): Promise<HlApproveFlowR
   try {
     resp = JSON.parse(text);
   } catch {
+    // Pre-venue parse failure — Hyperliquid did NOT register the agent.
+    // Roll back the orphan local OWS wallet so retry doesn't collide with
+    // "wallet name already exists". Errors during cleanup must NOT mask the
+    // original network/parse error (SSOT Rule #2).
+    const cleanupOk = tryDeleteOrphanWallet(ows, agentWalletName);
     throw new PerpError("EXCHANGE_ERROR", `HL exchange API parse error (${agentRes.status}): ${text.slice(0, 200)}`, {
-      remediation: "Check Hyperliquid API status",
+      remediation: buildPreVenueRemediation({
+        cleanupOk, dex: "hyperliquid", masterName, agentAddress: agentEvmAddress,
+        hint: "Check Hyperliquid API status",
+      }),
     });
   }
   if (resp?.status === "err") {
+    // Pre-venue rejection — Hyperliquid did NOT register the agent. Roll
+    // back the orphan local OWS wallet so retry can proceed cleanly.
+    const cleanupOk = tryDeleteOrphanWallet(ows, agentWalletName);
     throw new PerpError("APPROVE_PARTIAL", `HL approveAgent failed: ${typeof resp.response === "string" ? resp.response : JSON.stringify(resp)}`, {
-      remediation: `Agent address for cleanup: ${agentEvmAddress}`,
+      remediation: buildPreVenueRemediation({
+        cleanupOk, dex: "hyperliquid", masterName, agentAddress: agentEvmAddress,
+      }),
     });
   }
 
@@ -1936,21 +2020,33 @@ async function runPacApproveFlow(opts: PacApproveFlowOpts): Promise<PacApproveFl
       // Pacifica REST envelope: success === true OR explicit data field
       if (resp.success === false || resp.error) {
         const errMsg = typeof resp.error === "string" ? resp.error : JSON.stringify(resp);
+        // Pre-venue rejection — Pacifica did NOT register the agent.
+        const cleanupOk = tryDeleteOrphanWallet(ows, agentWalletName);
         throw new PerpError("APPROVE_PARTIAL", `Pacifica bind_agent_wallet failed: ${errMsg}`, {
-          remediation: `Agent address for cleanup: ${agentSolanaAddress}`,
+          remediation: buildPreVenueRemediation({
+            cleanupOk, dex: "pacifica", masterName, agentAddress: agentSolanaAddress,
+          }),
         });
       }
       pacPostSucceeded = true;
     } else {
       const errText = await httpRes.text().catch(() => "");
+      // Pre-venue rejection — Pacifica did NOT register the agent.
+      const cleanupOk = tryDeleteOrphanWallet(ows, agentWalletName);
       throw new PerpError("APPROVE_PARTIAL", `Pacifica bind_agent_wallet failed (${httpRes.status}): ${errText.slice(0, 200)}`, {
-        remediation: `Agent address for cleanup: ${agentSolanaAddress}`,
+        remediation: buildPreVenueRemediation({
+          cleanupOk, dex: "pacifica", masterName, agentAddress: agentSolanaAddress,
+        }),
       });
     }
   } catch (httpErr) {
     if (httpErr instanceof PerpError) throw httpErr;
+    // Network-level failure — Pacifica did NOT register the agent.
+    const cleanupOk = tryDeleteOrphanWallet(ows, agentWalletName);
     throw new PerpError("APPROVE_PARTIAL", `Pacifica bind_agent_wallet network error: ${httpErr instanceof Error ? httpErr.message : String(httpErr)}`, {
-      remediation: `Agent address for cleanup: ${agentSolanaAddress}`,
+      remediation: buildPreVenueRemediation({
+        cleanupOk, dex: "pacifica", masterName, agentAddress: agentSolanaAddress,
+      }),
     });
   }
 
