@@ -178,10 +178,10 @@ async function getAdapter(): Promise<ExchangeAdapter> {
               const s = loadSettings();
               s.referralApplied.hyperliquid = true;
               saveSettings(s);
-            }).catch(() => {
-              const s = loadSettings();
-              s.referralApplied.hyperliquid = true;
-              saveSettings(s);
+            }).catch((err) => {
+              // Per SSOT Rule #2: do NOT mark applied=true on failure.
+              // Leave referralApplied[ex]=false so next adapter init retries.
+              process.stderr.write(`[hyperliquid] referral apply failed: ${err instanceof Error ? err.message : String(err)}\n`);
             });
           }
         }
@@ -235,10 +235,10 @@ async function getAdapter(): Promise<ExchangeAdapter> {
               const s = loadSettings();
               s.referralApplied.lighter = true;
               saveSettings(s);
-            }).catch(() => {
-              const s = loadSettings();
-              s.referralApplied.lighter = true;
-              saveSettings(s);
+            }).catch((err) => {
+              // Per SSOT Rule #2: do NOT mark applied=true on failure.
+              // Leave referralApplied[ex]=false so next adapter init retries.
+              process.stderr.write(`[lighter] referral apply failed: ${err instanceof Error ? err.message : String(err)}\n`);
             });
           }
         }
@@ -448,10 +448,10 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
               const s = loadSettings();
               s.referralApplied.hyperliquid = true;
               saveSettings(s);
-            }).catch(() => {
-              const s = loadSettings();
-              s.referralApplied.hyperliquid = true;
-              saveSettings(s);
+            }).catch((err) => {
+              // Per SSOT Rule #2: do NOT mark applied=true on failure.
+              // Leave referralApplied[ex]=false so next adapter init retries.
+              process.stderr.write(`[hyperliquid] referral apply failed: ${err instanceof Error ? err.message : String(err)}\n`);
             });
           }
         }
@@ -495,10 +495,10 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
               const s = loadSettings();
               s.referralApplied.lighter = true;
               saveSettings(s);
-            }).catch(() => {
-              const s = loadSettings();
-              s.referralApplied.lighter = true;
-              saveSettings(s);
+            }).catch((err) => {
+              // Per SSOT Rule #2: do NOT mark applied=true on failure.
+              // Leave referralApplied[ex]=false so next adapter init retries.
+              process.stderr.write(`[lighter] referral apply failed: ${err instanceof Error ? err.message : String(err)}\n`);
             });
           }
         }
