@@ -324,6 +324,18 @@ async function _initWithOws(
       const { LighterAdapter } = await import("./exchanges/lighter.js");
       _lighterAdapter = new LighterAdapter("", isTestnet);
       _lighterAdapter.setSigner(OwsEvmSigner.create(owsWalletName, passphrase));
+      // Tier 1: agent if registered (mirrors getAdapter / getAdapterForExchange).
+      // Without this, _initWithOws would skip Tier 1 and fall through to
+      // auto-setup-at-slot-4 which is wrong for agent users (and breaks under
+      // SDK 1.0.11+ where signChangePubKey signature changed).
+      const { getAgent: getLtAgentOws } = await import("./agent-wallet/store.js");
+      const ltAgentMetaOws = getLtAgentOws("lighter");
+      if (ltAgentMetaOws && !noAgent) {
+        const { loadLighterKey } = await import("./agent-wallet/lighter-keystore.js");
+        const ltL2KeyOws = loadLighterKey(ltAgentMetaOws.accountIndex!, ltAgentMetaOws.apiKeyIndex!, "");
+        _lighterAdapter.setAgentSigner(ltAgentMetaOws, ltL2KeyOws);
+      }
+      if (noAgent) _lighterAdapter.setNoAgent(true);
       await _lighterAdapter.init();
       _adapter = _lighterAdapter;
       return _adapter;
