@@ -4,6 +4,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.12.10] — 2026-05-01
+
+### Fixed
+- `tryLoadPrivateKey("aster")` now reads `ASTER_PRIVATE_KEY` env var. v0.12.4 cleared the entry (legacy HMAC removal) and v0.12.6 only restored the `EXCHANGE_ENV_MAP` half — the `config.ts` `envMap` used by adapter init was missed, so Aster Tier 3 PK direct path returned "No signing path configured" even with a valid env-PK set. Discovered during v0.12.9 Docker QA: PAC/HL/LT routed via env, Aster blocked.
+
 ## [0.12.9] — 2026-05-01
 
 ### Fixed
@@ -90,7 +95,8 @@ Tagged but never published to npm — paused for the SKILL.md version-sync findi
 ### Security
 - Lighter L2 slot key is no longer stored in `.env` plaintext. Aligned with Aster/HL/PAC agents which were already in OWS vault.
 
-[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.9...HEAD
+[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.10...HEAD
+[0.12.10]: https://github.com/hypurrquant/perp-cli/compare/v0.12.9...v0.12.10
 [0.12.9]: https://github.com/hypurrquant/perp-cli/compare/v0.12.8...v0.12.9
 [0.12.8]: https://github.com/hypurrquant/perp-cli/compare/v0.12.7...v0.12.8
 [0.12.7]: https://github.com/hypurrquant/perp-cli/compare/v0.12.6...v0.12.7

@@ -80,15 +80,16 @@ export async function loadPrivateKey(exchange: Exchange, pkOverride?: string, wa
   }
 
   // 3. Exchange-specific env vars
-  // v0.12.4: Aster's ASTER_API_KEY entry is removed — the legacy HMAC
-  // signing path was retired in Plan v3.0. Aster onboarding is now via
-  // `perp wallet agent approve aster` (off-chain agent wallet); the runtime
-  // adapter pulls credentials from the agent store, not the env.
+  // v0.12.4 retired the legacy HMAC ASTER_API_KEY/SECRET path.
+  // v0.12.6 restored Aster as a normal EVM exchange in EXCHANGE_ENV_MAP
+  // (setup wizard / wallet show), but missed this map — leaving Tier 3
+  // env-PK loading broken. v0.12.10 restores ASTER_PRIVATE_KEY here so
+  // `tryLoadPrivateKey("aster")` finds the env value, mirroring HL/LT.
   const envMap: Record<Exchange, string[]> = {
     pacifica: ["PACIFICA_PRIVATE_KEY", "pk"],
     hyperliquid: ["HYPERLIQUID_PRIVATE_KEY", "HL_PRIVATE_KEY"],
     lighter: ["LIGHTER_PRIVATE_KEY"],
-    aster: [],
+    aster: ["ASTER_PRIVATE_KEY"],
   };
 
   for (const envVar of envMap[exchange]) {
