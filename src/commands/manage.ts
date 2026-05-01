@@ -315,8 +315,7 @@ export function registerWalletManageCommands(
   // Legacy `manage setup-api-key` removed in v0.12 (Phase 2d) — superseded by
   // the unified `wallet agent approve lighter` flow. The agent flow provides
   // 3-tier signer routing, expiry tracking, free-slot picking, and AgentMeta
-  // persistence. The auto-setup path in LighterAdapter.init() remains as the
-  // env-key fallback for users who haven't run the unified command yet.
+  // persistence.
 
   // ── Hyperliquid account abstraction mode ────────────────────────────────
   // Read side: HyperliquidAdapter._getAbstractionMode() (added v0.12.7).
