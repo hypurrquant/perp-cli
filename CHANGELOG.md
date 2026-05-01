@@ -4,6 +4,14 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.12.14] — 2026-05-02
+
+Release follow-up for v0.12.13. Closes remaining MCP surface drift and fixes invalid-symbol trade validation ordering.
+
+### Fixed
+- **MCP server stale v0.12.x surfaces** (MED) — closed 10 leftover stale user-facing references in `mcp-server.ts`: 4-DEX lists now include Aster, and advisor/schema/prompt output no longer points at removed `status` / `account balance` commands.
+- **Trade validator invalid-symbol flow** (MED) — `validateTrade()` now checks `getMarkets()` membership before `getOrderbook()`, so invalid symbols return `symbol_valid=false` instead of surfacing venue orderbook errors. Added a regression test.
+
 ## [0.12.13] — 2026-05-01
 
 Release-stable target. Fixes 2 BLOCKERS + 2 MEDIUM identified in Codex final QA of v0.12.12. Tests 1282 → 1301 (+19).
@@ -135,7 +143,8 @@ Tagged but never published to npm — paused for the SKILL.md version-sync findi
 ### Security
 - Lighter L2 slot key is no longer stored in `.env` plaintext. Aligned with Aster/HL/PAC agents which were already in OWS vault.
 
-[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.13...HEAD
+[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.14...HEAD
+[0.12.14]: https://github.com/hypurrquant/perp-cli/compare/v0.12.13...v0.12.14
 [0.12.13]: https://github.com/hypurrquant/perp-cli/compare/v0.12.12...v0.12.13
 [0.12.12]: https://github.com/hypurrquant/perp-cli/compare/v0.12.11...v0.12.12
 [0.12.11]: https://github.com/hypurrquant/perp-cli/compare/v0.12.10...v0.12.11
