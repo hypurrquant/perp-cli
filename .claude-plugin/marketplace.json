@@ -11,7 +11,7 @@
     {
       "name": "perp-cli",
       "description": "Trade, bridge, arbitrage, and manage perp positions across 4 DEXes (Pacifica, Hyperliquid, Lighter, Aster) via natural language. Ships an MCP server with 18 tools / 3 resources / 2 prompts and an agentskills.io-compatible Skill bundle.",
-      "version": "0.12.6",
+      "version": "0.12.7",
       "author": {
         "name": "HypurrQuant",
         "email": "hypurrquant@proton.me"
@@ -39,5 +39,5 @@
       "strict": false
     }
   ],
-  "version": "0.12.6"
+  "version": "0.12.7"
 }

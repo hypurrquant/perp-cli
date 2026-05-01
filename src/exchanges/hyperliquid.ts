@@ -377,6 +377,41 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     });
   }
 
+  /**
+   * Read the user's account abstraction mode from HL.
+   *
+   * Returns the canonical mode used to branch collateral accounting:
+   *   - "unified"   → spot clearinghouseState is the truth source (USDC total
+   *                   is unified across spot + perp). app.hyperliquid.xyz default.
+   *   - "standard"  → perp clearinghouseState is the truth source. Required
+   *                   mode for builder fee accrual.
+   *   - "portfolio" → multi-asset cross-collateral; for now treated like
+   *                   unified (spot truth). Refine when portfolio margin GA.
+   *
+   * Per SSOT Rule #2: an unrecognized venue response throws — no silent
+   * default. HIP-3 dex accounts (`this._dex` set) bypass the lookup since
+   * cross margin scopes per-DEX in standard semantics.
+   *
+   * Endpoint: `POST /info {"type":"userAbstraction","user":"0x..."}` →
+   * returns one of `"unifiedAccount" | "disabled" | "portfolioMargin"`.
+   */
+  async _getAbstractionMode(): Promise<"unified" | "standard" | "portfolio"> {
+    if (this._dex) return "standard";
+    this.ensureAddress();
+    const { withCache, TTL_ACCOUNT } = await import("../cache.js");
+    return withCache(`acct:hl:abstraction:${this._address}`, TTL_ACCOUNT, async () => {
+      const raw = (await this._infoPost({ type: "userAbstraction", user: this._address })) as unknown;
+      if (raw === "unifiedAccount") return "unified";
+      if (raw === "portfolioMargin") return "portfolio";
+      if (raw === "disabled") return "standard";
+      throw new PerpError(
+        "INVALID_PARAMS",
+        `UNKNOWN_ACCOUNT_MODE: HL returned unrecognized userAbstraction mode: ${JSON.stringify(raw)}`,
+        { remediation: "Check app.hyperliquid.xyz Settings → Account Mode" },
+      );
+    });
+  }
+
   /** Cached spot clearinghouse state — shared between getBalance() and HyperliquidSpotAdapter */
   async _getSpotClearinghouseState(): Promise<Record<string, unknown>> {
     this.ensureAddress();
@@ -404,24 +439,23 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     let equity: number;
     let available: number;
 
-    if (!this._dex) {
-      // Unified account: spot USDC total IS the true equity (includes perp margin as "hold").
-      // perp accountValue is a subset — adding both double-counts.
-      try {
-        const spotState = await this._getSpotClearinghouseState();
-        const balances = (spotState?.balances ?? []) as Record<string, unknown>[];
-        const usdc = balances.find((b) => String(b.coin).startsWith("USDC"));
-        const spotTotal = usdc?.total !== undefined ? Number(usdc.total) : NaN;
-        const spotHold = Number(usdc?.hold ?? 0);
-        equity = !isNaN(spotTotal) ? spotTotal : Number(margin.accountValue ?? cross.accountValue ?? 0);
-        available = !isNaN(spotTotal) ? spotTotal - spotHold : Number(s?.withdrawable ?? 0);
-      } catch {
-        // Spot API failed — fall back to perp-only values
-        equity = Number(margin.accountValue ?? cross.accountValue ?? 0);
-        available = Number(s?.withdrawable ?? 0);
-      }
+    // Branch by user's account abstraction mode (Rule #2: no silent fallback).
+    // - "unified" / "portfolio": spot USDC total = true equity; perp margin
+    //   is held against the same USDC pool, so adding both double-counts.
+    // - "standard": separate perp/spot accounting; perp clearinghouse is the
+    //   only collateral source. Required mode for builder fee accrual.
+    // HIP-3 dex accounts (this._dex) always use standard semantics.
+    const mode = await this._getAbstractionMode();
+    if (mode === "unified" || mode === "portfolio") {
+      const spotState = await this._getSpotClearinghouseState();
+      const balances = (spotState?.balances ?? []) as Record<string, unknown>[];
+      const usdc = balances.find((b) => String(b.coin).startsWith("USDC"));
+      const spotTotal = Number(usdc?.total ?? 0);
+      const spotHold = Number(usdc?.hold ?? 0);
+      equity = spotTotal;
+      available = spotTotal - spotHold;
     } else {
-      // Dex account: perp clearinghouse is the only source
+      // mode === "standard"
       equity = Number(margin.accountValue ?? cross.accountValue ?? 0);
       available = Number(s?.withdrawable ?? 0);
     }
