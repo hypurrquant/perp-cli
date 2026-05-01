@@ -605,7 +605,13 @@ export class AsterAdapter implements ExchangeAdapter {
 
   // ── Private: signer resolution ────────────────────────────────────────────
 
-  private _resolveSigner(): ResolvedSigner {
+  /**
+   * Resolve the active signer per the three-tier policy.
+   *
+   * Exposed (leading underscore) for unit-test access only — do not call
+   * from production code outside this class.
+   */
+  _resolveSigner(): ResolvedSigner {
     // Tier 1: agent (when registered, not expired, --no-agent NOT set)
     if (!this._useNoAgent && this._agentSigner && this._agentMeta) {
       if (isExpired(this._agentMeta)) {
@@ -626,13 +632,16 @@ export class AsterAdapter implements ExchangeAdapter {
       }
     }
 
-    // Tier 2: OWS master
+    // Tier 2: OWS master — master self-signs, so user==signer per V3 spec.
+    // The query string MUST still emit `user=` AND `signer=` as distinct
+    // fields even when the values are identical (Aster authority verifies
+    // both keys); see _buildSignedQueryString.
     if (this._masterSigner) {
       const addr = this._masterSigner.getAddress();
       return { tier: "master", signer: this._masterSigner, signerAddress: addr, userAddress: addr };
     }
 
-    // Tier 3: PK direct
+    // Tier 3: PK direct — same self-signing model as Tier 2.
     if (this._pkSigner) {
       const addr = this._pkSigner.getAddress();
       return { tier: "pk", signer: this._pkSigner, signerAddress: addr, userAddress: addr };
@@ -669,10 +678,17 @@ export class AsterAdapter implements ExchangeAdapter {
    * signed dict and the URL query string must be byte-identical except for
    * the appended signature.
    *
+   * Both `user` and `signer` are ALWAYS emitted as distinct query fields,
+   * even when the values are identical (Tier 2/3 self-signing case where
+   * master signs for itself). Aster's authority server checks both fields.
+   *
    * `signatureChainId` is NOT a v3 parameter — it's an artifact of an older
    * scheme; including it breaks signature verification on every call.
+   *
+   * Exposed (with leading underscore) for unit-test access only — do not call
+   * from production code outside this class.
    */
-  private async _buildSignedQueryString(
+  async _buildSignedQueryString(
     params: Record<string, string | number | boolean>,
     resolved: ResolvedSigner,
   ): Promise<string> {

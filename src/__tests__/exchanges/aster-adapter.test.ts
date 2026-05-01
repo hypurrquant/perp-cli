@@ -396,3 +396,102 @@ describe("AsterAdapter — AC-19 remediation fields", () => {
     expect(e.structured?.remediation ?? "").toContain("--ows");
   });
 });
+
+// ── C1: Tier 2/3 user/signer field model ─────────────────────────────────────
+
+describe("AsterAdapter — V3 user/signer field model in signed query string", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    const initResponse = {
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ serverTime: Date.now() }),
+      text: vi.fn().mockResolvedValue(""),
+      headers: { get: vi.fn().mockReturnValue(null) },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(initResponse));
+  });
+
+  it("Tier 1 (agent): emits user=master and signer=agent as distinct fields", async () => {
+    const { AsterAdapter } = await import("../../exchanges/aster.js");
+    const ast = new AsterAdapter(undefined, false);
+    await ast.init();
+
+    const meta = makeAgentMeta({
+      userEvmAddress: "0xMasterAddr00000000000000000000000000000",
+      agentEvmAddress: "0xAgentAddr000000000000000000000000000000",
+    });
+    ast.setAgent(meta, makeAgentStrategy(meta.agentEvmAddress));
+
+    const resolved = ast._resolveSigner();
+    const qs = await ast._buildSignedQueryString({ symbol: "BTCUSDT" }, resolved);
+    const sp = new URLSearchParams(qs);
+
+    expect(sp.get("user")).toBe(meta.userEvmAddress);
+    expect(sp.get("signer")).toBe(meta.agentEvmAddress);
+    expect(sp.get("user")).not.toBe(sp.get("signer"));
+    expect(sp.get("signature")).toBeTruthy();
+  });
+
+  it("Tier 2 (master): emits user==signer (both fields present even when identical)", async () => {
+    const { AsterAdapter } = await import("../../exchanges/aster.js");
+    const ast = new AsterAdapter(undefined, false);
+    await ast.init();
+
+    const masterAddr = "0xMasterAddr00000000000000000000000000000";
+    const masterSigner = makeEvmSigner(masterAddr);
+    ast.setMasterSigner(masterSigner);
+
+    const resolved = ast._resolveSigner();
+    const qs = await ast._buildSignedQueryString({ symbol: "BTCUSDT" }, resolved);
+    const sp = new URLSearchParams(qs);
+
+    // Both fields MUST be present in the query string
+    expect(qs).toContain("user=");
+    expect(qs).toContain("signer=");
+    expect(sp.get("user")).toBe(masterAddr);
+    expect(sp.get("signer")).toBe(masterAddr);
+    expect(sp.get("signature")).toBeTruthy();
+  });
+
+  it("Tier 3 (pk): emits user==signer (both fields present even when identical)", async () => {
+    const { AsterAdapter } = await import("../../exchanges/aster.js");
+    const ast = new AsterAdapter(undefined, false);
+    await ast.init();
+
+    const pkAddr = "0xPkAddr000000000000000000000000000000000";
+    const pkSigner = makePkSigner(pkAddr);
+    ast.setPkSigner(pkSigner);
+
+    const resolved = ast._resolveSigner();
+    const qs = await ast._buildSignedQueryString({ symbol: "BTCUSDT" }, resolved);
+    const sp = new URLSearchParams(qs);
+
+    expect(qs).toContain("user=");
+    expect(qs).toContain("signer=");
+    expect(sp.get("user")).toBe(pkAddr);
+    expect(sp.get("signer")).toBe(pkAddr);
+  });
+
+  it("--no-agent + master: master self-signs (user==signer==master), NOT agent address", async () => {
+    const { AsterAdapter } = await import("../../exchanges/aster.js");
+    const ast = new AsterAdapter(undefined, false);
+    await ast.init();
+
+    const masterAddr = "0xMasterAddr00000000000000000000000000000";
+    const meta = makeAgentMeta({ userEvmAddress: masterAddr });
+    ast.setAgent(meta, makeAgentStrategy(meta.agentEvmAddress));
+    ast.setMasterSigner(makeEvmSigner(masterAddr));
+    ast.setNoAgent(true);
+
+    const resolved = ast._resolveSigner();
+    expect(resolved.tier).toBe("master");
+
+    const qs = await ast._buildSignedQueryString({ symbol: "BTCUSDT" }, resolved);
+    const sp = new URLSearchParams(qs);
+
+    // When --no-agent bypasses Tier 1, master self-signs: both fields = master.
+    expect(sp.get("user")).toBe(masterAddr);
+    expect(sp.get("signer")).toBe(masterAddr);
+  });
+});
