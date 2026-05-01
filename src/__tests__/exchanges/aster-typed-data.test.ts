@@ -3,12 +3,14 @@ import { TypedDataEncoder } from "ethers";
 import {
   ASTER_DOMAIN_A,
   ASTER_DOMAIN_B,
+  ASTER_DOMAIN_B_TESTNET,
   ORDER_TYPES,
   buildApproveAgentTypedData,
   buildDelAgentTypedData,
   buildOrderQueryStringMsg,
   buildOrderTypedData,
   buildApproveBuilderTypedData,
+  getAsterDomainB,
 } from "../../exchanges/aster-typed-data.js";
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
@@ -649,5 +651,40 @@ describe("deterministic ordering of types array", () => {
       "User",
       "Nonce",
     ]);
+  });
+});
+
+// ── C6: Testnet chainId=714 ───────────────────────────────────────────────────
+
+describe("Domain B testnet branching (C6)", () => {
+  it("ASTER_DOMAIN_B_TESTNET.chainId is 714", () => {
+    expect(ASTER_DOMAIN_B_TESTNET.chainId).toBe(714);
+  });
+
+  it("getAsterDomainB(false) returns mainnet (chainId=1666)", () => {
+    expect(getAsterDomainB(false).chainId).toBe(1666);
+    expect(getAsterDomainB(false)).toEqual(ASTER_DOMAIN_B);
+  });
+
+  it("getAsterDomainB(true) returns testnet (chainId=714)", () => {
+    expect(getAsterDomainB(true).chainId).toBe(714);
+    expect(getAsterDomainB(true)).toEqual(ASTER_DOMAIN_B_TESTNET);
+  });
+
+  it("buildOrderTypedData defaults to mainnet (chainId=1666)", () => {
+    const result = buildOrderTypedData({ symbol: "BTCUSDT", user: USER, nonce: NONCE_MICROS });
+    expect(result.domain.chainId).toBe(1666);
+  });
+
+  it("buildOrderTypedData(testnet=true) emits chainId=714", () => {
+    const result = buildOrderTypedData({ symbol: "BTCUSDT", user: USER, nonce: NONCE_MICROS }, true);
+    expect(result.domain.chainId).toBe(714);
+  });
+
+  it("testnet and mainnet share name/version/verifyingContract (only chainId differs)", () => {
+    expect(ASTER_DOMAIN_B_TESTNET.name).toBe(ASTER_DOMAIN_B.name);
+    expect(ASTER_DOMAIN_B_TESTNET.version).toBe(ASTER_DOMAIN_B.version);
+    expect(ASTER_DOMAIN_B_TESTNET.verifyingContract).toBe(ASTER_DOMAIN_B.verifyingContract);
+    expect(ASTER_DOMAIN_B_TESTNET.chainId).not.toBe(ASTER_DOMAIN_B.chainId);
   });
 });

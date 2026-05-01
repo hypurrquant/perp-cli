@@ -700,7 +700,7 @@ export class AsterAdapter implements ExchangeAdapter {
       signer: resolved.signerAddress,
     };
 
-    const typed = buildOrderTypedData(fullParams);
+    const typed = buildOrderTypedData(fullParams, this._testnet);
 
     // Sign via the appropriate signer type
     const sigRaw = await (resolved.signer as AgentSigningStrategy & EvmSigner).signTypedData(

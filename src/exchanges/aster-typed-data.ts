@@ -28,6 +28,17 @@ export const ASTER_DOMAIN_B = {
   chainId: 1666,
 } as const;
 
+/** Domain B (testnet): chainId=714 per Aster V3 testnet docs. */
+export const ASTER_DOMAIN_B_TESTNET = {
+  ...ASTER_DOMAIN_A,
+  chainId: 714,
+} as const;
+
+/** Returns the Domain B object for the requested network (testnet branches chainId). */
+export function getAsterDomainB(testnet: boolean): typeof ASTER_DOMAIN_B | typeof ASTER_DOMAIN_B_TESTNET {
+  return testnet ? ASTER_DOMAIN_B_TESTNET : ASTER_DOMAIN_B;
+}
+
 /** EIP-712 types for Domain B order signing — single msg string (URL-encoded query string). */
 export const ORDER_TYPES = {
   Message: [{ name: "msg", type: "string" }],
@@ -215,20 +226,25 @@ export function buildOrderQueryStringMsg(
 /**
  * Build the EIP-712 typed-data payload for agent-signed order requests.
  *
- * Domain B (chainId=1666), primaryType="Message", single `msg` field containing
- * the URL-encoded query string produced by buildOrderQueryStringMsg.
+ * Domain B (chainId=1666 mainnet / 714 testnet), primaryType="Message",
+ * single `msg` field containing the URL-encoded query string produced by
+ * buildOrderQueryStringMsg.
+ *
+ * @param testnet When true, returns Domain B with chainId=714 per Aster V3
+ *                testnet docs. Defaults to false (mainnet).
  */
 export function buildOrderTypedData(
   orderParams: Record<string, string | number | boolean>,
+  testnet = false,
 ): {
-  domain: typeof ASTER_DOMAIN_B;
+  domain: typeof ASTER_DOMAIN_B | typeof ASTER_DOMAIN_B_TESTNET;
   types: typeof ORDER_TYPES;
   primaryType: "Message";
   message: { msg: string };
 } {
   const msg = buildOrderQueryStringMsg(orderParams);
   return {
-    domain: ASTER_DOMAIN_B,
+    domain: getAsterDomainB(testnet),
     types: ORDER_TYPES,
     primaryType: "Message",
     message: { msg },
