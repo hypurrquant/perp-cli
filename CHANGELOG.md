@@ -4,6 +4,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.12.15] — 2026-05-02
+
+### Fixed
+- **Top-level catch preserves PerpError code + remediation** — `index.ts` program-level catch was the last spot where typed errors got downgraded to `code:"FATAL"` even after v0.12.13's classifyError fix. Now branches on `err instanceof PerpError` and forwards the full structured payload (status, retryable, retryAfterMs, remediation) into the JSON envelope. Aster's NOT_IMPLEMENTED for missing agent now surfaces with the correct typed code and actionable remediation. Verified live in Docker.
+
 ## [0.12.14] — 2026-05-02
 
 Release follow-up for v0.12.13. Closes remaining MCP surface drift and fixes invalid-symbol trade validation ordering.
@@ -143,7 +148,8 @@ Tagged but never published to npm — paused for the SKILL.md version-sync findi
 ### Security
 - Lighter L2 slot key is no longer stored in `.env` plaintext. Aligned with Aster/HL/PAC agents which were already in OWS vault.
 
-[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.14...HEAD
+[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.15...HEAD
+[0.12.15]: https://github.com/hypurrquant/perp-cli/compare/v0.12.14...v0.12.15
 [0.12.14]: https://github.com/hypurrquant/perp-cli/compare/v0.12.13...v0.12.14
 [0.12.13]: https://github.com/hypurrquant/perp-cli/compare/v0.12.12...v0.12.13
 [0.12.12]: https://github.com/hypurrquant/perp-cli/compare/v0.12.11...v0.12.12
