@@ -1,6 +1,6 @@
 {
   "name": "perp-cli",
-  "version": "0.12.4",
+  "version": "0.12.5",
   "description": "Multi-DEX Perpetual Futures CLI - Pacifica, Hyperliquid, Lighter, Aster",
   "bin": {
     "perp": "dist/index.js",
@@ -18,7 +18,8 @@
     "test": "vitest run --exclude '**/integration/**'",
     "test:integration": "vitest run -c vitest.integration.config.ts",
     "test:all": "vitest run",
-    "prepublishOnly": "pnpm run build"
+    "sync-skill-version": "node scripts/sync-skill-version.mjs",
+    "prepublishOnly": "node scripts/sync-skill-version.mjs && pnpm run build"
   },
   "keywords": [
     "pacifica",
