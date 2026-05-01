@@ -733,11 +733,15 @@ export class AsterAdapter implements ExchangeAdapter {
       body: "",
     });
 
-    return this._handleEip712Response(res, "POST", path);
+    return this._handleAsterResponse(res, "POST", path);
   }
 
   /**
    * Sign and GET from a path using EIP-712 Domain B.
+   *
+   * Unlike public GETs, signed GETs route through _handleAsterResponse so
+   * venue JSON error envelopes ({code, msg}) are not silently treated as
+   * success (SSOT Rule #2).
    */
   private async _signedGetEip712(
     path: string,
@@ -746,12 +750,8 @@ export class AsterAdapter implements ExchangeAdapter {
   ): Promise<unknown> {
     const qs = await this._buildSignedQueryString(params, resolved);
     const url = `${this._baseUrl}${path}?${qs}`;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const res = await fetch(url);
-      const result = await this._handleResponse(res, "GET", path, attempt);
-      if (result !== null) return result;
-    }
-    throw new Error(`GET ${path} failed: max retries exceeded`);
+    const res = await fetch(url);
+    return this._handleAsterResponse(res, "GET", path);
   }
 
   /**
@@ -764,17 +764,25 @@ export class AsterAdapter implements ExchangeAdapter {
   ): Promise<unknown> {
     const qs = await this._buildSignedQueryString(params, resolved);
     const url = `${this._baseUrl}${path}?${qs}`;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const res = await fetch(url, { method: "DELETE" });
-      const result = await this._handleResponse(res, "DELETE", path, attempt);
-      if (result !== null) return result;
-    }
-    throw new Error(`DELETE ${path} failed: max retries exceeded`);
+    const res = await fetch(url, { method: "DELETE" });
+    return this._handleAsterResponse(res, "DELETE", path);
   }
 
   // ── Private: HTTP response handling ──────────────────────────────────────
 
-  private async _handleEip712Response(res: Response, method: string, path: string): Promise<unknown> {
+  /**
+   * Unified response validator for ALL signed Aster requests.
+   *
+   * Validates BOTH HTTP status AND the venue JSON error envelope. Aster's
+   * API commonly returns HTTP 200 + `{code, msg: "Signature check failed"}`
+   * for signing or auth failures — checking only HTTP status would silently
+   * accept these as success and cause callers (e.g., getBalance) to cache
+   * zero balances or empty arrays. SSOT Rule #2: failures throw with
+   * remediation; never substitute a default.
+   *
+   * Used by signed POST/GET/DELETE. Public unsigned GETs use _handleResponse.
+   */
+  private async _handleAsterResponse(res: Response, method: string, path: string): Promise<unknown> {
     if (res.status === 429) {
       const retryAfter = parseInt(res.headers.get("Retry-After") || "5", 10);
       await new Promise(r => setTimeout(r, Math.min(retryAfter * 1000, 30000)));
@@ -785,16 +793,28 @@ export class AsterAdapter implements ExchangeAdapter {
       const s = classifyError(new Error(`${method} ${path} failed (${res.status}): ${text.slice(0, 200)}`), "aster");
       throw new PerpError(s.code, s.message, { exchange: s.exchange });
     }
-    const json = await res.json() as { code?: string | number; msg?: string };
-    if (json.code !== undefined && json.code !== "000000" && json.code !== 200) {
-      const rawMsg = typeof json.msg === "string" ? json.msg : JSON.stringify(json);
-      const s = classifyError(new Error(rawMsg), "aster");
-      throw new PerpError(s.code, s.message, { exchange: s.exchange });
+    // Parse JSON, then validate venue error envelope. Aster success returns
+    // either an object whose `code` is "000000"/200 (or absent) or an array
+    // (e.g., GET /fapi/v3/openOrders, GET /fapi/v3/userTrades).
+    const text = await res.text();
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new PerpError("EXCHANGE_ERROR", `${method} ${path}: malformed JSON: ${text.slice(0, 200)}`, { exchange: "aster" });
     }
-    return json;
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const json = parsed as { code?: string | number; msg?: string };
+      if (json.code !== undefined && json.code !== "000000" && json.code !== 200 && json.code !== 0) {
+        const rawMsg = typeof json.msg === "string" ? json.msg : JSON.stringify(json);
+        const s = classifyError(new Error(rawMsg), "aster");
+        throw new PerpError(s.code, s.message, { exchange: s.exchange });
+      }
+    }
+    return parsed;
   }
 
-  /** Handle 429 rate limit with retry — used by GET/DELETE multi-attempt loops */
+  /** Handle 429 rate limit with retry — used by public unsigned GET multi-attempt loops */
   private async _handleResponse(res: Response, method: string, path: string, attempt = 0): Promise<unknown> {
     if (res.status === 429) {
       if (attempt >= 2) throw new Error(`${method} ${path} rate limited after ${attempt + 1} attempts`);

@@ -60,11 +60,12 @@ function makePkSigner(address = "0xPkAddr000000000000000000000000000000000") {
 
 /** Returns a successful Aster order response */
 function mockOrderResponse() {
+  const body = { code: "000000", orderId: "12345", status: "FILLED", executedQty: "0.1" };
   return {
     ok: true,
     status: 200,
-    json: vi.fn().mockResolvedValue({ code: "000000", orderId: "12345", status: "FILLED", executedQty: "0.1" }),
-    text: vi.fn().mockResolvedValue(""),
+    json: vi.fn().mockResolvedValue(body),
+    text: vi.fn().mockResolvedValue(JSON.stringify(body)),
     headers: { get: vi.fn().mockReturnValue(null) },
   };
 }
@@ -493,5 +494,103 @@ describe("AsterAdapter — V3 user/signer field model in signed query string", (
     // When --no-agent bypasses Tier 1, master self-signs: both fields = master.
     expect(sp.get("user")).toBe(masterAddr);
     expect(sp.get("signer")).toBe(masterAddr);
+  });
+});
+
+// ── C2: venue JSON error code validation on signed GET/DELETE ─────────────
+
+describe("AsterAdapter — venue JSON error envelope validation (Rule #2)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  /** Init fetch (server-time ping) followed by a custom signed-call response. */
+  function stubInitThen(signedResponse: unknown) {
+    const initResponse = {
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ serverTime: Date.now() }),
+      text: vi.fn().mockResolvedValue(JSON.stringify({ serverTime: Date.now() })),
+      headers: { get: vi.fn().mockReturnValue(null) },
+    };
+    const signedResp = {
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue(signedResponse),
+      text: vi.fn().mockResolvedValue(JSON.stringify(signedResponse)),
+      headers: { get: vi.fn().mockReturnValue(null) },
+    };
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(initResponse)
+      .mockResolvedValue(signedResp),
+    );
+  }
+
+  it("getBalance throws on HTTP-200 + Aster signature-fail envelope (NOT cache zero)", async () => {
+    stubInitThen({ code: -1022, msg: "Signature check failed" });
+
+    const { AsterAdapter } = await import("../../exchanges/aster.js");
+    const ast = new AsterAdapter(undefined, false);
+    await ast.init();
+
+    const masterSigner = makeEvmSigner();
+    ast.setMasterSigner(masterSigner);
+
+    let err: unknown;
+    try {
+      await ast.getBalance();
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeDefined();
+    const e = err as { message?: string; structured?: { code?: string } };
+    expect((e.message ?? "") + (e.structured?.code ?? "")).toMatch(/Signature|signature|AUTH|UNKNOWN/);
+  });
+
+  it("signed GET throws on HTTP-200 + nonzero venue code (Rule #2)", async () => {
+    stubInitThen({ code: -1021, msg: "Timestamp out of recvWindow" });
+
+    const { AsterAdapter } = await import("../../exchanges/aster.js");
+    const ast = new AsterAdapter(undefined, false);
+    await ast.init();
+    ast.setMasterSigner(makeEvmSigner());
+
+    let err: unknown;
+    try {
+      await ast.getOpenOrders();
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeDefined();
+  });
+
+  it("signed DELETE throws on HTTP-200 + nonzero venue code (Rule #2)", async () => {
+    stubInitThen({ code: -2011, msg: "Unknown order sent" });
+
+    const { AsterAdapter } = await import("../../exchanges/aster.js");
+    const ast = new AsterAdapter(undefined, false);
+    await ast.init();
+    ast.setMasterSigner(makeEvmSigner());
+
+    let err: unknown;
+    try {
+      await ast.cancelOrder("BTC", "12345");
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeDefined();
+  });
+
+  it("signed GET accepts array responses (e.g. /openOrders empty list)", async () => {
+    stubInitThen([]);  // empty array — valid open-orders response
+
+    const { AsterAdapter } = await import("../../exchanges/aster.js");
+    const ast = new AsterAdapter(undefined, false);
+    await ast.init();
+    ast.setMasterSigner(makeEvmSigner());
+
+    const orders = await ast.getOpenOrders();
+    expect(Array.isArray(orders)).toBe(true);
+    expect(orders.length).toBe(0);
   });
 });
