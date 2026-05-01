@@ -135,13 +135,25 @@ export function registerInitCommand(program: Command) {
       walletName?: string;
       passphrase?: string;
       defaultExchange?: string;
-    }) => {
+    }, command: Command) => {
+      // optsWithGlobals() merges parent + subcommand options so --passphrase
+      // works whether placed on `perp --passphrase X setup` (parent) or
+      // `perp setup --passphrase X` (subcommand). Commander v13 silently
+      // shadows the subcommand flag when the parent defines an identically
+      // named flag — the visible bug was non-interactive setup throwing
+      // PASSPHRASE_REQUIRED with --passphrase set on the subcommand.
+      const mergedOpts = command.optsWithGlobals() as { passphrase?: string };
+      const resolvedOpts = {
+        ...opts,
+        passphrase: mergedOpts.passphrase ?? opts.passphrase,
+      };
+
       // Non-interactive mode: skip all readline prompts, drive everything from
       // flags + OWS_PASSPHRASE env. This is the agent-friendly onboarding path
       // (CI / Docker / scripted init) — see plan v3.0 "agent-friendly five
       // guarantees" P1 (no-prompt) and P3 (passphrase 3-path).
-      if (opts.nonInteractive) {
-        return runNonInteractiveSetup(opts);
+      if (resolvedOpts.nonInteractive) {
+        return runNonInteractiveSetup(resolvedOpts);
       }
 
       const rl = createInterface({ input: process.stdin, output: process.stdout });

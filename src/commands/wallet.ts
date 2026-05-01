@@ -333,7 +333,7 @@ export function registerWalletCommands(
     .option("--show-mnemonic", "Display the mnemonic phrase (CAUTION)")
     .option("--passphrase <pp>", "Master OWS passphrase (fallback: OWS_PASSPHRASE env / stdin)")
     .option("--legacy <chain>", "Legacy mode: generate solana or evm key (unencrypted)")
-    .action(async (name: string | undefined, opts: { words: string; showMnemonic?: boolean; passphrase?: string; legacy?: string }) => {
+    .action(async (name: string | undefined, opts: { words: string; showMnemonic?: boolean; passphrase?: string; legacy?: string }, command: Command) => {
       // Legacy mode for backward compat
       if (opts.legacy) {
         return _legacyGenerate(opts.legacy, name, isJson);
@@ -345,8 +345,15 @@ export function registerWalletCommands(
         // > OWS_PASSPHRASE env > stdin pipe). When stdin is a TTY and nothing was
         // provided, the resolver returns null; fall back to "" to preserve the
         // historical "no passphrase" default for interactive use.
+        //
+        // optsWithGlobals() merges parent + subcommand options, so --passphrase
+        // works whether placed on `perp --passphrase X subcmd` (parent) or
+        // `perp subcmd --passphrase X` (subcommand). Without this, Commander v13
+        // shadows the subcommand flag with the parent's same-named flag and
+        // opts.passphrase is always undefined.
+        const merged = command.optsWithGlobals();
         const { resolvePassphrase } = await import("../agent-wallet/passphrase.js");
-        const pp = (await resolvePassphrase({ flag: opts.passphrase })) ?? "";
+        const pp = (await resolvePassphrase({ flag: merged.passphrase ?? opts.passphrase })) ?? "";
 
         const ows = loadOws();
         const w = ows.createWallet(walletName, pp, parseInt(opts.words));
@@ -412,7 +419,7 @@ export function registerWalletCommands(
     .option("--mnemonic", "Import as mnemonic phrase instead of private key")
     .option("--passphrase <pp>", "Master OWS passphrase (fallback: OWS_PASSPHRASE env / stdin)")
     .option("--legacy <chain>", "Legacy mode: import to wallets.json (solana or evm)")
-    .action(async (privateKey: string | undefined, opts: { name: string; chain: string; evm?: string; solana?: string; mnemonic?: boolean; passphrase?: string; legacy?: string }) => {
+    .action(async (privateKey: string | undefined, opts: { name: string; chain: string; evm?: string; solana?: string; mnemonic?: boolean; passphrase?: string; legacy?: string }, command: Command) => {
       // Legacy mode (positional only)
       if (opts.legacy) {
         if (!privateKey) {
@@ -482,8 +489,13 @@ export function registerWalletCommands(
         // > OWS_PASSPHRASE env > stdin pipe). When stdin is a TTY and nothing was
         // provided, the resolver returns null; fall back to "" to preserve the
         // historical "no passphrase" default for interactive use.
+        //
+        // optsWithGlobals() merges parent + subcommand options — see the
+        // wallet generate action for context. Without it, the parent program's
+        // --passphrase shadows the subcommand's same-named flag.
+        const merged = command.optsWithGlobals();
         const { resolvePassphrase } = await import("../agent-wallet/passphrase.js");
-        const pp = (await resolvePassphrase({ flag: opts.passphrase })) ?? "";
+        const pp = (await resolvePassphrase({ flag: merged.passphrase ?? opts.passphrase })) ?? "";
 
         let w;
         if (opts.mnemonic) {

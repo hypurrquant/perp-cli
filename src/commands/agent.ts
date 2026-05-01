@@ -352,8 +352,15 @@ export function registerWalletAgentCommands(
       ipWhitelist?: string;
       apiKeyIndex?: string;
       json?: boolean;
-    }) => {
+    }, command: Command) => {
       const useJson = opts.json ?? isJson();
+      // optsWithGlobals() merges parent + subcommand options so --passphrase
+      // works whether placed on `perp --passphrase X wallet agent approve` or
+      // on the subcommand. Commander v13 silently shadows the subcommand flag
+      // when the parent defines an identically-named flag — the visible bug
+      // was approve throwing PASSPHRASE_REQUIRED even with --passphrase set.
+      const mergedOpts = command.optsWithGlobals() as { passphrase?: string };
+      const passphraseFlag = mergedOpts.passphrase ?? opts.passphrase;
 
       // Normalize aliases
       const exchangeNorm = exchange === "lt" ? "lighter"
@@ -404,7 +411,7 @@ export function registerWalletAgentCommands(
           }
           chosenSlot = n;
         }
-        const passphrase = await resolvePassphrase({ flag: opts.passphrase });
+        const passphrase = await resolvePassphrase({ flag: passphraseFlag });
         if (passphrase === null) {
           reportErrorAndExit(new PerpError("PASSPHRASE_REQUIRED", "No passphrase provided and stdin is non-TTY", {
             remediation: "Provide passphrase via --passphrase flag, OWS_PASSPHRASE env var, or stdin pipe",
@@ -464,7 +471,7 @@ export function registerWalletAgentCommands(
             remediation: "Run: perp setup or use --master <name>",
           }));
         }
-        const passphrase = await resolvePassphrase({ flag: opts.passphrase });
+        const passphrase = await resolvePassphrase({ flag: passphraseFlag });
         if (passphrase === null) {
           reportErrorAndExit(new PerpError("PASSPHRASE_REQUIRED", "No passphrase provided and stdin is non-TTY", {
             remediation: "Provide passphrase via --passphrase flag, OWS_PASSPHRASE env var, or stdin pipe",
@@ -522,7 +529,7 @@ export function registerWalletAgentCommands(
             remediation: "Run: perp setup or use --master <name>",
           }));
         }
-        const passphrase = await resolvePassphrase({ flag: opts.passphrase });
+        const passphrase = await resolvePassphrase({ flag: passphraseFlag });
         if (passphrase === null) {
           reportErrorAndExit(new PerpError("PASSPHRASE_REQUIRED", "No passphrase provided and stdin is non-TTY", {
             remediation: "Provide passphrase via --passphrase flag, OWS_PASSPHRASE env var, or stdin pipe",
@@ -615,7 +622,7 @@ export function registerWalletAgentCommands(
         canSpot = opts.canSpot ?? false;
         canWithdraw = opts.canWithdraw ?? false;
         // 3-path passphrase resolver (non-TTY path)
-        passphrase = await resolvePassphrase({ flag: opts.passphrase });
+        passphrase = await resolvePassphrase({ flag: passphraseFlag });
         if (passphrase === null) {
           // TTY but non-wizard (some flags were supplied) — throw PASSPHRASE_REQUIRED
           reportErrorAndExit(new PerpError("PASSPHRASE_REQUIRED", "No passphrase provided and stdin is non-TTY or wizard skipped", {
@@ -764,8 +771,11 @@ export function registerWalletAgentCommands(
       force?: boolean;
       passphrase?: string;
       json?: boolean;
-    }) => {
+    }, command: Command) => {
       const useJson = opts.json ?? isJson();
+      // optsWithGlobals(): see wallet agent approve for full rationale.
+      const mergedOpts = command.optsWithGlobals() as { passphrase?: string };
+      const passphraseFlag = mergedOpts.passphrase ?? opts.passphrase;
 
       try {
         // Step 1: Check local meta (idempotent — absent = already revoked)
@@ -782,7 +792,7 @@ export function registerWalletAgentCommands(
 
         if (!opts.force) {
           // Step 2: Resolve passphrase
-          const passphrase = await resolvePassphrase({ flag: opts.passphrase });
+          const passphrase = await resolvePassphrase({ flag: passphraseFlag });
           if (passphrase === null) {
             throw new PerpError("PASSPHRASE_REQUIRED", "No passphrase provided and stdin is non-TTY", {
               remediation: "Provide passphrase via --passphrase flag, OWS_PASSPHRASE env var, or stdin pipe",
@@ -904,8 +914,11 @@ export function registerWalletAgentCommands(
       canSpot?: boolean;
       canWithdraw?: boolean;
       json?: boolean;
-    }) => {
+    }, command: Command) => {
       const useJson = opts.json ?? isJson();
+      // optsWithGlobals(): see wallet agent approve for full rationale.
+      const mergedOpts = command.optsWithGlobals() as { passphrase?: string };
+      const passphraseFlag = mergedOpts.passphrase ?? opts.passphrase;
 
       try {
         // Determine which agent to rotate
@@ -917,7 +930,7 @@ export function registerWalletAgentCommands(
         }
 
         // Resolve passphrase early (needed for both revoke and approve phases)
-        const passphrase = await resolvePassphrase({ flag: opts.passphrase });
+        const passphrase = await resolvePassphrase({ flag: passphraseFlag });
         if (passphrase === null) {
           throw new PerpError("PASSPHRASE_REQUIRED", "No passphrase provided and stdin is non-TTY", {
             remediation: "Provide passphrase via --passphrase flag, OWS_PASSPHRASE env var, or stdin pipe",
@@ -1118,12 +1131,15 @@ export function registerWalletAgentCommands(
       accountIndex?: string;
       passphrase?: string;
       json?: boolean;
-    }) => {
+    }, command: Command) => {
       const useJson = opts.json ?? isJson();
       const ts = new Date().toISOString();
+      // optsWithGlobals(): see wallet agent approve for full rationale.
+      const mergedOpts = command.optsWithGlobals() as { passphrase?: string };
+      const passphraseFlag = mergedOpts.passphrase ?? opts.passphrase;
 
       // Resolve passphrase via 3-path: flag > env > (no stdin prompt in verify)
-      const passphrase = opts.passphrase ?? process.env["OWS_PASSPHRASE"] ?? "";
+      const passphrase = passphraseFlag ?? process.env["OWS_PASSPHRASE"] ?? "";
 
       const verifyOpts: VerifyOpts = {
         agentName,
