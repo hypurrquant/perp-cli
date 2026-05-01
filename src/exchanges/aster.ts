@@ -1,10 +1,17 @@
 /**
- * Aster DEX adapter — EIP-712 three-tier signer routing (v3.2).
+ * Aster DEX adapter — EIP-712 agent-only signer routing (v3.3).
  *
- * Signer priority:
- *   Tier 1 — Agent OWS wallet  (registered + not expired + no --no-agent)
- *   Tier 2 — OWS master wallet (--ows / owsActiveWallet)
- *   Tier 3 — PK direct         (--private-key / PRIVATE_KEY / ASTER_PRIVATE_KEY)
+ * Signer policy:
+ *   Tier 1 — Agent OWS wallet  (registered + not expired + no --no-agent) — REQUIRED
+ *   Tier 2 — OWS master        — NOT_SUPPORTED (venue rejects master self-signing)
+ *   Tier 3 — PK direct         — NOT_SUPPORTED (venue rejects master self-signing)
+ *
+ * Aster V3 spec requires `signer` to be a registered API_WALLET (agent). The
+ * master wallet is never a valid signer — venue returns
+ * `code:-1000 msg:"Signature check failed"` when user==signer==master, even
+ * though the EIP-712 envelope is well-formed. Master/PK signers are still
+ * accepted via setMasterSigner/setPkSigner (used during approveAgent flow),
+ * but signed read/trade requests must use Tier 1.
  *
  * HMAC paths fully removed (see Step 3 plan — all Binance-compat HMAC code deleted).
  *
@@ -632,19 +639,23 @@ export class AsterAdapter implements ExchangeAdapter {
       }
     }
 
-    // Tier 2: OWS master — master self-signs, so user==signer per V3 spec.
-    // The query string MUST still emit `user=` AND `signer=` as distinct
-    // fields even when the values are identical (Aster authority verifies
-    // both keys); see _buildSignedQueryString.
-    if (this._masterSigner) {
-      const addr = this._masterSigner.getAddress();
-      return { tier: "master", signer: this._masterSigner, signerAddress: addr, userAddress: addr };
-    }
-
-    // Tier 3: PK direct — same self-signing model as Tier 2.
-    if (this._pkSigner) {
-      const addr = this._pkSigner.getAddress();
-      return { tier: "pk", signer: this._pkSigner, signerAddress: addr, userAddress: addr };
+    // Tier 2/3: master self-signing is not supported by the venue. Per Aster
+    // V3 spec the `signer` field MUST be a registered API_WALLET (agent);
+    // sending `user==signer==master` is rejected with
+    // `code:-1000 msg:"Signature check failed"` even though the EIP-712
+    // envelope is well-formed. SSOT Rule #2: throw with remediation rather
+    // than silently dispatching a request the venue will reject.
+    //
+    // Reference: HypurrQuant_FE AsterPerpAdapter.ts throws if agent isn't
+    // configured; never attempts master self-signing.
+    if (this._masterSigner || this._pkSigner) {
+      throw new PerpError(
+        "NOT_IMPLEMENTED",
+        "Aster requires a registered agent — master self-signing is not supported by venue",
+        {
+          remediation: "perp wallet agent approve aster --master <wallet>",
+        },
+      );
     }
 
     // No signer at any tier
@@ -678,9 +689,9 @@ export class AsterAdapter implements ExchangeAdapter {
    * signed dict and the URL query string must be byte-identical except for
    * the appended signature.
    *
-   * Both `user` and `signer` are ALWAYS emitted as distinct query fields,
-   * even when the values are identical (Tier 2/3 self-signing case where
-   * master signs for itself). Aster's authority server checks both fields.
+   * Both `user` and `signer` are ALWAYS emitted as distinct query fields.
+   * In production (Tier 1 only), `user` is the master and `signer` is the
+   * registered agent address. Aster's authority server checks both fields.
    *
    * `signatureChainId` is NOT a v3 parameter — it's an artifact of an older
    * scheme; including it breaks signature verification on every call.

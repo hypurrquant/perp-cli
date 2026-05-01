@@ -120,8 +120,8 @@ describe("AsterAdapter — three-tier signer routing", () => {
     expect(agentStrat.signTypedData).toHaveBeenCalled();
   });
 
-  // ─── Test 2: Tier 2 selection ───────────────────────────────────────────────
-  it("Tier 2 (master) selected when no agent configured", async () => {
+  // ─── Test 2: Tier 2 rejected (master self-signing not supported by venue) ───
+  it("Tier 2 (master) throws NOT_IMPLEMENTED when no agent configured", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
     await ast.init();
@@ -129,14 +129,22 @@ describe("AsterAdapter — three-tier signer routing", () => {
     const masterSigner = makeEvmSigner();
     ast.setMasterSigner(masterSigner);
 
-    await ast.marketOrder("BTC", "buy", "0.001");
+    let err: unknown;
+    try {
+      await ast.marketOrder("BTC", "buy", "0.001");
+    } catch (e) {
+      err = e;
+    }
 
-    expect(ast.activeSignerTier).toBe("master");
-    expect(masterSigner.signTypedData).toHaveBeenCalled();
+    expect(err).toBeDefined();
+    const e = err as { structured?: { code: string; remediation?: string } };
+    expect(e.structured?.code ?? "").toBe("NOT_IMPLEMENTED");
+    expect(e.structured?.remediation ?? "").toContain("perp wallet agent approve aster");
+    expect(masterSigner.signTypedData).not.toHaveBeenCalled();
   });
 
-  // ─── Test 3: Tier 3 selection ───────────────────────────────────────────────
-  it("Tier 3 (pk) selected when no agent or master, only PK configured", async () => {
+  // ─── Test 3: Tier 3 rejected (PK self-signing not supported by venue) ──────
+  it("Tier 3 (pk) throws NOT_IMPLEMENTED when no agent or master, only PK configured", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
     await ast.init();
@@ -144,14 +152,22 @@ describe("AsterAdapter — three-tier signer routing", () => {
     const pkSigner = makePkSigner();
     ast.setPkSigner(pkSigner);
 
-    await ast.marketOrder("BTC", "buy", "0.001");
+    let err: unknown;
+    try {
+      await ast.marketOrder("BTC", "buy", "0.001");
+    } catch (e) {
+      err = e;
+    }
 
-    expect(ast.activeSignerTier).toBe("pk");
-    expect(pkSigner.signTypedData).toHaveBeenCalled();
+    expect(err).toBeDefined();
+    const e = err as { structured?: { code: string; remediation?: string } };
+    expect(e.structured?.code ?? "").toBe("NOT_IMPLEMENTED");
+    expect(e.structured?.remediation ?? "").toContain("perp wallet agent approve aster");
+    expect(pkSigner.signTypedData).not.toHaveBeenCalled();
   });
 
-  // ─── Test 4: --no-agent bypass ──────────────────────────────────────────────
-  it("--no-agent bypasses Tier 1; falls through to Tier 2 (master)", async () => {
+  // ─── Test 4: --no-agent throws (no usable Aster signing path without agent) ─
+  it("--no-agent + master throws NOT_IMPLEMENTED (Aster requires agent)", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
     await ast.init();
@@ -164,11 +180,39 @@ describe("AsterAdapter — three-tier signer routing", () => {
     ast.setMasterSigner(masterSigner);
     ast.setNoAgent(true);
 
-    await ast.marketOrder("BTC", "buy", "0.001");
+    let err: unknown;
+    try {
+      await ast.marketOrder("BTC", "buy", "0.001");
+    } catch (e) {
+      err = e;
+    }
 
-    expect(ast.activeSignerTier).toBe("master");
+    expect(err).toBeDefined();
+    const e = err as { structured?: { code: string; remediation?: string } };
+    expect(e.structured?.code ?? "").toBe("NOT_IMPLEMENTED");
     expect(agentStrat.signTypedData).not.toHaveBeenCalled();
-    expect(masterSigner.signTypedData).toHaveBeenCalled();
+    expect(masterSigner.signTypedData).not.toHaveBeenCalled();
+  });
+
+  // ─── Test 4b: --no-agent without any other signer also throws NOT_IMPLEMENTED ─
+  it("--no-agent without agent or master throws NOT_IMPLEMENTED", async () => {
+    const AsterAdapter = await buildAdapter();
+    const ast = new AsterAdapter(undefined, false);
+    await ast.init();
+    ast.setNoAgent(true);
+
+    let err: unknown;
+    try {
+      await ast.marketOrder("BTC", "buy", "0.001");
+    } catch (e) {
+      err = e;
+    }
+
+    expect(err).toBeDefined();
+    const e = err as { structured?: { code: string; remediation?: string } };
+    // No signer at any tier → NO_SIGNER_AVAILABLE (master/pk would have thrown
+    // NOT_IMPLEMENTED but neither is configured here)
+    expect(e.structured?.code ?? "").toBe("NO_SIGNER_AVAILABLE");
   });
 
   // ─── Test 5: NO_SIGNER_AVAILABLE ────────────────────────────────────────────
@@ -216,8 +260,8 @@ describe("AsterAdapter — three-tier signer routing", () => {
     expect(e.structured?.remediation ?? "").toContain("perp wallet agent approve aster --rotate");
   });
 
-  // ─── Test 7: AGENT_EXPIRED falls through to master when available ───────────
-  it("expired agent falls through to Tier 2 (master) without error", async () => {
+  // ─── Test 7: AGENT_EXPIRED + master also throws (no master-self-sign path) ──
+  it("expired agent + master throws NOT_IMPLEMENTED (Aster requires fresh agent)", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
     await ast.init();
@@ -231,10 +275,18 @@ describe("AsterAdapter — three-tier signer routing", () => {
     ast.setAgent(expiredMeta, agentStrat);
     ast.setMasterSigner(masterSigner);
 
-    await ast.marketOrder("BTC", "buy", "0.001");
+    let err: unknown;
+    try {
+      await ast.marketOrder("BTC", "buy", "0.001");
+    } catch (e) {
+      err = e;
+    }
 
-    // Should use master, not agent
-    expect(masterSigner.signTypedData).toHaveBeenCalled();
+    expect(err).toBeDefined();
+    const e = err as { structured?: { code: string; remediation?: string } };
+    // Tier 1 falls through (expired) → Tier 2/3 rejected → NOT_IMPLEMENTED
+    expect(e.structured?.code ?? "").toBe("NOT_IMPLEMENTED");
+    expect(masterSigner.signTypedData).not.toHaveBeenCalled();
     expect(agentStrat.signTypedData).not.toHaveBeenCalled();
   });
 
@@ -398,7 +450,7 @@ describe("AsterAdapter — AC-19 remediation fields", () => {
   });
 });
 
-// ── C1: Tier 2/3 user/signer field model ─────────────────────────────────────
+// ── C1: Tier 1 user/signer field model (Tier 2/3 rejected at venue) ──────────
 
 describe("AsterAdapter — V3 user/signer field model in signed query string", () => {
   beforeEach(() => {
@@ -434,47 +486,39 @@ describe("AsterAdapter — V3 user/signer field model in signed query string", (
     expect(sp.get("signature")).toBeTruthy();
   });
 
-  it("Tier 2 (master): emits user==signer (both fields present even when identical)", async () => {
+  it("Tier 2 (master): _resolveSigner throws NOT_IMPLEMENTED (master self-signing rejected by venue)", async () => {
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
     await ast.init();
 
     const masterAddr = "0xMasterAddr00000000000000000000000000000";
-    const masterSigner = makeEvmSigner(masterAddr);
-    ast.setMasterSigner(masterSigner);
+    ast.setMasterSigner(makeEvmSigner(masterAddr));
 
-    const resolved = ast._resolveSigner();
-    const qs = await ast._buildSignedQueryString({ symbol: "BTCUSDT" }, resolved);
-    const sp = new URLSearchParams(qs);
-
-    // Both fields MUST be present in the query string
-    expect(qs).toContain("user=");
-    expect(qs).toContain("signer=");
-    expect(sp.get("user")).toBe(masterAddr);
-    expect(sp.get("signer")).toBe(masterAddr);
-    expect(sp.get("signature")).toBeTruthy();
+    let err: unknown;
+    try { ast._resolveSigner(); } catch (e) { err = e; }
+    expect(err).toBeDefined();
+    const e = err as { structured?: { code: string; remediation?: string } };
+    expect(e.structured?.code ?? "").toBe("NOT_IMPLEMENTED");
+    expect(e.structured?.remediation ?? "").toContain("perp wallet agent approve aster");
   });
 
-  it("Tier 3 (pk): emits user==signer (both fields present even when identical)", async () => {
+  it("Tier 3 (pk): _resolveSigner throws NOT_IMPLEMENTED (PK self-signing rejected by venue)", async () => {
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
     await ast.init();
 
     const pkAddr = "0xPkAddr000000000000000000000000000000000";
-    const pkSigner = makePkSigner(pkAddr);
-    ast.setPkSigner(pkSigner);
+    ast.setPkSigner(makePkSigner(pkAddr));
 
-    const resolved = ast._resolveSigner();
-    const qs = await ast._buildSignedQueryString({ symbol: "BTCUSDT" }, resolved);
-    const sp = new URLSearchParams(qs);
-
-    expect(qs).toContain("user=");
-    expect(qs).toContain("signer=");
-    expect(sp.get("user")).toBe(pkAddr);
-    expect(sp.get("signer")).toBe(pkAddr);
+    let err: unknown;
+    try { ast._resolveSigner(); } catch (e) { err = e; }
+    expect(err).toBeDefined();
+    const e = err as { structured?: { code: string; remediation?: string } };
+    expect(e.structured?.code ?? "").toBe("NOT_IMPLEMENTED");
+    expect(e.structured?.remediation ?? "").toContain("perp wallet agent approve aster");
   });
 
-  it("--no-agent + master: master self-signs (user==signer==master), NOT agent address", async () => {
+  it("--no-agent + master throws NOT_IMPLEMENTED (Aster requires agent — no master-self-sign path)", async () => {
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
     await ast.init();
@@ -485,15 +529,11 @@ describe("AsterAdapter — V3 user/signer field model in signed query string", (
     ast.setMasterSigner(makeEvmSigner(masterAddr));
     ast.setNoAgent(true);
 
-    const resolved = ast._resolveSigner();
-    expect(resolved.tier).toBe("master");
-
-    const qs = await ast._buildSignedQueryString({ symbol: "BTCUSDT" }, resolved);
-    const sp = new URLSearchParams(qs);
-
-    // When --no-agent bypasses Tier 1, master self-signs: both fields = master.
-    expect(sp.get("user")).toBe(masterAddr);
-    expect(sp.get("signer")).toBe(masterAddr);
+    let err: unknown;
+    try { ast._resolveSigner(); } catch (e) { err = e; }
+    expect(err).toBeDefined();
+    const e = err as { structured?: { code: string; remediation?: string } };
+    expect(e.structured?.code ?? "").toBe("NOT_IMPLEMENTED");
   });
 });
 
@@ -533,8 +573,8 @@ describe("AsterAdapter — venue JSON error envelope validation (Rule #2)", () =
     const ast = new AsterAdapter(undefined, false);
     await ast.init();
 
-    const masterSigner = makeEvmSigner();
-    ast.setMasterSigner(masterSigner);
+    const meta = makeAgentMeta();
+    ast.setAgent(meta, makeAgentStrategy(meta.agentEvmAddress));
 
     let err: unknown;
     try {
@@ -553,7 +593,8 @@ describe("AsterAdapter — venue JSON error envelope validation (Rule #2)", () =
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
     await ast.init();
-    ast.setMasterSigner(makeEvmSigner());
+    const meta = makeAgentMeta();
+    ast.setAgent(meta, makeAgentStrategy(meta.agentEvmAddress));
 
     let err: unknown;
     try {
@@ -570,7 +611,8 @@ describe("AsterAdapter — venue JSON error envelope validation (Rule #2)", () =
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
     await ast.init();
-    ast.setMasterSigner(makeEvmSigner());
+    const meta = makeAgentMeta();
+    ast.setAgent(meta, makeAgentStrategy(meta.agentEvmAddress));
 
     let err: unknown;
     try {
@@ -587,7 +629,8 @@ describe("AsterAdapter — venue JSON error envelope validation (Rule #2)", () =
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
     await ast.init();
-    ast.setMasterSigner(makeEvmSigner());
+    const meta = makeAgentMeta();
+    ast.setAgent(meta, makeAgentStrategy(meta.agentEvmAddress));
 
     const orders = await ast.getOpenOrders();
     expect(Array.isArray(orders)).toBe(true);
