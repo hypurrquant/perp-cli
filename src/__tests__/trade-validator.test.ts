@@ -148,6 +148,20 @@ describe("validateTrade — symbol validity", () => {
     expect(result.estimatedCost).toBeUndefined();
   });
 
+  it("returns symbol_valid=false without calling getOrderbook for an invalid symbol", async () => {
+    const getOrderbook = vi.fn().mockRejectedValue(new Error("unknown symbol"));
+    const adapter = mockAdapter({ getOrderbook });
+    const result = await validateTrade(adapter, {
+      symbol: "DOGE",
+      side: "buy",
+      size: 1,
+    });
+    expect(result.valid).toBe(false);
+    expect(result.checks).toHaveLength(1);
+    expect(result.checks[0]).toMatchObject({ check: "symbol_valid", passed: false });
+    expect(getOrderbook).not.toHaveBeenCalled();
+  });
+
   it("handles -PERP suffix stripping (input=BTC-PERP, market=BTC-PERP)", async () => {
     const adapter = mockAdapter({
       getMarkets: vi.fn().mockResolvedValue([

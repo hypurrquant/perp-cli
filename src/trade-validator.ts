@@ -53,21 +53,20 @@ export async function validateTrade(
   const warnings: string[] = [];
   const sym = params.symbol.toUpperCase();
 
-  // Fetch market data, balance, positions, orderbook in parallel.
+  // Fetch market list, balance, and positions in parallel.
+  // Defer the orderbook call until symbol membership is confirmed so invalid
+  // symbols return a structured symbol_valid failure instead of a venue error.
   // SSOT rule #2: errors must propagate, never silently substitute defaults.
   // getMarkets retains a tracked-error wrapper so the failed-load case surfaces
   // a structured symbol_valid check (not a generic exception).
   let marketsError: string | null = null;
-  const [markets, balance, positions, orderbook] = await Promise.all([
+  const [markets, balance, positions] = await Promise.all([
     adapter.getMarkets().catch((e: unknown) => {
       marketsError = e instanceof Error ? e.message : String(e);
       return [] as ExchangeMarketInfo[];
     }),
     adapter.getBalance(),
     adapter.getPositions(),
-    params.type !== "limit"
-      ? adapter.getOrderbook(sym)
-      : Promise.resolve({ bids: [] as [string, string][], asks: [] as [string, string][] }),
   ]);
 
   if (markets.length === 0 && marketsError) {
@@ -86,6 +85,10 @@ export async function validateTrade(
     checks.push({ check: "symbol_valid", passed: false, message: `${sym} not found on ${adapter.name}` });
     return { valid: false, checks, warnings, timestamp: new Date().toISOString() };
   }
+
+  const orderbook = params.type !== "limit"
+    ? await adapter.getOrderbook(sym)
+    : { bids: [] as [string, string][], asks: [] as [string, string][] };
 
   const markPrice = Number(market.markPrice);
   if (params.type === "limit" && (params.price === undefined || !Number.isFinite(params.price))) {
