@@ -226,21 +226,21 @@ async function getAdapter(): Promise<ExchangeAdapter> {
       }
       if (noAgent) _lighterAdapter.setNoAgent(true);
       await _lighterAdapter.init();
-      if (pk) {
-        const ltSettings = loadSettings();
-        if (ltSettings.referrals && !ltSettings.referralApplied.lighter) {
-          const ltRef = process.env.LIGHTER_REFERRAL_CODE || ltSettings.referralCodes.lighter;
-          if (ltRef) {
-            _lighterAdapter.useReferralCode(ltRef).then(() => {
-              const s = loadSettings();
-              s.referralApplied.lighter = true;
-              saveSettings(s);
-            }).catch((err) => {
-              // Per SSOT Rule #2: do NOT mark applied=true on failure.
-              // Leave referralApplied[ex]=false so next adapter init retries.
-              process.stderr.write(`[lighter] referral apply failed: ${err instanceof Error ? err.message : String(err)}\n`);
-            });
-          }
+      // LT referral apply is L2-signed (POST /referral/use uses the WASM slot
+      // signer's auth token, not the master EVM). Trigger on any active
+      // signer tier — agent / OWS master / PK direct — gated by isReadOnly.
+      const ltSettings = loadSettings();
+      if (ltSettings.referrals && !ltSettings.referralApplied.lighter && !_lighterAdapter.isReadOnly) {
+        const ltRef = process.env.LIGHTER_REFERRAL_CODE || ltSettings.referralCodes.lighter;
+        if (ltRef) {
+          _lighterAdapter.useReferralCode(ltRef).then(() => {
+            const s = loadSettings();
+            s.referralApplied.lighter = true;
+            saveSettings(s);
+          }).catch((err) => {
+            // Per SSOT Rule #2: do NOT mark applied=true on failure.
+            process.stderr.write(`[lighter] referral apply failed: ${err instanceof Error ? err.message : String(err)}\n`);
+          });
         }
       }
       _adapter = _lighterAdapter;
@@ -486,21 +486,20 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
       }
       if (noAgent) _lighterAdapter.setNoAgent(true);
       await _lighterAdapter.init();
-      if (pk) {
-        const s3 = loadSettings();
-        if (s3.referrals && !s3.referralApplied.lighter) {
-          const ltRef = process.env.LIGHTER_REFERRAL_CODE || s3.referralCodes.lighter;
-          if (ltRef) {
-            _lighterAdapter.useReferralCode(ltRef).then(() => {
-              const s = loadSettings();
-              s.referralApplied.lighter = true;
-              saveSettings(s);
-            }).catch((err) => {
-              // Per SSOT Rule #2: do NOT mark applied=true on failure.
-              // Leave referralApplied[ex]=false so next adapter init retries.
-              process.stderr.write(`[lighter] referral apply failed: ${err instanceof Error ? err.message : String(err)}\n`);
-            });
-          }
+      // LT referral apply is L2-signed; trigger on any active tier (agent
+      // included), gated by isReadOnly. See first LT case for rationale.
+      const s3 = loadSettings();
+      if (s3.referrals && !s3.referralApplied.lighter && !_lighterAdapter.isReadOnly) {
+        const ltRef = process.env.LIGHTER_REFERRAL_CODE || s3.referralCodes.lighter;
+        if (ltRef) {
+          _lighterAdapter.useReferralCode(ltRef).then(() => {
+            const s = loadSettings();
+            s.referralApplied.lighter = true;
+            saveSettings(s);
+          }).catch((err) => {
+            // Per SSOT Rule #2: do NOT mark applied=true on failure.
+            process.stderr.write(`[lighter] referral apply failed: ${err instanceof Error ? err.message : String(err)}\n`);
+          });
         }
       }
       if (!_adapter) _adapter = _lighterAdapter;
