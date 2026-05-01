@@ -4,6 +4,10 @@ import { createInterface } from "readline";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "fs";
 import { resolve } from "path";
 import { loadSettings, saveSettings } from "../settings.js";
+import { PerpError } from "../errors.js";
+import { jsonOk, jsonError, printJson } from "../utils.js";
+import { resolvePassphrase } from "../agent-wallet/passphrase.js";
+import { loadOws } from "../signer/ows-loader.js";
 
 const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
 const ENV_FILE = resolve(PERP_DIR, ".env");
@@ -117,12 +121,29 @@ export async function validateKey(chain: "solana" | "evm" | "apikey", key: strin
 // ── Commands ──────────────────────────────────────────────────
 
 export function registerInitCommand(program: Command) {
-  // ── perp setup (interactive) ──
+  // ── perp setup (interactive + non-interactive) ──
   program
     .command("setup")
     .alias("init")
-    .description("Interactive setup wizard — configure keys & default exchange")
-    .action(async () => {
+    .description("Setup wizard — interactive by default, scriptable with --non-interactive")
+    .option("--non-interactive", "Run without prompts; requires --passphrase or OWS_PASSPHRASE env")
+    .option("--wallet-name <name>", "OWS wallet alias to create (default: 'main')")
+    .option("--passphrase <pp>", "OWS vault passphrase (fallback: OWS_PASSPHRASE env / stdin)")
+    .option("--default-exchange <name>", "Default exchange (pacifica/hyperliquid/lighter/aster)")
+    .action(async (opts: {
+      nonInteractive?: boolean;
+      walletName?: string;
+      passphrase?: string;
+      defaultExchange?: string;
+    }) => {
+      // Non-interactive mode: skip all readline prompts, drive everything from
+      // flags + OWS_PASSPHRASE env. This is the agent-friendly onboarding path
+      // (CI / Docker / scripted init) — see plan v3.0 "agent-friendly five
+      // guarantees" P1 (no-prompt) and P3 (passphrase 3-path).
+      if (opts.nonInteractive) {
+        return runNonInteractiveSetup(opts);
+      }
+
       const rl = createInterface({ input: process.stdin, output: process.stdout });
 
       try {
@@ -310,4 +331,136 @@ function parseExchangeChoice(input: string): string[] {
     else if (p === "4" || p.startsWith("ast")) exchanges.push("aster");
   }
   return [...new Set(exchanges)];
+}
+
+// ── Non-interactive setup (agent / CI / Docker) ──────────────────────────────
+
+const VALID_EXCHANGES = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
+
+/**
+ * Test seam: emit JSON envelopes when the global --json flag is present.
+ * Mirrors the inline pattern used elsewhere (see src/index.ts:87) instead of
+ * wiring isJson() through registerInitCommand for one call site.
+ */
+function setupIsJson(): boolean {
+  return process.argv.includes("--json");
+}
+
+/**
+ * Drive `perp setup` end-to-end without TTY. Required:
+ *   - --passphrase or OWS_PASSPHRASE env (3-path resolver)
+ * Optional:
+ *   - --wallet-name (default: "main")
+ *   - --default-exchange (must be one of pacifica/hyperliquid/lighter/aster)
+ *
+ * Side effects:
+ *   1. Creates an OWS wallet via createWallet(name, passphrase)
+ *   2. Sets settings.owsActiveWallet (if unset) + settings.defaultExchange (if provided)
+ *
+ * Errors are returned as INVALID_PARAMS / PASSPHRASE_REQUIRED — never via
+ * readline. JSON envelope is emitted on stdout when --json is present.
+ */
+export async function runNonInteractiveSetup(opts: {
+  walletName?: string;
+  passphrase?: string;
+  defaultExchange?: string;
+}): Promise<void> {
+  const isJson = setupIsJson();
+
+  try {
+    // Validate --default-exchange shape early so users hit a precise error
+    // before passphrase resolution.
+    if (
+      opts.defaultExchange !== undefined &&
+      !(VALID_EXCHANGES as readonly string[]).includes(opts.defaultExchange)
+    ) {
+      throw new PerpError(
+        "INVALID_PARAMS",
+        `Invalid --default-exchange "${opts.defaultExchange}"`,
+        {
+          remediation: `Use one of: ${VALID_EXCHANGES.join(", ")}`,
+        },
+      );
+    }
+
+    // Resolve passphrase. resolvePassphrase already throws PASSPHRASE_REQUIRED
+    // when stdin is non-TTY and nothing was provided. In TTY mode it returns
+    // null — non-interactive mode must NOT fall back to a prompt.
+    const resolved = await resolvePassphrase({ flag: opts.passphrase });
+    if (resolved === null) {
+      throw new PerpError(
+        "PASSPHRASE_REQUIRED",
+        "Non-interactive setup requires a passphrase",
+        {
+          remediation: "Provide --passphrase <pp> or set OWS_PASSPHRASE env var",
+        },
+      );
+    }
+    const pp = resolved;
+
+    const walletName = opts.walletName ?? "main";
+
+    // Create OWS wallet
+    const ows = loadOws();
+    const w = ows.createWallet(walletName, pp);
+
+    // Update settings
+    const settings = loadSettings();
+    if (!settings.owsActiveWallet) {
+      settings.owsActiveWallet = walletName;
+    }
+    if (opts.defaultExchange) {
+      settings.defaultExchange = opts.defaultExchange;
+    }
+    saveSettings(settings);
+
+    if (isJson) {
+      printJson(
+        jsonOk({
+          walletName: w.name,
+          walletId: w.id,
+          accounts: w.accounts,
+          owsActiveWallet: settings.owsActiveWallet,
+          defaultExchange: settings.defaultExchange ?? null,
+          mode: "non-interactive",
+        }),
+      );
+      return;
+    }
+
+    console.log(chalk.cyan.bold("\n  perp-cli Setup (non-interactive) — Done\n"));
+    console.log(`  Wallet:           ${chalk.white.bold(w.name)}`);
+    console.log(`  Active wallet:    ${chalk.cyan(settings.owsActiveWallet)}`);
+    if (settings.defaultExchange) {
+      console.log(`  Default exchange: ${chalk.cyan(settings.defaultExchange)}`);
+    }
+    console.log(chalk.gray(`\n  Vault: ~/.ows/ (AES-256-GCM encrypted)\n`));
+  } catch (err) {
+    if (isJson) {
+      if (err instanceof PerpError) {
+        printJson(
+          jsonError(err.structured.code, err.structured.message, {
+            ...(err.structured.remediation
+              ? { details: { remediation: err.structured.remediation } }
+              : {}),
+          }),
+        );
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        printJson(jsonError("UNKNOWN", msg));
+      }
+      process.exitCode = 1;
+      return;
+    }
+    if (err instanceof PerpError) {
+      console.error(chalk.red(`\n  Error [${err.structured.code}]: ${err.structured.message}`));
+      if (err.structured.remediation) {
+        console.error(chalk.gray(`  Remediation: ${err.structured.remediation}\n`));
+      }
+    } else {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(`\n  Error: ${msg}\n`));
+    }
+    process.exitCode = 1;
+  }
 }
