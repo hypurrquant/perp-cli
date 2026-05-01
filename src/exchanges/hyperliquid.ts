@@ -82,6 +82,15 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     this._address = signer.getAddress();
   }
 
+  /**
+   * Set the user EVM address without attaching a signer. Used by read-only
+   * paths (e.g. `wallet manage account-mode` show branch) that need to query
+   * `/info` endpoints scoped to a master wallet but never sign.
+   */
+  setAddress(address: string): void {
+    this._address = address;
+  }
+
   /** Tier 1: inject agent OWS wallet signer. */
   setAgentSigner(meta: AgentMeta, signer: EvmSigner): void {
     this._agentMeta = meta;

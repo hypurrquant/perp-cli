@@ -3,6 +3,11 @@ import type { ExchangeAdapter } from "../exchanges/index.js";
 import { printJson, jsonOk, jsonError } from "../utils.js";
 import chalk from "chalk";
 import { hasPacificaSdk } from "../exchanges/capabilities.js";
+import { PerpError } from "../errors.js";
+import { loadSettings } from "../settings.js";
+import { resolvePassphrase } from "../agent-wallet/passphrase.js";
+import { runHlSetAbstractionFlow, type HlAbstractionMode } from "./agent.js";
+import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
 
 export function registerWalletManageCommands(
   parent: Command,
@@ -10,7 +15,7 @@ export function registerWalletManageCommands(
   isJson: () => boolean,
   getPacificaAdapter: () => unknown
 ) {
-  const manage = parent.command("manage").description("Exchange account settings (margin, subaccount, API keys, builder) — Pacifica + Lighter");
+  const manage = parent.command("manage").description("Exchange account settings (margin, subaccount, API keys, builder, account-mode) — Pacifica + Lighter + Hyperliquid");
 
   // Ensure adapter is initialized before accessing PacificaAdapter
   async function pac() {
@@ -312,4 +317,165 @@ export function registerWalletManageCommands(
   // 3-tier signer routing, expiry tracking, free-slot picking, and AgentMeta
   // persistence. The auto-setup path in LighterAdapter.init() remains as the
   // env-key fallback for users who haven't run the unified command yet.
+
+  // ── Hyperliquid account abstraction mode ────────────────────────────────
+  // Read side: HyperliquidAdapter._getAbstractionMode() (added v0.12.7).
+  // Write side: HL `userSetAbstraction` action — master EVM EIP-712 signature.
+  // Reuses the same `OwsEvmSigner.signTypedData` path as `wallet agent approve
+  // hyperliquid` (see runHlApproveFlow). No agent signer involved: this is a
+  // master-only action that toggles the user's account-level mode.
+  manage
+    .command("account-mode [mode]")
+    .description("Hyperliquid account abstraction mode. Modes: unified | standard | portfolio. No arg = show current.")
+    .option("--master <name>", "Master OWS wallet name (defaults to settings.owsActiveWallet)")
+    .option("--passphrase <pp>", "Master OWS passphrase (fallback: OWS_PASSPHRASE env / stdin)")
+    .option("--json", "Machine-readable output")
+    .action(async (mode: string | undefined, opts: {
+      master?: string;
+      passphrase?: string;
+      json?: boolean;
+    }, command: Command) => {
+      const useJson = opts.json ?? isJson();
+      // C5 fix: parent --passphrase shadows subcommand flag in Commander v13.
+      // Merge parent + subcommand opts so --passphrase works on either side.
+      const mergedOpts = command.optsWithGlobals() as { passphrase?: string; network?: string };
+      const passphraseFlag = mergedOpts.passphrase ?? opts.passphrase;
+      const network = mergedOpts.network ?? "mainnet";
+      const isTestnet = network === "testnet";
+
+      // ── Show branch (no positional arg) ─────────────────────────────────
+      if (!mode) {
+        try {
+          const adapter = new HyperliquidAdapter(undefined, isTestnet);
+          // Resolve the address. _getAbstractionMode requires an address; if
+          // the user hasn't configured one, surface a clear error instead of
+          // an opaque "address not set" exception.
+          const masterName = opts.master ?? loadSettings().owsActiveWallet;
+          if (!masterName) {
+            throw new PerpError("INVALID_PARAMS", "Master wallet name required to read account-mode. Use --master <name> or set owsActiveWallet.", {
+              remediation: "Run: perp wallet generate <name> or perp wallet use <name>, then retry.",
+            });
+          }
+          // Resolve the EVM address from the OWS wallet without unlocking it
+          // (read-only path needs no signature).
+          const { loadOws } = await import("../signer/ows-loader.js");
+          const ows = loadOws();
+          const wallet = ows.getWallet(masterName);
+          const evmAccount = wallet.accounts.find(
+            (a: { chainId: string }) => a.chainId.startsWith("eip155:"),
+          );
+          if (!evmAccount) {
+            throw new PerpError("INVALID_PARAMS", `OWS wallet "${masterName}" has no EVM account.`, {
+              remediation: "Generate an EVM-capable wallet: perp wallet generate <name>",
+            });
+          }
+          adapter.setAddress(evmAccount.address);
+          const current = await adapter._getAbstractionMode();
+          if (useJson) {
+            return printJson(jsonOk({ mode: current, master: masterName, address: evmAccount.address, network: isTestnet ? "testnet" : "mainnet" }));
+          }
+          console.log(chalk.cyan.bold("\n  Hyperliquid Account Mode\n"));
+          console.log(`  Master:   ${chalk.white(masterName)}`);
+          console.log(`  Address:  ${chalk.gray(evmAccount.address)}`);
+          console.log(`  Network:  ${chalk.gray(isTestnet ? "testnet" : "mainnet")}`);
+          console.log(`  Mode:     ${chalk.green(current)}\n`);
+          return;
+        } catch (err) {
+          if (useJson) {
+            const e = err instanceof PerpError
+              ? err.structured
+              : { code: "UNKNOWN", message: err instanceof Error ? err.message : String(err) };
+            console.error(JSON.stringify(jsonError(e.code as never, e.message)));
+            process.exit(1);
+          }
+          console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+          process.exit(1);
+        }
+      }
+
+      // ── Set branch ─────────────────────────────────────────────────────
+      const modeLower = mode.toLowerCase();
+      if (modeLower !== "unified" && modeLower !== "standard" && modeLower !== "portfolio") {
+        const e = new PerpError("INVALID_PARAMS", `Mode must be one of: unified, standard, portfolio (got "${mode}")`, {
+          remediation: "Example: perp wallet manage account-mode standard --master main",
+        });
+        if (useJson) {
+          console.error(JSON.stringify(jsonError(e.structured.code as never, e.structured.message)));
+          process.exit(1);
+        }
+        console.error(chalk.red(e.message));
+        process.exit(1);
+      }
+      const newMode = modeLower as HlAbstractionMode;
+
+      try {
+        const masterName = opts.master ?? loadSettings().owsActiveWallet;
+        if (!masterName) {
+          throw new PerpError("INVALID_PARAMS", "Master wallet name is required. Use --master or set owsActiveWallet in settings.", {
+            remediation: "Run: perp wallet generate <name> or perp wallet use <name>, then retry.",
+          });
+        }
+        const passphrase = await resolvePassphrase({ flag: passphraseFlag });
+        if (passphrase === null) {
+          throw new PerpError("PASSPHRASE_REQUIRED", "No passphrase provided and stdin is non-TTY", {
+            remediation: "Provide passphrase via --passphrase flag, OWS_PASSPHRASE env var, or stdin pipe",
+          });
+        }
+
+        // Capture previous mode (best-effort — info-only, do NOT block on read).
+        let prevMode: HlAbstractionMode | null = null;
+        try {
+          const readAdapter = new HyperliquidAdapter(undefined, isTestnet);
+          const { loadOws } = await import("../signer/ows-loader.js");
+          const ows = loadOws();
+          const wallet = ows.getWallet(masterName);
+          const evmAccount = wallet.accounts.find(
+            (a: { chainId: string }) => a.chainId.startsWith("eip155:"),
+          );
+          if (evmAccount) {
+            readAdapter.setAddress(evmAccount.address);
+            prevMode = await readAdapter._getAbstractionMode();
+          }
+        } catch {
+          // Best-effort previous-mode capture. SSOT Rule #2 forbids fallback
+          // for the primary action, but reading the prior mode is purely
+          // informational metadata — its absence does NOT mask the write.
+          prevMode = null;
+        }
+
+        const result = await runHlSetAbstractionFlow({
+          masterName,
+          passphrase: passphrase ?? "",
+          mode: newMode,
+          isTestnet,
+        });
+
+        if (useJson) {
+          return printJson(jsonOk({
+            mode: result.mode,
+            prevMode,
+            abstraction: result.abstraction,
+            hyperliquidChain: result.hyperliquidChain,
+            nonce: result.nonce,
+            user: result.userEvmAddress,
+            response: result.response,
+          }));
+        }
+        console.log(chalk.green.bold("\n  Hyperliquid account mode updated.\n"));
+        console.log(`  User:      ${chalk.gray(result.userEvmAddress)}`);
+        console.log(`  Network:   ${chalk.gray(result.hyperliquidChain)}`);
+        if (prevMode) console.log(`  Previous:  ${chalk.gray(prevMode)}`);
+        console.log(`  New mode:  ${chalk.cyan(result.mode)} ${chalk.gray(`(${result.abstraction})`)}\n`);
+      } catch (err) {
+        if (useJson) {
+          const e = err instanceof PerpError
+            ? err.structured
+            : { code: "UNKNOWN", message: err instanceof Error ? err.message : String(err) };
+          console.error(JSON.stringify(jsonError(e.code as never, e.message)));
+          process.exit(1);
+        }
+        console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+        process.exit(1);
+      }
+    });
 }

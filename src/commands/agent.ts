@@ -1936,6 +1936,131 @@ async function revokeHlAgent(masterSigner: OwsEvmSigner): Promise<void> {
   // Revoke is best-effort — don't throw on HTTP errors
 }
 
+// ── HL userSetAbstraction (account-mode write) helper ────────────────────────
+
+/** EIP-712 types for HyperliquidTransaction:UserSetAbstraction */
+const HL_USER_SET_ABSTRACTION_TYPES = {
+  "HyperliquidTransaction:UserSetAbstraction": [
+    { name: "hyperliquidChain", type: "string" },
+    { name: "abstraction", type: "string" },
+    { name: "nonce", type: "uint64" },
+  ],
+} as const;
+
+/** Public abstraction modes (CLI surface) → HL on-wire string. */
+const HL_ABSTRACTION_TO_WIRE = {
+  unified: "unifiedAccount",
+  standard: "disabled",
+  portfolio: "portfolioMargin",
+} as const;
+
+export type HlAbstractionMode = keyof typeof HL_ABSTRACTION_TO_WIRE;
+
+interface HlSetAbstractionFlowOpts {
+  masterName: string;
+  passphrase: string;
+  mode: HlAbstractionMode;
+  isTestnet: boolean;
+}
+
+interface HlSetAbstractionFlowResult {
+  mode: HlAbstractionMode;
+  abstraction: string;
+  hyperliquidChain: "Mainnet" | "Testnet";
+  nonce: number;
+  userEvmAddress: `0x${string}`;
+  response: Record<string, unknown>;
+}
+
+/**
+ * Send a Hyperliquid `userSetAbstraction` action.
+ *
+ * Reuses the same EIP-712 user-signed domain (`HyperliquidSignTransaction`,
+ * chainId 42161) and `OwsEvmSigner.signTypedData` plumbing as
+ * `runHlApproveFlow`; the only differences are the type struct
+ * (`UserSetAbstraction` vs `ApproveAgent`) and the action payload.
+ *
+ * Throws `PerpError` with structured remediation on signature/network/venue
+ * failure (Rule #2: no fallback, no silent retry).
+ */
+export async function runHlSetAbstractionFlow(
+  opts: HlSetAbstractionFlowOpts,
+): Promise<HlSetAbstractionFlowResult> {
+  const { masterName, passphrase, mode, isTestnet } = opts;
+  const { ethers } = await import("ethers");
+
+  const masterSigner = OwsEvmSigner.create(masterName, passphrase);
+  const userEvmAddress = masterSigner.getAddress() as `0x${string}`;
+
+  const hyperliquidChain = (isTestnet ? "Testnet" : "Mainnet") as "Mainnet" | "Testnet";
+  const sigChainIdHex = "0xa4b1"; // 42161 hex
+  const abstraction = HL_ABSTRACTION_TO_WIRE[mode];
+  const nonce = Date.now();
+
+  const action = {
+    type: "userSetAbstraction",
+    hyperliquidChain,
+    signatureChainId: sigChainIdHex,
+    user: userEvmAddress,
+    abstraction,
+    nonce,
+  } as Record<string, unknown>;
+
+  const message = {
+    hyperliquidChain,
+    abstraction,
+    nonce,
+  };
+
+  let sigRaw: string;
+  try {
+    sigRaw = await masterSigner.signTypedData(
+      HL_USER_SIGNED_DOMAIN as unknown as Record<string, unknown>,
+      HL_USER_SET_ABSTRACTION_TYPES as unknown as Record<string, Array<{ name: string; type: string }>>,
+      message,
+    );
+  } catch (sigErr) {
+    throw new PerpError("SIGNATURE_FAILED", `HL userSetAbstraction signing failed: ${sigErr instanceof Error ? sigErr.message : String(sigErr)}`, {
+      remediation: "Confirm OWS master is unlocked and passphrase is correct.",
+    });
+  }
+  const parsed = ethers.Signature.from(sigRaw);
+  const signature = { r: parsed.r, s: parsed.s, v: parsed.v };
+
+  const baseUrl = isTestnet ? "https://api.hyperliquid-testnet.xyz" : "https://api.hyperliquid.xyz";
+  const payload = { action, nonce, signature, vaultAddress: null };
+
+  const res = await fetch(`${baseUrl}/exchange`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const text = await res.text();
+  let resp: Record<string, unknown>;
+  try {
+    resp = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new PerpError("EXCHANGE_ERROR", `HL exchange API parse error (${res.status}): ${text.slice(0, 200)}`, {
+      remediation: "Check Hyperliquid API status. Retry: perp wallet manage account-mode <mode>",
+    });
+  }
+  if (resp?.status === "err") {
+    throw new PerpError("EXCHANGE_ERROR", `HL userSetAbstraction failed: ${typeof resp.response === "string" ? resp.response : JSON.stringify(resp)}`, {
+      remediation: "Verify master EVM wallet is the account owner. Retry: perp wallet manage account-mode <mode>",
+    });
+  }
+
+  return {
+    mode,
+    abstraction,
+    hyperliquidChain,
+    nonce,
+    userEvmAddress,
+    response: resp,
+  };
+}
+
 // ── Pacifica agent approve/revoke helpers (Phase 2c) ─────────────────────────
 
 interface PacApproveFlowOpts {
