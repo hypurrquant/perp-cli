@@ -719,7 +719,20 @@ program.parseAsync().then(() => {
   const msg = err instanceof Error ? err.message : String(err);
   if (isJson()) {
     const { jsonError } = await import("./utils.js");
-    console.log(JSON.stringify(jsonError("FATAL", msg)));
+    const { PerpError } = await import("./errors.js");
+    // Preserve typed PerpError code + remediation through the top-level
+    // catch (Rule #2: stay loud, keep semantic envelope).
+    if (err instanceof PerpError) {
+      const s = err.structured;
+      console.log(JSON.stringify(jsonError(s.code, s.message, {
+        status: s.status,
+        retryable: s.retryable,
+        retryAfterMs: s.retryAfterMs,
+        remediation: s.remediation,
+      })));
+    } else {
+      console.log(JSON.stringify(jsonError("FATAL", msg)));
+    }
   } else {
     console.error(chalk.red(msg));
   }
