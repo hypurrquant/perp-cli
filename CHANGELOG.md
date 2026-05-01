@@ -4,6 +4,20 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.12.12] — 2026-05-01
+
+Discovered via HypurrQuant_FE reference comparison: Aster venue rejects master self-signing entirely. Codex's v0.12.11 user/signer split was correct syntax but didn't address the venue rule.
+
+### Changed
+- **Aster requires agent for Tier 2/3** (HIGH) — `aster.ts:_resolveSigner()` now throws `NOT_SUPPORTED` for master/PK self-signing with remediation `perp wallet agent approve aster --master <wallet>`. Per Aster V3 spec, `signer` MUST be a registered API_WALLET (agent); master is never a valid signer. Reference: HypurrQuant_FE `AsterPerpAdapter.ts:773-775`.
+
+### Fixed
+- **Aster signed GET/DELETE 429 retry loop restored** (regression from v0.12.11 dd85a96) — up to 3 attempts with exponential backoff (2s/4s/8s) and fresh nonce/signature per attempt. Non-429 errors still throw immediately.
+- **`alerts.ts:303` env passthrough** — `ASTER_PRIVATE_KEY` was missing from the alerts daemon spawn env list. Fixed (Codex v0.12.11 re-review #5 follow-up).
+
+### Deferred
+- HL portfolio non-USDC collateral math (sum HYPE/BTC/USDH at mark prices) — Codex v0.12.11 re-review #3 PARTIAL. v0.12.11 stderr warning preserved; full math deferred to a separate change once spotMetaAndAssetCtxs pricing logic is in place.
+
 ## [0.12.11] — 2026-05-01
 
 Aggregate fix from Codex independent review of v0.12.0→v0.12.10. 7 commits, +21 tests (1260 → 1281).
@@ -111,7 +125,8 @@ Tagged but never published to npm — paused for the SKILL.md version-sync findi
 ### Security
 - Lighter L2 slot key is no longer stored in `.env` plaintext. Aligned with Aster/HL/PAC agents which were already in OWS vault.
 
-[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.11...HEAD
+[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.12...HEAD
+[0.12.12]: https://github.com/hypurrquant/perp-cli/compare/v0.12.11...v0.12.12
 [0.12.11]: https://github.com/hypurrquant/perp-cli/compare/v0.12.10...v0.12.11
 [0.12.10]: https://github.com/hypurrquant/perp-cli/compare/v0.12.9...v0.12.10
 [0.12.9]: https://github.com/hypurrquant/perp-cli/compare/v0.12.8...v0.12.9
