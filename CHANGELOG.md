@@ -4,6 +4,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.12.9] — 2026-05-01
+
+### Fixed
+- `_getAbstractionMode()` now maps HL's implicit `"default"` response (returned when a user has never invoked `userSetAbstraction`) to `"standard"`. Previously threw `INVALID_PARAMS` UNKNOWN_ACCOUNT_MODE for unset accounts, blocking `getBalance()` for any new HL user. Discovered during v0.12.8 Docker QA on a fresh wallet.
+
 ## [0.12.8] — 2026-05-01
 
 ### Added
@@ -85,7 +90,8 @@ Tagged but never published to npm — paused for the SKILL.md version-sync findi
 ### Security
 - Lighter L2 slot key is no longer stored in `.env` plaintext. Aligned with Aster/HL/PAC agents which were already in OWS vault.
 
-[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.8...HEAD
+[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.9...HEAD
+[0.12.9]: https://github.com/hypurrquant/perp-cli/compare/v0.12.8...v0.12.9
 [0.12.8]: https://github.com/hypurrquant/perp-cli/compare/v0.12.7...v0.12.8
 [0.12.7]: https://github.com/hypurrquant/perp-cli/compare/v0.12.6...v0.12.7
 [0.12.6]: https://github.com/hypurrquant/perp-cli/compare/v0.12.5...v0.12.6

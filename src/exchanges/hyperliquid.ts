@@ -413,6 +413,14 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       if (raw === "unifiedAccount") return "unified";
       if (raw === "portfolioMargin") return "portfolio";
       if (raw === "disabled") return "standard";
+      // "default" is the implicit pre-set value HL returns when a user has
+      // never invoked `userSetAbstraction`. Per HL docs the four modes are
+      // Standard / Unified / Portfolio / (legacy) DEX abstraction. The set
+      // API only accepts the latter three; Standard is the de-facto baseline
+      // for unset accounts. Map "default" → "standard" so accounting branches
+      // pick the perp clearinghouse path. Users can opt into unified explicitly
+      // via `wallet manage account-mode unified`.
+      if (raw === "default") return "standard";
       throw new PerpError(
         "INVALID_PARAMS",
         `UNKNOWN_ACCOUNT_MODE: HL returned unrecognized userAbstraction mode: ${JSON.stringify(raw)}`,
