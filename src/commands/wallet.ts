@@ -652,15 +652,9 @@ export function registerWalletCommands(
         }
       }
 
-      const settings = loadSettings();
-      const referralHint = !settings.referrals
-        ? { referrals: false, hint: "Optional: 'perp settings referrals on' to support perp-cli development (no extra fees — exchange rebates only)" }
-        : undefined;
-
       if (isJson()) return printJson(jsonOk({
         exchange: resolved, address, envFile: ENV_FILE, default: !!opts.default,
         ...(resolved === "lighter" && { lighterApiKey: lighterApiSetup }),
-        ...(referralHint && { referralHint }),
       }));
 
       console.log(chalk.green(`\n  ${resolved} configured.`));
@@ -674,10 +668,6 @@ export function registerWalletCommands(
           console.log(chalk.yellow(`  API Key:  setup failed — ${lighterApiSetup.error}`));
           console.log(chalk.gray(`  You can retry: perp wallet agent approve lighter`));
         }
-      }
-      if (!settings.referrals) {
-        console.log(chalk.gray(`  Optional: ${chalk.cyan("perp settings referrals on")} to support perp-cli development`));
-        console.log(chalk.gray(`  (no extra fees — exchange rebates only)`));
       }
       console.log();
     });

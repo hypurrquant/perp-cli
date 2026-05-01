@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
+import { printJson, jsonOk, withJsonErrors } from "../utils.js";
 import { loadSettings, saveSettings, type Settings, type ExchangeFees } from "../settings.js";
 import type { ExchangeAdapter } from "../exchanges/index.js";
 import { ENV_FILE, loadEnvFile, setEnvVar, EXCHANGE_ENV_MAP, validateKey } from "./init.js";
@@ -40,7 +40,7 @@ export function registerSettingsCommands(
 
         console.log(chalk.cyan.bold("\n  CLI Settings\n"));
         console.log(`  Default Exchange: ${s.defaultExchange ? chalk.cyan(s.defaultExchange) : chalk.gray("pacifica (built-in)")}`);
-        console.log(`  Referrals:        ${s.referrals ? chalk.green("ON") : chalk.gray("OFF (opt-in)")}`);
+        console.log(`  Referrals:        ${chalk.green("MANDATORY (always on)")}`);
         console.log(chalk.white.bold("\n  Referral Codes:"));
         console.log(`    Pacifica:      ${s.referralCodes.pacifica || chalk.gray("(none)")}`);
         console.log(`    Hyperliquid:   ${s.referralCodes.hyperliquid || chalk.gray("(none)")}`);
@@ -55,36 +55,10 @@ export function registerSettingsCommands(
       });
     });
 
-  // ── settings referrals ──
-  settings
-    .command("referrals")
-    .description("Enable or disable referral codes")
-    .argument("<action>", "on | off")
-    .action(async (action: string) => {
-      await withJsonErrors(isJson(), async () => {
-        const s = loadSettings();
-        if (action === "on") {
-          s.referrals = true;
-          // Reset applied flags so referrals get re-sent on next connection
-          s.referralApplied = { hyperliquid: false, lighter: false };
-          saveSettings(s);
-          if (isJson()) return printJson(jsonOk({ referrals: true }));
-          console.log(chalk.green("\n  Referrals enabled. Codes will be sent on next connection.\n"));
-          if (s.referralCodes.pacifica) console.log(`  Pacifica builder code: ${s.referralCodes.pacifica}`);
-          if (s.referralCodes.hyperliquid) console.log(`  Hyperliquid referral:  ${s.referralCodes.hyperliquid}`);
-          if (s.referralCodes.lighter) console.log(`  Lighter referral:      ${s.referralCodes.lighter}`);
-          console.log();
-        } else if (action === "off") {
-          s.referrals = false;
-          saveSettings(s);
-          if (isJson()) return printJson(jsonOk({ referrals: false }));
-          console.log(chalk.yellow("\n  Referrals disabled. No codes will be sent.\n"));
-        } else {
-          if (isJson()) return printJson(jsonError("INVALID_ARGS", `Invalid action "${action}". Usage: perp settings referrals <on|off>`));
-          console.error(chalk.red(`\n  Usage: perp settings referrals <on|off>\n`));
-        }
-      });
-    });
+  // Note: `settings referrals on/off` removed in v0.12 — referral codes are
+  // now mandatory (SSOT-aligned with Pacifica's always-on builder code).
+  // To reset applied flags (force re-send on next connection):
+  //   perp settings set referralApplied.hyperliquid false   (and same for lighter)
 
   // ── settings fees ──
   // Bare `settings fees` shows current tiers (same as `settings fees show`).
@@ -241,8 +215,6 @@ export function registerSettingsCommands(
             return;
           }
           s.defaultExchange = value.toLowerCase();
-        } else if (key === "referrals") {
-          s.referrals = value === "true" || value === "on";
         } else if (key.startsWith("referralCodes.")) {
           const exchange = key.split(".")[1] as keyof Settings["referralCodes"];
           if (exchange in s.referralCodes) {
@@ -251,9 +223,18 @@ export function registerSettingsCommands(
             console.error(chalk.red(`  Unknown exchange: ${exchange}`));
             return;
           }
+        } else if (key.startsWith("referralApplied.")) {
+          // Force re-apply: `set referralApplied.hyperliquid false`
+          const exchange = key.split(".")[1] as keyof Settings["referralApplied"];
+          if (exchange in s.referralApplied) {
+            s.referralApplied[exchange] = value === "true" || value === "on";
+          } else {
+            console.error(chalk.red(`  Unknown exchange: ${exchange}`));
+            return;
+          }
         } else {
           console.error(chalk.red(`  Unknown key: ${key}`));
-          console.log(chalk.gray("  Valid keys: default-exchange, referrals, referralCodes.pacifica, referralCodes.hyperliquid, referralCodes.lighter\n"));
+          console.log(chalk.gray("  Valid keys: default-exchange, referralCodes.{pacifica,hyperliquid,lighter}, referralApplied.{hyperliquid,lighter}\n"));
           return;
         }
 

@@ -100,9 +100,9 @@ export interface Settings {
   defaultExchange: string;
   /** Active OWS wallet name (used when no --ows or --wallet flag) */
   owsActiveWallet: string;
-  /** Enable referral/builder codes (default: false — opt-in only) */
-  referrals: boolean;
-  /** Per-exchange referral codes (used when referrals=true) */
+  /** Per-exchange referral / builder codes (always applied per SSOT Rule #3:
+   *  no opt-out — Pacifica builder code has always been mandatory; HL/LT
+   *  aligned 2026-05-01). */
   referralCodes: {
     pacifica: string;   // builder code (sent per-order, not one-time)
     hyperliquid: string;
@@ -124,7 +124,6 @@ export interface Settings {
 const DEFAULTS: Settings = {
   defaultExchange: "",
   owsActiveWallet: "",
-  referrals: false,
   referralCodes: {
     pacifica: "",
     hyperliquid: "HYPERCASH",
@@ -163,7 +162,6 @@ export function loadSettings(): Settings {
     return {
       defaultExchange: stored.defaultExchange ?? DEFAULTS.defaultExchange,
       owsActiveWallet: stored.owsActiveWallet ?? DEFAULTS.owsActiveWallet,
-      referrals: stored.referrals ?? DEFAULTS.referrals,
       referralCodes: {
         pacifica: stored.referralCodes?.pacifica ?? DEFAULTS.referralCodes.pacifica,
         hyperliquid: stored.referralCodes?.hyperliquid ?? DEFAULTS.referralCodes.hyperliquid,

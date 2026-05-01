@@ -171,7 +171,7 @@ async function getAdapter(): Promise<ExchangeAdapter> {
       await _hlAdapter.init();
       if (pk) {
         const hlSettings = loadSettings();
-        if (hlSettings.referrals && !hlSettings.referralApplied.hyperliquid) {
+        if (!hlSettings.referralApplied.hyperliquid) {
           const hlRef = process.env.HL_REFERRAL_CODE || hlSettings.referralCodes.hyperliquid;
           if (hlRef) {
             _hlAdapter.autoSetReferrer(hlRef).then(() => {
@@ -230,7 +230,7 @@ async function getAdapter(): Promise<ExchangeAdapter> {
       // signer's auth token, not the master EVM). Trigger on any active
       // signer tier — agent / OWS master / PK direct — gated by isReadOnly.
       const ltSettings = loadSettings();
-      if (ltSettings.referrals && !ltSettings.referralApplied.lighter && !_lighterAdapter.isReadOnly) {
+      if (!ltSettings.referralApplied.lighter && !_lighterAdapter.isReadOnly) {
         const ltRef = process.env.LIGHTER_REFERRAL_CODE || ltSettings.referralCodes.lighter;
         if (ltRef) {
           _lighterAdapter.useReferralCode(ltRef).then(() => {
@@ -441,7 +441,7 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
       await _hlAdapter.init();
       if (pk) {
         const s2 = loadSettings();
-        if (s2.referrals && !s2.referralApplied.hyperliquid) {
+        if (!s2.referralApplied.hyperliquid) {
           const hlRef = process.env.HL_REFERRAL_CODE || s2.referralCodes.hyperliquid;
           if (hlRef) {
             _hlAdapter.autoSetReferrer(hlRef).then(() => {
@@ -489,7 +489,7 @@ async function getAdapterForExchange(rawExchange: string): Promise<ExchangeAdapt
       // LT referral apply is L2-signed; trigger on any active tier (agent
       // included), gated by isReadOnly. See first LT case for rationale.
       const s3 = loadSettings();
-      if (s3.referrals && !s3.referralApplied.lighter && !_lighterAdapter.isReadOnly) {
+      if (!s3.referralApplied.lighter && !_lighterAdapter.isReadOnly) {
         const ltRef = process.env.LIGHTER_REFERRAL_CODE || s3.referralCodes.lighter;
         if (ltRef) {
           _lighterAdapter.useReferralCode(ltRef).then(() => {
