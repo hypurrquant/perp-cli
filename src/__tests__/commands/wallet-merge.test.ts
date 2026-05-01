@@ -136,6 +136,35 @@ describe("wallet merge — relocated commands are reachable", () => {
     consoleSpy.mockRestore();
   });
 
+  it("C4: wallet key create — parent --passphrase shadows subcommand flag (optsWithGlobals merge)", async () => {
+    // Reproduces the parent-shadow bug: when the parent program defines
+    // `--passphrase` (as `index.ts` does globally) and the user passes it
+    // BEFORE the subcommand, Commander v13 silently consumes it on the
+    // parent. The subcommand action's `opts.passphrase` then defaults to
+    // the empty string. Without optsWithGlobals(), createApiKey would
+    // receive "" and silently encrypt with the wrong passphrase.
+    const prog = new Command();
+    prog.exitOverride();
+    prog.configureOutput({ writeErr: () => {}, writeOut: () => {} });
+    // Mirror the global passphrase flag from src/index.ts:83
+    prog.option("--passphrase <pp>", "Master OWS passphrase");
+    registerWalletCommands(prog, () => true);
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await prog.parseAsync([
+      "node", "perp",
+      "--passphrase", "PARENT_VALUE",
+      "wallet", "key", "create",
+      "--name", "trading-bot",
+      "--wallets", "main",
+    ]);
+
+    expect(mockOws.createApiKey).toHaveBeenCalledTimes(1);
+    // 4th positional arg is the passphrase (createApiKey signature: name, walletIds, policyIds, passphrase, expires).
+    expect(mockOws.createApiKey.mock.calls[0][3]).toBe("PARENT_VALUE");
+    consoleSpy.mockRestore();
+  });
+
   it("wallet key revoke reaches OWS revokeApiKey handler", async () => {
     const prog = makeProgram();
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});

@@ -1284,12 +1284,19 @@ export function registerWalletCommands(
     .option("--policy <ids>", "Comma-separated policy IDs to enforce")
     .option("--expires <iso>", "Key expiry (ISO-8601)")
     .option("-p, --passphrase <pass>", "Vault passphrase", "")
-    .action(async (opts: { name: string; wallets: string; policy?: string; expires?: string; passphrase: string }) => {
+    .action(async (opts: { name: string; wallets: string; policy?: string; expires?: string; passphrase: string }, command: Command) => {
       try {
         const o = loadOws();
         const walletIds = opts.wallets.split(",").map(s => s.trim());
         const policyIds = opts.policy ? opts.policy.split(",").map(s => s.trim()) : [];
-        const result = o.createApiKey(opts.name, walletIds, policyIds, opts.passphrase, opts.expires);
+        // optsWithGlobals() merges parent + subcommand options, so --passphrase
+        // works whether placed on `perp --passphrase X wallet key create` (parent)
+        // or `perp wallet key create --passphrase X` (subcommand). Without this
+        // merge, Commander v13 silently shadows the subcommand flag with the
+        // parent flag and opts.passphrase becomes the empty-string default.
+        const merged = command.optsWithGlobals();
+        const passphrase = (merged.passphrase as string | undefined) ?? opts.passphrase;
+        const result = o.createApiKey(opts.name, walletIds, policyIds, passphrase, opts.expires);
 
         if (isJson()) return printJson(jsonOk({ id: result.id, name: result.name, token: result.token, wallets: walletIds, policies: policyIds, expires: opts.expires ?? null }));
         console.log(chalk.green.bold("\n  OWS API Key Created\n"));
