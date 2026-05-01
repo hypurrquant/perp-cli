@@ -421,6 +421,11 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       // pick the perp clearinghouse path. Users can opt into unified explicitly
       // via `wallet manage account-mode unified`.
       if (raw === "default") return "standard";
+      // "dexAbstraction" is HL's legacy fourth mode, slated for deprecation
+      // but still returned by the venue for some users. Per HL docs the spot
+      // pool acts as collateral (same accounting semantics as unified), so
+      // route through the unified branch rather than throwing.
+      if (raw === "dexAbstraction") return "unified";
       throw new PerpError(
         "INVALID_PARAMS",
         `UNKNOWN_ACCOUNT_MODE: HL returned unrecognized userAbstraction mode: ${JSON.stringify(raw)}`,
@@ -462,6 +467,12 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     // - "standard": separate perp/spot accounting; perp clearinghouse is the
     //   only collateral source. Required mode for builder fee accrual.
     // HIP-3 dex accounts (this._dex) always use standard semantics.
+    //
+    // Portfolio-margin mode: per HL portfolio-margin docs, eligible collateral
+    // includes HYPE, BTC, USDH, USDC. We currently use USDC-only as a minimum
+    // viable baseline (mark-priced multi-asset accounting requires fetching
+    // spot mark prices and is deferred to a follow-up). Emit a stderr note so
+    // users see the breakdown when non-USDC collateral is present.
     const mode = await this._getAbstractionMode();
     if (mode === "unified" || mode === "portfolio") {
       const spotState = await this._getSpotClearinghouseState();
@@ -471,6 +482,22 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       const spotHold = Number(usdc?.hold ?? 0);
       equity = spotTotal;
       available = spotTotal - spotHold;
+      if (mode === "portfolio") {
+        const PORTFOLIO_COLLATERAL = ["HYPE", "BTC", "USDH"];
+        const nonUsdc = balances.filter((b) => {
+          const coin = String(b.coin);
+          if (coin.startsWith("USDC")) return false;
+          if (Number(b.total ?? 0) <= 0) return false;
+          return PORTFOLIO_COLLATERAL.some((c) => coin === c || coin.startsWith(`${c}-`));
+        });
+        if (nonUsdc.length > 0) {
+          const summary = nonUsdc.map((b) => `${b.coin}=${b.total}`).join(", ");
+          process.stderr.write(
+            `[hl] portfolio mode: non-USDC collateral present but not counted in equity (${summary}). ` +
+            `Equity reflects USDC only; full multi-asset accounting pending.\n`,
+          );
+        }
+      }
     } else {
       // mode === "standard"
       equity = Number(margin.accountValue ?? cross.accountValue ?? 0);
