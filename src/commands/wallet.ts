@@ -331,8 +331,9 @@ export function registerWalletCommands(
     .description("Generate a new wallet (OWS encrypted vault, multi-chain)")
     .option("--words <count>", "Mnemonic word count (12 or 24)", "12")
     .option("--show-mnemonic", "Display the mnemonic phrase (CAUTION)")
+    .option("--passphrase <pp>", "Master OWS passphrase (fallback: OWS_PASSPHRASE env / stdin)")
     .option("--legacy <chain>", "Legacy mode: generate solana or evm key (unencrypted)")
-    .action(async (name: string | undefined, opts: { words: string; showMnemonic?: boolean; legacy?: string }) => {
+    .action(async (name: string | undefined, opts: { words: string; showMnemonic?: boolean; passphrase?: string; legacy?: string }) => {
       // Legacy mode for backward compat
       if (opts.legacy) {
         return _legacyGenerate(opts.legacy, name, isJson);
@@ -340,8 +341,15 @@ export function registerWalletCommands(
 
       const walletName = name || "default";
       try {
+        // Resolve vault passphrase via the standard 3-path resolver (--passphrase
+        // > OWS_PASSPHRASE env > stdin pipe). When stdin is a TTY and nothing was
+        // provided, the resolver returns null; fall back to "" to preserve the
+        // historical "no passphrase" default for interactive use.
+        const { resolvePassphrase } = await import("../agent-wallet/passphrase.js");
+        const pp = (await resolvePassphrase({ flag: opts.passphrase })) ?? "";
+
         const ows = loadOws();
-        const w = ows.createWallet(walletName, "", parseInt(opts.words));
+        const w = ows.createWallet(walletName, pp, parseInt(opts.words));
 
         // Set as active wallet
         const { loadSettings: ls, saveSettings: ss } = await import("../settings.js");
@@ -402,7 +410,7 @@ export function registerWalletCommands(
     .option("--evm <hex>", "EVM (secp256k1) private key — use with --solana to import both curves")
     .option("--solana <key>", "Solana (ed25519) private key — accepts hex (64), base58 (Phantom export), or JSON byte array. Use with --evm to import both curves")
     .option("--mnemonic", "Import as mnemonic phrase instead of private key")
-    .option("--passphrase <pp>", "OWS vault encryption passphrase (default: empty / OWS_PASSPHRASE env)")
+    .option("--passphrase <pp>", "Master OWS passphrase (fallback: OWS_PASSPHRASE env / stdin)")
     .option("--legacy <chain>", "Legacy mode: import to wallets.json (solana or evm)")
     .action(async (privateKey: string | undefined, opts: { name: string; chain: string; evm?: string; solana?: string; mnemonic?: boolean; passphrase?: string; legacy?: string }) => {
       // Legacy mode (positional only)
@@ -470,9 +478,12 @@ export function registerWalletCommands(
           }
         };
 
-        // Resolve vault passphrase (precedence: --passphrase > OWS_PASSPHRASE env > "")
-        const pp = opts.passphrase
-          ?? (("OWS_PASSPHRASE" in process.env) ? (process.env["OWS_PASSPHRASE"] ?? "") : "");
+        // Resolve vault passphrase via the standard 3-path resolver (--passphrase
+        // > OWS_PASSPHRASE env > stdin pipe). When stdin is a TTY and nothing was
+        // provided, the resolver returns null; fall back to "" to preserve the
+        // historical "no passphrase" default for interactive use.
+        const { resolvePassphrase } = await import("../agent-wallet/passphrase.js");
+        const pp = (await resolvePassphrase({ flag: opts.passphrase })) ?? "";
 
         let w;
         if (opts.mnemonic) {
