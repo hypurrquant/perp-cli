@@ -17,6 +17,7 @@ import { loadPrivateKey, tryLoadPrivateKey, parseSolanaKeypair, type Exchange } 
 import { PacificaAdapter } from "./exchanges/pacifica.js";
 import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
 import { LighterAdapter } from "./exchanges/lighter.js";
+import { AsterAdapter } from "./exchanges/aster.js";
 import {
   fetchPacificaPrices,
   fetchHyperliquidMeta,
@@ -59,8 +60,14 @@ async function getOrCreateAdapter(exchange: string): Promise<ExchangeAdapter> {
       adapter = lt;
       break;
     }
+    case "aster": {
+      const ast = new AsterAdapter(pk);
+      await ast.init();
+      adapter = ast;
+      break;
+    }
     default:
-      throw new Error(`Unknown exchange: ${exchange}. Supported: pacifica, hyperliquid, lighter`);
+      throw new Error(`Unknown exchange: ${exchange}. Supported: pacifica, hyperliquid, lighter, aster`);
   }
 
   adapters.set(key, adapter);
@@ -90,8 +97,14 @@ async function fetchMarketsPublic(exchange: string) {
   } else if (ex === "lighter" || ex === "lt") {
     const data = await fetchLighterOrderBookDetails();
     return data.map(d => ({ symbol: d.symbol, markPrice: String(d.lastTradePrice), indexPrice: String(d.lastTradePrice), fundingRate: "0", volume24h: "0", openInterest: "0", maxLeverage: 20 }));
+  } else if (ex === "aster" || ex === "ast") {
+    // Aster has no shared-api helper; AsterAdapter.getMarkets() uses
+    // public-only endpoints (exchangeInfo + ticker/24hr + premiumIndex).
+    const ast = new AsterAdapter();
+    await ast.init();
+    return ast.getMarkets();
   }
-  throw new Error(`Unknown exchange: ${exchange}. Supported: pacifica, hyperliquid, lighter`);
+  throw new Error(`Unknown exchange: ${exchange}. Supported: pacifica, hyperliquid, lighter, aster`);
 }
 
 /** Fetch orderbook using public API (no key needed) */
@@ -125,6 +138,11 @@ async function fetchOrderbookPublic(exchange: string, symbol: string): Promise<{
       bids: (data.l?.[0] ?? []).map(e => [e.p, e.a] as [string, string]),
       asks: (data.l?.[1] ?? []).map(e => [e.p, e.a] as [string, string]),
     };
+  } else if (ex === "aster" || ex === "ast") {
+    // AsterAdapter.getOrderbook() uses /fapi/v1/depth (public).
+    const ast = new AsterAdapter();
+    await ast.init();
+    return ast.getOrderbook(symbol);
   }
   throw new Error(`Unknown exchange: ${exchange}`);
 }
@@ -156,7 +174,7 @@ const server = new McpServer(
 server.tool(
   "get_markets",
   "Get all available perpetual futures markets on an exchange, including price, funding rate, volume, and max leverage. Works without API keys.",
-  { exchange: z.string().describe("Exchange name: pacifica, hyperliquid, or lighter") },
+  { exchange: z.string().describe("Exchange name: pacifica, hyperliquid, lighter, or aster") },
   async ({ exchange }) => {
     try {
       // Try adapter first (richer data), fall back to public API (no key needed)
@@ -177,7 +195,7 @@ server.tool(
   "get_orderbook",
   "Get the order book (bids and asks) for a symbol on an exchange. Works without API keys.",
   {
-    exchange: z.string().describe("Exchange name: pacifica, hyperliquid, or lighter"),
+    exchange: z.string().describe("Exchange name: pacifica, hyperliquid, lighter, or aster"),
     symbol: z.string().describe("Trading pair symbol, e.g. BTC, ETH, SOL"),
   },
   async ({ exchange, symbol }) => {
@@ -198,7 +216,7 @@ server.tool(
 
 server.tool(
   "get_funding_rates",
-  "Compare funding rates across all 3 exchanges (Pacifica, Hyperliquid, Lighter). Returns rates per symbol with spread analysis",
+  "Compare funding rates across all 4 exchanges (Pacifica, Hyperliquid, Lighter, Aster). Returns rates per symbol with spread analysis",
   {
     symbols: z
       .array(z.string())
@@ -223,7 +241,7 @@ server.tool(
 
 server.tool(
   "get_prices",
-  "Get cross-exchange prices for symbols. Fetches mark prices from all 3 exchanges for comparison",
+  "Get cross-exchange prices for symbols. Fetches mark prices from all 4 exchanges for comparison",
   {
     symbols: z
       .array(z.string())
@@ -232,10 +250,17 @@ server.tool(
   },
   async ({ symbols }) => {
     try {
-      const [pacifica, hl, lighter] = await Promise.all([
+      // Aster has no shared-api helper; use AsterAdapter.getMarkets() (public).
+      const asterMarkets = (async () => {
+        const ast = new AsterAdapter();
+        await ast.init();
+        return ast.getMarkets();
+      })();
+      const [pacifica, hl, lighter, aster] = await Promise.all([
         fetchPacificaPrices(),
         fetchHyperliquidMeta(),
         fetchLighterOrderBookDetails(),
+        asterMarkets,
       ]);
 
       const filter = symbols ? new Set(symbols.map(s => s.toUpperCase())) : null;
@@ -260,6 +285,12 @@ server.tool(
         if (!priceMap.has(sym)) priceMap.set(sym, {});
         priceMap.get(sym)!.lighter = m.lastTradePrice;
       }
+      for (const a of aster) {
+        const sym = a.symbol.toUpperCase();
+        if (filter && !filter.has(sym)) continue;
+        if (!priceMap.has(sym)) priceMap.set(sym, {});
+        priceMap.get(sym)!.aster = Number(a.markPrice);
+      }
 
       const data = Array.from(priceMap.entries()).map(([symbol, prices]) => ({ symbol, prices }));
       return { content: [{ type: "text", text: ok(data, { count: data.length }) }] };
@@ -276,7 +307,7 @@ server.tool(
 server.tool(
   "get_balance",
   "Get account balance (equity, available margin, margin used, unrealized PnL) on an exchange",
-  { exchange: z.string().describe("Exchange name: pacifica, hyperliquid, or lighter") },
+  { exchange: z.string().describe("Exchange name: pacifica, hyperliquid, lighter, or aster") },
   async ({ exchange }) => {
     try {
       const adapter = await getOrCreateAdapter(exchange);
@@ -291,7 +322,7 @@ server.tool(
 server.tool(
   "get_positions",
   "Get all open positions on an exchange, including size, entry price, PnL, leverage",
-  { exchange: z.string().describe("Exchange name: pacifica, hyperliquid, or lighter") },
+  { exchange: z.string().describe("Exchange name: pacifica, hyperliquid, lighter, or aster") },
   async ({ exchange }) => {
     try {
       const adapter = await getOrCreateAdapter(exchange);
@@ -306,7 +337,7 @@ server.tool(
 server.tool(
   "get_open_orders",
   "Get all open/pending orders on an exchange",
-  { exchange: z.string().describe("Exchange name: pacifica, hyperliquid, or lighter") },
+  { exchange: z.string().describe("Exchange name: pacifica, hyperliquid, lighter, or aster") },
   async ({ exchange }) => {
     try {
       const adapter = await getOrCreateAdapter(exchange);
@@ -320,10 +351,10 @@ server.tool(
 
 server.tool(
   "portfolio",
-  "Cross-exchange portfolio summary: balances, positions, and risk metrics across all exchanges",
+  "Cross-exchange portfolio summary: balances, positions, and risk metrics across all 4 exchanges",
   {},
   async () => {
-    const EXCHANGES = ["pacifica", "hyperliquid", "lighter"] as const;
+    const EXCHANGES = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
 
     interface ExchangeSnapshot {
       exchange: string;
@@ -422,7 +453,7 @@ server.tool(
   "Given a natural language trading goal, suggest the exact perp CLI commands to run. Does NOT execute anything — only returns commands for the user to review and run manually",
   {
     goal: z.string().describe("Natural language goal, e.g. 'buy 0.1 BTC on pacifica', 'close all positions', 'check funding arb opportunities'"),
-    exchange: z.string().optional().describe("Preferred exchange (default: pacifica). Options: pacifica, hyperliquid, lighter"),
+    exchange: z.string().optional().describe("Preferred exchange (default: pacifica). Options: pacifica, hyperliquid, lighter, aster"),
   },
   async ({ goal, exchange }) => {
     try {
@@ -435,7 +466,7 @@ server.tool(
         const size = extractNumber(g) || "<size>";
         steps.push(
           { step: 1, command: `perp -e ${ex} --json market book ${symbol}`, description: `Check ${symbol} orderbook and liquidity` },
-          { step: 2, command: `perp -e ${ex} --json account balance`, description: "Check available balance and margin" },
+          { step: 2, command: `perp -e ${ex} --json portfolio`, description: "Check available balance and margin" },
           { step: 3, command: `perp -e ${ex} --json trade check ${symbol} buy ${size}`, description: "Pre-flight validation (dry run)" },
           { step: 4, command: `perp -e ${ex} --json trade market ${symbol} buy ${size}`, description: `Buy ${size} ${symbol} at market`, dangerous: true },
           { step: 5, command: `perp -e ${ex} --json account positions`, description: "Verify position opened" },
@@ -445,7 +476,7 @@ server.tool(
         const size = extractNumber(g) || "<size>";
         steps.push(
           { step: 1, command: `perp -e ${ex} --json market book ${symbol}`, description: `Check ${symbol} orderbook and liquidity` },
-          { step: 2, command: `perp -e ${ex} --json account balance`, description: "Check available balance and margin" },
+          { step: 2, command: `perp -e ${ex} --json portfolio`, description: "Check available balance and margin" },
           { step: 3, command: `perp -e ${ex} --json trade check ${symbol} sell ${size}`, description: "Pre-flight validation (dry run)" },
           { step: 4, command: `perp -e ${ex} --json trade market ${symbol} sell ${size}`, description: `Sell ${size} ${symbol} at market`, dangerous: true },
           { step: 5, command: `perp -e ${ex} --json account positions`, description: "Verify position opened" },
@@ -456,7 +487,7 @@ server.tool(
         const side = g.includes("sell") || g.includes("short") ? "sell" : "buy";
         steps.push(
           { step: 1, command: `perp -e ${ex} --json market book ${symbol}`, description: `Check ${symbol} orderbook for price levels` },
-          { step: 2, command: `perp -e ${ex} --json account balance`, description: "Check available balance" },
+          { step: 2, command: `perp -e ${ex} --json portfolio`, description: "Check available balance" },
           { step: 3, command: `perp -e ${ex} --json trade limit ${symbol} ${side} <price> ${size}`, description: `Place limit ${side} order`, dangerous: true },
           { step: 4, command: `perp -e ${ex} --json account orders`, description: "Verify order placed" },
         );
@@ -491,7 +522,7 @@ server.tool(
         const side = g.includes("sell") || g.includes("short") ? "sell" : "buy";
         steps.push(
           { step: 1, command: `perp -e ${ex} --json market book ${symbol}`, description: "Check current prices" },
-          { step: 2, command: `perp -e ${ex} --json account balance`, description: "Check available balance" },
+          { step: 2, command: `perp -e ${ex} --json portfolio`, description: "Check available balance" },
           { step: 3, command: `perp -e ${ex} --json trade scale-in ${symbol} ${side} --levels '<price1>:<size>,<price2>:<size>'`, description: "Place scaled entry orders at multiple levels", dangerous: true },
         );
       } else if (g.includes("tpsl") || g.includes("tp/sl") || g.includes("tp sl") || (g.includes("take profit") && g.includes("stop loss"))) {
@@ -520,7 +551,7 @@ server.tool(
         const side = g.includes("sell") || g.includes("short") ? "sell" : "buy";
         steps.push(
           { step: 1, command: `perp -e ${ex} --json market book ${symbol}`, description: `Check ${symbol} orderbook depth` },
-          { step: 2, command: `perp -e ${ex} --json account balance`, description: "Check available balance" },
+          { step: 2, command: `perp -e ${ex} --json portfolio`, description: "Check available balance" },
           { step: 3, command: `perp -e ${ex} --json trade split ${symbol} ${side} ${amount}`, description: `Split ${side} $${amount} ${symbol} into depth-based slices`, dangerous: true },
           { step: 4, command: `perp -e ${ex} --json account positions`, description: "Verify position opened" },
         );
@@ -529,7 +560,7 @@ server.tool(
         const size = extractNumber(g) || "<size>";
         const side = g.includes("sell") || g.includes("short") ? "sell" : "buy";
         steps.push(
-          { step: 1, command: `perp -e ${ex} --json account balance`, description: "Check available balance" },
+          { step: 1, command: `perp -e ${ex} --json portfolio`, description: "Check available balance" },
           { step: 2, command: `perp -e ${ex} --json trade twap ${symbol} ${side} ${size} <duration>`, description: `TWAP ${side} ${size} ${symbol} over duration`, dangerous: true },
         );
       } else if (g.includes("reduce")) {
@@ -583,7 +614,7 @@ server.tool(
           const amount = extractNumber(g) || "<amount>";
           const side = g.includes("sell") || g.includes("short") ? "sell" : "buy";
           steps.push(
-            { step: 1, command: `perp -e ${ex} --json account balance`, description: "Check available balance" },
+            { step: 1, command: `perp -e ${ex} --json portfolio`, description: "Check available balance" },
             { step: 2, command: `perp -e ${ex} --json strategy quick-dca ${symbol} ${side} ${amount} <interval>`, description: "Start DCA bot", dangerous: true },
             { step: 3, command: "perp --json background list", description: "Verify bot is running" },
           );
@@ -689,7 +720,7 @@ server.tool(
       } else if (g.includes("withdraw")) {
         const amount = extractNumber(g) || "<amount>";
         steps.push(
-          { step: 1, command: `perp -e ${ex} --json account balance`, description: "Check available balance" },
+          { step: 1, command: `perp -e ${ex} --json portfolio`, description: "Check available balance" },
           { step: 2, command: `perp --json funds withdraw ${ex} ${amount}`, description: `Withdraw $${amount} from ${ex}`, dangerous: true },
           { step: 3, command: "perp --json wallet balance", description: "Verify withdrawal received" },
         );
@@ -1192,21 +1223,33 @@ server.tool(
 
 server.tool(
   "health_check",
-  "Ping all exchanges and return connectivity status and latency",
+  "Ping all 4 exchanges and return connectivity status and latency",
   {},
   async () => {
     try {
-      const [pacifica, hyperliquid, lighter] = await Promise.all([
+      // Aster has no shared-api ping helper; ping /fapi/v1/time directly.
+      const pingAster = async (): Promise<{ ok: boolean; latencyMs: number; status: number }> => {
+        const start = Date.now();
+        try {
+          const res = await fetch("https://fapi.asterdex.com/fapi/v1/time");
+          return { ok: res.ok, latencyMs: Date.now() - start, status: res.status };
+        } catch {
+          return { ok: false, latencyMs: Date.now() - start, status: 0 };
+        }
+      };
+      const [pacifica, hyperliquid, lighter, aster] = await Promise.all([
         pingPacifica(),
         pingHyperliquid(),
         pingLighter(),
+        pingAster(),
       ]);
 
       const result = {
         pacifica: { ...pacifica, statusText: pacifica.ok ? "healthy" : "unreachable" },
         hyperliquid: { ...hyperliquid, statusText: hyperliquid.ok ? "healthy" : "unreachable" },
         lighter: { ...lighter, statusText: lighter.ok ? "healthy" : "unreachable" },
-        allHealthy: pacifica.ok && hyperliquid.ok && lighter.ok,
+        aster: { ...aster, statusText: aster.ok ? "healthy" : "unreachable" },
+        allHealthy: pacifica.ok && hyperliquid.ok && lighter.ok && aster.ok,
       };
 
       return { content: [{ type: "text", text: ok(result) }] };
@@ -1444,7 +1487,7 @@ server.tool(
   "trade_preview",
   "Preview a trade WITHOUT executing. Returns estimated fill price, fees, margin impact, and risk checks. ALWAYS call this before trade_execute and show the result to the user for confirmation.",
   {
-    exchange: z.string().describe("Exchange: pacifica, hyperliquid, or lighter"),
+    exchange: z.string().describe("Exchange: pacifica, hyperliquid, lighter, or aster"),
     symbol: z.string().describe("Trading symbol (e.g., BTC, ETH, SOL)"),
     side: z.enum(["buy", "sell"]).describe("Order side"),
     size: z.string().describe("Order size (base currency units, e.g., '0.1' for 0.1 BTC)"),
@@ -1530,7 +1573,7 @@ server.tool(
   "trade_execute",
   "Execute a trade. IMPORTANT: Always call trade_preview first and get explicit user confirmation before calling this tool. Supports market and limit orders.",
   {
-    exchange: z.string().describe("Exchange: pacifica, hyperliquid, or lighter"),
+    exchange: z.string().describe("Exchange: pacifica, hyperliquid, lighter, or aster"),
     symbol: z.string().describe("Trading symbol (e.g., BTC, ETH, SOL)"),
     side: z.enum(["buy", "sell"]).describe("Order side"),
     size: z.string().describe("Order size (base currency units)"),
@@ -1575,7 +1618,7 @@ server.tool(
   "trade_close",
   "Close an existing position. IMPORTANT: Call trade_preview first with the opposite side to show impact, then get user confirmation.",
   {
-    exchange: z.string().describe("Exchange: pacifica, hyperliquid, or lighter"),
+    exchange: z.string().describe("Exchange: pacifica, hyperliquid, lighter, or aster"),
     symbol: z.string().describe("Symbol to close (e.g., BTC, ETH)"),
   },
   async ({ exchange, symbol }) => {
