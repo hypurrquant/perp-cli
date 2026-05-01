@@ -339,7 +339,14 @@ async function fetchExchangeEntry(
             valueUsd: base === "USDC" ? Number(b.total) : (priceMap.get(base) ?? 0) * Number(b.total),
           };
         });
-        isUnified = !isDexCapable(adapter) || !adapter.dex;
+        // Read the actual abstraction mode (populated during init()) instead
+        // of assuming all main HL accounts are unified. Standard/default mode
+        // accounts must include spot USDC in totalAccountValueUsd because
+        // perp equity does NOT contain it. HIP-3 dex accounts always run
+        // standard semantics. Codex v0.12.12 final QA #1.
+        const hlAdapter = adapter as InstanceType<typeof HyperliquidAdapter>;
+        const dexScoped = isDexCapable(adapter) && !!adapter.dex;
+        isUnified = !dexScoped && hlAdapter.isUnifiedAccount === true;
       } else if (exName === "lighter") {
         const { LighterAdapter } = await import("../exchanges/lighter.js");
         const { LighterSpotAdapter } = await import("../exchanges/lighter-spot.js");

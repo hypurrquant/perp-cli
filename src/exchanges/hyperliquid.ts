@@ -18,7 +18,14 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   readonly name = "hyperliquid";
   readonly chain = "evm";
   readonly aliases = ["hl"] as const;
-  readonly isUnifiedAccount = true;
+  /**
+   * Reflects whether perp + spot share the same USDC pool (true for unified /
+   * portfolio mode) or are separately margined (false for standard mode and
+   * HIP-3 dex accounts). Populated during init() from _getAbstractionMode();
+   * defaults to false until init resolves so callers never assume unified
+   * semantics for accounts that have never opted in. Codex v0.12.12 final QA #1.
+   */
+  isUnifiedAccount = false;
   private sdk: Hyperliquid;
   private _address: string;
   private _privateKey: string;
@@ -179,6 +186,22 @@ export class HyperliquidAdapter implements ExchangeAdapter {
 
     // Build asset index map
     await this._loadAssetMap();
+
+    // Resolve abstraction mode → isUnifiedAccount flag for callers
+    // (portfolio accounting + spot-perp arb sizing). Standard/HIP-3 dex
+    // accounts are NOT unified (perp + spot are separately margined).
+    // Read-only paths (no address yet) can't query userAbstraction; leave the
+    // default false until a downstream caller invokes setAddress + the cache
+    // populates during getBalance(). Codex v0.12.12 final QA #1.
+    if (this._address) {
+      try {
+        const mode = await this._getAbstractionMode();
+        this.isUnifiedAccount = mode === "unified" || mode === "portfolio";
+      } catch {
+        // If userAbstraction lookup fails, retain conservative default
+        // (false). getBalance() will surface the underlying error when called.
+      }
+    }
   }
 
   /** Load asset index map — supports native and HIP-3 dex. */

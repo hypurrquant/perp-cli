@@ -77,3 +77,109 @@ describe("HyperliquidAdapter._getAbstractionMode — C3 mapping", () => {
     expect(e.structured?.remediation ?? "").toContain("Settings");
   });
 });
+
+// ─── Codex v0.12.12 final QA #1: isUnifiedAccount tracks abstraction mode ───
+// Replaces the static `readonly isUnifiedAccount = true` field that caused
+// portfolio.ts and bot strategies to silently undercount standard-mode HL
+// accounts (perp equity excludes spot USDC under standard, but portfolio.ts
+// dropped spot USDC on the assumption of unified). isUnifiedAccount is now
+// populated during init() from _getAbstractionMode().
+describe("HyperliquidAdapter.isUnifiedAccount — derived from abstraction mode (C1)", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("standard mode → isUnifiedAccount === false (portfolio must add spot USDC)", async () => {
+    const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
+    const hl = new HyperliquidAdapter(undefined, false);
+    hl.setAddress("0xabcdef0000000000000000000000000000000001");
+    (hl as unknown as { _infoPost: (b: unknown) => Promise<unknown> })._infoPost =
+      vi.fn().mockResolvedValue("disabled");
+    // Stub sdk.connect / asset map loader so init() reaches the mode lookup
+    (hl as unknown as { sdk: { connect: () => Promise<void> }; _loadAssetMap: () => Promise<void> }).sdk =
+      { connect: vi.fn().mockResolvedValue(undefined) } as unknown as { connect: () => Promise<void> };
+    (hl as unknown as { _loadAssetMap: () => Promise<void> })._loadAssetMap =
+      vi.fn().mockResolvedValue(undefined);
+
+    await hl.init();
+    expect(hl.isUnifiedAccount).toBe(false);
+  });
+
+  it("default (legacy unset) → isUnifiedAccount === false (standard semantics)", async () => {
+    const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
+    const hl = new HyperliquidAdapter(undefined, false);
+    hl.setAddress("0xabcdef0000000000000000000000000000000002");
+    (hl as unknown as { _infoPost: (b: unknown) => Promise<unknown> })._infoPost =
+      vi.fn().mockResolvedValue("default");
+    (hl as unknown as { sdk: { connect: () => Promise<void> }; _loadAssetMap: () => Promise<void> }).sdk =
+      { connect: vi.fn().mockResolvedValue(undefined) } as unknown as { connect: () => Promise<void> };
+    (hl as unknown as { _loadAssetMap: () => Promise<void> })._loadAssetMap =
+      vi.fn().mockResolvedValue(undefined);
+
+    await hl.init();
+    expect(hl.isUnifiedAccount).toBe(false);
+  });
+
+  it("unifiedAccount → isUnifiedAccount === true (spot USDC already in perp equity)", async () => {
+    const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
+    const hl = new HyperliquidAdapter(undefined, false);
+    hl.setAddress("0xabcdef0000000000000000000000000000000003");
+    (hl as unknown as { _infoPost: (b: unknown) => Promise<unknown> })._infoPost =
+      vi.fn().mockResolvedValue("unifiedAccount");
+    (hl as unknown as { sdk: { connect: () => Promise<void> }; _loadAssetMap: () => Promise<void> }).sdk =
+      { connect: vi.fn().mockResolvedValue(undefined) } as unknown as { connect: () => Promise<void> };
+    (hl as unknown as { _loadAssetMap: () => Promise<void> })._loadAssetMap =
+      vi.fn().mockResolvedValue(undefined);
+
+    await hl.init();
+    expect(hl.isUnifiedAccount).toBe(true);
+  });
+
+  it("portfolioMargin → isUnifiedAccount === true", async () => {
+    const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
+    const hl = new HyperliquidAdapter(undefined, false);
+    hl.setAddress("0xabcdef0000000000000000000000000000000004");
+    (hl as unknown as { _infoPost: (b: unknown) => Promise<unknown> })._infoPost =
+      vi.fn().mockResolvedValue("portfolioMargin");
+    (hl as unknown as { sdk: { connect: () => Promise<void> }; _loadAssetMap: () => Promise<void> }).sdk =
+      { connect: vi.fn().mockResolvedValue(undefined) } as unknown as { connect: () => Promise<void> };
+    (hl as unknown as { _loadAssetMap: () => Promise<void> })._loadAssetMap =
+      vi.fn().mockResolvedValue(undefined);
+
+    await hl.init();
+    expect(hl.isUnifiedAccount).toBe(true);
+  });
+
+  it("HIP-3 dex account (standard semantics) → isUnifiedAccount === false", async () => {
+    const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
+    const hl = new HyperliquidAdapter(undefined, false);
+    hl.setAddress("0xabcdef0000000000000000000000000000000005");
+    hl.setDex("km"); // any HIP-3 dex name → _getAbstractionMode short-circuits to "standard"
+    // _infoPost is still consulted by other paths; not by mode lookup for dex
+    (hl as unknown as { _infoPost: (b: unknown) => Promise<unknown> })._infoPost =
+      vi.fn().mockResolvedValue("unifiedAccount"); // even if venue would say unified, dex short-circuits
+    (hl as unknown as { sdk: { connect: () => Promise<void> }; _loadAssetMap: () => Promise<void> }).sdk =
+      { connect: vi.fn().mockResolvedValue(undefined) } as unknown as { connect: () => Promise<void> };
+    (hl as unknown as { _loadAssetMap: () => Promise<void> })._loadAssetMap =
+      vi.fn().mockResolvedValue(undefined);
+
+    await hl.init();
+    expect(hl.isUnifiedAccount).toBe(false);
+  });
+
+  it("read-only init (no address) leaves default false (no userAbstraction call)", async () => {
+    const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
+    const hl = new HyperliquidAdapter(undefined, false);
+    // No setAddress() before init — read-only path
+    const infoPost = vi.fn().mockResolvedValue("unifiedAccount");
+    (hl as unknown as { _infoPost: (b: unknown) => Promise<unknown> })._infoPost = infoPost;
+    (hl as unknown as { sdk: { connect: () => Promise<void> }; _loadAssetMap: () => Promise<void> }).sdk =
+      { connect: vi.fn().mockResolvedValue(undefined) } as unknown as { connect: () => Promise<void> };
+    (hl as unknown as { _loadAssetMap: () => Promise<void> })._loadAssetMap =
+      vi.fn().mockResolvedValue(undefined);
+
+    await hl.init();
+    expect(hl.isUnifiedAccount).toBe(false);
+    expect(infoPost).not.toHaveBeenCalled();
+  });
+});
