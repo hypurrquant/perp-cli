@@ -4,6 +4,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.12.16] — 2026-05-02
+
+### Fixed
+- **Landing page Aster status clarity** — `perp` no-arg landing page rendered `Aster: —` (generic dash) for users with env-PK but no registered Aster agent, indistinguishable from a venue outage. Aster venue ships only signed account endpoints (no public address-based balance query exists, unlike HL/PAC/LT confirmed via v3 docs). Now renders `⚙ Aster  agent required → perp wallet agent approve aster` when agent missing; other failure modes still fall through to the red dash.
+
 ## [0.12.15] — 2026-05-02
 
 ### Fixed
@@ -148,7 +153,8 @@ Tagged but never published to npm — paused for the SKILL.md version-sync findi
 ### Security
 - Lighter L2 slot key is no longer stored in `.env` plaintext. Aligned with Aster/HL/PAC agents which were already in OWS vault.
 
-[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.15...HEAD
+[Unreleased]: https://github.com/hypurrquant/perp-cli/compare/v0.12.16...HEAD
+[0.12.16]: https://github.com/hypurrquant/perp-cli/compare/v0.12.15...v0.12.16
 [0.12.15]: https://github.com/hypurrquant/perp-cli/compare/v0.12.14...v0.12.15
 [0.12.14]: https://github.com/hypurrquant/perp-cli/compare/v0.12.13...v0.12.14
 [0.12.13]: https://github.com/hypurrquant/perp-cli/compare/v0.12.12...v0.12.13
