@@ -55,6 +55,7 @@ import { registerInitCommand, EXCHANGE_ENV_MAP, validateKey } from "./commands/i
 import { registerAlertCommands } from "./commands/alerts.js";
 import { loadSettings, saveSettings } from "./settings.js";
 import { setSharedApiNetwork } from "./shared-api.js";
+import { LANDING_EXCHANGES, asterAgentMissing as getAsterAgentMissing, renderLandingExchangeLine } from "./landing.js";
 
 const _require = createRequire(import.meta.url);
 const _pkg = _require("../package.json") as { version: string };
@@ -634,9 +635,6 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
         console.log(`    ${chalk.green("perp --help")}                    all commands\n`);
       } else {
         // Configured — show exchange status + balance
-        const EX_NAMES = ["pacifica", "hyperliquid", "lighter", "aster"] as const;
-        const exLabel = (e: string) => e === "pacifica" ? "Pacifica" : e === "hyperliquid" ? "Hyperliquid" : e === "lighter" ? "Lighter" : "Aster";
-
         // Ping + balance in parallel (with 5s timeout to keep landing fast)
         const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
           Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
@@ -647,14 +645,9 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
         // call throws NOT_SUPPORTED at venue. Detect that case here so
         // landing can surface a clear "agent required" hint instead of
         // a generic dash.
-        const asterAgentMissing = await (async () => {
-          try {
-            const { listAgents } = await import("./agent-wallet/store.js");
-            return listAgents("aster").length === 0;
-          } catch { return false; }
-        })();
+        const asterAgentMissing = getAsterAgentMissing();
 
-        const statusResults = await Promise.allSettled(EX_NAMES.map(async (ex) => {
+        const statusResults = await Promise.allSettled(LANDING_EXCHANGES.map(async (ex) => {
           try {
             const adapter = await withTimeout(getAdapterForExchange(ex), 5000);
             const [balance, positions] = await withTimeout(Promise.all([adapter.getBalance(), adapter.getPositions()]), 5000);
@@ -698,18 +691,7 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
         for (const r of statusResults) {
           if (r.status !== "fulfilled") continue;
           const s = r.value;
-          // Aster venue requires a registered agent for ANY account read
-          // (no public address-based balance endpoint exists). Surface that
-          // distinctly so users know to run `wallet agent approve aster`
-          // instead of guessing whether the venue is down.
-          if (!s.ok && s.exchange === "aster" && asterAgentMissing) {
-            console.log(`    ${chalk.yellow("⚙")} ${chalk.cyan(exLabel(s.exchange).padEnd(14))} ${chalk.yellow("agent required")} ${chalk.gray("→ perp wallet agent approve aster")}`);
-            continue;
-          }
-          const icon = s.ok ? chalk.green("●") : chalk.red("○");
-          const eq = s.ok ? chalk.white(`$${Number(s.equity).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`) : chalk.gray("—");
-          const pos = s.ok && s.positions > 0 ? chalk.yellow(` ${s.positions} pos`) : "";
-          console.log(`    ${icon} ${chalk.cyan(exLabel(s.exchange).padEnd(14))} ${eq}${pos}`);
+          console.log(renderLandingExchangeLine(s, asterAgentMissing));
           if (s.ok) { totalEquity += s.equity; totalPositions += s.positions; }
         }
 
