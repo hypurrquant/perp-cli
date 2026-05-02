@@ -4,6 +4,15 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.12.17] — 2026-05-02
+
+### Fixed
+- **`account twap-orders` HL/LT/Aster generic error** — non-Pacifica venues surfaced "Market settings are only available on Pacifica" via the shared `pac()` helper, leaking an internal helper name. Now returns a TWAP-specific `NOT_SUPPORTED` envelope with `remediation: "Use 'perp -e pacifica account twap-orders'"`.
+- **Landing page Aster agent-missing detection** — tightened detection so only the `NOT_IMPLEMENTED` "agent required" path renders the agent-required hint; other failure modes still fall through to the red dash (Rule #2 — no silent fallback).
+
+### Docs
+- **Skill bundle alignment** — `skills/perp-cli/SKILL.md` now reflects v0.12.16 commands and follows the Anthropic skill-authoring guide.
+
 ## [0.12.16] — 2026-05-02
 
 ### Fixed
