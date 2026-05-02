@@ -26,9 +26,9 @@ Switch Cost =
 
 Query each component:
 ```bash
-perp --json -e <FROM> trade check <SYM> <SIDE> <SIZE>   # close cost estimate
-perp --json bridge quote --from <CHAIN> --to <CHAIN> --amount <AMT>  # bridge cost
-perp --json -e <TO> trade check <SYM> <SIDE> <SIZE>     # open cost estimate
+perp --json -e <FROM> trade check <SYM> <SIDE> <SIZE> --leverage <L>   # close cost estimate
+perp --json funds bridge quote --from <CHAIN> --to <CHAIN> --amount <AMT>  # bridge cost
+perp --json -e <TO> trade check <SYM> <SIDE> <SIZE> --leverage <L>     # open cost estimate
 ```
 
 **Only switch if:**
@@ -56,8 +56,10 @@ During transition, you are **unhedged**. Price can move against you. Factor this
 
 ### Discovery Loop
 ```bash
-perp --json arb scan --min 5             # find spreads > 5 bps (shows longExch/shortExch/netSpread)
-# NOTE: 'arb rates' is deprecated — use 'arb scan' instead
+perp --json arb scan --min 5             # find spreads > 5% annual (shows longExch/shortExch/netSpread)
+perp --json arb scan --rates             # raw funding rates across all exchanges
+perp --json arb scan --history <SYMBOL>  # historical funding for a symbol
+# NOTE: legacy 'arb rates'/'arb prices'/'arb dex' are removed — all routes go through 'arb scan'
 ```
 
 ### CRITICAL: Reading arb scan Results
@@ -135,7 +137,7 @@ Actual hold: 6h | Actual net: ~130 bps
 ### Monitoring Active Positions
 ```bash
 perp --json portfolio                    # unified multi-exchange view
-perp --json risk overview                # cross-exchange risk assessment
+perp --json risk status                  # cross-exchange risk assessment (level, violations, canTrade)
 perp --json -e <EX> account positions    # per-exchange positions
 perp --json arb scan --min 5             # are current rates still favorable?
 ```
@@ -453,7 +455,8 @@ This is YOUR operational knowledge. Use it to make better decisions over time.
 ### Cross-Exchange Capital Allocation
 Your capital is split across exchanges. Rebalancing has real costs:
 ```bash
-perp --json bridge quote --from solana --to arbitrum --amount 1000
+perp --json funds bridge quote --from solana --to arbitrum --amount 1000
+perp --json funds rebalance plan                  # auto-compute optimal moves across exchanges
 ```
 
 Before rebalancing, ask:

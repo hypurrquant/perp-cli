@@ -2,74 +2,94 @@
 
 All commands support `--json` for structured output. Always use `--json` when calling from an agent.
 
+## Global Flags
+
+`--json` (required for agents) | `-e <pac|hl|lt|aster>` (exchange) | `--dex <name>` (HIP-3) | `-w, --wallet <name>` | `--dry-run` | `--fields <f1,f2>` | `--ndjson`
+
 ## Market Data (read-only, safe)
 ```bash
-perp --json market list                    # all markets with prices, funding, volume
-perp --json market prices                  # cross-exchange price comparison
-perp --json market mid <SYMBOL>            # mid price (fast)
-perp --json market info <SYMBOL>           # mark/index price, funding, volume, OI, max leverage
-perp --json market book <SYMBOL>           # orderbook (bids/asks)
-perp --json market trades <SYMBOL>         # recent trades
-perp --json market funding <SYMBOL>        # funding rate history
-perp --json market kline <SYM> <INTERVAL>  # OHLCV candles (1m,5m,15m,1h,4h,1d)
-perp --json market hip3                    # list HIP-3 deployed perp dexes (Hyperliquid only)
+perp --json -e <EX> market list                # all markets with prices, funding, volume
+perp --json market prices                      # cross-exchange price comparison
+perp --json -e <EX> market mid <SYMBOL>        # mid price (fast)
+perp --json -e <EX> market info <SYMBOL>       # mark/index price, funding, volume, OI, max leverage
+perp --json -e <EX> market book <SYMBOL>       # orderbook (bids/asks)
+perp --json -e <EX> market trades <SYMBOL>     # recent trades
+perp --json -e <EX> market funding <SYMBOL>    # funding rate history
+perp --json -e <EX> market kline <SYM> <INT>   # OHLCV candles (1m,5m,15m,1h,4h,1d)
+perp --json market hip3                        # list HIP-3 deployed perp dexes (Hyperliquid)
 ```
 
 ## Account (read-only, safe)
 ```bash
-perp --json account balance                # perp balance + spot holdings + 24h funding (alias: account balance)
-perp --json account positions              # open positions
-perp --json account orders                 # open/pending orders
-perp --json account history                # order history
-perp --json account trades                 # trade fill history
-perp --json account funding-history        # funding payments
-perp --json account pnl                    # profit & loss
-perp --json account margin <SYMBOL>        # position margin info
-perp --json portfolio                      # cross-exchange unified view
+perp --json -e <EX> account balance            # perp balance + spot holdings + 24h funding
+perp --json -e <EX> account positions          # open positions
+perp --json -e <EX> account orders             # open/pending orders
+perp --json -e <EX> account history            # order history
+perp --json -e <EX> account trades             # trade fill history
+perp --json -e <EX> account funding-history    # funding payments
+perp --json -e <EX> account settings           # per-market leverage & margin mode
+perp --json -e <EX> account margin <SYMBOL>    # position margin info
+perp --json -e <EX> account pnl                # realized + unrealized + funding
+perp --json -e <EX> account twap-orders        # active TWAP orders
+perp --json portfolio                          # cross-exchange unified view
+perp --json portfolio --arb                    # full dashboard with arb top 5
 ```
 
 ## Trading (requires user confirmation)
 ```bash
 # Market orders
-perp --json trade market <SYMBOL> <buy|sell> <SIZE>
-perp --json trade buy <SYMBOL> <SIZE>       # shorthand market buy
-perp --json trade sell <SYMBOL> <SIZE>      # shorthand market sell
+perp --json -e <EX> trade market <SYMBOL> <buy|sell> <SIZE>
+perp --json -e <EX> trade buy <SYMBOL> <SIZE>           # shorthand market buy
+perp --json -e <EX> trade sell <SYMBOL> <SIZE>          # shorthand market sell
+perp --json -e <EX> trade buy <SYM> <SIZE> --smart      # IOC limit at best ask (less slippage)
 
-# Limit orders
-perp --json trade limit <SYMBOL> <buy|sell> <PRICE> <SIZE>
+# Split execution (orderbook-aware, for large orders)
+perp --json -e <EX> trade split <SYMBOL> <buy|sell> <USD>
+perp --json -e <EX> trade split <SYM> buy 5000 --max-slippage 0.5 --max-slices 5 --delay 2000 --min-slice 200
+perp --json -e <EX> trade market <SYM> buy <SIZE> --split   # split via flag
 
-# Stop orders
-perp --json trade stop <SYMBOL> <SIDE> <STOP_PRICE> <SIZE>
-perp --json trade tpsl <SYMBOL> <SIDE> --tp <PRICE> --sl <PRICE>
+# Limit / stop / TPSL
+perp --json -e <EX> trade limit <SYMBOL> <buy|sell> <PRICE> <SIZE>
+perp --json -e <EX> trade stop <SYMBOL> <SIDE> <SIZE> <STOP_PRICE>
+perp --json -e <EX> trade tpsl <SYMBOL> <SIDE> --tp <P> --sl <P>
 
 # Order management
-perp --json trade edit <SYMBOL> <ORDER_ID> <PRICE> <SIZE>
-perp --json trade cancel <SYMBOL> <ORDER_ID>
-perp --json trade cancel-all
-perp --json trade check <SYMBOL> <SIDE> <SIZE>    # pre-flight validation (no execution)
-perp --json trade check <SYM> <SIDE> <SIZE> --leverage 3  # check with specific leverage
+perp --json -e <EX> trade edit <SYMBOL> <ORDER_ID> <PRICE> <SIZE>
+perp --json -e <EX> trade cancel <SYMBOL_OR_ORDER_ID> [orderId]
+perp --json -e <EX> trade cancel-all
+perp --json -e <EX> trade cancel-stop <SYMBOL> <STOP_ORDER_ID>
+perp --json -e <EX> trade cancel-twap <SYMBOL> <TWAP_ORDER_ID>
+perp --json -e <EX> trade status <ORDER_ID>             # check order state
+perp --json -e <EX> trade fills [SYMBOL]                # recent fills
+
+# Pre-flight validation
+perp --json -e <EX> trade check <SYMBOL> <SIDE> <SIZE>
+perp --json -e <EX> trade check <SYM> <SIDE> <SIZE> --leverage 3
 # NOTE: trade check does NOT read exchange-set leverage. Always pass --leverage explicitly.
 
 # Position management
-perp --json trade close <SYMBOL>            # close single position
-perp --json trade close-all                 # close all positions
-perp --json trade flatten                   # cancel all orders + close all positions
-perp --json trade reduce <SYMBOL> <PCT>     # reduce position by percentage
-perp --json trade leverage <SYMBOL> <N>     # set leverage
+perp --json -e <EX> trade close <SYMBOL>                # close single position
+perp --json -e <EX> trade close-all                     # close all positions
+perp --json -e <EX> trade flatten                       # cancel all orders + close all positions
+perp --json -e <EX> trade reduce <SYMBOL> <PCT>         # reduce by percentage
+perp --json -e <EX> trade leverage <SYMBOL> <N> [--isolated]
 
 # Advanced orders
-perp --json trade scale-tp <SYMBOL> --levels '<PRICE1>:<PCT>,<PRICE2>:<PCT>'
-perp --json trade scale-in <SYMBOL> <SIDE> --levels '<PRICE1>:<SIZE>,<PRICE2>:<SIZE>'
-perp --json trade pnl-track                 # real-time PnL tracker
+perp --json -e <EX> trade scale-tp <SYMBOL> --levels '<P1>:<PCT>,<P2>:<PCT>'
+perp --json -e <EX> trade scale-in <SYMBOL> <SIDE> --levels '<P1>:<SIZE>,<P2>:<SIZE>'
+perp --json -e <EX> trade pnl-track                     # real-time PnL tracker
+perp --json trade twap <SYMBOL> <SIDE> <SIZE> <DURATION>  # native TWAP order
 
-# Split execution (orderbook-aware)
-perp --json trade split <SYMBOL> <buy|sell> <USD>   # split large order into depth-based slices
-perp --json trade split <SYM> buy 5000 --max-slippage 0.5 --max-slices 5 --delay 2000 --min-slice 200
-perp --json trade market <SYM> buy <SIZE> --split   # split via market command flag
-perp --json trade market <SYM> buy <SIZE> --split --max-slippage 0.5
+# Spot helpers (Hyperliquid / Lighter)
+perp --json -e <EX> trade spot-buy <SYMBOL> <SIZE>
+perp --json -e <EX> trade spot-sell <SYMBOL> <SIZE>
+perp --json -e <EX> trade spot-balance
+
+# Multi-leg atomic execution
+perp --json trade multi <legs...>
 ```
 
-## Funds (Deposit, Withdraw, Transfer, Bridge, Rebalance)
+## Funds (deposit, withdraw, transfer, bridge, rebalance)
 
 All fund movement lives under `perp funds`.
 
@@ -89,11 +109,11 @@ perp --json funds info                                      # combined routes & 
 
 ### Cross-chain bridge (multi-provider router: cctp / relay / debridge — auto-cheapest)
 ```bash
-perp --json funds bridge chains                   # supported chains
+perp --json funds bridge chains                             # supported chains
 perp --json funds bridge quote --from <CHAIN> --to <CHAIN> --amount <AMT>
-perp --json funds bridge send --from <CHAIN> --to <CHAIN> --amount <AMT>           # auto-cheapest
+perp --json funds bridge send --from <CHAIN> --to <CHAIN> --amount <AMT>
 perp --json funds bridge send --from <CHAIN> --to <CHAIN> --amount <AMT> --provider cctp
-perp --json funds bridge exchange --from <EX> --to <EX> --amount <AMT>             # between exchanges
+perp --json funds bridge exchange --from <EX> --to <EX> --amount <AMT>   # between exchanges
 perp --json funds bridge status <ORDER_ID>
 ```
 
@@ -106,100 +126,228 @@ perp --json funds rebalance execute --withdraw-only          # only withdraw, ma
 ```
 
 ## Arbitrage
+
+All scan modes are routed through `arb scan`. Legacy aliases (`arb rates`, `arb prices`, `arb dex`, `arb spot-exec`, `arb spot-close`) are removed.
+
 ```bash
-# Perp-Perp arb
-perp --json arb scan --min <BPS>            # find opportunities (>N bps spread) — PRIMARY command
-perp --json arb exec <SYM> <longEx> <shortEx> <$>  # execute perp-perp arb
-perp --json arb close <SYM>                 # close perp-perp arb
-perp --json arb status                      # monitor open arb positions
-perp --json arb funding-earned              # actual funding payments
+# Scan (read-only, safe)
+perp --json arb scan                                        # default --mode all (perp-perp + spot-perp)
+perp --json arb scan --mode perp-perp --min 10              # perp-only with min annual %
+perp --json arb scan --mode spot-perp --min 10              # spot+perp only
+perp --json arb scan --rates                                # funding rates across exchanges
+perp --json arb scan --basis [SYMBOL]                       # cross-exchange basis
+perp --json arb scan --gaps                                 # cross-exchange price gaps
+perp --json arb scan --hip3                                 # HIP-3 cross-dex spreads
+perp --json arb scan --history [SYMBOL]                     # historical funding
+perp --json arb scan --compare <SYMBOL>                     # compare a symbol across exchanges
+perp --json arb scan --positions                            # position funding impact
+perp --json arb scan --live --interval 60                   # continuous monitoring
+perp --json arb scan --top 10 --hold-days 7 --bridge-cost 0 --size 100  # cost-aware filtering
 
-# Spot+Perp arb (spot funding = 0, spread = |perp funding|)
-perp --json arb scan --mode spot-perp       # scan spot+perp opportunities
-perp --json arb scan --mode all             # both perp-perp + spot-perp
-perp --json arb spot-exec <SYM> <spotEx> <perpEx> <$>  # execute spot+perp arb
-perp --json arb spot-close <SYM> --spot-exch <hl|lt>   # close spot+perp arb
-# spotEx: hl (Hyperliquid) or lt (Lighter). perpEx: hl, lt, pac.
-# HL spot uses U-tokens: BTC→UBTC, ETH→UETH, SOL→USOL (auto-resolved)
+# Execute (perp-perp or spot+perp via spot:<exch> prefix)
+perp --json arb exec <SYM> <longEx> <shortEx> <USD>         # perp-perp dual-leg entry
+perp --json arb exec <SYM> spot:hl hl <USD>                 # spot+perp via HL spot
+perp --json arb exec <SYM> spot:lt pac <USD>                # spot+perp via LT spot
+perp --json arb exec <SYM> <longEx> <shortEx> <USD> \
+   --leverage 2 --isolated --smart --reconcile --max-slippage 0.5
 
-# Other arb tools
-perp --json arb rates                       # funding rates across all DEXs (detailed)
-perp --json arb prices                      # cross-exchange price gaps
-perp --json arb dex                         # HIP-3 cross-dex arb (Hyperliquid)
-# Deprecated: 'gap show' → use 'arb prices'; 'funding rates/spread' → use 'arb rates/scan'
+# Close
+perp --json arb close <SYM>                                  # close perp-perp arb
+perp --json arb close <SYM> --pair <longEx>:<shortEx>       # disambiguate by pair
+perp --json arb close <SYM> --spot-exch hl --perp-exch hl   # close spot+perp legs
+perp --json arb close <SYM> --smart                         # IOC limits at best price
+
+# Status / history / config / rebalance
+perp --json arb status                                      # open arb positions + PnL + funding earned
+perp --json arb status --period 7 --symbol BTC              # filter funding lookback / symbol
+perp --json arb history                                     # alias: arb log
+perp --json arb history --period 30                         # past arb trade performance
+perp --json arb config                                      # show arb defaults
+perp --json arb rebalance --check                           # cross-exchange balance distribution
+perp --json arb rebalance --target 50:50 --amount 1000 --dry-run
+
+# Auto-execute daemon
+perp --json arb auto --min-spread 30 --close-spread 5 --size 100 --max-positions 5
+perp --json arb auto --background                           # tmux session
+perp --json arb auto --hip3 --min-oi 50000 --min-grade C    # HIP-3 mode
+perp --json arb auto --dry-run                              # simulate
 ```
 
 ## Wallet Management
 ```bash
-perp --json wallet set hl <KEY>             # set Hyperliquid key
-perp --json wallet set pac <KEY>            # set Pacifica key
-perp --json wallet set lt <KEY>             # set Lighter key
-perp --json wallet set hl <KEY> --default   # set key + make default exchange
-perp --json wallet show                     # show configured wallets (public addresses)
-perp --json wallet generate evm             # generate new EVM wallet
-perp --json wallet generate solana          # generate new Solana wallet
-perp --json wallet balance                  # on-chain balance
+perp --json wallet generate evm                # generate EVM wallet
+perp --json wallet generate solana             # generate Solana wallet
+perp --json wallet import [privateKey]         # import an existing key
+perp --json wallet set hl <KEY>                # set Hyperliquid key
+perp --json wallet set pac <KEY>               # set Pacifica key
+perp --json wallet set lt <KEY>                # set Lighter key (auto-generates API key)
+perp --json wallet set aster <API_KEY>         # set Aster API key
+perp --json wallet set hl <KEY> --default      # set + make default exchange
+perp --json wallet show                        # public addresses for active wallet
+perp --json wallet list                        # all named wallets
+perp --json wallet use <name>                  # set active wallet
+perp --json wallet rename <old> <new>
+perp --json wallet remove <name>
+perp --json wallet balance                     # on-chain USDC balances
+perp --json wallet solana <address>            # check arbitrary Solana address
+perp --json wallet arbitrum <address>          # check arbitrary Arbitrum address
+perp --json wallet migrate                     # migrate legacy ~/.perp/.env config
+perp --json wallet rotate                      # rotate keys + transfer assets
+perp --json wallet backup                      # encrypted backup
+perp --json wallet restore <file>              # restore from backup
+perp --json wallet deposit <walletName>        # deposit prompt for a stored wallet
+perp --json wallet setup                       # **interactive — DO NOT use from agent**
+```
+
+### Agent wallet (DEX-side delegation)
+```bash
+perp --json wallet agent approve <exchange> [--master <name>] [--api-key-index <n>]
+perp --json wallet agent list [exchange]
+perp --json wallet agent revoke <exchange> <agentName>
+perp --json wallet agent rotate <exchange> [oldAgentName]
+perp --json wallet agent verify [exchange] [agentName]
+```
+
+### Exchange settings (`wallet manage`)
+```bash
+perp --json wallet manage margin <SYMBOL> <cross|isolated>
+perp --json wallet manage withdraw <amount> <address>          # generic on-exchange withdraw
+perp --json wallet manage account-mode [standard|big-blocks]   # Hyperliquid only
+perp --json wallet manage sub create <name>
+perp --json wallet manage sub list
+perp --json wallet manage sub transfer <from> <to> <amount>
+perp --json wallet manage lake create <symbol> <amount>
+perp --json wallet manage lake deposit <lakeId> <amount>
+perp --json wallet manage lake withdraw <lakeId> <amount>
+perp --json wallet manage builder approve <code> <maxFeeRate>
+perp --json wallet manage builder revoke <code>
+perp --json wallet manage builder list
+perp --json wallet manage builder overview
+perp --json wallet manage builder trades <code>
+perp --json wallet manage builder leaderboard <code>
+perp --json wallet manage builder update-fee <code> <feeRate>
+perp --json wallet manage referral claim <code>               # Pacifica
+perp --json wallet manage apikey create <name> <maxFeeRate>
+perp --json wallet manage apikey list
+perp --json wallet manage apikey revoke <key>
+```
+
+### OWS (Open Wallet Standard) API key + policy — optional, scoped agent tokens
+```bash
+perp --json wallet key create
+perp --json wallet key list
+perp --json wallet key revoke <id>
+perp --json wallet policy create
+perp --json wallet policy list
+perp --json wallet policy show <id>
+perp --json wallet policy delete <id>
 ```
 
 ## Risk & Analytics
 ```bash
-perp --json risk status                     # portfolio risk overview (level, violations, canTrade)
-perp --json risk liquidation-distance       # % distance from liquidation for ALL positions
-perp --json risk limits                     # view current risk limits
+perp --json risk status                        # portfolio risk overview (level, violations, canTrade)
+perp --json risk health                        # health-check summary
+perp --json risk liquidation-distance          # % distance from liquidation for ALL positions
+perp --json risk limits                        # view current risk limits
 perp --json risk limits --min-liq-distance 30 --max-leverage 5  # set risk limits
-perp --json risk check --notional 1000 --leverage 3  # pre-trade risk check
-perp --json history summary                 # trading performance
-perp --json history pnl                     # P&L breakdown by exchange
-perp --json history funding                 # funding payment aggregation
-perp --json history report                  # full performance report (summary + pnl + funding)
-perp --json history perf --period daily     # daily PnL breakdown (replaces daily-pnl)
-perp --json history perf --period weekly    # weekly PnL breakdown (replaces weekly-pnl)
-perp --json history perf --period summary   # performance summary stats
-perp --json history list                    # execution audit trail
+perp --json risk check --notional 1000 --leverage 3             # pre-trade risk check
 ```
 
-## Automated Strategies (strategy — 19 algorithms + nested scripted plans)
+## History (execution log + analytics)
 ```bash
-perp --json strategy list-strategies                         # list all 19 strategies
+perp --json history list                       # execution audit trail
+perp --json history stats                      # aggregated execution stats
+perp --json history positions                  # position lifetime tracking
+perp --json history prune                      # purge old entries
+perp --json history summary                    # trading performance summary
+perp --json history pnl                        # P&L breakdown by exchange
+perp --json history funding                    # funding payment aggregation
+perp --json history report                     # full performance report (summary + pnl + funding)
+perp --json history compare                    # compare strategies / accounts
+perp --json history snapshot                   # equity snapshot
+perp --json history track                      # PnL tracking helper
+perp --json history perf --period daily        # daily PnL breakdown
+perp --json history perf --period weekly       # weekly PnL breakdown
+perp --json history perf --period summary      # performance summary stats
+```
+
+## Strategies (`perp strategy` — 20 algorithms + nested scripted plans)
+```bash
+perp --json strategy list-strategies                         # list all 20 strategies
 perp --json strategy run <STRATEGY> [SYMBOL]                 # run any registered strategy
-perp --json strategy run funding-auto                        # multi-exchange funding arb (no symbol needed)
-perp --json strategy apex [SYMBOL]                           # APEX autonomous orchestrator (Radar+Pulse+Guard)
-perp --json strategy reflect                                 # trading performance analysis (win rate, fees, PnL)
-perp --json strategy preset-list                             # list strategy presets
-perp --json strategy preset <NAME> [SYMBOL]                  # run from preset
-perp --json strategy twap <SYMBOL> <SIDE> <SIZE> <DURATION>  # TWAP execution
+perp --json strategy run funding-auto                        # multi-exchange funding arb
+perp --json strategy apex [SYMBOL]                           # APEX orchestrator
+perp --json strategy reflect                                 # performance analysis
+perp --json strategy preset-list
+perp --json strategy preset <NAME> [SYMBOL]
+perp --json strategy start <CONFIG.yaml>                     # YAML/JSON config-driven
+perp --json strategy quick-grid <SYMBOL>
+perp --json strategy quick-dca <SYMBOL> <SIDE> <AMOUNT> <INTERVAL>
+perp --json strategy quick-arb
+perp --json strategy delta-neutral
+perp --json strategy twap <SYMBOL> <SIDE> <SIZE> <DURATION>
 perp --json strategy grid <SYMBOL> --range <PCT> --grids <N> --size <USD>
 perp --json strategy dca <SYMBOL> <SIDE> <AMOUNT> <INTERVAL>
-perp --json strategy trailing-stop <SYMBOL>                  # trailing stop with callback %
-perp --json strategy funding-arb                             # auto funding arb
-perp --json strategy quick-grid <SYMBOL>                     # quick grid bot
-perp --json strategy quick-arb                               # quick arb bot
+perp --json strategy trailing-stop <SYMBOL>
+perp --json strategy funding-arb                             # legacy alias for run funding-arb
 
 # Scripted execution plans (one-shot multi-step)
-perp --json strategy plan example                            # show plan format
-perp --json strategy plan validate <FILE>                    # validate plan
-perp --json strategy plan execute <FILE> --dry-run           # dry-run plan
-
-# Background process supervisor (tmux)
-perp --json background list                                  # list running jobs
-perp --json background stop <ID>                             # stop a job
-perp --json background logs <ID>                             # view job logs
-perp --json background remove <ID>                           # remove a job entry
-perp --json background clean                                 # remove all stopped/done jobs
+perp --json strategy plan example
+perp --json strategy plan validate <FILE>
+perp --json strategy plan execute <FILE> --dry-run
 ```
 
-### Available Strategies
-Market Making: `simple-mm`, `engine-mm`, `avellaneda-mm`, `regime-mm`, `grid-mm`, `liquidation-mm`
-Signal/Directional: `momentum-breakout`, `mean-reversion`, `aggressive-taker`
-Arbitrage: `funding-arb`, `funding-auto`, `basis-arb`
-Infrastructure: `hedge-agent`, `rfq-agent`, `claude-agent`
-Classic: `grid`, `dca`, `twap`, `apex`
+### Available Strategies (20)
+- **Market Making:** `simple-mm`, `engine-mm`, `avellaneda-mm`, `regime-mm`, `grid-mm`, `liquidation-mm`
+- **Signal/Directional:** `momentum-breakout`, `mean-reversion`, `aggressive-taker`
+- **Arbitrage:** `funding-arb`, `funding-arb-v2`, `funding-auto`, `basis-arb`, `spot-perp-arb`
+- **Infrastructure:** `hedge-agent`, `rfq-agent`, `claude-agent`
+- **Classic:** `grid`, `dca`, `apex`
 
-## Agent Wallet Management
+## Background Process Supervisor (tmux)
 ```bash
-perp wallet agent approve <exchange> [--master <name>]   # Register an agent wallet
-perp wallet agent list [exchange]                        # List registered agents
-perp wallet agent revoke <exchange> <agentName>          # Revoke an agent
-perp wallet agent rotate <exchange> [agentName]          # Revoke + re-approve same name
-perp wallet agent verify [exchange] [agentName]          # Verify via DEX query API
+perp --json background list                   # list running jobs (default subcommand)
+perp --json background stop <ID>              # stop a job
+perp --json background logs <ID>              # view logs (use -f to follow)
+perp --json background remove <ID>            # remove a job entry
+perp --json background clean                  # purge all stopped/done jobs
 ```
+
+## Backtest
+```bash
+perp --json backtest funding-arb              # backtest funding arb on historical data
+perp --json backtest grid                     # backtest grid strategy
+```
+
+## Alerts (Telegram / Discord)
+```bash
+perp alerts setup                             # interactive setup wizard
+perp --json alerts test                       # send test message
+perp --json alerts add <SYMBOL> <PCT>         # add alert rule
+perp --json alerts add --all <PCT>            # alert for any symbol > N%
+perp --json alerts list                       # list active rules
+perp --json alerts remove <ID>                # remove a rule
+perp alerts start [--background]              # run daemon (tmux for background)
+perp alerts stop                              # stop background daemon
+```
+
+## Settings
+```bash
+perp --json settings show                     # show current CLI settings
+perp --json settings set <key> <value>        # set a CLI default
+perp --json settings referrals on|off         # toggle referral codes
+perp --json settings fees show                # cached exchange fee table
+perp --json settings fees sync                # refresh fee cache
+perp --json settings env show                 # show ~/.perp/.env values
+perp --json settings env set <name> <value>
+perp --json settings env remove <name>
+perp --json settings env path                 # config file path
+```
+
+## Init / Setup
+```bash
+perp init                                     # interactive — DO NOT use from agent
+perp setup                                    # alias for init — DO NOT use from agent
+```
+
+Use `perp wallet set <ex> <key>` instead — non-interactive and agent-safe.

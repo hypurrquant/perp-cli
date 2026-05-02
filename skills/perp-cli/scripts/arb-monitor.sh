@@ -1,7 +1,7 @@
 #!/bin/bash
 # Monitor open arb positions and evaluate exit conditions
 # Usage: ./arb-monitor.sh [--json] [--min-spread 5]
-# Checks: current spread vs entry, funding earned, PnL, liquidation distance
+# Checks: current spread vs entry, funding earned (from arb status), PnL, liquidation distance
 # Returns JSON with position health + actionable recommendations
 
 set -euo pipefail
@@ -23,7 +23,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# 1. Get current arb status
+# 1. Get current arb status (already includes funding earned per period)
 ARB_STATUS=$($PERP --json arb status 2>/dev/null || echo '{"ok":false}')
 if ! echo "$ARB_STATUS" | grep -q '"ok":true'; then
   if $JSON_MODE; then
@@ -34,14 +34,14 @@ if ! echo "$ARB_STATUS" | grep -q '"ok":true'; then
   exit 0
 fi
 
-# 2. Get current spreads
-ARB_SCAN=$($PERP --json arb scan --min 0 2>/dev/null || echo '{"ok":false,"data":{"opportunities":[]}}')
+# 2. Get current spreads (all modes)
+ARB_SCAN=$($PERP --json arb scan --mode all --min 0 2>/dev/null || echo '{"ok":false,"data":{"opportunities":[]}}')
 
-# 3. Get funding earned
-FUNDING=$($PERP --json arb funding-earned 2>/dev/null || echo '{"ok":false}')
-
-# 4. Get liquidation distances
+# 3. Get liquidation distances
 LIQ_DIST=$($PERP --json risk liquidation-distance 2>/dev/null || echo '{"ok":false}')
+
+# 4. Get risk overview
+RISK_STATUS=$($PERP --json risk status 2>/dev/null || echo '{"ok":false}')
 
 # 5. Output combined analysis
 if $JSON_MODE; then
@@ -51,8 +51,8 @@ if $JSON_MODE; then
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "positions": $ARB_STATUS,
   "currentSpreads": $ARB_SCAN,
-  "fundingEarned": $FUNDING,
   "liquidationDistance": $LIQ_DIST,
+  "riskStatus": $RISK_STATUS,
   "minSpreadThreshold": $MIN_SPREAD
 }
 EOF
@@ -60,15 +60,15 @@ else
   echo "=== Arb Position Monitor ==="
   echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo ""
-  echo "--- Positions ---"
+  echo "--- Positions (with funding earned) ---"
   echo "$ARB_STATUS" | jq -r '.data // empty'
-  echo ""
-  echo "--- Funding Earned ---"
-  echo "$FUNDING" | jq -r '.data // empty'
   echo ""
   echo "--- Liquidation Distance ---"
   echo "$LIQ_DIST" | jq -r '.data // empty'
   echo ""
-  echo "Min spread threshold: ${MIN_SPREAD} bps"
-  echo "Recommendation: Check if current spreads exceed ${MIN_SPREAD} bps to continue holding."
+  echo "--- Risk Status ---"
+  echo "$RISK_STATUS" | jq -r '.data // empty'
+  echo ""
+  echo "Min spread threshold: ${MIN_SPREAD}% annual"
+  echo "Recommendation: Check if current spreads exceed ${MIN_SPREAD}% to continue holding."
 fi

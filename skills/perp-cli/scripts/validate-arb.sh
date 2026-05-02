@@ -1,8 +1,9 @@
 #!/bin/bash
 # Validate an arb opportunity before execution
 # Usage: ./validate-arb.sh <SYMBOL> <LONG_EX> <SHORT_EX> <SIZE_USD> [--leverage N]
-# Performs: price check, liquidity check, balance check, risk check, slippage estimate
+# Performs: price check, liquidity check, balance check, risk check, dry-run via 'arb exec'
 # Returns JSON validation report
+# NOTE: For spot+perp arb, pass spot:<exch> as LONG_EX (e.g. spot:hl).
 
 set -euo pipefail
 
