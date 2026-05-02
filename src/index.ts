@@ -641,6 +641,19 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
         const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
           Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
 
+        // Aster venue ships only signed account endpoints — no public
+        // address-based balance query exists (HL/PAC/LT all do). So when
+        // a user has an env-PK but no Aster agent, every getBalance()
+        // call throws NOT_SUPPORTED at venue. Detect that case here so
+        // landing can surface a clear "agent required" hint instead of
+        // a generic dash.
+        const asterAgentMissing = await (async () => {
+          try {
+            const { listAgents } = await import("./agent-wallet/store.js");
+            return listAgents("aster").length === 0;
+          } catch { return false; }
+        })();
+
         const statusResults = await Promise.allSettled(EX_NAMES.map(async (ex) => {
           try {
             const adapter = await withTimeout(getAdapterForExchange(ex), 5000);
@@ -685,6 +698,14 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
         for (const r of statusResults) {
           if (r.status !== "fulfilled") continue;
           const s = r.value;
+          // Aster venue requires a registered agent for ANY account read
+          // (no public address-based balance endpoint exists). Surface that
+          // distinctly so users know to run `wallet agent approve aster`
+          // instead of guessing whether the venue is down.
+          if (!s.ok && s.exchange === "aster" && asterAgentMissing) {
+            console.log(`    ${chalk.yellow("⚙")} ${chalk.cyan(exLabel(s.exchange).padEnd(14))} ${chalk.yellow("agent required")} ${chalk.gray("→ perp wallet agent approve aster")}`);
+            continue;
+          }
           const icon = s.ok ? chalk.green("●") : chalk.red("○");
           const eq = s.ok ? chalk.white(`$${Number(s.equity).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`) : chalk.gray("—");
           const pos = s.ok && s.positions > 0 ? chalk.yellow(` ${s.positions} pos`) : "";
