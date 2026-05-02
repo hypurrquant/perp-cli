@@ -6,7 +6,7 @@ allowed-tools: "Bash(perp:*), Bash(npx perp-cli:*), Bash(npx -y perp-cli:*)"
 compatibility: "Requires Node.js 20 or newer and the perp-cli npm package (global install or npx). Network access required for exchange APIs and bridge providers. Mutating commands need wallet keys configured via 'perp wallet set EXCHANGE KEY' (Solana base58 / EVM hex / Aster API key). Skill is portable across Claude Code, Claude.ai, Cursor, Codex, and Gemini CLI — no platform-specific features."
 metadata:
   author: hypurrquant
-  version: "0.12.16"
+  version: "0.12.18"
 ---
 
 # perp-cli
@@ -44,7 +44,7 @@ Also bundled under `scripts/`: `preflight.sh`, `arb-monitor.sh`, `funding-analys
 ### Step 1: Verify install + version
 
 ```bash
-perp --version 2>/dev/null  # must be >= 0.12.16
+perp --version 2>/dev/null  # must be >= 0.12.18
 npm install -g perp-cli@latest 2>/dev/null || npx -y perp-cli@latest --json --version
 ```
 

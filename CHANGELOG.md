@@ -4,6 +4,14 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.12.18] — 2026-05-02
+
+Closes Codex independent review of v0.12.17. 1 HIGH regression + 1 MEDIUM Rule #2 gap.
+
+### Fixed
+- **`account twap-orders` over-broad catch (HIGH, v0.12.17 regression)** — `src/commands/account.ts` catch wrapped both `getAdapter()` and `pac()`, then unconditionally returned `NOT_SUPPORTED` + Pacifica remediation in JSON mode. This mislabeled unrelated failures (network errors, locked wallets, missing PK, other typed `PerpError`s). Now uses an explicit `hasPacificaSdk()` guard so only the actual Pacifica-only assertion is rewritten; other errors propagate to the standard classifier untouched.
+- **Landing page Aster agent-required false-positive (MED)** — `LandingExchangeStatus` now carries `errorCode` and the agent-required hint requires both (a) local Aster agent absent AND (b) the failure was actually `NOT_IMPLEMENTED` / `NO_SIGNER_AVAILABLE` / `AGENT_EXPIRED`. Generic Aster outages no longer render "agent required" — they fall through to the red dash (Rule #2: no silent classification fallback). Tests 1305 → 1307 (+2 regression cases).
+
 ## [0.12.17] — 2026-05-02
 
 ### Fixed

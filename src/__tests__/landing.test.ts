@@ -50,18 +50,20 @@ describe("asterAgentMissing", () => {
 });
 
 describe("renderLandingExchangeLine", () => {
-  it("prints 'agent required' only for failed Aster when the agent is missing", () => {
-    const asterMissing = stripVTControlCharacters(renderLandingExchangeLine({
+  it("prints 'agent required' only when failed Aster + agent missing + agent-related error code", () => {
+    const asterMissingAgentErr = stripVTControlCharacters(renderLandingExchangeLine({
       exchange: "aster",
       ok: false,
       equity: 0,
       positions: 0,
+      errorCode: "NOT_IMPLEMENTED",
     }, true));
     const asterPresent = stripVTControlCharacters(renderLandingExchangeLine({
       exchange: "aster",
       ok: false,
       equity: 0,
       positions: 0,
+      errorCode: "NOT_IMPLEMENTED",
     }, false));
     const pacificaMissing = stripVTControlCharacters(renderLandingExchangeLine({
       exchange: "pacifica",
@@ -70,11 +72,45 @@ describe("renderLandingExchangeLine", () => {
       positions: 0,
     }, true));
 
-    expect(asterMissing).toContain("agent required");
-    expect(asterMissing).toContain("perp wallet agent approve aster");
+    expect(asterMissingAgentErr).toContain("agent required");
+    expect(asterMissingAgentErr).toContain("perp wallet agent approve aster");
     expect(asterPresent).not.toContain("agent required");
     expect(asterPresent).toContain("—");
     expect(pacificaMissing).not.toContain("agent required");
     expect(pacificaMissing).toContain("—");
+  });
+
+  it("falls through to red dash when Aster failed for a non-agent reason (Rule #2)", () => {
+    const asterNetworkErr = stripVTControlCharacters(renderLandingExchangeLine({
+      exchange: "aster",
+      ok: false,
+      equity: 0,
+      positions: 0,
+      errorCode: "EXCHANGE_ERROR",
+    }, true));
+    const asterUnknownErr = stripVTControlCharacters(renderLandingExchangeLine({
+      exchange: "aster",
+      ok: false,
+      equity: 0,
+      positions: 0,
+    }, true));
+
+    expect(asterNetworkErr).not.toContain("agent required");
+    expect(asterNetworkErr).toContain("—");
+    expect(asterUnknownErr).not.toContain("agent required");
+    expect(asterUnknownErr).toContain("—");
+  });
+
+  it("renders agent-required hint for AGENT_EXPIRED and NO_SIGNER_AVAILABLE (any agent-related code)", () => {
+    for (const code of ["AGENT_EXPIRED", "NO_SIGNER_AVAILABLE", "NOT_IMPLEMENTED"]) {
+      const out = stripVTControlCharacters(renderLandingExchangeLine({
+        exchange: "aster",
+        ok: false,
+        equity: 0,
+        positions: 0,
+        errorCode: code,
+      }, true));
+      expect(out).toContain("agent required");
+    }
   });
 });

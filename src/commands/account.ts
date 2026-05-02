@@ -660,27 +660,17 @@ export function registerAccountCommands(
     .command("twap-orders")
     .description("Active TWAP orders")
     .action(async () => {
-      let p: ReturnType<typeof pac>;
-      try {
-        const adapter = await getAdapter();
-        p = pac(adapter);
-      } catch (err) {
-        // pac() throws a generic "Market settings are only available on
-        // Pacifica" — replace with a TWAP-specific message so HL/LT/Aster
-        // users see what's actually unsupported. Codex QA matrix #1 fix.
-        const orig = err instanceof Error ? err.message : String(err);
-        const msg = orig.includes("only available on Pacifica")
-          ? "TWAP orders are a Pacifica-only feature."
-          : orig;
+      const adapter = await getAdapter();
+      if (!hasPacificaSdk(adapter)) {
+        const msg = "TWAP orders are a Pacifica-only feature.";
         if (isJson()) return printJson(jsonError("NOT_SUPPORTED", msg, {
           details: { remediation: "Use 'perp -e pacifica account twap-orders'" },
         }));
         console.error(chalk.red(`\n  ${msg}\n`));
-        if (orig.includes("only available on Pacifica")) {
-          console.error(chalk.gray(`  Run: perp -e pacifica account twap-orders\n`));
-        }
+        console.error(chalk.gray(`  Run: perp -e pacifica account twap-orders\n`));
         return;
       }
+      const p = pac(adapter);
       const sdk = p.sdk as Record<string, (...args: any[]) => any>;
       const orders = await sdk.getTWAPOrders(p.publicKey);
       if (isJson()) return printJson(jsonOk(orders));

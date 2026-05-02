@@ -8,7 +8,14 @@ export type LandingExchangeStatus = {
   ok: boolean;
   equity: number;
   positions: number;
+  errorCode?: string;
 };
+
+const ASTER_AGENT_REQUIRED_CODES = new Set([
+  "NOT_IMPLEMENTED",
+  "NO_SIGNER_AVAILABLE",
+  "AGENT_EXPIRED",
+]);
 
 function exchangeLabel(exchange: LandingExchangeStatus["exchange"]): string {
   return exchange === "pacifica" ? "Pacifica" : exchange === "hyperliquid" ? "Hyperliquid" : exchange === "lighter" ? "Lighter" : "Aster";
@@ -22,7 +29,13 @@ export function renderLandingExchangeLine(
   status: LandingExchangeStatus,
   asterAgentMissing: boolean,
 ): string {
-  if (!status.ok && status.exchange === "aster" && asterAgentMissing) {
+  if (
+    !status.ok &&
+    status.exchange === "aster" &&
+    asterAgentMissing &&
+    status.errorCode !== undefined &&
+    ASTER_AGENT_REQUIRED_CODES.has(status.errorCode)
+  ) {
     return `    ${chalk.yellow("⚙")} ${chalk.cyan(exchangeLabel(status.exchange).padEnd(14))} ${chalk.yellow("agent required")} ${chalk.gray("→ perp wallet agent approve aster")}`;
   }
 

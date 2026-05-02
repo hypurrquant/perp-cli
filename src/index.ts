@@ -680,8 +680,10 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
               }
             } catch { /* spot not available */ }
             return { exchange: ex, ok: true, equity: Number(balance.equity) + spotValue, positions: posCount };
-          } catch {
-            return { exchange: ex, ok: false, equity: 0, positions: 0 };
+          } catch (err) {
+            const { PerpError } = await import("./errors.js");
+            const errorCode = err instanceof PerpError ? err.structured.code : undefined;
+            return { exchange: ex, ok: false, equity: 0, positions: 0, errorCode };
           }
         }));
 
