@@ -30,6 +30,7 @@ import type { ExchangeAdapter } from "./exchanges/interface.js";
 import { resolveExchangeName } from "./exchanges/registry.js";
 import { registerMarketCommands } from "./commands/market.js";
 import { registerAccountCommands } from "./commands/account.js";
+import { registerOutcomeCommands } from "./commands/outcome.js";
 import { registerTradeCommands } from "./commands/trade.js";
 // manage commands now register under `wallet manage ...` via registerWalletCommands.
 // stream commands removed — WS feeds still used by dashboard/event-stream internally
@@ -390,6 +391,7 @@ function getHLAdapter(): HyperliquidAdapter {
 // Register command groups with async adapter getter
 registerMarketCommands(program, getAdapter, isJson, getAdapterForExchange);
 registerAccountCommands(program, getAdapter, isJson, getAdapterForExchange);
+registerOutcomeCommands(program, getAdapterForExchange, isJson);
 registerTradeCommands(program, getAdapter, isJson, isDryRun, getAdapterForExchange);
 // manage tree wired inside registerWalletCommands below.
 // stream commands removed
