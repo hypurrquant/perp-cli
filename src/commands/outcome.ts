@@ -189,6 +189,16 @@ export function registerOutcomeCommands(
           notional: (Number(price) * Number(size)).toFixed(4),
         };
 
+        // Validate min-notional client-side so --dry-run surfaces it too
+        // (placeOrder enforces but is bypassed by --dry-run early return).
+        if (Number(orderInfo.notional) < 10) {
+          throw new PerpError(
+            "INVALID_PARAMS",
+            `Outcome order notional must be at least 10 USDH (got price=${price} * size=${size} = ${orderInfo.notional})`,
+            { exchange: "hyperliquid", remediation: "Increase --usd or pass --limit so price*size >= 10" },
+          );
+        }
+
         if (merged.dryRun) {
           if (isJson()) return printJson(jsonOk({ dryRun: true, order: orderInfo }));
           console.log(chalk.yellow(`\n  [dry-run] ${action.toUpperCase()} outcome=${outcomeId} side=${side} ${size}@${price} (notional ~$${orderInfo.notional} USDH, tif=${tifNorm})\n`));
