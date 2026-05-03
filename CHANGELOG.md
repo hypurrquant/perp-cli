@@ -4,6 +4,33 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-05-03
+
+Adds Hyperliquid Outcome markets (HIP-4) support — a new asset class. Verified end-to-end against mainnet (place + cancel real order against asset id `100,000,010`). Two rounds of independent Codex review closed before release.
+
+### Added
+- **`perp outcome` command tree** — `list`, `book`, `positions`, `orders`, `buy`, `sell`, `cancel`. USDH-quoted, fully collateralized binary/range contracts; no leverage / no liquidation. $10 USDH min order. Currently 1 live market on mainnet (BTC binary daily settling at 06:00 UTC).
+- **`HyperliquidOutcomeAdapter`** — composes with `HyperliquidAdapter` for signing. Asset id formula `100_000_000 + (10 * outcome + side)`. Bypasses HL's cached spot-state for fresh post-fill positions, then invalidates the `acct:` cache after place/cancel for downstream readers.
+- **`OutcomeAdapter` interface** in `src/exchanges/outcome-interface.ts` (mirrors the SpotAdapter shape; ready for additional venues if HIP-4 pattern spreads).
+- **Probe scripts** under `scripts/probe-outcome-{ws,order}.ts` documenting the WebSocket and exchange-action shapes that informed this implementation.
+- **+16 unit tests** covering encoding (`10*outcome+side`), coin name conventions (`#<enc>`/`+<enc>`), description parsing, venue-rejection assertion helpers, and cancel-status validation. Total: 1305 → 1323.
+
+### SSOT compliance
+- **Rule #2 (No Fallback):** venue rejections embedded in `status:"ok"` + `statuses[0].error` are now thrown as `EXCHANGE_ERROR` (not silently masked); unknown outcome → `SYMBOL_NOT_FOUND`; out-of-range side / encoding overflow → `INVALID_PARAMS`. `_resolveUserAddress()` prefers `_hl.address`, falls back to OWS-stored agent meta `userEvmAddress`, and throws `NO_SIGNER_AVAILABLE` only if both are absent (no silent zero-balance substitution).
+- **Rule #3 (Single Secret Source):** no new env vars; reuses existing HL agent.
+
+### UX
+- **`--dry-run`** uses `command.optsWithGlobals()` so the parent program's flag is not shadowed; pre-validates min-notional so the dry-run output cannot lie about a viable order.
+- **Encoded-side mismatch detection** — `outcome buy 2 #10` (where `#10` encodes outcome 1) throws `INVALID_PARAMS` with guidance instead of silently routing to outcome 2.
+- **Pre-checks spot USDH balance** on buy and surfaces `INSUFFICIENT_BALANCE` with a "bridge USDC→USDH" remediation instead of an opaque venue error.
+- **`outcome orders`** uses the normalised lowercase `buy`/`sell` from the HL adapter (was rendering all buys as SELL).
+
+### Out of scope (deferred)
+- Portfolio aggregation of outcome holdings (roll into `perp portfolio`).
+- Landing page outcome line.
+- `outcome close <outcome> <side>` shortcut (use `outcome sell <outcome> <side> <usd>` for now).
+- HIP-4 builder/deployer mechanics for creating new outcomes/questions.
+
 ## [0.12.18] — 2026-05-02
 
 Closes Codex independent review of v0.12.17. 1 HIGH regression + 1 MEDIUM Rule #2 gap.
