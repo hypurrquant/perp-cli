@@ -19,6 +19,9 @@ import type {
   OutcomeOrderbook,
   OutcomePosition,
   OutcomeSideInfo,
+  OutcomeView,
+  OutcomeViewSide,
+  OutcomeViewUnderlying,
 } from "./outcome-interface.js";
 import type { HyperliquidAdapter } from "./hyperliquid.js";
 
@@ -192,6 +195,112 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
       }
     }
     return positions;
+  }
+
+  /**
+   * Assemble a combined view of one outcome: all sides' books in parallel,
+   * the underlying mark price (HL perp mid for `description.underlying`),
+   * gap vs targetPrice, time-to-expiry, and per-side implied probability.
+   *
+   * Outcome markets have a symmetric (Yes / No) structure where the prices
+   * sum to ~$1; this view exposes both sides in a single round-trip and
+   * also surfaces the directional context for binary markets — what BTC
+   * mark price would settle the contract right now.
+   */
+  async getView(outcome: number, depth: number = 10): Promise<OutcomeView> {
+    await this.init();
+    const meta = this._outcomeMeta?.outcomes.find((o) => o.outcome === outcome);
+    if (!meta) {
+      throw new PerpError("SYMBOL_NOT_FOUND", `Unknown outcome id: ${outcome}`, {
+        exchange: "hyperliquid",
+        remediation: "Run: perp outcome list",
+      });
+    }
+    const parsed = HyperliquidOutcomeAdapter.parseDescription(meta.description);
+
+    // Fetch books for every side in parallel + allMids once for mids and
+    // the underlying symbol's mark price.
+    const allMidsPromise = this._infoPost({ type: "allMids" }) as Promise<Record<string, string>>;
+    const bookPromises = meta.sideSpecs.map((_, i) => this.getOrderbook(outcome, i));
+    const [allMids, ...books] = await Promise.all([allMidsPromise, ...bookPromises]);
+
+    // Trim each book to `depth` levels and compute best bid/ask + implied prob.
+    const sides: OutcomeViewSide[] = meta.sideSpecs.map((spec, i) => {
+      const encoding = HyperliquidOutcomeAdapter.encoding(outcome, i);
+      const book = books[i];
+      const bids = book.bids.slice(0, depth);
+      const asks = book.asks.slice(0, depth);
+      const bestBid = bids[0]?.[0];
+      const bestAsk = asks[0]?.[0];
+      const mid = allMids[`#${encoding}`];
+      return {
+        side: i,
+        name: spec.name,
+        encoding,
+        assetId: OUTCOME_ASSET_OFFSET + encoding,
+        mid,
+        bids,
+        asks,
+        bestBid,
+        bestAsk,
+        impliedProb: mid !== undefined ? Number(mid) : undefined,
+      };
+    });
+
+    const midSum = sides.every((s) => s.impliedProb !== undefined)
+      ? sides.reduce((acc, s) => acc + (s.impliedProb ?? 0), 0)
+      : undefined;
+
+    // Underlying: HL perp mid for the parsed underlying symbol.
+    let underlying: OutcomeViewUnderlying | null = null;
+    if (parsed.underlying) {
+      const sym = parsed.underlying.toUpperCase();
+      // HL `allMids` keys perps by bare symbol (e.g. "BTC"). HIP-3 perps
+      // use "@dexIdx:SYMBOL" but those won't be referenced in HIP-4
+      // outcomes for now.
+      const markPrice = allMids[sym];
+      const target = parsed.targetPrice;
+      let gap: number | undefined;
+      let gapPct: number | undefined;
+      let inTheMoney: "yes" | "no" | null = null;
+      if (markPrice !== undefined && target !== undefined) {
+        gap = Number(markPrice) - target;
+        gapPct = (gap / target) * 100;
+        // For class:priceBinary the convention is Yes = "underlying >=
+        // target". When `class` is unknown or non-binary, leave inTheMoney
+        // as null rather than guessing.
+        if (parsed.class === "priceBinary" && Number.isFinite(gap)) {
+          inTheMoney = gap >= 0 ? "yes" : "no";
+        }
+      }
+      underlying = {
+        symbol: sym,
+        source: sym,
+        markPrice,
+        targetPrice: target,
+        gap,
+        gapPct,
+        inTheMoney,
+      };
+    }
+
+    const expiryMs = parsed.expiryMs;
+    const serverTime = Date.now();
+    const msToExpiry = expiryMs !== undefined ? expiryMs - serverTime : undefined;
+
+    return {
+      outcome,
+      name: meta.name,
+      description: meta.description,
+      class: parsed.class,
+      expiryMs,
+      msToExpiry,
+      period: parsed.period,
+      underlying,
+      sides,
+      midSum,
+      serverTime,
+    };
   }
 
   async getOrderbook(outcome: number, side: number): Promise<OutcomeOrderbook> {

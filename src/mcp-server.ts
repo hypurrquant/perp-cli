@@ -324,6 +324,28 @@ server.tool(
 );
 
 server.tool(
+  "get_outcome_view",
+  "Get a combined view of one outcome market: all sides' books in parallel + underlying mark price gap (vs targetPrice) + time to expiry + per-side implied probability (mid sum). For binary markets, the symmetric structure means Yes bid + No ask ≈ 1.0 — the view exposes both sides in a single round-trip and surfaces directional context (e.g., is BTC currently above the target). Public read.",
+  {
+    outcome: z.number().int().nonnegative().describe("Outcome id from outcomeMeta (e.g., 1 for the BTC binary daily)"),
+    depth: z.number().int().min(1).max(50).optional().default(10).describe("Number of book levels per side"),
+  },
+  async ({ outcome, depth }) => {
+    try {
+      const { HyperliquidAdapter } = await import("./exchanges/hyperliquid.js");
+      const { HyperliquidOutcomeAdapter } = await import("./exchanges/hyperliquid-outcome.js");
+      const hl = new HyperliquidAdapter(undefined, false);
+      await hl.init();
+      const out = new HyperliquidOutcomeAdapter(hl);
+      const view = await out.getView(outcome, depth);
+      return { content: [{ type: "text", text: ok(view, { outcome, depth }) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: err(e instanceof Error ? e.message : String(e), { outcome }) }], isError: true };
+    }
+  },
+);
+
+server.tool(
   "get_outcome_book",
   "Get the orderbook for one outcome side. Public read — no API key needed.",
   {

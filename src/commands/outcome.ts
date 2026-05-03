@@ -15,6 +15,7 @@ import type {
   OutcomeMarketInfo,
   OutcomePosition,
   OutcomeOrderbook,
+  OutcomeView,
 } from "../exchanges/outcome-interface.js";
 import { makeTable, printJson, jsonOk, jsonError, formatUsd } from "../utils.js";
 import { PerpError } from "../errors.js";
@@ -88,6 +89,26 @@ export function registerOutcomeCommands(
       if (isJson()) return printJson(jsonOk(book));
 
       printOutcomeBook(book, depth);
+    });
+
+  // ── outcome view <outcome> ───────────────────────────────────────────────
+  // Symmetric Yes/No book + underlying gap + time to expiry. Single
+  // round-trip view for binary markets.
+  outcome
+    .command("view <outcome>")
+    .alias("status")
+    .description("Combined view: Yes/No books side-by-side + underlying mark gap + expiry")
+    .option("--depth <n>", "Number of levels per side", "10")
+    .action(async (outcomeArg: string, opts: { depth?: string }) => {
+      const adapter = await getOutcomeAdapter();
+      const outcomeId = Number(outcomeArg);
+      if (!Number.isInteger(outcomeId) || outcomeId < 0) {
+        throw new PerpError("INVALID_PARAMS", `Invalid outcome id: ${outcomeArg}`, {});
+      }
+      const depth = Math.max(1, Number(opts.depth ?? "10"));
+      const view = await adapter.getView(outcomeId, depth);
+      if (isJson()) return printJson(jsonOk(view));
+      printOutcomeView(view);
     });
 
   // ── outcome positions ────────────────────────────────────────────────────
@@ -286,6 +307,72 @@ async function resolveOutcomeSide(
     throw new PerpError("INVALID_PARAMS", `Invalid side: ${sideArg} (use 0/1, Yes/No, or #<enc>)`, {});
   }
   return { outcome: outcomeId, side };
+}
+
+function printOutcomeView(view: OutcomeView): void {
+  console.log(chalk.white.bold(`\n  Outcome #${view.outcome} — ${view.name}`));
+  console.log(chalk.gray(`  ${view.description}`));
+
+  // Header line: target / underlying mark / gap / expiry
+  if (view.underlying) {
+    const u = view.underlying;
+    const target = u.targetPrice !== undefined ? `$${u.targetPrice.toLocaleString()}` : "—";
+    const mark = u.markPrice !== undefined ? `$${Number(u.markPrice).toLocaleString()}` : chalk.gray("—");
+    const gapStr = u.gap !== undefined && u.gapPct !== undefined
+      ? (u.gap >= 0
+          ? chalk.green(`+$${Math.abs(u.gap).toFixed(2)} (+${u.gapPct.toFixed(2)}%)`)
+          : chalk.red(`-$${Math.abs(u.gap).toFixed(2)} (${u.gapPct.toFixed(2)}%)`))
+      : chalk.gray("—");
+    const itm = u.inTheMoney === "yes" ? chalk.green("Yes ITM")
+      : u.inTheMoney === "no" ? chalk.red("No ITM")
+      : chalk.gray("—");
+    console.log(`  ${u.symbol} target ${target}  current ${mark}  gap ${gapStr}  ${itm}`);
+  }
+  if (view.expiryMs !== undefined) {
+    const expiryStr = new Date(view.expiryMs).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+    const ttx = view.msToExpiry !== undefined ? formatDuration(view.msToExpiry) : "—";
+    console.log(`  Expires: ${expiryStr}  (${ttx})`);
+  }
+  if (view.midSum !== undefined) {
+    const sumColor = Math.abs(view.midSum - 1) < 0.01 ? chalk.gray : chalk.yellow;
+    console.log(`  Implied probabilities (sum ${sumColor(view.midSum.toFixed(4))}):`);
+    for (const s of view.sides) {
+      const p = s.impliedProb !== undefined ? `${(s.impliedProb * 100).toFixed(1)}%` : "—";
+      console.log(`    ${s.name.padEnd(6)} ${p}`);
+    }
+  }
+
+  // One table per side. Stacked layout — readable on any terminal width
+  // and avoids the alignment quirks that come from padding ANSI strings.
+  console.log("");
+  for (const s of view.sides) {
+    console.log(`  ${chalk.white.bold(s.name)} book`);
+    const maxLevels = Math.max(s.bids.length, s.asks.length);
+    const rows: string[][] = [];
+    for (let i = 0; i < maxLevels; i++) {
+      const b = s.bids[i];
+      const a = s.asks[i];
+      rows.push([
+        b ? chalk.green(b[0]) : "",
+        b ? b[1] : "",
+        a ? chalk.red(a[0]) : "",
+        a ? a[1] : "",
+      ]);
+    }
+    console.log(makeTable(["bid", "size", "ask", "size"], rows));
+    console.log("");
+  }
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 0) return "expired";
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 24) return `${Math.floor(h / 24)}d ${h % 24}h ${m}m left`;
+  if (h > 0) return `${h}h ${m}m left`;
+  if (m > 0) return `${m}m ${s % 60}s left`;
+  return `${s}s left`;
 }
 
 function printOutcomeBook(book: OutcomeOrderbook, depth: number): void {

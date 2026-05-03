@@ -320,7 +320,7 @@ When the user first sets up a wallet, ask:
 
 ## MCP Server
 
-The package also ships a 21-tool MCP server (no API keys required for read-only market data — `get_markets`, `get_orderbook`, `get_funding_rates`, `get_prices`, `get_outcome_markets`, `get_outcome_book`, plus 15 account/advisor tools):
+The package also ships a 22-tool MCP server (no API keys required for read-only market data — `get_markets`, `get_orderbook`, `get_funding_rates`, `get_prices`, `get_outcome_markets`, `get_outcome_view`, `get_outcome_book`, plus 15 account/advisor tools):
 
 ```json
 {

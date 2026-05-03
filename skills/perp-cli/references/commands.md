@@ -99,9 +99,16 @@ Fully-collateralized binary/range contracts on Hyperliquid. **Quote token: USDH 
 # with mid + assetId.
 perp --json outcome list
 
-# Orderbook for one side. <side> accepts: 0/1, Yes/No, or #<enc> / +<enc>
-# (the encoded form must match the outcome arg — mismatch throws
-# INVALID_PARAMS).
+# COMBINED VIEW — all sides' books in parallel + underlying mark price
+# (HL perp mid for `description.underlying`) + gap vs targetPrice + ms
+# until expiry + per-side implied probability. For a binary market the
+# symmetric structure means Yes BID + No ASK ≈ 1.0; this is the
+# preferred entry point for agents that need a single snapshot.
+perp --json outcome view <outcome> [--depth N=10]
+
+# Orderbook for ONE side only (use `view` if you want both at once).
+# <side> accepts: 0/1, Yes/No, or #<enc> / +<enc> (the encoded form
+# must match the outcome arg — mismatch throws INVALID_PARAMS).
 perp --json outcome book <outcome> <side> [--depth N=10]
 
 # Holdings + open orders.
@@ -145,16 +152,17 @@ Encoding formula: `enc = 10 * outcome + side`; asset id = `100,000,000 + enc`.
 
 ```
 1. perp --json outcome list                       # discover markets, parse description
-2. perp --json -e hyperliquid market mid <UNDERLYING>
-                                                  # if class:priceBinary, compare against targetPrice
-3. perp --json outcome book <outcome> <side> --depth 10
-                                                  # check liquidity (single-MM mirror book risk)
-4. perp --json outcome buy <outcome> <side> <usd> --dry-run
+2. perp --json outcome view <outcome>             # full snapshot: both books +
+                                                  # underlying mark + gap vs target +
+                                                  # implied probabilities + time to expiry
+3. perp --json outcome buy <outcome> <side> <usd> --dry-run
                                                   # validate notional, get user approval
-5. perp --json outcome buy <outcome> <side> <usd> [--limit <px>] [--tif ...]
+4. perp --json outcome buy <outcome> <side> <usd> [--limit <px>] [--tif ...]
                                                   # execute (only after explicit user OK)
-6. perp --json outcome positions                  # confirm fill / monitor
+5. perp --json outcome positions                  # confirm fill / monitor
 ```
+
+`outcome view` replaces the old multi-call pattern (separate `book` + `market mid` lookups). One round-trip returns everything an agent needs to decide direction.
 
 Settlement at `expiryMs` is venue-side: winning side → 1 USDH per share, losing → 0. Decide before expiry whether to self-close or let the venue settle.
 

@@ -74,6 +74,47 @@ export interface OutcomeOrderbook {
   time: number;
 }
 
+export interface OutcomeViewSide extends OutcomeSideInfo {
+  bids: [string, string][];
+  asks: [string, string][];
+  bestBid?: string;
+  bestAsk?: string;
+  /** Implied probability of THIS side winning, derived from mid */
+  impliedProb?: number;
+}
+
+export interface OutcomeViewUnderlying {
+  /** Underlying symbol from description (e.g. "BTC") */
+  symbol: string;
+  /** Source perp symbol used to fetch mark (typically same as `symbol`, may include venue prefix) */
+  source: string;
+  markPrice?: string;
+  targetPrice?: number;
+  /** markPrice - targetPrice (USD) */
+  gap?: number;
+  /** (markPrice - targetPrice) / targetPrice * 100 */
+  gapPct?: number;
+  /** If markPrice were to settle now: which side is winning ("yes"|"no") or null when ambiguous */
+  inTheMoney?: "yes" | "no" | null;
+}
+
+export interface OutcomeView {
+  outcome: number;
+  name: string;
+  description: string;
+  class?: string;
+  expiryMs?: number;
+  /** ms until expiry; negative if already expired; undefined if expiry unknown */
+  msToExpiry?: number;
+  period?: string;
+  underlying: OutcomeViewUnderlying | null;
+  sides: OutcomeViewSide[];
+  /** Sum of side mids; ~1.0 for fair binary, deviation hints at arbitrage. */
+  midSum?: number;
+  /** Server time-ms when the view was assembled */
+  serverTime: number;
+}
+
 export interface OutcomeAdapter {
   readonly name: string;
   init(): Promise<void>;
@@ -83,6 +124,8 @@ export interface OutcomeAdapter {
   getPositions(): Promise<OutcomePosition[]>;
   /** L2 orderbook for one (outcome, side). */
   getOrderbook(outcome: number, side: number): Promise<OutcomeOrderbook>;
+  /** Combined view: all sides' books in parallel + underlying mark price gap + expiry. */
+  getView(outcome: number, depth?: number): Promise<OutcomeView>;
   /** Place a limit order. Throws INVALID_PARAMS if `price * size < 10` USDH. */
   placeOrder(opts: {
     outcome: number;
