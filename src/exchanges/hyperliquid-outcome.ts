@@ -158,10 +158,7 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
     await this.init();
     // Bypass HL adapter's cached spot state — outcome positions change at
     // every fill, and the spot cache TTL would surface stale data.
-    const userAddress = this._hl.address;
-    if (!userAddress) {
-      throw new PerpError("NO_SIGNER_AVAILABLE", "Hyperliquid address not resolved — cannot fetch outcome positions in read-only mode", { exchange: "hyperliquid" });
-    }
+    const userAddress = await this._resolveUserAddress();
     const state = await this._infoPost({ type: "spotClearinghouseState", user: userAddress }) as { balances?: Array<Record<string, unknown>> };
     const balances = (state?.balances ?? []) as Array<Record<string, unknown>>;
     const allMidsPromise = this._infoPost({ type: "allMids" }) as Promise<Record<string, string>>;
@@ -350,9 +347,28 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
     }
   }
 
+  /**
+   * Resolve the master EVM address for spot-clearinghouse queries.
+   * `HyperliquidAdapter._address` is populated only when a master/PK signer
+   * is configured. Agent-only setups (no master pk in OWS) leave it empty
+   * even though the agent meta knows the user's EVM address. Fall through
+   * to the agent registry rather than treating empty as zero balance —
+   * Rule #2: no silent fallback.
+   */
+  private async _resolveUserAddress(): Promise<string> {
+    if (this._hl.address) return this._hl.address;
+    const { getAgent } = await import("../agent-wallet/store.js");
+    const agent = getAgent("hyperliquid");
+    if (agent?.userEvmAddress) return agent.userEvmAddress;
+    throw new PerpError(
+      "NO_SIGNER_AVAILABLE",
+      "Hyperliquid user address not resolved — cannot query spot/USDH state",
+      { exchange: "hyperliquid", remediation: "Configure an OWS master wallet or register an HL agent" },
+    );
+  }
+
   private async _getUsdhAvailable(): Promise<number> {
-    const userAddress = this._hl.address;
-    if (!userAddress) return 0;
+    const userAddress = await this._resolveUserAddress();
     const state = await this._infoPost({ type: "spotClearinghouseState", user: userAddress }) as { balances?: Array<Record<string, unknown>> };
     const balances = state?.balances ?? [];
     const usdh = balances.find((b) => String(b.coin) === "USDH");
