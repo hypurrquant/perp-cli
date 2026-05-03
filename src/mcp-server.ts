@@ -301,8 +301,74 @@ server.tool(
 );
 
 // ============================================================
+// Outcome markets (Hyperliquid HIP-4) — public reads
+// ============================================================
+
+server.tool(
+  "get_outcome_markets",
+  "List active Hyperliquid Outcome markets (HIP-4). Each market has parsed metadata (underlying asset, target price, expiry, period) and per-side info (Yes/No name, encoding, asset id, current mid). Public read — no API key needed.",
+  {},
+  async () => {
+    try {
+      const { HyperliquidAdapter } = await import("./exchanges/hyperliquid.js");
+      const { HyperliquidOutcomeAdapter } = await import("./exchanges/hyperliquid-outcome.js");
+      const hl = new HyperliquidAdapter(undefined, false);
+      await hl.init();
+      const out = new HyperliquidOutcomeAdapter(hl);
+      const markets = await out.getMarkets();
+      return { content: [{ type: "text", text: ok(markets, { count: markets.length, source: "outcomeMeta" }) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: err(e instanceof Error ? e.message : String(e)) }], isError: true };
+    }
+  },
+);
+
+server.tool(
+  "get_outcome_book",
+  "Get the orderbook for one outcome side. Public read — no API key needed.",
+  {
+    outcome: z.number().int().nonnegative().describe("Outcome id from outcomeMeta (e.g., 1 for the BTC binary daily)"),
+    side: z.number().int().min(0).max(9).describe("Side index within the outcome (0 = first sideSpecs entry like 'Yes', 1 = second like 'No')"),
+  },
+  async ({ outcome, side }) => {
+    try {
+      const { HyperliquidAdapter } = await import("./exchanges/hyperliquid.js");
+      const { HyperliquidOutcomeAdapter } = await import("./exchanges/hyperliquid-outcome.js");
+      const hl = new HyperliquidAdapter(undefined, false);
+      await hl.init();
+      const out = new HyperliquidOutcomeAdapter(hl);
+      const book = await out.getOrderbook(outcome, side);
+      return { content: [{ type: "text", text: ok(book, { outcome, side, assetId: HyperliquidOutcomeAdapter.assetId(outcome, side) }) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: err(e instanceof Error ? e.message : String(e), { outcome, side }) }], isError: true };
+    }
+  },
+);
+
+// ============================================================
 // Account tools (need private key)
 // ============================================================
+
+server.tool(
+  "get_outcome_positions",
+  "Get the active account's open outcome positions (size, entry notional, mark price, unrealized PnL). Requires a configured Hyperliquid wallet or agent.",
+  {},
+  async () => {
+    try {
+      const { HyperliquidAdapter } = await import("./exchanges/hyperliquid.js");
+      const { HyperliquidOutcomeAdapter } = await import("./exchanges/hyperliquid-outcome.js");
+      const adapter = await getOrCreateAdapter("hyperliquid");
+      if (!(adapter instanceof HyperliquidAdapter)) {
+        return { content: [{ type: "text", text: err("Outcome positions are Hyperliquid-only", { exchange: "hyperliquid" }) }], isError: true };
+      }
+      const out = new HyperliquidOutcomeAdapter(adapter);
+      const positions = await out.getPositions();
+      return { content: [{ type: "text", text: ok(positions, { count: positions.length }) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: err(e instanceof Error ? e.message : String(e)) }], isError: true };
+    }
+  },
+);
 
 server.tool(
   "get_balance",

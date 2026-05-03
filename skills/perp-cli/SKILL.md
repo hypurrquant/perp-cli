@@ -11,7 +11,7 @@ metadata:
 
 # perp-cli
 
-Multi-DEX perpetual futures CLI + MCP server for Pacifica (Solana), Hyperliquid (HyperEVM), Lighter (Ethereum), and Aster (BNB Chain).
+Multi-DEX perpetual futures CLI + MCP server for Pacifica (Solana), Hyperliquid (HyperEVM), Lighter (Ethereum), and Aster (BNB Chain). v0.13.0+ also supports Hyperliquid Outcome markets (HIP-4) — fully-collateralized binary/range contracts quoted in USDH.
 
 ## Instructions
 
@@ -25,7 +25,7 @@ Activate whenever the user wants to do anything against perp-cli, including: sca
 
 This skill uses progressive disclosure. Read these on demand:
 
-- `references/commands.md` — full command tree for every group (market, account, trade, arb, funds, wallet, risk, history, strategy, background, alerts, settings, backtest)
+- `references/commands.md` — full command tree for every group (market, account, trade, outcome, arb, funds, wallet, risk, history, strategy, background, alerts, settings, backtest)
 - `references/agent-operations.md` — non-interactive setup flows, idempotency rules, error codes, common mistakes
 - `references/strategies.md` — funding-arb decision framework + risk-management playbook (read before designing arb strategy)
 
@@ -320,7 +320,7 @@ When the user first sets up a wallet, ask:
 
 ## MCP Server
 
-The package also ships a 18-tool MCP server (no API keys required for read-only market data):
+The package also ships a 21-tool MCP server (no API keys required for read-only market data — `get_markets`, `get_orderbook`, `get_funding_rates`, `get_prices`, `get_outcome_markets`, `get_outcome_book`, plus 15 account/advisor tools):
 
 ```json
 {

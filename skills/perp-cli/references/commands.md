@@ -89,6 +89,75 @@ perp --json -e <EX> trade spot-balance
 perp --json trade multi <legs...>
 ```
 
+## Outcome Markets (Hyperliquid HIP-4)
+
+Fully-collateralized binary/range contracts on Hyperliquid. **Quote token: USDH (NOT USDC)**. No leverage / no liquidation. Min order $10 USDH (price × size ≥ 10). Currently 1 live market on mainnet (BTC binary daily settling at 06:00 UTC).
+
+```bash
+# List active outcome markets — parses the description string into
+# class / underlying / expiry / targetPrice / period and lists each side
+# with mid + assetId.
+perp --json outcome list
+
+# Orderbook for one side. <side> accepts: 0/1, Yes/No, or #<enc> / +<enc>
+# (the encoded form must match the outcome arg — mismatch throws
+# INVALID_PARAMS).
+perp --json outcome book <outcome> <side> [--depth N=10]
+
+# Holdings + open orders.
+perp --json outcome positions
+perp --json outcome orders
+
+# Place orders. ALWAYS dry-run first.
+perp --json outcome buy  <outcome> <side> <usd> --dry-run
+perp --json outcome sell <outcome> <side> <usd> --dry-run
+
+# Live execution. --limit makes it GTC; without --limit it's IoC at top-of-book +/-5%.
+perp --json outcome buy  <outcome> <side> <usd> [--limit <px>] [--tif gtc|ioc|alo]
+perp --json outcome sell <outcome> <side> <usd> [--limit <px>] [--tif gtc|ioc|alo]
+
+# Cancel a resting order.
+perp --json outcome cancel <outcome> <side> <oid>
+```
+
+### Identifier model
+
+Same outcome side can be referenced 5 ways — the CLI normalises:
+
+| Form | Example (BTC daily Yes) |
+|---|---|
+| `<outcome>, <side>` integer | `1, 0` |
+| `<outcome>, <side>` name | `1, yes` |
+| `#<enc>` (l2Book / candle / allMids coin) | `#10` |
+| `+<enc>` (spotClearinghouseState balance coin) | `+10` |
+| asset id (HL `/exchange` payload) | `100000010` |
+
+Encoding formula: `enc = 10 * outcome + side`; asset id = `100,000,000 + enc`.
+
+### Foot-guns enforced (Rule #2)
+
+- **Min notional:** `price * size < 10 USDH` → `INVALID_PARAMS` with remediation. Enforced in dry-run too.
+- **Encoded-side mismatch:** `outcome buy 2 #10` (where `#10` decodes to outcome=1) → `INVALID_PARAMS`, never silently routes to outcome 2.
+- **Insufficient USDH:** pre-checked before order send → `INSUFFICIENT_BALANCE` with "bridge USDC→USDH" remediation. Resolves the user address through the OWS-stored agent meta when no master pk is configured.
+- **Venue rejection:** HL returns HTTP 200 with `statuses[0].error` even when an order is rejected; the adapter throws `EXCHANGE_ERROR` so a "placed" success message never masks a failure.
+
+### Agent workflow recommendation
+
+```
+1. perp --json outcome list                       # discover markets, parse description
+2. perp --json -e hyperliquid market mid <UNDERLYING>
+                                                  # if class:priceBinary, compare against targetPrice
+3. perp --json outcome book <outcome> <side> --depth 10
+                                                  # check liquidity (single-MM mirror book risk)
+4. perp --json outcome buy <outcome> <side> <usd> --dry-run
+                                                  # validate notional, get user approval
+5. perp --json outcome buy <outcome> <side> <usd> [--limit <px>] [--tif ...]
+                                                  # execute (only after explicit user OK)
+6. perp --json outcome positions                  # confirm fill / monitor
+```
+
+Settlement at `expiryMs` is venue-side: winning side → 1 USDH per share, losing → 0. Decide before expiry whether to self-close or let the venue settle.
+
 ## Funds (deposit, withdraw, transfer, bridge, rebalance)
 
 All fund movement lives under `perp funds`.
