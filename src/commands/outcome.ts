@@ -128,13 +128,21 @@ export function registerOutcomeCommands(
         console.log(chalk.gray("\n  No open outcome orders.\n"));
         return;
       }
-      const rows = (orders as Array<Record<string, unknown>>).map((o) => [
-        String(o.symbol ?? ""),
-        String(o.side === "B" ? chalk.green("BUY") : chalk.red("SELL")),
-        String(o.size ?? ""),
-        String(o.price ?? ""),
-        String(o.orderId ?? ""),
-      ]);
+      // HL adapter normalises open-order sides to "buy"/"sell" (see
+      // HyperliquidAdapter.getOpenOrders → ExchangeOrder shape). Earlier
+      // versions checked the raw "B"/"A" form, which mislabelled every buy
+      // as SELL.
+      const rows = (orders as Array<Record<string, unknown>>).map((o) => {
+        const side = String(o.side ?? "").toLowerCase();
+        const sideLabel = side === "buy" ? chalk.green("BUY") : side === "sell" ? chalk.red("SELL") : chalk.gray(String(o.side ?? ""));
+        return [
+          String(o.symbol ?? ""),
+          sideLabel,
+          String(o.size ?? ""),
+          String(o.price ?? ""),
+          String(o.orderId ?? ""),
+        ];
+      });
       console.log("\n" + makeTable(["coin", "side", "size", "price", "oid"], rows) + "\n");
     });
 
@@ -248,13 +256,26 @@ async function resolveOutcomeSide(
     throw new PerpError("INVALID_PARAMS", `Invalid outcome id: ${outcomeArg}`, {});
   }
 
-  // side may be: integer (0/1), name (Yes/No), or `#10`/`+10`
+  // side may be: integer (0/1), name (Yes/No), or `#<enc>`/`+<enc>` where
+  // enc encodes BOTH outcome and side. The encoded form is verified against
+  // outcomeArg — silently picking the side digit while ignoring the outcome
+  // would route the trade to the wrong market.
   let side: number | undefined;
   if (/^\d+$/.test(sideArg)) {
     side = Number(sideArg);
   } else if (/^[#+]\d+$/.test(sideArg)) {
     const enc = Number(sideArg.slice(1));
-    side = enc % 10;
+    const encodedOutcome = Math.floor(enc / 10);
+    const encodedSide = enc % 10;
+    if (encodedOutcome !== outcomeId) {
+      throw new PerpError(
+        "INVALID_PARAMS",
+        `Side reference '${sideArg}' encodes outcome=${encodedOutcome} but the outcome arg is ${outcomeId}. ` +
+        `Either use plain side (0/1/Yes/No) or pass outcome=${encodedOutcome}.`,
+        {},
+      );
+    }
+    side = encodedSide;
   } else {
     const markets = await adapter.getMarkets();
     const market = markets.find((m) => m.outcome === outcomeId);
@@ -262,7 +283,7 @@ async function resolveOutcomeSide(
     side = match?.side;
   }
   if (side === undefined || !Number.isInteger(side)) {
-    throw new PerpError("INVALID_PARAMS", `Invalid side: ${sideArg} (use 0/1, Yes/No, or #10)`, {});
+    throw new PerpError("INVALID_PARAMS", `Invalid side: ${sideArg} (use 0/1, Yes/No, or #<enc>)`, {});
   }
   return { outcome: outcomeId, side };
 }

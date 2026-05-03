@@ -24,6 +24,11 @@ import type { HyperliquidAdapter } from "./hyperliquid.js";
 
 const OUTCOME_ASSET_OFFSET = 100_000_000;
 const MIN_ORDER_USDH = 10;
+/** Outcome encoding `10*outcome + side` keeps side as the units digit, so
+ *  side must be 0..9 to avoid overflow into the next outcome's id space. */
+const MAX_SIDE = 9;
+/** Asset id offset spans `[100_000_000, 200_000_000)`, so encoding < 100M. */
+const MAX_ENCODING = 99_999_999;
 
 type RawOutcomeMeta = {
   outcomes: Array<{
@@ -230,6 +235,21 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
       );
     }
 
+    // Pre-check USDH balance (only on buy — sell consumes outcome shares).
+    if (opts.isBuy) {
+      const usdh = await this._getUsdhAvailable();
+      if (usdh < notional) {
+        throw new PerpError(
+          "INSUFFICIENT_BALANCE",
+          `Insufficient USDH for outcome buy: need ${notional.toFixed(4)} USDH, have ${usdh.toFixed(4)}`,
+          {
+            exchange: "hyperliquid",
+            remediation: "Bridge USDC→USDH on Hyperliquid (perp funds bridge) or buy USDH on HL spot",
+          },
+        );
+      }
+    }
+
     const assetId = HyperliquidOutcomeAdapter.assetId(opts.outcome, opts.side);
     const tif = opts.tif ?? "Gtc";
     const action = {
@@ -244,17 +264,51 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
       }],
       grouping: "na",
     };
-    return this._hl.exchangeAction(action);
+    const result = await this._hl.exchangeAction(action);
+    HyperliquidOutcomeAdapter._assertOrderStatusOk(result);
+    await this._invalidateAccountCache();
+    return result;
   }
 
   async cancelOrder(outcome: number, side: number, oid: number): Promise<unknown> {
     await this.init();
     this._validateOutcomeSide(outcome, side);
     const assetId = HyperliquidOutcomeAdapter.assetId(outcome, side);
-    return this._hl.exchangeAction({
+    const result = await this._hl.exchangeAction({
       type: "cancel",
       cancels: [{ a: assetId, o: oid }],
     });
+    HyperliquidOutcomeAdapter._assertCancelStatusOk(result);
+    await this._invalidateAccountCache();
+    return result;
+  }
+
+  /**
+   * Throw if the venue rejected the order embedded inside a top-level
+   * `status:"ok"` response (HL pattern). Returns silently for resting/filled.
+   */
+  static _assertOrderStatusOk(result: unknown): void {
+    const r = result as { status?: string; response?: { type?: string; data?: { statuses?: Array<Record<string, unknown>> } } };
+    const statuses = r?.response?.data?.statuses;
+    if (!Array.isArray(statuses) || statuses.length === 0) {
+      throw new PerpError("EXCHANGE_ERROR", `Outcome order: empty status response (${JSON.stringify(result).slice(0, 200)})`, { exchange: "hyperliquid" });
+    }
+    const st = statuses[0];
+    if (st.error) {
+      throw new PerpError("EXCHANGE_ERROR", `Outcome order rejected: ${String(st.error)}`, { exchange: "hyperliquid" });
+    }
+  }
+
+  static _assertCancelStatusOk(result: unknown): void {
+    const r = result as { status?: string; response?: { type?: string; data?: { statuses?: unknown[] } } };
+    const statuses = r?.response?.data?.statuses;
+    if (!Array.isArray(statuses) || statuses.length === 0) {
+      throw new PerpError("EXCHANGE_ERROR", `Outcome cancel: empty status response`, { exchange: "hyperliquid" });
+    }
+    const st = statuses[0];
+    if (typeof st === "object" && st !== null && "error" in st) {
+      throw new PerpError("EXCHANGE_ERROR", `Outcome cancel rejected: ${String((st as { error: unknown }).error)}`, { exchange: "hyperliquid" });
+    }
   }
 
   async getOpenOrders(): Promise<unknown[]> {
@@ -271,6 +325,16 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
   }
 
   private _validateOutcomeSide(outcome: number, side: number): void {
+    if (!Number.isInteger(outcome) || outcome < 0) {
+      throw new PerpError("INVALID_PARAMS", `Outcome id must be a non-negative integer, got: ${outcome}`, { exchange: "hyperliquid" });
+    }
+    if (!Number.isInteger(side) || side < 0 || side > MAX_SIDE) {
+      throw new PerpError("INVALID_PARAMS", `Side must be an integer 0..${MAX_SIDE} (encoding scheme is single digit), got: ${side}`, { exchange: "hyperliquid" });
+    }
+    const encoding = HyperliquidOutcomeAdapter.encoding(outcome, side);
+    if (encoding > MAX_ENCODING) {
+      throw new PerpError("INVALID_PARAMS", `Encoding ${encoding} overflows the outcome asset block (max ${MAX_ENCODING})`, { exchange: "hyperliquid" });
+    }
     const o = this._outcomeMeta?.outcomes.find((x) => x.outcome === outcome);
     if (!o) {
       throw new PerpError("SYMBOL_NOT_FOUND", `Unknown outcome id: ${outcome}`, {
@@ -278,11 +342,30 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
         remediation: "Run: perp outcome list",
       });
     }
-    if (side < 0 || side >= o.sideSpecs.length) {
+    if (side >= o.sideSpecs.length) {
       throw new PerpError("INVALID_PARAMS", `Invalid side ${side} for outcome ${outcome} (valid: 0..${o.sideSpecs.length - 1})`, {
         exchange: "hyperliquid",
         remediation: "Run: perp outcome list",
       });
+    }
+  }
+
+  private async _getUsdhAvailable(): Promise<number> {
+    const userAddress = this._hl.address;
+    if (!userAddress) return 0;
+    const state = await this._infoPost({ type: "spotClearinghouseState", user: userAddress }) as { balances?: Array<Record<string, unknown>> };
+    const balances = state?.balances ?? [];
+    const usdh = balances.find((b) => String(b.coin) === "USDH");
+    if (!usdh) return 0;
+    return Math.max(0, Number(usdh.total ?? 0) - Number(usdh.hold ?? 0));
+  }
+
+  private async _invalidateAccountCache(): Promise<void> {
+    try {
+      const { invalidateCache } = await import("../cache.js");
+      invalidateCache("acct");
+    } catch {
+      // Cache module unavailable in test contexts; ignore.
     }
   }
 

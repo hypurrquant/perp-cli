@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HyperliquidOutcomeAdapter } from "../../exchanges/hyperliquid-outcome.js";
+import { PerpError } from "../../errors.js";
 
 describe("HyperliquidOutcomeAdapter — pure helpers", () => {
   describe("encoding & assetId", () => {
@@ -71,6 +72,58 @@ describe("HyperliquidOutcomeAdapter — pure helpers", () => {
     it("returns empty struct for empty / non-keyed description", () => {
       expect(HyperliquidOutcomeAdapter.parseDescription("")).toEqual({});
       expect(HyperliquidOutcomeAdapter.parseDescription("plain text without colons")).toEqual({});
+    });
+  });
+
+  describe("_assertOrderStatusOk — venue rejection surfacing (Rule #2)", () => {
+    it("passes silently for resting status", () => {
+      expect(() => HyperliquidOutcomeAdapter._assertOrderStatusOk({
+        status: "ok",
+        response: { type: "order", data: { statuses: [{ resting: { oid: 1 } }] } },
+      })).not.toThrow();
+    });
+
+    it("passes silently for filled status", () => {
+      expect(() => HyperliquidOutcomeAdapter._assertOrderStatusOk({
+        status: "ok",
+        response: { type: "order", data: { statuses: [{ filled: { oid: 1, totalSz: "10", avgPx: "0.5" } }] } },
+      })).not.toThrow();
+    });
+
+    it("throws PerpError when venue embeds an error in statuses[0] despite top-level status:ok", () => {
+      const result = {
+        status: "ok",
+        response: { type: "order", data: { statuses: [{ error: "Insufficient USDH balance" }] } },
+      };
+      expect(() => HyperliquidOutcomeAdapter._assertOrderStatusOk(result)).toThrow(PerpError);
+      try {
+        HyperliquidOutcomeAdapter._assertOrderStatusOk(result);
+      } catch (e) {
+        const err = e as PerpError;
+        expect(err.structured.code).toBe("EXCHANGE_ERROR");
+        expect(err.message).toContain("Insufficient USDH balance");
+      }
+    });
+
+    it("throws PerpError on missing/empty statuses array", () => {
+      expect(() => HyperliquidOutcomeAdapter._assertOrderStatusOk({})).toThrow(PerpError);
+      expect(() => HyperliquidOutcomeAdapter._assertOrderStatusOk({ response: { data: { statuses: [] } } })).toThrow(PerpError);
+    });
+  });
+
+  describe("_assertCancelStatusOk", () => {
+    it("passes for 'success' status string", () => {
+      expect(() => HyperliquidOutcomeAdapter._assertCancelStatusOk({
+        status: "ok",
+        response: { type: "cancel", data: { statuses: ["success"] } },
+      })).not.toThrow();
+    });
+
+    it("throws when statuses[0] is an error object", () => {
+      expect(() => HyperliquidOutcomeAdapter._assertCancelStatusOk({
+        status: "ok",
+        response: { type: "cancel", data: { statuses: [{ error: "Order already filled" }] } },
+      })).toThrow(PerpError);
     });
   });
 });
