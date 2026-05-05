@@ -9,7 +9,8 @@ const TEST_HOME = resolve(os.tmpdir(), `perp-landing-test-${process.pid}`);
 vi.stubEnv("HOME", TEST_HOME);
 
 const { setAgent } = await import("../agent-wallet/store.js");
-const { asterAgentMissing, renderLandingExchangeLine } = await import("../landing.js");
+const { asterAgentMissing, renderLandingExchangeLine, LANDING_EXCHANGES } = await import("../landing.js");
+const { listExchanges } = await import("../exchanges/registry.js");
 
 function makeAgent(name: string, status: "active" | "partial" = "active") {
   return {
@@ -111,6 +112,42 @@ describe("renderLandingExchangeLine", () => {
         errorCode: code,
       }, true));
       expect(out).toContain("agent required");
+    }
+  });
+});
+
+describe("LANDING_EXCHANGES sync — multi-adapter enumeration guard (Section 9)", () => {
+  // Defends against the silent-drift class of bug we keep hitting: a new
+  // exchange gets added to the adapter registry but the no-arg `perp`
+  // landing page (or any consumer of LANDING_EXCHANGES) keeps showing the
+  // old 4. Enumeration lives in two places — registry.ts and landing.ts —
+  // and only the registry is the SSOT.
+  it("matches the adapter registry — drift means a new exchange was added without updating landing.ts", () => {
+    const landing = [...LANDING_EXCHANGES].sort();
+    const registry = listExchanges().sort();
+    expect(landing).toEqual(registry);
+  });
+
+  it("renders a distinct, non-empty label for every LANDING_EXCHANGES member (no exchangeLabel inline-switch fallthrough)", () => {
+    // exchangeLabel() in landing.ts is an inline ternary chain; if a 5th
+    // exchange is added to LANDING_EXCHANGES without updating that switch
+    // it silently falls through to the last arm's label ("Aster"). This
+    // test catches that footgun by asserting all labels are unique.
+    const labels = LANDING_EXCHANGES.map((ex) => {
+      const line = stripVTControlCharacters(renderLandingExchangeLine({
+        exchange: ex,
+        ok: true,
+        equity: 1234.56,
+        positions: 0,
+      }, false));
+      const m = /●\s+(\S+)/.exec(line);
+      return m?.[1] ?? "";
+    });
+    expect(labels).toHaveLength(LANDING_EXCHANGES.length);
+    expect(new Set(labels).size).toBe(LANDING_EXCHANGES.length);
+    for (const label of labels) {
+      expect(label).not.toBe("");
+      expect(label).toMatch(/^[A-Z][a-zA-Z]+$/);
     }
   });
 });
