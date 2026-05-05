@@ -51,22 +51,20 @@ Same EVM key works for both Hyperliquid and Lighter.
 | `market` | Prices, orderbook, funding, klines, HIP-3 dexes |
 | `account` | Balance, positions, orders, margin |
 | `trade` | Market/limit/stop orders, close, scale, split execution |
+| `outcome` | Hyperliquid Outcome (HIP-4) — binary/range contracts, USDH-quoted, no leverage |
 | `arb` | Funding rate arb — scan, exec, close, monitor (perp-perp & spot-perp) |
 | `strategy` | 19 bot algorithms (grid, dca, twap, APEX, REFLECT, presets) + nested scripted plans |
 | `funds` | Deposit, withdraw, transfer, cross-chain bridge (multi-provider), inter-exchange rebalance |
 | `risk` | Risk limits, liquidation distance, guardrails |
-| `wallet` | Multi-wallet management & on-chain balances |
+| `wallet` | Multi-wallet management, agent wallets (`wallet agent ...`), margin mode / subaccount / API keys (`wallet manage ...`), on-chain balances |
 | `history` | Execution log, PnL, performance breakdown |
-| `manage` | Margin mode, subaccount, API keys, builder |
-| `portfolio` | Cross-exchange unified overview |
-| `dashboard` | Live web dashboard |
-| `settings` | CLI settings (referrals, defaults) |
+| `portfolio` | Cross-exchange unified overview (replaces former `account balance` / `status` / `dashboard`) |
+| `health` | Adapter health check across all 4 DEX |
+| `settings` | CLI settings (referrals, defaults, fees) |
 | `backtest` | Strategy backtesting |
 | `background` | Background process supervisor (tmux sessions for strategies, alerts, etc.) |
-| `alerts` | Telegram funding rate alerts with background daemon |
-| `agent` | Schema introspection, capabilities, health check |
+| `alerts` | Funding rate alerts (Telegram / Discord) with background daemon |
 | `setup` | Interactive setup wizard (alias: `init`) |
-| `status` | Unified dashboard: balances, positions, arb opps |
 
 ## Core Commands
 
@@ -100,6 +98,17 @@ perp --json -e <EX> account positions
 perp --json -e <EX> account pnl                      # realized + unrealized + funding
 perp --json -e <EX> account funding                  # personal funding payment history
 perp --json -e <EX> account settings                 # per-market leverage & margin mode
+
+# Outcome markets (Hyperliquid HIP-4 — fully-collateralized binary contracts, USDH-quoted, $10 min)
+perp --json outcome list                                       # active markets + Yes/No mid prices
+perp --json outcome view <outcome>                             # symmetric Yes/No book + underlying gap + expiry
+perp --json outcome book <outcome> <side>                      # one-side orderbook (e.g. '1 yes' or '1 0')
+perp --json outcome positions                                  # open outcome holdings
+perp --json outcome orders                                     # open outcome orders
+perp --json outcome buy <outcome> <side> <usd> --dry-run       # validate before submit
+perp --json outcome buy <outcome> <side> <usd>                 # market buy in USDH notional
+perp --json outcome sell <outcome> <side> <usd> --limit <px> --tif gtc
+perp --json outcome cancel <outcome> <side> <oid>
 
 # Funding rate arbitrage
 perp --json arb scan --min 5                         # perp-perp opportunities

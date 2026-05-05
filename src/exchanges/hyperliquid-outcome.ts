@@ -109,6 +109,147 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
     return out;
   }
 
+  /**
+   * Compute the underlying mark-price view (gap / inTheMoney) for an outcome
+   * from a parsed description and the live allMids map.
+   *
+   * Pure helper — extracted from getView so the settlement-status logic is
+   * directly unit-testable.
+   *
+   * - HL `allMids` keys perps by bare symbol (e.g. "BTC"). HIP-3 perps use
+   *   "@dexIdx:SYMBOL" but those aren't referenced in HIP-4 outcomes yet.
+   * - For `class:priceBinary` the convention is Yes = "underlying >= target".
+   *   When `class` is missing or non-binary, `inTheMoney` stays null rather
+   *   than guessing (Rule #2 — no silent classification fallback).
+   * - Returns null when there is no underlying field to look up.
+   */
+  static _computeUnderlying(
+    parsed: { class?: string; underlying?: string; targetPrice?: number },
+    allMids: Record<string, string>,
+  ): OutcomeViewUnderlying | null {
+    if (!parsed.underlying) return null;
+    const sym = parsed.underlying.toUpperCase();
+    const markPrice = allMids[sym];
+    const target = parsed.targetPrice;
+    let gap: number | undefined;
+    let gapPct: number | undefined;
+    let inTheMoney: "yes" | "no" | null = null;
+    if (markPrice !== undefined && target !== undefined) {
+      gap = Number(markPrice) - target;
+      gapPct = (gap / target) * 100;
+      if (parsed.class === "priceBinary" && Number.isFinite(gap)) {
+        inTheMoney = gap >= 0 ? "yes" : "no";
+      }
+    }
+    return {
+      symbol: sym,
+      source: sym,
+      markPrice,
+      targetPrice: target,
+      gap,
+      gapPct,
+      inTheMoney,
+    };
+  }
+
+  /**
+   * Sum of `impliedProb` across sides — for fair binary markets the sum
+   * should converge to ~1.0. Deviation hints at arbitrage or stale mids.
+   *
+   * Returns undefined when any side is missing impliedProb OR when any
+   * impliedProb is non-finite (NaN, Infinity). This means "we don't have a
+   * trustworthy view of the symmetry right now" rather than emitting NaN
+   * downstream (Rule #2 — no silent garbage propagation).
+   */
+  static _computeMidSum(sides: Array<{ impliedProb?: number }>): number | undefined {
+    if (sides.length === 0) return undefined;
+    for (const s of sides) {
+      if (s.impliedProb === undefined) return undefined;
+      if (!Number.isFinite(s.impliedProb)) return undefined;
+    }
+    return sides.reduce((acc, s) => acc + (s.impliedProb ?? 0), 0);
+  }
+
+  /**
+   * Compute the time-status pair (`serverTime`, `msToExpiry`) for a view.
+   * Pure helper — takes `nowMs` as an argument so callers can inject a
+   * deterministic clock under test.
+   *
+   * `msToExpiry` is the raw signed delta `expiryMs - nowMs`:
+   *   positive  = unexpired
+   *   zero      = at expiry
+   *   negative  = already settled (caller decides UX)
+   *   undefined = unknown expiry
+   *
+   * Does NOT clamp negatives or treat them as "expired" — that
+   * classification is the caller's job (Rule #2 — no silent classification
+   * fallback in a low-level helper).
+   */
+  static _computeTimeStatus(expiryMs: number | undefined, nowMs: number): {
+    serverTime: number;
+    msToExpiry?: number;
+  } {
+    return {
+      serverTime: nowMs,
+      msToExpiry: expiryMs !== undefined ? expiryMs - nowMs : undefined,
+    };
+  }
+
+  /**
+   * Pure arithmetic gate for the (outcome, side) pair.
+   *
+   * Rejects NaN / non-integer / negative values immediately so the
+   * encoding formula `10 * outcome + side` never produces a garbage
+   * asset id silently. Does NOT consult outcomeMeta — that lookup is in
+   * the instance-level `_validateOutcomeSide` which composes this
+   * helper with the live registry check.
+   *
+   * Boundary: outcome=9_999_999, side=9 → encoding=99_999_999 = MAX_ENCODING (valid).
+   *           outcome=10_000_000, side=0 → encoding=100_000_000 > MAX_ENCODING (rejected).
+   */
+  static _assertOutcomeRange(outcome: number, side: number): void {
+    if (!Number.isInteger(outcome) || outcome < 0) {
+      throw new PerpError("INVALID_PARAMS", `Outcome id must be a non-negative integer, got: ${outcome}`, { exchange: "hyperliquid" });
+    }
+    if (!Number.isInteger(side) || side < 0 || side > MAX_SIDE) {
+      throw new PerpError("INVALID_PARAMS", `Side must be an integer 0..${MAX_SIDE} (encoding scheme is single digit), got: ${side}`, { exchange: "hyperliquid" });
+    }
+    const encoding = HyperliquidOutcomeAdapter.encoding(outcome, side);
+    if (encoding > MAX_ENCODING) {
+      throw new PerpError("INVALID_PARAMS", `Encoding ${encoding} overflows the outcome asset block (max ${MAX_ENCODING})`, { exchange: "hyperliquid" });
+    }
+  }
+
+  /**
+   * Trim a raw orderbook to `depth` levels and surface best bid/ask.
+   *
+   * Throws (rather than silently coercing) when:
+   *  - `book.bids` or `book.asks` is missing/non-array (venue payload
+   *    malformed — Rule #2: don't fabricate an empty book)
+   *  - `depth` is not a non-negative integer (NaN, negative, Infinity,
+   *    fractional are all caller bugs that previously silently produced
+   *    `slice(0, NaN) === []` or `slice(0, -1)` = "all but last")
+   */
+  static _trimBook(
+    book: { bids: [string, string][]; asks: [string, string][] } | { bids: unknown; asks: unknown } | null | undefined,
+    depth: number,
+  ): { bids: [string, string][]; asks: [string, string][]; bestBid?: string; bestAsk?: string } {
+    if (!book || !Array.isArray((book as { bids?: unknown }).bids) || !Array.isArray((book as { asks?: unknown }).asks)) {
+      throw new PerpError("EXCHANGE_ERROR", "Outcome orderbook response is missing bids/asks array", { exchange: "hyperliquid" });
+    }
+    if (!Number.isInteger(depth) || depth < 0) {
+      throw new PerpError("INVALID_PARAMS", `Depth must be a non-negative integer, got: ${depth}`, { exchange: "hyperliquid" });
+    }
+    const bids = (book as { bids: [string, string][] }).bids.slice(0, depth);
+    const asks = (book as { asks: [string, string][] }).asks.slice(0, depth);
+    return {
+      bids,
+      asks,
+      bestBid: bids[0]?.[0],
+      bestAsk: asks[0]?.[0],
+    };
+  }
+
   /** Parse "20260504-0600" → ms-epoch (UTC). Returns undefined for malformed. */
   private static _parseExpiry(s: string): number | undefined {
     const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(s);
@@ -227,11 +368,7 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
     // Trim each book to `depth` levels and compute best bid/ask + implied prob.
     const sides: OutcomeViewSide[] = meta.sideSpecs.map((spec, i) => {
       const encoding = HyperliquidOutcomeAdapter.encoding(outcome, i);
-      const book = books[i];
-      const bids = book.bids.slice(0, depth);
-      const asks = book.asks.slice(0, depth);
-      const bestBid = bids[0]?.[0];
-      const bestAsk = asks[0]?.[0];
+      const trimmed = HyperliquidOutcomeAdapter._trimBook(books[i], depth);
       const mid = allMids[`#${encoding}`];
       return {
         side: i,
@@ -239,61 +376,30 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
         encoding,
         assetId: OUTCOME_ASSET_OFFSET + encoding,
         mid,
-        bids,
-        asks,
-        bestBid,
-        bestAsk,
+        bids: trimmed.bids,
+        asks: trimmed.asks,
+        bestBid: trimmed.bestBid,
+        bestAsk: trimmed.bestAsk,
         impliedProb: mid !== undefined ? Number(mid) : undefined,
       };
     });
 
-    const midSum = sides.every((s) => s.impliedProb !== undefined)
-      ? sides.reduce((acc, s) => acc + (s.impliedProb ?? 0), 0)
-      : undefined;
+    const midSum = HyperliquidOutcomeAdapter._computeMidSum(sides);
 
     // Underlying: HL perp mid for the parsed underlying symbol.
-    let underlying: OutcomeViewUnderlying | null = null;
-    if (parsed.underlying) {
-      const sym = parsed.underlying.toUpperCase();
-      // HL `allMids` keys perps by bare symbol (e.g. "BTC"). HIP-3 perps
-      // use "@dexIdx:SYMBOL" but those won't be referenced in HIP-4
-      // outcomes for now.
-      const markPrice = allMids[sym];
-      const target = parsed.targetPrice;
-      let gap: number | undefined;
-      let gapPct: number | undefined;
-      let inTheMoney: "yes" | "no" | null = null;
-      if (markPrice !== undefined && target !== undefined) {
-        gap = Number(markPrice) - target;
-        gapPct = (gap / target) * 100;
-        // For class:priceBinary the convention is Yes = "underlying >=
-        // target". When `class` is unknown or non-binary, leave inTheMoney
-        // as null rather than guessing.
-        if (parsed.class === "priceBinary" && Number.isFinite(gap)) {
-          inTheMoney = gap >= 0 ? "yes" : "no";
-        }
-      }
-      underlying = {
-        symbol: sym,
-        source: sym,
-        markPrice,
-        targetPrice: target,
-        gap,
-        gapPct,
-        inTheMoney,
-      };
-    }
+    const underlying = HyperliquidOutcomeAdapter._computeUnderlying(parsed, allMids);
 
-    const expiryMs = parsed.expiryMs;
-    const serverTime = Date.now();
-    const msToExpiry = expiryMs !== undefined ? expiryMs - serverTime : undefined;
+    const { serverTime, msToExpiry } = HyperliquidOutcomeAdapter._computeTimeStatus(
+      parsed.expiryMs,
+      Date.now(),
+    );
 
     return {
       outcome,
       name: meta.name,
       description: meta.description,
       class: parsed.class,
-      expiryMs,
+      expiryMs: parsed.expiryMs,
       msToExpiry,
       period: parsed.period,
       underlying,
@@ -310,11 +416,27 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
     const book = await this._infoPost({ type: "l2Book", coin }) as {
       coin?: string; time?: number; levels?: [Array<Record<string, string>>, Array<Record<string, string>>];
     };
-    const levels = book?.levels ?? [[], []];
+    // Rule #2: do NOT fabricate an empty book when the venue payload is
+    // malformed. Caller (typically getView) has its own gates downstream
+    // but a missing `levels` here is a venue contract break, not "no
+    // resting orders".
+    if (
+      !book ||
+      !Array.isArray((book as { levels?: unknown }).levels) ||
+      !Array.isArray((book as { levels: unknown[] }).levels[0]) ||
+      !Array.isArray((book as { levels: unknown[] }).levels[1])
+    ) {
+      throw new PerpError(
+        "EXCHANGE_ERROR",
+        `Hyperliquid l2Book returned malformed payload for ${coin}: missing or non-array \`levels\``,
+        { exchange: "hyperliquid" },
+      );
+    }
+    const levels = book.levels!;
     return {
       outcome,
       side,
-      time: Number(book?.time ?? 0),
+      time: Number(book.time ?? 0),
       bids: levels[0].map((l) => [String(l.px ?? "0"), String(l.sz ?? "0")] as [string, string]),
       asks: levels[1].map((l) => [String(l.px ?? "0"), String(l.sz ?? "0")] as [string, string]),
     };
@@ -431,16 +553,7 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
   }
 
   private _validateOutcomeSide(outcome: number, side: number): void {
-    if (!Number.isInteger(outcome) || outcome < 0) {
-      throw new PerpError("INVALID_PARAMS", `Outcome id must be a non-negative integer, got: ${outcome}`, { exchange: "hyperliquid" });
-    }
-    if (!Number.isInteger(side) || side < 0 || side > MAX_SIDE) {
-      throw new PerpError("INVALID_PARAMS", `Side must be an integer 0..${MAX_SIDE} (encoding scheme is single digit), got: ${side}`, { exchange: "hyperliquid" });
-    }
-    const encoding = HyperliquidOutcomeAdapter.encoding(outcome, side);
-    if (encoding > MAX_ENCODING) {
-      throw new PerpError("INVALID_PARAMS", `Encoding ${encoding} overflows the outcome asset block (max ${MAX_ENCODING})`, { exchange: "hyperliquid" });
-    }
+    HyperliquidOutcomeAdapter._assertOutcomeRange(outcome, side);
     const o = this._outcomeMeta?.outcomes.find((x) => x.outcome === outcome);
     if (!o) {
       throw new PerpError("SYMBOL_NOT_FOUND", `Unknown outcome id: ${outcome}`, {
