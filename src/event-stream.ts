@@ -123,6 +123,17 @@ export async function startEventStream(
       for (const p of positions) {
         const mark = Number(p.markPrice);
         const liq = Number(p.liquidationPrice);
+        // Rule #2: a NaN mark or liq would silently fail the `> 0` checks
+        // (NaN comparisons are always false), suppressing the
+        // critical-distance liquidation_warning the user depends on.
+        // Surface the corruption explicitly so the stream layer doesn't
+        // hide a failed alert.
+        if (!Number.isFinite(mark) || !Number.isFinite(liq)) {
+          if (p.liquidationPrice !== "N/A") {
+            console.warn(`[event-stream] non-finite mark/liquidation for ${p.symbol} on ${adapter.name} (mark=${p.markPrice}, liq=${p.liquidationPrice}) — skipping liquidation distance check`);
+          }
+          continue;
+        }
         if (mark > 0 && liq > 0 && p.liquidationPrice !== "N/A") {
           const distancePct = Math.abs(mark - liq) / mark * 100;
           if (distancePct < 3) {
@@ -181,8 +192,18 @@ export async function startEventStream(
 
       // ── Balance updates ──
       if (prevBalance) {
-        const equityDelta = Math.abs(Number(balance.equity) - Number(prevBalance.equity));
-        const availDelta = Math.abs(Number(balance.available) - Number(prevBalance.available));
+        const equityNow = Number(balance.equity);
+        const equityPrev = Number(prevBalance.equity);
+        const availNow = Number(balance.available);
+        const availPrev = Number(prevBalance.available);
+        // Rule #2: a NaN delta would silently fail the `> 0.01` threshold,
+        // suppressing balance_update events. Surface the corruption.
+        if (!Number.isFinite(equityNow) || !Number.isFinite(equityPrev) ||
+            !Number.isFinite(availNow)  || !Number.isFinite(availPrev)) {
+          console.warn(`[event-stream] non-finite balance values for ${adapter.name} (equity=${balance.equity}/${prevBalance.equity}, available=${balance.available}/${prevBalance.available}) — skipping balance_update emit`);
+        } else {
+        const equityDelta = Math.abs(equityNow - equityPrev);
+        const availDelta = Math.abs(availNow - availPrev);
         if (equityDelta > 0.01 || availDelta > 0.01) {
           emit({
             type: "balance_update",
@@ -197,6 +218,7 @@ export async function startEventStream(
               prevAvailable: prevBalance.available,
             },
           });
+        }
         }
       }
       prevBalance = balance;

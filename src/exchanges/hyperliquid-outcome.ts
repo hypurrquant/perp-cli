@@ -433,10 +433,22 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
       );
     }
     const levels = book.levels!;
+    // Rule #2: `Number("abc") ?? 0` would silently coerce a non-numeric
+    // venue time to 0 (1970 epoch). 0 is a legitimate "no time given"
+    // value when book.time is undefined, but a NaN should not be hidden.
+    const timeRaw = book.time;
+    const time = timeRaw === undefined || timeRaw === null ? 0 : Number(timeRaw);
+    if (!Number.isFinite(time)) {
+      throw new PerpError(
+        "EXCHANGE_ERROR",
+        `Hyperliquid l2Book returned non-finite time for ${coin}: ${timeRaw}`,
+        { exchange: "hyperliquid" },
+      );
+    }
     return {
       outcome,
       side,
-      time: Number(book.time ?? 0),
+      time,
       bids: levels[0].map((l) => [String(l.px ?? "0"), String(l.sz ?? "0")] as [string, string]),
       asks: levels[1].map((l) => [String(l.px ?? "0"), String(l.sz ?? "0")] as [string, string]),
     };

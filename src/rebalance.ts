@@ -1,4 +1,5 @@
 import type { ExchangeAdapter } from "./exchanges/index.js";
+import { PerpError } from "./errors.js";
 
 /**
  * Cross-exchange rebalancing engine.
@@ -47,12 +48,30 @@ export async function fetchAllBalances(
   const results = await Promise.allSettled(
     entries.map(async ([name, adapter]) => {
       const bal = await adapter.getBalance();
+      const equity = Number(bal.equity);
+      const available = Number(bal.available);
+      const marginUsed = Number(bal.marginUsed);
+      const unrealizedPnl = Number(bal.unrealizedPnl);
+      // Rule #2: rebalance plan computes sums and per-exchange targets.
+      // A NaN value would silently propagate into the plan output and the
+      // execute step would attempt nonsense moves. Reject upfront so the
+      // affected exchange falls out of `Promise.allSettled` (filtered to
+      // fulfilled below) and the user sees a partial result instead of a
+      // corrupt plan.
+      if (!Number.isFinite(equity) || !Number.isFinite(available) ||
+          !Number.isFinite(marginUsed) || !Number.isFinite(unrealizedPnl)) {
+        throw new PerpError(
+          "EXCHANGE_ERROR",
+          `${name} returned non-finite balance: equity=${bal.equity} available=${bal.available} marginUsed=${bal.marginUsed} unrealizedPnl=${bal.unrealizedPnl}`,
+          { exchange: name },
+        );
+      }
       return {
         exchange: name,
-        equity: Number(bal.equity),
-        available: Number(bal.available),
-        marginUsed: Number(bal.marginUsed),
-        unrealizedPnl: Number(bal.unrealizedPnl),
+        equity,
+        available,
+        marginUsed,
+        unrealizedPnl,
       };
     }),
   );
