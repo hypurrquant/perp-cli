@@ -1,6 +1,7 @@
 import type { ExchangeAdapter, ExchangeMarketInfo } from "./exchanges/index.js";
 import { symbolMatch } from "./utils.js";
 import { DEFAULT_TAKER_FEE } from "./constants.js";
+import { PerpError } from "./errors.js";
 
 export interface CheckResult {
   check: "symbol_valid" | "balance_sufficient" | "price_fresh" | "liquidity_ok" | "risk_limits" | "position_exists";
@@ -91,6 +92,17 @@ export async function validateTrade(
     : { bids: [] as [string, string][], asks: [] as [string, string][] };
 
   const markPrice = Number(market.markPrice);
+  // Rule #2: NaN slipped past the previous `markPrice <= 0` check because
+  // NaN comparisons are always false. Reject explicit non-finite values
+  // upfront so downstream NaN propagation (notional, marginRequired,
+  // slippage, deviation) is impossible.
+  if (Number.isNaN(markPrice) || markPrice === Infinity || markPrice === -Infinity) {
+    throw new PerpError(
+      "EXCHANGE_ERROR",
+      `${adapter.name} returned non-finite markPrice for ${sym}: ${market.markPrice}`,
+      { exchange: adapter.name },
+    );
+  }
   if (params.type === "limit" && (params.price === undefined || !Number.isFinite(params.price))) {
     throw new Error(`Limit order requires explicit price (received ${params.price}); refusing silent mark-price substitution.`);
   }
@@ -110,6 +122,17 @@ export async function validateTrade(
 
   // 2. Balance check
   const available = Number(balance.available);
+  // Rule #2: a NaN `available` would silently take the "insufficient
+  // balance" branch on the negative comparison and *also* render
+  // misleading "$NaN available" in the user-visible message. Throw
+  // instead so the trade flow surfaces a real venue/parsing failure.
+  if (!Number.isFinite(available)) {
+    throw new PerpError(
+      "EXCHANGE_ERROR",
+      `${adapter.name} returned non-finite balance.available: ${balance.available}`,
+      { exchange: adapter.name },
+    );
+  }
   if (params.reduceOnly) {
     // reduce-only doesn't need margin
     checks.push({ check: "balance_sufficient", passed: true, message: "Reduce-only order, no margin needed" });
@@ -140,8 +163,22 @@ export async function validateTrade(
     let availableLiquidity = 0;
     let worstPrice = 0;
     for (const [px, sz] of book) {
-      availableLiquidity += Number(px) * Number(sz);
-      worstPrice = Number(px);
+      const pxN = Number(px);
+      const szN = Number(sz);
+      // Rule #2: a NaN level would silently inflate `availableLiquidity`
+      // to NaN, the `>= notional` comparison would be false, and the
+      // outer branch would emit a "Insufficient liquidity: $NaN" message.
+      // Reject the level explicitly so a malformed orderbook can't
+      // fabricate a passing or failing liquidity check.
+      if (!Number.isFinite(pxN) || !Number.isFinite(szN) || pxN <= 0 || szN < 0) {
+        throw new PerpError(
+          "EXCHANGE_ERROR",
+          `${adapter.name} orderbook level has non-finite or non-positive value for ${sym}: px=${px} sz=${sz}`,
+          { exchange: adapter.name },
+        );
+      }
+      availableLiquidity += pxN * szN;
+      worstPrice = pxN;
       if (availableLiquidity >= notional) break;
     }
 
@@ -187,6 +224,15 @@ export async function validateTrade(
     const pos = positions.find(p => symbolMatch(p.symbol, sym));
     if (pos) {
       const posSize = parseFloat(pos.size);
+      // Rule #2: NaN posSize would make `params.size > posSize` always
+      // false, silently passing the reduce-only size check.
+      if (!Number.isFinite(posSize)) {
+        throw new PerpError(
+          "EXCHANGE_ERROR",
+          `${adapter.name} returned non-finite position size for ${sym}: ${pos.size}`,
+          { exchange: adapter.name },
+        );
+      }
       if (params.size > posSize) {
         checks.push({ check: "position_exists", passed: false, message: `Reduce size ${params.size} exceeds position ${posSize}`, details: { positionSize: posSize, reduceSize: params.size } });
       } else {
@@ -220,7 +266,17 @@ export async function validateTrade(
     marketInfo: {
       symbol: sym,
       markPrice,
-      fundingRate: Number(market.fundingRate),
+      // Rule #2: NaN funding rate must not propagate to envelope output;
+      // surface the missing-data state via warnings rather than emitting
+      // `fundingRate: NaN` to agents that JSON.parse the response.
+      fundingRate: (() => {
+        const fr = Number(market.fundingRate);
+        if (!Number.isFinite(fr)) {
+          warnings.push(`Funding rate unavailable for ${sym} on ${adapter.name} (received ${market.fundingRate})`);
+          return 0;
+        }
+        return fr;
+      })(),
       maxLeverage: market.maxLeverage,
     },
     timestamp: new Date().toISOString(),
