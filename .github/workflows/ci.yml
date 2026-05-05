@@ -38,6 +38,12 @@ jobs:
       - name: Type check (tsc strict)
         run: pnpm run build
 
+      - name: SKILL.md version sync check
+        # Fails the PR if package.json bumped without re-running
+        # scripts/sync-skill-version.mjs. Catches drift between the npm
+        # package version and the agent-skill bundle's declared version.
+        run: node scripts/sync-skill-version.mjs --check
+
       - name: Unit tests
         run: pnpm test
 
