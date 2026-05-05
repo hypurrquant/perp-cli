@@ -416,11 +416,27 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
     const book = await this._infoPost({ type: "l2Book", coin }) as {
       coin?: string; time?: number; levels?: [Array<Record<string, string>>, Array<Record<string, string>>];
     };
-    const levels = book?.levels ?? [[], []];
+    // Rule #2: do NOT fabricate an empty book when the venue payload is
+    // malformed. Caller (typically getView) has its own gates downstream
+    // but a missing `levels` here is a venue contract break, not "no
+    // resting orders".
+    if (
+      !book ||
+      !Array.isArray((book as { levels?: unknown }).levels) ||
+      !Array.isArray((book as { levels: unknown[] }).levels[0]) ||
+      !Array.isArray((book as { levels: unknown[] }).levels[1])
+    ) {
+      throw new PerpError(
+        "EXCHANGE_ERROR",
+        `Hyperliquid l2Book returned malformed payload for ${coin}: missing or non-array \`levels\``,
+        { exchange: "hyperliquid" },
+      );
+    }
+    const levels = book.levels!;
     return {
       outcome,
       side,
-      time: Number(book?.time ?? 0),
+      time: Number(book.time ?? 0),
       bids: levels[0].map((l) => [String(l.px ?? "0"), String(l.sz ?? "0")] as [string, string]),
       asks: levels[1].map((l) => [String(l.px ?? "0"), String(l.sz ?? "0")] as [string, string]),
     };

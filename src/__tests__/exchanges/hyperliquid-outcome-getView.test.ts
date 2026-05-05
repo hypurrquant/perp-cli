@@ -175,22 +175,20 @@ describe("HyperliquidOutcomeAdapter.getView — integration with mocked SDK", ()
     expect(view.midSum).toBeUndefined();
   });
 
-  it("RECORDS a known Rule #2 violation: `getOrderbook` silently substitutes [[],[]] when l2Book omits `levels` (follow-up)", async () => {
-    // `getOrderbook` at hyperliquid-outcome.ts:419 currently does:
-    //   const levels = book?.levels ?? [[], []];
-    // This masks a malformed venue payload as an empty book — a silent
-    // Rule #2 violation. _trimBook would have caught it (it throws on
-    // missing bids/asks) but never sees the bug because getOrderbook
-    // sanitizes upstream. This test pins the current behavior so a
-    // future commit that fixes the fallback (throws EXCHANGE_ERROR
-    // instead) will visibly flip this assertion.
+  it("throws EXCHANGE_ERROR when l2Book omits `levels` (Rule #2 — no fabricated empty book)", async () => {
+    // Pinned regression for the silent fallback at getOrderbook line 419
+    // (`book?.levels ?? [[], []]`) which used to mask a malformed venue
+    // payload as an empty book. Now throws so the caller can react.
     const adapter = makeAdapter({
       bookFor: (coin) => ({ coin, time: 0 }), // `levels` field missing
     });
-    const view = await adapter.getView(2, 3);
-    expect(view.sides[0].bids).toEqual([]); // silent empty (today's behavior)
-    expect(view.sides[0].asks).toEqual([]);
-    expect(view.sides[0].bestBid).toBeUndefined();
-    expect(view.sides[0].bestAsk).toBeUndefined();
+    await expect(adapter.getView(2, 3)).rejects.toThrow(/malformed payload/);
+  });
+
+  it("throws EXCHANGE_ERROR when l2Book `levels` is not a tuple of two arrays", async () => {
+    const adapter = makeAdapter({
+      bookFor: (coin) => ({ coin, time: 0, levels: [[]] }), // length 1 instead of 2
+    });
+    await expect(adapter.getView(2, 3)).rejects.toThrow(/malformed payload/);
   });
 });
