@@ -111,6 +111,101 @@ describe("HyperliquidOutcomeAdapter — pure helpers", () => {
     });
   });
 
+  describe("_computeUnderlying — outcome view settlement status (Rule #2)", () => {
+    it("returns null when description has no underlying field", () => {
+      expect(HyperliquidOutcomeAdapter._computeUnderlying({}, {})).toBeNull();
+      expect(HyperliquidOutcomeAdapter._computeUnderlying(
+        { class: "priceBinary", targetPrice: 100 },
+        { BTC: "100" },
+      )).toBeNull();
+    });
+
+    it("classifies priceBinary in-the-money when mark > target", () => {
+      const u = HyperliquidOutcomeAdapter._computeUnderlying(
+        { class: "priceBinary", underlying: "BTC", targetPrice: 79980 },
+        { BTC: "80718.5" },
+      );
+      expect(u).not.toBeNull();
+      expect(u!.inTheMoney).toBe("yes");
+      expect(u!.gap).toBeCloseTo(738.5, 6);
+      expect(u!.gapPct).toBeCloseTo(0.9233558, 5);
+      expect(u!.markPrice).toBe("80718.5");
+      expect(u!.targetPrice).toBe(79980);
+    });
+
+    it("classifies priceBinary out-of-the-money when mark < target", () => {
+      const u = HyperliquidOutcomeAdapter._computeUnderlying(
+        { class: "priceBinary", underlying: "BTC", targetPrice: 90000 },
+        { BTC: "80000" },
+      );
+      expect(u!.inTheMoney).toBe("no");
+      expect(u!.gap).toBe(-10000);
+      expect(u!.gapPct).toBeCloseTo(-11.1111, 3);
+    });
+
+    it("classifies priceBinary as 'yes' when gap is exactly 0 (Yes = mark >= target)", () => {
+      const u = HyperliquidOutcomeAdapter._computeUnderlying(
+        { class: "priceBinary", underlying: "ETH", targetPrice: 3000 },
+        { ETH: "3000" },
+      );
+      expect(u!.inTheMoney).toBe("yes");
+      expect(u!.gap).toBe(0);
+      expect(u!.gapPct).toBe(0);
+    });
+
+    it("leaves inTheMoney null for non-priceBinary class — gap still computed, classification suppressed", () => {
+      const u = HyperliquidOutcomeAdapter._computeUnderlying(
+        { class: "priceRange", underlying: "BTC", targetPrice: 80000 },
+        { BTC: "85000" },
+      );
+      expect(u!.inTheMoney).toBeNull();
+      expect(u!.gap).toBe(5000);
+      expect(u!.gapPct).toBeCloseTo(6.25, 6);
+    });
+
+    it("leaves inTheMoney null when class is missing entirely (Rule #2 — no guessing)", () => {
+      const u = HyperliquidOutcomeAdapter._computeUnderlying(
+        { underlying: "BTC", targetPrice: 80000 },
+        { BTC: "85000" },
+      );
+      expect(u!.inTheMoney).toBeNull();
+      expect(u!.gap).toBe(5000);
+    });
+
+    it("leaves gap/gapPct undefined when mark price is missing for the symbol", () => {
+      const u = HyperliquidOutcomeAdapter._computeUnderlying(
+        { class: "priceBinary", underlying: "FOO", targetPrice: 100 },
+        { BTC: "80000" },
+      );
+      expect(u!.markPrice).toBeUndefined();
+      expect(u!.gap).toBeUndefined();
+      expect(u!.gapPct).toBeUndefined();
+      expect(u!.inTheMoney).toBeNull();
+    });
+
+    it("leaves gap/gapPct undefined when targetPrice is missing", () => {
+      const u = HyperliquidOutcomeAdapter._computeUnderlying(
+        { class: "priceBinary", underlying: "BTC" },
+        { BTC: "80000" },
+      );
+      expect(u!.markPrice).toBe("80000");
+      expect(u!.gap).toBeUndefined();
+      expect(u!.gapPct).toBeUndefined();
+      expect(u!.inTheMoney).toBeNull();
+    });
+
+    it("uppercases the underlying symbol before allMids lookup", () => {
+      const u = HyperliquidOutcomeAdapter._computeUnderlying(
+        { class: "priceBinary", underlying: "btc", targetPrice: 80000 },
+        { BTC: "85000" },
+      );
+      expect(u!.symbol).toBe("BTC");
+      expect(u!.source).toBe("BTC");
+      expect(u!.markPrice).toBe("85000");
+      expect(u!.inTheMoney).toBe("yes");
+    });
+  });
+
   describe("_assertCancelStatusOk", () => {
     it("passes for 'success' status string", () => {
       expect(() => HyperliquidOutcomeAdapter._assertCancelStatusOk({

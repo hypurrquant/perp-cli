@@ -109,6 +109,49 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
     return out;
   }
 
+  /**
+   * Compute the underlying mark-price view (gap / inTheMoney) for an outcome
+   * from a parsed description and the live allMids map.
+   *
+   * Pure helper — extracted from getView so the settlement-status logic is
+   * directly unit-testable.
+   *
+   * - HL `allMids` keys perps by bare symbol (e.g. "BTC"). HIP-3 perps use
+   *   "@dexIdx:SYMBOL" but those aren't referenced in HIP-4 outcomes yet.
+   * - For `class:priceBinary` the convention is Yes = "underlying >= target".
+   *   When `class` is missing or non-binary, `inTheMoney` stays null rather
+   *   than guessing (Rule #2 — no silent classification fallback).
+   * - Returns null when there is no underlying field to look up.
+   */
+  static _computeUnderlying(
+    parsed: { class?: string; underlying?: string; targetPrice?: number },
+    allMids: Record<string, string>,
+  ): OutcomeViewUnderlying | null {
+    if (!parsed.underlying) return null;
+    const sym = parsed.underlying.toUpperCase();
+    const markPrice = allMids[sym];
+    const target = parsed.targetPrice;
+    let gap: number | undefined;
+    let gapPct: number | undefined;
+    let inTheMoney: "yes" | "no" | null = null;
+    if (markPrice !== undefined && target !== undefined) {
+      gap = Number(markPrice) - target;
+      gapPct = (gap / target) * 100;
+      if (parsed.class === "priceBinary" && Number.isFinite(gap)) {
+        inTheMoney = gap >= 0 ? "yes" : "no";
+      }
+    }
+    return {
+      symbol: sym,
+      source: sym,
+      markPrice,
+      targetPrice: target,
+      gap,
+      gapPct,
+      inTheMoney,
+    };
+  }
+
   /** Parse "20260504-0600" → ms-epoch (UTC). Returns undefined for malformed. */
   private static _parseExpiry(s: string): number | undefined {
     const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(s);
@@ -252,37 +295,7 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
       : undefined;
 
     // Underlying: HL perp mid for the parsed underlying symbol.
-    let underlying: OutcomeViewUnderlying | null = null;
-    if (parsed.underlying) {
-      const sym = parsed.underlying.toUpperCase();
-      // HL `allMids` keys perps by bare symbol (e.g. "BTC"). HIP-3 perps
-      // use "@dexIdx:SYMBOL" but those won't be referenced in HIP-4
-      // outcomes for now.
-      const markPrice = allMids[sym];
-      const target = parsed.targetPrice;
-      let gap: number | undefined;
-      let gapPct: number | undefined;
-      let inTheMoney: "yes" | "no" | null = null;
-      if (markPrice !== undefined && target !== undefined) {
-        gap = Number(markPrice) - target;
-        gapPct = (gap / target) * 100;
-        // For class:priceBinary the convention is Yes = "underlying >=
-        // target". When `class` is unknown or non-binary, leave inTheMoney
-        // as null rather than guessing.
-        if (parsed.class === "priceBinary" && Number.isFinite(gap)) {
-          inTheMoney = gap >= 0 ? "yes" : "no";
-        }
-      }
-      underlying = {
-        symbol: sym,
-        source: sym,
-        markPrice,
-        targetPrice: target,
-        gap,
-        gapPct,
-        inTheMoney,
-      };
-    }
+    const underlying = HyperliquidOutcomeAdapter._computeUnderlying(parsed, allMids);
 
     const expiryMs = parsed.expiryMs;
     const serverTime = Date.now();
