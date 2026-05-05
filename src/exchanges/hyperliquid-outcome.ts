@@ -152,6 +152,49 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
     };
   }
 
+  /**
+   * Sum of `impliedProb` across sides — for fair binary markets the sum
+   * should converge to ~1.0. Deviation hints at arbitrage or stale mids.
+   *
+   * Returns undefined when any side is missing impliedProb OR when any
+   * impliedProb is non-finite (NaN, Infinity). This means "we don't have a
+   * trustworthy view of the symmetry right now" rather than emitting NaN
+   * downstream (Rule #2 — no silent garbage propagation).
+   */
+  static _computeMidSum(sides: Array<{ impliedProb?: number }>): number | undefined {
+    if (sides.length === 0) return undefined;
+    for (const s of sides) {
+      if (s.impliedProb === undefined) return undefined;
+      if (!Number.isFinite(s.impliedProb)) return undefined;
+    }
+    return sides.reduce((acc, s) => acc + (s.impliedProb ?? 0), 0);
+  }
+
+  /**
+   * Compute the time-status pair (`serverTime`, `msToExpiry`) for a view.
+   * Pure helper — takes `nowMs` as an argument so callers can inject a
+   * deterministic clock under test.
+   *
+   * `msToExpiry` is the raw signed delta `expiryMs - nowMs`:
+   *   positive  = unexpired
+   *   zero      = at expiry
+   *   negative  = already settled (caller decides UX)
+   *   undefined = unknown expiry
+   *
+   * Does NOT clamp negatives or treat them as "expired" — that
+   * classification is the caller's job (Rule #2 — no silent classification
+   * fallback in a low-level helper).
+   */
+  static _computeTimeStatus(expiryMs: number | undefined, nowMs: number): {
+    serverTime: number;
+    msToExpiry?: number;
+  } {
+    return {
+      serverTime: nowMs,
+      msToExpiry: expiryMs !== undefined ? expiryMs - nowMs : undefined,
+    };
+  }
+
   /** Parse "20260504-0600" → ms-epoch (UTC). Returns undefined for malformed. */
   private static _parseExpiry(s: string): number | undefined {
     const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(s);
@@ -290,23 +333,22 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
       };
     });
 
-    const midSum = sides.every((s) => s.impliedProb !== undefined)
-      ? sides.reduce((acc, s) => acc + (s.impliedProb ?? 0), 0)
-      : undefined;
+    const midSum = HyperliquidOutcomeAdapter._computeMidSum(sides);
 
     // Underlying: HL perp mid for the parsed underlying symbol.
     const underlying = HyperliquidOutcomeAdapter._computeUnderlying(parsed, allMids);
 
-    const expiryMs = parsed.expiryMs;
-    const serverTime = Date.now();
-    const msToExpiry = expiryMs !== undefined ? expiryMs - serverTime : undefined;
+    const { serverTime, msToExpiry } = HyperliquidOutcomeAdapter._computeTimeStatus(
+      parsed.expiryMs,
+      Date.now(),
+    );
 
     return {
       outcome,
       name: meta.name,
       description: meta.description,
       class: parsed.class,
-      expiryMs,
+      expiryMs: parsed.expiryMs,
       msToExpiry,
       period: parsed.period,
       underlying,

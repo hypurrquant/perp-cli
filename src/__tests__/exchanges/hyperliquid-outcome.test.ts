@@ -206,6 +206,92 @@ describe("HyperliquidOutcomeAdapter — pure helpers", () => {
     });
   });
 
+  describe("_computeMidSum — symmetry invariant for binary outcomes", () => {
+    it("sums impliedProb across all sides when each side has a finite probability", () => {
+      // Healthy binary market: mids ≈ 1.0 in total
+      expect(HyperliquidOutcomeAdapter._computeMidSum([
+        { impliedProb: 0.965 },
+        { impliedProb: 0.034 },
+      ])).toBeCloseTo(0.999, 3);
+    });
+
+    it("returns undefined when even one side is missing impliedProb", () => {
+      // Half-loaded view shouldn't claim a sum — would mislead arb scanners
+      expect(HyperliquidOutcomeAdapter._computeMidSum([
+        { impliedProb: 0.5 },
+        { impliedProb: undefined },
+      ])).toBeUndefined();
+      expect(HyperliquidOutcomeAdapter._computeMidSum([
+        { impliedProb: undefined },
+        { impliedProb: 0.5 },
+      ])).toBeUndefined();
+    });
+
+    it("returns undefined when any side has a non-finite impliedProb (NaN / Infinity)", () => {
+      // Defends against `Number(mid)` producing NaN from a malformed venue payload
+      expect(HyperliquidOutcomeAdapter._computeMidSum([
+        { impliedProb: NaN },
+        { impliedProb: 0.5 },
+      ])).toBeUndefined();
+      expect(HyperliquidOutcomeAdapter._computeMidSum([
+        { impliedProb: 0.5 },
+        { impliedProb: Infinity },
+      ])).toBeUndefined();
+      expect(HyperliquidOutcomeAdapter._computeMidSum([
+        { impliedProb: -Infinity },
+        { impliedProb: 0.5 },
+      ])).toBeUndefined();
+    });
+
+    it("returns undefined for an empty side list (no inference from no data)", () => {
+      expect(HyperliquidOutcomeAdapter._computeMidSum([])).toBeUndefined();
+    });
+
+    it("preserves arithmetic faithfully — sum can be < 1 (unfilled book) or > 1 (crossed)", () => {
+      // _computeMidSum is a pure aggregator; classification (fair / arb /
+      // suspicious) is the caller's responsibility, not this helper's.
+      expect(HyperliquidOutcomeAdapter._computeMidSum([
+        { impliedProb: 0.4 },
+        { impliedProb: 0.4 },
+      ])).toBeCloseTo(0.8, 6);
+      expect(HyperliquidOutcomeAdapter._computeMidSum([
+        { impliedProb: 0.6 },
+        { impliedProb: 0.6 },
+      ])).toBeCloseTo(1.2, 6);
+    });
+  });
+
+  describe("_computeTimeStatus — deterministic clock for outcome view", () => {
+    const EXPIRY = Date.UTC(2026, 4, 5, 6, 0); // 2026-05-05 06:00 UTC (live BTC binary)
+
+    it("returns positive msToExpiry when now is before expiry", () => {
+      const now = EXPIRY - 60_000;
+      const r = HyperliquidOutcomeAdapter._computeTimeStatus(EXPIRY, now);
+      expect(r.serverTime).toBe(now);
+      expect(r.msToExpiry).toBe(60_000);
+    });
+
+    it("returns msToExpiry === 0 exactly at expiry (edge of settlement)", () => {
+      const r = HyperliquidOutcomeAdapter._computeTimeStatus(EXPIRY, EXPIRY);
+      expect(r.msToExpiry).toBe(0);
+    });
+
+    it("returns negative msToExpiry after expiry — caller decides expired UX (Rule #2)", () => {
+      // Deliberately does NOT clamp to 0 or treat as expired here; that
+      // classification belongs to the consumer (CLI / view renderer).
+      const now = EXPIRY + 5_000;
+      const r = HyperliquidOutcomeAdapter._computeTimeStatus(EXPIRY, now);
+      expect(r.msToExpiry).toBe(-5_000);
+    });
+
+    it("returns msToExpiry undefined when expiry is unknown", () => {
+      const now = Date.UTC(2026, 4, 5);
+      const r = HyperliquidOutcomeAdapter._computeTimeStatus(undefined, now);
+      expect(r.serverTime).toBe(now);
+      expect(r.msToExpiry).toBeUndefined();
+    });
+  });
+
   describe("_assertCancelStatusOk", () => {
     it("passes for 'success' status string", () => {
       expect(() => HyperliquidOutcomeAdapter._assertCancelStatusOk({
