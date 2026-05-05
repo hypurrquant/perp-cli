@@ -195,6 +195,61 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
     };
   }
 
+  /**
+   * Pure arithmetic gate for the (outcome, side) pair.
+   *
+   * Rejects NaN / non-integer / negative values immediately so the
+   * encoding formula `10 * outcome + side` never produces a garbage
+   * asset id silently. Does NOT consult outcomeMeta — that lookup is in
+   * the instance-level `_validateOutcomeSide` which composes this
+   * helper with the live registry check.
+   *
+   * Boundary: outcome=9_999_999, side=9 → encoding=99_999_999 = MAX_ENCODING (valid).
+   *           outcome=10_000_000, side=0 → encoding=100_000_000 > MAX_ENCODING (rejected).
+   */
+  static _assertOutcomeRange(outcome: number, side: number): void {
+    if (!Number.isInteger(outcome) || outcome < 0) {
+      throw new PerpError("INVALID_PARAMS", `Outcome id must be a non-negative integer, got: ${outcome}`, { exchange: "hyperliquid" });
+    }
+    if (!Number.isInteger(side) || side < 0 || side > MAX_SIDE) {
+      throw new PerpError("INVALID_PARAMS", `Side must be an integer 0..${MAX_SIDE} (encoding scheme is single digit), got: ${side}`, { exchange: "hyperliquid" });
+    }
+    const encoding = HyperliquidOutcomeAdapter.encoding(outcome, side);
+    if (encoding > MAX_ENCODING) {
+      throw new PerpError("INVALID_PARAMS", `Encoding ${encoding} overflows the outcome asset block (max ${MAX_ENCODING})`, { exchange: "hyperliquid" });
+    }
+  }
+
+  /**
+   * Trim a raw orderbook to `depth` levels and surface best bid/ask.
+   *
+   * Throws (rather than silently coercing) when:
+   *  - `book.bids` or `book.asks` is missing/non-array (venue payload
+   *    malformed — Rule #2: don't fabricate an empty book)
+   *  - `depth` is not a non-negative integer (NaN, negative, Infinity,
+   *    fractional are all caller bugs that previously silently produced
+   *    `slice(0, NaN) === []` or `slice(0, -1)` = "all but last")
+   */
+  static _trimBook(
+    book: { bids: [string, string][]; asks: [string, string][] } | { bids: unknown; asks: unknown } | null | undefined,
+    depth: number,
+  ): { bids: [string, string][]; asks: [string, string][]; bestBid?: string; bestAsk?: string } {
+    if (!book || !Array.isArray((book as { bids?: unknown }).bids) || !Array.isArray((book as { asks?: unknown }).asks)) {
+      throw new PerpError("EXCHANGE_ERROR", "Outcome orderbook response is missing bids/asks array", { exchange: "hyperliquid" });
+    }
+    if (!Number.isInteger(depth) || depth < 0) {
+      throw new PerpError("INVALID_PARAMS", `Depth must be a non-negative integer, got: ${depth}`, { exchange: "hyperliquid" });
+    }
+    const bids = (book as { bids: [string, string][] }).bids.slice(0, depth);
+    const asks = (book as { asks: [string, string][] }).asks.slice(0, depth);
+    return {
+      bids,
+      asks,
+      bestBid: bids[0]?.[0],
+      bestAsk: asks[0]?.[0],
+    };
+  }
+
   /** Parse "20260504-0600" → ms-epoch (UTC). Returns undefined for malformed. */
   private static _parseExpiry(s: string): number | undefined {
     const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(s);
@@ -313,11 +368,7 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
     // Trim each book to `depth` levels and compute best bid/ask + implied prob.
     const sides: OutcomeViewSide[] = meta.sideSpecs.map((spec, i) => {
       const encoding = HyperliquidOutcomeAdapter.encoding(outcome, i);
-      const book = books[i];
-      const bids = book.bids.slice(0, depth);
-      const asks = book.asks.slice(0, depth);
-      const bestBid = bids[0]?.[0];
-      const bestAsk = asks[0]?.[0];
+      const trimmed = HyperliquidOutcomeAdapter._trimBook(books[i], depth);
       const mid = allMids[`#${encoding}`];
       return {
         side: i,
@@ -325,10 +376,10 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
         encoding,
         assetId: OUTCOME_ASSET_OFFSET + encoding,
         mid,
-        bids,
-        asks,
-        bestBid,
-        bestAsk,
+        bids: trimmed.bids,
+        asks: trimmed.asks,
+        bestBid: trimmed.bestBid,
+        bestAsk: trimmed.bestAsk,
         impliedProb: mid !== undefined ? Number(mid) : undefined,
       };
     });
@@ -486,16 +537,7 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
   }
 
   private _validateOutcomeSide(outcome: number, side: number): void {
-    if (!Number.isInteger(outcome) || outcome < 0) {
-      throw new PerpError("INVALID_PARAMS", `Outcome id must be a non-negative integer, got: ${outcome}`, { exchange: "hyperliquid" });
-    }
-    if (!Number.isInteger(side) || side < 0 || side > MAX_SIDE) {
-      throw new PerpError("INVALID_PARAMS", `Side must be an integer 0..${MAX_SIDE} (encoding scheme is single digit), got: ${side}`, { exchange: "hyperliquid" });
-    }
-    const encoding = HyperliquidOutcomeAdapter.encoding(outcome, side);
-    if (encoding > MAX_ENCODING) {
-      throw new PerpError("INVALID_PARAMS", `Encoding ${encoding} overflows the outcome asset block (max ${MAX_ENCODING})`, { exchange: "hyperliquid" });
-    }
+    HyperliquidOutcomeAdapter._assertOutcomeRange(outcome, side);
     const o = this._outcomeMeta?.outcomes.find((x) => x.outcome === outcome);
     if (!o) {
       throw new PerpError("SYMBOL_NOT_FOUND", `Unknown outcome id: ${outcome}`, {

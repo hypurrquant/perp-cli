@@ -292,6 +292,111 @@ describe("HyperliquidOutcomeAdapter — pure helpers", () => {
     });
   });
 
+  describe("_assertOutcomeRange — pure (outcome, side) gate (Rule #2)", () => {
+    it("accepts the valid (outcome, side) range without throwing", () => {
+      expect(() => HyperliquidOutcomeAdapter._assertOutcomeRange(0, 0)).not.toThrow();
+      expect(() => HyperliquidOutcomeAdapter._assertOutcomeRange(1, 0)).not.toThrow();
+      expect(() => HyperliquidOutcomeAdapter._assertOutcomeRange(1, 9)).not.toThrow();
+      // boundary: outcome=9_999_999, side=9 → encoding=99_999_999 = MAX_ENCODING
+      expect(() => HyperliquidOutcomeAdapter._assertOutcomeRange(9_999_999, 9)).not.toThrow();
+    });
+
+    it("rejects outcome that is NaN / non-integer / negative — previously could pass silently", () => {
+      // Each of these would slip through the old `encoding > MAX_ENCODING`
+      // post-check because Number.isInteger(NaN)=false; without the
+      // pre-check `encoding = NaN` and the comparison was always false.
+      expect(() => HyperliquidOutcomeAdapter._assertOutcomeRange(NaN, 0)).toThrow(PerpError);
+      expect(() => HyperliquidOutcomeAdapter._assertOutcomeRange(-1, 0)).toThrow(PerpError);
+      expect(() => HyperliquidOutcomeAdapter._assertOutcomeRange(0.5, 0)).toThrow(PerpError);
+      expect(() => HyperliquidOutcomeAdapter._assertOutcomeRange(Infinity, 0)).toThrow(PerpError);
+    });
+
+    it("rejects side outside 0..9 — encoding scheme is single digit", () => {
+      expect(() => HyperliquidOutcomeAdapter._assertOutcomeRange(1, 10)).toThrow(/Side must be an integer/);
+      expect(() => HyperliquidOutcomeAdapter._assertOutcomeRange(1, -1)).toThrow(/Side must be an integer/);
+      expect(() => HyperliquidOutcomeAdapter._assertOutcomeRange(1, NaN)).toThrow(/Side must be an integer/);
+      expect(() => HyperliquidOutcomeAdapter._assertOutcomeRange(1, 1.5)).toThrow(/Side must be an integer/);
+    });
+
+    it("rejects encoding overflow (outcome=10_000_000, side=0 → encoding=100_000_000)", () => {
+      try {
+        HyperliquidOutcomeAdapter._assertOutcomeRange(10_000_000, 0);
+        expect.fail("expected to throw");
+      } catch (e) {
+        const err = e as PerpError;
+        expect(err.structured.code).toBe("INVALID_PARAMS");
+        expect(err.message).toMatch(/Encoding 100000000 overflows/);
+      }
+    });
+  });
+
+  describe("_trimBook — depth + malformed-payload gate (Rule #2)", () => {
+    const book = {
+      bids: [
+        ["0.96", "10"],
+        ["0.95", "20"],
+        ["0.94", "30"],
+      ] as [string, string][],
+      asks: [
+        ["0.97", "5"],
+        ["0.98", "15"],
+      ] as [string, string][],
+    };
+
+    it("trims to the requested depth and surfaces best bid/ask", () => {
+      const r = HyperliquidOutcomeAdapter._trimBook(book, 2);
+      expect(r.bids).toEqual([["0.96", "10"], ["0.95", "20"]]);
+      expect(r.asks).toEqual([["0.97", "5"], ["0.98", "15"]]);
+      expect(r.bestBid).toBe("0.96");
+      expect(r.bestAsk).toBe("0.97");
+    });
+
+    it("depth=0 returns empty bids/asks and undefined best prices", () => {
+      const r = HyperliquidOutcomeAdapter._trimBook(book, 0);
+      expect(r.bids).toEqual([]);
+      expect(r.asks).toEqual([]);
+      expect(r.bestBid).toBeUndefined();
+      expect(r.bestAsk).toBeUndefined();
+    });
+
+    it("depth larger than book length returns the full book — no padding, no error", () => {
+      const r = HyperliquidOutcomeAdapter._trimBook(book, 9999);
+      expect(r.bids).toHaveLength(3);
+      expect(r.asks).toHaveLength(2);
+    });
+
+    it("rejects negative depth — previously slice(0, -1) silently dropped the last entry", () => {
+      expect(() => HyperliquidOutcomeAdapter._trimBook(book, -1)).toThrow(/Depth must be a non-negative integer/);
+    });
+
+    it("rejects NaN / Infinity / fractional depth (caller bug, not a venue issue)", () => {
+      expect(() => HyperliquidOutcomeAdapter._trimBook(book, NaN)).toThrow(/Depth must be a non-negative integer/);
+      expect(() => HyperliquidOutcomeAdapter._trimBook(book, Infinity)).toThrow(/Depth must be a non-negative integer/);
+      expect(() => HyperliquidOutcomeAdapter._trimBook(book, 1.5)).toThrow(/Depth must be a non-negative integer/);
+    });
+
+    it("throws EXCHANGE_ERROR when the venue payload is missing bids or asks (Rule #2: don't fabricate empty book)", () => {
+      try {
+        HyperliquidOutcomeAdapter._trimBook({ bids: undefined, asks: book.asks } as any, 5);
+        expect.fail("expected to throw");
+      } catch (e) {
+        const err = e as PerpError;
+        expect(err.structured.code).toBe("EXCHANGE_ERROR");
+        expect(err.message).toMatch(/missing bids\/asks/);
+      }
+      expect(() => HyperliquidOutcomeAdapter._trimBook(null as any, 5)).toThrow(/missing bids\/asks/);
+      expect(() => HyperliquidOutcomeAdapter._trimBook({ bids: [], asks: null } as any, 5)).toThrow(/missing bids\/asks/);
+    });
+
+    it("empty book returns empty arrays and undefined best prices", () => {
+      const r = HyperliquidOutcomeAdapter._trimBook({ bids: [], asks: [] }, 10);
+      expect(r.bids).toEqual([]);
+      expect(r.asks).toEqual([]);
+      expect(r.bestBid).toBeUndefined();
+      expect(r.bestAsk).toBeUndefined();
+    });
+  });
+
   describe("_assertCancelStatusOk", () => {
     it("passes for 'success' status string", () => {
       expect(() => HyperliquidOutcomeAdapter._assertCancelStatusOk({
