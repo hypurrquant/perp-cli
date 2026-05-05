@@ -537,16 +537,45 @@ export class LighterAdapter implements ExchangeAdapter {
     }
   }
 
+  /**
+   * Coerce a venue payload value to a finite number — or throw.
+   *
+   * Rules:
+   *  - undefined / null → `defaultValue` (typically 0). Lighter may
+   *    legitimately omit a field for an empty account or zero position;
+   *    that is "no data, treat as zero", not a parsing failure.
+   *  - finite number → returned as-is.
+   *  - NaN / ±Infinity / strings that parse to NaN → throw EXCHANGE_ERROR.
+   *    Silent `|| 0` substitution would mask broken accounting (a stale
+   *    cache hit, partial response, or numeric overflow on the venue
+   *    side) as "$0 balance" — exactly the class of Rule #2 violation
+   *    the previous QA cycle found in `_computeMidSum` and getOrderbook.
+   */
+  static _toFiniteNumber(value: unknown, fieldName: string, defaultValue = 0): number {
+    if (value === undefined || value === null) return defaultValue;
+    const n = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(n)) {
+      throw new PerpError(
+        "EXCHANGE_ERROR",
+        `Lighter response field \`${fieldName}\` is not a finite number: ${JSON.stringify(value)}`,
+        { exchange: "lighter" },
+      );
+    }
+    return n;
+  }
+
   async getBalance(): Promise<ExchangeBalance> {
     if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     const acct = await this.fetchAccount();
     if (!acct) return { equity: "0", available: "0", marginUsed: "0", unrealizedPnl: "0" };
 
-    const totalAsset = Number(acct.total_asset_value || 0);
-    const available = Number(acct.available_balance || 0);
-    const collateral = Number(acct.collateral || 0);
+    const totalAsset = LighterAdapter._toFiniteNumber(acct.total_asset_value, "total_asset_value");
+    const available = LighterAdapter._toFiniteNumber(acct.available_balance, "available_balance");
+    const collateral = LighterAdapter._toFiniteNumber(acct.collateral, "collateral");
     const unrealizedPnl = (acct.positions as unknown as Record<string, unknown>[])?.reduce(
-      (sum: number, p: Record<string, unknown>) => sum + Number(p.unrealized_pnl || 0), 0
+      (sum: number, p: Record<string, unknown>) =>
+        sum + LighterAdapter._toFiniteNumber(p.unrealized_pnl, "position.unrealized_pnl"),
+      0,
     ) ?? 0;
 
     // Include spot USDC balance (separate from perp collateral)
@@ -571,9 +600,10 @@ export class LighterAdapter implements ExchangeAdapter {
     if (!acct) return [];
 
     return ((acct.positions as unknown as Record<string, unknown>[]) ?? [])
-      .filter((p: Record<string, unknown>) => Number(p.position || 0) !== 0)
+      .filter((p: Record<string, unknown>) => LighterAdapter._toFiniteNumber(p.position, "position") !== 0)
       .map((p: Record<string, unknown>) => {
-        const posSize = Number(p.position || 0);
+        const posSize = LighterAdapter._toFiniteNumber(p.position, "position");
+        const positionValue = LighterAdapter._toFiniteNumber(p.position_value, "position_value");
         return {
           symbol: String(p.symbol || `Market-${p.market_id}`),
           side: (Number(p.sign) > 0 ? "long" : "short") as "long" | "short",
@@ -581,7 +611,7 @@ export class LighterAdapter implements ExchangeAdapter {
           entryPrice: String(p.avg_entry_price || "0"),
           markPrice: (() => {
             if (posSize === 0) return "0";
-            const rawMark = Number(p.position_value || 0) / Math.abs(posSize);
+            const rawMark = positionValue / Math.abs(posSize);
             const priceDec = this._marketDecimals.get(String(p.symbol || "").toUpperCase())?.price;
             return String(priceDec !== undefined ? rawMark.toFixed(priceDec) : rawMark);
           })(),
@@ -589,8 +619,8 @@ export class LighterAdapter implements ExchangeAdapter {
           unrealizedPnl: String(p.unrealized_pnl || "0"),
           // Compute actual leverage = notional / account equity (not max leverage from IMF)
           leverage: (() => {
-            const notional = Math.abs(Number(p.position_value || 0));
-            const equity = Number(acct.total_asset_value || 0);
+            const notional = Math.abs(positionValue);
+            const equity = LighterAdapter._toFiniteNumber(acct.total_asset_value, "total_asset_value");
             if (equity > 0 && notional > 0) return Math.round(notional / equity * 10) / 10;
             return 1;
           })(),
