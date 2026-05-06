@@ -722,3 +722,93 @@ describe("validateTrade — overall validity", () => {
     expect(new Date(result.timestamp).toISOString()).toBe(result.timestamp);
   });
 });
+
+// ──────────────────────────────────────────────
+// Rule #2 numeric guards — NaN propagation rejection
+// ──────────────────────────────────────────────
+
+describe("validateTrade — Rule #2 numeric guards (NaN propagation rejection)", () => {
+  // These tests document the gap previous helper-extract audits did not
+  // cover at the validator boundary: NaN values from a malformed venue
+  // payload would silently slip past comparison-based checks because all
+  // NaN comparisons are false. The validator must reject them explicitly
+  // so the caller doesn't see a false-positive "insufficient liquidity"
+  // or "$NaN available" message.
+
+  it("throws EXCHANGE_ERROR when getMarkets returns non-finite markPrice", async () => {
+    const adapter = mockAdapter({
+      getMarkets: vi.fn().mockResolvedValue([
+        {
+          symbol: "BTC-PERP", markPrice: "not-a-number", indexPrice: "60000",
+          fundingRate: "0.0001", volume24h: "1000000", openInterest: "500000", maxLeverage: 20,
+        },
+      ]),
+    });
+    await expect(
+      validateTrade(adapter, { symbol: "BTC", side: "buy", size: 0.1 } as TradeCheckParams),
+    ).rejects.toThrow(/non-finite markPrice/);
+  });
+
+  it("throws EXCHANGE_ERROR when balance.available is non-finite", async () => {
+    const adapter = mockAdapter({
+      getBalance: vi.fn().mockResolvedValue({
+        equity: "10000", available: undefined, marginUsed: "2000", unrealizedPnl: "0",
+      }),
+    });
+    await expect(
+      validateTrade(adapter, { symbol: "BTC", side: "buy", size: 0.1 } as TradeCheckParams),
+    ).rejects.toThrow(/non-finite balance\.available/);
+  });
+
+  it("throws EXCHANGE_ERROR when an orderbook level has non-finite price", async () => {
+    const adapter = mockAdapter({
+      getOrderbook: vi.fn().mockResolvedValue({
+        bids: [["59990", "1"]],
+        asks: [["abc", "1"], ["60020", "2"]],
+      }),
+    });
+    await expect(
+      validateTrade(adapter, { symbol: "BTC", side: "buy", size: 0.1 } as TradeCheckParams),
+    ).rejects.toThrow(/orderbook level/);
+  });
+
+  it("throws EXCHANGE_ERROR when an orderbook level has zero price", async () => {
+    const adapter = mockAdapter({
+      getOrderbook: vi.fn().mockResolvedValue({
+        bids: [["59990", "1"]],
+        asks: [["0", "1"]],
+      }),
+    });
+    await expect(
+      validateTrade(adapter, { symbol: "BTC", side: "buy", size: 0.1 } as TradeCheckParams),
+    ).rejects.toThrow(/non-finite or non-positive/);
+  });
+
+  it("throws EXCHANGE_ERROR when reduce-only position size is non-finite", async () => {
+    const adapter = mockAdapter({
+      getPositions: vi.fn().mockResolvedValue([
+        { symbol: "BTC-PERP", side: "long", size: "garbled", markPrice: "60000", entryPrice: "60000", unrealizedPnl: "0", margin: "100" },
+      ]),
+    });
+    await expect(
+      validateTrade(adapter, { symbol: "BTC", side: "sell", size: 0.5, reduceOnly: true } as TradeCheckParams),
+    ).rejects.toThrow(/non-finite position size/);
+  });
+
+  it("substitutes 0 + emits warning when funding rate is non-finite (output sanitization)", async () => {
+    const adapter = mockAdapter({
+      getMarkets: vi.fn().mockResolvedValue([
+        {
+          symbol: "BTC-PERP", markPrice: "60000", indexPrice: "60000",
+          fundingRate: "abc", volume24h: "1000000", openInterest: "500000", maxLeverage: 20,
+        },
+      ]),
+    });
+    const result = await validateTrade(adapter, {
+      symbol: "BTC", side: "buy", size: 0.1,
+    } as TradeCheckParams);
+    // Envelope must NOT carry NaN — agents JSON.parsing the output would break.
+    expect(result.marketInfo?.fundingRate).toBe(0);
+    expect(result.warnings.some((w) => w.includes("Funding rate unavailable"))).toBe(true);
+  });
+});
