@@ -273,23 +273,40 @@ perp --json wallet rotate                      # rotate keys + transfer assets
 perp --json wallet backup                      # encrypted backup
 perp --json wallet restore <file>              # restore from backup
 perp --json wallet deposit <walletName>        # deposit prompt for a stored wallet
-perp --json wallet setup                       # **interactive — DO NOT use from agent**
+perp --json wallet setup --name <n> --max-tx-usd <usd> --max-daily-usd <usd> [--skip-key]
+                                               # one-click: wallet + policy + agent key.
+                                               # Passphrase prompt unless OWS_PASSPHRASE env is set.
 ```
 
 ### Agent wallet (DEX-side delegation)
 ```bash
-perp --json wallet agent approve <exchange> [--master <name>] [--api-key-index <n>]
+# Register an agent. Default expires-in is 90d — agent silently expires unless
+# rotated; pass --expires-in 1y / 180d / etc to extend. --master is required
+# for the OWS vault path (Aster/PAC); HL accepts --master-address.
+perp --json wallet agent approve <exchange> \
+  [--master <name>] \
+  [--agent-name <name>] \
+  [--expires-in 30d|90d|180d|1y|<ISO-8601>] \
+  [--can-perp|--no-perp] [--can-spot|--no-spot] [--can-withdraw|--no-withdraw] \
+  [--rotate] \
+  [--passphrase <pp>] \
+  [--builder <addr> --max-fee-rate <bps> --builder-name <name>] \
+  [--ip-whitelist <list>] \
+  [--api-key-index <n>]                # Lighter slot 4-254
+
 perp --json wallet agent list [exchange]
 perp --json wallet agent revoke <exchange> <agentName>
 perp --json wallet agent rotate <exchange> [oldAgentName]
-perp --json wallet agent verify [exchange] [agentName]
+# verify uses --master/--master-address (HL) / --account-index (LT) / --passphrase (Aster/PAC).
+# Aster: returns NOT_IMPLEMENTED — DEX endpoint /fapi/v3/agent rejects identical sigs.
+perp --json wallet agent verify [exchange] [agentName] \
+  [--master <name>] [--master-address <addr>] [--account-index <n>] [--passphrase <pp>]
 ```
 
 ### Exchange settings (`wallet manage`)
 ```bash
 perp --json wallet manage margin <SYMBOL> <cross|isolated>
-perp --json wallet manage withdraw <amount> <address>          # generic on-exchange withdraw
-perp --json wallet manage account-mode [standard|big-blocks]   # Hyperliquid only
+perp --json wallet manage account-mode [unified|standard|portfolio]   # Hyperliquid only; no arg = show current
 perp --json wallet manage sub create <name>
 perp --json wallet manage sub list
 perp --json wallet manage sub transfer <from> <to> <amount>
@@ -333,10 +350,9 @@ perp --json risk check --notional 1000 --leverage 3             # pre-trade risk
 ## History (execution log + analytics)
 ```bash
 perp --json history list                       # execution audit trail
-perp --json history stats                      # aggregated execution stats
 perp --json history positions                  # position lifetime tracking
 perp --json history prune                      # purge old entries
-perp --json history summary                    # trading performance summary
+perp --json history summary                    # trading performance summary (replaces former 'stats')
 perp --json history pnl                        # P&L breakdown by exchange
 perp --json history funding                    # funding payment aggregation
 perp --json history report                     # full performance report (summary + pnl + funding)
@@ -423,8 +439,15 @@ perp --json settings env path                 # config file path
 
 ## Init / Setup
 ```bash
-perp init                                     # interactive — DO NOT use from agent
-perp setup                                    # alias for init — DO NOT use from agent
+# Interactive default — DO NOT use from agent without flags (will hang on prompts).
+perp setup                                    # alias: perp init
+perp init
+
+# Agent-safe non-interactive variant (requires --passphrase or OWS_PASSPHRASE env):
+perp --json setup --non-interactive \
+  --wallet-name <name> \
+  --passphrase <pp> \
+  [--default-exchange <pacifica|hyperliquid|lighter|aster>]
 ```
 
-Use `perp wallet set <ex> <key>` instead — non-interactive and agent-safe.
+For per-exchange key registration without the wizard, use `perp wallet set <ex> <key>` — also agent-safe.

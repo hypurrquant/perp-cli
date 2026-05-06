@@ -4,11 +4,23 @@ Complete reference for non-interactive CLI operations. Every command here is saf
 
 ## Interactive vs Non-Interactive Commands
 
-### NEVER use these (interactive, will hang):
+### Avoid bare interactive forms (they prompt and will hang an agent):
 ```
 perp setup                       # interactive wizard — asks questions via stdin
 perp init                        # alias for setup
-perp wallet setup                # interactive wallet wizard
+perp wallet setup                # one-click setup — passphrase prompt
+```
+
+### Agent-safe non-interactive variants:
+```bash
+# Setup wizard with explicit args (no prompts):
+perp --json setup --non-interactive \
+  --wallet-name <name> \
+  --passphrase <pp> \
+  [--default-exchange <pacifica|hyperliquid|lighter|aster>]
+
+# wallet setup (one-click) only prompts for passphrase — set OWS_PASSPHRASE env to skip:
+OWS_PASSPHRASE=<pp> perp --json wallet setup --name <name> --max-tx-usd <usd> --max-daily-usd <usd>
 ```
 
 ### ALWAYS use these (non-interactive, agent-safe):

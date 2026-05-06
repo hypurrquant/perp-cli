@@ -36,7 +36,7 @@ Also bundled under `scripts/`: `preflight.sh`, `arb-monitor.sh`, `funding-analys
 1. **Always pass `--json`.** Without it, output is human-formatted and hard to parse.
 2. **Always run `--dry-run` first** for any mutating trade (open / close / bridge / withdraw). Show the result, get user confirmation, then execute without `--dry-run`.
 3. **Always use `--fields`** when you only need specific data — saves tokens.
-4. **NEVER run `perp setup`, `perp init`, or `perp wallet setup`.** All three are interactive and will hang the agent. Use `perp wallet set <exchange> <key>` instead.
+4. **Avoid bare `perp setup` / `perp init` / `perp wallet setup`** — they prompt and will hang an agent. Use `perp wallet set <exchange> <key>` for key registration, or `perp setup --non-interactive --passphrase <pp> --wallet-name <name>` (and `OWS_PASSPHRASE=<pp> perp wallet setup --name <n> --max-tx-usd <usd> --max-daily-usd <usd>`) when the wizard is required.
 5. **NEVER trade without explicit user confirmation.** A dry-run is not consent.
 6. **NEVER read `~/.perp/.env` or other key files.** The CLI reads them — you should not.
 7. **NEVER manually add `-PERP` suffix** to symbols. Use bare names (`BTC`, `SOL`, `ICP`); the CLI resolves exchange-specific naming.
