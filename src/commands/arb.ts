@@ -30,7 +30,6 @@ interface FundingRate {
   symbol: string;
   fundingRate: number;
   markPrice: number;
-  nextFunding?: number;
 }
 
 async function fetchPacificaRates(): Promise<FundingRate[]> {
@@ -40,7 +39,6 @@ async function fetchPacificaRates(): Promise<FundingRate[]> {
     symbol: p.symbol,
     fundingRate: p.funding,
     markPrice: p.mark,
-    nextFunding: p.nextFunding ?? 0,
   }));
 }
 
@@ -69,7 +67,6 @@ async function fetchAsterRates(): Promise<FundingRate[]> {
       if (!rawSym.endsWith("USDT")) continue;
       const fundingRate = Number(p.lastFundingRate);
       const markPrice = Number(p.markPrice);
-      const nextFunding = Number(p.nextFundingTime);
       if (!Number.isFinite(fundingRate) || !Number.isFinite(markPrice) || markPrice <= 0) {
         continue;
       }
@@ -78,7 +75,6 @@ async function fetchAsterRates(): Promise<FundingRate[]> {
         symbol: rawSym.replace(/USDT$/, ""),
         fundingRate,
         markPrice,
-        nextFunding: Number.isFinite(nextFunding) ? nextFunding : 0,
       });
     }
     return out;

@@ -56,20 +56,20 @@ export const TOP_SYMBOLS = [
 // ── Fetchers (using shared-api.ts) ──
 
 async function fetchPacificaRates(): Promise<ExchangeFundingRate[]> {
+  // Pacifica's public prices endpoint does not expose a next-funding-time
+  // (unix ms). Its `next_funding` field is the predicted next-period funding
+  // RATE, not a timestamp. Leave `nextFundingTime` undefined so cross-DEX
+  // schema consumers (HL/LT/Aster) aren't fed a rate as if it were a time.
   try {
     const assets = await fetchPacificaPrices();
-    return assets.map(p => {
-      const hourly = toHourlyRate(p.funding, "pacifica");
-      return {
-        exchange: "pacifica" as const,
-        symbol: p.symbol,
-        fundingRate: p.funding,
-        hourlyRate: hourly,
-        annualizedPct: annualizeRate(p.funding, "pacifica"),
-        markPrice: p.mark,
-        nextFundingTime: p.nextFunding,
-      };
-    });
+    return assets.map(p => ({
+      exchange: "pacifica" as const,
+      symbol: p.symbol,
+      fundingRate: p.funding,
+      hourlyRate: toHourlyRate(p.funding, "pacifica"),
+      annualizedPct: annualizeRate(p.funding, "pacifica"),
+      markPrice: p.mark,
+    }));
   } catch {
     return [];
   }

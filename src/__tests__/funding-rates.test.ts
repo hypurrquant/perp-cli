@@ -372,6 +372,56 @@ describe("fetchSymbolFundingRates", () => {
 // 3-DEX direction logic
 // ──────────────────────────────────────────────
 
+// ──────────────────────────────────────────────
+// Pacifica nextFundingTime semantic guard
+// (regression: pacifica's next_funding API field is the next-period funding
+//  RATE — not a unix-ms timestamp. Mapping it into the schema's
+//  nextFundingTime field polluted cross-DEX comparisons.)
+// ──────────────────────────────────────────────
+
+describe("Pacifica nextFundingTime guard", () => {
+  it("does not populate nextFundingTime even when API returns next_funding", async () => {
+    // Pacifica's API exposes next_funding as a small decimal (rate). Mock it
+    // here as a value that would clearly be invalid as a unix-ms timestamp
+    // (negative + sub-millisecond).
+    mockFetch.mockImplementation(async (url: string | URL) => {
+      const urlStr = typeof url === "string" ? url : url.toString();
+      if (urlStr.includes("pacifica.fi")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [
+              { symbol: "BTC", funding: 0.0001, mark: 60000, next_funding: -0.00014299 },
+            ],
+          }),
+          text: async () => "",
+        };
+      }
+      if (urlStr.includes("hyperliquid.xyz")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            { universe: [{ name: "BTC" }] },
+            [{ funding: 0.00005, markPx: 60100 }],
+          ],
+          text: async () => "",
+        };
+      }
+      throw new Error(`Unexpected fetch: ${urlStr}`);
+    });
+
+    const snapshot = await fetchAllFundingRates();
+    const btc = snapshot.symbols.find(s => s.symbol === "BTC");
+    expect(btc).toBeTruthy();
+    const pacEntry = btc!.rates.find(r => r.exchange === "pacifica");
+    expect(pacEntry).toBeTruthy();
+    // The API's next_funding (a rate) MUST NOT leak into nextFundingTime.
+    expect(pacEntry!.nextFundingTime).toBeUndefined();
+  });
+});
+
 describe("3-DEX direction logic", () => {
   it("picks correct long/short when lighter has best rate", async () => {
     setupMockFetch({

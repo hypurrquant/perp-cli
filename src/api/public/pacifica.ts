@@ -8,7 +8,6 @@ interface PacificaAsset {
   symbol: string;
   funding: number;
   mark: number;
-  nextFunding?: number;
 }
 
 // ── Fetchers ──
@@ -31,16 +30,7 @@ export function fetchPacificaPrices(): Promise<PacificaAsset[]> {
       if (!symbol || fundingRaw === undefined || !Number.isFinite(funding) || !Number.isFinite(mark) || mark <= 0) {
         continue;
       }
-      const nextFundingRaw = p.next_funding;
-      const nextFundingNumber = Number(nextFundingRaw);
-      out.push({
-        symbol,
-        funding,
-        mark,
-        nextFunding: nextFundingRaw !== undefined && Number.isFinite(nextFundingNumber)
-          ? nextFundingNumber
-          : undefined,
-      });
+      out.push({ symbol, funding, mark });
     }
     return out;
   });
