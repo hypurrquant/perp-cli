@@ -3,7 +3,7 @@ import type { ExchangeAdapter } from "../exchanges/index.js";
 import { printJson, jsonOk, jsonError } from "../utils.js";
 import chalk from "chalk";
 import { hasPacificaSdk } from "../exchanges/capabilities.js";
-import { PerpError } from "../errors.js";
+import { PerpError, classifyError } from "../errors.js";
 import { loadSettings } from "../settings.js";
 import { resolvePassphrase } from "../agent-wallet/passphrase.js";
 import { runHlSetAbstractionFlow, type HlAbstractionMode } from "./agent.js";
@@ -381,9 +381,7 @@ export function registerWalletManageCommands(
           return;
         } catch (err) {
           if (useJson) {
-            const e = err instanceof PerpError
-              ? err.structured
-              : { code: "UNKNOWN", message: err instanceof Error ? err.message : String(err) };
+            const e = classifyError(err);
             console.error(JSON.stringify(jsonError(e.code as never, e.message)));
             process.exit(1);
           }
@@ -467,9 +465,7 @@ export function registerWalletManageCommands(
         console.log(`  New mode:  ${chalk.cyan(result.mode)} ${chalk.gray(`(${result.abstraction})`)}\n`);
       } catch (err) {
         if (useJson) {
-          const e = err instanceof PerpError
-            ? err.structured
-            : { code: "UNKNOWN", message: err instanceof Error ? err.message : String(err) };
+          const e = classifyError(err);
           console.error(JSON.stringify(jsonError(e.code as never, e.message)));
           process.exit(1);
         }

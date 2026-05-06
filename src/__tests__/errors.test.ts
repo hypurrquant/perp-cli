@@ -73,6 +73,26 @@ describe("classifyError — pattern matching", () => {
     expect(classifyError(new Error("Risk limit violation")).code).toBe("RISK_VIOLATION");
   });
 
+  it("classifies AEAD/decryption failure as INVALID_PASSPHRASE", () => {
+    // The exact NAPI error message thrown by @open-wallet-standard/core
+    // when the AEAD tag check fails (wrong passphrase or tampered ciphertext).
+    const r = classifyError(new Error("decryption failed: aead::Error"));
+    expect(r.code).toBe("INVALID_PASSPHRASE");
+    expect(r.status).toBe(401);
+    expect(r.retryable).toBe(false);
+    expect(r.remediation).toMatch(/passphrase/i);
+  });
+
+  it("INVALID_PASSPHRASE matches generic 'decryption failed' messages too", () => {
+    expect(classifyError(new Error("Decryption failed")).code).toBe("INVALID_PASSPHRASE");
+    expect(classifyError(new Error("decryption error: tag mismatch")).code).toBe("INVALID_PASSPHRASE");
+  });
+
+  it("INVALID_PASSPHRASE is distinct from PASSPHRASE_REQUIRED", () => {
+    expect(classifyError(new Error("passphrase required")).code).toBe("PASSPHRASE_REQUIRED");
+    expect(classifyError(new Error("aead::Error")).code).toBe("INVALID_PASSPHRASE");
+  });
+
   it("returns EXCHANGE_ERROR when exchange is known but message is unrecognized", () => {
     const r = classifyError(new Error("Something weird happened"), "hyperliquid");
     expect(r.code).toBe("EXCHANGE_ERROR");

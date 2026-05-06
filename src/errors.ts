@@ -23,6 +23,7 @@ export const ERROR_CODES = {
   APPROVE_FAILED:       { code: "APPROVE_FAILED",       status: 500, retryable: false },
   LOCK_HELD:            { code: "LOCK_HELD",            status: 423, retryable: true, retryAfterMs: 5000 },
   PASSPHRASE_REQUIRED:  { code: "PASSPHRASE_REQUIRED",  status: 401, retryable: false },
+  INVALID_PASSPHRASE:   { code: "INVALID_PASSPHRASE",   status: 401, retryable: false },
   NOT_IMPLEMENTED:      { code: "NOT_IMPLEMENTED",      status: 501, retryable: false },
 
   // 5xx - System / transient errors
@@ -127,6 +128,18 @@ export function classifyError(err: unknown, exchange?: string): StructuredError 
   }
   if (lower.includes("passphrase required") || lower.includes("passphrase missing")) {
     return { ...ERROR_CODES.PASSPHRASE_REQUIRED, message, exchange };
+  }
+  // OWS vault decrypt failure (NAPI binding throws "decryption failed: aead::Error"
+  // when the AEAD tag check fails — wrong passphrase or tampered ciphertext).
+  // Distinct from PASSPHRASE_REQUIRED (which means no passphrase was supplied):
+  // here a passphrase WAS supplied but did not unlock the vault.
+  if (lower.includes("aead::error") || lower.includes("decryption failed") || lower.includes("decryption error")) {
+    return {
+      ...ERROR_CODES.INVALID_PASSPHRASE,
+      message,
+      exchange,
+      remediation: "Re-check OWS passphrase. Confirm with: perp --json wallet show --passphrase $PP. If wallet was rekeyed, restore from backup or re-import.",
+    };
   }
   if (lower.includes("partial") && (lower.includes("approve") || lower.includes("approval"))) {
     return { ...ERROR_CODES.APPROVE_PARTIAL, message, exchange };

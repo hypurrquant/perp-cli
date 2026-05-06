@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { printJson, jsonOk } from "../utils.js";
-import { PerpError } from "../errors.js";
+import { PerpError, classifyError } from "../errors.js";
 import chalk from "chalk";
 import bs58 from "bs58";
 import { loadSettings } from "../settings.js";
@@ -25,9 +25,12 @@ import {
  */
 function reportErrorAndExit(err: unknown): never {
   const ts = new Date().toISOString();
-  const envelope = err instanceof PerpError
-    ? { ok: false, error: { ...err.structured }, meta: { timestamp: ts } }
-    : { ok: false, error: { code: "UNKNOWN", message: err instanceof Error ? err.message : String(err) }, meta: { timestamp: ts } };
+  // Route through the central classifier so generic Errors thrown from
+  // dependencies (e.g. NAPI "decryption failed: aead::Error" from OWS vault
+  // unlock) get a meaningful code + remediation instead of a bare UNKNOWN.
+  // PerpError instances pass through unchanged via classifyError's first
+  // branch so explicitly typed errors keep their structured shape.
+  const envelope = { ok: false, error: classifyError(err), meta: { timestamp: ts } };
   process.stdout.write(JSON.stringify(envelope) + "\n");
   process.exit(1);
 }
