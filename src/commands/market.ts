@@ -395,7 +395,7 @@ export function registerMarketCommands(
       await withJsonErrors(isJson(), async () => {
         const adapter = await getAdapter();
         if (!(isDexCapable(adapter))) {
-          if (isJson()) return printJson(jsonError("INVALID_EXCHANGE", "HIP-3 dexes are only available on Hyperliquid. Use -e hyperliquid."));
+          if (isJson()) return printJson(jsonError("INVALID_PARAMS", "HIP-3 dexes are only available on Hyperliquid.", { remediation: "Re-run with -e hyperliquid." }));
           console.error(chalk.red("\n  HIP-3 dexes are only available on Hyperliquid. Use -e hyperliquid.\n"));
           return;
         }

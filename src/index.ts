@@ -738,7 +738,19 @@ program.parseAsync().then(() => {
         remediation: s.remediation,
       })));
     } else {
-      console.log(JSON.stringify(jsonError("FATAL", msg)));
+      // Route generic Errors through the central classifier so a typo'd symbol
+      // becomes SYMBOL_NOT_FOUND, a stalled fetch becomes EXCHANGE_UNREACHABLE,
+      // etc. Hard-coding "FATAL" here gave callers a code that wasn't in
+      // ERROR_CODES (no status / retryable / remediation), defeating the
+      // structured envelope contract.
+      const { classifyError } = await import("./errors.js");
+      const s = classifyError(err);
+      console.log(JSON.stringify(jsonError(s.code, s.message, {
+        status: s.status,
+        retryable: s.retryable,
+        retryAfterMs: s.retryAfterMs,
+        remediation: s.remediation,
+      })));
     }
   } else {
     console.error(chalk.red(msg));
