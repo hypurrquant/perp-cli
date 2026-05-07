@@ -963,8 +963,50 @@ export function registerWalletCommands(
           .map(([ex, wn]) => ({ exchange: ex, ...store.wallets[wn] }))
           .filter((e) => e.address);
 
-        // Fallback to .env-based wallets when no named wallets are active
+        // OWS-aware path: vault-based setups have no legacy `active` mapping
+        // (it's empty by design — owsActiveWallet replaces per-exchange
+        // active wallets). Fetch on-chain balances for both EVM and Solana
+        // accounts of the active OWS vault BEFORE falling through to the
+        // legacy .env path.
         if (activeEntries.length === 0) {
+          const settings = loadSettings();
+          if (settings.owsActiveWallet) {
+            try {
+              const { loadOws } = await import("../signer/ows-loader.js");
+              const ows = loadOws();
+              const owsWallet = ows.getWallet(settings.owsActiveWallet);
+              const owsResults: { wallet: string; chain: "evm" | "solana"; address: string; balances: unknown }[] = [];
+              for (const acct of owsWallet.accounts) {
+                const isEvm = (acct as { chainId: string }).chainId.startsWith("eip155:");
+                const isSol = (acct as { chainId: string }).chainId.startsWith("solana:");
+                if (!isEvm && !isSol) continue;
+                const address = (acct as { address: string }).address;
+                const balances = isSol
+                  ? await getSolanaBalances(address, opts.testnet)
+                  : await getEvmBalances(address, opts.testnet);
+                if (isJson()) {
+                  owsResults.push({
+                    wallet: settings.owsActiveWallet,
+                    chain: isSol ? "solana" : "evm",
+                    address,
+                    balances,
+                  });
+                } else {
+                  console.log(chalk.cyan.bold(`\n  ${settings.owsActiveWallet} (${isSol ? "solana" : "evm"} ${address.slice(0, 8)}...)`));
+                  const rows = balances.map((b) => [
+                    chalk.white.bold(b.token), b.balance, b.usdValue || chalk.gray("-"),
+                  ]);
+                  console.log(makeTable(["Token", "Balance", "USD Value"], rows));
+                }
+              }
+              if (isJson()) printJson(jsonOk(owsResults));
+              else console.log();
+              return;
+            } catch {
+              // OWS module unavailable or vault missing — fall through to env path
+            }
+          }
+
           const stored = loadEnvFile();
           const envEntries: { exchange: string; chain: "solana" | "evm"; address: string }[] = [];
           for (const [exchange, info] of Object.entries(EXCHANGE_ENV_MAP)) {
