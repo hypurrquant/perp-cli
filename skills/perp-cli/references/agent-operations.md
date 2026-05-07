@@ -31,7 +31,7 @@ perp --json wallet generate solana          # generate Solana wallet
 perp --json wallet show                     # check configured wallets
 perp --json wallet list                     # list named wallets
 perp --json wallet balance                  # on-chain USDC balances
-perp --json -e <EX> account balance         # exchange account balance
+perp --json portfolio -e <EX>               # per-exchange balance + positions (account balance was renamed in v0.12)
 perp --json -e <EX> account positions       # open positions
 perp --json -e <EX> market list             # available markets
 perp --json -e <EX> trade market ...        # execute trade
@@ -61,7 +61,7 @@ perp --json wallet show
 # → check "ok": true and address appears
 
 # 4. Check balance
-perp --json -e hl account balance
+perp --json portfolio -e hl
 # → if balance is 0, tell user to deposit USDC
 
 # 5. Ready to trade
@@ -84,10 +84,10 @@ perp --json wallet set aster <ASTER_API_KEY>
 perp --json wallet show
 
 # 3. Check balances (each exchange holds its own balance)
-perp --json -e hl account balance
-perp --json -e pac account balance
-perp --json -e lt account balance
-perp --json -e aster account balance
+perp --json portfolio -e hl
+perp --json portfolio -e pac
+perp --json portfolio -e lt
+perp --json portfolio -e aster
 
 # 4. If one side needs funding, bridge USDC via funds bridge
 perp --json funds bridge quote --from solana --to arbitrum --amount 500
@@ -137,7 +137,7 @@ Aliases for exchange names:
 ### Check On-Chain vs Exchange Balance
 ```bash
 perp --json wallet balance               # on-chain USDC in your wallet
-perp --json -e hl account balance        # USDC deposited on exchange
+perp --json portfolio -e hl              # USDC deposited on exchange
 ```
 
 **On-chain balance ≠ exchange balance.** USDC in your wallet must be deposited to the exchange before trading.
@@ -279,7 +279,7 @@ Error case:
 
 ### Safe to retry (idempotent):
 - `wallet show`, `wallet list`, `wallet balance` — read-only
-- `account balance`, `account positions`, `account orders`, `account margin` — read-only
+- `portfolio`, `portfolio -e <ex>`, `account positions`, `account orders`, `account margin` — read-only (note: `account balance` was renamed to `portfolio` in v0.12)
 - `market list`, `market mid`, `market book`, `market info`, `market funding` — read-only
 - `arb scan` (any mode), `arb status`, `arb history`, `arb config` — read-only
 - `portfolio`, `risk status`, `risk liquidation-distance` — read-only
@@ -328,7 +328,7 @@ Symbols are auto-resolved by the CLI. **Always use bare symbols** (e.g., `BTC`, 
 
 1. **Using `perp setup` / `perp init` / `perp wallet setup`** — interactive, will hang forever. Use `wallet set` instead.
 2. **Forgetting `--json`** — output becomes unparseable human text.
-3. **Trading with zero balance** — check `account balance` first, tell user to deposit.
+3. **Trading with zero balance** — check `perp --json portfolio -e <ex>` first, tell user to deposit.
 4. **Retrying a trade without checking** — leads to double positions. Always check `account positions` after a trade, even if it seemed to fail.
 5. **Bridging without quoting** — always run `funds bridge quote` first to show the user fees and estimated time.
 6. **Assuming deposit is instant** — after `funds bridge send`, wait for `funds bridge status` to confirm completion before depositing to the destination exchange.

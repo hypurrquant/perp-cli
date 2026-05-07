@@ -93,7 +93,7 @@ perp --json -e <EX> trade tpsl <SYM> long            # set take-profit / stop-lo
 perp --json -e <EX> trade leverage <SYM> <N>
 
 # Account
-perp --json -e <EX> account balance
+perp --json portfolio -e <EX>                        # balance + spot + positions (account balance was renamed in v0.12)
 perp --json -e <EX> account positions
 perp --json -e <EX> account pnl                      # realized + unrealized + funding
 perp --json -e <EX> account funding                  # personal funding payment history

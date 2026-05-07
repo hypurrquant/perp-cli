@@ -21,7 +21,7 @@ perp --json market hip3                        # list HIP-3 deployed perp dexes 
 
 ## Account (read-only, safe)
 ```bash
-perp --json -e <EX> account balance            # perp balance + spot holdings + 24h funding
+perp --json portfolio -e <EX>                  # perp balance + spot holdings + 24h funding (renamed from `account balance` in v0.12)
 perp --json -e <EX> account positions          # open positions
 perp --json -e <EX> account orders             # open/pending orders
 perp --json -e <EX> account history            # order history

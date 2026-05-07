@@ -54,7 +54,7 @@ If `perp` is not on PATH, prefix every command with `npx -y perp-cli@latest`.
 
 ```bash
 perp --json wallet show               # confirms configured exchanges
-perp --json -e <ex> account balance   # per-exchange USDC available
+perp --json portfolio -e <ex>         # per-exchange USDC available (account balance was renamed to portfolio in v0.12)
 ```
 
 If any required exchange is missing, register it (user supplies the key):
@@ -91,8 +91,8 @@ Common knobs: `--min <pct>`, `--top <n>`, `--hold-days <n>`, `--bridge-cost <usd
 For arb:
 
 ```bash
-perp --json -e <longEx>  account balance              # check available USDC
-perp --json -e <shortEx> account balance              # check available USDC
+perp --json portfolio -e <longEx>                     # check available USDC (long leg)
+perp --json portfolio -e <shortEx>                    # check available USDC (short leg)
 perp --json --dry-run arb exec <SYM> <longEx> <shortEx> <USD>
 ```
 
@@ -222,8 +222,8 @@ For deeper risk-management framework, read `references/strategies.md`.
 perp --json arb scan --min 10 --top 10
 # 2. Show top 3 to user; ask which to evaluate
 # 3. Check balances on the two exchanges
-perp --json -e <longEx> account balance
-perp --json -e <shortEx> account balance
+perp --json portfolio -e <longEx>
+perp --json portfolio -e <shortEx>
 # 4. Recommend size + dry-run
 perp --json --dry-run arb exec BTC <longEx> <shortEx> 100
 # 5. After user confirmation:
