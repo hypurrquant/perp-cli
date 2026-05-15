@@ -191,4 +191,84 @@ describe("HyperliquidOutcomeAdapter.getView — integration with mocked SDK", ()
     });
     await expect(adapter.getView(2, 3)).rejects.toThrow(/malformed payload/);
   });
+
+  // Regression coverage for the time guard added in ed533cb at
+  // hyperliquid-outcome.ts:439-447. `Number("abc") ?? 0` used to coerce a
+  // non-numeric venue time silently to 0 (1970 epoch), which downstream
+  // consumers (UI / arb scanner) cannot distinguish from a legitimate
+  // "no time given". The fix now distinguishes the two cases.
+
+  it("accepts l2Book without a `time` field — treated as legitimate 'no time given' (time=0)", async () => {
+    const adapter = makeAdapter({
+      bookFor: (coin) => ({
+        coin,
+        // `time` field absent entirely — represents "venue did not return time"
+        levels: [
+          [{ px: "0.5", sz: "10" }],
+          [{ px: "0.5", sz: "10" }],
+        ],
+      }),
+    });
+    // Note: `getView` delegates the order side to `getOrderbook` for outcome+side.
+    // We focus on the time path; if upstream parse rejects for other reasons the
+    // test will still surface that as a separate failure.
+    await expect(adapter.getView(2, 3)).resolves.toBeTruthy();
+  });
+
+  it("throws EXCHANGE_ERROR when l2Book.time is a non-numeric string (was silently → 0)", async () => {
+    const adapter = makeAdapter({
+      bookFor: (coin) => ({
+        coin,
+        time: "abc",
+        levels: [
+          [{ px: "0.5", sz: "10" }],
+          [{ px: "0.5", sz: "10" }],
+        ],
+      }),
+    });
+    await expect(adapter.getView(2, 3)).rejects.toThrow(PerpError);
+    await expect(adapter.getView(2, 3)).rejects.toThrow(/non-finite time/);
+  });
+
+  it("throws EXCHANGE_ERROR when l2Book.time is Infinity", async () => {
+    const adapter = makeAdapter({
+      bookFor: (coin) => ({
+        coin,
+        time: Infinity,
+        levels: [
+          [{ px: "0.5", sz: "10" }],
+          [{ px: "0.5", sz: "10" }],
+        ],
+      }),
+    });
+    await expect(adapter.getView(2, 3)).rejects.toThrow(/non-finite time/);
+  });
+
+  it("throws EXCHANGE_ERROR when l2Book.time is NaN", async () => {
+    const adapter = makeAdapter({
+      bookFor: (coin) => ({
+        coin,
+        time: NaN,
+        levels: [
+          [{ px: "0.5", sz: "10" }],
+          [{ px: "0.5", sz: "10" }],
+        ],
+      }),
+    });
+    await expect(adapter.getView(2, 3)).rejects.toThrow(/non-finite time/);
+  });
+
+  it("preserves time=0 distinction: explicit null is treated the same as omitted (legit, no throw)", async () => {
+    const adapter = makeAdapter({
+      bookFor: (coin) => ({
+        coin,
+        time: null,
+        levels: [
+          [{ px: "0.5", sz: "10" }],
+          [{ px: "0.5", sz: "10" }],
+        ],
+      }),
+    });
+    await expect(adapter.getView(2, 3)).resolves.toBeTruthy();
+  });
 });
