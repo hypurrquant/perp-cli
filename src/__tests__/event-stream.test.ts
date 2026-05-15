@@ -289,6 +289,142 @@ describe("startEventStream — liquidation warnings", () => {
   });
 });
 
+describe("startEventStream — non-finite numeric guards (Rule #2)", () => {
+  // Regression coverage for the guards added in ed533cb at
+  // src/event-stream.ts:131-136 (mark/liq) and 201-203 (balance). A NaN
+  // would silently fail `> 0` / `> 0.01` comparisons (NaN comparisons are
+  // always false), suppressing the very alerts users rely on. The fix
+  // surfaces corruption via `console.warn` and skips the affected branch.
+
+  it("suppresses liquidation_warning / margin_call when markPrice is NaN, logs warn", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const events: StreamEvent[] = [];
+    const controller = new AbortController();
+
+    const adapter = mockAdapter({
+      getPositions: vi.fn().mockImplementation(async () => {
+        controller.abort();
+        // NaN-producing markPrice; finite liqPrice. Pre-fix code computed
+        // `(NaN - 92) / NaN * 100` → NaN, which would silently fail every
+        // `< 3` and `< 10` comparison, hiding the alert.
+        return [{ symbol: "SOL", side: "long", size: "10", entryPrice: "95", unrealizedPnl: "50", liquidationPrice: "92", markPrice: "NaN" }];
+      }),
+    });
+
+    await startEventStream(adapter, {
+      intervalMs: 1,
+      onEvent: (e) => events.push(e),
+      signal: controller.signal,
+    });
+
+    expect(events.filter((e) => e.type === "liquidation_warning" || e.type === "margin_call")).toHaveLength(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/non-finite mark\/liquidation for SOL on test/));
+    warn.mockRestore();
+  });
+
+  it("suppresses liquidation_warning when liquidationPrice is non-numeric (not 'N/A')", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const events: StreamEvent[] = [];
+    const controller = new AbortController();
+
+    const adapter = mockAdapter({
+      getPositions: vi.fn().mockImplementation(async () => {
+        controller.abort();
+        return [{ symbol: "BTC", side: "long", size: "1", entryPrice: "50000", unrealizedPnl: "0", liquidationPrice: "garbage", markPrice: "50000" }];
+      }),
+    });
+
+    await startEventStream(adapter, {
+      intervalMs: 1,
+      onEvent: (e) => events.push(e),
+      signal: controller.signal,
+    });
+
+    expect(events.filter((e) => e.type === "liquidation_warning" || e.type === "margin_call")).toHaveLength(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/non-finite mark\/liquidation for BTC/));
+    warn.mockRestore();
+  });
+
+  it("stays silent (no warn) when liquidationPrice is exactly 'N/A' — venue sentinel, not corruption", async () => {
+    // The guard explicitly preserves the 'N/A' sentinel as a non-warn case
+    // (event-stream.ts:132). Otherwise every non-positioned exchange would
+    // spam the console on every poll.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const controller = new AbortController();
+
+    const adapter = mockAdapter({
+      getPositions: vi.fn().mockImplementation(async () => {
+        controller.abort();
+        return [{ symbol: "BTC", side: "long", size: "1", entryPrice: "50000", unrealizedPnl: "0", liquidationPrice: "N/A", markPrice: "NaN" }];
+      }),
+    });
+
+    await startEventStream(adapter, {
+      intervalMs: 1,
+      onEvent: () => {},
+      signal: controller.signal,
+    });
+
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("suppresses balance_update when current balance has a non-finite field, logs warn", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const events: StreamEvent[] = [];
+    const controller = new AbortController();
+    let callNum = 0;
+
+    const adapter = mockAdapter({
+      getBalance: vi.fn().mockImplementation(async () => {
+        callNum++;
+        if (callNum === 1) return { equity: "1000.00", available: "800.00", marginUsed: "200", unrealizedPnl: "0" };
+        controller.abort();
+        // Second cycle: venue returned a corrupt equity. Pre-fix code would
+        // compute `Math.abs(NaN - 1000) = NaN`, fail `NaN > 0.01`, and
+        // silently swallow the balance_update.
+        return { equity: "NaN", available: "850", marginUsed: "200", unrealizedPnl: "0" };
+      }),
+    });
+
+    await startEventStream(adapter, {
+      intervalMs: 1,
+      onEvent: (e) => events.push(e),
+      signal: controller.signal,
+    });
+
+    expect(events.filter((e) => e.type === "balance_update")).toHaveLength(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/non-finite balance values for test/));
+    warn.mockRestore();
+  });
+
+  it("suppresses balance_update when previous balance was non-finite (recovery cycle should not re-emit)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const events: StreamEvent[] = [];
+    const controller = new AbortController();
+    let callNum = 0;
+
+    const adapter = mockAdapter({
+      getBalance: vi.fn().mockImplementation(async () => {
+        callNum++;
+        if (callNum === 1) return { equity: "NaN", available: "800.00", marginUsed: "200", unrealizedPnl: "0" };
+        controller.abort();
+        return { equity: "1050.50", available: "850", marginUsed: "200", unrealizedPnl: "50" };
+      }),
+    });
+
+    await startEventStream(adapter, {
+      intervalMs: 1,
+      onEvent: (e) => events.push(e),
+      signal: controller.signal,
+    });
+
+    expect(events.filter((e) => e.type === "balance_update")).toHaveLength(0);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
 describe("startEventStream — error handling", () => {
   it("emits error event when adapter throws", async () => {
     const events: StreamEvent[] = [];
