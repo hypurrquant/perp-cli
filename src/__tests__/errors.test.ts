@@ -151,6 +151,60 @@ describe("ERROR_CODES coverage", () => {
       }
     }
   });
+
+  // Regression guard for 198f196: the ad-hoc strings "FATAL" (index.ts
+  // top-level catch) and "INVALID_EXCHANGE" (market hip3 path) used to ship
+  // via `jsonError(code as never, ...)` without being registered in
+  // ERROR_CODES — they slipped past the type system and reached callers as
+  // codes with no status/retryable/remediation. The fix routes both through
+  // existing registered codes (classifyError for the catch-all; INVALID_PARAMS
+  // with remediation for hip3). Pin the absence to prevent reintroduction.
+  it("ad-hoc codes retired in 198f196 are not in ERROR_CODES", () => {
+    const retired = ["FATAL", "INVALID_EXCHANGE"];
+    for (const code of retired) {
+      expect(
+        Object.prototype.hasOwnProperty.call(ERROR_CODES, code),
+        `${code} was retired in 198f196 — must not be reintroduced as a registered code`,
+      ).toBe(false);
+    }
+  });
+});
+
+describe("classifyError — never returns an unregistered code (198f196 regression guard)", () => {
+  // Before 198f196, the top-level catch in src/index.ts hard-coded
+  // jsonError("FATAL", msg) for any non-PerpError thrown out of an action,
+  // so a typo'd Lighter symbol shipped as { code: "FATAL" } — no status,
+  // no retryable, no remediation. The fix routes such errors through
+  // classifyError. Pin that the classifier output is always a registered
+  // ERROR_CODES entry, regardless of input shape.
+
+  it("a network-flavored Error becomes EXCHANGE_UNREACHABLE (registered), not 'FATAL'", () => {
+    const r = classifyError(new Error("fetch failed: ECONNREFUSED"));
+    expect(r.code).toBe("EXCHANGE_UNREACHABLE");
+    expect(ERROR_CODES).toHaveProperty(r.code);
+  });
+
+  it("a typo'd symbol Error becomes SYMBOL_NOT_FOUND (registered), not 'FATAL'", () => {
+    const r = classifyError(new Error("Symbol BTCUSDX not found"));
+    expect(r.code).toBe("SYMBOL_NOT_FOUND");
+    expect(ERROR_CODES).toHaveProperty(r.code);
+  });
+
+  it("a wholly unknown Error message falls back to UNKNOWN (registered), not 'FATAL'", () => {
+    const r = classifyError(new Error("something went wrong in a way nobody pattern-matched"));
+    expect(r.code).toBe("UNKNOWN");
+    expect(ERROR_CODES).toHaveProperty(r.code);
+  });
+
+  it("a non-Error thrown value (string / object) still resolves to a registered code", () => {
+    // Defensive: pre-fix code path would have called String(err) and
+    // labeled "FATAL". Now `classifyError` handles non-Error inputs
+    // via extractErrorMessage + pattern matching.
+    const r1 = classifyError("raw string thrown");
+    expect(ERROR_CODES).toHaveProperty(r1.code);
+    const r2 = classifyError({ message: "raw object thrown" });
+    expect(ERROR_CODES).toHaveProperty(r2.code);
+  });
 });
 
 // ─── Codex v0.12.12 final QA #2: classifyError preserves PerpError ────────
