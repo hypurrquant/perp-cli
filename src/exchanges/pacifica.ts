@@ -15,6 +15,7 @@ import { LocalSolanaSigner } from "../signer/index.js";
 import type { AgentMeta } from "../settings.js";
 import { isExpired } from "../agent-wallet/expiry.js";
 import { PerpError } from "../errors.js";
+import { parseFiniteVenueNumber } from "../utils/numeric.js";
 
 export class PacificaAdapter implements ExchangeAdapter {
   readonly name = "pacifica";
@@ -228,12 +229,16 @@ export class PacificaAdapter implements ExchangeAdapter {
     // API often returns unrealized_pnl=0 — compute from price delta when needed
     let totalPnl = 0;
     for (const p of positions) {
-      let upnl = Number(p.unrealized_pnl ?? 0);
-      if (upnl === 0 && Number(p.amount) > 0) {
-        const mark = Number(priceMap.get(p.symbol)?.mark ?? p.mark_price ?? 0);
-        const entry = Number(p.entry_price);
+      let upnl = parseFiniteVenueNumber(p.unrealized_pnl, "position.unrealized_pnl", "pacifica");
+      const amount = parseFiniteVenueNumber(p.amount, "position.amount", "pacifica");
+      if (upnl === 0 && amount > 0) {
+        const mark = parseFiniteVenueNumber(
+          priceMap.get(p.symbol)?.mark ?? p.mark_price,
+          "position.mark", "pacifica",
+        );
+        const entry = parseFiniteVenueNumber(p.entry_price, "position.entry_price", "pacifica");
         const dir = p.side === "bid" ? 1 : -1;
-        if (mark > 0 && entry > 0) upnl = (mark - entry) * Number(p.amount) * dir;
+        if (mark > 0 && entry > 0) upnl = (mark - entry) * amount * dir;
       }
       totalPnl += upnl;
     }
@@ -266,12 +271,12 @@ export class PacificaAdapter implements ExchangeAdapter {
     return positions.map((p) => {
       const mark = priceMap.get(p.symbol)?.mark ?? p.mark_price ?? "0";
       const side = p.side === "bid" ? "long" : "short";
-      const size = Number(p.amount);
-      const entry = Number(p.entry_price);
-      const markNum = Number(mark);
+      const size = parseFiniteVenueNumber(p.amount, "position.amount", "pacifica");
+      const entry = parseFiniteVenueNumber(p.entry_price, "position.entry_price", "pacifica");
+      const markNum = parseFiniteVenueNumber(mark, "position.mark", "pacifica");
 
       // API often returns unrealized_pnl=0 — compute from price delta when needed
-      let upnl = Number(p.unrealized_pnl ?? 0);
+      let upnl = parseFiniteVenueNumber(p.unrealized_pnl, "position.unrealized_pnl", "pacifica");
       if (upnl === 0 && size > 0 && entry > 0 && markNum > 0) {
         const dir = side === "long" ? 1 : -1;
         upnl = (markNum - entry) * size * dir;
