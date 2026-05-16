@@ -22,17 +22,24 @@ vi.mock("../../cache.js", async () => ({
   TTL_PRICES: 1000,
 }));
 
-async function buildAdapter(stateOrPos: { type: "balance" | "positions"; payload: unknown }) {
+async function buildAdapter(stateOrPos: {
+  type: "balance" | "positions";
+  payload: unknown;
+  mode?: "standard" | "unified" | "portfolio";
+  spotPayload?: unknown;
+}) {
   const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
   const hl = new HyperliquidAdapter(undefined, false);
   hl.setAddress("0xabcdef0000000000000000000000000000000001");
-  // Stub the abstraction mode probe so getBalance picks the "standard"
-  // branch (most direct path to the new guards on margin.accountValue
-  // and s.withdrawable).
+  // Default to "standard" mode (most direct path to the guards on
+  // margin.accountValue and s.withdrawable). Override via opts.mode to
+  // exercise the spot-USDC and portfolio-collateral branches.
   (hl as unknown as { _getAbstractionMode: () => Promise<string> })._getAbstractionMode =
-    vi.fn().mockResolvedValue("standard");
+    vi.fn().mockResolvedValue(stateOrPos.mode ?? "standard");
   (hl as unknown as { _getClearinghouseState: () => Promise<unknown> })._getClearinghouseState =
     vi.fn().mockResolvedValue(stateOrPos.payload);
+  (hl as unknown as { _getSpotClearinghouseState: () => Promise<unknown> })._getSpotClearinghouseState =
+    vi.fn().mockResolvedValue(stateOrPos.spotPayload ?? { balances: [] });
   return hl;
 }
 
@@ -189,5 +196,162 @@ describe("HyperliquidAdapter.getPositions — parseFiniteVenueNumber guards (Pha
     });
     const positions = await hl.getPositions();
     expect(positions[0].leverage).toBe(1);
+  });
+});
+
+// ─── Supplementary verification (보조 검증) ──────────────────────────────────
+//
+// Phase B docker QA only exercised HL `unified` mode (the user's mainnet
+// account abstraction setting). The `standard` mode (the test default
+// above) and the new `unified`/`portfolio` branches were not reachable
+// in live QA — flipping the user's HL account-mode via
+// `perp wallet manage account-mode <mode>` writes to the venue and
+// requires explicit user consent (STRICT rule, QA workflow §3).
+//
+// Unit-level coverage below pins the spot-USDC + portfolio-collateral
+// guard paths that the live QA could not reach. Code paths exercised:
+//   - unified mode: src/exchanges/hyperliquid.ts:506-507 (spot USDC total/hold)
+//   - portfolio mode: src/exchanges/hyperliquid.ts:513 (non-USDC filter)
+describe("HyperliquidAdapter.getBalance — unified mode spot-USDC guards", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("unified mode: clean spot USDC payload computes equity from spotTotal", async () => {
+    const hl = await buildAdapter({
+      type: "balance",
+      mode: "unified",
+      payload: {
+        marginSummary: { totalMarginUsed: "0" },
+        crossMarginSummary: {},
+        withdrawable: "0",
+        assetPositions: [],
+      },
+      spotPayload: {
+        balances: [
+          { coin: "USDC-SPOT", total: "1000", hold: "100" },
+        ],
+      },
+    });
+    const bal = await hl.getBalance();
+    expect(bal.equity).toBe("1000");
+    expect(bal.available).toBe("900");
+  });
+
+  it("unified mode: throws when spot USDC total is NaN", async () => {
+    const hl = await buildAdapter({
+      type: "balance",
+      mode: "unified",
+      payload: {
+        marginSummary: { totalMarginUsed: "0" }, crossMarginSummary: {},
+        withdrawable: "0", assetPositions: [],
+      },
+      spotPayload: {
+        balances: [{ coin: "USDC-SPOT", total: "NaN", hold: "0" }],
+      },
+    });
+    await expect(hl.getBalance()).rejects.toThrow(/spotBalance.USDC.total.*not a finite/);
+  });
+
+  it("unified mode: throws when spot USDC hold is empty string '' (qa/2026-05-16 strict policy)", async () => {
+    const hl = await buildAdapter({
+      type: "balance",
+      mode: "unified",
+      payload: {
+        marginSummary: { totalMarginUsed: "0" }, crossMarginSummary: {},
+        withdrawable: "0", assetPositions: [],
+      },
+      spotPayload: {
+        balances: [{ coin: "USDC-SPOT", total: "1000", hold: "" }],
+      },
+    });
+    await expect(hl.getBalance()).rejects.toThrow(/spotBalance.USDC.hold.*empty string/);
+  });
+});
+
+describe("HyperliquidAdapter.getBalance — portfolio mode collateral filter guards", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("portfolio mode: clean payload with non-USDC HYPE collateral computes USDC-only equity", async () => {
+    const hl = await buildAdapter({
+      type: "balance",
+      mode: "portfolio",
+      payload: {
+        marginSummary: { totalMarginUsed: "0" }, crossMarginSummary: {},
+        withdrawable: "0", assetPositions: [],
+      },
+      spotPayload: {
+        balances: [
+          { coin: "USDC-SPOT", total: "500", hold: "0" },
+          { coin: "HYPE", total: "10", hold: "0" },
+        ],
+      },
+    });
+    const bal = await hl.getBalance();
+    // Equity reflects USDC only (HYPE counted via warn, not equity sum).
+    expect(bal.equity).toBe("500");
+  });
+
+  it("portfolio mode: throws when non-USDC collateral total is NaN (filter no longer silently drops corruption)", async () => {
+    const hl = await buildAdapter({
+      type: "balance",
+      mode: "portfolio",
+      payload: {
+        marginSummary: { totalMarginUsed: "0" }, crossMarginSummary: {},
+        withdrawable: "0", assetPositions: [],
+      },
+      spotPayload: {
+        balances: [
+          { coin: "USDC-SPOT", total: "500", hold: "0" },
+          { coin: "HYPE", total: "NaN", hold: "0" },
+        ],
+      },
+    });
+    await expect(hl.getBalance()).rejects.toThrow(/spotBalance.HYPE.total.*not a finite/);
+  });
+
+  it("portfolio mode: throws when non-USDC collateral total is empty string ''", async () => {
+    const hl = await buildAdapter({
+      type: "balance",
+      mode: "portfolio",
+      payload: {
+        marginSummary: { totalMarginUsed: "0" }, crossMarginSummary: {},
+        withdrawable: "0", assetPositions: [],
+      },
+      spotPayload: {
+        balances: [
+          { coin: "USDC-SPOT", total: "500", hold: "0" },
+          { coin: "BTC", total: "", hold: "0" },
+        ],
+      },
+    });
+    await expect(hl.getBalance()).rejects.toThrow(/spotBalance.BTC.total.*empty string/);
+  });
+
+  it("portfolio mode: USDC-prefix balances are exempt from the filter (USDC-SPOT, USDC-PERP, etc.)", async () => {
+    // Filter at hyperliquid.ts:512 skips `coin.startsWith("USDC")` before
+    // calling parseFiniteVenueNumber — so a NaN USDC-PERP entry should NOT
+    // throw via the filter (it's already excluded from non-USDC scan).
+    const hl = await buildAdapter({
+      type: "balance",
+      mode: "portfolio",
+      payload: {
+        marginSummary: { totalMarginUsed: "0" }, crossMarginSummary: {},
+        withdrawable: "0", assetPositions: [],
+      },
+      spotPayload: {
+        balances: [
+          { coin: "USDC-SPOT", total: "500", hold: "0" },
+          // NaN here would throw if the filter incorrectly entered the
+          // parseFiniteVenueNumber branch for USDC-prefixed coins. The
+          // current filter correctly skips USDC-* upfront so this is a no-op.
+          { coin: "USDC-PERP", total: "NaN", hold: "0" },
+        ],
+      },
+    });
+    const bal = await hl.getBalance();
+    expect(bal.equity).toBe("500");
   });
 });
