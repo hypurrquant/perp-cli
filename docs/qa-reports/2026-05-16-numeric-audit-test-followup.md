@@ -115,13 +115,75 @@ QA plan 작성 시 명령명 검증 누락 — `positions` / `rebalance plan` �
 4. **`portfolio` HL 모드 보조 검증**: 현재 HL `unified` 모드만 라이브 검증됨. `standard` / `portfolio` 모드 사용자가 있다면 별도 매트릭스 필요 (특히 `standard` 모드의 `marginSummary.accountValue` + `withdrawable` 분기 — Phase 2.3 신규 가드 사이트).
 5. **Phase C 건너뜀**: 컨테이너 안에서 production code 패치 → revert 사이클은 위험 (잘못된 revert 가 호스트 빌드와 컨테이너 빌드 발산 유발). 신규 가드 발화는 unit 테스트 (1462 중 47개 신규 venue-payload 테스트) 로 증거 확보. 별도 staging 환경에서 강제 NaN 주입 테스트는 follow-up 으로 고려.
 
+## Phase E — 확장 command-based 매트릭스 (read-only 전체 트리)
+
+Phase B 가 어댑터 read-path 중심 (`portfolio` / `positions` / `wallet balance`) 이었다면, Phase E 는 CLI top-level command 트리 전체의 read-only 명령을 횡단으로 검증해서 다음을 보장:
+
+- 이번 사이클이 만진 helper (`parseFiniteVenueNumber`) 가 portfolio/positions 외 경로(market, account, arb, history 등) 에서 false-positive 를 일으키지 않음
+- 198f196 의 error-code retirement 가 라이브 envelope 에 정확히 반영됨
+- 사이클 무관한 명령들도 일관된 JSON envelope 으로 동작 (`ok:true` 또는 registered `error.code`)
+
+### Outcome (HIP-4) — 7 cases
+
+| 명령 | 결과 |
+|------|------|
+| `perp --json outcome list` | ✓ 5 active markets (outcome 50/51/52/53/54), 모두 sides/encoding/assetId/mid finite |
+| `perp --json outcome view 50` | ✓ BTC priceBinary, mark $77863.5 / target $78985 / gap -1.42% / `inTheMoney:"no"`, 양 sides book |
+| `perp --json outcome book 50 0` (Yes) | ✓ `time: 1778937424121` finite, bids/asks |
+| `perp --json outcome book 50 1` (No) | ✓ `time: 1778937425176` finite, bids/asks |
+| `perp --json outcome view 52` (no class) | ✓ `underlying:null` (class 없음 → 계산 안함), sides bids/asks/mid 정상 |
+| `perp --json outcome positions` | ✓ `data: []` (미보유) |
+| `perp --json outcome orders` | ✓ `data: []` |
+
+**bbc7819 + 51f6af8 가 가드한 `book.time` 경로 false-positive 0건** — 실제 venue 가 finite ms timestamp 반환.
+
+### Health + 확장 read-only 매트릭스 — 38 cases
+
+| 카테고리 | 명령 | 결과 |
+|---------|------|------|
+| **Health** | `health` | ✓ 4/4 ok (PAC 109ms / HL 92ms / LT 43ms / Aster 80ms) |
+| **Market (9)** | `market list / prices / info BTC / book BTC / trades BTC / funding BTC / mid BTC / kline BTC 1h` | 8/8 ✓ |
+| | `market hip3` | ✓ **expected error**: `INVALID_PARAMS` + remediation `"Re-run with -e hyperliquid."` — **198f196 contract 라이브 검증** (이전 `INVALID_EXCHANGE` 아닌 registered code + remediation 정상) |
+| **Account (8)** | `account orders / history / settings / trades / funding / pnl / twap-orders` | 7/7 ✓ |
+| | `account margin BTC` | ✓ **expected error**: `POSITION_NOT_FOUND` (사용자 미보유, registered code) |
+| **Arb (3)** | `arb status / history / config` | 3/3 ✓ |
+| **Risk (3)** | `risk status / limits / liquidation-distance` | 3/3 ✓ |
+| **History (8)** | `history list / positions / summary / pnl / funding / report / snapshot / perf` | 8/8 ✓ |
+| **Settings (2)** | `settings show / fees` | 2/2 ✓ |
+| **Alerts (1)** | `alerts list` | ✓ |
+| **Funds (1)** | `funds info` | ✓ |
+| **Strategy (2)** | `strategy list-strategies / preset-list` | 2/2 ✓ |
+| **Background (1)** | `background list` | ✓ |
+
+**총 38/38 정상 envelope 응답.** 37 `ok:true` + 2 expected registered-error 응답. `parseFiniteVenueNumber` 발화 0건, ad-hoc error code (`FATAL`/`INVALID_EXCHANGE`) 0건.
+
+## 추가 발견 — `startEventStream` dead code (P1)
+
+QA 중 발견 — 이번 사이클의 ed533cb + bbc7819 가 가드한 `src/event-stream.ts:startEventStream()` 는 **production caller 0건**:
+
+- production 전체 grep: 유일한 importer 는 `src/position-history.ts:8` (`import type { StreamEvent }` — 타입만)
+- `src/index.ts:36` 의 "stream commands removed — WS feeds still used by dashboard/event-stream internally" 코멘트는 **stale** (실제 dashboard / bot 어디서도 호출 안 함)
+
+### 시사점
+
+| 옵션 | 평가 |
+|------|------|
+| A. 유지 | 미래 stream CLI 재도입 / 라이브러리 import 대비 방어 코드. 유지 비용 = 모듈 + 5 unit test (~250 lines). ed533cb + bbc7819 의 5개 NaN/empty 가드 unit test 는 여전히 valid (방어 contract). |
+| B. 모듈 제거 | dead code 정리. 단점 = ed533cb 사이클 작업 무위. 사용자 의도 확인 필요 — "stream commands removed" 코멘트가 의도된 잠재 재도입 신호일 수도. |
+| C. CLI 재추가 | `perp events --tail` 같은 stream subscribe 명령 부활. 사이클 범위 밖 (별도 feature 작업). |
+
+**현재 권장**: 옵션 A (유지) — guards 자체는 올바르고 unit-test 도 robust. 사용자가 명시적으로 dead-code cleanup 을 지시할 때 옵션 B 로 별도 사이클 진행.
+
 ## 다음 권장 액션
 
 - [ ] **사용자 검토 후 PR 작성** (main 향한 PR — STRICT 룰)
 - [ ] **버전 bump 결정** (v0.13.0 → v0.14.0 후보, breaking 거동 변경 포함)
-- [ ] **HL `standard`/`portfolio` 모드 라이브 보조 검증** (해당 모드 사용자 발생 시)
+- [ ] **HL `standard`/`portfolio` 모드 라이브 보조 검증** (해당 모드 사용자 발생 시) — unit-level 은 `75effe4` 에서 7 case 추가 완료
 - [ ] **HL/PAC/Aster 실포지션 보유 시점 재검증** (현재 Lighter 만 surface)
+- [ ] **`startEventStream` 처리 결정**: 유지 / 제거 / CLI 재추가 중 사용자 선택
 
 ## 결론
 
-이번 사이클의 핵심 위험 (어댑터 read-path 거동 변경이 정상 mainnet 데이터에서 false-positive 발생) 은 **15개 라이브 매트릭스 전부 통과로 해소**. 1462 unit + 7 integration test 도 모두 green. 머지 가능 상태.
+이번 사이클의 핵심 위험 (어댑터 read-path 거동 변경이 정상 mainnet 데이터에서 false-positive 발생) 은 **Phase B 15 + Phase E 45 = 총 60개 라이브 매트릭스 전부 통과로 해소**. 1469 unit + 7 integration test 도 모두 green. 머지 가능 상태.
+
+추가 P1 finding (event-stream dead code) 는 사이클 무관한 별도 cleanup item — 작업 흐름에 영향 없음.
