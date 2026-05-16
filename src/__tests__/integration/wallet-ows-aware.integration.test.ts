@@ -1,8 +1,24 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execSync } from "child_process";
-import { mkdirSync, rmSync, writeFileSync, existsSync } from "fs";
+import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import { tmpdir } from "os";
+
+/** Read settings.json under the temp HOME — returns parsed object or {} */
+function readTestSettings(): { owsActiveWallet?: string } {
+  const path = resolve(TEST_HOME, ".perp/settings.json");
+  if (!existsSync(path)) return {};
+  return JSON.parse(readFileSync(path, "utf-8"));
+}
+
+/** Run perp CLI inside the isolated temp HOME, returning stdout or throwing. */
+function runPerp(args: string, timeoutMs = 30_000): string {
+  return execSync(`npx tsx src/index.ts ${args}`, {
+    encoding: "utf-8",
+    timeout: timeoutMs,
+    env: { ...process.env, HOME: TEST_HOME, NODE_NO_WARNINGS: "1" },
+  });
+}
 
 /**
  * End-to-end coverage for the `wallet balance` OWS-aware path
@@ -161,5 +177,60 @@ describe("perp wallet balance — OWS-aware path (dc1c1e0)", { timeout: 45_000 }
       resolve(TEST_HOME, ".perp/settings.json"),
       JSON.stringify({ owsActiveWallet: TEST_WALLET_NAME }, null, 2),
     );
+  });
+
+  // ── owsActiveWallet mutation parity (wallet generate / use / remove) ──
+  //
+  // Pre-existing tests only exercised `wallet balance`. The other wallet
+  // subcommands also mutate `settings.owsActiveWallet` and never had a
+  // regression guard. Each test below runs the real CLI inside the same
+  // isolated HOME and inspects `~/.perp/settings.json` after the command
+  // to verify the mutation.
+  //
+  // State carries across these tests intentionally — each starts from
+  // the known post-state of the previous one, mirroring how a user moves
+  // through the wallet lifecycle on a single machine.
+
+  const SECOND_WALLET = `qa-second-${process.pid}`;
+  const THIRD_WALLET = `qa-third-${process.pid}`;
+
+  it("`wallet generate` does NOT auto-switch owsActiveWallet when one is already set", () => {
+    // Pre-condition: owsActiveWallet === TEST_WALLET_NAME (restored by prior test).
+    expect(readTestSettings().owsActiveWallet).toBe(TEST_WALLET_NAME);
+
+    runPerp(`--json wallet generate ${SECOND_WALLET} --passphrase ${TEST_PASSPHRASE}`);
+
+    // The second wallet exists in the vault but owsActiveWallet stays put —
+    // L364-367 auto-set only fires when no active wallet is set yet.
+    expect(readTestSettings().owsActiveWallet).toBe(TEST_WALLET_NAME);
+  });
+
+  it("`wallet use <name>` switches owsActiveWallet to the named OWS vault", () => {
+    runPerp(`--json wallet use ${SECOND_WALLET}`);
+    expect(readTestSettings().owsActiveWallet).toBe(SECOND_WALLET);
+  });
+
+  it("`wallet generate` AUTO-sets owsActiveWallet when none is set", () => {
+    // Clear active first so the auto-set path fires (L364 only sets when
+    // settings.owsActiveWallet is empty/falsy).
+    writeFileSync(
+      resolve(TEST_HOME, ".perp/settings.json"),
+      JSON.stringify({ owsActiveWallet: "" }, null, 2),
+    );
+    expect(readTestSettings().owsActiveWallet).toBe("");
+
+    runPerp(`--json wallet generate ${THIRD_WALLET} --passphrase ${TEST_PASSPHRASE}`);
+
+    expect(readTestSettings().owsActiveWallet).toBe(THIRD_WALLET);
+  });
+
+  it("`wallet remove <name>` clears owsActiveWallet when removing the active wallet", () => {
+    // Pre-condition: owsActiveWallet === THIRD_WALLET (set by prior test).
+    expect(readTestSettings().owsActiveWallet).toBe(THIRD_WALLET);
+
+    runPerp(`--json wallet remove ${THIRD_WALLET}`);
+
+    // L862-865 explicitly clears owsActiveWallet when the removed wallet matches.
+    expect(readTestSettings().owsActiveWallet).toBe("");
   });
 });
