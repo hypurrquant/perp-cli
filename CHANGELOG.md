@@ -27,7 +27,7 @@ QA cycle `qa/2026-05-16-numeric-audit-test-followup` — 21 commits closing test
 ### Test
 - **Unit suite**: 1400 → **1470 passed** (+70 across 80 files).
 - **Integration suite**: +7 new OWS-vault cases (`pnpm test:integration`).
-- **New venue-payload coverage**: 47 dedicated cases across `numeric.test.ts` (11), `hyperliquid-toFinite.test.ts` (16, incl. supplementary `unified` / `portfolio` mode guards), `aster-toFinite.test.ts` (7), `pacifica-toFinite.test.ts` (7), `cross-adapter-envelope.test.ts` (9).
+- **New venue-payload coverage**: 50 dedicated cases across `numeric.test.ts` (11), `hyperliquid-toFinite.test.ts` (16, incl. supplementary `unified` / `portfolio` mode guards), `aster-toFinite.test.ts` (7), `pacifica-toFinite.test.ts` (7), `cross-adapter-envelope.test.ts` (9).
 
 ### Verified live (qa/2026-05-16 Docker QA, 4 DEX)
 - **Phase A** — container parity: 1469 unit + 7 integration pass identically to host build.
