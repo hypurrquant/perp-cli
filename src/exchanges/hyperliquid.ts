@@ -13,6 +13,7 @@ import type { EvmSigner } from "../signer/index.js";
 import { LocalEvmSigner } from "../signer/index.js";
 import type { AgentMeta } from "../settings.js";
 import { PerpError } from "../errors.js";
+import { parseFiniteVenueNumber } from "../utils/numeric.js";
 
 export class HyperliquidAdapter implements ExchangeAdapter {
   readonly name = "hyperliquid";
@@ -472,13 +473,17 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const margin = (s?.marginSummary ?? {}) as Record<string, unknown>;
     const cross = (s?.crossMarginSummary ?? {}) as Record<string, unknown>;
 
-    const marginUsed = Number(margin.totalMarginUsed ?? cross.totalMarginUsed ?? 0);
+    const marginUsed = parseFiniteVenueNumber(
+      margin.totalMarginUsed ?? cross.totalMarginUsed,
+      "marginSummary.totalMarginUsed",
+      "hyperliquid",
+    );
     // Sum unrealized PnL directly from positions (reliable for both main + dex accounts)
     const positions = (s?.assetPositions ?? []) as Record<string, unknown>[];
     let unrealizedPnl = 0;
     for (const entry of positions) {
       const pos = (entry.position ?? entry) as Record<string, unknown>;
-      unrealizedPnl += Number(pos.unrealizedPnl ?? 0);
+      unrealizedPnl += parseFiniteVenueNumber(pos.unrealizedPnl, "position.unrealizedPnl", "hyperliquid");
     }
 
     let equity: number;
@@ -501,8 +506,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       const spotState = await this._getSpotClearinghouseState();
       const balances = (spotState?.balances ?? []) as Record<string, unknown>[];
       const usdc = balances.find((b) => String(b.coin).startsWith("USDC"));
-      const spotTotal = Number(usdc?.total ?? 0);
-      const spotHold = Number(usdc?.hold ?? 0);
+      const spotTotal = parseFiniteVenueNumber(usdc?.total, "spotBalance.USDC.total", "hyperliquid");
+      const spotHold = parseFiniteVenueNumber(usdc?.hold, "spotBalance.USDC.hold", "hyperliquid");
       equity = spotTotal;
       available = spotTotal - spotHold;
       if (mode === "portfolio") {
@@ -510,7 +515,10 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         const nonUsdc = balances.filter((b) => {
           const coin = String(b.coin);
           if (coin.startsWith("USDC")) return false;
-          if (Number(b.total ?? 0) <= 0) return false;
+          // Reject NaN/empty here too — venue payload corruption shouldn't
+          // silently filter a token in or out.
+          const total = parseFiniteVenueNumber(b.total, `spotBalance.${coin}.total`, "hyperliquid");
+          if (total <= 0) return false;
           return PORTFOLIO_COLLATERAL.some((c) => coin === c || coin.startsWith(`${c}-`));
         });
         if (nonUsdc.length > 0) {
@@ -523,8 +531,12 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       }
     } else {
       // mode === "standard"
-      equity = Number(margin.accountValue ?? cross.accountValue ?? 0);
-      available = Number(s?.withdrawable ?? 0);
+      equity = parseFiniteVenueNumber(
+        margin.accountValue ?? cross.accountValue,
+        "marginSummary.accountValue",
+        "hyperliquid",
+      );
+      available = parseFiniteVenueNumber(s?.withdrawable, "withdrawable", "hyperliquid");
     }
 
     return {
@@ -542,22 +554,30 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     return positions
       .filter((p: Record<string, unknown>) => {
         const pos = (p.position ?? p) as Record<string, unknown>;
-        return Number(pos.szi ?? 0) !== 0;
+        return parseFiniteVenueNumber(pos.szi, "position.szi", "hyperliquid") !== 0;
       })
       .map((p: Record<string, unknown>) => {
         const pos = (p.position ?? p) as Record<string, unknown>;
-        const szi = Number(pos.szi ?? 0);
+        const szi = parseFiniteVenueNumber(pos.szi, "position.szi", "hyperliquid");
+        const positionValue = pos.positionValue !== undefined && pos.positionValue !== null
+          ? parseFiniteVenueNumber(pos.positionValue, "position.positionValue", "hyperliquid")
+          : 0;
         return {
           symbol: String(pos.coin ?? ""),
           side: szi > 0 ? ("long" as const) : ("short" as const),
           size: String(Math.abs(szi)),
           entryPrice: String(pos.entryPx ?? "0"),
-          markPrice: String(szi !== 0 && pos.positionValue && Number(pos.positionValue) !== 0
-            ? Number(pos.positionValue) / Math.abs(szi)
+          markPrice: String(szi !== 0 && positionValue !== 0
+            ? positionValue / Math.abs(szi)
             : pos.markPx ?? "0"),
           liquidationPrice: String(pos.liquidationPx ?? "N/A"),
           unrealizedPnl: String(pos.unrealizedPnl ?? "0"),
-          leverage: Number((pos.leverage as { value?: number })?.value ?? 1),
+          leverage: parseFiniteVenueNumber(
+            (pos.leverage as { value?: number })?.value,
+            "position.leverage.value",
+            "hyperliquid",
+            { defaultValue: 1 },
+          ),
         };
       });
   }
