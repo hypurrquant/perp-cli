@@ -49,6 +49,7 @@ interface PositionEntry {
   size: string;
   entryPrice: string;
   markPrice: string;
+  liquidationPrice: string;
   unrealizedPnl: string;
   leverage: number;
 }
@@ -393,6 +394,7 @@ async function fetchExchangeEntry(
         size: p.size,
         entryPrice: p.entryPrice,
         markPrice: p.markPrice,
+        liquidationPrice: p.liquidationPrice,
         unrealizedPnl: p.unrealizedPnl,
         leverage: p.leverage,
       })),

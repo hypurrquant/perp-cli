@@ -217,6 +217,59 @@ describe("Test 1: Default snapshot (all 4 exchanges)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Test 1b: positions[] entries carry liquidationPrice (qa/2026-05-16)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Test 1b: positions[] surfaces liquidationPrice from adapter", () => {
+  // Prior to qa/2026-05-16 the portfolio map dropped `liquidationPrice` from
+  // each position entry — surfaced by docker QA cross-validation against
+  // `account positions` which DID include the field. Pinning here so the
+  // field passes through end-to-end and the portfolio UI can show
+  // liq-distance without a second adapter round-trip.
+  it("includes liquidationPrice in each positions[] entry alongside markPrice/entryPrice", async () => {
+    const factory = vi.fn().mockResolvedValue({
+      getBalance: vi.fn().mockResolvedValue(makeBalance("100")),
+      getPositions: vi.fn().mockResolvedValue([
+        {
+          symbol: "BTC", side: "long", size: "0.5",
+          entryPrice: "50000", markPrice: "51000",
+          liquidationPrice: "40000",
+          unrealizedPnl: "500", leverage: 10,
+        },
+      ]),
+      getOpenOrders: vi.fn().mockResolvedValue([]),
+      getFundingPayments: vi.fn().mockResolvedValue([]),
+      address: "0xAddr",
+    });
+
+    const prog = makeProgram(factory as never);
+    const { captured, restore } = captureOutput();
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("exit"); }) as never);
+
+    try {
+      await prog.parseAsync(["node", "perp", "-e", "hyperliquid", "--json", "portfolio"]);
+    } finally {
+      restore();
+      exitSpy.mockRestore();
+    }
+
+    const envelope = parseEnvelope(captured.stdoutLines);
+    expect(envelope.ok).toBe(true);
+    const data = envelope.data as Record<string, unknown>;
+    const exchanges = data.exchanges as Array<Record<string, unknown>>;
+    const positions = exchanges[0].positions as Array<Record<string, unknown>>;
+    expect(positions).toHaveLength(1);
+    expect(positions[0]).toMatchObject({
+      symbol: "BTC",
+      entryPrice: "50000",
+      markPrice: "51000",
+      liquidationPrice: "40000",
+      unrealizedPnl: "500",
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Test 2: Single-exchange filter via global -e
 // ─────────────────────────────────────────────────────────────────────────────
 
