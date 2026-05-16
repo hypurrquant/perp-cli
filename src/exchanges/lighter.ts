@@ -13,6 +13,7 @@ import { LocalEvmSigner } from "../signer/index.js";
 import type { AgentMeta } from "../settings.js";
 import { isExpired } from "../agent-wallet/expiry.js";
 import { PerpError } from "../errors.js";
+import { parseFiniteVenueNumber } from "../utils/numeric.js";
 
 import type { WasmSignerClient as WasmSignerClientType } from "lighter-ts-sdk";
 
@@ -537,56 +538,17 @@ export class LighterAdapter implements ExchangeAdapter {
     }
   }
 
-  /**
-   * Coerce a venue payload value to a finite number — or throw.
-   *
-   * Rules:
-   *  - undefined / null → `defaultValue` (typically 0). Lighter may
-   *    legitimately omit a field for an empty account or zero position;
-   *    that is "no data, treat as zero", not a parsing failure.
-   *  - empty string "" → throw. Strict policy (qa/2026-05-16): an empty
-   *    string is indistinguishable from a stale-cache partial response,
-   *    so the pre-existing `Number("") === 0 → "$0 balance"` path was a
-   *    Rule #2 silent-substitution hole. A truly absent field must use
-   *    undefined/null, not "".
-   *  - finite number → returned as-is.
-   *  - NaN / ±Infinity / strings that parse to NaN → throw EXCHANGE_ERROR.
-   *    Silent `|| 0` substitution would mask broken accounting (a stale
-   *    cache hit, partial response, or numeric overflow on the venue
-   *    side) as "$0 balance" — exactly the class of Rule #2 violation
-   *    the previous QA cycle found in `_computeMidSum` and getOrderbook.
-   */
-  static _toFiniteNumber(value: unknown, fieldName: string, defaultValue = 0): number {
-    if (value === undefined || value === null) return defaultValue;
-    if (value === "") {
-      throw new PerpError(
-        "EXCHANGE_ERROR",
-        `Lighter response field \`${fieldName}\` is an empty string (use null for missing data)`,
-        { exchange: "lighter" },
-      );
-    }
-    const n = typeof value === "number" ? value : Number(value);
-    if (!Number.isFinite(n)) {
-      throw new PerpError(
-        "EXCHANGE_ERROR",
-        `Lighter response field \`${fieldName}\` is not a finite number: ${JSON.stringify(value)}`,
-        { exchange: "lighter" },
-      );
-    }
-    return n;
-  }
-
   async getBalance(): Promise<ExchangeBalance> {
     if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     const acct = await this.fetchAccount();
     if (!acct) return { equity: "0", available: "0", marginUsed: "0", unrealizedPnl: "0" };
 
-    const totalAsset = LighterAdapter._toFiniteNumber(acct.total_asset_value, "total_asset_value");
-    const available = LighterAdapter._toFiniteNumber(acct.available_balance, "available_balance");
-    const collateral = LighterAdapter._toFiniteNumber(acct.collateral, "collateral");
+    const totalAsset = parseFiniteVenueNumber(acct.total_asset_value, "total_asset_value", "lighter");
+    const available = parseFiniteVenueNumber(acct.available_balance, "available_balance", "lighter");
+    const collateral = parseFiniteVenueNumber(acct.collateral, "collateral", "lighter");
     const unrealizedPnl = (acct.positions as unknown as Record<string, unknown>[])?.reduce(
       (sum: number, p: Record<string, unknown>) =>
-        sum + LighterAdapter._toFiniteNumber(p.unrealized_pnl, "position.unrealized_pnl"),
+        sum + parseFiniteVenueNumber(p.unrealized_pnl, "position.unrealized_pnl", "lighter"),
       0,
     ) ?? 0;
 
@@ -612,10 +574,10 @@ export class LighterAdapter implements ExchangeAdapter {
     if (!acct) return [];
 
     return ((acct.positions as unknown as Record<string, unknown>[]) ?? [])
-      .filter((p: Record<string, unknown>) => LighterAdapter._toFiniteNumber(p.position, "position") !== 0)
+      .filter((p: Record<string, unknown>) => parseFiniteVenueNumber(p.position, "position", "lighter") !== 0)
       .map((p: Record<string, unknown>) => {
-        const posSize = LighterAdapter._toFiniteNumber(p.position, "position");
-        const positionValue = LighterAdapter._toFiniteNumber(p.position_value, "position_value");
+        const posSize = parseFiniteVenueNumber(p.position, "position", "lighter");
+        const positionValue = parseFiniteVenueNumber(p.position_value, "position_value", "lighter");
         return {
           symbol: String(p.symbol || `Market-${p.market_id}`),
           side: (Number(p.sign) > 0 ? "long" : "short") as "long" | "short",
@@ -632,7 +594,7 @@ export class LighterAdapter implements ExchangeAdapter {
           // Compute actual leverage = notional / account equity (not max leverage from IMF)
           leverage: (() => {
             const notional = Math.abs(positionValue);
-            const equity = LighterAdapter._toFiniteNumber(acct.total_asset_value, "total_asset_value");
+            const equity = parseFiniteVenueNumber(acct.total_asset_value, "total_asset_value", "lighter");
             if (equity > 0 && notional > 0) return Math.round(notional / equity * 10) / 10;
             return 1;
           })(),
