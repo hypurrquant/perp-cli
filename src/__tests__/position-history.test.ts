@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { existsSync, unlinkSync, readFileSync, writeFileSync, renameSync } from "fs";
 import { resolve } from "path";
 import {
@@ -165,6 +165,45 @@ describe("readPositionHistory — edge cases", () => {
     const records = readPositionHistory();
     expect(records).toHaveLength(1);
     expect(records[0].symbol).toBe("OK");
+  });
+});
+
+describe("getPositionStats — non-finite realizedPnl handling (Phase 4, qa/2026-05-16)", () => {
+  // Pre-policy: `Number("NaN") = NaN` → `stats.totalPnl += NaN` → totalPnl
+  // becomes NaN, averages become NaN, winRate gets confused. The strict
+  // policy at position-history.ts:170-179 + L211-213 now skips the row's
+  // PnL contribution (trade still counted in totalTrades for visibility)
+  // and surfaces a warning to stderr so a corrupt history file is observable.
+
+  it("skips PnL aggregation when a row's realizedPnl parses to NaN", () => {
+    const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    logPosition(makeRecord({ status: "closed", realizedPnl: "100", exchange: "hl", symbol: "BTC", duration: 1000 }));
+    logPosition(makeRecord({ status: "closed", realizedPnl: "NaN", exchange: "hl", symbol: "BTC", duration: 1000 }));
+    logPosition(makeRecord({ status: "closed", realizedPnl: "-50", exchange: "hl", symbol: "BTC", duration: 1000 }));
+
+    const stats = getPositionStats();
+    // All three rows count as trades for visibility; only the two clean
+    // rows contribute to PnL math.
+    expect(stats.totalTrades).toBe(3);
+    expect(stats.totalPnl).toBe(50);
+    expect(Number.isFinite(stats.totalPnl)).toBe(true);
+    expect(Number.isFinite(stats.avgPnl)).toBe(true);
+    expect(stats.bestTrade).toBe(100);
+    expect(stats.worstTrade).toBe(-50);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/non-finite realizedPnl for BTC on hl/));
+    warn.mockRestore();
+  });
+
+  it("skips PnL aggregation when realizedPnl is Infinity", () => {
+    const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    logPosition(makeRecord({ status: "closed", realizedPnl: "Infinity", exchange: "pac", symbol: "ETH", duration: 1000 }));
+    logPosition(makeRecord({ status: "closed", realizedPnl: "50", exchange: "pac", symbol: "ETH", duration: 1000 }));
+
+    const stats = getPositionStats();
+    expect(Number.isFinite(stats.totalPnl)).toBe(true);
+    expect(stats.totalPnl).toBe(50);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 

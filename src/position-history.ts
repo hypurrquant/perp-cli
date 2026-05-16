@@ -166,6 +166,17 @@ export function getPositionStats(opts?: {
   for (const r of records) {
     stats.totalTrades++;
     const pnl = Number(r.realizedPnl ?? 0);
+    // Rule #2 (qa/2026-05-16 extension): a non-finite realizedPnl from a
+    // corrupt history row would propagate NaN into totalPnl / averages and
+    // break the entire stats report. Surface the bad row and skip its PnL
+    // contribution (the trade is still counted but excluded from PnL math
+    // so the operator sees the row count vs. expected and can investigate).
+    if (!Number.isFinite(pnl)) {
+      process.stderr.write(
+        `[position-history] skipping non-finite realizedPnl for ${r.symbol ?? "<unknown>"} on ${r.exchange ?? "<unknown>"}: ${JSON.stringify(r.realizedPnl)}\n`,
+      );
+      continue;
+    }
 
     if (pnl > 0) stats.wins++;
     else if (pnl < 0) stats.losses++;
@@ -207,6 +218,9 @@ export function getPositionStats(opts?: {
   const symbolWins: Record<string, number> = {};
   for (const r of records) {
     const pnl = Number(r.realizedPnl ?? 0);
+    // Same guard as above — silently skipping NaN here keeps win-rate
+    // attribution consistent with the totals computed in the main loop.
+    if (!Number.isFinite(pnl)) continue;
     if (pnl > 0) {
       symbolWins[r.symbol] = (symbolWins[r.symbol] ?? 0) + 1;
     }
