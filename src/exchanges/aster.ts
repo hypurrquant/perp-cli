@@ -34,6 +34,7 @@ import type { AgentMeta } from "../settings.js";
 import type { AgentSigningStrategy } from "../agent-wallet/signing-strategy.js";
 import { isExpired } from "../agent-wallet/expiry.js";
 import { classifyError, PerpError } from "../errors.js";
+import { parseFiniteVenueNumber } from "../utils/numeric.js";
 import { buildOrderTypedData } from "./aster-typed-data.js";
 
 // ── ResolvedSigner type ────────────────────────────────────────────────────────
@@ -296,10 +297,10 @@ export class AsterAdapter implements ExchangeAdapter {
     // v3: /fapi/v2/account is HMAC-only; v3 EIP-712 uses /fapi/v3/accountWithJoinMargin.
     const account = await this._signedGetEip712("/fapi/v3/accountWithJoinMargin", {}, r) as Record<string, unknown>;
 
-    const totalWallet = Number(account.totalWalletBalance ?? 0);
-    const unrealizedPnl = Number(account.totalUnrealizedProfit ?? 0);
-    const available = Number(account.availableBalance ?? 0);
-    const marginUsed = Number(account.totalInitialMargin ?? 0);
+    const totalWallet = parseFiniteVenueNumber(account.totalWalletBalance, "totalWalletBalance", "aster");
+    const unrealizedPnl = parseFiniteVenueNumber(account.totalUnrealizedProfit, "totalUnrealizedProfit", "aster");
+    const available = parseFiniteVenueNumber(account.availableBalance, "availableBalance", "aster");
+    const marginUsed = parseFiniteVenueNumber(account.totalInitialMargin, "totalInitialMargin", "aster");
 
     const result = {
       equity: String(totalWallet + unrealizedPnl),
@@ -322,7 +323,7 @@ export class AsterAdapter implements ExchangeAdapter {
     const account = await this._signedGetEip712("/fapi/v3/accountWithJoinMargin", {}, r) as Record<string, unknown>;
     const positions = (account.positions as Array<Record<string, unknown>> | undefined) ?? [];
 
-    const open = positions.filter((p) => Number(p.positionAmt ?? 0) !== 0);
+    const open = positions.filter((p) => parseFiniteVenueNumber(p.positionAmt, "position.positionAmt", "aster") !== 0);
 
     // Fetch mark prices for the open symbols (best-effort; non-fatal on failure)
     const markMap = new Map<string, string>();
@@ -336,7 +337,7 @@ export class AsterAdapter implements ExchangeAdapter {
     }
 
     const result = open.map((p) => {
-      const amt = Number(p.positionAmt ?? 0);
+      const amt = parseFiniteVenueNumber(p.positionAmt, "position.positionAmt", "aster");
       const apiSym = String(p.symbol ?? "");
       return {
         symbol: this._fromApi(apiSym),
@@ -346,7 +347,7 @@ export class AsterAdapter implements ExchangeAdapter {
         markPrice: markMap.get(apiSym) ?? "0",
         liquidationPrice: "0", // v3 accountWithJoinMargin does not expose this
         unrealizedPnl: String(p.unrealizedProfit ?? "0"),
-        leverage: Number(p.leverage ?? 1),
+        leverage: parseFiniteVenueNumber(p.leverage, "position.leverage", "aster", { defaultValue: 1 }),
       };
     });
     this._positionsCache = { data: result, time: Date.now() };
