@@ -60,8 +60,29 @@ describe("LighterAdapter._toFiniteNumber — Rule #2 venue-payload coercion", ()
   it("throws EXCHANGE_ERROR for non-numeric strings (Number(s) → NaN)", () => {
     expect(() => LighterAdapter._toFiniteNumber("abc", "x")).toThrow(/not a finite number/);
     expect(() => LighterAdapter._toFiniteNumber("12abc", "x")).toThrow(/not a finite number/);
-    // empty string → Number("") === 0, allowed (venue may stringify zero this way)
-    expect(LighterAdapter._toFiniteNumber("", "x")).toBe(0);
+  });
+
+  // qa/2026-05-16 strict-policy update:
+  // The earlier policy (26d78d7) allowed Number("") === 0 — empty string
+  // was treated as "venue stringified zero". That made "" indistinguishable
+  // from a stale-cache partial response and surfaced as a phantom $0
+  // balance downstream (rebalance plan, event-stream balance_update,
+  // outcome time). The strict policy now rejects "" alongside NaN/Infinity;
+  // truly absent fields must use undefined/null at the adapter layer.
+  it("throws EXCHANGE_ERROR for empty string '' — corruption, not 'venue stringified zero'", () => {
+    expect(() => LighterAdapter._toFiniteNumber("", "available_balance")).toThrow(PerpError);
+    expect(() => LighterAdapter._toFiniteNumber("", "available_balance"))
+      .toThrow(/empty string/);
+    try {
+      LighterAdapter._toFiniteNumber("", "available_balance");
+      expect.fail("expected throw");
+    } catch (e) {
+      const err = e as PerpError;
+      expect(err.structured.code).toBe("EXCHANGE_ERROR");
+      expect(err.message).toMatch(/`available_balance` is an empty string/);
+      expect(err.message).toMatch(/use null for missing data/);
+      expect((err.structured as { details?: { exchange?: string } }).details?.exchange).toBe("lighter");
+    }
   });
 
   it("includes the field name in the error so the failing endpoint is attributable", () => {

@@ -322,6 +322,33 @@ describe("startEventStream — non-finite numeric guards (Rule #2)", () => {
     warn.mockRestore();
   });
 
+  it("suppresses liquidation_warning when markPrice is the empty string '' (qa/2026-05-16 strict policy)", async () => {
+    // Number("") === 0 in JS — pre-fix code would pass the finiteness check,
+    // then `mark > 0` would be false, silently skipping the alert without
+    // surfacing the payload break. Strict policy now adds an explicit ""
+    // rejection at event-stream.ts:131-134.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const events: StreamEvent[] = [];
+    const controller = new AbortController();
+
+    const adapter = mockAdapter({
+      getPositions: vi.fn().mockImplementation(async () => {
+        controller.abort();
+        return [{ symbol: "ETH", side: "long", size: "1", entryPrice: "3000", unrealizedPnl: "0", liquidationPrice: "2700", markPrice: "" }];
+      }),
+    });
+
+    await startEventStream(adapter, {
+      intervalMs: 1,
+      onEvent: (e) => events.push(e),
+      signal: controller.signal,
+    });
+
+    expect(events.filter((e) => e.type === "liquidation_warning" || e.type === "margin_call")).toHaveLength(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/non-finite mark\/liquidation for ETH/));
+    warn.mockRestore();
+  });
+
   it("suppresses liquidation_warning when liquidationPrice is non-numeric (not 'N/A')", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const events: StreamEvent[] = [];
@@ -384,6 +411,36 @@ describe("startEventStream — non-finite numeric guards (Rule #2)", () => {
         // compute `Math.abs(NaN - 1000) = NaN`, fail `NaN > 0.01`, and
         // silently swallow the balance_update.
         return { equity: "NaN", available: "850", marginUsed: "200", unrealizedPnl: "0" };
+      }),
+    });
+
+    await startEventStream(adapter, {
+      intervalMs: 1,
+      onEvent: (e) => events.push(e),
+      signal: controller.signal,
+    });
+
+    expect(events.filter((e) => e.type === "balance_update")).toHaveLength(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/non-finite balance values for test/));
+    warn.mockRestore();
+  });
+
+  it("suppresses balance_update when current equity is the empty string '' (qa/2026-05-16 strict policy)", async () => {
+    // Pre-fix: Number("") === 0, so `Math.abs(0 - 1000) = 1000 > 0.01` would
+    // fire a balance_update event with data.equity="" — laundering corruption
+    // as a synthetic delta. Strict policy at event-stream.ts:204-209 catches
+    // the "" upfront and skips the emit with a warn instead.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const events: StreamEvent[] = [];
+    const controller = new AbortController();
+    let callNum = 0;
+
+    const adapter = mockAdapter({
+      getBalance: vi.fn().mockImplementation(async () => {
+        callNum++;
+        if (callNum === 1) return { equity: "1000.00", available: "800.00", marginUsed: "200", unrealizedPnl: "0" };
+        controller.abort();
+        return { equity: "", available: "850", marginUsed: "200", unrealizedPnl: "0" };
       }),
     });
 

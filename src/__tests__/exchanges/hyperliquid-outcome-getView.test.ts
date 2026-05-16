@@ -258,6 +258,25 @@ describe("HyperliquidOutcomeAdapter.getView — integration with mocked SDK", ()
     await expect(adapter.getView(2, 3)).rejects.toThrow(/non-finite time/);
   });
 
+  it("throws EXCHANGE_ERROR when l2Book.time is the empty string '' (qa/2026-05-16 strict policy)", async () => {
+    // Number("") === 0 in JS — pre-fix the same fake-1970-epoch leak would
+    // recur via the empty-string path. Strict policy treats "" the same as
+    // a non-numeric venue string, distinct from the legitimate undefined/null
+    // "no time given" semantic.
+    const adapter = makeAdapter({
+      bookFor: (coin) => ({
+        coin,
+        time: "",
+        levels: [
+          [{ px: "0.5", sz: "10" }],
+          [{ px: "0.5", sz: "10" }],
+        ],
+      }),
+    });
+    await expect(adapter.getView(2, 3)).rejects.toThrow(PerpError);
+    await expect(adapter.getView(2, 3)).rejects.toThrow(/empty string for time/);
+  });
+
   it("preserves time=0 distinction: explicit null is treated the same as omitted (legit, no throw)", async () => {
     const adapter = makeAdapter({
       bookFor: (coin) => ({

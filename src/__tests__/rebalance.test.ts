@@ -59,15 +59,20 @@ describe("rebalance.fetchAllBalances — non-finite balance guard (Rule #2)", ()
     expect(snaps.find((s) => s.exchange === "aster")).toBeUndefined();
   });
 
-  it("rejects on Infinity / -Infinity / non-numeric strings for any of the 4 balance fields", async () => {
+  it("rejects on Infinity / -Infinity / non-numeric strings / empty strings for any of the 4 balance fields", async () => {
     const cases: { label: string; bal: ExchangeBalance }[] = [
       { label: "equity Infinity", bal: { ...CLEAN, equity: "Infinity" } },
       { label: "available -Infinity", bal: { ...CLEAN, available: "-Infinity" } },
       { label: "marginUsed garbage", bal: { ...CLEAN, marginUsed: "abc" } },
-      // Note: Number("") === 0 in JS (not NaN), so an empty venue field is
-      // silently coerced — pin the actually-NaN-producing inputs here, and
-      // record the empty-string gap as a separate observation for follow-up.
       { label: "unrealizedPnl garbage", bal: { ...CLEAN, unrealizedPnl: "garbage" } },
+      // qa/2026-05-16 strict policy: empty venue field is corruption.
+      // Number("") === 0 in JS would silently pass the finiteness check and
+      // surface a phantom $0 balance in the plan — closed by the explicit
+      // `=== ""` rejection at rebalance.ts:55-60.
+      { label: "equity empty string", bal: { ...CLEAN, equity: "" } },
+      { label: "available empty string", bal: { ...CLEAN, available: "" } },
+      { label: "marginUsed empty string", bal: { ...CLEAN, marginUsed: "" } },
+      { label: "unrealizedPnl empty string", bal: { ...CLEAN, unrealizedPnl: "" } },
     ];
 
     for (const { label, bal } of cases) {
