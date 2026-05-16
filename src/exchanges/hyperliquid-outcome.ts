@@ -436,7 +436,19 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
     // Rule #2: `Number("abc") ?? 0` would silently coerce a non-numeric
     // venue time to 0 (1970 epoch). 0 is a legitimate "no time given"
     // value when book.time is undefined, but a NaN should not be hidden.
+    //
+    // Strict policy (qa/2026-05-16): empty string is corruption too —
+    // `Number("") === 0` would land in the same fake-1970-epoch bucket
+    // as the previous silent path. Treat "" the same as a non-numeric
+    // string, distinct from the legitimate undefined/null "no time given".
     const timeRaw = book.time;
+    if (timeRaw === "") {
+      throw new PerpError(
+        "EXCHANGE_ERROR",
+        `Hyperliquid l2Book returned empty string for time on ${coin}`,
+        { exchange: "hyperliquid" },
+      );
+    }
     const time = timeRaw === undefined || timeRaw === null ? 0 : Number(timeRaw);
     if (!Number.isFinite(time)) {
       throw new PerpError(

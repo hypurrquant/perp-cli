@@ -128,7 +128,13 @@ export async function startEventStream(
         // critical-distance liquidation_warning the user depends on.
         // Surface the corruption explicitly so the stream layer doesn't
         // hide a failed alert.
-        if (!Number.isFinite(mark) || !Number.isFinite(liq)) {
+        //
+        // Strict policy (qa/2026-05-16): an empty-string markPrice or
+        // liquidationPrice is also corruption — `Number("") === 0` would
+        // pass the `Number.isFinite` check, then `mark > 0` would be
+        // false, silently skipping the alert without surfacing the
+        // payload break. Add an explicit "" check to the rejection bucket.
+        if (p.markPrice === "" || p.liquidationPrice === "" || !Number.isFinite(mark) || !Number.isFinite(liq)) {
           if (p.liquidationPrice !== "N/A") {
             console.warn(`[event-stream] non-finite mark/liquidation for ${p.symbol} on ${adapter.name} (mark=${p.markPrice}, liq=${p.liquidationPrice}) — skipping liquidation distance check`);
           }
@@ -198,7 +204,15 @@ export async function startEventStream(
         const availPrev = Number(prevBalance.available);
         // Rule #2: a NaN delta would silently fail the `> 0.01` threshold,
         // suppressing balance_update events. Surface the corruption.
-        if (!Number.isFinite(equityNow) || !Number.isFinite(equityPrev) ||
+        //
+        // Strict policy (qa/2026-05-16): "" coerces to 0 via Number(""),
+        // so `Math.abs(0 - prev)` could pass the `> 0.01` check and emit
+        // a misleading balance_update with `data.equity = ""`. Reject ""
+        // upfront so the corruption is visible, not laundered into a
+        // synthetic delta event.
+        const empties = balance.equity === "" || prevBalance.equity === "" ||
+                        balance.available === "" || prevBalance.available === "";
+        if (empties || !Number.isFinite(equityNow) || !Number.isFinite(equityPrev) ||
             !Number.isFinite(availNow)  || !Number.isFinite(availPrev)) {
           console.warn(`[event-stream] non-finite balance values for ${adapter.name} (equity=${balance.equity}/${prevBalance.equity}, available=${balance.available}/${prevBalance.available}) — skipping balance_update emit`);
         } else {

@@ -544,6 +544,11 @@ export class LighterAdapter implements ExchangeAdapter {
    *  - undefined / null → `defaultValue` (typically 0). Lighter may
    *    legitimately omit a field for an empty account or zero position;
    *    that is "no data, treat as zero", not a parsing failure.
+   *  - empty string "" → throw. Strict policy (qa/2026-05-16): an empty
+   *    string is indistinguishable from a stale-cache partial response,
+   *    so the pre-existing `Number("") === 0 → "$0 balance"` path was a
+   *    Rule #2 silent-substitution hole. A truly absent field must use
+   *    undefined/null, not "".
    *  - finite number → returned as-is.
    *  - NaN / ±Infinity / strings that parse to NaN → throw EXCHANGE_ERROR.
    *    Silent `|| 0` substitution would mask broken accounting (a stale
@@ -553,6 +558,13 @@ export class LighterAdapter implements ExchangeAdapter {
    */
   static _toFiniteNumber(value: unknown, fieldName: string, defaultValue = 0): number {
     if (value === undefined || value === null) return defaultValue;
+    if (value === "") {
+      throw new PerpError(
+        "EXCHANGE_ERROR",
+        `Lighter response field \`${fieldName}\` is an empty string (use null for missing data)`,
+        { exchange: "lighter" },
+      );
+    }
     const n = typeof value === "number" ? value : Number(value);
     if (!Number.isFinite(n)) {
       throw new PerpError(

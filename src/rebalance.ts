@@ -48,6 +48,19 @@ export async function fetchAllBalances(
   const results = await Promise.allSettled(
     entries.map(async ([name, adapter]) => {
       const bal = await adapter.getBalance();
+      // Strict policy (qa/2026-05-16): empty string is corruption, not
+      // "venue stringified zero". A truly absent field must surface as
+      // undefined/null at the adapter layer, not "". An empty string here
+      // would coerce to 0 via Number("") and silently propagate a $0
+      // balance into the plan — exactly the Rule #2 silent-substitution
+      // hole this audit cycle is closing.
+      if (bal.equity === "" || bal.available === "" || bal.marginUsed === "" || bal.unrealizedPnl === "") {
+        throw new PerpError(
+          "EXCHANGE_ERROR",
+          `${name} returned empty-string balance field: equity="${bal.equity}" available="${bal.available}" marginUsed="${bal.marginUsed}" unrealizedPnl="${bal.unrealizedPnl}"`,
+          { exchange: name },
+        );
+      }
       const equity = Number(bal.equity);
       const available = Number(bal.available);
       const marginUsed = Number(bal.marginUsed);
