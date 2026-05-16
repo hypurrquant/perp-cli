@@ -441,7 +441,11 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
     // `Number("") === 0` would land in the same fake-1970-epoch bucket
     // as the previous silent path. Treat "" the same as a non-numeric
     // string, distinct from the legitimate undefined/null "no time given".
-    const timeRaw = book.time;
+    // The SDK types `book.time` as `number | undefined`, but the wire
+    // payload can return a string at runtime — we widen to unknown so the
+    // runtime guard against an empty string is meaningful (the SDK type
+    // would otherwise narrow it out).
+    const timeRaw = book.time as unknown;
     if (timeRaw === "") {
       throw new PerpError(
         "EXCHANGE_ERROR",
