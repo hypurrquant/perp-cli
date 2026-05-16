@@ -422,6 +422,70 @@ describe("Pacifica nextFundingTime guard", () => {
   });
 });
 
+describe("Pacifica row-skip on non-finite venue payload (Phase 4, qa/2026-05-16)", () => {
+  // src/api/public/pacifica.ts:25-35 already guards against NaN/Infinity
+  // funding/mark and silently skips the row (no throw — partial-result UX
+  // for funding aggregation, by design). Pin the contract so a future
+  // "fix" that promotes the silent skip to an error doesn't accidentally
+  // crash multi-DEX scans.
+
+  it("drops a Pacifica row where funding is NaN, keeps clean rows", async () => {
+    invalidateCache();
+    setupMockFetch({
+      pac: [
+        { symbol: "BTC", funding: 0.0001, mark: 60000 },
+        // Corrupted: non-numeric funding → must be filtered out by
+        // src/api/public/pacifica.ts:30 (Number.isFinite guard).
+        { symbol: "ETH", funding: "garbage" as unknown as number, mark: 3000 },
+      ],
+      hl: {
+        assets: [{ name: "BTC" }, { name: "ETH" }],
+        ctxs: [
+          { funding: 0.00005, markPx: 60100 },
+          { funding: 0.00003, markPx: 3001 },
+        ],
+      },
+      lt: { details: [], funding: [] },
+    });
+
+    const snapshot = await fetchAllFundingRates();
+    const btc = snapshot.symbols.find(s => s.symbol === "BTC");
+    const eth = snapshot.symbols.find(s => s.symbol === "ETH");
+    expect(btc?.rates.find(r => r.exchange === "pacifica")).toBeTruthy();
+    // ETH had a corrupt funding → pacifica row dropped. ETH presence in the
+    // snapshot depends on whether at least one exchange returned a valid row;
+    // primary assertion is that pacifica is NOT in the ETH rate list.
+    expect(eth?.rates.find(r => r.exchange === "pacifica")).toBeUndefined();
+  });
+
+  it("drops a Pacifica row where mark is non-finite or <= 0", async () => {
+    invalidateCache();
+    setupMockFetch({
+      pac: [
+        { symbol: "BTC", funding: 0.0001, mark: 60000 },
+        // mark <= 0 → must be skipped (a $0 mark would corrupt arb sizing).
+        { symbol: "ETH", funding: 0.0001, mark: 0 },
+        // mark = NaN string → also skipped (Number(NaN-string)=NaN, not finite).
+        { symbol: "SOL", funding: 0.0001, mark: "NaN" as unknown as number },
+      ],
+      hl: {
+        assets: [{ name: "BTC" }, { name: "ETH" }, { name: "SOL" }],
+        ctxs: [
+          { funding: 0.00005, markPx: 60100 },
+          { funding: 0.00005, markPx: 3001 },
+          { funding: 0.00005, markPx: 150 },
+        ],
+      },
+      lt: { details: [], funding: [] },
+    });
+    const snapshot = await fetchAllFundingRates();
+    const eth = snapshot.symbols.find(s => s.symbol === "ETH");
+    const sol = snapshot.symbols.find(s => s.symbol === "SOL");
+    expect(eth?.rates.find(r => r.exchange === "pacifica")).toBeUndefined();
+    expect(sol?.rates.find(r => r.exchange === "pacifica")).toBeUndefined();
+  });
+});
+
 describe("3-DEX direction logic", () => {
   it("picks correct long/short when lighter has best rate", async () => {
     setupMockFetch({
