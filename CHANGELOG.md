@@ -4,6 +4,41 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+QA cycle `qa/2026-05-16-numeric-audit-test-followup` — 21 commits closing test-coverage gaps from the v0.13.0 / numeric-validation-audit cycles, adding a shared NaN/empty-string guard helper across all 4 adapters, and surfacing the missing `liquidationPrice` in `perp portfolio`. **Verified end-to-end against mainnet** (60 read-only CLI commands inside `perp-qa` Docker container, 4 DEX, zero false positives). Full QA report: `docs/qa-reports/2026-05-16-numeric-audit-test-followup.md`.
+
+### Added
+- **`parseFiniteVenueNumber()` shared helper** in `src/utils/numeric.ts` — consolidates the venue-payload coercion contract (undefined/null → default 0, `""`/NaN/±Infinity/non-numeric → throw `EXCHANGE_ERROR` tagged with `structured.details.exchange`). Replaces `LighterAdapter._toFiniteNumber` (removed) and is now used by all 4 adapters in `getBalance` / `getPositions`.
+- **HL / Aster / Pacifica adapter NaN guards** — 25 venue-payload sites across `getBalance` + `getPositions` now reject NaN/empty payloads instead of silent $0 substitution. Closes the asymmetry where only Lighter had the guard (26d78d7).
+- **Real-vault OWS integration test** at `src/__tests__/integration/wallet-ows-aware.integration.test.ts` — 7 cases creating a real OWS vault in an isolated `HOME`, spawning the real CLI subprocess, and asserting the JSON envelope + post-state of `settings.json` for `wallet balance` / `generate` / `use` / `remove`.
+- **Cross-adapter envelope consistency test** at `src/__tests__/exchanges/cross-adapter-envelope.test.ts` — parameterized over all 4 DEX names; pins that NaN/`""` payloads produce identical envelope shape downstream.
+- **Docker QA report** at `docs/qa-reports/2026-05-16-numeric-audit-test-followup.md` (Phase A–E, ~400 lines) — container-parity checks, 60-command live matrix, cross-validation findings, and a P1 dead-code finding (`startEventStream` has no production caller; guards retained as defensive contract).
+
+### Changed (potentially breaking for SDK consumers)
+- **Empty-string venue payload (`""`) is now corruption, not "stringified zero"** (qa/2026-05-16 strict policy). All 4 adapters, `src/rebalance.ts`, `src/event-stream.ts`, and `src/exchanges/hyperliquid-outcome.ts:getOrderbook` now throw `EXCHANGE_ERROR` for `""` instead of `Number("") === 0` silent coercion. Overrides the 26d78d7 design decision that allowed Lighter `""→0`. **Live QA: 60 commands across 4 adapters surfaced zero false positives** — venues do not return `""` for real balance/position fields.
+- **`LighterAdapter._toFiniteNumber` static method removed** — callers (including the now-removed test file `lighter-toFinite.test.ts`) must migrate to `parseFiniteVenueNumber(...)` from `src/utils/numeric.js`. Same contract, different import.
+
+### Fixed
+- **`perp portfolio` positions[] now surfaces `liquidationPrice`** (`src/commands/portfolio.ts:50-54, 390-398`). Pre-fix the field was stripped from the `.map()` projection even though the adapter populated it — a user who relied on `portfolio` alone could not see liquidation distance and had to re-fetch via `perp account positions -e <ex>`. Live verified on Lighter SKHYNIXUSD short ($1892.93 liq price now visible end-to-end).
+- **`getPositionStats` NaN propagation** (`src/position-history.ts:170-179, 211-213`). A corrupt history row with non-finite `realizedPnl` previously propagated NaN into `stats.totalPnl` / averages / `bestTrade` / `worstTrade`, poisoning the entire stats report. The row is now skipped from PnL math (still counted in `totalTrades` for visibility) with a stderr warn naming the symbol/exchange.
+- **`outcome book.time` empty-string + non-finite** (`src/exchanges/hyperliquid-outcome.ts:439-457`). Pre-fix `Number("") === 0` or `Number("abc") = NaN` was silently masked as a 1970-epoch timestamp; now throws `EXCHANGE_ERROR` for both. Includes a TypeScript type-narrowing fix (`book.time as unknown`) so the runtime guard compiles under `tsconfig strict`.
+- **`event-stream` non-finite mark / liq / balance** (`src/event-stream.ts:131-136, 201-203`). Pre-fix a NaN/`""` mark price silently failed the `> 0` distance check and suppressed `liquidation_warning` / `margin_call` events. Now logs to stderr and skips the affected branch instead of laundering corruption as "no alert".
+- **`rebalance` non-finite balance partial-result** (`src/rebalance.ts:51-77`). `fetchAllBalances` now rejects the affected adapter's `Promise.allSettled` branch on NaN/`""` so the plan never sums corrupt inputs. User sees a partial result instead of a phantom $0 balance.
+
+### Test
+- **Unit suite**: 1400 → **1470 passed** (+70 across 80 files).
+- **Integration suite**: +7 new OWS-vault cases (`pnpm test:integration`).
+- **New venue-payload coverage**: 47 dedicated cases across `numeric.test.ts` (11), `hyperliquid-toFinite.test.ts` (16, incl. supplementary `unified` / `portfolio` mode guards), `aster-toFinite.test.ts` (7), `pacifica-toFinite.test.ts` (7), `cross-adapter-envelope.test.ts` (9).
+
+### Verified live (qa/2026-05-16 Docker QA, 4 DEX)
+- **Phase A** — container parity: 1469 unit + 7 integration pass identically to host build.
+- **Phase B** — 15 live mainnet commands across `portfolio`, `account positions`, `funds rebalance check/plan`, `arb scan`, `wallet balance` (incl. OWS-aware path, `--testnet`).
+- **Phase E** — 45 additional live commands across `outcome` (HIP-4 view/book/list — verifies `book.time` guard against real venue), `market` (info/prices/funding/book/trades/kline per-DEX), `account`, `arb`, `risk`, `history`, `settings`, `alerts`, `funds info`, `strategy` (list-only), `background list`.
+- **Total**: 60 live commands, 0 new-guard false positives, 198f196 error envelope (`INVALID_PARAMS` + remediation for `market hip3` without `-e hyperliquid`) confirmed end-to-end.
+- **Cross-validation**: BTC mark price across 4 DEX agreed to within 0.032% (max-min spread $25 on $77.9k); Lighter SKHYNIXUSD position shape identical across `portfolio`, `account positions`, `account margin` (single source of truth in adapter).
+
+### Outstanding (P1, deferred to next cycle)
+- `src/event-stream.ts:startEventStream()` is **dead code** — production grep shows no callers; only `src/position-history.ts:8` imports the `StreamEvent` type. The 5 new venue-guard unit tests remain valid as defensive contracts but the runtime path is unreachable from the current CLI. Three handling options recorded in the QA report (keep / remove / re-add `perp events --tail` CLI). No action taken; awaits user direction.
+
 ## [0.13.0] — 2026-05-03
 
 Adds Hyperliquid Outcome markets (HIP-4) support — a new asset class. Verified end-to-end against mainnet (place + cancel real order against asset id `100,000,010`). Two rounds of independent Codex review closed before release.
