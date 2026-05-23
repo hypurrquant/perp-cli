@@ -3,9 +3,12 @@ import chalk from "chalk";
 import { classifyError } from "./errors.js";
 
 export function symbolMatch(candidate: string, target: string): boolean {
-  const c = candidate.toUpperCase();
-  const t = target.toUpperCase();
-  return c === t || c === `${t}-PERP` || c.replace(/-PERP$/, "") === t;
+  // Symmetric match: strip a trailing -PERP from BOTH sides before comparing.
+  // Callers pass (venueSymbol, userInput); the venue may report "BTC" or
+  // "BTC-PERP" and the user may type either form, so matching must not depend
+  // on which side carries the suffix.
+  const strip = (s: string) => s.toUpperCase().replace(/-PERP$/, "");
+  return strip(candidate) === strip(target);
 }
 
 export function formatUsd(value: string | number): string {

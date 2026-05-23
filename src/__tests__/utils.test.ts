@@ -112,10 +112,10 @@ describe("symbolMatch", () => {
     expect(symbolMatch("eth-perp", "ETH")).toBe(true);
   });
 
-  it("does NOT match bare candidate against target with -PERP suffix (asymmetric)", () => {
-    // Pinned current behavior: matching is only candidate→target, not reverse.
-    // If callers need symmetric matching they must normalize the target first.
-    expect(symbolMatch("BTC", "BTC-PERP")).toBe(false);
+  it("matches symmetrically when the -PERP suffix is on the target instead of the candidate", () => {
+    // strip() applies to both sides, so argument order does not matter.
+    expect(symbolMatch("BTC", "BTC-PERP")).toBe(true);
+    expect(symbolMatch("BTC-PERP", "BTC-PERP")).toBe(true);
   });
 
   it("rejects different bases", () => {

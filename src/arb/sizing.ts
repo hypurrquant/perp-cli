@@ -51,11 +51,14 @@ export function computeMatchedSize(
       roundedUp = Math.ceil(rawSize * factor) / factor;
     }
     const notionalUp = roundedUp * price;
-    // Only round up if the increase is small (< 20% over requested)
-    if (notionalUp <= sizeUsd * 1.2) {
+    // Round up only if it both (a) clears the venue minimum and (b) does not
+    // overshoot the requested size by more than 20%. Pre-fix this checked only
+    // (b), so a ceil that still fell short of minNotional was returned and then
+    // rejected by the venue — SSOT Rule #2: fail honestly with null instead.
+    if (notionalUp >= minNotional && notionalUp <= sizeUsd * 1.2) {
       return { size: formatSize(roundedUp, szDecimals, opts?.lotSize), notional: notionalUp };
     }
-    return null; // Can't meet minimum
+    return null; // Can't meet minimum within tolerance
   }
 
   return { size: formatSize(roundedSize, szDecimals, opts?.lotSize), notional };
@@ -125,7 +128,9 @@ export function computeSpotPerpMatchedSize(
   if (notional < minNotional) {
     const roundedUp = Math.ceil(rawSize * factor) / factor;
     const notionalUp = roundedUp * price;
-    if (notionalUp <= sizeUsd * 1.2) {
+    // Same minNotional re-check as computeMatchedSize (SSOT Rule #2): a ceil
+    // that is still under the venue minimum must fail, not be returned.
+    if (notionalUp >= minNotional && notionalUp <= sizeUsd * 1.2) {
       return { size: roundedUp.toFixed(szDecimals), notional: notionalUp };
     }
     return null;

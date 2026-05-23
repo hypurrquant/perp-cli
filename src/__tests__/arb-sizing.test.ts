@@ -102,15 +102,20 @@ describe("computeMatchedSize — lotSize option (integer-quantum coins)", () => 
 });
 
 describe("computeMatchedSize — round-up fallback (no lotSize)", () => {
-  it("rounds UP when floor lands below minNotional and the resulting notional is within 20% of sizeUsd", () => {
-    // aster szDecimals=0 → rawSize=8/3≈2.667 → floor=2 → notional=6 < min 10 → round-up
-    // ceil=3 → notionalUp=9 → sizeUsd*1.2=9.6 → 9 ≤ 9.6 → success
-    // NOTE: notionalUp (9) is still below minNotional (10); current logic does NOT
-    // re-check min on the round-up path — this guard pins that behavior.
-    const result = computeMatchedSize(8, 3, "aster", "aster");
+  it("rounds UP to clear the venue minimum when the bumped notional is within the 20% overshoot bound", () => {
+    // aster szDecimals=0 → rawSize=10/3≈3.333 → floor=3 → notional=9 < min 10 → round-up
+    // ceil=4 → notionalUp=12 → 12 ≥ min 10 AND 12 ≤ sizeUsd*1.2=12 → success
+    const result = computeMatchedSize(10, 3, "aster", "aster");
     expect(result).not.toBeNull();
-    expect(result!.size).toBe("3");
-    expect(result!.notional).toBe(9);
+    expect(result!.size).toBe("4");
+    expect(result!.notional).toBe(12);
+  });
+
+  it("returns null when even the rounded-up notional is still below minNotional (Rule #2: never emit a venue-rejectable size)", () => {
+    // aster szDecimals=0 → rawSize=8/3≈2.667 → floor=2 → notional=6 < min 10 → round-up
+    // ceil=3 → notionalUp=9 → 9 < min 10 → null
+    // Pre-fix this returned "3"/$9, which the venue would have rejected (min $10).
+    expect(computeMatchedSize(8, 3, "aster", "aster")).toBeNull();
   });
 
   it("returns null when the round-up notional exceeds the 20% bound (oversize protection)", () => {
@@ -159,13 +164,19 @@ describe("computeSpotPerpMatchedSize", () => {
     expect(result!.notional).toBe(100);
   });
 
-  it("rounds UP when floor lands below minNotional and round-up is within 20% bound", () => {
-    // explicit szDec=0 → rawSize=8/3≈2.667 → floor=2 → notional=6 < min 10 → round-up
-    // ceil=3 → notionalUp=9 ≤ sizeUsd*1.2=9.6 → success → "3" (toFixed(0))
-    const result = computeSpotPerpMatchedSize(8, 3, "hyperliquid", "hyperliquid", 0, 0);
+  it("rounds UP to clear the venue minimum when the bumped notional is within the 20% bound", () => {
+    // explicit szDec=0 → rawSize=10/3≈3.333 → floor=3 → notional=9 < min 10 → round-up
+    // ceil=4 → notionalUp=12 → 12 ≥ min 10 AND 12 ≤ sizeUsd*1.2=12 → success → "4"
+    const result = computeSpotPerpMatchedSize(10, 3, "hyperliquid", "hyperliquid", 0, 0);
     expect(result).not.toBeNull();
-    expect(result!.size).toBe("3");
-    expect(result!.notional).toBe(9);
+    expect(result!.size).toBe("4");
+    expect(result!.notional).toBe(12);
+  });
+
+  it("returns null when the rounded-up notional is still below minNotional (Rule #2)", () => {
+    // explicit szDec=0 → rawSize=8/3≈2.667 → floor=2 → notional=6 < min 10 → round-up
+    // ceil=3 → notionalUp=9 → 9 < min 10 → null (pre-fix returned "3"/$9)
+    expect(computeSpotPerpMatchedSize(8, 3, "hyperliquid", "hyperliquid", 0, 0)).toBeNull();
   });
 
   it("returns null when round-up exceeds the 20% bound", () => {
