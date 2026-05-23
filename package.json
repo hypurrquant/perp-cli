@@ -70,10 +70,11 @@
   "devDependencies": {
     "@types/node": "^25.3.3",
     "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^4.1.6",
     "ts-morph": "^27.0.2",
     "tsup": "^8.4.0",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.6"
   }
 }

@@ -226,3 +226,76 @@ describe("findDexArbPairs — edge cases", () => {
     expect(findDexArbPairs(assets)).toHaveLength(0);
   });
 });
+
+describe("findDexArbPairs — viability grades by OI (A/B/C/D) and liquidity floor", () => {
+  // Funding spread is held constant across cases so the only variable driving
+  // grade selection is openInterest * markPrice (i.e. OI in USD).
+  const longF = 0.001;
+  const shortF = -0.001;
+
+  it("returns viability 'A' when minOiUsd >= $1M (>= $1M floor)", () => {
+    // BTC at $100k, OI 15 → $1.5M | OI 20 → $2M → min = $1.5M → A
+    const assets: DexAsset[] = [
+      makeAsset({ raw: "dexA:BTC", base: "BTC", dex: "dexA", markPrice: 100_000, fundingRate: longF, openInterest: 15 }),
+      makeAsset({ raw: "dexB:BTC", base: "BTC", dex: "dexB", markPrice: 100_000, fundingRate: shortF, openInterest: 20 }),
+    ];
+    const [pair] = findDexArbPairs(assets);
+    expect(pair.viability).toBe("A");
+    expect(pair.minOiUsd).toBeGreaterThanOrEqual(1_000_000);
+  });
+
+  it("returns viability 'B' when minOiUsd is in [$100K, $1M)", () => {
+    // ETH at $2k, OI 100 → $200K each → min = $200K → B
+    const assets: DexAsset[] = [
+      makeAsset({ raw: "dexA:ETH", base: "ETH", dex: "dexA", markPrice: 2_000, fundingRate: longF, openInterest: 100 }),
+      makeAsset({ raw: "dexB:ETH", base: "ETH", dex: "dexB", markPrice: 2_000, fundingRate: shortF, openInterest: 100 }),
+    ];
+    const [pair] = findDexArbPairs(assets);
+    expect(pair.viability).toBe("B");
+    expect(pair.minOiUsd).toBeGreaterThanOrEqual(100_000);
+    expect(pair.minOiUsd).toBeLessThan(1_000_000);
+  });
+
+  it("returns viability 'C' when minOiUsd is in [$10K, $100K)", () => {
+    // SOL at $200, OI 100 → $20K each → min = $20K → C
+    const assets: DexAsset[] = [
+      makeAsset({ raw: "dexA:SOL", base: "SOL", dex: "dexA", markPrice: 200, fundingRate: longF, openInterest: 100 }),
+      makeAsset({ raw: "dexB:SOL", base: "SOL", dex: "dexB", markPrice: 200, fundingRate: shortF, openInterest: 100 }),
+    ];
+    const [pair] = findDexArbPairs(assets);
+    expect(pair.viability).toBe("C");
+    expect(pair.minOiUsd).toBeGreaterThanOrEqual(10_000);
+    expect(pair.minOiUsd).toBeLessThan(100_000);
+  });
+
+  it("returns viability 'D' when minOiUsd < $10K (dust market — do not size into it)", () => {
+    // FOO at $10, OI 100 → $1K each → min = $1K → D
+    const assets: DexAsset[] = [
+      makeAsset({ raw: "dexA:FOO", base: "FOO", dex: "dexA", markPrice: 10, fundingRate: longF, openInterest: 100 }),
+      makeAsset({ raw: "dexB:FOO", base: "FOO", dex: "dexB", markPrice: 10, fundingRate: shortF, openInterest: 100 }),
+    ];
+    const [pair] = findDexArbPairs(assets);
+    expect(pair.viability).toBe("D");
+    expect(pair.minOiUsd).toBeLessThan(10_000);
+  });
+
+  it("derives minOiUsd from the SMALLER leg — large leg cannot rescue a dust counterparty", () => {
+    // Long leg $10M OI, short leg $5K OI → min = $5K → grade D (capped by smaller side)
+    const assets: DexAsset[] = [
+      makeAsset({ raw: "dexA:XYZ", base: "XYZ", dex: "dexA", markPrice: 100, fundingRate: longF, openInterest: 100_000 }), // $10M
+      makeAsset({ raw: "dexB:XYZ", base: "XYZ", dex: "dexB", markPrice: 100, fundingRate: shortF, openInterest: 50 }),     // $5K
+    ];
+    const [pair] = findDexArbPairs(assets);
+    expect(pair.viability).toBe("D");
+    expect(pair.minOiUsd).toBeCloseTo(5_000, 0);
+  });
+
+  it("derives minVolume24hUsd from the smaller leg (same min-leg rule as OI)", () => {
+    const assets: DexAsset[] = [
+      makeAsset({ raw: "dexA:NN", base: "NN", dex: "dexA", markPrice: 100, fundingRate: longF, volume24h: 1_000_000 }),
+      makeAsset({ raw: "dexB:NN", base: "NN", dex: "dexB", markPrice: 100, fundingRate: shortF, volume24h: 50_000 }),
+    ];
+    const [pair] = findDexArbPairs(assets);
+    expect(pair.minVolume24hUsd).toBe(50_000);
+  });
+});
