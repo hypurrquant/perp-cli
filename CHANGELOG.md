@@ -4,7 +4,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
-QA cycle `qa/2026-05-16-numeric-audit-test-followup` — 21 commits closing test-coverage gaps from the v0.13.0 / numeric-validation-audit cycles, adding a shared NaN/empty-string guard helper across all 4 adapters, and surfacing the missing `liquidationPrice` in `perp portfolio`. **Verified end-to-end against mainnet** (60 read-only CLI commands inside `perp-qa` Docker container, 4 DEX, zero false positives). Full QA report: `docs/qa-reports/2026-05-16-numeric-audit-test-followup.md`.
+QA cycle `qa/2026-05-16-numeric-audit-test-followup` — 34 commits. The first numeric-validation block closes test-coverage gaps from the v0.13.0 / numeric-validation-audit cycles, adds a shared NaN/empty-string guard helper across all 4 adapters, and surfaces the missing `liquidationPrice` in `perp portfolio`; **verified end-to-end against mainnet** (60 read-only CLI commands inside `perp-qa` Docker container, 4 DEX, zero false positives). Later commits add sizing / utils / Lighter coverage, fix two latent arb-sizing / `symbolMatch` defects surfaced while adding those guards, and stop an abort-listener leak in the polling loops (these are unit + `tsc` verified, not part of the 60-command live run). Full QA report: `docs/qa-reports/2026-05-16-numeric-audit-test-followup.md`.
 
 ### Added
 - **`parseFiniteVenueNumber()` shared helper** in `src/utils/numeric.ts` — consolidates the venue-payload coercion contract (undefined/null → default 0, `""`/NaN/±Infinity/non-numeric → throw `EXCHANGE_ERROR` tagged with `structured.details.exchange`). Replaces `LighterAdapter._toFiniteNumber` (removed) and is now used by all 4 adapters in `getBalance` / `getPositions`.
@@ -23,11 +23,15 @@ QA cycle `qa/2026-05-16-numeric-audit-test-followup` — 21 commits closing test
 - **`outcome book.time` empty-string + non-finite** (`src/exchanges/hyperliquid-outcome.ts:439-457`). Pre-fix `Number("") === 0` or `Number("abc") = NaN` was silently masked as a 1970-epoch timestamp; now throws `EXCHANGE_ERROR` for both. Includes a TypeScript type-narrowing fix (`book.time as unknown`) so the runtime guard compiles under `tsconfig strict`.
 - **`event-stream` non-finite mark / liq / balance** (`src/event-stream.ts:131-136, 201-203`). Pre-fix a NaN/`""` mark price silently failed the `> 0` distance check and suppressed `liquidation_warning` / `margin_call` events. Now logs to stderr and skips the affected branch instead of laundering corruption as "no alert".
 - **`rebalance` non-finite balance partial-result** (`src/rebalance.ts:51-77`). `fetchAllBalances` now rejects the affected adapter's `Promise.allSettled` branch on NaN/`""` so the plan never sums corrupt inputs. User sees a partial result instead of a phantom $0 balance.
+- **arb sizing round-up could emit a venue-rejectable size** (`src/arb/sizing.ts`, `computeMatchedSize` / `computeSpotPerpMatchedSize`). The round-up fallback checked only the 20% overshoot bound, so a `ceil` size that was still below the venue `minNotional` was returned and then rejected by the venue. Now also requires `notionalUp >= minNotional` — SSOT Rule #2: fail with `null` rather than emit a size the venue will reject. Surfaced while adding the b420788 coverage guards.
+- **`symbolMatch` was one-directional** (`src/utils.ts`). A user typing `BTC-PERP` against a venue position reported as `BTC` failed to match (only `candidate → target` was normalized). Now strips a trailing `-PERP` from **both** sides before comparing, so match no longer depends on which side carries the suffix.
+- **abort-listener leak in polling loops** (`src/event-stream.ts`, `src/commands/history.ts`). `startEventStream()` and the `history track` PnL loop attached a fresh `abort` listener to a long-lived `AbortSignal` every iteration but relied only on `{ once: true }` to clean it up — which fires on abort, never on the timer branch that wins each normal cycle. Listeners leaked for the stream's lifetime and Node emitted `MaxListenersExceededWarning` past 10 cycles. The timer branch now detaches its listener so each iteration leaves the signal clean.
 
 ### Test
-- **Unit suite**: 1400 → **1470 passed** (+70 across 80 files).
-- **Integration suite**: +7 new OWS-vault cases (`pnpm test:integration`).
+- **Unit suite**: 1400 → **1526 passed** (+126 across 81 files).
+- **Integration suite**: +7 new OWS-vault cases (`pnpm test:integration`). Two pre-existing bridge suites fail in this environment, unrelated to this cycle — see "Outstanding" below.
 - **New venue-payload coverage**: 50 dedicated cases across `numeric.test.ts` (11), `hyperliquid-toFinite.test.ts` (16, incl. supplementary `unified` / `portfolio` mode guards), `aster-toFinite.test.ts` (7), `pacifica-toFinite.test.ts` (7), `cross-adapter-envelope.test.ts` (9).
+- **Additional coverage**: +36 sizing / utils / dex-asset-map regression guards (`arb-sizing.test.ts`, `utils.test.ts`, `dex-asset-map.test.ts`); +17 Lighter pure-surface units (`lighter-adapter.test.ts` — `getMarketIndex` / `toTicks` / signer-tier resolution, lifting `lighter.ts` line coverage 5.09% → ~10.5%); +1 abort-listener leak guard (`event-stream.test.ts`).
 
 ### Verified live (qa/2026-05-16 Docker QA, 4 DEX)
 - **Phase A** — container parity: 1469 unit + 7 integration pass identically to host build.
@@ -37,7 +41,10 @@ QA cycle `qa/2026-05-16-numeric-audit-test-followup` — 21 commits closing test
 - **Cross-validation**: BTC mark price across 4 DEX agreed to within 0.032% (max-min spread $25 on $77.9k); Lighter SKHYNIXUSD position shape identical across `portfolio`, `account positions`, `account margin` (single source of truth in adapter).
 
 ### Outstanding (P1, deferred to next cycle)
-- `src/event-stream.ts:startEventStream()` is **dead code** — production grep shows no callers; only `src/position-history.ts:8` imports the `StreamEvent` type. The 5 new venue-guard unit tests remain valid as defensive contracts but the runtime path is unreachable from the current CLI. Three handling options recorded in the QA report (keep / remove / re-add `perp events --tail` CLI). No action taken; awaits user direction.
+- `src/event-stream.ts:startEventStream()` is **dead code** — production grep shows no callers; only `src/position-history.ts:8` imports the `StreamEvent` type. The venue-guard unit tests remain valid as defensive contracts but the runtime path is unreachable from the current CLI. Three handling options recorded in the QA report (keep / remove / re-add `perp events --tail` CLI). No action taken on the dead-code question; awaits user direction. (Its polling-loop abort-listener leak was still fixed this cycle — see Fixed — because the test suite drives the function directly.)
+- **Two pre-existing bridge integration suites fail locally, unrelated to this cycle** (neither file touched since 2026-03; both independent of the numeric / listener work). Test-hygiene issues, not product defects:
+  - `bridge.integration.test.ts > "CCTP same-chain doesn't throw"` — the `edge cases (offline)` block actually calls `getCctpQuote → fetch(CCTP_FEE_API/3/3)`; Circle's API now returns **HTTP 400** for same-chain (domain 3→3). `bridge-engine.ts` correctly throws (Rule #2, no hardcoded fee fallback) — the test's expectation depends on the external API tolerating same-chain and is stale; the block is also mislabeled "offline".
+  - `bridge-strict.integration.test.ts` — `beforeAll` throws `Missing 'pk' / 'HL_PRIVATE_KEY' in .env`; all 98 cases skip but the file is marked failed. Expected when mainnet keys are absent (Section 7 forbids storing PKs on the host); a `describe.skipIf` guard would report this as skipped rather than failed.
 
 ## [0.13.0] — 2026-05-03
 
