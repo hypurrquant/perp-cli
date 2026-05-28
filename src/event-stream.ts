@@ -267,8 +267,18 @@ export async function startEventStream(
   // Polling loop
   while (!opts.signal?.aborted) {
     await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, intervalMs);
-      opts.signal?.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+      const signal = opts.signal;
+      let timer: ReturnType<typeof setTimeout>;
+      const onAbort = () => { clearTimeout(timer); resolve(); };
+      // When the timer wins the race, remove the abort listener so it does not
+      // accumulate on the (long-lived) signal across polling iterations.
+      // When abort wins, { once: true } removes it. Either way the signal is
+      // left with zero listeners from this iteration — no MaxListeners leak.
+      timer = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, intervalMs);
+      signal?.addEventListener("abort", onAbort, { once: true });
     });
     if (opts.signal?.aborted) break;
     await poll();

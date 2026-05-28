@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { getEventListeners } from "node:events";
 import { startEventStream, type StreamEvent } from "../event-stream.js";
 
 function mockAdapter(overrides?: Record<string, any>) {
@@ -505,5 +506,44 @@ describe("startEventStream — error handling", () => {
     const errors = events.filter(e => e.type === "error");
     expect(errors.length).toBeGreaterThanOrEqual(1);
     expect(errors[0].data.message).toContain("API unreachable");
+  });
+});
+
+describe("startEventStream — abort listener lifecycle (MaxListeners leak guard)", () => {
+  // Regression guard for the qa/2026-05-16 fix in the polling loop. Pre-fix the
+  // loop attached a fresh `abort` listener to the (long-lived) signal every
+  // iteration but relied solely on { once: true } to clean it up — which fires
+  // only on abort, never on the timer branch that wins every normal cycle. By
+  // cycle 11 Node emitted "MaxListenersExceededWarning: 11 abort listeners
+  // added to [AbortSignal]" and the listeners leaked for the lifetime of the
+  // stream. The fix detaches the listener in the timer branch, so at any
+  // sampling point at most one is attached.
+  it("does not accumulate abort listeners across many polling cycles", async () => {
+    const controller = new AbortController();
+    let maxObserved = 0;
+    let pollCount = 0;
+
+    const adapter = mockAdapter({
+      getPositions: vi.fn().mockImplementation(async () => {
+        pollCount++;
+        const n = getEventListeners(controller.signal, "abort").length;
+        if (n > maxObserved) maxObserved = n;
+        // Run well past Node's default MaxListeners=10 so a leak is unmissable.
+        if (pollCount >= 15) controller.abort();
+        return [];
+      }),
+    });
+
+    await startEventStream(adapter, {
+      intervalMs: 1,
+      onEvent: () => {},
+      signal: controller.signal,
+    });
+
+    // Pre-fix: ~14 listeners observed by cycle 15 (and a console warning at 11).
+    // Post-fix: the timer branch detaches its listener each cycle, so the signal
+    // never carries more than the single in-flight one between samples.
+    expect(pollCount).toBeGreaterThanOrEqual(15);
+    expect(maxObserved).toBeLessThanOrEqual(1);
   });
 });

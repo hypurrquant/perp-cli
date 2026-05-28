@@ -1050,8 +1050,15 @@ function registerPnlSubcommands(
 
       while (!controller.signal.aborted) {
         await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, intervalMs);
-          controller.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+          let timer: ReturnType<typeof setTimeout>;
+          const onAbort = () => { clearTimeout(timer); resolve(); };
+          // Remove the listener when the timer wins so it does not pile up on
+          // the controller's signal every snapshot interval (MaxListeners leak).
+          timer = setTimeout(() => {
+            controller.signal.removeEventListener("abort", onAbort);
+            resolve();
+          }, intervalMs);
+          controller.signal.addEventListener("abort", onAbort, { once: true });
         });
         if (controller.signal.aborted) break;
 
