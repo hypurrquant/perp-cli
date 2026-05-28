@@ -187,3 +187,75 @@ QA 중 발견 — 이번 사이클의 ed533cb + bbc7819 가 가드한 `src/event
 이번 사이클의 핵심 위험 (어댑터 read-path 거동 변경이 정상 mainnet 데이터에서 false-positive 발생) 은 **Phase B 15 + Phase E 45 = 총 60개 라이브 매트릭스 전부 통과로 해소**. 1469 unit + 7 integration test 도 모두 green. 머지 가능 상태.
 
 추가 P1 finding (event-stream dead code) 는 사이클 무관한 별도 cleanup item — 작업 흐름에 영향 없음.
+
+---
+
+## Phase F — test-followup 후속 (2026-05-29)
+
+> 2026-05-16 사이클과 동일 브랜치에서 이어진 후속 QA. 위 Phase A–E (60-command
+> live matrix) 는 numeric-guard 묶음(~`a70ebfb`) 검증분이고, 본 Phase F 는 그
+> 이후 누적된 커밋(`b420788` / `9918594` / `f1c5302`)의 재검증과 신규 결함 1건의
+> 수정·푸시를 다룬다. 베이스 `dcae870`, 추가 커밋 `70dd5b7`(fix) / `327c6f1`(docs).
+
+### F-1. abort-listener 누수 (신규 발견 → 수정, P0)
+
+**발견 경위**: 전체 unit suite 실행 시 stderr 에
+`MaxListenersExceededWarning: 11 abort listeners added to [AbortSignal]` 출력.
+`event-stream.test.ts` 단독 실행으로 출처 확정.
+
+**근본 원인**: `startEventStream()`(`event-stream.ts`) 와 `history track` PnL
+loop(`history.ts`) 의 polling while-loop 가 매 iteration 마다
+`signal.addEventListener("abort", …, { once: true })` 를 추가. `{ once: true }`
+는 abort *발생 시에만* listener 를 제거하는데, 정상 흐름은 timer 가 먼저
+resolve 되므로 listener 가 영구 누적. Node EventTarget 기본 MaxListeners=10 →
+11번째에서 경고. long-running stream/tracker 에서 실질 메모리 누수.
+
+**수정**(`70dd5b7`): timer 분기에서 `removeEventListener` 로 정리 → 각 iteration
+이 signal 을 listener 0 으로 남김. abort 분기는 `{ once: true }` 가 정리.
+`startEventStream` 은 dead code 이나 테스트가 직접 호출하므로 함께 수정;
+`history track` 은 production-reachable CLI.
+
+**회귀 가드(P0)**: `event-stream.test.ts` 에 `getEventListeners(signal,"abort")`
+를 15 cycle 동안 샘플링해 최대 1개만 붙는지 검증(pre-fix ~14 관측). fix 후
+경고 소멸 + 가드 통과.
+
+**Live↔unit cross-validation**: 이 결함은 Node EventTarget 의 실제 listener
+count 를 unit 에서 직접 측정하므로 **unit 가드 = 실동작 검증**. 별도 live 재현
+불요 (`perp history track` 은 foreground 무한 loop 라 Docker live 부적합).
+
+### F-2. arb-sizing / symbolMatch 잠재결함 (`9918594` — 호출처 회귀분석)
+
+`b420788` 커버리지 추가 중 표면화돼 `9918594` 에서 수정된 2건을 호출처
+회귀분석으로 재검증:
+- `computeMatchedSize` / `computeSpotPerpMatchedSize` round-up 분기가
+  `minNotional` 미달 size 를 반환할 수 있던 문제 → `notionalUp >= minNotional`
+  재확인 추가(SSOT Rule #2). 호출처 6곳 모두 기존에 `null` 핸들링 보유 → 회귀
+  없음.
+- `symbolMatch` 단방향 → 양방향 `-PERP` strip. 호출처 13곳 모두
+  `symbolMatch(venueSymbol, userInput)` 순서로 일관. `false→true` 전환만 발생
+  (동일 base perp), false-positive 없음. spot 은 `BTC/USDC` 형태라 strip 무관.
+
+### F-3. bridge integration 2건 실패 (pre-existing, 사람 검토 필요)
+
+`pnpm test:integration` → 166 passed / 1 failed / 174 skipped, **2 failed files**.
+둘 다 2026-03 이후 미변경이며 numeric/listener 작업과 무관:
+- `bridge.integration.test.ts > "CCTP same-chain doesn't throw"`: `edge cases
+  (offline)` 블록이 실제로는 `getCctpQuote → fetch(CCTP_FEE_API/3/3)` 호출 →
+  Circle API 가 same-chain(domain 3→3)에 **HTTP 400**. `bridge-engine.ts` 는
+  Rule #2 대로 throw(정상); 테스트 기대가 외부 API 관대함에 의존(stale) + 블록
+  라벨이 "offline" 인데 실제 네트워크 호출.
+- `bridge-strict.integration.test.ts`: `beforeAll`(line 65) 이 `.env` 의
+  `pk`/`HL_PRIVATE_KEY` 요구 → 호스트에 mainnet PK 없어서 throw(Section 7 준수).
+  98 cases skip 인데 파일은 failed 표시. `describe.skipIf` 가드면 skipped 로
+  표시될 것.
+
+### F-4. 검증 결과
+
+| 항목 | 결과 |
+|------|------|
+| `pnpm build` (tsc) | exit 0 |
+| `pnpm test` (unit) | **1526 passed / 81 files / 0 failed** (이번 세션 1525→1526; 사이클 전체 1400→1526) |
+| `MaxListenersExceededWarning` | fix 후 **소멸** |
+| `pnpm test:integration` | 166 passed / 1 failed(외부 CCTP) / 174 skipped — bridge 2건 pre-existing |
+| pre-push hook (tsc) | ✅ Build OK |
+| CHANGELOG `[Unreleased]` | 실제 상태로 동기화 (`327c6f1`) |
