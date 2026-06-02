@@ -16,6 +16,10 @@ vi.mock("../../client-id-tracker.js", () => ({
 }));
 
 vi.mock("../../trade-validator.js", () => ({
+  // enforceOrderRisk is the manual-order risk gate; stub it to a no-op pass so
+  // these command-mapping tests exercise the order path without the risk fetch.
+  // The gate itself is covered by enforce-order-risk.test.ts.
+  enforceOrderRisk: vi.fn().mockResolvedValue(undefined),
   validateTrade: vi.fn().mockResolvedValue({
     valid: true,
     checks: [],

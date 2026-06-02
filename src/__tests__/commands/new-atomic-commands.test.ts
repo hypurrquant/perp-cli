@@ -18,6 +18,7 @@ vi.mock("../../client-id-tracker.js", () => ({
 }));
 
 vi.mock("../../trade-validator.js", () => ({
+  enforceOrderRisk: vi.fn().mockResolvedValue(undefined),
   validateTrade: vi.fn().mockResolvedValue({
     valid: true,
     checks: [],

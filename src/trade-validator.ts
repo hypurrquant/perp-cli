@@ -282,3 +282,64 @@ export async function validateTrade(
     timestamp: new Date().toISOString(),
   };
 }
+
+/**
+ * Hard pre-trade risk gate for manual order commands.
+ *
+ * Unlike validateTrade (which is advisory — used by `trade check` and the MCP
+ * preview), this is meant to run immediately before submitting a real order.
+ * It throws RISK_VIOLATION when the order would breach the locally configured
+ * limits (maxPositionUsd / maxTotalExposureUsd / maxPositions, plus any active
+ * critical violation that suspends trading). reduce-only and --force orders are
+ * exempt, so position-reducing and intentional-override flows are never blocked.
+ *
+ * Leverage is only checked when the caller passes an explicit value; the bare
+ * buy/sell/market/limit commands carry no leverage argument, so the gate there
+ * enforces notional/exposure rather than per-order leverage.
+ */
+export async function enforceOrderRisk(
+  adapter: ExchangeAdapter,
+  p: { symbol: string; size: number; price?: number; leverage?: number; reduceOnly?: boolean; force?: boolean },
+): Promise<void> {
+  if (p.reduceOnly || p.force) return;
+
+  const { loadRiskLimits, assessRisk, preTradeCheck } = await import("./risk.js");
+  const limits = loadRiskLimits();
+
+  // Resolve notional: limit orders carry a price; market orders need markPrice.
+  let price = p.price;
+  if (price == null || !Number.isFinite(price)) {
+    const markets = await adapter.getMarkets();
+    const m = markets.find((mk) => symbolMatch(mk.symbol, p.symbol));
+    if (!m) {
+      throw new PerpError("SYMBOL_NOT_FOUND", `${p.symbol} not found on ${adapter.name}`, { exchange: adapter.name });
+    }
+    price = Number(m.markPrice);
+  }
+  // SSOT rule #2: if the notional cannot be computed we cannot enforce the
+  // limit — fail closed (the caller may pass --force) rather than wave it
+  // through with a silent zero notional that bypasses the position cap.
+  if (!Number.isFinite(price) || (price as number) <= 0) {
+    throw new PerpError("PRICE_STALE", `Cannot resolve a mark price for ${p.symbol} on ${adapter.name} to check risk limits`, {
+      exchange: adapter.name,
+      remediation: "Retry, or pass --force to skip the local risk check.",
+    });
+  }
+
+  const notional = Math.abs(p.size * (price as number));
+  const [balance, positions] = await Promise.all([adapter.getBalance(), adapter.getPositions()]);
+  const assessment = assessRisk(
+    [{ exchange: adapter.name, balance }],
+    positions.map((pos) => ({ exchange: adapter.name, position: pos })),
+    limits,
+  );
+
+  const check = preTradeCheck(assessment, notional, p.leverage ?? 0);
+  if (!check.allowed) {
+    throw new PerpError("RISK_VIOLATION", check.reason ?? "Order blocked by local risk limits", {
+      exchange: adapter.name,
+      remediation: "Adjust limits with `perp risk set ...`, reduce the order size, or pass --force to override.",
+      details: { symbol: p.symbol, notional },
+    });
+  }
+}

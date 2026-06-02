@@ -3,7 +3,7 @@ import type { ExchangeAdapter } from "../exchanges/index.js";
 import { printJson, errorAndExit, withJsonErrors, jsonOk, jsonError, symbolMatch, formatUsd } from "../utils.js";
 import { extractErrorMessage } from "../errors.js";
 import { logExecution } from "../execution-log.js";
-import { validateTrade } from "../trade-validator.js";
+import { validateTrade, enforceOrderRisk } from "../trade-validator.js";
 import { generateClientId, logClientId, isOrderDuplicate } from "../client-id-tracker.js";
 import { smartOrder } from "../smart-order.js";
 import chalk from "chalk";
@@ -56,7 +56,8 @@ export function registerTradeCommands(
     .option("--max-slippage <pct>", "Max slippage per split slice (%)", "0.3")
     .option("--client-id <id>", "Client order ID for idempotent tracking")
     .option("--auto-id", "Auto-generate a client order ID")
-    .action(async (symbol: string, side: string, size: string, opts: { slippage: string; reduceOnly?: boolean; smart?: boolean; split?: boolean; maxSlippage?: string; clientId?: string; autoId?: boolean }) => {
+    .option("--force", "Bypass local risk-limit checks (maxPosition / total exposure)")
+    .action(async (symbol: string, side: string, size: string, opts: { slippage: string; reduceOnly?: boolean; smart?: boolean; split?: boolean; maxSlippage?: string; clientId?: string; autoId?: boolean; force?: boolean }) => {
       const s = side.toLowerCase();
       if (s !== "buy" && s !== "sell") errorAndExit("Side must be buy or sell");
       const sym = symbol.toUpperCase();
@@ -96,6 +97,8 @@ export function registerTradeCommands(
       const adapter = await getAdapter();
 
       if (dryRunGuard("market_order", { exchange: adapter.name, symbol: sym, side: s, size, smart: !!opts.smart })) return;
+
+      await enforceOrderRisk(adapter, { symbol: sym, size: parseFloat(size), reduceOnly: opts.reduceOnly, force: opts.force });
 
       if (clientId) {
         logClientId({
@@ -149,7 +152,8 @@ export function registerTradeCommands(
     .option("--smart", "Smart execution: IOC limit at best ask + 1 tick")
     .option("--client-id <id>", "Client order ID")
     .option("--auto-id", "Auto-generate client order ID")
-    .action(async (symbol: string, size: string, opts: { slippage: string; reduceOnly?: boolean; smart?: boolean; clientId?: string; autoId?: boolean }) => {
+    .option("--force", "Bypass local risk-limit checks (maxPosition / total exposure)")
+    .action(async (symbol: string, size: string, opts: { slippage: string; reduceOnly?: boolean; smart?: boolean; clientId?: string; autoId?: boolean; force?: boolean }) => {
       const clientId = opts.autoId ? generateClientId() : opts.clientId;
       if (clientId && isOrderDuplicate(clientId)) {
         if (isJson()) return printJson(jsonOk({ duplicate: true, clientOrderId: clientId, message: "Order already submitted" }));
@@ -158,6 +162,7 @@ export function registerTradeCommands(
       }
       const adapter = await getAdapter();
       if (dryRunGuard("market_order", { exchange: adapter.name, symbol: symbol.toUpperCase(), side: "buy", size, smart: !!opts.smart })) return;
+      await enforceOrderRisk(adapter, { symbol: symbol.toUpperCase(), size: parseFloat(size), reduceOnly: opts.reduceOnly, force: opts.force });
       let result: unknown;
       try {
         if (opts.smart) {
@@ -183,7 +188,8 @@ export function registerTradeCommands(
     .option("--smart", "Smart execution: IOC limit at best bid - 1 tick")
     .option("--client-id <id>", "Client order ID")
     .option("--auto-id", "Auto-generate client order ID")
-    .action(async (symbol: string, size: string, opts: { slippage: string; reduceOnly?: boolean; smart?: boolean; clientId?: string; autoId?: boolean }) => {
+    .option("--force", "Bypass local risk-limit checks (maxPosition / total exposure)")
+    .action(async (symbol: string, size: string, opts: { slippage: string; reduceOnly?: boolean; smart?: boolean; clientId?: string; autoId?: boolean; force?: boolean }) => {
       const clientId = opts.autoId ? generateClientId() : opts.clientId;
       if (clientId && isOrderDuplicate(clientId)) {
         if (isJson()) return printJson(jsonOk({ duplicate: true, clientOrderId: clientId, message: "Order already submitted" }));
@@ -192,6 +198,7 @@ export function registerTradeCommands(
       }
       const adapter = await getAdapter();
       if (dryRunGuard("market_order", { exchange: adapter.name, symbol: symbol.toUpperCase(), side: "sell", size, smart: !!opts.smart })) return;
+      await enforceOrderRisk(adapter, { symbol: symbol.toUpperCase(), size: parseFloat(size), reduceOnly: opts.reduceOnly, force: opts.force });
       let result: unknown;
       try {
         if (opts.smart) {
@@ -261,7 +268,8 @@ export function registerTradeCommands(
     .option("--reduce-only", "Reduce only order")
     .option("--client-id <id>", "Client order ID for idempotent tracking")
     .option("--auto-id", "Auto-generate a client order ID")
-    .action(async (symbol: string, side: string, price: string, size: string, opts: { tif: string; reduceOnly?: boolean; clientId?: string; autoId?: boolean }) => {
+    .option("--force", "Bypass local risk-limit checks (maxPosition / total exposure)")
+    .action(async (symbol: string, side: string, price: string, size: string, opts: { tif: string; reduceOnly?: boolean; clientId?: string; autoId?: boolean; force?: boolean }) => {
       const s = side.toLowerCase();
       if (s !== "buy" && s !== "sell") errorAndExit("Side must be buy or sell");
 
@@ -276,6 +284,8 @@ export function registerTradeCommands(
       const adapter = await getAdapter();
 
       if (dryRunGuard("limit_order", { exchange: adapter.name, symbol: symbol.toUpperCase(), side: s, size, price })) return;
+
+      await enforceOrderRisk(adapter, { symbol: symbol.toUpperCase(), size: parseFloat(size), price: parseFloat(price), reduceOnly: opts.reduceOnly, force: opts.force });
 
       if (clientId) {
         logClientId({

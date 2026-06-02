@@ -10,6 +10,14 @@ vi.mock("../../client-id-tracker.js", () => ({
   logClientId: vi.fn(),
   isOrderDuplicate: vi.fn().mockReturnValue(false),
 }));
+// The manual-order risk gate is orthogonal to dry-run gating; stub it to a
+// no-op pass so the live-order (dry-run OFF) cases reach marketOrder without
+// the gate's getMarkets/getBalance/getPositions fetch. The gate has its own
+// coverage in enforce-order-risk.test.ts.
+vi.mock("../../trade-validator.js", () => ({
+  enforceOrderRisk: vi.fn().mockResolvedValue(undefined),
+  validateTrade: vi.fn().mockResolvedValue({ valid: true, checks: [], warnings: [], timestamp: "" }),
+}));
 
 import { Command } from "commander";
 import { registerTradeCommands } from "../../commands/trade.js";
