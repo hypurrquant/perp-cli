@@ -207,6 +207,14 @@ perp --json -e hl trade sell BTC 0.01             # shorthand
 perp --json -e hl trade buy BTC 0.01 --smart      # IOC limit at best ask (less slippage)
 ```
 
+> **Risk gate:** `trade market/buy/sell/limit` enforce the local risk limits in
+> `~/.perp/risk.json` (`maxPositionUsd` / `maxTotalExposureUsd` / `maxPositions`).
+> An order that would breach them fails with `RISK_VIOLATION` in **both `--json`
+> and TTY modes** — handle it like any other structured error. Pass `--force` to
+> override, or `perp risk set ...` to raise the limit; `reduce-only` orders are
+> always exempt. Defaults are loose (`maxPositionUsd` 100000), so most orders are
+> unaffected until tightened.
+
 ### Split Orders (orderbook-aware, for large orders)
 ```bash
 perp --json -e hl trade split BTC buy 5000        # split $5000 into depth-based slices

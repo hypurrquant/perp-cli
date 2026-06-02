@@ -259,3 +259,47 @@ count 를 unit 에서 직접 측정하므로 **unit 가드 = 실동작 검증**.
 | `pnpm test:integration` | 166 passed / 1 failed(외부 CCTP) / 174 skipped — bridge 2건 pre-existing |
 | pre-push hook (tsc) | ✅ Build OK |
 | CHANGELOG `[Unreleased]` | 실제 상태로 동기화 (`327c6f1`) |
+
+---
+
+## Phase G — risk-control audit + 수동 주문 risk 강제 (2026-06-02)
+
+사용자 질문 "격리 계정 / 자산 한도 / 레버리지 제한 / 출금 제한 / 실시간 모니터링 —
+잘 되어 있나"에서 출발한 5개 안전장치 코드 audit + 발견된 최우선 갭 수정.
+
+### G-1. Audit 결과 (5개 안전장치)
+
+| 항목 | 상태 | 근거 |
+|------|------|------|
+| 격리된 계정 | ✅ | agent wallet 키 권한 격리, `canWithdraw` 기본 off (`commands/agent.ts:333`) |
+| 자산 한도 | ⚠️→✅ | `risk.ts` 한도 정의 + 자동매매 cap 존재. **수동 주문 미강제가 최대 갭 → 본 Phase에서 수정** |
+| 레버리지 제한 | ⚠️ | `preTradeCheck` block 로직 존재하나 진입 명령에 leverage 인자 없어 notional/exposure 위주 강제 |
+| 출금 제한 | ✅ | `perp-guardrail` OWS Policy Engine — per-tx/daily 출금 한도 + fail-closed (`perp-guardrail.ts:92`) |
+| 실시간 모니터링 | ⚠️ | `perp risk` / `history track` / bot daily-loss는 작동; 상시 push 경보(`event-stream`)는 dead code |
+
+핵심 갭: **수동 주문(`trade market/buy/sell/limit`)이 `adapter.marketOrder/limitOrder`를
+직접 호출해 `~/.perp/risk.json` 한도를 우회**. risk 강제는 자동매매(cross-chain-margin)와
+advisory `trade check`에만 존재했음.
+
+### G-2. 수정 (`3c06dcc` / `630d746` / `19809d7`)
+
+- `enforceOrderRisk()`(`trade-validator.ts`) — dry-run 가드 직후 4개 진입 명령에서 호출.
+  notional(limit price 또는 markPrice) → `assessRisk` → `preTradeCheck` → 위반 시
+  `RISK_VIOLATION` + remediation throw. `reduce-only`/`--force` 면제, **JSON 모드 동일 강제(fail-safe)**.
+- `--force` 플래그 신규 (의도적 우회).
+- `DEFAULT_LIMITS` 주석을 relaxed 100k 의도에 정합 (behavior 불변).
+- `agent-operations.md`에 risk-gate 노트 추가 (에이전트가 `RISK_VIOLATION` 인지하도록).
+
+### G-3. 테스트 영향 & 검증
+
+- 회귀 가드 9 cases(`enforce-order-risk.test.ts`): skip(reduce-only/force), 차단(maxPosition/exposure),
+  markPrice 조회, PRICE_STALE fail-closed, remediation 힌트.
+- enforce 추가가 기존 단위 테스트 24개를 깨뜨림 — 원인은 **테스트 mock이 신규 `enforceOrderRisk`
+  export를 누락**(risk 차단이 아니라 `undefined` 호출). 4개 test 파일 mock에 no-op stub 추가로 복구.
+- 최종: `pnpm build` exit 0, `pnpm test` **1526 → 1535 passed / 82 files / 0 failed**.
+
+### G-4. 남은 갭 (사람 검토 / 후속)
+
+- **진입 명령에 leverage 인자 부재** → 직접 leverage 차단 미적용 (거래소 자체 maxLeverage만 작동).
+- **`twap`/`scale-in`/`multi`/`split`/`stop`/`tpsl` 미적용** — 1차는 핵심 4개. 후속 확장 대상.
+- **실시간 청산 push 경보 부재** — `event-stream` dead code (Phase F-1 / Outstanding 참조). CLI 재노출 시 활성.
