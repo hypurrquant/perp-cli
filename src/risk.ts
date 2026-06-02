@@ -5,13 +5,13 @@ import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "./excha
 // ── Risk Configuration ──
 
 export interface RiskLimits {
-  maxDrawdownUsd: number;       // close all if uPnL below this (default 500)
-  maxPositionUsd: number;       // max single position notional (default 5000)
-  maxTotalExposureUsd: number;  // max total notional across all positions (default 20000)
-  dailyLossLimitUsd: number;    // stop trading if daily realized loss exceeds this (default 200)
-  maxPositions: number;         // max number of simultaneous positions (default 10)
-  maxLeverage: number;          // max leverage per position (default 20)
-  maxMarginUtilization: number; // max margin/equity ratio % (default 80)
+  maxDrawdownUsd: number;       // close all if uPnL below this (default 100000)
+  maxPositionUsd: number;       // max single position notional (default 100000)
+  maxTotalExposureUsd: number;  // max total notional across all positions (default 500000)
+  dailyLossLimitUsd: number;    // daily realized-loss stop — enforced by the bot engine, NOT by assessRisk/preTradeCheck (default 50000)
+  maxPositions: number;         // max number of simultaneous positions (default 50)
+  maxLeverage: number;          // max leverage per position (default 50)
+  maxMarginUtilization: number; // max margin/equity ratio % (default 95)
   minLiquidationDistance: number; // min % distance from liquidation price (default 5)
   // Percentage-based limits (% of total equity). When both USD and % are set, the stricter one applies.
   maxDrawdownPct?: number;      // max drawdown as % of equity (default: 10)
@@ -20,6 +20,10 @@ export interface RiskLimits {
   dailyLossPct?: number;        // daily loss limit as % of equity (default: none)
 }
 
+// Loose defaults by design (b8d0c56 "relaxed risk defaults") — a backstop, not
+// a tight policy. Tighten per-account with `perp risk set ...` (persisted to
+// ~/.perp/risk.json). enforceOrderRisk() applies these to manual orders;
+// cross-chain-margin applies them to auto-trading position sizing.
 const DEFAULT_LIMITS: RiskLimits = {
   maxDrawdownUsd: 100000,
   maxPositionUsd: 100000,
