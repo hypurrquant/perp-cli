@@ -17,6 +17,7 @@ async function buildAdapter() {
   const createStopOrder = vi.fn().mockResolvedValue({ ok: true });
   (pac as unknown as { client: { createStopOrder: typeof createStopOrder } }).client = {
     createStopOrder,
+    setRequestAgentWallet: vi.fn(),
   } as never;
   return { pac, createStopOrder };
 }

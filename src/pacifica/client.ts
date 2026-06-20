@@ -44,6 +44,30 @@ export class PacificaClient {
   private baseUrl: string;
   private apiKey?: string;
   private builderCode: string;
+  /**
+   * Agent-wallet pubkey for the current request signer, set by the adapter when an
+   * agent wallet (not the master) is signing. When present, signed bodies carry the
+   * `agent_wallet` field (with account = master) so Pacifica verifies the signature
+   * against the agent key. Undefined for master/PK signers.
+   */
+  private requestAgentWallet?: string;
+
+  /** Attach (or clear) the agent wallet used for subsequent signed requests. */
+  setRequestAgentWallet(agentWallet?: string): void {
+    this.requestAgentWallet = agentWallet;
+  }
+
+  /** Build a signed POST body, attaching agent_wallet when an agent is the active signer. */
+  private async signedBody(
+    operationType: string,
+    payload: object,
+    account: string,
+    signMessage: SignMessageFn,
+  ): Promise<Record<string, unknown>> {
+    return this.requestAgentWallet
+      ? buildAgentSignedRequest(operationType, payload, account, this.requestAgentWallet, signMessage)
+      : buildSignedRequest(operationType, payload, account, signMessage);
+  }
 
   constructor(config: PacificaClientConfig = {}) {
     this.baseUrl =
@@ -229,7 +253,7 @@ export class PacificaClient {
     signMessage: SignMessageFn
   ): Promise<unknown> {
     const payload = this.addBuilderCode({ ...params });
-    const body = await buildSignedRequest("create_market_order", payload, account, signMessage);
+    const body = await this.signedBody("create_market_order", payload, account, signMessage);
     return this.post("/orders/create_market", body);
   }
 
@@ -239,7 +263,7 @@ export class PacificaClient {
     signMessage: SignMessageFn
   ): Promise<unknown> {
     const payload = this.addBuilderCode({ ...params });
-    const body = await buildSignedRequest("create_order", payload, account, signMessage);
+    const body = await this.signedBody("create_order", payload, account, signMessage);
     return this.post("/orders/create", body);
   }
 
@@ -248,7 +272,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("create_stop_order", params, account, signMessage);
+    const body = await this.signedBody("create_stop_order", params, account, signMessage);
     return this.post("/orders/stop/create", body);
   }
 
@@ -257,7 +281,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("edit_order", params, account, signMessage);
+    const body = await this.signedBody("edit_order", params, account, signMessage);
     return this.post("/orders/edit", body);
   }
 
@@ -266,7 +290,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("cancel_order", params, account, signMessage);
+    const body = await this.signedBody("cancel_order", params, account, signMessage);
     return this.post("/orders/cancel", body);
   }
 
@@ -275,7 +299,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("cancel_all_orders", params, account, signMessage);
+    const body = await this.signedBody("cancel_all_orders", params, account, signMessage);
     return this.post("/orders/cancel_all", body);
   }
 
@@ -284,7 +308,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("cancel_stop_order", params, account, signMessage);
+    const body = await this.signedBody("cancel_stop_order", params, account, signMessage);
     return this.post("/orders/stop/cancel", body);
   }
 
@@ -294,7 +318,7 @@ export class PacificaClient {
     signMessage: SignMessageFn
   ): Promise<unknown> {
     const payload = this.addBuilderCode({ ...params });
-    const body = await buildSignedRequest("create_twap_order", payload, account, signMessage);
+    const body = await this.signedBody("create_twap_order", payload, account, signMessage);
     return this.post("/orders/twap/create", body);
   }
 
@@ -303,7 +327,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("cancel_twap_order", params, account, signMessage);
+    const body = await this.signedBody("cancel_twap_order", params, account, signMessage);
     return this.post("/orders/twap/cancel", body);
   }
 
@@ -312,7 +336,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("set_position_tpsl", params, account, signMessage);
+    const body = await this.signedBody("set_position_tpsl", params, account, signMessage);
     return this.post("/positions/tpsl", body);
   }
 
@@ -321,7 +345,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("update_leverage", params, account, signMessage);
+    const body = await this.signedBody("update_leverage", params, account, signMessage);
     return this.post("/account/leverage", body);
   }
 
@@ -330,7 +354,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("update_margin_mode", params, account, signMessage);
+    const body = await this.signedBody("update_margin_mode", params, account, signMessage);
     return this.post("/account/margin", body);
   }
 
@@ -339,7 +363,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("withdraw", params, account, signMessage);
+    const body = await this.signedBody("withdraw", params, account, signMessage);
     return this.post("/account/withdraw", body);
   }
 
@@ -351,7 +375,7 @@ export class PacificaClient {
     signMessage: SignMessageFn
   ): Promise<unknown> {
     // Step 1: Initiate
-    const initiateBody = await buildSignedRequest(
+    const initiateBody = await this.signedBody(
       "subaccount_initiate",
       { subaccount_name: subaccountName },
       account,
@@ -360,7 +384,7 @@ export class PacificaClient {
     await this.post("/account/subaccount/create", initiateBody);
 
     // Step 2: Confirm
-    const confirmBody = await buildSignedRequest(
+    const confirmBody = await this.signedBody(
       "subaccount_confirm",
       { subaccount_name: subaccountName },
       account,
@@ -373,7 +397,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("list_subaccounts", {}, account, signMessage);
+    const body = await this.signedBody("list_subaccounts", {}, account, signMessage);
     return this.post("/account/subaccount/list", body);
   }
 
@@ -382,7 +406,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("transfer_funds", params, account, signMessage);
+    const body = await this.signedBody("transfer_funds", params, account, signMessage);
     return this.post("/account/subaccount/transfer", body);
   }
 
@@ -393,7 +417,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest(
+    const body = await this.signedBody(
       "bind_agent_wallet",
       { agent_wallet: agentWallet },
       account,
@@ -406,7 +430,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("list_agent_wallets", {}, account, signMessage);
+    const body = await this.signedBody("list_agent_wallets", {}, account, signMessage);
     return this.post("/agent/list", body);
   }
 
@@ -415,7 +439,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest(
+    const body = await this.signedBody(
       "revoke_agent_wallet",
       { agent_wallet: agentWallet },
       account,
@@ -428,7 +452,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("revoke_all_agent_wallets", {}, account, signMessage);
+    const body = await this.signedBody("revoke_all_agent_wallets", {}, account, signMessage);
     return this.post("/agent/revoke_all", body);
   }
 
@@ -440,7 +464,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest(
+    const body = await this.signedBody(
       "create_api_key",
       { name, max_fee_rate: maxFeeRate },
       account,
@@ -453,7 +477,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("list_api_keys", {}, account, signMessage);
+    const body = await this.signedBody("list_api_keys", {}, account, signMessage);
     return this.post("/account/api_keys", body);
   }
 
@@ -462,7 +486,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest(
+    const body = await this.signedBody(
       "revoke_api_key",
       { api_key: apiKey },
       account,
@@ -478,7 +502,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("create_lake", params, account, signMessage);
+    const body = await this.signedBody("create_lake", params, account, signMessage);
     return this.post("/lake/create", body);
   }
 
@@ -487,7 +511,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("deposit_to_lake", params, account, signMessage);
+    const body = await this.signedBody("deposit_to_lake", params, account, signMessage);
     return this.post("/lake/deposit", body);
   }
 
@@ -496,7 +520,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("withdraw_from_lake", params, account, signMessage);
+    const body = await this.signedBody("withdraw_from_lake", params, account, signMessage);
     return this.post("/lake/withdraw", body);
   }
 
@@ -507,7 +531,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("approve_builder_code", params, account, signMessage);
+    const body = await this.signedBody("approve_builder_code", params, account, signMessage);
     return this.post("/account/builder_codes/approve", body);
   }
 
@@ -516,7 +540,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("revoke_builder_code", params, account, signMessage);
+    const body = await this.signedBody("revoke_builder_code", params, account, signMessage);
     return this.post("/account/builder_codes/revoke", body);
   }
 
@@ -529,7 +553,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("update_builder_code_fee_rate", params, account, signMessage);
+    const body = await this.signedBody("update_builder_code_fee_rate", params, account, signMessage);
     return this.post("/builder/update_fee_rate", body);
   }
 
@@ -552,7 +576,7 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await buildSignedRequest("claim_referral_code", params, account, signMessage);
+    const body = await this.signedBody("claim_referral_code", params, account, signMessage);
     return this.post("/referral/user/code/claim", body);
   }
 

@@ -54,7 +54,12 @@ export class PacificaAdapter implements ExchangeAdapter {
 
   private ensureSigner(): void {
     // Resolves across all tiers; throws PerpError if none available.
-    this._resolveSigner();
+    const r = this._resolveSigner();
+    // Sync the client's agent_wallet for the active tier. Agent-signed requests
+    // (account = master, signature = agent key) MUST carry agent_wallet, or
+    // Pacifica verifies the signature against the master key and rejects every
+    // order. Master/PK signers clear it so they self-sign as before.
+    this.client.setRequestAgentWallet(r.tier === "agent" ? r.address : undefined);
   }
 
   /**
