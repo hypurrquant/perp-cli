@@ -263,15 +263,6 @@ export class PacificaAdapter implements ExchangeAdapter {
       this._getPrices(),
     ]);
     const priceMap = new Map(prices.map((p) => [p.symbol, p]));
-    let levMap = new Map<string, number>();
-    try {
-      const settings = await this.client.getAccountSettings(this.account);
-      if (Array.isArray(settings)) {
-        levMap = new Map(settings.map((s) => [s.symbol, s.leverage]));
-      }
-    } catch {
-      // Settings API may not be available
-    }
 
     return positions.map((p) => {
       const mark = priceMap.get(p.symbol)?.mark ?? p.mark_price ?? "0";
@@ -287,6 +278,18 @@ export class PacificaAdapter implements ExchangeAdapter {
         upnl = (markNum - entry) * size * dir;
       }
 
+      // Leverage: /positions has no reliable leverage field (the spec omits it, and
+      // default-leverage positions are blank in /account/settings), so the old `?? 1`
+      // fabricated 1x for the common case. Prefer the API's leverage when present,
+      // else derive the effective leverage from the position's own margin
+      // (entry-notional / margin). This keeps the downstream
+      // marginRequired = notional / leverage consistent with the real margin. 1 is
+      // only a last resort for an effectively-empty position.
+      const marginNum = parseFiniteVenueNumber(p.margin ?? p.margin_used, "position.margin", "pacifica", { defaultValue: 0 });
+      const apiLev = typeof p.leverage === "number" && p.leverage > 0 ? p.leverage : 0;
+      const entryNotional = size * entry;
+      const derivedLev = marginNum > 0 && entryNotional > 0 ? Math.round(entryNotional / marginNum) : 0;
+
       return {
         symbol: p.symbol,
         side: side as "long" | "short",
@@ -295,7 +298,7 @@ export class PacificaAdapter implements ExchangeAdapter {
         markPrice: mark,
         liquidationPrice: String(p.liquidation_price ?? "N/A"),
         unrealizedPnl: upnl.toFixed(4),
-        leverage: p.leverage ?? levMap.get(String(p.symbol)) ?? 1,
+        leverage: apiLev || derivedLev || 1,
       };
     });
   }
