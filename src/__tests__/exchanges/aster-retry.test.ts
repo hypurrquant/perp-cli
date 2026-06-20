@@ -74,7 +74,7 @@ describe("AsterAdapter — retry loop reaches all 3 backoffs (C3)", () => {
   });
 
   it("4 attempts total (initial + 3 retries) on consecutive 429s — backoffs 2s/4s/8s", async () => {
-    // First call: init's /fapi/v1/time. Subsequent 4 calls: signed GET retries.
+    // First call: init's /fapi/v3/time. Subsequent 4 calls: signed GET retries.
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(makeInitResponse())   // init() ping
       .mockResolvedValueOnce(make429Response())    // attempt 0 → backoff 2s

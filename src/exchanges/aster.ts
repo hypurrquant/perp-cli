@@ -94,7 +94,7 @@ export class AsterAdapter implements ExchangeAdapter {
 
   async init(): Promise<void> {
     // Verify connectivity by fetching server time
-    await this._publicGet("/fapi/v1/time");
+    await this._publicGet("/fapi/v3/time");
 
     // Build LocalEvmSigner from ctor PK now that we're in an async context
     if (this._pendingPk) {
@@ -161,7 +161,7 @@ export class AsterAdapter implements ExchangeAdapter {
 
     try {
       const apiSym = this._toApi(key);
-      const data = await this._publicGet("/fapi/v1/fundingRate", { symbol: apiSym, limit: "2" }) as Array<{ fundingTime: number }>;
+      const data = await this._publicGet("/fapi/v3/fundingRate", { symbol: apiSym, limit: "2" }) as Array<{ fundingTime: number }>;
       if (Array.isArray(data) && data.length >= 2) {
         const hours = Math.abs(data[1].fundingTime - data[0].fundingTime) / 3600000;
         const rounded = hours <= 1.5 ? 1 : hours <= 5 ? 4 : 8;
@@ -179,8 +179,8 @@ export class AsterAdapter implements ExchangeAdapter {
     }
 
     const [info, tickers] = await Promise.all([
-      this._publicGet("/fapi/v1/exchangeInfo") as Promise<{ symbols?: Array<Record<string, unknown>> }>,
-      this._publicGet("/fapi/v1/ticker/24hr") as Promise<Array<Record<string, unknown>>>,
+      this._publicGet("/fapi/v3/exchangeInfo") as Promise<{ symbols?: Array<Record<string, unknown>> }>,
+      this._publicGet("/fapi/v3/ticker/24hr") as Promise<Array<Record<string, unknown>>>,
     ]);
 
     const tickerMap = new Map<string, Record<string, unknown>>();
@@ -190,7 +190,7 @@ export class AsterAdapter implements ExchangeAdapter {
 
     let premiumMap = new Map<string, Record<string, unknown>>();
     try {
-      const premiums = await this._publicGet("/fapi/v1/premiumIndex") as Array<Record<string, unknown>>;
+      const premiums = await this._publicGet("/fapi/v3/premiumIndex") as Array<Record<string, unknown>>;
       premiumMap = new Map(premiums.map(p => [String(p.symbol), p]));
     } catch { /* non-critical */ }
 
@@ -228,7 +228,7 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
-    const res = await this._publicGet("/fapi/v1/depth", { symbol: this._toApi(symbol), limit: "50" }) as {
+    const res = await this._publicGet("/fapi/v3/depth", { symbol: this._toApi(symbol), limit: "50" }) as {
       bids?: [string, string][];
       asks?: [string, string][];
     };
@@ -239,7 +239,7 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   async getRecentTrades(symbol: string, limit = 20): Promise<ExchangeTrade[]> {
-    const trades = await this._publicGet("/fapi/v1/trades", {
+    const trades = await this._publicGet("/fapi/v3/trades", {
       symbol: this._toApi(symbol),
       limit: String(limit),
     }) as Array<Record<string, unknown>>;
@@ -255,7 +255,7 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
-    const data = await this._publicGet("/fapi/v1/fundingRate", {
+    const data = await this._publicGet("/fapi/v3/fundingRate", {
       symbol: this._toApi(symbol),
       limit: String(limit),
     }) as Array<Record<string, unknown>>;
@@ -268,7 +268,7 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
-    const data = await this._publicGet("/fapi/v1/klines", {
+    const data = await this._publicGet("/fapi/v3/klines", {
       symbol: this._toApi(symbol),
       interval,
       startTime: String(startTime),
@@ -294,7 +294,8 @@ export class AsterAdapter implements ExchangeAdapter {
       return this._accountCache.data as ExchangeBalance;
     }
     const r = this._resolveSigner();
-    // v3: /fapi/v2/account is HMAC-only; v3 EIP-712 uses /fapi/v3/accountWithJoinMargin.
+    // v3 EIP-712 account endpoint. (The legacy /fapi/v2/account was HMAC-only and
+    // is no longer documented in the Aster V3 spec.)
     const account = await this._signedGetEip712("/fapi/v3/accountWithJoinMargin", {}, r) as Record<string, unknown>;
 
     const totalWallet = parseFiniteVenueNumber(account.totalWalletBalance, "totalWalletBalance", "aster");
@@ -317,9 +318,10 @@ export class AsterAdapter implements ExchangeAdapter {
       return this._positionsCache.data as ExchangePosition[];
     }
     const r = this._resolveSigner();
-    // v3: /fapi/v2/positionRisk has no v3 equivalent. Positions live inside
-    // /fapi/v3/accountWithJoinMargin under `positions`. Mark price + liquidation
-    // price are NOT included there — fetch from the public premiumIndex.
+    // Positions are derived from /fapi/v3/accountWithJoinMargin (`positions` array).
+    // That payload omits mark + liquidation price, so mark price is fetched from the
+    // public premiumIndex below. (A dedicated GET /fapi/v3/positionRisk also exists in
+    // the V3 spec and exposes liquidationPrice — not yet wired in; see note below.)
     const account = await this._signedGetEip712("/fapi/v3/accountWithJoinMargin", {}, r) as Record<string, unknown>;
     const positions = (account.positions as Array<Record<string, unknown>> | undefined) ?? [];
 
@@ -329,7 +331,7 @@ export class AsterAdapter implements ExchangeAdapter {
     const markMap = new Map<string, string>();
     if (open.length > 0) {
       try {
-        const premiums = await this._publicGet("/fapi/v1/premiumIndex") as Array<Record<string, unknown>>;
+        const premiums = await this._publicGet("/fapi/v3/premiumIndex") as Array<Record<string, unknown>>;
         for (const p of premiums ?? []) {
           markMap.set(String(p.symbol), String(p.markPrice ?? "0"));
         }
@@ -345,7 +347,7 @@ export class AsterAdapter implements ExchangeAdapter {
         size: String(Math.abs(amt)),
         entryPrice: String(p.entryPrice ?? "0"),
         markPrice: markMap.get(apiSym) ?? "0",
-        liquidationPrice: "0", // v3 accountWithJoinMargin does not expose this
+        liquidationPrice: "0", // not in accountWithJoinMargin; GET /fapi/v3/positionRisk exposes it (TODO: wire in)
         unrealizedPnl: String(p.unrealizedProfit ?? "0"),
         leverage: parseFiniteVenueNumber(p.leverage, "position.leverage", "aster", { defaultValue: 1 }),
       };

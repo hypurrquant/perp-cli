@@ -325,10 +325,10 @@ describe("AsterAdapter — three-tier signer routing", () => {
   // ─── Test 9: Read methods work without any signer ───────────────────────────
   it("read-only methods (getMarkets, ticker) work without any signer", async () => {
     // getMarkets makes 3 parallel/sequential public calls:
-    //  1. init() → /fapi/v1/time
-    //  2. /fapi/v1/exchangeInfo → { symbols: [] }
-    //  3. /fapi/v1/ticker/24hr → []
-    //  4. /fapi/v1/premiumIndex → [] (non-critical, caught)
+    //  1. init() → /fapi/v3/time
+    //  2. /fapi/v3/exchangeInfo → { symbols: [] }
+    //  3. /fapi/v3/ticker/24hr → []
+    //  4. /fapi/v3/premiumIndex → [] (non-critical, caught)
     const timeResp = { ok: true, status: 200, json: vi.fn().mockResolvedValue({ serverTime: Date.now() }), text: vi.fn().mockResolvedValue(""), headers: { get: vi.fn().mockReturnValue(null) } };
     const infoResp = { ok: true, status: 200, json: vi.fn().mockResolvedValue({ symbols: [] }), text: vi.fn().mockResolvedValue(""), headers: { get: vi.fn().mockReturnValue(null) } };
     const tickerResp = { ok: true, status: 200, json: vi.fn().mockResolvedValue([]), text: vi.fn().mockResolvedValue(""), headers: { get: vi.fn().mockReturnValue(null) } };
