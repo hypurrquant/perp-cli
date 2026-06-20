@@ -417,7 +417,8 @@ export function registerTradeCommands(
     .option("--reduce-only", "Reduce only order")
     .option("--background", "Run client-side TWAP in background (tmux) — works on all exchanges")
     .option("--slices <n>", "Number of slices for client-side TWAP")
-    .action(async (symbol: string, side: string, size: string, duration: string, opts: { slippage: string; reduceOnly?: boolean; background?: boolean; slices?: string }) => {
+    .option("--force", "Bypass local risk-limit checks (maxPosition / total exposure)")
+    .action(async (symbol: string, side: string, size: string, duration: string, opts: { slippage: string; reduceOnly?: boolean; background?: boolean; slices?: string; force?: boolean }) => {
       const s = side.toLowerCase();
       if (s !== "buy" && s !== "sell") errorAndExit("Side must be buy or sell");
 
@@ -428,6 +429,7 @@ export function registerTradeCommands(
         const cliArgs = [
           symbol.toUpperCase(), s, size, duration,
           ...(opts.slices ? ["--slices", opts.slices] : []),
+          ...(opts.force ? ["--force"] : []),
         ];
         // Pass exchange flag through
         const job = startJob({
@@ -446,6 +448,8 @@ export function registerTradeCommands(
       }
 
       const adapter = await getAdapter();
+
+      await enforceOrderRisk(adapter, { symbol: symbol.toUpperCase(), size: parseFloat(size), reduceOnly: opts.reduceOnly, force: opts.force });
 
       // Native TWAP: Pacifica (SDK) or Hyperliquid (twapOrder)
       // Fallback: client-side TWAP for any exchange without native support
@@ -1103,7 +1107,8 @@ export function registerTradeCommands(
     .requiredOption("--levels <levels>", "Comma-separated price:percent pairs (e.g., 65000:30,63000:30,60000:40)")
     .option("--size-usd <usd>", "Total USD amount to deploy across all levels")
     .option("--size <base>", "Total base amount (e.g., 0.01 BTC)")
-    .action(async (symbol: string, side: string, opts: { levels: string; sizeUsd?: string; size?: string }) => {
+    .option("--force", "Bypass local risk-limit checks (maxPosition / total exposure)")
+    .action(async (symbol: string, side: string, opts: { levels: string; sizeUsd?: string; size?: string; force?: boolean }) => {
       const sym = symbol.toUpperCase();
       const s = side.toLowerCase();
       if (s !== "buy" && s !== "sell") errorAndExit("Side must be buy or sell");
@@ -1148,6 +1153,13 @@ export function registerTradeCommands(
         totalSizeBase: opts.size ?? "N/A",
         levels: levelSizes.map(l => `${l.price}@${l.pct}% (${l.size})`).join(", "),
       })) return;
+
+      // Risk gate on the aggregate position being built. scale-in is always an
+      // opening flow (no reduce-only exemption); only --force bypasses. Notional
+      // is the sum across levels, expressed as total base * volume-weighted price.
+      const totalBase = levelSizes.reduce((acc, l) => acc + parseFloat(l.size), 0);
+      const totalNotional = levelSizes.reduce((acc, l) => acc + parseFloat(l.size) * parseFloat(l.price), 0);
+      await enforceOrderRisk(adapter, { symbol: sym, size: totalBase, price: totalBase > 0 ? totalNotional / totalBase : NaN, force: opts.force });
 
       // Place limit orders at each level (NOT reduce-only — opening positions)
       const results: Array<{ price: string; size: string; pct: number; result: unknown }> = [];
@@ -1487,7 +1499,8 @@ function registerMultiAction(
     .option("--rollback", "Auto-rollback filled legs if any leg fails", true)
     .option("--no-rollback", "Disable auto-rollback")
     .option("--timeout <ms>", "Per-leg timeout in milliseconds", "30000")
-    .action(async (legSpecs: string[], opts: { smart?: boolean; rollback: boolean; timeout: string }) => {
+    .option("--force", "Bypass local risk-limit checks (maxPosition / total exposure) for every leg")
+    .action(async (legSpecs: string[], opts: { smart?: boolean; rollback: boolean; timeout: string; force?: boolean }) => {
       await withJsonErrors(isJson(), async () => {
         // Parse legs
         const legs = legSpecs.map(parseMultiLeg);
@@ -1514,6 +1527,19 @@ function registerMultiAction(
             adapters.set(l.exchange, await getAdapterForExchange(l.exchange));
           }
         }
+
+        // Risk gate every leg before any order goes out, so a breach aborts the
+        // whole multi-leg up front. --force bypasses; the rollback orders below
+        // are exempt (they reduce the just-opened legs).
+        await Promise.all(
+          legs.map((leg) =>
+            enforceOrderRisk(adapters.get(leg.exchange)!, {
+              symbol: leg.symbol,
+              size: parseFloat(leg.size),
+              force: opts.force,
+            }),
+          ),
+        );
 
         // Execute all legs simultaneously
         const timeoutMs = parseInt(opts.timeout);

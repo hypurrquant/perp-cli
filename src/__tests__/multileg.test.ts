@@ -13,6 +13,16 @@ function createMockAdapter(overrides: Record<string, unknown> = {}) {
     getPositions: vi.fn().mockResolvedValue([]),
     getOpenOrders: vi.fn().mockResolvedValue([]),
     getOrderbook: vi.fn().mockResolvedValue({ bids: [], asks: [] }),
+    // enforceOrderRisk (run per leg before execution) resolves a mark price via
+    // getMarkets for market orders, then checks notional against the local risk
+    // limits. Supply modest mark prices so the tiny test orders (≤ $100 notional)
+    // pass cleanly under DEFAULT_LIMITS.maxPositionUsd ($100k) — this exercises the
+    // real risk gate rather than bypassing it with --force.
+    getMarkets: vi.fn().mockResolvedValue([
+      { symbol: "ETH", markPrice: "2000", indexPrice: "2000", fundingRate: "0", volume24h: "0", openInterest: "0", maxLeverage: 50 },
+      { symbol: "SOL", markPrice: "100", indexPrice: "100", fundingRate: "0", volume24h: "0", openInterest: "0", maxLeverage: 50 },
+      { symbol: "BTC", markPrice: "60000", indexPrice: "60000", fundingRate: "0", volume24h: "0", openInterest: "0", maxLeverage: 50 },
+    ]),
     ...overrides,
   };
 }
