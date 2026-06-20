@@ -102,51 +102,50 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
 
   async getSpotMarkets(): Promise<SpotMarketInfo[]> {
     await this.init();
-    try {
-      // Reuse cached metaCtx from init, or fetch fresh if cache expired
-      const metaCtx = this._cachedMetaCtx
-        ?? await this._infoPost({ type: "spotMetaAndAssetCtxs" }) as typeof this._cachedMetaCtx;
+    // Rule #2: no catch→[]. A failed spotMetaAndAssetCtxs/allMids fetch must throw,
+    // not be coerced to an empty markets list (which reads as "this venue has no spot
+    // markets" and silently disables spot-perp arb discovery/sizing).
+    // Reuse cached metaCtx from init, or fetch fresh if cache expired.
+    const metaCtx = this._cachedMetaCtx
+      ?? await this._infoPost({ type: "spotMetaAndAssetCtxs" }) as typeof this._cachedMetaCtx;
 
-      if (!metaCtx?.[0]?.universe) return [];
+    if (!metaCtx?.[0]?.universe) return [];
 
-      const tokenNames = new Map<number, string>();
-      const tokenSzDec = new Map<number, number>();
-      for (const t of metaCtx[0].tokens ?? []) {
-        tokenNames.set(t.index, t.name);
-        if (t.szDecimals !== undefined) tokenSzDec.set(t.index, t.szDecimals);
-      }
-
-      // Fetch accurate mid prices from allMids (markPx in metaCtx is unreliable for spot)
-      const allMids = await this._infoPost({ type: "allMids" }) as Record<string, string>;
-
-      const usdcTokenIndex = metaCtx[0].tokens?.find(t => t.name === "USDC")?.index ?? 0;
-      const markets: SpotMarketInfo[] = [];
-
-      for (const u of metaCtx[0].universe) {
-        // Only USDC-quoted pairs
-        if (u.tokens[1] !== usdcTokenIndex) continue;
-        const baseToken = tokenNames.get(u.tokens[0]) ?? "";
-        if (!baseToken) continue;
-
-        // Price from allMids using universe.name (e.g., "PURR/USDC" or "@107")
-        const midPrice = allMids[u.name] ?? "0";
-
-        const spotDec = this._spotDecimals.get(baseToken.toUpperCase());
-        markets.push({
-          symbol: `${baseToken}/USDC`,
-          baseToken,
-          quoteToken: "USDC",
-          markPrice: midPrice,
-          volume24h: "0",
-          sizeDecimals: spotDec?.size ?? tokenSzDec.get(u.tokens[0]) ?? 2,
-          priceDecimals: spotDec?.price ?? 6,
-        });
-      }
-
-      return markets;
-    } catch {
-      return [];
+    const tokenNames = new Map<number, string>();
+    const tokenSzDec = new Map<number, number>();
+    for (const t of metaCtx[0].tokens ?? []) {
+      tokenNames.set(t.index, t.name);
+      if (t.szDecimals !== undefined) tokenSzDec.set(t.index, t.szDecimals);
     }
+
+    // Fetch accurate mid prices from allMids (markPx in metaCtx is unreliable for spot)
+    const allMids = await this._infoPost({ type: "allMids" }) as Record<string, string>;
+
+    const usdcTokenIndex = metaCtx[0].tokens?.find(t => t.name === "USDC")?.index ?? 0;
+    const markets: SpotMarketInfo[] = [];
+
+    for (const u of metaCtx[0].universe) {
+      // Only USDC-quoted pairs
+      if (u.tokens[1] !== usdcTokenIndex) continue;
+      const baseToken = tokenNames.get(u.tokens[0]) ?? "";
+      if (!baseToken) continue;
+
+      // Price from allMids using universe.name (e.g., "PURR/USDC" or "@107")
+      const midPrice = allMids[u.name] ?? "0";
+
+      const spotDec = this._spotDecimals.get(baseToken.toUpperCase());
+      markets.push({
+        symbol: `${baseToken}/USDC`,
+        baseToken,
+        quoteToken: "USDC",
+        markPrice: midPrice,
+        volume24h: "0",
+        sizeDecimals: spotDec?.size ?? tokenSzDec.get(u.tokens[0]) ?? 2,
+        priceDecimals: spotDec?.price ?? 6,
+      });
+    }
+
+    return markets;
   }
 
   async getSpotOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
@@ -174,20 +173,20 @@ export class HyperliquidSpotAdapter implements SpotAdapter {
   }
 
   async getSpotBalances(): Promise<SpotBalance[]> {
-    try {
-      // Reuse cached spot clearinghouse state (shared with getBalance() — saves 1 API call)
-      const state = await this._hl._getSpotClearinghouseState();
-      const balances = (state?.balances ?? []) as Record<string, unknown>[];
-      return balances.map((b) => ({
-        token: String(b.coin ?? ""),
-        total: String(b.total ?? "0"),
-        available: String(Number(b.total ?? 0) - Number(b.hold ?? 0)),
-        held: String(b.hold ?? "0"),
-        entryNtl: b.entryNtl !== undefined ? String(b.entryNtl) : undefined,
-      }));
-    } catch {
-      return [];
-    }
+    // Rule #2: no catch→[]. A failed spotClearinghouseState fetch must surface
+    // honestly — an empty list is indistinguishable from a genuinely empty wallet
+    // and silently drives wrong USDC-transfer sizing / false post-fill verification
+    // in the funding-arb bot (and a misleading empty holdings table).
+    // Reuse cached spot clearinghouse state (shared with getBalance() — saves 1 API call).
+    const state = await this._hl._getSpotClearinghouseState();
+    const balances = (state?.balances ?? []) as Record<string, unknown>[];
+    return balances.map((b) => ({
+      token: String(b.coin ?? ""),
+      total: String(b.total ?? "0"),
+      available: String(Number(b.total ?? 0) - Number(b.hold ?? 0)),
+      held: String(b.hold ?? "0"),
+      entryNtl: b.entryNtl !== undefined ? String(b.entryNtl) : undefined,
+    }));
   }
 
   async spotMarketOrder(symbol: string, side: "buy" | "sell", size: string): Promise<unknown> {
