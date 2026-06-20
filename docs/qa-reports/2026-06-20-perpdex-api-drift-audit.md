@@ -108,3 +108,32 @@ additive 기능(drift 아님). 거래 코드라 testnet 검증 동반 권장. �
 - 빌드 0 · **전체 1557 tests PASS** (88 files, Phase 2에서 +회귀가드 다수).
 - 각 fix는 단위테스트 회귀 가드 포함. **서명/자금 경로(withdraw·agent·reduceOnly·user-signed action)는 라이브 미실행 → 커밋 NOTE에 "testnet 검증 필수" 명시.**
 - 공개 인터페이스 변경: `funds withdraw pacifica`에서 `--to` 제거(Pacifica는 본인 지갑 전용; HL/Lighter는 유지). 그 외 출력/명령 불변.
+
+---
+
+# Phase 3 — READ-path / Rule #2 감사 (2026-06-21)
+
+**각도:** 보낸 payload(Phase 2)가 아니라 **읽는 데이터** — 응답 파싱 정확성 + Rule #2(No-Fallback) 위반(silent `?? default` / `catch{}`가 금융 데이터 조작·실패 은폐). 멀티에이전트 audit(self-verify, verify 단계는 레이트리밋 회피 위해 제거 → 결과는 직접 라이브/코드 검증). **15개 후보 → P1 7개 수정, P2 8개 defensible 처분.**
+
+## 수정한 P1 (7개)
+
+| DEX | 결함 | 검증 | 커밋 |
+|---|---|---|---|
+| Lighter | `getFundingRates` 거래소 필터 누락 → 멀티거래소 aggregate(634행)에서 타 거래소 rate가 Lighter rate를 덮어씀(last-write-wins) | 라이브: binance165/bybit156/hl132/lighter181 | `3dd5df0` |
+| Lighter | `getKlines`가 `res.candles` 읽음 → API는 키 `c` → 항상 빈 캔들 | 라이브: `/candles` top keys `code,r,c` | `3dd5df0` |
+| Lighter | `getRecentTrades` timestamp `×1000` → 이미 ms(13자리) → year ~58000 | 라이브: timestamp 1781970606461 | `3dd5df0` |
+| HL spot | `getSpotBalances`/`getSpotMarkets` `catch{return []}` → fetch 실패를 빈 결과로 위장(arb 사이징·post-fill 검증 오작동) | 코드 | `49b7f6b` |
+| Pacifica | `getPositions` 레버리지 `?? 1` 조작 — /positions에 leverage 없고 default-leverage는 settings에서 blank → 1x 표시 + marginRequired 왜곡. settings `catch{}` swallow도 제거 → margin에서 도출 | doc 2회 확인 + 코드 | `f4e5775` |
+
+## P2 처분 (8개 — defensible, 미수정)
+
+- 대부분 market-data **display-path `?? "0"` 방어**(corruption-only 트리거; 이전 numeric-audit이 balance/positions의 risk-gating 필드는 이미 `parseFiniteVenueNumber` strict로 전환). 표시 필드의 "0" 기본값은 합리적.
+- **Aster openInterest 하드코딩 "0"**: OI는 per-symbol 전용 엔드포인트뿐 → market-list에서 N회 호출 필요 → 의도된 비용 트레이드오프.
+- **Aster positionRisk best-effort "0"**(Phase 1에서 추가): 실패 시 mark/liq "0", 단 `enforceOrderRisk`의 price≤0 가드가 위험 케이스 차단.
+
+## 기각 (Phase 2)
+- HL `updateIsolatedMargin` Math.abs (워크플로우 3-vote 만장일치) · Lighter `_selfTransfer` 이중스케일(직접 검증 — 저수준 signer는 미스케일).
+
+## Phase 3 검증
+- 빌드 0 · **전체 1565 tests PASS** (91 files). 각 P1 fix 회귀 가드 + 라이브 API shape 확인 포함.
+- Pacifica 레버리지(margin 도출)는 라이브 계정 미확인 → 커밋 NOTE에 실계정 검증 권장 명시.
