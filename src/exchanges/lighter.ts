@@ -650,7 +650,10 @@ export class LighterAdapter implements ExchangeAdapter {
         if (r.status !== "fulfilled" || !r.value.orders.length) continue;
         for (const o of r.value.orders) {
           allOrders.push({
-            orderId: String(o.order_id ?? o.order_index ?? ""),
+            // Use order_index (the per-market index), NOT order_id (global): cancelOrder
+            // and modifyOrder sign with `orderIndex`, so the id surfaced here must be the
+            // cancellation key. Matches the order-history mapping below.
+            orderId: String(o.order_index ?? o.order_id ?? ""),
             symbol: String(o.symbol ?? r.value.sym),
             side: o.is_ask ? ("sell" as const) : ("buy" as const),
             price: String(o.price ?? "0"),
