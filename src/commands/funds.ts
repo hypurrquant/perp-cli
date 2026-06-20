@@ -578,16 +578,16 @@ export function registerFundsCommands(
 
   withdraw
     .command("pacifica <amount>")
-    .description("Withdraw USDC from Pacifica to your Solana wallet")
-    .option("--to <address>", "Destination Solana address (default: your wallet)")
-    .action(async (amount: string, opts: { to?: string }) => {
+    .description("Withdraw USDC from Pacifica to your own Solana wallet (Pacifica has no destination field)")
+    .action(async (amount: string) => {
       const amountNum = parseFloat(amount);
       if (isNaN(amountNum) || amountNum <= 0) throw new Error("Invalid amount");
 
       const adapter = await getAdapter();
       if (!hasPacificaSdk(adapter) || !isWithdrawCapable(adapter)) throw new Error("Requires --exchange pacifica");
 
-      const dest = opts.to || adapter.publicKey;
+      // Pacifica withdrawals always go to the account owner's own wallet.
+      const dest = adapter.publicKey;
 
       if (!isJson()) {
         console.log(chalk.cyan(`\n  Withdrawing $${formatUsd(amountNum)} USDC from Pacifica...\n`));

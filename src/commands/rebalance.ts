@@ -284,8 +284,9 @@ async function executeWithdraw(
     case "pacifica": {
       if (!hasPacificaSdk(adapter)) throw new Error("Invalid adapter");
       const sdk = adapter.sdk as Record<string, (...args: any[]) => any>;
+      // Pacifica withdraws to the account owner's own wallet (no destination field).
       await sdk.withdraw(
-        { amount: String(move.amount), dest_address: adapter.publicKey },
+        { amount: String(move.amount) },
         adapter.publicKey,
         adapter.signer,
       );

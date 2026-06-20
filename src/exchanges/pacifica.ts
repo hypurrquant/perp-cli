@@ -458,11 +458,18 @@ export class PacificaAdapter implements ExchangeAdapter {
 
   async withdraw(amount: string, destination: string, _opts?: { assetId?: number; routeType?: number }): Promise<unknown> {
     this.ensureSigner();
-    return this.client.withdraw(
-      { amount, dest_address: destination },
-      this.account,
-      this.signMessage,
-    );
+    // Pacifica withdrawals ALWAYS go to the account owner's own connected wallet —
+    // the REST API has no destination field. Refuse a mismatched destination rather
+    // than silently sending to the own wallet (Rule #2: no misdirection / false
+    // affordance). An empty destination or the own address is accepted.
+    if (destination && destination !== this.account) {
+      throw new PerpError(
+        "INVALID_PARAMS",
+        `Pacifica withdrawals only go to the account owner's own wallet (${this.account}); the API has no destination field, so withdrawing to ${destination} is not possible.`,
+        { exchange: "pacifica" },
+      );
+    }
+    return this.client.withdraw({ amount }, this.account, this.signMessage);
   }
 
   async getRecentTrades(symbol: string, _limit = 20): Promise<ExchangeTrade[]> {

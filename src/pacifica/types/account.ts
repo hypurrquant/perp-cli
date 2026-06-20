@@ -29,7 +29,8 @@ export interface TransferFundsParams {
 
 export interface WithdrawParams {
   amount: string;
-  dest_address: string;
+  // No destination field: Pacifica withdrawals always go to the account owner's
+  // own connected wallet (per the request-withdrawal REST spec).
 }
 
 export interface UpdateLeverageParams {
