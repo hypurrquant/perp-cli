@@ -926,7 +926,9 @@ export class LighterAdapter implements ExchangeAdapter {
     const res = await this.restGet("/recentTrades", { market_id: String(marketId), limit: String(limit) }) as Record<string, unknown>;
     const trades = (res.trades ?? []) as Record<string, unknown>[];
     return trades.map((t) => ({
-      time: Number(t.timestamp ?? 0) * 1000,
+      // /recentTrades `timestamp` is already in milliseconds (13 digits) — do NOT
+      // multiply by 1000 (that pushed trade times to year ~58000).
+      time: Number(t.timestamp ?? 0),
       symbol,
       // /recentTrades returns is_maker_ask: maker was asking → taker bought
       side: t.is_maker_ask ? "buy" as const : "sell" as const,
@@ -946,7 +948,9 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
     const res = await this.getCandles(symbol, interval, startTime, endTime) as Record<string, unknown>;
-    const candles = (res.candles ?? []) as Record<string, unknown>[];
+    // /candles returns the array under key `c` (top keys: code, r, c) — `res.candles`
+    // is always undefined, which silently rendered every Lighter kline set empty.
+    const candles = (res.c ?? res.candles ?? []) as Record<string, unknown>[];
     return candles.map((c) => ({
       time: Number(c.start_timestamp ?? c.t ?? 0),
       open: String(c.open ?? c.o ?? "0"),
@@ -1007,7 +1011,7 @@ export class LighterAdapter implements ExchangeAdapter {
     const map = new Map<string, { rate: string; markPrice: string }>();
     try {
       const res = await this.restGet("/funding-rates", {}) as {
-        funding_rates?: Array<{ market_id: number; rate: number; symbol: string; funding_rate?: string; mark_price?: string }>;
+        funding_rates?: Array<{ exchange?: string; market_id: number; rate: number; symbol: string; funding_rate?: string; mark_price?: string }>;
       };
 
       const reverseMap = new Map<number, string>();
@@ -1016,6 +1020,10 @@ export class LighterAdapter implements ExchangeAdapter {
       }
 
       for (const fr of res.funding_rates ?? []) {
+        // /funding-rates is a MULTI-EXCHANGE aggregate (Binance/Bybit/HL/Lighter…).
+        // Only keep Lighter's own rate, or another venue's rate overwrites it for the
+        // same symbol (last-write-wins). Mirrors src/api/public/lighter.ts.
+        if (String(fr.exchange ?? "").toLowerCase() !== "lighter") continue;
         const symbol = fr.symbol || reverseMap.get(fr.market_id);
         if (symbol) {
           map.set(symbol, {
