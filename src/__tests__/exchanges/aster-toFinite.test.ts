@@ -10,16 +10,20 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-async function buildAdapter(account: unknown) {
+async function buildAdapter(account: unknown, positionRisk: unknown[] = []) {
   const { AsterAdapter } = await import("../../exchanges/aster.js");
   const ast = new AsterAdapter(undefined, false);
   // Stub _resolveSigner so getBalance doesn't try to pick an agent/master
   (ast as unknown as { _resolveSigner: () => unknown })._resolveSigner =
     vi.fn().mockReturnValue({ kind: "agent", signer: {}, agent: {} });
-  // Stub _signedGetEip712 — the leaf method getBalance/getPositions call
+  // Route signed GETs by path: GET /fapi/v3/positionRisk (mark + liquidation
+  // enrichment in getPositions) returns its own array; every other signed GET
+  // (accountWithJoinMargin for getBalance/getPositions) returns `account`.
   (ast as unknown as { _signedGetEip712: (...args: unknown[]) => Promise<unknown> })._signedGetEip712 =
-    vi.fn().mockResolvedValue(account);
-  // Stub _publicGet for the premiumIndex call inside getPositions
+    vi.fn().mockImplementation((path: string) =>
+      Promise.resolve(path === "/fapi/v3/positionRisk" ? positionRisk : account));
+  // getPositions no longer calls _publicGet (positionRisk replaced the premiumIndex
+  // mark-price probe); keep a defensive stub so any incidental public read is empty.
   (ast as unknown as { _publicGet: (...args: unknown[]) => Promise<unknown> })._publicGet =
     vi.fn().mockResolvedValue([]);
   // Bypass cache by clearing it on every call
@@ -113,5 +117,34 @@ describe("AsterAdapter.getPositions — parseFiniteVenueNumber guards (Phase 2.4
     });
     const pos = await ast.getPositions();
     expect(pos[0].leverage).toBe(1);
+  });
+
+  it("enriches markPrice + liquidationPrice from /fapi/v3/positionRisk", async () => {
+    const ast = await buildAdapter(
+      {
+        totalWalletBalance: "1000", totalUnrealizedProfit: "0",
+        availableBalance: "800", totalInitialMargin: "200",
+        positions: [{ symbol: "BTCUSDT", positionAmt: "0.5", entryPrice: "50000", unrealizedProfit: "0", leverage: "10" }],
+      },
+      [{ symbol: "BTCUSDT", markPrice: "63000.5", liquidationPrice: "41250.7", positionAmt: "0.5" }],
+    );
+    const pos = await ast.getPositions();
+    expect(pos).toHaveLength(1);
+    expect(pos[0].markPrice).toBe("63000.5");
+    expect(pos[0].liquidationPrice).toBe("41250.7");
+  });
+
+  it("mark/liquidation fall back to '0' when positionRisk omits the symbol (best-effort)", async () => {
+    const ast = await buildAdapter(
+      {
+        totalWalletBalance: "1000", totalUnrealizedProfit: "0",
+        availableBalance: "800", totalInitialMargin: "200",
+        positions: [{ symbol: "BTCUSDT", positionAmt: "0.5", entryPrice: "50000", leverage: "10" }],
+      },
+      [], // positionRisk returns no rows → no enrichment
+    );
+    const pos = await ast.getPositions();
+    expect(pos[0].markPrice).toBe("0");
+    expect(pos[0].liquidationPrice).toBe("0");
   });
 });

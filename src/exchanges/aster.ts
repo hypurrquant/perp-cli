@@ -318,36 +318,42 @@ export class AsterAdapter implements ExchangeAdapter {
       return this._positionsCache.data as ExchangePosition[];
     }
     const r = this._resolveSigner();
-    // Positions are derived from /fapi/v3/accountWithJoinMargin (`positions` array).
-    // That payload omits mark + liquidation price, so mark price is fetched from the
-    // public premiumIndex below. (A dedicated GET /fapi/v3/positionRisk also exists in
-    // the V3 spec and exposes liquidationPrice — not yet wired in; see note below.)
+    // Positions are enumerated from /fapi/v3/accountWithJoinMargin (`positions`
+    // array); that payload omits both mark and liquidation price. The signed
+    // Position Information v3 endpoint (GET /fapi/v3/positionRisk) supplies both
+    // per open symbol, so it replaces the older public premiumIndex mark-price probe.
     const account = await this._signedGetEip712("/fapi/v3/accountWithJoinMargin", {}, r) as Record<string, unknown>;
     const positions = (account.positions as Array<Record<string, unknown>> | undefined) ?? [];
 
     const open = positions.filter((p) => parseFiniteVenueNumber(p.positionAmt, "position.positionAmt", "aster") !== 0);
 
-    // Fetch mark prices for the open symbols (best-effort; non-fatal on failure)
-    const markMap = new Map<string, string>();
+    // Enrich open positions with mark + liquidation price from /fapi/v3/positionRisk
+    // (best-effort; a transient failure leaves them "0" rather than failing the whole
+    // positions read). Response fields per Aster V3 spec: markPrice, liquidationPrice.
+    const riskMap = new Map<string, { mark: string; liq: string }>();
     if (open.length > 0) {
       try {
-        const premiums = await this._publicGet("/fapi/v3/premiumIndex") as Array<Record<string, unknown>>;
-        for (const p of premiums ?? []) {
-          markMap.set(String(p.symbol), String(p.markPrice ?? "0"));
+        const risk = await this._signedGetEip712("/fapi/v3/positionRisk", {}, r) as Array<Record<string, unknown>>;
+        for (const pr of risk ?? []) {
+          riskMap.set(String(pr.symbol), {
+            mark: String(pr.markPrice ?? "0"),
+            liq: String(pr.liquidationPrice ?? "0"),
+          });
         }
-      } catch { /* non-critical */ }
+      } catch { /* non-critical — mark/liq stay "0" */ }
     }
 
     const result = open.map((p) => {
       const amt = parseFiniteVenueNumber(p.positionAmt, "position.positionAmt", "aster");
       const apiSym = String(p.symbol ?? "");
+      const risk = riskMap.get(apiSym);
       return {
         symbol: this._fromApi(apiSym),
         side: amt > 0 ? "long" as const : "short" as const,
         size: String(Math.abs(amt)),
         entryPrice: String(p.entryPrice ?? "0"),
-        markPrice: markMap.get(apiSym) ?? "0",
-        liquidationPrice: "0", // not in accountWithJoinMargin; GET /fapi/v3/positionRisk exposes it (TODO: wire in)
+        markPrice: risk?.mark ?? "0",
+        liquidationPrice: risk?.liq ?? "0",
         unrealizedPnl: String(p.unrealizedProfit ?? "0"),
         leverage: parseFiniteVenueNumber(p.leverage, "position.leverage", "aster", { defaultValue: 1 }),
       };
