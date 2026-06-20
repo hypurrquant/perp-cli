@@ -137,3 +137,73 @@ additive 기능(drift 아님). 거래 코드라 testnet 검증 동반 권장. �
 ## Phase 3 검증
 - 빌드 0 · **전체 1565 tests PASS** (91 files). 각 P1 fix 회귀 가드 + 라이브 API shape 확인 포함.
 - Pacifica 레버리지(margin 도출)는 라이브 계정 미확인 → 커밋 NOTE에 실계정 검증 권장 명시.
+
+---
+
+# Phase 4 — 무인증(credential-free) 검증
+
+testnet 자격증명 없이 가능한 모든 검증 수행. **단위테스트를 넘어 ① 실제 암호 서명, ② 라이브 CLI↔raw API 교차검증, ③ 클린-linux Docker**로 직접 확정. (probe는 일회성이라 커밋 안 함.)
+
+## 1. 실제 암호 서명 probe (자금/브로드캐스트 없음)
+
+### #1 Lighter withdraw P0 — 실 WASM signer
+번들된 `WasmSignerClient.signWithdraw`를 실제 호출(throwaway 키):
+```
+signWithdraw(usdcAmount=100)          → 서명 txInfo "Amount":100        (= 0.0001 USDC, 수정 전 버그)
+signWithdraw(usdcAmount=100_000_000)  → 서명 txInfo "Amount":100000000  (= 100 USDC, 수정 후)
+```
+→ WASM은 스케일 안 함이 실서명으로 확정. `×1e6` 수정이 정확.
+
+### #4 Pacifica agent_wallet — 실 Ed25519
+`buildAgentSignedRequest`를 실제 Ed25519(throwaway master/agent)로 서명·검증:
+```
+account = master ✓ · agent_wallet = agent ✓
+signature: AGENT 키로 valid=true · MASTER 키로 valid=false ✓
+```
+→ agent 모드 서명이 agent 키로 유효하고 master로 무효 = Pacifica가 agent-위임 주문 수락에 필요한 정확한 형태. (수정 전 agent_wallet 부재 → master 검증 → 전건 거부.)
+
+## 2. 라이브 CLI ↔ raw API 교차검증 (PUBLIC 경로)
+
+### #5 Lighter funding 거래소 필터 — divergent 심볼 5개 동시 대조
+| 심볼 | perp-cli CLI | raw LIGHTER | binance | bybit | hl |
+|---|---|---|---|---|---|
+| RESOLV | **-0.1648%** | -0.1648% ✓ | +0.0100% | +0.0100% | -0.0624% |
+| DOLO | **-0.1608%** | -0.1608% ✓ | +0.0100% | -0.2153% | — |
+| STABLE | **+0.0096%** | +0.0096% ✓ | -0.1259% | -0.0635% | -0.0279% |
+| VVV | **-0.0520%** | -0.0520% ✓ | -0.1705% | -0.1795% | -0.1360% |
+| CHIP | **-0.1416%** | -0.1416% ✓ | -0.1076% | -0.0215% | -0.1358% |
+
+→ 5/5 CLI=lighter, 타 거래소와 명확히 다름(RESOLV·STABLE은 부호 반대). 필터 작동 확정. (초기 BTC 불일치는 호출 간 rate 갱신 timing 아티팩트로 판명.)
+
+### #6 trades / #7 klines
+- `market trades BTC --exchange lighter` → 시각 **2026** (수정 전 year ~58000) ✓
+- `market kline BTC 1h --exchange lighter` → **20행 실 OHLC** (수정 전 빈값) ✓
+
+## 3. 4개 DEX read 경로 smoke (17개 수정 후 회귀 0)
+| DEX | market list | orderbook BTC |
+|---|---|---|
+| Hyperliquid | 230 markets | 21 levels |
+| Pacifica | 69 markets | 21 levels |
+| Aster | 483 markets | 21 levels |
+| Lighter | 198 markets | 21 levels |
+
+→ 실오류 0. (grep "error" 1건씩은 ba**NaN**a / ba**NaN**as31 심볼명 오탐.)
+
+## 4. Docker (클린 linux node:20, 호스트 격리)
+호스트 src read-only 마운트 → 컨테이너-로컬 복사 → install/build/test. **build OK · 91 files / 1565 tests PASS.** Lighter WASM 네이티브 의존성 포함 클린-linux 동작 확인.
+
+## 검증 커버리지 매트릭스
+
+| 수정 | 무인증 검증 | testnet 필요 |
+|---|---|---|
+| #1 Lighter withdraw P0 | ✅ 실 WASM 서명 | round-trip 수령액 |
+| #4 Pacifica agent_wallet | ✅ 실 Ed25519 | 실주문 체결 |
+| #5/#6/#7 Lighter read | ✅ 라이브 교차검증 | — (PUBLIC, 완결) |
+| Aster v1→v3 | ✅ 라이브 E2E | — (PUBLIC, 완결) |
+| #2 HL reduceOnly | 단위테스트(marketClose 라우팅)+SDK bundle 확인 | close가 flip 안 함 |
+| #3/#9/#10 HL user-signed | 단위테스트(SDK 라우팅) | 서명 수락 |
+| #8 Aster editOrder | 단위테스트(순수 로직) | — |
+| Pacifica trigger_price_type | 단위테스트(매핑)+Ed25519 경로 동일 | 주문 수락 |
+| Pacifica 레버리지 | — | margin 시맨틱(실계정) |
+
+→ **무인증 가능 검증 전부 소진.** 핵심 funds/signing 2건은 실 암호서명, public 경로는 라이브 교차검증, 전체는 클린-linux Docker로 확정. 남은 건 실제 브로드캐스트 round-trip + Pacifica margin 시맨틱뿐.
