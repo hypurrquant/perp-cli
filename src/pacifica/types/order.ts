@@ -29,6 +29,8 @@ export interface StopOrderParams {
     amount: string;
     limit_price?: string;
     client_order_id?: string;
+    /** Trigger price source: "mark_price" (default) | "last_trade_price" | "mid_price". */
+    trigger_price_type?: string;
   };
 }
 

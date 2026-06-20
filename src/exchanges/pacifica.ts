@@ -429,14 +429,22 @@ export class PacificaAdapter implements ExchangeAdapter {
     return { symbol, leverage, marginMode };
   }
 
-  async stopOrder(symbol: string, side: "buy" | "sell", size: string, triggerPrice: string, opts?: { limitPrice?: string; reduceOnly?: boolean }) {
+  /** CLI trigger-type → Pacifica `trigger_price_type` value. Omitted ⇒ venue default (mark_price). */
+  private static readonly TRIGGER_TYPE: Record<"mark" | "last" | "mid", string> = {
+    mark: "mark_price",
+    last: "last_trade_price",
+    mid: "mid_price",
+  };
+
+  async stopOrder(symbol: string, side: "buy" | "sell", size: string, triggerPrice: string, opts?: { limitPrice?: string; reduceOnly?: boolean; triggerType?: "mark" | "last" | "mid" }) {
     this.ensureSigner();
+    const triggerPriceType = opts?.triggerType ? PacificaAdapter.TRIGGER_TYPE[opts.triggerType] : undefined;
     return this.client.createStopOrder(
       {
         symbol,
         side: side === "buy" ? "bid" : "ask",
         reduce_only: opts?.reduceOnly ?? false,
-        stop_order: { stop_price: triggerPrice, amount: size, limit_price: opts?.limitPrice },
+        stop_order: { stop_price: triggerPrice, amount: size, limit_price: opts?.limitPrice, trigger_price_type: triggerPriceType },
       },
       this.account,
       this.signMessage

@@ -503,9 +503,13 @@ export function registerTradeCommands(
     .description("Place a stop order")
     .option("--limit-price <price>", "Limit price (makes it stop-limit)")
     .option("--reduce-only", "Reduce only order")
-    .action(async (symbol: string, side: string, size: string, stopPrice: string, opts: { limitPrice?: string; reduceOnly?: boolean }) => {
+    .option("--trigger-type <type>", "Trigger price source: mark | last | mid (Pacifica only; other venues use their default)")
+    .action(async (symbol: string, side: string, size: string, stopPrice: string, opts: { limitPrice?: string; reduceOnly?: boolean; triggerType?: string }) => {
       const s = side.toLowerCase();
       if (s !== "buy" && s !== "sell") errorAndExit("Side must be buy or sell");
+      if (opts.triggerType && !["mark", "last", "mid"].includes(opts.triggerType)) {
+        errorAndExit("--trigger-type must be one of: mark, last, mid");
+      }
 
       const adapter = await getAdapter();
       if (dryRunGuard("stop_order", { exchange: adapter.name, symbol: symbol.toUpperCase(), side: s, size, price: stopPrice })) return;
@@ -516,7 +520,7 @@ export function registerTradeCommands(
           s as "buy" | "sell",
           size,
           stopPrice,
-          { limitPrice: opts.limitPrice, reduceOnly: opts.reduceOnly }
+          { limitPrice: opts.limitPrice, reduceOnly: opts.reduceOnly, triggerType: opts.triggerType as "mark" | "last" | "mid" | undefined }
         );
         logExecution({ type: "stop_order", exchange: adapter.name, symbol: symbol.toUpperCase(), side: s, size, price: stopPrice, status: "success", dryRun: false });
       } catch (err) {

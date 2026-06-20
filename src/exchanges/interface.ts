@@ -102,5 +102,10 @@ export interface ExchangeAdapter {
 
   // ── Risk ──
   setLeverage(symbol: string, leverage: number, marginMode?: "cross" | "isolated"): Promise<unknown>;
-  stopOrder(symbol: string, side: "buy" | "sell", size: string, triggerPrice: string, opts?: { limitPrice?: string; reduceOnly?: boolean }): Promise<unknown>;
+  /**
+   * triggerType selects the trigger price source where the venue supports it
+   * (currently Pacifica: "mark" | "last" | "mid"). Adapters that don't support
+   * a configurable trigger source ignore the field and use their venue default.
+   */
+  stopOrder(symbol: string, side: "buy" | "sell", size: string, triggerPrice: string, opts?: { limitPrice?: string; reduceOnly?: boolean; triggerType?: "mark" | "last" | "mid" }): Promise<unknown>;
 }
