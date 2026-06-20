@@ -77,3 +77,34 @@ additive 기능(drift 아님). 거래 코드라 testnet 검증 동반 권장. �
 - **CLI:** `trade stop`에 `--trigger-type <mark|last|mid>` 추가 (opt-in, Pacifica). 그 외 명령·플래그·출력 불변.
 - **어댑터 인터페이스:** `ExchangeAdapter.stopOrder` opts에 `triggerType?` 추가 (optional, 미지원 어댑터 무시 — 하위호환).
 - **출력 형식:** Aster v1→v3 마이그레이션은 응답 shape 동일 → 사용자 가시 동작 불변. Aster 포지션의 `liquidationPrice`가 `"0"` → 실제값(positionRisk 성공 시).
+
+---
+
+# Phase 2 — 심층 order/API-call 정확성 감사 + 전체 수정
+
+**방법:** DEX별 멀티에이전트 워크플로우(order/signed-call payload를 필드 단위로 라이브 문서·SDK와 대조 → 3-vote adversarial 검증). 워크플로우 verifier 다수가 transient rate limit으로 실패 → funds/signing 결함은 **직접 코드 재검증**(node_modules·라이브 doc). 11개 후보 중 **10개 확정·수정, 1개 false positive 기각**.
+
+## 확정·수정 (커밋)
+
+| # | 결함 | 심각 | 커밋 |
+|---|---|---|---|
+| 1 | **Lighter `withdraw` 1e6 스케일 누락** — 저수준 WasmSignerClient는 스케일 안 하는데 raw 금액 전달 → 100 USDC 요청이 0.0001로 서명. node_modules 직접 확정 | **P0** | `966ffc0` |
+| 6 | Lighter withdraw CLI `--asset-id` 기본 2 → 3(USDC) | P1 | `966ffc0` |
+| 2 | HL `marketOrder`/`smartOrder` reduceOnly 무시 → close가 market fallback 시 flip 가능 → `marketClose` 라우팅 | P1 | `6812c86` |
+| 4 | **Pacifica agent-wallet 거래 전체 broken** — `agent_wallet` 누락(buildAgentSignedRequest 미배선) → ensureSigner에서 동기화 | P1 | `c826d46` |
+| 5 | Pacifica `withdraw --to` 무시(API에 destination 필드 없음, 라이브 doc 확정) → dest_address 제거 + mismatch throw | P1 | `36eef50` |
+| 8 | Aster `editOrder` side="buy" 기본 + reduceOnly 드롭 → raw 주문에서 보존 + Rule #2 throw | P1 | `c54fc99` |
+| 3 | HL `withdraw3` fallback이 L1 스킴(잘못)으로 서명 + 에러 삼킴 → fallback 제거 | P1 | `cde3212` |
+| 7 | Lighter `getOpenOrders`가 order_id 노출 → cancel/modify가 order_index 자리에 잘못된 키 | P1 | `4832c6e` |
+| 9 | HL `approveBuilderFee` L1 스킴 → SDK user-signed 라우팅 (unwired) | P2 | `cde3212` |
+| 10 | HL `tokenDelegate` L1 스킴/malformed → SDK 라우팅 (unwired) | P2 | `cde3212` |
+
+## Adversarial 검증으로 기각 (false positive)
+
+- **#11 Lighter spot `_selfTransfer` 이중 스케일** — finding은 last-resort `signer.signTransfer`가 고수준 SDK라 1e6 이중 적용된다 주장. 직접 검증 결과 `this._lt.signer`는 **저수준 WasmSignerClient**(스케일 안 함)라 3개 경로 모두 1회 스케일로 정확. **수정 안 함** (고쳤으면 오히려 버그). → votes=0 finding은 반드시 직접 검증 후 수정 교훈.
+- **HL `updateIsolatedMargin` Math.abs** — 워크플로우 3-vote 만장일치 기각(방향은 `isBuy`가 인코딩, `ntli` 부호 아님).
+
+## Phase 2 검증
+- 빌드 0 · **전체 1557 tests PASS** (88 files, Phase 2에서 +회귀가드 다수).
+- 각 fix는 단위테스트 회귀 가드 포함. **서명/자금 경로(withdraw·agent·reduceOnly·user-signed action)는 라이브 미실행 → 커밋 NOTE에 "testnet 검증 필수" 명시.**
+- 공개 인터페이스 변경: `funds withdraw pacifica`에서 `--to` 제거(Pacifica는 본인 지갑 전용; HL/Lighter는 유지). 그 외 출력/명령 불변.
