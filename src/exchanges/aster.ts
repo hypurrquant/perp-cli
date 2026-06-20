@@ -531,13 +531,27 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   async editOrder(symbol: string, orderId: string, price: string, size: string): Promise<unknown> {
-    // Aster has no atomic edit — cancel + replace
-    const openOrders = await this.getOpenOrders();
-    const existing = openOrders.find(o => o.orderId === orderId);
-    const side = existing?.side ?? "buy";
+    // Aster has no atomic edit — cancel + replace. Read the RAW order first so we
+    // preserve its side + reduceOnly (the mapped getOpenOrders drops reduceOnly).
+    const r = this._resolveSigner();
+    const rawOrders = await this._signedGetEip712("/fapi/v3/openOrders", {}, r) as Array<Record<string, unknown>>;
+    const existing = (rawOrders ?? []).find(o => String(o.orderId ?? "") === orderId);
+    if (!existing) {
+      // Rule #2: never default the side. A phantom replace on a guessed side can
+      // open/flip a position — fail honestly if the order is no longer open.
+      throw new PerpError("ORDER_NOT_FOUND", `Aster order ${orderId} is not among the open orders; refusing to edit (cannot guess its side).`, { exchange: "aster" });
+    }
+    const type = String(existing.type ?? "").toUpperCase();
+    if (type !== "LIMIT") {
+      // cancel+replace only rebuilds a plain LIMIT; re-placing a STOP/TP as a limit
+      // would drop the trigger and change semantics. Refuse rather than corrupt it.
+      throw new PerpError("INVALID_PARAMS", `Aster editOrder only supports plain LIMIT orders (order ${orderId} is ${type || "unknown"}). Cancel and re-place it explicitly.`, { exchange: "aster" });
+    }
+    const side = String(existing.side).toLowerCase() as "buy" | "sell";
+    const reduceOnly = existing.reduceOnly === true || String(existing.reduceOnly) === "true";
 
     await this.cancelOrder(symbol, orderId);
-    return this.limitOrder(symbol, side, price, size);
+    return this.limitOrder(symbol, side, price, size, { reduceOnly });
   }
 
   async cancelOrder(symbol: string, orderId: string): Promise<unknown> {
