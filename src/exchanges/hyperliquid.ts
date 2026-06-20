@@ -1149,20 +1149,12 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    */
   async withdraw(amount: string, destination: string, _opts?: { assetId?: number; routeType?: number }) {
     this.ensureSigner();
-    try {
-      return await this.sdk.exchange.initiateWithdrawal(destination, parseFloat(amount));
-    } catch {
-      // Fallback: try raw action if SDK method signature changed
-      const action = {
-        type: "withdraw3",
-        hyperliquidChain: this._testnet ? "Testnet" : "Mainnet",
-        signatureChainId: this._testnet ? "0x66eee" : "0xa4b1",
-        destination,
-        amount,
-        time: Date.now(),
-      };
-      return this._sendExchangeAction(action);
-    }
+    // initiateWithdrawal user-signs the withdraw3 bridge action with the correct
+    // HyperliquidSignTransaction EIP-712 scheme. Do NOT fall back to a raw
+    // _sendExchangeAction here: that signs with the L1 phantom-agent scheme (wrong
+    // for a bridge action → rejected) and the catch would swallow the real SDK
+    // error (Rule #2). Let any SDK error propagate honestly.
+    return this.sdk.exchange.initiateWithdrawal(destination, parseFloat(amount));
   }
 
   /**
@@ -1342,14 +1334,12 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Action type: approveBuilderFee
    */
   async approveBuilderFee(builder: string, maxFeeRate: string) {
-    const action = {
-      type: "approveBuilderFee",
-      hyperliquidChain: this._testnet ? "Testnet" : "Mainnet",
-      signatureChainId: this._testnet ? "0x66eee" : "0xa4b1",
-      maxFeeRate,
-      builder,
-    };
-    return this._sendExchangeAction(action);
+    this.ensureSigner();
+    // approveBuilderFee is a USER-signed action (HyperliquidSignTransaction EIP-712),
+    // not an L1 action — routing it through _sendExchangeAction would sign it with the
+    // wrong (L1 phantom-agent) scheme and the venue would reject it. Use the SDK, which
+    // user-signs it correctly.
+    return this.sdk.exchange.approveBuilderFee({ builder, maxFeeRate });
   }
 
   /**
@@ -1369,15 +1359,12 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Delegate/undelegate tokens for staking.
    */
   async tokenDelegate(validator: string, wei: string, isUndelegate = false) {
-    const action = {
-      type: "tokenDelegate",
-      hyperliquidChain: this._testnet ? "Testnet" : "Mainnet",
-      signatureChainId: this._testnet ? "0x66eee" : "0xa4b1",
-      validator,
-      isUndelegate,
-      wei,
-    };
-    return this._sendExchangeAction(action);
+    this.ensureSigner();
+    // tokenDelegate is a USER-signed staking action, not an L1 action — route it
+    // through the SDK (which user-signs with the correct EIP-712 scheme) rather than
+    // _sendExchangeAction (L1 phantom-agent scheme → rejected). SDK arg order is
+    // (validator, isUndelegate, wei: bigint).
+    return this.sdk.exchange.tokenDelegate(validator, isUndelegate, BigInt(wei));
   }
 
   /**
