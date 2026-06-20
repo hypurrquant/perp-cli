@@ -678,7 +678,7 @@ export function registerFundsCommands(
   withdraw
     .command("lighter <amount>")
     .description("Withdraw USDC from Lighter to your Ethereum L1 wallet")
-    .option("--asset-id <id>", "Asset ID (default: 2 = USDC)", "2")
+    .option("--asset-id <id>", "Asset index (default: 3 = USDC, matching the signer/adapter default)", "3")
     .option("--route <type>", "Route type: 0=perp, 1=spot (default: 0)", "0")
     .action(async (amount: string, opts: { assetId: string; route: string }) => {
       const amountNum = parseFloat(amount);

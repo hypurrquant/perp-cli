@@ -891,8 +891,17 @@ export class LighterAdapter implements ExchangeAdapter {
   private async _withdrawRaw(amount: number, assetId = 3, routeType = 0): Promise<unknown> {
     this.ensureSigner();
     const nonce = await this.getNextNonce();
+    // USDC has 6 decimals. The low-level WasmSignerClient.signWithdraw passes
+    // usdcAmount straight to the WASM module with NO scaling — only the SDK's
+    // high-level SignerClient wrapper multiplies by 1e6. Since this adapter calls
+    // the low-level signer, it must convert human USDC → smallest units itself,
+    // or it would sign a withdrawal 1,000,000x too small.
+    const scaledAmount = Math.floor(amount * 1_000_000);
+    if (amount > 0 && scaledAmount <= 0) {
+      throw new Error(`Lighter withdraw amount ${amount} USDC rounds below the minimum unit (1e-6 USDC).`);
+    }
     const signed = await this._signer.signWithdraw({
-      usdcAmount: amount, assetIndex: assetId, routeType, nonce,
+      usdcAmount: scaledAmount, assetIndex: assetId, routeType, nonce,
       apiKeyIndex: this._apiKeyIndex, accountIndex: this._accountIndex,
     });
     return this.sendTx(signed);

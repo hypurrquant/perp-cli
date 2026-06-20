@@ -1,6 +1,33 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { LighterAdapter } from "../../exchanges/lighter.js";
 import type { AgentMeta } from "../../settings.js";
+
+describe("LighterAdapter.withdraw — USDC 6-decimal scaling (P0 under-scale regression)", () => {
+  function makeAdapter() {
+    const a = new LighterAdapter("0xabc", true);
+    const signWithdraw = vi.fn().mockResolvedValue({ txType: 13, txInfo: "{}", txHash: "0x" });
+    (a as unknown as { ensureSigner: () => void }).ensureSigner = () => {};
+    (a as unknown as { getNextNonce: () => Promise<number> }).getNextNonce = async () => 7;
+    (a as unknown as { _signer: { signWithdraw: typeof signWithdraw } })._signer = { signWithdraw } as never;
+    (a as unknown as { sendTx: (s: unknown) => Promise<unknown> }).sendTx = async () => ({ ok: true });
+    return { a, signWithdraw };
+  }
+
+  it("scales human USDC to smallest units (100 → 100_000_000) for the low-level signer", async () => {
+    const { a, signWithdraw } = makeAdapter();
+    await a.withdraw("100", "");
+    expect(signWithdraw).toHaveBeenCalledTimes(1);
+    const params = signWithdraw.mock.calls[0][0] as { usdcAmount: number; assetIndex: number };
+    expect(params.usdcAmount).toBe(100_000_000);
+    expect(params.assetIndex).toBe(3); // USDC default
+  });
+
+  it("throws rather than signing a sub-unit (dust) withdrawal", async () => {
+    const { a, signWithdraw } = makeAdapter();
+    await expect(a.withdraw("0.0000001", "")).rejects.toThrow(/below the minimum unit/);
+    expect(signWithdraw).not.toHaveBeenCalled();
+  });
+});
 
 // These cover the pure / state-machine surface of LighterAdapter that does not
 // require the WASM signer or any REST call: the constructor only assigns
