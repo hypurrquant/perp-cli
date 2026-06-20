@@ -154,7 +154,7 @@ export async function smartOrder(
   const relevantSide = side === "buy" ? book.asks : book.bids;
   if (relevantSide.length === 0) {
     if (!fallback) throw new Error(`No ${side === "buy" ? "asks" : "bids"} in orderbook for ${symbol}`);
-    const result = await adapter.marketOrder(symbol, side, size);
+    const result = await adapter.marketOrder(symbol, side, size, { reduceOnly });
     return { result, method: "market_fallback", price: "0", bestBookPrice: "0", tickSize: "0" };
   }
 
@@ -185,7 +185,7 @@ export async function smartOrder(
     // result for a rejected order and treat the failure as success.
     if (hasOrderError(result)) {
       if (fallback) {
-        const fallbackResult = await adapter.marketOrder(symbol, side, size);
+        const fallbackResult = await adapter.marketOrder(symbol, side, size, { reduceOnly });
         return {
           result: fallbackResult,
           method: "market_fallback",
@@ -207,7 +207,7 @@ export async function smartOrder(
   } catch (err) {
     if (!fallback) throw err;
     // Fallback to raw market order for reliability
-    const result = await adapter.marketOrder(symbol, side, size);
+    const result = await adapter.marketOrder(symbol, side, size, { reduceOnly });
     return {
       result,
       method: "market_fallback",

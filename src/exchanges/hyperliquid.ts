@@ -645,7 +645,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts?: { reduceOnly?: boolean }) {
     this.ensureSigner();
     if (this._dex) {
-      const r = await this._dexMarketOrder(symbol, side, size);
+      const r = await this._dexMarketOrder(symbol, side, size, opts);
       this._validateOrderFill(r, symbol, side, size);
       await this._invalidateAccountCache();
       return r;
@@ -654,11 +654,13 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const origLog = console.log;
     console.log = () => {};
     try {
-      const result = await this.sdk.custom.marketOpen(
-        symbol.toUpperCase(),
-        side === "buy",
-        parseFloat(size),
-      );
+      // A reduce-only market order MUST use marketClose: the SDK's marketOpen
+      // hardcodes reduce_only:false, so a close/rollback sized above the live
+      // position would open or flip the opposite side. marketClose derives the
+      // closing side from the position and can only reduce — never flip.
+      const result = opts?.reduceOnly
+        ? await this.sdk.custom.marketClose(symbol.toUpperCase(), parseFloat(size))
+        : await this.sdk.custom.marketOpen(symbol.toUpperCase(), side === "buy", parseFloat(size));
       this._validateOrderFill(result, symbol, side, size);
       await this._invalidateAccountCache();
       return result;
@@ -672,7 +674,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Bypasses SDK's symbolConversion (which only knows native perps)
    * and constructs + signs the order action directly.
    */
-  private async _dexMarketOrder(symbol: string, side: "buy" | "sell", size: string) {
+  private async _dexMarketOrder(symbol: string, side: "buy" | "sell", size: string, opts?: { reduceOnly?: boolean }) {
     const assetIndex = await this.getAssetIndex(symbol.toUpperCase());
     const szDec = this.getSzDecimals(symbol);
 
@@ -704,7 +706,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       price: limitPrice,
       size: Number(size).toFixed(szDec),
       orderType: { limit: { tif: "Ioc" } },
-      reduceOnly: false,
+      reduceOnly: opts?.reduceOnly ?? false,
     });
   }
 

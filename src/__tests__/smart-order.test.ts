@@ -70,7 +70,7 @@ describe("smartOrder", () => {
     const result = await smartOrder(adapter, "BTC", "buy", "0.1", { fallback: true });
 
     expect(result.method).toBe("market_fallback");
-    expect(adapter.marketOrder).toHaveBeenCalledWith("BTC", "buy", "0.1");
+    expect(adapter.marketOrder).toHaveBeenCalledWith("BTC", "buy", "0.1", { reduceOnly: false });
   });
 
   it("throws by default when IOC limit fails (SSOT rule #2)", async () => {
@@ -212,7 +212,7 @@ describe("smartOrder", () => {
     const result = await smartOrder(adapter, "BTC", "sell", "0.1", { fallback: true });
 
     expect(result.method).toBe("market_fallback");
-    expect(adapter.marketOrder).toHaveBeenCalledWith("BTC", "sell", "0.1");
+    expect(adapter.marketOrder).toHaveBeenCalledWith("BTC", "sell", "0.1", { reduceOnly: false });
   });
 
   it("rounds tick size to eliminate floating-point noise", async () => {
