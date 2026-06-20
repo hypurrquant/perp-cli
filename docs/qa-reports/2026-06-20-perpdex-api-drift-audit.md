@@ -1,0 +1,79 @@
+# QA 리포트 — 4개 Perp DEX API Drift 감사 + 업데이트
+
+- **날짜:** 2026-06-20
+- **브랜치:** `qa/2026-05-16-numeric-audit-test-followup`
+- **베이스 커밋:** `2f3d9d8` (docs: document manual-order risk enforcement)
+- **추가 커밋 (4):**
+  - `cca359e` fix(aster): migrate public market-data reads /fapi/v1 → /fapi/v3
+  - `cbc111e` feat(trade): enforce risk limits on twap / scale-in / multi-leg orders
+  - `46c677d` feat(aster): populate position liquidationPrice + markPrice from /fapi/v3/positionRisk
+  - `20bcfab` feat(pacifica): support trigger_price_type on stop orders (mark/last/mid)
+- **방법:** 4개 DEX 공식 문서를 라이브 fetch(`perp-dex-docs` 스킬 canonical URL) → 어댑터 구현과 대조. 모든 drift 주장은 문서 인용 + 어댑터 `file:line` 증거 요구.
+
+---
+
+## 1. 감사 결과 매트릭스
+
+| DEX | 코어 서명/엔드포인트 | 확정 Drift | 조치 |
+|---|---|---|---|
+| **Lighter** | ✅ 전부 현행 | 없음 | tx-type(8·12·13·14·15·16·17·20)·order-type(0–5)·TIF(0·1) 상수 전수 일치. No-Fallback 가드가 signer 재넘버링 방어. 조치 불필요 |
+| **Pacifica** | ✅ 실거래 경로 전부 현행 | P1: `unbind_agent_wallet` 공식 표 부재 | **사람 검토** (§4). trigger_price_type 신규 지원 추가 (`20bcfab`) |
+| **Hyperliquid** | ✅ 코어 전부 현행 | P1(잠재): Outcome `MAX_SIDE=9` vs binary(0/1) | 미조치 — 인스턴스 `_validateOutcomeSide`가 이미 실시장 sideSpecs로 차단. §5 메뉴 |
+| **Aster** | ✅ Domain B·nonce(µs)·EIP-712 일치 | **P1: public read v1→v3** | **수정 완료** (`cca359e`) |
+
+세부 근거는 세션 transcript 및 메모리 `aster_verify_endpoint_pending.md` 참조.
+
+## 2. 적용한 변경 (drift 수정 + 후속)
+
+### 2.1 Aster public read `/fapi/v1/*` → `/fapi/v3/*` (`cca359e`)
+- V3 스펙은 모든 공개 엔드포인트를 `/fapi/v3/*`로만 문서화. `/fapi/v1/*`은 미문서화 Binance-compat 레거시 별칭.
+- **라이브 교차검증:** 7개 엔드포인트(exchangeInfo·ticker/24hr·depth·trades·klines·fundingRate·time) v1=v3 둘 다 HTTP200 + 응답 키 **완전 동일** 확인.
+- `_publicGet` 10곳 전부 v3 이전 (No-Fallback, SSOT Rule #2). stale v2 주석 정정.
+
+### 2.2 Aster 포지션 liquidationPrice + markPrice 배선 (`46c677d`)
+- `getPositions`가 liquidationPrice를 하드코딩 `"0"` 하던 것을, 신규 문서화된 `GET /fapi/v3/positionRisk`(Position Information v3, USER_DATA; markPrice+liquidationPrice 공급)로 대체. 기존 public premiumIndex mark-price probe를 1회 signed positionRisk 호출로 교체.
+- best-effort: positionRisk 실패 시 mark/liq `"0"` (기존 premiumIndex 실패와 동일 회복력).
+- **검증 한계:** positionRisk는 signed USER_DATA → 세션에 Aster 계정 없어 라이브 미실행. 문서 응답 스키마 + 단위테스트로 검증. **실계정 라이브 read 권장.**
+
+### 2.3 risk 게이트 twap/scale-in/multi-leg 확장 + multileg 테스트 (`cbc111e`)
+- 세션 시작 시 작업 트리에 있던 `trade.ts`(enforceOrderRisk를 twap/scale-in/multi에 확장) 미커밋 변경이 multileg 테스트 3개를 깨뜨림(mock 어댑터에 `getMarkets` 부재 → 게이트 abort → `marketOrder` 0회). mock에 `getMarkets` 추가로 실게이트를 통과시켜 복구.
+
+### 2.4 Pacifica `trigger_price_type` (`20bcfab`)
+- create-stop-order의 옵션 `trigger_price_type`(mark_price|last_trade_price|mid_price) 미지원이던 것을, opt-in `--trigger-type <mark|last|mid>` 플래그로 추가. 미사용 시 canonical-JSON이 undefined 필드 strip → 서명 byte-identical(기존 동작 불변).
+
+## 3. 테스트 결과
+
+- **전체:** 83 files / **1541 tests PASS** (세션 시작 클린 HEAD 1535 → **+6**: positionRisk 2 + trigger_price_type 4).
+- **빌드:** `tsc` exit 0.
+- **라이브 E2E:** `market list/book/funding --exchange aster` 실데이터 정상 반환 (v3 마이그레이션 end-to-end 검증).
+- **회귀:** Aster 111 tests PASS. 다중 어댑터 인터페이스(interface.ts stopOrder opts 확장) 변경 후 전체 GREEN.
+
+## 4. 사람 검토 / testnet 필요 (자금·키 — blind edit 금지)
+
+### 4.1 Aster agent 승인 서명 drift — **probe 준비 완료**
+- 라이브 V3 스펙이 `POST /fapi/v3/registerAndApproveAgent`를 **flat `msg`-string** EIP-712 envelope로 문서화. 어댑터(`aster-typed-data.ts:buildApproveAgentTypedData`)는 **structured-field** `ApproveAgent` + domain chainId **56** + `/fapi/v3/approveAgent` 사용 → 상이.
+- **문서 자체 모순:** typed_data JSON 예시 domain `chainId=1666`, 요약표 `chainId=56`.
+- `wallet agent verify aster` broken 건(메모리)과 직접 연관.
+- **probe 산출물:** `scripts/probe-aster-agent.ts` — testnet에서 2×2 매트릭스(엔드포인트 × domain chainId, doc flat-msg envelope) 제출 후 어느 조합이 `{"code":200}` 반환하는지 확인. `canWithdraw=false` 강제, testnet URL 강제, 키는 env(`ASTER_TESTNET_MASTER_PK`)로만. **세션 내 미실행(testnet 자격증명 없음) — 첫 실행이 곧 테스트.**
+  ```
+  ASTER_TESTNET_MASTER_PK=0x... ASTER_TESTNET_URL=https://fapi.asterdex-testnet.com \
+    npx tsx scripts/probe-aster-agent.ts
+  ```
+
+### 4.2 Pacifica `unbind_agent_wallet`
+- 공식 operation-types 표에 `bind_agent_wallet`만 있고 unbind/revoke 변형 없음. `wallet agent revoke pacifica`(`agent.ts` → `/agent/bind`에 `unbind_agent_wallet` type POST)가 무음 실패 가능. HypurrQuant_FE 출처(코드 주석 자인). **testnet probe 필요.**
+
+## 5. 다음 권장 액션 — 미구현 신규 기능 메뉴 (DEX가 추가, 어댑터 미노출)
+
+additive 기능(drift 아님). 거래 코드라 testnet 검증 동반 권장. 우선순위는 사용자 결정.
+
+- **Hyperliquid:** 주문에 `builder:{b,f}` + cloid `c` 부착(빌더 수수료 수익 — 현재 approveBuilderFee 정의돼 있으나 미배선/호출처 0), `expiresAfter`, `cancelByCloid`, `normalTpsl` grouping(브래킷).
+- **Lighter:** TWAP(order type 6), POST_ONLY TIF(2, 메이커 전용), `sendTxBatch`, grouped orders(tx 28), 전용 margin tx(29), integrator 귀속.
+- **Pacifica:** 진입 주문(market/limit)에 attached TP/SL, TWAP/batch 어댑터 노출.
+- **Aster:** `PUT /fapi/v3/order`(atomic modify — 현재 cancel+replace), batchOrders, `/fapi/v3/balance`(경량 잔고), chase(BBO-peg), countdownCancelAll(dead-man), hedge-mode `positionSide`.
+
+## 6. 공개 인터페이스 변경
+
+- **CLI:** `trade stop`에 `--trigger-type <mark|last|mid>` 추가 (opt-in, Pacifica). 그 외 명령·플래그·출력 불변.
+- **어댑터 인터페이스:** `ExchangeAdapter.stopOrder` opts에 `triggerType?` 추가 (optional, 미지원 어댑터 무시 — 하위호환).
+- **출력 형식:** Aster v1→v3 마이그레이션은 응답 shape 동일 → 사용자 가시 동작 불변. Aster 포지션의 `liquidationPrice`가 `"0"` → 실제값(positionRisk 성공 시).
