@@ -511,7 +511,13 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       equity = spotTotal;
       available = spotTotal - spotHold;
       if (mode === "portfolio") {
-        const PORTFOLIO_COLLATERAL = ["HYPE", "BTC", "USDH"];
+        // Eligible collateral per trading/portfolio-margin.md (global supply cap
+        // table) and trading/account-abstraction-modes.md ("eligible assets,
+        // which are currently HYPE, BTC, USDC, USDT"). USDH is NOT collateral —
+        // listing it here was wrong — and USDT was missing, so a portfolio
+        // account holding USDT collateral got no warning that its collateral is
+        // absent from `equity`. USDC is filtered out above as the quote asset.
+        const PORTFOLIO_COLLATERAL = ["HYPE", "BTC", "USDT"];
         const nonUsdc = balances.filter((b) => {
           const coin = String(b.coin);
           if (coin.startsWith("USDC")) return false;

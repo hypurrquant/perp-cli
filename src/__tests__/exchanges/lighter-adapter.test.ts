@@ -177,3 +177,56 @@ describe("LighterAdapter._resolveSigner / activeSignerTier — 3-tier priority",
     expect(a.activeSignerTier).toBeNull();
   });
 });
+
+/**
+ * Non-USDC withdrawals must refuse rather than mis-scale.
+ *
+ * `_withdrawRaw` hardcodes the 1e6 factor, which is USDC's scale specifically
+ * (assetDetails id 3: decimals 6, l1_decimals 6). ETH (id 1) and LIT (id 2)
+ * report decimals 8 with l1_decimals 18, so the same factor would sign a
+ * withdrawal ~100x too small — the exact class of defect 966ffc0 fixed for USDC.
+ * The correct factor is not determinable here (the docs say "the ERC20's
+ * decimals" while the L2 registry carries a different `decimals`), so this is a
+ * Rule #2 refusal, not a guess.
+ */
+describe("LighterAdapter.withdraw — non-USDC assets refuse instead of mis-scaling", () => {
+  const buildAdapter = async () => {
+    const mod = await import("../../exchanges/lighter.js");
+    const adapter = Object.create(mod.LighterAdapter.prototype);
+    adapter.ensureSigner = vi.fn();
+    adapter.getNextNonce = vi.fn().mockResolvedValue(1);
+    adapter.sendTx = vi.fn().mockResolvedValue({ ok: true });
+    adapter._apiKeyIndex = 4;
+    adapter._accountIndex = 42;
+    adapter._signer = { signWithdraw: vi.fn().mockResolvedValue({ txType: 13, txInfo: "{}" }) };
+    return adapter;
+  };
+
+  it("refuses asset id 1 (ETH)", async () => {
+    const adapter = await buildAdapter();
+    await expect(adapter.withdraw("1", "", { assetId: 1 })).rejects.toThrow(/only supports USDC/);
+    expect(adapter._signer.signWithdraw).not.toHaveBeenCalled();
+  });
+
+  it("refuses asset id 2 (LIT)", async () => {
+    const adapter = await buildAdapter();
+    await expect(adapter.withdraw("1", "", { assetId: 2 })).rejects.toThrow(/only supports USDC/);
+    expect(adapter._signer.signWithdraw).not.toHaveBeenCalled();
+  });
+
+  it("still signs USDC (asset id 3) scaled by 1e6", async () => {
+    const adapter = await buildAdapter();
+    await adapter.withdraw("100", "", { assetId: 3 });
+    expect(adapter._signer.signWithdraw).toHaveBeenCalledWith(
+      expect.objectContaining({ usdcAmount: 100_000_000, assetIndex: 3 }),
+    );
+  });
+
+  it("defaults to USDC when no assetId is supplied", async () => {
+    const adapter = await buildAdapter();
+    await adapter.withdraw("5", "");
+    expect(adapter._signer.signWithdraw).toHaveBeenCalledWith(
+      expect.objectContaining({ usdcAmount: 5_000_000, assetIndex: 3 }),
+    );
+  });
+});

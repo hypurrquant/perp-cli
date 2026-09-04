@@ -899,6 +899,24 @@ export class LighterAdapter implements ExchangeAdapter {
     // high-level SignerClient wrapper multiplies by 1e6. Since this adapter calls
     // the low-level signer, it must convert human USDC → smallest units itself,
     // or it would sign a withdrawal 1,000,000x too small.
+    // Rule #2: the 1e6 factor is USDC's scale specifically (assetDetails id 3:
+    // decimals 6, l1_decimals 6). Other assets do not share it — ETH (id 1) and
+    // LIT (id 2) report decimals 8 with l1_decimals 18 — so applying 1e6 to them
+    // signs a withdrawal ~100x too small, the same class of defect 966ffc0 fixed
+    // for USDC. The docs say the amount follows "the ERC20's decimals" while the
+    // L2 registry carries a different `decimals`, so the correct factor for a
+    // non-USDC asset is not determinable from here. Refuse instead of guessing
+    // at a funds path.
+    if (assetId !== 3) {
+      throw new PerpError(
+        "NOT_IMPLEMENTED",
+        `Lighter withdraw only supports USDC (asset id 3); asset id ${assetId} has a different decimal scale and is not implemented.`,
+        {
+          exchange: "lighter",
+          remediation: "Withdraw USDC (omit --asset-id), or withdraw this asset from the Lighter UI.",
+        },
+      );
+    }
     const scaledAmount = Math.floor(amount * 1_000_000);
     if (amount > 0 && scaledAmount <= 0) {
       throw new Error(`Lighter withdraw amount ${amount} USDC rounds below the minimum unit (1e-6 USDC).`);

@@ -14,5 +14,9 @@ export interface Position {
   margin_used: string;
   /** Optional — the live /positions spec omits leverage; treat as possibly absent. */
   leverage?: number;
+  /** True when the position is isolated-margin. Gates `margin`, which the spec
+   *  documents as "only shown when isolated" — so leverage cannot be derived
+   *  from margin on a cross position. */
+  isolated?: boolean;
   created_at: number;
 }

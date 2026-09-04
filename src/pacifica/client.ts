@@ -272,7 +272,11 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await this.signedBody("create_stop_order", params, account, signMessage);
+    // builder_code applies to ALL order-creation endpoints (changelog
+    // 2026-04-23), stop orders included. It was attached on market/limit/TWAP
+    // but not here, so every stop order lost the referral attribution.
+    const payload = this.addBuilderCode({ ...params });
+    const body = await this.signedBody("create_stop_order", payload, account, signMessage);
     return this.post("/orders/stop/create", body);
   }
 
@@ -336,7 +340,10 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn
   ): Promise<unknown> {
-    const body = await this.signedBody("set_position_tpsl", params, account, signMessage);
+    // Same referral gap as createStopOrder: position TP/SL creates orders and
+    // therefore carries builder_code too.
+    const payload = this.addBuilderCode({ ...params });
+    const body = await this.signedBody("set_position_tpsl", payload, account, signMessage);
     return this.post("/positions/tpsl", body);
   }
 

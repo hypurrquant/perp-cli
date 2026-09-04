@@ -264,7 +264,7 @@ export class PacificaAdapter implements ExchangeAdapter {
     ]);
     const priceMap = new Map(prices.map((p) => [p.symbol, p]));
 
-    return positions.map((p) => {
+    const mapped = positions.map((p) => {
       const mark = priceMap.get(p.symbol)?.mark ?? p.mark_price ?? "0";
       const side = p.side === "bid" ? "long" : "short";
       const size = parseFiniteVenueNumber(p.amount, "position.amount", "pacifica");
@@ -285,6 +285,14 @@ export class PacificaAdapter implements ExchangeAdapter {
       // (entry-notional / margin). This keeps the downstream
       // marginRequired = notional / leverage consistent with the real margin. 1 is
       // only a last resort for an effectively-empty position.
+      // The margin derivation below only works for ISOLATED positions: the docs
+      // define `margin` as "Amount of margin allocated to an isolated position
+      // (only shown when isolated)", so a cross position reports "0" and the
+      // derivation collapses to 0 — which previously fell through to a
+      // fabricated 1x on the most common case. For cross, the documented default
+      // is max leverage, not 1: get-account-settings.md says margin settings
+      // "default to cross margin and leverage default to max ... will return
+      // blank". 1 remains only a genuine last resort.
       const marginNum = parseFiniteVenueNumber(p.margin ?? p.margin_used, "position.margin", "pacifica", { defaultValue: 0 });
       const apiLev = typeof p.leverage === "number" && p.leverage > 0 ? p.leverage : 0;
       const entryNotional = size * entry;
@@ -298,9 +306,23 @@ export class PacificaAdapter implements ExchangeAdapter {
         markPrice: mark,
         liquidationPrice: String(p.liquidation_price ?? "N/A"),
         unrealizedPnl: upnl.toFixed(4),
-        leverage: apiLev || derivedLev || 1,
+        // 0 = unresolved; filled from the market's max leverage below.
+        leverage: apiLev || derivedLev,
       };
     });
+
+    // Cross positions resolve to 0 above (no `margin` to derive from), and the
+    // documented default for them is the market's max leverage. Fetch it ONLY
+    // when something is actually unresolved — coupling every positions read to
+    // market info would let a market-info failure take down the positions read
+    // for a value most rows never need. getMarkets() is cached (CACHE_TTL).
+    if (mapped.some((m) => m.leverage <= 0)) {
+      const maxLevMap = new Map((await this.getMarkets()).map((m) => [m.symbol, m.maxLeverage]));
+      for (const m of mapped) {
+        if (m.leverage <= 0) m.leverage = maxLevMap.get(m.symbol) || 1;
+      }
+    }
+    return mapped;
   }
 
   async getOpenOrders(): Promise<ExchangeOrder[]> {

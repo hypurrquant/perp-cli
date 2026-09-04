@@ -355,3 +355,65 @@ describe("HyperliquidAdapter.getBalance — portfolio mode collateral filter gua
     expect(bal.equity).toBe("500");
   });
 });
+
+/**
+ * Portfolio-mode collateral list must match the venue's eligible assets.
+ *
+ * trading/portfolio-margin.md caps and trading/account-abstraction-modes.md
+ * ("eligible assets, which are currently HYPE, BTC, USDC, USDT") define the set.
+ * The list previously read ["HYPE","BTC","USDH"] — USDH is not collateral at
+ * all, and USDT was missing, so a portfolio account holding USDT collateral got
+ * NO warning that its collateral is excluded from the reported equity.
+ */
+describe("HyperliquidAdapter portfolio-mode collateral warning", () => {
+  const buildPortfolioAdapter = async (balances: Array<Record<string, unknown>>) => {
+    const mod = await import("../../exchanges/hyperliquid.js");
+    const adapter = Object.create(mod.HyperliquidAdapter.prototype);
+    adapter._address = "0xabc";
+    adapter._dex = undefined;
+    adapter._getAbstractionMode = vi.fn().mockResolvedValue("portfolio");
+    adapter._getSpotClearinghouseState = vi.fn().mockResolvedValue({ balances });
+    adapter._getClearinghouseState = vi.fn().mockResolvedValue({
+      marginSummary: {}, crossMarginSummary: {}, assetPositions: [],
+    });
+    return adapter;
+  };
+
+  const warningsFor = async (balances: Array<Record<string, unknown>>) => {
+    const lines: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((c) => { lines.push(String(c)); return true; });
+    try {
+      const adapter = await buildPortfolioAdapter(balances);
+      await adapter.getBalance();
+    } finally {
+      spy.mockRestore();
+    }
+    return lines.join("");
+  };
+
+  it("warns about USDT collateral (previously invisible)", async () => {
+    const out = await warningsFor([
+      { coin: "USDC", total: "100", hold: "0" },
+      { coin: "USDT", total: "500", hold: "0" },
+    ]);
+    expect(out).toMatch(/USDT=500/);
+  });
+
+  it("still warns about HYPE and BTC collateral", async () => {
+    const out = await warningsFor([
+      { coin: "USDC", total: "100", hold: "0" },
+      { coin: "HYPE", total: "10", hold: "0" },
+      { coin: "BTC", total: "1", hold: "0" },
+    ]);
+    expect(out).toMatch(/HYPE=10/);
+    expect(out).toMatch(/BTC=1/);
+  });
+
+  it("does not treat USDH as collateral — it is not an eligible asset", async () => {
+    const out = await warningsFor([
+      { coin: "USDC", total: "100", hold: "0" },
+      { coin: "USDH", total: "999", hold: "0" },
+    ]);
+    expect(out).not.toMatch(/USDH/);
+  });
+});
