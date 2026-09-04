@@ -799,8 +799,15 @@ export class LighterAdapter implements ExchangeAdapter {
       return results;
     }
     const nonce = await this.getNextNonce();
+    // TIF for CancelAllOrders is its OWN enum, not the order TIF enum:
+    // ImmediateCancelAll = 0, ScheduledCancelAll = 1, AbortScheduledCancelAll = 2
+    // (lighter-go types/txtypes/constants.go). Sending 1 with time = now + 1h
+    // did NOT cancel anything — it armed a dead-man switch to fire an hour
+    // later, so `trade cancel-all` and `trade flatten` reported success while
+    // every order stayed live, and orders placed during that hour were wiped
+    // without warning. Cancel-all must be immediate.
     const signed = await this._signer.signCancelAllOrders({
-      timeInForce: 1, time: Date.now() + 3600_000, nonce,
+      timeInForce: 0, time: 0, nonce,
       apiKeyIndex: this._apiKeyIndex, accountIndex: this._accountIndex,
     });
     return this.sendTx(signed);

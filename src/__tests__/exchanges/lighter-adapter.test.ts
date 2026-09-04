@@ -230,3 +230,43 @@ describe("LighterAdapter.withdraw — non-USDC assets refuse instead of mis-scal
     );
   });
 });
+
+/**
+ * cancel-all must be IMMEDIATE.
+ *
+ * CancelAllOrders carries its own TIF enum, distinct from the order TIF enum:
+ * ImmediateCancelAll = 0 / ScheduledCancelAll = 1 / AbortScheduledCancelAll = 2
+ * (lighter-go types/txtypes/constants.go:109-111). The adapter sent 1 with
+ * time = now + 1h, which is a SCHEDULED cancel — nothing was cancelled at call
+ * time, `trade cancel-all` and `trade flatten` still printed success, and an
+ * hour later the schedule fired and wiped whatever was resting by then.
+ */
+describe("LighterAdapter.cancelAllOrders — immediate, not scheduled", () => {
+  const buildAdapter = async () => {
+    const mod = await import("../../exchanges/lighter.js");
+    const adapter = Object.create(mod.LighterAdapter.prototype);
+    adapter.ensureSigner = vi.fn();
+    adapter.getNextNonce = vi.fn().mockResolvedValue(7);
+    adapter.sendTx = vi.fn().mockResolvedValue({ ok: true });
+    adapter._apiKeyIndex = 4;
+    adapter._accountIndex = 42;
+    adapter._signer = { signCancelAllOrders: vi.fn().mockResolvedValue({ txType: 16, txInfo: "{}" }) };
+    return adapter;
+  };
+
+  it("signs ImmediateCancelAll (0), never ScheduledCancelAll (1)", async () => {
+    const adapter = await buildAdapter();
+    await adapter.cancelAllOrders();
+    const arg = adapter._signer.signCancelAllOrders.mock.calls[0][0];
+    expect(arg.timeInForce).toBe(0);
+  });
+
+  it("does not schedule the cancel into the future", async () => {
+    const adapter = await buildAdapter();
+    await adapter.cancelAllOrders();
+    const arg = adapter._signer.signCancelAllOrders.mock.calls[0][0];
+    // A non-zero future `time` combined with TIF 1 is precisely the dead-man
+    // switch shape that made cancel-all a no-op.
+    expect(arg.time).toBe(0);
+  });
+});
