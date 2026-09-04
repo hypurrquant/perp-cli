@@ -336,7 +336,13 @@ export function registerFundsCommands(
   lighterDeposit
     .command("ethereum <amount>")
     .description("Deposit USDC via Ethereum L1 (min 1 USDC, gas: $3-10+)")
-    .option("--asset-id <id>", "Asset index (default: 2 = USDC)", "2")
+    // Asset index comes from GET /api/v1/assetDetails, which the deposit docs
+    // name as the source for the contract's `_assetIndex`. Live registry:
+    // 3 = USDC (l1_decimals 6), 2 = LIT (l1_decimals 18), 1 = ETH. The old
+    // "2 = USDC" default contradicted this function's own USDC ERC20 transfer
+    // and its parseUnits(amount, 6). Same defect as the withdraw side, which
+    // was corrected to 3 in 966ffc0; the deposit side was missed then.
+    .option("--asset-id <id>", "Asset index (default: 3 = USDC, per /api/v1/assetDetails)", "3")
     .option("--route <type>", "Route: 0=perps, 1=spot (default: 0)", "0")
     .action(async (amount: string, opts: { assetId: string; route: string }) => {
       const amountNum = parseFloat(amount);
