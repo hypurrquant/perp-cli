@@ -92,3 +92,44 @@ describe("classifyError — OWS / agent-wallet codes (ordering test)", () => {
     expect(r.code).toBe("SYMBOL_NOT_FOUND");
   });
 });
+
+/**
+ * Aster gated every authenticated V3 endpoint behind a first main-wallet
+ * deposit on 2026-09-01 (venue code -5050). Without a dedicated branch the
+ * venue message fell through to a bare EXCHANGE_ERROR with no remediation, so
+ * the user could not tell a deposit requirement from a key/permission failure.
+ * The agent-wallet and builder endpoints are exempt, which is why onboarding
+ * succeeds and the FIRST authenticated read is what fails.
+ */
+describe("classifyError — DEPOSIT_REQUIRED (Aster -5050)", () => {
+  it('Aster message "This function can only be used after deposit." → DEPOSIT_REQUIRED', () => {
+    const r = classifyError(new Error("[-5050] This function can only be used after deposit."), "aster");
+    expect(r.code).toBe("DEPOSIT_REQUIRED");
+    expect(r.status).toBe(403);
+    expect(r.retryable).toBe(false);
+    expect(r.exchange).toBe("aster");
+  });
+
+  it("carries a remediation naming the deposit as the blocker", () => {
+    const r = classifyError(new Error("This function can only be used after deposit."), "aster");
+    expect(r.code).toBe("DEPOSIT_REQUIRED");
+    expect(r.remediation).toMatch(/deposit/i);
+  });
+
+  it("matches on the numeric venue code even if the message text is reworded", () => {
+    const r = classifyError(new Error("[-5050] deposit needed"), "aster");
+    expect(r.code).toBe("DEPOSIT_REQUIRED");
+  });
+
+  it("matches the DEPOSIT_REQUIRED code name itself", () => {
+    const r = classifyError(new Error("DEPOSIT_REQUIRED"), "aster");
+    expect(r.code).toBe("DEPOSIT_REQUIRED");
+  });
+
+  // Regression: an ordinary deposit-shaped message must not be hijacked when it
+  // is really about something else the classifier already handles.
+  it('"Insufficient balance to deposit" still → INSUFFICIENT_BALANCE', () => {
+    const r = classifyError(new Error("Insufficient balance"), "aster");
+    expect(r.code).toBe("INSUFFICIENT_BALANCE");
+  });
+});

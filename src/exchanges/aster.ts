@@ -866,7 +866,7 @@ export class AsterAdapter implements ExchangeAdapter {
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       const s = classifyError(new Error(`${method} ${path} failed (${res.status}): ${text.slice(0, 200)}`), "aster");
-      throw new PerpError(s.code, s.message, { exchange: s.exchange });
+      throw new PerpError(s.code, s.message, { exchange: s.exchange, ...(s.remediation ? { remediation: s.remediation } : {}) });
     }
     // Parse JSON, then validate venue error envelope. Aster success returns
     // either an object whose `code` is "000000"/200 (or absent) or an array
@@ -882,8 +882,16 @@ export class AsterAdapter implements ExchangeAdapter {
       const json = parsed as { code?: string | number; msg?: string };
       if (json.code !== undefined && json.code !== "000000" && json.code !== 200 && json.code !== 0) {
         const rawMsg = typeof json.msg === "string" ? json.msg : JSON.stringify(json);
-        const s = classifyError(new Error(rawMsg), "aster");
-        throw new PerpError(s.code, s.message, { exchange: s.exchange });
+        // Classify on the venue code AND the message: Aster's terse messages
+        // ("This function can only be used after deposit.") are the only signal
+        // for some codes, but the numeric code is the stable key — feed both so
+        // a message reword upstream does not silently drop the mapping.
+        const s = classifyError(new Error(`[${json.code}] ${rawMsg}`), "aster");
+        throw new PerpError(s.code, rawMsg, {
+          exchange: s.exchange,
+          venueCode: json.code,
+          ...(s.remediation ? { remediation: s.remediation } : {}),
+        });
       }
     }
     return parsed;

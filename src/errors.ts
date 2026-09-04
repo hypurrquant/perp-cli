@@ -11,6 +11,7 @@ export const ERROR_CODES = {
   SIZE_TOO_LARGE: { code: "SIZE_TOO_LARGE", status: 400, retryable: false },
   RISK_VIOLATION: { code: "RISK_VIOLATION", status: 403, retryable: false },
   DUPLICATE_ORDER: { code: "DUPLICATE_ORDER", status: 409, retryable: false },
+  DEPOSIT_REQUIRED: { code: "DEPOSIT_REQUIRED", status: 403, retryable: false },
 
   // Agent-wallet error codes (OWS / Phase 2a)
   NO_SIGNER_AVAILABLE:  { code: "NO_SIGNER_AVAILABLE",  status: 401, retryable: false },
@@ -146,6 +147,24 @@ export function classifyError(err: unknown, exchange?: string): StructuredError 
   }
   if (lower.includes("approve_failed") || (lower.includes("approve failed") && lower.includes("clean"))) {
     return { ...ERROR_CODES.APPROVE_FAILED, message, exchange };
+  }
+
+  // Aster V3 gates every authenticated endpoint behind a first main-wallet
+  // deposit as of 2026-09-01 (venue code -5050 DEPOSIT_REQUIRED, message
+  // "This function can only be used after deposit."). Without this branch the
+  // message falls through to a bare EXCHANGE_ERROR and the user never learns
+  // that a deposit — not a key/permission problem — is what blocks them. The
+  // agent-wallet and builder endpoints are exempt, so onboarding succeeds and
+  // the first read is what fails.
+  if (lower.includes("after deposit") || lower.includes("deposit_required") || lower.includes("-5050")) {
+    return {
+      ...ERROR_CODES.DEPOSIT_REQUIRED,
+      message,
+      exchange,
+      remediation:
+        "This venue requires a completed deposit to the main wallet before any authenticated endpoint works. " +
+        "Deposit funds from the exchange UI, then retry. Public market data and agent-wallet setup are unaffected.",
+    };
   }
 
   if (lower.includes("not found") && (lower.includes("symbol") || lower.includes("market") || lower.includes("asset"))) {
