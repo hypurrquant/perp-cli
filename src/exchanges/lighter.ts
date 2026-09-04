@@ -672,7 +672,6 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts?: { reduceOnly?: boolean }) {
     this.ensureSigner();
-    void opts; // lighter doesn't support reduceOnly on market orders
     await this.ensureMarketMap();
 
     const nonce = await this.getNextNonce();
@@ -690,7 +689,14 @@ export class LighterAdapter implements ExchangeAdapter {
       isAsk: side === "sell" ? 1 : 0,
       orderType: 1, // ORDER_TYPE_MARKET
       timeInForce: 0, // IOC (Immediate or Cancel)
-      reduceOnly: 0,
+      // reduceOnly is a first-class order field (`ReduceOnly uint8 json:"ro"`),
+      // not a limit-order-only one — the previous `void opts` dropped it and
+      // every close/rollback that asked for reduce-only was sent as a plain
+      // market order, so one sized above the live position could FLIP it. The
+      // venue enforces the constraint itself (21732 "reduce only increases
+      // position"), so passing it through converts a silent flip into an honest
+      // rejection. Same defect 6812c86 fixed on Hyperliquid.
+      reduceOnly: opts?.reduceOnly ? 1 : 0,
       triggerPrice: 0,
       orderExpiry: 0, // DEFAULT_IOC_EXPIRY
       nonce,

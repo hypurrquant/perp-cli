@@ -270,3 +270,58 @@ describe("LighterAdapter.cancelAllOrders — immediate, not scheduled", () => {
     expect(arg.time).toBe(0);
   });
 });
+
+/**
+ * Market orders must honour reduceOnly.
+ *
+ * `reduceOnly` is a first-class field on the Lighter order struct
+ * (`ReduceOnly uint8 json:"ro"`), not a limit-only one. marketOrder used to
+ * `void opts` and hardcode 0, so every close/rollback that asked for
+ * reduce-only went out as a plain market order — one sized above the live
+ * position could FLIP it. The venue enforces the constraint itself
+ * (21732 "reduce only increases position"), so passing it through turns a
+ * silent flip into an honest rejection. Reachable from smart-order's close and
+ * fallback paths (smart-order.ts:157,188,210). Same defect 6812c86 fixed on
+ * Hyperliquid.
+ */
+describe("LighterAdapter.marketOrder — reduceOnly is honoured", () => {
+  const buildAdapter = async () => {
+    const mod = await import("../../exchanges/lighter.js");
+    const adapter = Object.create(mod.LighterAdapter.prototype);
+    adapter.ensureSigner = vi.fn();
+    adapter.ensureMarketMap = vi.fn();
+    adapter.getNextNonce = vi.fn().mockResolvedValue(1);
+    adapter.getMarketIndex = vi.fn().mockReturnValue(0);
+    adapter.getMarkPrice = vi.fn().mockResolvedValue(100);
+    adapter.toTicks = vi.fn().mockReturnValue({ baseAmount: 1000, priceTicks: 200 });
+    adapter.nextClientOrderIndex = vi.fn().mockReturnValue(1);
+    adapter.signOrder = vi.fn().mockResolvedValue({ txType: 14, txInfo: "{}" });
+    adapter.sendTx = vi.fn().mockResolvedValue({ ok: true });
+    adapter._verifyFill = vi.fn();
+    return adapter;
+  };
+
+  it("sends reduceOnly=1 when the caller asks to reduce only", async () => {
+    const adapter = await buildAdapter();
+    await adapter.marketOrder("BTC", "sell", "0.01", { reduceOnly: true }).catch(() => {});
+    expect(adapter.signOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ reduceOnly: 1, orderType: 1 }),
+    );
+  });
+
+  it("sends reduceOnly=0 for a normal entry", async () => {
+    const adapter = await buildAdapter();
+    await adapter.marketOrder("BTC", "buy", "0.01").catch(() => {});
+    expect(adapter.signOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ reduceOnly: 0 }),
+    );
+  });
+
+  it("sends reduceOnly=0 when opts explicitly says false", async () => {
+    const adapter = await buildAdapter();
+    await adapter.marketOrder("BTC", "buy", "0.01", { reduceOnly: false }).catch(() => {});
+    expect(adapter.signOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ reduceOnly: 0 }),
+    );
+  });
+});

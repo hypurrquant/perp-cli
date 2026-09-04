@@ -366,10 +366,15 @@ export class LighterSpotAdapter implements SpotAdapter {
     const signer = this._lt.signer;
     const nonce = await this._getNextNonce();
     const apiKeyIndex = (this._lt as unknown as { _apiKeyIndex: number })._apiKeyIndex;
-    // time must be in milliseconds, in the future
+    // CancelAllOrders has its OWN time-in-force enum: ImmediateCancelAll = 0,
+    // ScheduledCancelAll = 1, AbortScheduledCancelAll = 2 (lighter-go
+    // types/txtypes/constants.go). Sending 1 with a future `time` armed a
+    // dead-man switch an hour out instead of cancelling — nothing was cancelled
+    // at call time and the schedule later wiped whatever was resting. Same
+    // defect as the perp adapter's cancelAllOrders.
     const signed = await signer.signCancelAllOrders({
-      timeInForce: 1,
-      time: Date.now() + 3600_000,
+      timeInForce: 0,
+      time: 0,
       nonce,
       apiKeyIndex,
       accountIndex: this._lt.accountIndex,
