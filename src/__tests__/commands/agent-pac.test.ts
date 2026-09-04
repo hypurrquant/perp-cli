@@ -69,7 +69,7 @@ vi.mock("node:readline/promises", () => ({
 const { registerWalletAgentCommands } = await import("../../commands/agent.js");
 const { getAgent, setAgent } = await import("../../agent-wallet/store.js");
 import { PacificaAdapter } from "../../exchanges/pacifica.js";
-import { buildBindAgentMessage, buildUnbindAgentMessage } from "../../exchanges/pacifica-typed-data.js";
+import { buildBindAgentMessage, buildRevokeAgentMessage, buildRevokeAllAgentsMessage } from "../../exchanges/pacifica-typed-data.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -289,9 +289,12 @@ describe("Test 4: PAC bind canonical JSON shape", () => {
 // Test 5: PAC unbind canonical JSON
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("Test 5: PAC unbind canonical JSON", () => {
-  it("buildUnbindAgentMessage produces sorted JSON with unbind_agent_wallet type", () => {
-    const built = buildUnbindAgentMessage({
+describe("Test 5: PAC revoke canonical JSON", () => {
+  it("buildRevokeAgentMessage produces sorted JSON with revoke_agent_wallet type", () => {
+    // Operation type + endpoint follow the OFFICIAL Pacifica SDK
+    // (rest/api_agent_keys_detailed.py). The former `unbind_agent_wallet` →
+    // /agent/bind shape was a HypurrQuant carry-over that Pacifica rejects.
+    const built = buildRevokeAgentMessage({
       account: "MasterPacBase58Address1111111111111111111111",
       agentWallet: "AgentPacBase58Address11111111111111111111111",
       timestamp: 1700000000000,
@@ -299,19 +302,34 @@ describe("Test 5: PAC unbind canonical JSON", () => {
     });
 
     expect(built.canonicalJson).toBe(
-      '{"data":{"agent_wallet":"AgentPacBase58Address11111111111111111111111"},"expiry_window":5000,"timestamp":1700000000000,"type":"unbind_agent_wallet"}',
+      '{"data":{"agent_wallet":"AgentPacBase58Address11111111111111111111111"},"expiry_window":5000,"timestamp":1700000000000,"type":"revoke_agent_wallet"}',
     );
-    expect(built.header.type).toBe("unbind_agent_wallet");
+    expect(built.header.type).toBe("revoke_agent_wallet");
   });
 
-  it("empty agent_wallet allowed (revoke-all convention)", () => {
-    const built = buildUnbindAgentMessage({
+  it("empty agent_wallet is REFUSED — revoke-all is its own operation", () => {
+    // The empty-string "revoke all" sentinel was invented locally; Pacifica
+    // exposes revoke_all_agent_wallets → /agent/revoke_all instead. Signing an
+    // empty agent_wallet would produce a request the venue cannot act on.
+    expect(() => buildRevokeAgentMessage({
       account: "MasterPacBase58Address1111111111111111111111",
       agentWallet: "",
       timestamp: 1700000000000,
       expiryWindow: 5000,
+    })).toThrow(/non-empty agentWallet/);
+  });
+
+  it("buildRevokeAllAgentsMessage uses revoke_all_agent_wallets with an empty payload", () => {
+    const built = buildRevokeAllAgentsMessage({
+      account: "MasterPacBase58Address1111111111111111111111",
+      timestamp: 1700000000000,
+      expiryWindow: 5000,
     });
-    expect(built.canonicalJson).toContain('"agent_wallet":""');
+
+    expect(built.canonicalJson).toBe(
+      '{"data":{},"expiry_window":5000,"timestamp":1700000000000,"type":"revoke_all_agent_wallets"}',
+    );
+    expect(built.header.type).toBe("revoke_all_agent_wallets");
   });
 });
 
@@ -320,7 +338,7 @@ describe("Test 5: PAC unbind canonical JSON", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Test 6: PAC revoke happy path (AC-30)", () => {
-  it("sends signed unbind action and deletes settings entry", async () => {
+  it("sends signed revoke action to /agent/revoke and deletes settings entry", async () => {
     setupOkOws();
     setAgent("pacifica", makePacAgentMeta());
 
@@ -344,8 +362,9 @@ describe("Test 6: PAC revoke happy path (AC-30)", () => {
 
     expect(getAgent("pacifica", "perp-cli-pac")).toBeNull();
     expect(fetchMock).toHaveBeenCalled();
+    expect(String(fetchMock.mock.calls[0][0])).toBe("https://api.pacifica.fi/api/v1/agent/revoke");
     const callBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(callBody.type).toBe("unbind_agent_wallet");
+    expect(callBody.type).toBe("revoke_agent_wallet");
     expect(callBody.agent_wallet).toBe("AgentPacBase58Address11111111111111111111111");
   });
 });
@@ -354,29 +373,74 @@ describe("Test 6: PAC revoke happy path (AC-30)", () => {
 // Test 7: PAC revoke when network fails — still clears local state (best-effort)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("Test 7: PAC revoke best-effort on network failure", () => {
-  it("network error in revoke POST → settings still cleared", async () => {
-    setupOkOws();
-    setAgent("pacifica", makePacAgentMeta());
-
-    const fetchMock = vi.fn().mockRejectedValue(new Error("ENETUNREACH"));
-    vi.stubGlobal("fetch", fetchMock);
-
+describe("Test 7: PAC revoke fails loudly when the venue refuses", () => {
+  // Rule #2. The previous contract cleared local state even when the venue
+  // never acknowledged the revoke, so the user was told the key was dead while
+  // it stayed authorized to trade — and the local record that identified it was
+  // gone. A failed revoke must surface and must NOT delete the record.
+  const runRevoke = async () => {
     vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as never);
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const consoleLines: string[] = [];
-    vi.spyOn(console, "log").mockImplementation((...args) => {
-      consoleLines.push(args.map(String).join(" "));
-    });
-
+    vi.spyOn(console, "log").mockImplementation(() => {});
     const prog = makeProgram();
-    await prog.parseAsync([
+    return prog.parseAsync([
       "node", "perp", "wallet", "agent", "revoke", "pacifica", "perp-cli-pac",
       "--passphrase", "testpass",
       "--json",
     ]);
+  };
 
-    // settings still cleared (revoke is best-effort)
+  it("network error in revoke POST → error surfaced, settings NOT cleared", async () => {
+    setupOkOws();
+    setAgent("pacifica", makePacAgentMeta());
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ENETUNREACH")));
+
+    await expect(runRevoke()).rejects.toThrow("process.exit");
+    expect(getAgent("pacifica", "perp-cli-pac")).not.toBeNull();
+  });
+
+  it("HTTP 4xx from /agent/revoke → error surfaced, settings NOT cleared", async () => {
+    setupOkOws();
+    setAgent("pacifica", makePacAgentMeta());
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      text: async () => JSON.stringify({ success: false, error: "unknown operation type" }),
+    }));
+
+    await expect(runRevoke()).rejects.toThrow("process.exit");
+    expect(getAgent("pacifica", "perp-cli-pac")).not.toBeNull();
+  });
+
+  it("HTTP 200 with success:false → still treated as a refusal", async () => {
+    setupOkOws();
+    setAgent("pacifica", makePacAgentMeta());
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ success: false, error: "agent not bound" }),
+    }));
+
+    await expect(runRevoke()).rejects.toThrow("process.exit");
+    expect(getAgent("pacifica", "perp-cli-pac")).not.toBeNull();
+  });
+
+  it("--force skips the venue call and clears local state", async () => {
+    setupOkOws();
+    setAgent("pacifica", makePacAgentMeta());
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as never);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const prog = makeProgram();
+    await prog.parseAsync([
+      "node", "perp", "wallet", "agent", "revoke", "pacifica", "perp-cli-pac",
+      "--force", "--json",
+    ]);
+
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(getAgent("pacifica", "perp-cli-pac")).toBeNull();
   });
 });

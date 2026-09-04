@@ -12,10 +12,14 @@
  *      where header is `{ type, timestamp, expiry_window }`. The `data` key
  *      is sorted lexicographically alongside the header fields.
  *
- * The agent bind/unbind action types are documented in HypurrQuant_FE
- * `PacificaPerpAdapter.ts` (production reference for HypurrQuant_FE; see
- * project memory `hypurrquant_fe_reference.md`). We mirror their `bind_agent_wallet`
- * and `unbind_agent_wallet` operation types here.
+ * `bind_agent_wallet` mirrors HypurrQuant_FE `PacificaPerpAdapter.ts` (see
+ * project memory `hypurrquant_fe_reference.md`).
+ *
+ * Revocation follows the OFFICIAL Pacifica SDK (`rest/api_agent_keys_detailed.py`):
+ * `revoke_agent_wallet` → POST /agent/revoke, `revoke_all_agent_wallets` →
+ * POST /agent/revoke_all. An earlier `unbind_agent_wallet` → /agent/bind shape
+ * was carried over from the HypurrQuant reference and is NOT part of Pacifica's
+ * API; it was silently rejected, leaving revoked-looking agents authorized.
  *
  * Pure functions — no side effects, no fs/fetch/env reads.
  */
@@ -38,13 +42,10 @@ export interface BindAgentMessageParams {
   expiryWindow?: number;
 }
 
-export interface UnbindAgentMessageParams {
+export interface RevokeAgentMessageParams {
   /** Master Solana base58 public key. */
   account: string;
-  /**
-   * Agent Solana base58 public key to unbind. Pass an empty string to
-   * unbind all agent wallets per Pacifica convention.
-   */
+  /** Agent Solana base58 public key to revoke. Required — must not be empty. */
   agentWallet: string;
   timestamp?: number;
   expiryWindow?: number;
@@ -90,18 +91,45 @@ export function buildBindAgentMessage(params: BindAgentMessageParams): BuiltMess
 }
 
 /**
- * Build the canonical JSON for `unbind_agent_wallet`.
+ * Build the canonical JSON for `revoke_agent_wallet` (POST /agent/revoke).
  *
- * Pacifica convention: empty `agent_wallet` string unbinds all agents; a
- * specific base58 address unbinds just that agent.
+ * Revokes exactly one agent wallet. To revoke every agent, use
+ * `buildRevokeAllAgentsMessage` — Pacifica exposes that as its own operation
+ * type and endpoint, not as an empty-string sentinel on this one.
  */
-export function buildUnbindAgentMessage(params: UnbindAgentMessageParams): BuiltMessage {
+export function buildRevokeAgentMessage(params: RevokeAgentMessageParams): BuiltMessage {
+  if (!params.agentWallet) {
+    // Rule #2: an empty agent address is not a "revoke all" sentinel on this
+    // operation. Signing one would produce a request the venue cannot act on.
+    throw new Error("buildRevokeAgentMessage requires a non-empty agentWallet; use buildRevokeAllAgentsMessage to revoke every agent.");
+  }
   const timestamp = params.timestamp ?? Date.now();
   const expiryWindow = params.expiryWindow ?? DEFAULT_EXPIRY_WINDOW;
-  const type = "unbind_agent_wallet";
+  const type = "revoke_agent_wallet";
   const payload: Record<string, unknown> = {
     agent_wallet: params.agentWallet,
   };
+  const header = { type, timestamp, expiry_window: expiryWindow };
+  const wrapped = { ...header, data: payload };
+  const sorted = sortJsonKeys(wrapped);
+  return {
+    canonicalJson: JSON.stringify(sorted),
+    header,
+    payload,
+  };
+}
+
+/**
+ * Build the canonical JSON for `revoke_all_agent_wallets`
+ * (POST /agent/revoke_all). Payload is empty per the official SDK.
+ */
+export function buildRevokeAllAgentsMessage(
+  params: Omit<RevokeAgentMessageParams, "agentWallet">,
+): BuiltMessage {
+  const timestamp = params.timestamp ?? Date.now();
+  const expiryWindow = params.expiryWindow ?? DEFAULT_EXPIRY_WINDOW;
+  const type = "revoke_all_agent_wallets";
+  const payload: Record<string, unknown> = {};
   const header = { type, timestamp, expiry_window: expiryWindow };
   const wrapped = { ...header, data: payload };
   const sorted = sortJsonKeys(wrapped);

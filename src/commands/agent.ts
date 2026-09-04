@@ -810,12 +810,15 @@ export function registerWalletAgentCommands(
               await revokeHlAgent(masterSigner);
             } catch { /* best effort — HL revoke is idempotent */ }
           } else if (exchange === "pacifica") {
-            // PAC revoke: signed unbind_agent_wallet with the agent base58 address
+            // PAC revoke: signed revoke_agent_wallet → POST /agent/revoke.
+            // Rule #2: do NOT swallow. A refused revoke leaves the agent key
+            // authorized to trade; suppressing it here would delete the local
+            // record (Step 6) and leave the user believing the key is dead.
+            // Mirrors the Aster branch below: fail, and offer --force for a
+            // local-only cleanup.
             const masterName = meta.masterWalletName;
             const solanaSigner = OwsSolanaSigner.create(masterName, passphrase);
-            try {
-              await revokePacAgent(solanaSigner, meta.agentSolanaAddress ?? "");
-            } catch { /* best effort — Pacifica revoke is idempotent */ }
+            await revokePacAgent(solanaSigner, meta.agentSolanaAddress ?? "");
           } else if (exchange === "lighter" || exchange === "lt") {
             // LT revoke: Lighter has no on-chain revoke action; revoke is local-only.
             // Slots persist on the L2 server until overwritten by a fresh ChangePubKey
@@ -1032,7 +1035,15 @@ export function registerWalletAgentCommands(
             }
             deleteAgent(exchange, agentNameToRotate);
             }
-          } catch { /* best effort on revoke — continue to approve */ }
+          } catch (revokeErr) {
+            // Best effort on revoke — still rotate in a new agent. But do not
+            // stay silent: a failed revoke means the OLD agent key may remain
+            // authorized to trade, which the user must know to clean up.
+            process.stderr.write(
+              `[${exchange}] warning: revoking the previous agent failed — it may still be authorized. ` +
+              `${revokeErr instanceof Error ? revokeErr.message : String(revokeErr)}\n`,
+            );
+          }
         }
 
         const expiresIn = opts.expiresIn ?? "90d";
@@ -2237,42 +2248,68 @@ async function runPacApproveFlow(opts: PacApproveFlowOpts): Promise<PacApproveFl
 }
 
 /**
- * Revoke a Pacifica agent wallet (best-effort, idempotent).
- * Sends signed unbind_agent_wallet to /api/v1/agent/bind. Pacifica accepts
- * either a specific agent base58 or an empty string (revoke all) — we pass
- * the specific agent address when available.
+ * Revoke a Pacifica agent wallet.
+ *
+ * Endpoint + operation type follow the official Pacifica SDK
+ * (`rest/api_agent_keys_detailed.py`): `revoke_agent_wallet` → POST
+ * /agent/revoke, and `revoke_all_agent_wallets` → POST /agent/revoke_all when
+ * no specific agent address is known.
+ *
+ * Rule #2: this THROWS on a rejected revoke. It previously POSTed an
+ * `unbind_agent_wallet` type to /agent/bind — neither of which Pacifica
+ * exposes — and discarded the response entirely, so a refused revoke was
+ * reported to the user as success while the agent key stayed authorized to
+ * trade. Callers that genuinely want best-effort must catch explicitly.
  */
 async function revokePacAgent(masterSigner: OwsSolanaSigner, agentSolanaAddress: string): Promise<void> {
-  const { buildUnbindAgentMessage } = await import("../exchanges/pacifica-typed-data.js");
+  const { buildRevokeAgentMessage, buildRevokeAllAgentsMessage } = await import("../exchanges/pacifica-typed-data.js");
   const userSolanaAddress = masterSigner.getPublicKeyBase58();
 
-  const unbind = buildUnbindAgentMessage({
-    account: userSolanaAddress,
-    agentWallet: agentSolanaAddress,
-  });
-  const msgBytes = new TextEncoder().encode(unbind.canonicalJson);
+  const revokeAll = !agentSolanaAddress;
+  const built = revokeAll
+    ? buildRevokeAllAgentsMessage({ account: userSolanaAddress })
+    : buildRevokeAgentMessage({ account: userSolanaAddress, agentWallet: agentSolanaAddress });
+  const path = revokeAll ? "/agent/revoke_all" : "/agent/revoke";
+
+  const msgBytes = new TextEncoder().encode(built.canonicalJson);
   const sigBytes = await masterSigner.signMessage(msgBytes);
   const signature = bs58.encode(sigBytes);
 
   const requestBody: Record<string, unknown> = {
     account: userSolanaAddress,
     signature,
-    timestamp: unbind.header.timestamp,
-    expiry_window: unbind.header.expiry_window,
-    type: unbind.header.type,
-    ...unbind.payload,
+    timestamp: built.header.timestamp,
+    expiry_window: built.header.expiry_window,
+    type: built.header.type,
+    ...built.payload,
   };
 
-  // FIXME(2c-spike): unverified endpoint — Pacifica may expose a separate
-  // `/api/v1/agent/unbind` or accept unbind via the same /agent/bind. We POST
-  // to /agent/bind because the action type discriminates server-side per the
-  // signing convention. Confirm against live mainnet.
-  await fetch("https://api.pacifica.fi/api/v1/agent/bind", {
+  const res = await fetch(`https://api.pacifica.fi/api/v1${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestBody),
   });
-  // Revoke is best-effort — don't throw on HTTP errors
+  const text = await res.text().catch(() => "");
+  if (!res.ok) {
+    throw new PerpError("APPROVE_FAILED", `Pacifica revoke failed (${res.status}): ${text.slice(0, 200)}`, {
+      exchange: "pacifica",
+      remediation: `The agent key may still be authorized to trade. Retry, or revoke it from the Pacifica UI. Agent: ${agentSolanaAddress || "(all)"}`,
+    });
+  }
+  // Pacifica wraps REST results in `{ success, error, data }` — a 200 with
+  // success:false is still a refusal, so check the envelope, not just the code.
+  try {
+    const parsed = JSON.parse(text) as { success?: boolean; error?: unknown };
+    if (parsed && parsed.success === false) {
+      throw new PerpError("APPROVE_FAILED", `Pacifica revoke rejected: ${JSON.stringify(parsed.error ?? parsed)}`, {
+        exchange: "pacifica",
+        remediation: `The agent key may still be authorized to trade. Retry, or revoke it from the Pacifica UI. Agent: ${agentSolanaAddress || "(all)"}`,
+      });
+    }
+  } catch (e) {
+    if (e instanceof PerpError) throw e;
+    // Non-JSON 2xx body: the venue accepted it. Nothing to assert.
+  }
 }
 
 // ── Lighter agent approve/revoke helpers (Phase 2d) ──────────────────────────
