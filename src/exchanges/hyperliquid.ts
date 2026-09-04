@@ -930,11 +930,46 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   // ── Interface methods ──
 
   async editOrder(symbol: string, orderId: string, price: string, size: string) {
-    // Look up the existing order's side to preserve it (avoid flipping buy↔sell)
-    const openOrders = await this.getOpenOrders();
-    const existing = openOrders.find(o => o.orderId === orderId);
-    const side = existing?.side ?? "buy";
-    return this.modifyOrder(symbol, parseInt(orderId), side, price, size);
+    // Read the RAW order: the mapped getOpenOrders() hardcodes type:"limit" and
+    // drops reduceOnly, so it cannot distinguish a trigger order from a plain
+    // limit nor preserve reduce-only across the modify.
+    const raw = await this._infoPost({
+      type: "frontendOpenOrders",
+      user: this._address,
+      ...(this._dex ? { dex: this._dex } : {}),
+    }) as Record<string, unknown>[];
+    const existing = (raw ?? []).find(o => String(o.oid ?? "") === orderId);
+    if (!existing) {
+      // Rule #2: never default the side. Guessing "buy" on a resting sell order
+      // rewrites it to the opposite side, which can open or flip a position.
+      throw new PerpError(
+        "ORDER_NOT_FOUND",
+        `Hyperliquid order ${orderId} is not among the open orders; refusing to edit (cannot guess its side).`,
+        { exchange: "hyperliquid" },
+      );
+    }
+    if (existing.isTrigger === true) {
+      // batchModify is sent without the `a` (always_place) flag. Per the exchange
+      // docs, that path requires a NON-trigger order, so the venue rejects a
+      // modify into a stop/TP — re-placing it as a plain limit would also drop
+      // the trigger. Refuse rather than corrupt the order's semantics.
+      throw new PerpError(
+        "INVALID_PARAMS",
+        `Hyperliquid editOrder only supports non-trigger orders (order ${orderId} is ${String(existing.orderType ?? "a trigger order")}). Cancel and re-place it explicitly.`,
+        { exchange: "hyperliquid" },
+      );
+    }
+    const sideRaw = String(existing.side);
+    const side = sideRaw === "B" ? "buy" : sideRaw === "A" ? "sell" : sideRaw.toLowerCase();
+    if (side !== "buy" && side !== "sell") {
+      throw new PerpError(
+        "EXCHANGE_ERROR",
+        `Hyperliquid order ${orderId} has an unrecognized side "${sideRaw}"; refusing to edit.`,
+        { exchange: "hyperliquid" },
+      );
+    }
+    const reduceOnly = existing.reduceOnly === true;
+    return this.modifyOrder(symbol, parseInt(orderId), side, price, size, { reduceOnly });
   }
 
   async setLeverage(symbol: string, leverage: number, marginMode: "cross" | "isolated" = "cross") {
@@ -1223,7 +1258,38 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         },
       }],
     };
-    return this._signAndSendAction(action);
+    const result = await this._signAndSendAction(action);
+    this._validateModifyResult(result, orderId);
+    return result;
+  }
+
+  /**
+   * Validate that a batchModify actually took.
+   *
+   * HL returns the envelope `status: "ok"` even when the individual modify was
+   * rejected — the real verdict is per-order in `response.data.statuses[]`.
+   * `_signAndSendAction` only throws on the envelope, so without this check a
+   * rejected edit (crossing price, trigger order, stale oid) was reported to the
+   * user as a green success.
+   */
+  private _validateModifyResult(result: unknown, orderId: number): void {
+    const r = result as { response?: { data?: { statuses?: Array<Record<string, unknown>> } } };
+    const statuses = r?.response?.data?.statuses;
+    if (!statuses || statuses.length === 0) {
+      throw new PerpError(
+        "EXCHANGE_ERROR",
+        `Hyperliquid modify ${orderId}: no order status in response`,
+        { exchange: "hyperliquid" },
+      );
+    }
+    const st = statuses[0];
+    if (st.error) {
+      throw new PerpError(
+        "EXCHANGE_ERROR",
+        `Hyperliquid modify ${orderId} rejected: ${String(st.error)}`,
+        { exchange: "hyperliquid" },
+      );
+    }
   }
 
   /**

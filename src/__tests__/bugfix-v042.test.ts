@@ -5,35 +5,99 @@ import { describe, it, expect, vi } from "vitest";
 
 // ── BUG 1: HL editOrder preserves original side ──
 describe("BUG 1: HL editOrder preserves side", () => {
-  it("editOrder passes existing order side (sell) to modifyOrder", async () => {
-    // Dynamically import to avoid top-level side effects
+  // editOrder reads the RAW frontendOpenOrders record (not the mapped
+  // getOpenOrders, which hardcodes type:"limit" and drops reduceOnly).
+  const mkAdapter = async (rawOrders: Record<string, unknown>[]) => {
     const mod = await import("../exchanges/hyperliquid.js");
-    const HyperliquidAdapter = mod.HyperliquidAdapter;
-
-    // Create a partial mock: override getOpenOrders and modifyOrder
-    const adapter = Object.create(HyperliquidAdapter.prototype);
-    adapter.getOpenOrders = vi.fn().mockResolvedValue([
-      { orderId: "42", symbol: "ETH", side: "sell", price: "3000", size: "0.1", filled: "0", status: "open", type: "limit" },
-    ]);
+    const adapter = Object.create(mod.HyperliquidAdapter.prototype);
+    adapter._address = "0xabc";
+    adapter._dex = undefined;
+    adapter._infoPost = vi.fn().mockResolvedValue(rawOrders);
     adapter.modifyOrder = vi.fn().mockResolvedValue({ status: "ok" });
+    return adapter;
+  };
+
+  it("editOrder passes existing order side (sell) to modifyOrder", async () => {
+    const adapter = await mkAdapter([
+      { oid: 42, coin: "ETH", side: "A", limitPx: "3000", sz: "0.1", isTrigger: false, reduceOnly: false },
+    ]);
 
     await adapter.editOrder("ETH", "42", "3100", "0.1");
 
-    expect(adapter.modifyOrder).toHaveBeenCalledWith("ETH", 42, "sell", "3100", "0.1");
+    expect(adapter.modifyOrder).toHaveBeenCalledWith("ETH", 42, "sell", "3100", "0.1", { reduceOnly: false });
   });
 
-  it("editOrder defaults to buy when order not found in open orders", async () => {
+  it("editOrder preserves reduceOnly across the modify", async () => {
+    const adapter = await mkAdapter([
+      { oid: 42, coin: "ETH", side: "A", limitPx: "3000", sz: "0.1", isTrigger: false, reduceOnly: true },
+    ]);
+
+    await adapter.editOrder("ETH", "42", "3100", "0.1");
+
+    expect(adapter.modifyOrder).toHaveBeenCalledWith("ETH", 42, "sell", "3100", "0.1", { reduceOnly: true });
+  });
+
+  it("editOrder FAILS CLOSED when the order is not among the open orders", async () => {
+    // Rule #2: the previous behaviour defaulted the side to "buy", which would
+    // rewrite a resting sell order to the opposite side and can open or flip a
+    // position. Refuse instead of guessing.
+    const adapter = await mkAdapter([]);
+
+    await expect(adapter.editOrder("ETH", "999", "3100", "0.1")).rejects.toThrow(
+      /not among the open orders/
+    );
+    expect(adapter.modifyOrder).not.toHaveBeenCalled();
+  });
+
+  it("editOrder refuses to edit a trigger (stop/TP) order", async () => {
+    const adapter = await mkAdapter([
+      { oid: 7, coin: "ETH", side: "A", limitPx: "3000", sz: "0.1", isTrigger: true, orderType: "Stop Market" },
+    ]);
+
+    await expect(adapter.editOrder("ETH", "7", "3100", "0.1")).rejects.toThrow(
+      /non-trigger orders/
+    );
+    expect(adapter.modifyOrder).not.toHaveBeenCalled();
+  });
+});
+
+describe("HL modifyOrder surfaces per-order rejections", () => {
+  const mkAdapter = async (sendResult: unknown) => {
     const mod = await import("../exchanges/hyperliquid.js");
-    const HyperliquidAdapter = mod.HyperliquidAdapter;
+    const adapter = Object.create(mod.HyperliquidAdapter.prototype);
+    adapter.getAssetIndex = vi.fn().mockResolvedValue(1);
+    adapter.getSzDecimals = vi.fn().mockReturnValue(2);
+    adapter._hlRoundPrice = (n: number) => String(n);
+    adapter._signAndSendAction = vi.fn().mockResolvedValue(sendResult);
+    return adapter;
+  };
 
-    const adapter = Object.create(HyperliquidAdapter.prototype);
-    adapter.getOpenOrders = vi.fn().mockResolvedValue([]);
-    adapter.modifyOrder = vi.fn().mockResolvedValue({ status: "ok" });
+  it("throws when statuses[0] carries an error even though the envelope is ok", async () => {
+    // HL returns status:"ok" for a REJECTED modify — the verdict is per-order.
+    // Pre-fix this was reported to the user as a green success.
+    const adapter = await mkAdapter({
+      status: "ok",
+      response: { type: "order", data: { statuses: [{ error: "Order would immediately match" }] } },
+    });
 
-    await adapter.editOrder("ETH", "999", "3100", "0.1");
+    await expect(adapter.modifyOrder("ETH", 42, "buy", "3100", "0.1")).rejects.toThrow(
+      /rejected: Order would immediately match/
+    );
+  });
 
-    // Falls back to "buy" when order not found
-    expect(adapter.modifyOrder).toHaveBeenCalledWith("ETH", 999, "buy", "3100", "0.1");
+  it("throws when the response carries no per-order status at all", async () => {
+    const adapter = await mkAdapter({ status: "ok", response: { type: "order", data: { statuses: [] } } });
+
+    await expect(adapter.modifyOrder("ETH", 42, "buy", "3100", "0.1")).rejects.toThrow(
+      /no order status in response/
+    );
+  });
+
+  it("returns the result when the modify actually rests", async () => {
+    const ok = { status: "ok", response: { type: "order", data: { statuses: [{ resting: { oid: 43 } }] } } };
+    const adapter = await mkAdapter(ok);
+
+    await expect(adapter.modifyOrder("ETH", 42, "buy", "3100", "0.1")).resolves.toEqual(ok);
   });
 });
 
