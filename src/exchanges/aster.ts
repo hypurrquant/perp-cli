@@ -71,6 +71,8 @@ export class AsterAdapter implements ExchangeAdapter {
   private _marketsCache: ExchangeMarketInfo[] | null = null;
   private _marketsCacheTime = 0;
   private _fundingHoursCache = new Map<string, number>();
+  /** When the venue-wide funding-interval table was last loaded (0 = never). */
+  private _fundingInfoLoadedAt = 0;
   private _accountCache: { data: unknown; time: number } | null = null;
   private _positionsCache: { data: unknown; time: number } | null = null;
   private _ordersCache: { data: unknown; time: number } | null = null;
@@ -153,24 +155,42 @@ export class AsterAdapter implements ExchangeAdapter {
 
   // ── Market Data ──
 
-  /** Get funding interval for a symbol (lazy bootstrap). */
+  /**
+   * Get funding interval for a symbol.
+   *
+   * Source of truth is `GET /fapi/v3/fundingInfo` (weight 1), which states
+   * `fundingIntervalHours` per symbol for the whole venue in a single call.
+   * This previously inferred the interval by differencing the last two
+   * `fundingRate` timestamps and bucketing to 1/4/8h — an estimate that is
+   * wrong for a newly listed symbol (fewer than two settlements), across a
+   * schedule change, or whenever a settlement is skipped/delayed, and Aster
+   * really does mix 1h, 4h and 8h symbols. Funding-interval misconfiguration is
+   * exactly what produced the v0.7.23 Aster funding bug, so it is read, not
+   * guessed.
+   */
   async getFundingHours(symbol: string): Promise<number | undefined> {
     const key = symbol.toUpperCase();
     const cached = this._fundingHoursCache.get(key);
     if (cached !== undefined) return cached;
+    await this._loadFundingInfo();
+    return this._fundingHoursCache.get(key);
+  }
 
-    try {
-      const apiSym = this._toApi(key);
-      const data = await this._publicGet("/fapi/v3/fundingRate", { symbol: apiSym, limit: "2" }) as Array<{ fundingTime: number }>;
-      if (Array.isArray(data) && data.length >= 2) {
-        const hours = Math.abs(data[1].fundingTime - data[0].fundingTime) / 3600000;
-        const rounded = hours <= 1.5 ? 1 : hours <= 5 ? 4 : 8;
-        this._fundingHoursCache.set(key, rounded);
-        return rounded;
-      }
-    } catch { /* non-critical */ }
-
-    return undefined;
+  /** Populate the funding-interval cache for every symbol in one call. */
+  private async _loadFundingInfo(): Promise<void> {
+    if (this._fundingInfoLoadedAt && Date.now() - this._fundingInfoLoadedAt < AsterAdapter.CACHE_TTL) return;
+    const rows = await this._publicGet("/fapi/v3/fundingInfo", {}) as Array<{
+      symbol?: string; fundingIntervalHours?: number;
+    }>;
+    if (!Array.isArray(rows)) {
+      throw new PerpError("EXCHANGE_ERROR", "Aster /fapi/v3/fundingInfo did not return an array", { exchange: "aster" });
+    }
+    for (const row of rows) {
+      const hours = Number(row?.fundingIntervalHours);
+      if (!row?.symbol || !Number.isFinite(hours) || hours <= 0) continue;
+      this._fundingHoursCache.set(this._fromApi(String(row.symbol)), hours);
+    }
+    this._fundingInfoLoadedAt = Date.now();
   }
 
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
@@ -181,6 +201,12 @@ export class AsterAdapter implements ExchangeAdapter {
     const [info, tickers] = await Promise.all([
       this._publicGet("/fapi/v3/exchangeInfo") as Promise<{ symbols?: Array<Record<string, unknown>> }>,
       this._publicGet("/fapi/v3/ticker/24hr") as Promise<Array<Record<string, unknown>>>,
+      // Populate the funding-interval table (weight 1, whole venue in one call).
+      // The per-symbol read below consulted this cache but nothing ever filled
+      // it during getMarkets, so `fundingHours` came back undefined for every
+      // market — and Aster genuinely mixes 1h / 4h / 8h symbols, which funding
+      // math depends on.
+      this._loadFundingInfo(),
     ]);
 
     const tickerMap = new Map<string, Record<string, unknown>>();
@@ -586,7 +612,18 @@ export class AsterAdapter implements ExchangeAdapter {
           symbol: this._toApi(symbol),
           marginType: marginMode === "cross" ? "CROSSED" : "ISOLATED",
         }, r);
-      } catch { /* may fail if already set */ }
+      } catch (e) {
+        // Rule #2: only -4046 NO_NEED_TO_CHANGE_MARGIN_TYPE ("No need to change
+        // margin type") is a benign no-op. Every other rejection — notably a
+        // refusal because the symbol has an open position or open orders —
+        // means the account is STILL on the previous margin mode. Swallowing
+        // those left the user believing they had switched to isolated while the
+        // position stayed cross, and the leverage change below then applied to
+        // a cross position.
+        const msg = e instanceof Error ? e.message : String(e);
+        const benign = msg.includes("-4046") || /no need to change margin type/i.test(msg);
+        if (!benign) throw e;
+      }
     }
     return this._signedPostEip712("/fapi/v3/leverage", {
       symbol: this._toApi(symbol),
