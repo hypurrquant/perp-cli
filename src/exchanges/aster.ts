@@ -353,6 +353,29 @@ export class AsterAdapter implements ExchangeAdapter {
 
     const open = positions.filter((p) => parseFiniteVenueNumber(p.positionAmt, "position.positionAmt", "aster") !== 0);
 
+    // Hedge mode returns TWO rows per symbol (LONG and SHORT). This adapter
+    // keys everything by symbol alone — the riskMap below, and the mapped
+    // result — so the two legs collide and one silently inherits the other's
+    // mark/liquidation price. Orders are safe (the venue rejects them with
+    // -4061 because we never send positionSide), but positions and liquidation
+    // distance would be quietly wrong, so fail honestly instead.
+    const bySymbol = new Map<string, number>();
+    for (const p of open) {
+      const k = String(p.symbol ?? "");
+      bySymbol.set(k, (bySymbol.get(k) ?? 0) + 1);
+    }
+    const dupes = [...bySymbol.entries()].filter(([, n]) => n > 1).map(([s]) => s);
+    if (dupes.length > 0) {
+      throw new PerpError(
+        "NOT_IMPLEMENTED",
+        `Aster hedge mode is not supported: ${dupes.join(", ")} has both LONG and SHORT positions, which this adapter cannot represent (positions are keyed by symbol).`,
+        {
+          exchange: "aster",
+          remediation: "Switch the account to One-way Mode (POST /fapi/v3/positionSide/dual with dualSidePosition=false) or close one side, then retry.",
+        },
+      );
+    }
+
     // Enrich open positions with mark + liquidation price from /fapi/v3/positionRisk
     // (best-effort; a transient failure leaves them "0" rather than failing the whole
     // positions read). Response fields per Aster V3 spec: markPrice, liquidationPrice.
@@ -366,7 +389,20 @@ export class AsterAdapter implements ExchangeAdapter {
             liq: String(pr.liquidationPrice ?? "0"),
           });
         }
-      } catch { /* non-critical — mark/liq stay "0" */ }
+      } catch (e) {
+        // NOT non-critical. A "0" liquidation price is not a neutral default:
+        // risk.ts filters positions on `liquidationPrice !== "N/A" && > 0` and
+        // event-stream.ts gates the liquidation warning on `liq > 0`, so a
+        // silent "0" drops EVERY Aster position out of liquidation monitoring —
+        // and the likeliest cause of this call failing (rate limiting)
+        // correlates with the volatility that makes those alerts matter most.
+        // Surface it, and report the values as unknown rather than as a price.
+        process.stderr.write(
+          `[aster] positionRisk fetch failed — mark and liquidation prices are UNAVAILABLE this cycle, ` +
+          `so liquidation warnings are suppressed for Aster positions: ` +
+          `${e instanceof Error ? e.message : String(e)}\n`,
+        );
+      }
     }
 
     const result = open.map((p) => {
@@ -378,8 +414,10 @@ export class AsterAdapter implements ExchangeAdapter {
         side: amt > 0 ? "long" as const : "short" as const,
         size: String(Math.abs(amt)),
         entryPrice: String(p.entryPrice ?? "0"),
-        markPrice: risk?.mark ?? "0",
-        liquidationPrice: risk?.liq ?? "0",
+        // "N/A" (unknown), not "0" — a zero reads downstream as a real price.
+        // Matches the Pacifica adapter's convention for an absent liq price.
+        markPrice: risk?.mark ?? "N/A",
+        liquidationPrice: risk?.liq ?? "N/A",
         unrealizedPnl: String(p.unrealizedProfit ?? "0"),
         leverage: parseFiniteVenueNumber(p.leverage, "position.leverage", "aster", { defaultValue: 1 }),
       };

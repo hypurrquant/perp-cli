@@ -167,6 +167,22 @@ export function classifyError(err: unknown, exchange?: string): StructuredError 
     };
   }
 
+  // Aster -4061: the account is in Hedge Mode, where `positionSide` is
+  // mandatory and `reduceOnly` is forbidden. This adapter always sends one-way
+  // shape, so every order is rejected until the account switches back. Without
+  // this branch the user sees a bare "position side does not match" with no
+  // indication that the ACCOUNT MODE is the thing to change.
+  if (lower.includes("-4061") || lower.includes("position side does not match") || lower.includes("position_side_not_match")) {
+    return {
+      ...ERROR_CODES.INVALID_PARAMS,
+      message,
+      exchange,
+      remediation:
+        "The account appears to be in Hedge Mode, which this adapter does not support (it sends one-way orders). " +
+        "Switch to One-way Mode in the exchange UI, or via POST /fapi/v3/positionSide/dual with dualSidePosition=false, then retry.",
+    };
+  }
+
   if (lower.includes("not found") && (lower.includes("symbol") || lower.includes("market") || lower.includes("asset"))) {
     return { ...ERROR_CODES.SYMBOL_NOT_FOUND, message, exchange };
   }

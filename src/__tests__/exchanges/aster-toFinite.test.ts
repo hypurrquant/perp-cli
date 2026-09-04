@@ -134,7 +134,12 @@ describe("AsterAdapter.getPositions — parseFiniteVenueNumber guards (Phase 2.4
     expect(pos[0].liquidationPrice).toBe("41250.7");
   });
 
-  it("mark/liquidation fall back to '0' when positionRisk omits the symbol (best-effort)", async () => {
+  // Was: "fall back to '0'". A zero is not a neutral default here — risk.ts
+  // filters positions on `liquidationPrice !== "N/A" && > 0` and event-stream
+  // gates the liquidation warning on `liq > 0`, so a "0" silently drops the
+  // position out of liquidation monitoring. Unknown is now reported as "N/A",
+  // matching the Pacifica adapter, so it reads as absent rather than as a price.
+  it("mark/liquidation report 'N/A' when positionRisk omits the symbol", async () => {
     const ast = await buildAdapter(
       {
         totalWalletBalance: "1000", totalUnrealizedProfit: "0",
@@ -144,7 +149,7 @@ describe("AsterAdapter.getPositions — parseFiniteVenueNumber guards (Phase 2.4
       [], // positionRisk returns no rows → no enrichment
     );
     const pos = await ast.getPositions();
-    expect(pos[0].markPrice).toBe("0");
-    expect(pos[0].liquidationPrice).toBe("0");
+    expect(pos[0].markPrice).toBe("N/A");
+    expect(pos[0].liquidationPrice).toBe("N/A");
   });
 });
