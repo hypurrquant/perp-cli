@@ -4,6 +4,8 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-10-14
+
 ### NEW: `canonicals` filter for `kind: "allMarkets"`; FIX: missing `ws` never loops
 
 - **`stream.subscribe({ kind: "allMarkets", canonicals: ["BTC", "xyz:TSLA"] })`** selects every directory market whose canonical matches (via `opts.canonicalize`): `"BTC"` → aster `BTCUSDT` + `BTCUSD1`, arcus `BTC-USD`, lighter-rh `BTC` (USDG), hyperliquid `BTC` (HIP-3 markets only as `"<dex>:<BASE>"`). One subscription now works unchanged on every venue (before, `symbols: ["BTC"]` rejected on aster and arcus, which are directory symbols). Canonicals a venue does not list are skipped and reported once per subscription as a non-fatal `{ type: "error", code: "SYMBOL_NOT_FOUND", fatal: false, details: { missing, suggestions } }` (new optional, typed `StreamControl.details`: `StreamErrorDetails`; new `WsErrorCode` `SYMBOL_NOT_FOUND`, same status as the CLI's); only when none exist on the venue does `ready` reject `INVALID_PARAMS`. `canonicals` together with `symbols` rejects `INVALID_PARAMS`. The warning is delivered once and is never evicted from the pre-iterator ring (like fills and gaps).
