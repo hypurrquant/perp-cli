@@ -23,6 +23,13 @@ vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
   },
 }));
 vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({ StdioServerTransport: class {} }));
+// Credentials are explicit per test (never whatever the developer's HOME holds).
+const hasCreds = vi.hoisted(() => vi.fn(async (_venue: string) => false));
+vi.mock("../config.js", async (orig) => ({
+  ...(await orig<typeof import("../config.js")>()),
+  hasCredentials: hasCreds,
+  resolveCredentials: vi.fn(async () => ({ pk: null, owsWallet: null, owsPassphrase: null, owsKeyToken: null, agent: null })),
+}));
 
 const FIX = resolve(dirname(fileURLToPath(import.meta.url)), "fixtures", "grvt");
 const fx = (n: string): unknown => JSON.parse(readFileSync(resolve(FIX, n), "utf-8"));
@@ -43,6 +50,7 @@ const row = (venue: string, symbol: string): VenueMarket => ({
 
 beforeEach(async () => {
   clearGrvtCaches();
+  hasCreds.mockImplementation(async () => false);
   fetchMock = vi.fn(async (u: string, init?: RequestInit) => {
     const url = String(u);
     if (!url.startsWith("https://market-data.grvt.io/full/v1/")) throw new Error(`unexpected network call: ${url}`);
@@ -99,5 +107,21 @@ describe("MCP get_markets labels unverified funding", () => {
     const r = await call("get_markets", { exchange: "risex" });
     expect((r.data as Array<Record<string, unknown>>)[0]).toEqual(row("risex", "BTC"));
     expect(r.meta.fundingVerified).toBeUndefined();
+  });
+});
+
+describe("MCP get_markets through the credentialed adapter branch", () => {
+  it("qfex with credentials: the adapter's rows get the same fundingVerified label; meta too", async () => {
+    hasCreds.mockImplementation(async (venue: string) => venue === "qfex");
+    const legacy = { symbol: "AAPL", markPrice: "250", indexPrice: null, fundingRate: "0.0001", volume24h: null, openInterest: null, maxLeverage: 10, sizeDecimals: 2, stepSize: "0.01", fundingHours: 1, marginTiers: null };
+    const getMarkets = vi.fn(async () => [legacy]);
+    const qfex = getVenue("qfex") as { create: (ctx: unknown) => Promise<unknown> };
+    const create = vi.spyOn(qfex, "create").mockImplementation(async () => ({ name: "qfex", getMarkets }));
+    const r = await call("get_markets", { exchange: "qfex" });
+    expect(create).toHaveBeenCalled();
+    expect(getMarkets).toHaveBeenCalled();
+    expect(r.meta.source).toBeUndefined(); // adapter branch, not the public fallback
+    expect(r.data).toEqual([{ ...legacy, fundingVerified: false }]);
+    expect(r.meta).toMatchObject({ apiStatus: "official", fundingVerified: false, fundingNote: expect.stringContaining("UNVERIFIED") });
   });
 });

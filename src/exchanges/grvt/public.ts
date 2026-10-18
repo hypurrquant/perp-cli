@@ -335,39 +335,61 @@ export async function grvtTicker(client: GrvtClient, net: Network, instrument: s
   return value;
 }
 
+/** One margin-rules cache entry: when it was read (ms) and what it said (null = no brackets published). */
+export interface GrvtLeverageEntry {
+  fetchedAt: number;
+  leverage: GrvtLeverage | null;
+}
+
+function isEntry(v: unknown): v is GrvtLeverageEntry {
+  if (v === null || typeof v !== "object") return false;
+  const e = v as { fetchedAt?: unknown; leverage?: unknown };
+  return typeof e.fetchedAt === "number" && Number.isFinite(e.fetchedAt) && (e.leverage === null || (typeof e.leverage === "object" && e.leverage !== undefined));
+}
+
 /**
- * Leverage per instrument from the margin-rules file cache (GRVT_MARGIN_TTL_MS, JSON: instrument →
- * GrvtLeverage | null); only instruments not cached are fetched. A failed read leaves that market's
- * leverage unknown (null, warned, not cached).
+ * Leverage per instrument from the margin-rules file cache (JSON: instrument → {fetchedAt, leverage}).
+ * Each entry expires on its own GRVT_MARGIN_TTL_MS after ITS read (rewriting the file never extends
+ * an old entry); expired, malformed and missing instruments are read again. A failed read leaves
+ * that market's leverage unknown (null entry, warned, not cached).
  */
-export async function grvtLeverageFor(client: GrvtClient, net: Network, instruments: readonly string[], warn: (msg: string) => void): Promise<Record<string, GrvtLeverage | null>> {
-  const cached = getCached<Record<string, GrvtLeverage | null>>(marginCacheKey(net)) ?? {};
-  const missing = instruments.filter(i => !(i in cached));
+export async function grvtLeverageFor(client: GrvtClient, net: Network, instruments: readonly string[], warn: (msg: string) => void): Promise<Record<string, GrvtLeverageEntry | null>> {
+  const now = Date.now();
+  const stored = getCached<Record<string, unknown>>(marginCacheKey(net)) ?? {};
+  const cache: Record<string, GrvtLeverageEntry> = {};
+  for (const [inst, e] of Object.entries(stored)) {
+    if (isEntry(e) && e.fetchedAt <= now && now - e.fetchedAt < GRVT_MARGIN_TTL_MS) cache[inst] = e;
+  }
+  const missing = instruments.filter(i => !(i in cache));
   if (missing.length > 0) {
     const settled = await settleEach(missing, GRVT_FANOUT_CONCURRENCY, i => fetchGrvtLeverage(client, i));
     const failed: string[] = [];
     const errors: unknown[] = [];
     settled.forEach((r, k) => {
-      if (r.ok) cached[missing[k]] = r.value;
+      if (r.ok) cache[missing[k]] = { fetchedAt: Date.now(), leverage: r.value };
       else { failed.push(missing[k]); errors.push(r.error); }
     });
     if (failed.length > 0) warn(`[grvt] margin rules unreadable for ${failed.length} market(s) — max leverage unknown: ${failureList(failed, errors)}`);
-    setCached(marginCacheKey(net), cached, GRVT_MARGIN_TTL_MS);
+    // The file outlives every entry in it (each is younger than the TTL); entries expire by fetchedAt.
+    setCached(marginCacheKey(net), cache, GRVT_MARGIN_TTL_MS);
   }
-  return Object.fromEntries(instruments.map(i => [i, i in cached ? cached[i] : null]));
+  return Object.fromEntries(instruments.map(i => [i, i in cache ? cache[i] : null]));
 }
 
 // ── Mapping ──
 
 export type GrvtVenueMarket = VenueMarket & {
   tickSize: string;
+  /** When maxLeverage / marginTiers were read from GRVT (ISO; they may come from the 6 h cache); null = not read. */
+  leverageAsOf: string | null;
   lastPrice: string | null;
   bestBid: string | null;
   bestAsk: string | null;
   nextFundingTime: number | null;
 };
 
-export function toGrvtVenueMarket(m: GrvtMarketMeta, t: GrvtTicker & { markPrice: string }, lev: GrvtLeverage | null): GrvtVenueMarket {
+export function toGrvtVenueMarket(m: GrvtMarketMeta, t: GrvtTicker & { markPrice: string }, entry: GrvtLeverageEntry | null): GrvtVenueMarket {
+  const lev = entry === null ? null : entry.leverage;
   return {
     venue: "grvt",
     venueSymbol: m.instrument,
@@ -390,6 +412,7 @@ export function toGrvtVenueMarket(m: GrvtMarketMeta, t: GrvtTicker & { markPrice
     minNotional: m.minNotional,
     maxLeverage: lev === null ? null : lev.maxLeverage,
     marginTiers: lev === null ? null : lev.tiers,
+    leverageAsOf: entry === null ? null : new Date(entry.fetchedAt).toISOString(),
     // Not mapped: the ticker's `session` ("REGULAR" on every market, 2026-10-19) is not in GRVT's
     // documented schema and its other values / their meaning (open hours, price bands) are unknown.
     session: null,

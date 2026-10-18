@@ -15,8 +15,9 @@ import { getVenue, resolveVenueId, requireCapabilities } from "../../exchanges/v
 import { GrvtClient } from "../../exchanges/grvt/client.js";
 import {
   clearGrvtCaches, fetchGrvtFundingRates, fetchGrvtMarkets, grvtPercentToFraction, grvtPublicData, resolveGrvtMarket, toGrvtLeverage,
-  toGrvtMarketMeta, toGrvtTicker, GRVT_SHORT_TTL_MS, type GrvtMarketMeta,
+  toGrvtMarketMeta, toGrvtTicker, GRVT_MARGIN_TTL_MS, GRVT_SHORT_TTL_MS, type GrvtMarketMeta,
 } from "../../exchanges/grvt/public.js";
+import { getCached, setCached } from "../../cache.js";
 import { startJob } from "../../jobs.js";
 import { GrvtPublicAdapter } from "../../exchanges/grvt/adapter.js";
 import { GRVT_OTHER_RATE_LIMIT, GRVT_READ_ONLY_REMEDIATION, GRVT_TICKER_RATE_LIMIT } from "../../exchanges/venues/grvt.js";
@@ -433,6 +434,63 @@ describe("request budget", () => {
   });
 });
 
+describe("margin-rules cache: each entry expires on its own (fake clock)", () => {
+  const HOUR = 3_600_000;
+  const KEY = "grvt-margin-rules-mainnet";
+  const marginBodies = (): string[] => fetchMock.mock.calls
+    .filter(([u]) => String(u).endsWith("/margin_rules"))
+    .map(([, init]) => (JSON.parse(String((init as RequestInit).body)) as { instrument: string }).instrument);
+
+  it("an old entry is served until ITS TTL, a newer read does not extend it, then it is read again", async () => {
+    fetchMock.mockImplementation(routeFixtures());
+    const t0 = 1_800_000_000_000;
+    const now = vi.spyOn(Date, "now").mockReturnValue(t0);
+    const btcLev = toGrvtLeverage(MARGIN_BTC);
+    // Seeded BTC entry read 5.9 h ago.
+    setCached(KEY, { BTC_USDT_Perp: { fetchedAt: t0 - 5.9 * HOUR, leverage: btcLev } }, GRVT_MARGIN_TTL_MS);
+    const a = new GrvtPublicAdapter(getVenue("grvt"), "mainnet");
+
+    const btc1 = await a.getMarketInfo("BTC");
+    expect(marginBodies()).toEqual([]); // still fresh: served from the cache
+    expect(btc1).toMatchObject({ maxLeverage: 50, leverageAsOf: new Date(t0 - 5.9 * HOUR).toISOString() });
+
+    await a.getMarketInfo("ETH"); // rewrites the file …
+    expect(marginBodies()).toEqual(["ETH_USDT_Perp"]);
+    const stored = getCached<Record<string, { fetchedAt: number }>>(KEY)!;
+    expect(stored.BTC_USDT_Perp.fetchedAt).toBe(t0 - 5.9 * HOUR); // … without touching BTC's age
+    expect(stored.ETH_USDT_Perp.fetchedAt).toBe(t0);
+
+    now.mockReturnValue(t0 + 0.2 * HOUR); // BTC is now 6.1 h old, ETH 0.2 h
+    const btc2 = await a.getMarketInfo("BTC");
+    await a.getMarketInfo("ETH");
+    expect(marginBodies()).toEqual(["ETH_USDT_Perp", "BTC_USDT_Perp"]);
+    expect(btc2).toMatchObject({ maxLeverage: 50, leverageAsOf: new Date(t0 + 0.2 * HOUR).toISOString() });
+  });
+
+  it("malformed / old-format entries and future timestamps are read again", async () => {
+    fetchMock.mockImplementation(routeFixtures());
+    const t0 = 1_800_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(t0);
+    setCached(KEY, {
+      BTC_USDT_Perp: { maxLeverage: 50, tiers: [] }, // pre-fetchedAt format
+      ETH_USDT_Perp: { fetchedAt: t0 + HOUR, leverage: null }, // clock went backwards
+    }, GRVT_MARGIN_TTL_MS);
+    const a = new GrvtPublicAdapter(getVenue("grvt"), "mainnet");
+    await a.getMarketInfo("BTC");
+    await a.getMarketInfo("ETH");
+    expect(marginBodies()).toEqual(["BTC_USDT_Perp", "ETH_USDT_Perp"]);
+  });
+
+  it("market list rows carry leverageAsOf; price-only and failed reads have it null", async () => {
+    fetchMock.mockImplementation(routeFixtures());
+    const t0 = 1_800_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(t0);
+    const rows = await new GrvtPublicAdapter(getVenue("grvt"), "mainnet").getMarkets();
+    expect(rows.every(r => r.leverageAsOf === new Date(t0).toISOString())).toBe(true);
+    expect((await fetchGrvtMarkets("mainnet", { leverage: false }, { warn: () => undefined })).every(r => r.leverageAsOf === null)).toBe(true);
+  });
+});
+
 describe("per-market failure isolation", () => {
   it("a failed ticker drops only that market, with a warning naming it", async () => {
     fetchMock.mockImplementation(routeFixtures({ tickerStatus: i => (i === "ETH_USDT_Perp" ? 500 : null) }));
@@ -473,7 +531,7 @@ describe("per-market failure isolation", () => {
     });
     const warn = vi.fn();
     const first = await fetchGrvtMarkets("mainnet", { leverage: true }, { warn });
-    expect(bySymbol(first, "BTC")).toMatchObject({ maxLeverage: null, marginTiers: null });
+    expect(bySymbol(first, "BTC")).toMatchObject({ maxLeverage: null, marginTiers: null, leverageAsOf: null });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("margin rules unreadable for 1 market(s) — max leverage unknown: BTC_USDT_Perp"));
     failBtc = false;
     const second = await fetchGrvtMarkets("mainnet", { leverage: true }, { warn });

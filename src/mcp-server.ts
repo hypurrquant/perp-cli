@@ -134,8 +134,15 @@ async function tryGetAdapter(exchange: string): Promise<ExchangeAdapter | null> 
  * venueApi; rows of a venue whose funding is unverified (QFEX, GRVT, TxFlow) carry fundingVerified false.
  */
 async function fetchMarketsPublic(exchange: string) {
+  return labelMarketRows(exchange, await getVenue(exchange).publicData.fetchMarkets(MCP_NETWORK));
+}
+
+/**
+ * The one row label for market rows of any source (public data path or a credentialed adapter):
+ * unofficial-API rows carry venueApi + fundingVerified; unverified-funding rows carry fundingVerified false.
+ */
+function labelMarketRows<T extends object>(exchange: string, rows: T[]) {
   const def = getVenue(exchange);
-  const rows = await def.publicData.fetchMarkets(MCP_NETWORK);
   if (def.apiStatus.kind === "unofficial") return rows.map(r => ({ ...r, venueApi: "unofficial" as const, fundingVerified: def.fundingVerified }));
   return def.fundingVerified ? rows : rows.map(r => ({ ...r, fundingVerified: false as const }));
 }
@@ -281,7 +288,7 @@ server.tool(
       // Try adapter first (richer data), fall back to public API (no key needed)
       const adapter = await tryGetAdapter(exchange);
       if (adapter) {
-        const markets = await adapter.getMarkets();
+        const markets = labelMarketRows(exchange, await adapter.getMarkets());
         return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, ...apiMeta(exchange) }) }] };
       }
       const markets = await fetchMarketsPublic(exchange);

@@ -48,6 +48,8 @@ export type GrvtMarketInfo = ExchangeMarketInfo & {
   bestBid: string | null;
   bestAsk: string | null;
   tickSize: string;
+  /** When maxLeverage / marginTiers were read (ISO, possibly from the 6 h cache); null = not read. */
+  leverageAsOf: string | null;
   minSize: string | null;
   minNotional: string | null;
   nextFundingTime: number | null;
@@ -92,6 +94,7 @@ export function toGrvtMarketInfo(m: GrvtVenueMarket): GrvtMarketInfo {
     bestBid: m.bestBid,
     bestAsk: m.bestAsk,
     tickSize: m.tickSize,
+    leverageAsOf: m.leverageAsOf,
     minSize: m.minSize,
     minNotional: m.minNotional,
     nextFundingTime: m.nextFundingTime,
