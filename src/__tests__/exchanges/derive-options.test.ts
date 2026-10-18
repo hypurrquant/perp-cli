@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { PerpError } from "../../errors.js";
-import { DeriveClient } from "../../exchanges/derive/client.js";
+import { DERIVE_RATE_LIMIT, DeriveClient } from "../../exchanges/derive/client.js";
 import {
   DeriveOptionsVenue, expiriesOf, normalizeExpiry, normalizeUnderlying, parseDeriveInstrument,
   parseDeriveOptionTicker, strikesAround,
@@ -149,6 +149,15 @@ describe("parseDeriveOptionTicker (recorded get_ticker / get_tickers)", () => {
     for (const q of traded) expect(q.stats24h.high).toBe((rawTickers[q.instrument].stats as Record<string, string>).h);
   });
 
+  it("real zeros stay \"0\": a delta of 0 and a mark of 0 are venue values, not unknowns", () => {
+    const zeroDelta = all1019.filter(i => (rawTickers[i.name].option_pricing as Record<string, string>).d === "0");
+    const zeroMark = all1019.filter(i => rawTickers[i.name].M === "0");
+    expect(zeroDelta.length).toBeGreaterThan(0);
+    expect(zeroMark.length).toBeGreaterThan(0);
+    for (const i of zeroDelta) expect(quotes.find(x => x.instrument === i.name)!.greeks!.delta).toBe("0");
+    for (const i of zeroMark) expect(quotes.find(x => x.instrument === i.name)!.mark).toBe("0");
+  });
+
   it("no option_pricing → greeks / forward / IV null (never 0)", () => {
     const t = clone(TICK_3500P.result as Record<string, unknown>);
     t.option_pricing = null;
@@ -191,7 +200,7 @@ describe("expiry / strike selection", () => {
   it("normalizeExpiry accepts YYYY-MM-DD / YYYYMMDD, rejects impossible dates", () => {
     expect(normalizeExpiry("2026-12-25")).toBe("2026-12-25");
     expect(normalizeExpiry("20261225")).toBe("2026-12-25");
-    for (const bad of ["2026-02-30", "2026-13-01", "Dec 25", "2026-1-5"]) {
+    for (const bad of ["2026-02-30", "2026-13-01", "Dec 25", "2026-1-5", "2026-1225", "202612-25"]) {
       expect(() => normalizeExpiry(bad)).toThrow(/Invalid expiry/);
     }
   });
@@ -331,6 +340,14 @@ describe("DeriveOptionsVenue", () => {
     expect(e.message).toMatch(/perp, not an option/);
   });
 
+  it("quote: an ACTIVE option whose ticker is missing (-32602 \"Ticker not found\", recorded) → EXCHANGE_ERROR with remediation", async () => {
+    routeFetch({ get_instrument: INST_3500P, get_ticker: ERR_TICKER });
+    const e = await caught(testVenue().getQuote("ETH-20261225-3500-P"));
+    expect(e.structured.code).toBe("EXCHANGE_ERROR");
+    expect(e.message).toMatch(/no live ticker for active option ETH-20261225-3500-P/);
+    expect(e.structured.remediation).toContain("options chain ETH --expiry 2026-12-25");
+  });
+
   it("quote: a listed-but-inactive option → SYMBOL_NOT_FOUND with its activation time", async () => {
     const inactive = rawInstruments.find(i => !i.is_active)!;
     routeFetch({ get_instrument: { result: inactive }, get_ticker: ERR_TICKER });
@@ -345,10 +362,12 @@ describe("DeriveOptionsVenue", () => {
 describe("DeriveClient error envelope", () => {
   const client = () => new DeriveClient("mainnet", "https://derive.test/v3", { capacity: 1000, refillPerSec: 1000, weights: null });
 
-  it("JSON-RPC invalid params (recorded) → INVALID_PARAMS with rpcCode / rpcData", async () => {
+  it("JSON-RPC -32602 (recorded) is a Derive-side rejection → EXCHANGE_ERROR (never the user's INVALID_PARAMS)", async () => {
     routeFetch({ get_tickers: ERR_EXPIRY });
     const e = await caught(client().call("get_tickers", { instrument_type: "option", currency: "ETH" }));
-    expect(e.structured.code).toBe("INVALID_PARAMS");
+    expect(e.structured.code).toBe("EXCHANGE_ERROR");
+    expect(e.message).toContain("request rejected by Derive");
+    expect(e.structured.remediation).toBeTruthy();
     expect(e.message).toContain("Expiry date is required for options");
     expect(e.structured.details).toMatchObject({ exchange: "derive", rpcCode: -32602, rpcData: "Expiry date is required for options" });
   });
@@ -364,6 +383,34 @@ describe("DeriveClient error envelope", () => {
   it("HTTP 429 → RATE_LIMITED", async () => {
     routeFetch({ get_ticker: "Too Many Requests" }, 429);
     expect((await caught(client().call("get_ticker", {}))).structured.code).toBe("RATE_LIMITED");
+  });
+
+  it("HTTP 429: the RPC body's Retry-after wins over the retry-after header; the header is used when the body has none", async () => {
+    const at429 = (body: unknown, retryAfter: string) => vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(JSON.stringify(body), { status: 429, headers: { "retry-after": retryAfter } })));
+    at429({ error: { code: -32000, message: "Rate limit exceeded", data: "Retry after 700 ms" } }, "3");
+    let e = await caught(client().call("get_ticker", {}));
+    expect(e.structured.code).toBe("RATE_LIMITED");
+    expect(e.structured.details?.retryAfterMs).toBe(700);
+    at429({ error: { code: -32000, message: "Rate limit exceeded", data: null } }, "3");
+    e = await caught(client().call("get_ticker", {}));
+    expect(e.structured.details?.retryAfterMs).toBe(3000);
+  });
+
+  it("every client error carries a remediation", async () => {
+    const errs: PerpError[] = [];
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("ECONNREFUSED"); }));
+    errs.push(await caught(client().call("get_ticker", {})));
+    for (const [status, body] of [[502, "<html/>"], [200, "not json"], [200, { id: 1 }], [200, ERR_EXPIRY], [200, ERR_NOT_FOUND],
+      [200, { error: { code: -32000, message: "Rate limit exceeded", data: "Retry after 5 ms" } }], [429, "slow down"]] as Array<[number, unknown]>) {
+      routeFetch({ get_ticker: body }, status);
+      errs.push(await caught(client().call("get_ticker", {})));
+    }
+    for (const e of errs) expect(e.structured.remediation, e.message).toMatch(/\S/);
+  });
+
+  it("the default bucket never exceeds Derive's 25 requests per 5 s window", () => {
+    expect(DERIVE_RATE_LIMIT.capacity + DERIVE_RATE_LIMIT.refillPerSec * 5).toBeLessThanOrEqual(25);
   });
 
   it("an application error code → EXCHANGE_ERROR carrying the code", async () => {
@@ -397,6 +444,23 @@ describe("DeriveClient error envelope", () => {
 // ── registry / CLI ──
 
 describe("options venue registry", () => {
+  it("-e derive with a perp command → UNKNOWN_VENUE whose remediation points at perp options", async () => {
+    const { resolveVenueId } = await import("../../exchanges/venue.js");
+    await import("../../exchanges/venues/index.js");
+    try {
+      resolveVenueId("derive");
+      throw new Error("no throw");
+    } catch (e) {
+      expect((e as PerpError).structured.code).toBe("UNKNOWN_VENUE");
+      expect((e as PerpError).structured.remediation).toContain("derive is options-only: perp -e derive options");
+    }
+    try {
+      resolveVenueId("nope");
+    } catch (e) {
+      expect((e as PerpError).structured.remediation).not.toContain("options-only");
+    }
+  });
+
   it("resolves derive (and alias drv); a perp venue is CAPABILITY_UNSUPPORTED", async () => {
     expect((await getOptionsVenue("Derive", "mainnet")).id).toBe("derive");
     expect((await getOptionsVenue("drv", "mainnet")).id).toBe("derive");
@@ -444,7 +508,9 @@ describe("perp options (CLI, --json)", () => {
     const f = routeFetch({});
     expect((await run(["options", "expiries", "ETH"])).error?.code).toBe("CAPABILITY_UNSUPPORTED");
     expect((await run(["-e", "hyperliquid", "options", "quote", "ETH-20261225-3500-P"])).error?.code).toBe("CAPABILITY_UNSUPPORTED");
-    expect((await run(["-e", "derive", "options", "chain", "ETH", "--strikes", "two"])).error?.code).toBe("INVALID_PARAMS");
+    const bad = (await run(["-e", "derive", "options", "chain", "ETH", "--strikes", "two"])).error as { code: string; remediation?: string };
+    expect(bad.code).toBe("INVALID_PARAMS");
+    expect(bad.remediation).toBe("Pass a positive integer, e.g. --strikes 10");
     expect(f).not.toHaveBeenCalled();
   });
 });

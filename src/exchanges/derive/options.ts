@@ -24,7 +24,7 @@ import {
   type OptionChain, type OptionChainQuery, type OptionChainRow, type OptionExpiries, type OptionExpiry,
   type OptionKind, type OptionQuote, type OptionsVenue, type OptionUnderlyings,
 } from "../options-interface.js";
-import { DERIVE_INSTRUMENT_NOT_FOUND, DeriveClient, deriveRpcCode, deriveShapeError } from "./client.js";
+import { DERIVE_INSTRUMENT_NOT_FOUND, DERIVE_INVALID_PARAMS, DeriveClient, deriveRpcCode, deriveShapeError } from "./client.js";
 
 const VENUE = "derive";
 const PAGE_SIZE = 1000;
@@ -84,9 +84,9 @@ export function utcDate(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-/** User expiry ("2026-12-25" or "20261225") → YYYY-MM-DD; anything else INVALID_PARAMS. */
+/** User expiry, exactly "2026-12-25" or "20261225" (not mixed) → YYYY-MM-DD; anything else INVALID_PARAMS. */
 export function normalizeExpiry(input: string): string {
-  const m = /^(\d{4})-?(\d{2})-?(\d{2})$/.exec(input.trim());
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input.trim()) ?? /^(\d{4})(\d{2})(\d{2})$/.exec(input.trim());
   const iso = m !== null ? `${m[1]}-${m[2]}-${m[3]}` : null;
   if (iso === null || Number.isNaN(Date.parse(`${iso}T00:00:00Z`)) || utcDate(Date.parse(`${iso}T00:00:00Z`)) !== iso) {
     throw new PerpError("INVALID_PARAMS", `Invalid expiry "${input}" — expected YYYY-MM-DD (UTC)`, {
@@ -209,7 +209,8 @@ export function strikesAround(strikes: readonly string[], price: string, n: numb
 /**
  * Chain for one expiry from its instruments and the `get_tickers` map. Rows come from the listed
  * instruments; a listed instrument without a ticker leaves its side null and is named in
- * `missingTickers`. Index / forward come from the most recent ticker (largest `t`).
+ * `missingTickers`. Index / forward are those of the newest ticker (largest `t`) — one ticker's values,
+ * not an average over the expiry.
  */
 export function buildChain(
   underlying: string,
@@ -333,7 +334,9 @@ export class DeriveOptionsVenue implements OptionsVenue {
     const underlying = normalizeUnderlying(q.underlying);
     const wanted = q.expiry === null ? null : normalizeExpiry(q.expiry);
     if (q.strikesAroundAtm !== null && (!Number.isInteger(q.strikesAroundAtm) || q.strikesAroundAtm < 1)) {
-      throw new PerpError("INVALID_PARAMS", `--strikes must be a positive integer (got ${q.strikesAroundAtm})`, {});
+      throw new PerpError("INVALID_PARAMS", `--strikes must be a positive integer (got ${q.strikesAroundAtm})`, {
+        remediation: "Pass a positive integer, e.g. --strikes 10",
+      });
     }
     const all = await this.instruments(underlying);
     const expiries = expiriesOf(all);
@@ -379,7 +382,17 @@ export class DeriveOptionsVenue implements OptionsVenue {
         exchange: VENUE, remediation: `Active expiries: perp -e ${VENUE} options expiries ${inst.underlying}`,
       });
     }
-    if (tickR.status === "rejected") throw tickR.reason;
+    if (tickR.status === "rejected") {
+      // An active instrument with no ticker (-32602 "Ticker not found for instrument", live): an
+      // activation / expiry race on Derive's side — transient, never the user's INVALID_PARAMS.
+      if (deriveRpcCode(tickR.reason) === DERIVE_INVALID_PARAMS) {
+        throw new PerpError("EXCHANGE_ERROR", `Derive has no live ticker for active option ${name} (${tickR.reason instanceof Error ? tickR.reason.message : String(tickR.reason)})`, {
+          exchange: VENUE, rpcCode: DERIVE_INVALID_PARAMS,
+          remediation: `The option may be activating or expiring right now; retry in a moment, or list live instruments: perp -e ${VENUE} options chain ${inst.underlying} --expiry ${inst.expiry}`,
+        });
+      }
+      throw tickR.reason;
+    }
     return parseDeriveOptionTicker(tickR.value, inst);
   }
 }

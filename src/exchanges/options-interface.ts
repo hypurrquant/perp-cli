@@ -120,9 +120,9 @@ export interface OptionChain {
   expiryMs: number;
   /** "requested" = --expiry; "nearest" = the soonest active expiry (no --expiry given). */
   expirySelection: "requested" | "nearest";
-  /** Underlying index (from the expiry's tickers); null when no ticker was returned. */
+  /** Underlying index of the newest ticker of the expiry (largest timestampMs); null when no ticker was returned. */
   index: string | null;
-  /** Forward for this expiry; null when no ticker carried pricing. */
+  /** Forward of the newest ticker of the expiry (one ticker's value, not an average); null when it carried no pricing. */
   forward: string | null;
   /**
    * At-the-money strike: the listed strike closest to `price` — the expiry's forward when the venue

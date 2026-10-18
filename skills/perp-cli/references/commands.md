@@ -193,8 +193,8 @@ perp --json -e derive options chain ETH --expiry 2026-12-25 --strikes 10   # 10 
 perp --json -e derive options quote ETH-20261225-3500-P       # one option
 ```
 
-- Chain row: `{strike, call, put}`; each side is an option quote: `bid`/`ask` `{price, size}`, `mark`, `index`, `forward`, `discountFactor`, `iv {mark, bid, ask}`, `greeks {delta, gamma, theta, vega, rho}` (venue units, verbatim), `openInterest` (contracts), `stats24h {contracts, notional, premium, trades, high, low}`, `timestampMs`. Chain level: `index`, `forward`, `atm {strike, reference, price}`, `strikesListed`, `missingTickers`.
-- Errors: unknown underlying / expiry / instrument → `SYMBOL_NOT_FOUND` (remediation names the listing command / active expiries); a perp name in `quote` → `INVALID_PARAMS`; no `-e` or a perp venue → `CAPABILITY_UNSUPPORTED`; Derive's rate limit → `RATE_LIMITED` (retryable).
+- Chain row: `{strike, call, put}`; each side is an option quote: `bid`/`ask` `{price, size}`, `mark`, `index`, `forward`, `discountFactor`, `iv {mark, bid, ask}`, `greeks {delta, gamma, theta, vega, rho}` (venue units, verbatim), `openInterest` (contracts), `stats24h {contracts, notional, premium, trades, high, low}`, `timestampMs`. Chain level: `index`, `forward` (both of the newest ticker of the expiry, not an average), `atm {strike, reference, price}`, `strikesListed`, `missingTickers`.
+- Errors: unknown underlying / expiry / instrument → `SYMBOL_NOT_FOUND` (remediation names the listing command / active expiries); a perp name in `quote` → `INVALID_PARAMS`; an active option with no live ticker (activation / expiry race) → `EXCHANGE_ERROR` (retry); other Derive rejections → `EXCHANGE_ERROR`; no `-e` or a perp venue → `CAPABILITY_UNSUPPORTED`; Derive's rate limit → `RATE_LIMITED` (retryable).
 - Cost: `expiries` 1 request, `chain` 2 (instruments + ONE tickers call for the expiry), `quote` 2. Derive's public budget is 5 requests/s per IP.
 - `-n testnet` reads `testnet.api.derive.xyz`. MCP: `get_option_expiries`, `get_option_chain`, `get_option_quote` (`venue: "derive"`).
 

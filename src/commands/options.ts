@@ -82,7 +82,9 @@ export function registerOptionsCommands(program: Command, isJson: () => boolean)
 function parseStrikes(raw: string): number {
   const n = Number(raw);
   if (!/^\d+$/.test(raw.trim()) || !Number.isInteger(n) || n < 1) {
-    throw new PerpError("INVALID_PARAMS", `--strikes must be a positive integer (got "${raw}")`, {});
+    throw new PerpError("INVALID_PARAMS", `--strikes must be a positive integer (got "${raw}")`, {
+      remediation: "Pass a positive integer, e.g. --strikes 10",
+    });
   }
   return n;
 }
