@@ -185,8 +185,12 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
 
   private requireAccount(): string {
     if (this.deps.account === null) {
-      throw new PerpError("NO_SIGNER_AVAILABLE", "RISEx account reads need an account address: select a master wallet (perp wallet use <name> / --ows <name>) or register a signer", {
-        exchange: "risex", remediation: `perp${this.network === "testnet" ? " -n testnet" : ""} wallet agent approve risex --master <ows-wallet>`,
+      const tradingOn = this.venue.roles.includes("trading");
+      throw new PerpError("NO_SIGNER_AVAILABLE", `RISEx account reads need an account address: select a master wallet (perp wallet use <name> / --ows <name>)${tradingOn ? " or register a signer" : ""}`, {
+        exchange: "risex",
+        remediation: tradingOn
+          ? `perp${this.network === "testnet" ? " -n testnet" : ""} wallet agent approve risex --master <ows-wallet>`
+          : "Select the wallet that owns the RISEx account: perp wallet use <name> (or pass --ows <name>)",
       });
     }
     return this.deps.account;
