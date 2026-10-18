@@ -399,7 +399,7 @@ Every response is `{ "ok": true, "data": ... }` or `{ "ok": false, "error": { "c
 | `PASSPHRASE_REQUIRED` | Vault passphrase needed | Ask the user to provide `OWS_PASSPHRASE` (or stdin); never put it on argv. |
 | `LOCK_HELD` | Another perp process holds a state lock | Wait ~5s and retry once; check `background list`. |
 | `NO_BRIDGE_ROUTE` | No supported bridge route (e.g. deBridge from Solana, HyperCore → Solana) | Use the route in `remediation` (e.g. `--provider cctp`). |
-| `RATE_LIMITED` / `EXCHANGE_UNREACHABLE` | Throttled / API down (reads) | Wait 5–10s, retry once; then skip that venue. |
+| `RATE_LIMITED` / `EXCHANGE_UNREACHABLE` | Throttled / API down (reads) | Wait 5–10s (or `retryAfterMs` when present — Pacifica sets it from its credit headers), retry once; then skip that venue. |
 | `INSUFFICIENT_BALANCE` | Not enough collateral on that venue | Reduce size or move funds first (user-confirmed). |
 | `SYMBOL_NOT_FOUND` | Not listed on this venue | `market list`. Don't add `-PERP`. |
 | `SIZE_TOO_SMALL` | Below venue minimum (HL TWAP: $100 total) | Compute `size × price`; raise size. |
