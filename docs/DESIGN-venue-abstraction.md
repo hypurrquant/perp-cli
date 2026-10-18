@@ -886,6 +886,7 @@ PerpError("CAPABILITY_UNSUPPORTED", "<Venue> does not support <feature>", {
 - **모든 venue의 trade 명령이 `OrderResult`(§10.10) + `execution`을 반환** — 기존 4개 venue의 legacy 원시 응답(JSON)은 `venueRaw`로 이동. → 기존 4개 venue용 `TradingV2` 래퍼 구현(§10.9에서 미뤘던 항목).
 - 스팟은 `SpotOrderResult`로 통일(HL/Lighter legacy 결과도 래핑).
 - `--json` 출력 형태 변경 = BEHAVIOR CHANGE. 한 릴리스 동안 `legacy` 필드에 원시 응답 병행 제공.
+- **의도된 예외 — 다중 레그 명령:** `trade multi`와 마찬가지로 `trade atomic`(Pacifica 전용, `POST /orders/batch`의 `CreateMarket` 레그 묶음, `src/exchanges/pacifica-atomic.ts`)은 단일 `OrderResult`가 아니라 **레그별 결과**(`outcomes[]`: `symbol` / `side` / `size` / `clientOrderId` / `orderId` / `status` filled·partiallyFilled·notFilled·rejected·unknown / `filledSize` / `detail`)를 반환한다. 전부 체결 = `ok`; 미확인 레그 → `ORDER_PENDING`(그 심볼 격리, 재전송 금지), 0 체결 → `ORDER_REJECTED`, 그 외 `ORDER_PARTIAL` — 전체 레그는 `error.details.legs`. batch 응답의 `CreateMarket` 결과는 `order_id: null`(docs 예시)이라 각 레그는 자신의 `client_order_id`로 추적(`orderByClientId`, 제한된 polling) 후 `history_by_id`로 체결 확인. HTTP 400(문서화된 전체 거절) / 429 외의 batch 실패(timeout, 5xx, 해석 불가 응답)는 **모든 레그**를 격리한다. 다른 venue는 `CAPABILITY_UNSUPPORTED`.
 
 ### 13.8 스팟 통일
 - `spot-transfer`: unified 계정(pacifica, HL unified)은 **no-op 성공**(`execution.method: "sharedAccount"`, 이동 불필요) — 에러 아님. wallet(arcus)은 통일 미지원 응답.

@@ -91,6 +91,16 @@ perp --json -e <EX> trade scale-in <SYMBOL> <SIDE> --levels '<P1>:<PCT>,<P2>:<PC
 perp --json -e <EX> trade pnl-track                     # real-time PnL tracker
 perp --json -e <EX> trade twap <SYMBOL> <SIDE> <SIZE> <DURATION>   # Pacifica: seconds (native), HL: minutes (native, min $100); others client-side: --background [--slices <n>]
 
+# Pacifica Atomic basket (pacifica only; other venues → CAPABILITY_UNSUPPORTED). Legs SYMBOL[:WEIGHT] (≤ 5 per side, each market once);
+# --usd is split by weight at each mark, floored to the lot, each leg ≥ the market's USD minimum. ONE POST /orders/batch of market
+# orders — NOT all-or-nothing: each leg fills or fails on its own (ORDER_PARTIAL / ORDER_REJECTED / ORDER_PENDING per basket).
+# --reduce-only: --long legs must close shorts, --short legs must close longs (checked before sending). Supports --dry-run (plan + unsigned body).
+perp --json -e pacifica trade atomic --long BTC:50 --short ETH:50 --usd 1000 [--reduce-only] [--slippage-bps <n>] [--force]
+# A leg needs notional ≥ the market minimum × (1 + slippage bound). Legs without an order_id in the ack are traced by their client_order_id.
+# A batch failure other than HTTP 400 / 429 (timeout, 5xx, unreadable answer) → ORDER_PENDING and EVERY leg is quarantined.
+# Pacifica Chase / OCO / Trailing Stop / Swarm / Trigger Swarm / Conditional Market|Limit: no documented API / SDK path (as of 2026-10-19) —
+# nearest here: trade twap (≈ Swarm, split market execution), trade tpsl (≈ OCO bracket exit).
+
 # Spot helpers (any venue with spot)
 perp --json -e <EX> trade spot-buy <SYMBOL> <SIZE>
 perp --json -e <EX> trade spot-sell <SYMBOL> <SIZE>

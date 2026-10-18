@@ -185,6 +185,8 @@ perp --json --dry-run -e <ex> trade buy <SYM> <SIZE> --smart
 > `trade check` does NOT read exchange-set leverage. Always pass `--leverage` explicitly.
 >
 > `--smart` (IOC at best bid/ask ± 1 tick) exists only on pacifica / hyperliquid / lighter / aster, and is refused (`CAPABILITY_UNSUPPORTED`) together with `--tp`/`--sl` or `--client-id`/`--auto-id`.
+>
+> Pacifica basket (pair trade): `perp --json --dry-run -e pacifica trade atomic --long BTC:50 --short ETH:50 --usd 1000` — one batch of market orders, NOT all-or-nothing (a leg can fill while another is refused → `ORDER_PARTIAL`; an unconfirmed leg → `ORDER_PENDING` + quarantine). A batch failure other than HTTP 400 / 429 quarantines every leg. Pacifica's Chase / OCO / Trailing Stop / Swarm / Trigger Swarm / Conditional orders have no documented API / SDK path (as of 2026-10-19); nearest here: `trade twap` (≈ Swarm) and `trade tpsl` (≈ OCO bracket exit).
 
 Show the dry-run output to the user. Wait for confirmation.
 
@@ -409,8 +411,8 @@ Every response is `{ "ok": true, "data": ... }` or `{ "ok": false, "error": { "c
 ## Safety rules
 
 - **Unknown outcome (`ORDER_PENDING`) on ANY write** — orders, cancels, edits, leverage, withdraw / deposit / bridge / transfer: do NOT resubmit. Check `perp --json -e <ex> trade status c:<id> --symbol <S>` (the id in `remediation`), `account orders` / `account positions` / `portfolio`, and the tx hash / request id in `error.details` (`funds bridge status <id>` for bridges). Report to the user.
-- **Quarantine**: an unknown or unhedged outcome (arb, bots, `trade close`, `trade multi`) quarantines the symbol — global per symbol, scoped by network. It blocks opening orders, `arb exec`, `arb auto` and bots (`RISK_VIOLATION`); reduce-only orders pass. List: `perp --json strategy quarantine`. Clear only after the USER has verified the positions on the venues: `perp --json strategy quarantine-clear <SYM>`. `arb close` on a quarantined symbol needs `--force`.
-- **Risk gate**: `trade market / buy / sell / limit / split / market --split / scale-in / twap / multi / stop --no-reduce-only` check `~/.perp/risk.json` (`perp risk limits ...`); reduce-only is exempt. `--force` bypasses the limits (never quarantine) — only with explicit user consent.
+- **Quarantine**: an unknown or unhedged outcome (arb, bots, `trade close`, `trade multi`, `trade atomic`) quarantines the symbol — global per symbol, scoped by network. It blocks opening orders, `arb exec`, `arb auto` and bots (`RISK_VIOLATION`); reduce-only orders pass. List: `perp --json strategy quarantine`. Clear only after the USER has verified the positions on the venues: `perp --json strategy quarantine-clear <SYM>`. `arb close` on a quarantined symbol needs `--force`.
+- **Risk gate**: `trade market / buy / sell / limit / split / market --split / scale-in / twap / multi / atomic / stop --no-reduce-only` check `~/.perp/risk.json` (`perp risk limits ...`); reduce-only is exempt. `--force` bypasses the limits (never quarantine) — only with explicit user consent.
 - **Stops** (`trade stop`, `tpsl`) are reduce-only by default; `--no-reduce-only` is refused on ondo and qfex. `trade tpsl <SYM> long|short` = the OPEN position's side; legs are sized to the live position.
 - **Dry-run is default-deny**: commands that cannot simulate refuse `--dry-run` with `INVALID_PARAMS` (e.g. `trade twap`, `trade multi`, `trade cancel-stop`, `trade cancel-twap`, `strategy start / preset / grid / dca / quick-* / funding-arb`, `wallet agent approve`, `wallet rotate`). Simulate bots with `perp --json --dry-run strategy run <strategy>` / `perp --json --dry-run arb auto`.
 - **A dry-run is not a full venue check**: it validates arguments, the risk gate and quarantine, but some venue rules are enforced only on the live send — e.g. an off-grid limit price (`INVALID_TICK`) or `--no-reduce-only` on ondo / qfex (`CAPABILITY_UNSUPPORTED`). Those refusals happen before anything is sent.
