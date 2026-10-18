@@ -6,7 +6,7 @@
  * with reduce_only:false. If the size exceeded the live position, HL would open or flip
  * the opposite side instead of just reducing.
  *
- * Current contract (, CHANGELOG "marketOrder/spotMarketOrder now require opts
+ * Current contract (CHANGELOG "marketOrder/spotMarketOrder now require opts
  * { reduceOnly, slippage }"): marketOrder is ONE signed IOC limit order at the slippage-
  * bounded protection price; the order wire's `r` flag carries opts.reduceOnly verbatim.
  * The SDK marketOpen/marketClose helpers are no longer used.

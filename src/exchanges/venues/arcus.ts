@@ -101,7 +101,7 @@ export const arcusVenue: VenueDefinition = {
       return spot;
     },
   },
-  // Arcus venue limit per.
+  // Arcus venue slippage limit.
   maxSlippageBps: 1000,
   builderFee: BUILDER_FEE_CAPABILITIES["arcus"],
   apiStatus: { kind: "official" },

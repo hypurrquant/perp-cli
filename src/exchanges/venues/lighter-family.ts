@@ -105,7 +105,7 @@ export function lighterFamilyNetworks(venue: LighterVenueId): { mainnet: VenueNe
 }
 
 /**
- * + + . timeInForce lists the CLI inputs the adapter accepts:
+ * timeInForce lists the CLI inputs the adapter accepts:
  * GTC is mapped to GTT (28-day expiry, LIGHTER_GTT_EXPIRY_MS) by LighterAdapter.limitOrder;
  * ALO is sent as time-in-force 2 (POST_ONLY); FOK is not offered.
  * clientOrderId: Lighter `clientOrderIndex`, a numeric id — CLI format rule

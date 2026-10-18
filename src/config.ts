@@ -79,7 +79,7 @@ function envKeyOf(venue: LegacyVenueId): string | null {
     const v = process.env[envVar];
     if (v) return v;
   }
-  // config.ts generic PRIVATE_KEY — recorded as out of scope in , legacy venues only.
+  // config.ts generic PRIVATE_KEY — out of scope (legacy venues only).
   const generic = process.env.PRIVATE_KEY;
   return generic ? generic : null;
 }

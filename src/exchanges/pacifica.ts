@@ -43,7 +43,7 @@ export function pacificaTif(tif: string | undefined): PacificaTif {
 }
 
 /**
- * Generated client_order_id carrying the order's TIF (, like Ondo's
+ * Generated client_order_id carrying the order's TIF (like Ondo's
  * `pcli-<p|n>-…`): Pacifica takes a full UUID and never returns the TIF (GET /orders has no
  * tif field), so amend recovers it from the id. Layout: a UUID v4 whose first 6 hex digits are
  * `5ac1f` + TIF code (1 GTC, 2 IOC, 3 ALO, 4 TOB). The native edit keeps the client_order_id.

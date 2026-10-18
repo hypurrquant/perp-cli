@@ -1403,7 +1403,7 @@ describe("scale-tp / scale-in — level sizing and outcome", () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// TP/SL direction validation (, CHANGELOG "--tp/--sl ... Direction checked
+// TP/SL direction validation (CHANGELOG "--tp/--sl ... Direction checked
 // before the entry is sent (long: tp > ref > sl, short: reverse)") — nothing is sent on a
 // wrong-side trigger, which would otherwise fire immediately.
 // ══════════════════════════════════════════════════════════════

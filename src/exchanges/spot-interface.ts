@@ -41,7 +41,7 @@ export interface SpotBalance {
   shared: boolean;
 }
 
-/** Normalized spot order result for venues added under (legacy HL/Lighter return unknown). */
+/** Normalized spot order result for venue-definition spot venues (legacy HL/Lighter return unknown). */
 export interface SpotOrderResult {
   venue: string;
   symbol: string;

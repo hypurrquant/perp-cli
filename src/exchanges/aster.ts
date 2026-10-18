@@ -358,7 +358,7 @@ export class AsterAdapter implements ExchangeAdapter {
     }
   }
 
-  // ── Spot host access (, used by AsterSpotAdapter) ──
+  // ── Spot host access (used by AsterSpotAdapter) ──
 
   /**
    * Aster spot REST host. Spot shares the perp EIP-712 Domain B signing

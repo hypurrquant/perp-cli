@@ -75,7 +75,8 @@ export function hlProtectionPrice(
 }
 
 /**
- * A USER-SUPPLIED limit / trigger / modify price checked against HL's price grid (* an off-grid limit price is refused, never rounded — rounding to nearest can move a buy price UP).
+ * A USER-SUPPLIED limit / trigger / modify price checked against HL's price grid:
+ * an off-grid limit price is refused, never rounded — rounding to nearest can move a buy price UP.
  * HL docs (trading/tick-and-lot-size): "Prices can have up to 5 significant figures, but no more
  * than MAX_DECIMALS - szDecimals decimal places where MAX_DECIMALS is 6 for perps and 8 for spot.
  * Integer prices are always allowed, regardless of the number of significant figures."

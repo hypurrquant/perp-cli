@@ -663,7 +663,7 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
   /**
    * A reduce-only order the venue did not confirm as reduce-only (`reduce_only` false or absent
    * on an order frame — reduceOnlyUnconfirmedFrame — or on a read-back row of THIS order). The order may be live as a normal order, so the outcome is
-   * unknown (ORDER_PENDING,e: never re-sent). It is NOT cancelled here: a cancel
+   * unknown (ORDER_PENDING, never re-sent). It is NOT cancelled here: a cancel
    * is a second mutating command with its own unknown outcome and cannot undo a fill.
    */
   private reduceOnlyEchoError(i: QfexInstrument, orderId: string | null, clientOrderId: string, echo: unknown, venueRaw: unknown): PerpError {

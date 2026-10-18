@@ -134,7 +134,7 @@ describe("HL modifyOrder surfaces per-order rejections", () => {
 });
 
 // ── BUG 2: Lighter market order never prices off a zero / missing reference ──
-// The reference price is now the orderbook mid (, LIGHTER_REFERENCE_PRICE_SOURCE):
+// The reference price is now the orderbook mid (LIGHTER_REFERENCE_PRICE_SOURCE):
 // a book missing a side → PRICE_STALE, and the order is NOT signed or sent (definite, pre-send).
 describe("BUG 2: Lighter marketOrder refuses without a usable reference price", () => {
   const build = async (book: unknown) => {

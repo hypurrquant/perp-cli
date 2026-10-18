@@ -301,7 +301,7 @@ export class ArcusSpotRouter {
       sellAmount: p.sellAmount.toString(),
       taker: p.taker,
       slippageBps: String(p.slippageBps),
-      allowWrapped: "false", // — never accept a wrapped placeholder
+      allowWrapped: "false", // never accept a wrapped placeholder
     });
   }
 
