@@ -141,7 +141,7 @@ describe("TWAP — runTWAP", () => {
     expect(slice1 + slice2 + slice3).toBeCloseTo(1.0, 6);
   });
 
-  it("every slice states reduceOnly and carries the resolved slippage bound (design §13.2)", async () => {
+  it("every slice states reduceOnly and carries the resolved slippage bound", async () => {
     const { runTWAP } = await import("../strategies/twap.js");
     const adapter = mockAdapter();
     await runTWAP(adapter, { symbol: "BTC", side: "sell", totalSize: 0.2, durationSec: 1, slices: 2, reduceOnly: true }, undefined, vi.fn());

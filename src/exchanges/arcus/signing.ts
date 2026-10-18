@@ -14,7 +14,7 @@
  *   "everything else" rule, scheduleCancel — unverified):
  *     ed25519(timestampNs + action + canonicalJson(body))
  *
- * Time units (design §10.10): `ct` and X-Timestamp are Unix NANOseconds;
+ * Time units: `ct` and X-Timestamp are Unix NANOseconds;
  * signed `g` is NANOseconds; the request body `goodTilTime` is a MICROsecond
  * decimal string (g = goodTilTime × 1000).
  *
@@ -137,8 +137,7 @@ export function placePayload(f: ArcusPlaceFields, untriggered: boolean): string 
  *  - authentication page: always `id`, plus `c` "only if the resting order was placed
  *    with a client id … the engine rejects a mismatch".
  * Default follows the openapi spec ("idOnly": sign `id`, never `c`; the body sends
- * orderId only). "idAndClientId" is the authentication-page variant. Settled by the
- * docs/TEST-PLAN.md step "Arcus modify signature identity" on testnet.
+ * orderId only). "idAndClientId" is the authentication-page variant. Settled by the "Arcus modify signature identity" testnet check.
  */
 export type ArcusModifyIdentity = "idOnly" | "idAndClientId";
 export const ARCUS_MODIFY_SIGNED_IDENTITY: ArcusModifyIdentity = "idOnly";

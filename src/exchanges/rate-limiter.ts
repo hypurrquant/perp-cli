@@ -1,5 +1,5 @@
 /**
- * Per-process token-bucket rate limiter keyed by venue (design §3 L4, §10.9).
+ * Per-process token-bucket rate limiter keyed by venue.
  *
  * Limitation (documented): this only coordinates requests inside one process.
  * CLI + MCP server + bots running at once can still exceed a venue's limit.

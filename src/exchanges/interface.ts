@@ -173,7 +173,7 @@ export interface ExchangeAdapter {
 
   // ── Trading ──
   /**
-   * Market order = IOC within the resolved slippage bound (design §13.2). `opts` is
+   * Market order = IOC within the resolved slippage bound. `opts` is
    * required so every caller states reduceOnly and passes resolveSlippage() output.
    */
   marketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { reduceOnly: boolean; slippage: ResolvedSlippage }): Promise<unknown>;
@@ -191,7 +191,7 @@ export interface ExchangeAdapter {
    * `slippage` (resolveSlippage() output) bounds the execution price of a market
    * trigger on venues that send it as a protection-priced limit once triggered
    * (Lighter, Arcus: required there for a market trigger — adapters never read
-   * settings, design §13.10 #1); venue-native market triggers ignore it.
+   * settings); venue-native market triggers ignore it.
    * `kind` ("tp" | "sl") states the protective intent explicitly: venues with distinct
    * take-profit / stop-loss trigger types (Aster, Lighter) send that type as given — no
    * price-based classification — and a trigger already crossed is left for the venue to

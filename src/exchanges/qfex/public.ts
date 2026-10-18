@@ -1,5 +1,5 @@
 /**
- * QFEX public market data (design §14.8 as amended by §14.12 #6, #7, #10).
+ * QFEX public market data.
  *
  * Sources (all public):
  *   GET /refdata                 instruments: tick, lot, min/max quantity, price band, status,
@@ -8,7 +8,7 @@
  *                                24h notional volume
  *   GET /md/contracts            funding_rate / next_funding_rate_timestamp (funding reads only)
  *
- * Coupling (§14.12 #10): order-entry precision comes from /refdata ALONE (fetchQfexInstruments).
+ * Coupling: order-entry precision comes from /refdata ALONE (fetchQfexInstruments).
  * Markets need /refdata + the MDS snapshot. Only funding reads need /md/contracts — its failure
  * fails fetchFundingRates, never market listing or order entry.
  *
@@ -163,7 +163,7 @@ export function toQfexInstrument(raw: unknown): QfexInstrument {
   };
 }
 
-/** Is the market one perp-cli may send orders to? USD-quoted and ACTIVE (§14.12 #7). */
+/** Is the market one perp-cli may send orders to? USD-quoted and ACTIVE. */
 export function qfexTradable(i: Pick<QfexInstrument, "status" | "quoteAsset">): boolean {
   return i.status === "ACTIVE" && i.quoteAsset === "USD";
 }

@@ -1,5 +1,5 @@
 /**
- * Arcus Spot Router HTTP client + wire types (design §12, §12.4 #7).
+ * Arcus Spot Router HTTP client + wire types.
  *
  * Ported from @arcus-xyz/arcus-spot-sdk@1.0.2 (src/client.ts, src/types.ts,
  * src/chains.ts) — Copyright Arcus, licensed under the Apache License 2.0
@@ -301,7 +301,7 @@ export class ArcusSpotRouter {
       sellAmount: p.sellAmount.toString(),
       taker: p.taker,
       slippageBps: String(p.slippageBps),
-      allowWrapped: "false", // §12.4 #7 — never accept a wrapped placeholder
+      allowWrapped: "false", // — never accept a wrapped placeholder
     });
   }
 

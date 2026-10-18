@@ -96,8 +96,7 @@ vi.mock("../../exchanges/lighter.js", () => {
       this.accountIndex = mockAccountIndex;
     }
 
-    // Lighter-family venues are built with LighterAdapter.forVenue(venue, …) (design §10:
-    // one adapter class serves lighter and lighter-rh); the approve flow uses it.
+    // Lighter-family venues are built with LighterAdapter.forVenue(venue, …) (// one adapter class serves lighter and lighter-rh); the approve flow uses it.
     static forVenue(venue: string, evmKey: string, testnet: boolean, opts?: { apiKey?: string; accountIndex?: number }): MockLighterAdapter {
       const a = new MockLighterAdapter(evmKey, testnet, opts);
       a.name = venue;

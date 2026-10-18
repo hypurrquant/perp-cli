@@ -87,7 +87,7 @@ async function buildAdapter() {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-// marketOrder opts are required (interface.ts, design §13.2): reduceOnly + resolved slippage.
+// marketOrder opts are required (interface.ts): reduceOnly + resolved slippage.
 const MARKET_OPTS = { reduceOnly: false, slippage: { bps: 50, source: "default" as const } };
 
 describe("AsterAdapter — three-tier signer routing", () => {

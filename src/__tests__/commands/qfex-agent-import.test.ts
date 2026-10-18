@@ -1,5 +1,5 @@
 /**
- * `perp wallet agent import qfex` (design §14.5, §14.12 #9): every check is a read and runs
+ * `perp wallet agent import qfex`: every check is a read and runs
  * BEFORE anything is stored; the key is bound to a concrete account UUID that must be
  * confirmed; permissions are informational; no secret appears in any output or error.
  *

@@ -1,5 +1,5 @@
 /**
- * QFEX request signing + wire-number conversion (design §14.2, §14.3).
+ * QFEX request signing + wire-number conversion.
  *
  * Auth (docs /websocket/channels/trade/authenticate, OpenAPI securitySchemes):
  *   signature = hex(HMAC-SHA256(secret, `${nonce}:${unix_ts}`))
@@ -12,7 +12,7 @@
  * fromWireNumber are the only places a decimal string becomes a float or the reverse.
  *
  * Wire facts that needed a live check are single constants here; while one is unset every code
- * path that needs it refuses with the uniform CAPABILITY_UNSUPPORTED response (design §14.12).
+ * path that needs it refuses with the uniform CAPABILITY_UNSUPPORTED response.
  */
 
 import { createHmac, randomBytes } from "node:crypto";
@@ -24,7 +24,7 @@ export interface QfexCredentials {
   secret: string;
 }
 
-// ── Live-checked wire facts (docs/TEST-PLAN.md QFEX items; scripts/e2e/venues.ts DESIGN_ITEMS) ──
+// ── Live-checked wire facts (QFEX UAT items; scripts/e2e/venues.ts DESIGN_ITEMS) ──
 
 /** How `add_order.params.reduce_only` is encoded. */
 export type QfexReduceOnlyWire = "boolean" | "integer";
@@ -127,8 +127,7 @@ export const QFEX_MODIFY_KEEPS_CLIENT_ID = true as boolean | null;
 export const QFEX_USER_ID_IS_ACCOUNT = null as boolean | null;
 
 const Q2_REMEDIATION =
-  "Reduce / close the position on the QFEX web app. perp-cli sends reduce-only orders on QFEX only with the wire format of item Q2 "
-  + "(docs/TEST-PLAN.md) set";
+  "Reduce / close the position on the QFEX web app. perp-cli sends reduce-only orders on QFEX only with the wire format of item Q2 set";
 
 /** The uniform refusal of every reduce-only path when the wire format is unset; null when it is set. */
 export function qfexReduceOnlyGate(wire: QfexReduceOnlyWire | null): PerpError | null {
@@ -144,7 +143,7 @@ export function qfexAutomationGate(verified: true | null): PerpError | null {
   return unsupported("qfex", "automation",
     "funding is unverified (Q4) and a resting reduce-only order the market reaches while flat is not proven harmless (Q2), and no automated flow places its own protective stop yet",
     "Trade QFEX with the manual commands (perp trade market / limit / stop / tpsl / close / reduce / close-all / flatten -e qfex) and watch the position yourself; "
-    + "automation opens once docs/TEST-PLAN.md QFEX items Q2 / Q4 are settled");
+    + "automation opens once QFEX items Q2 / Q4 are settled");
 }
 
 /** `reduce_only` value for the wire in the verified format. */

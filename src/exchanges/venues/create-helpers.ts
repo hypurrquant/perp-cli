@@ -2,7 +2,7 @@
  * Adapter construction for the pre-existing venues (pacifica / hyperliquid /
  * lighter / lighter-rh / aster) — the single creation path that replaced the
  * three copies in src/index.ts (getAdapter / _initWithOws / getAdapterForExchange)
- * and the MCP server's getOrCreateAdapter (design §10.2).
+ * and the MCP server's getOrCreateAdapter.
  *
  * Signer tiers, as before: agent (Tier 1) → OWS master (Tier 2) → raw PK (Tier 3).
  * Which tier signs a given request is still decided inside each adapter.
@@ -90,7 +90,7 @@ export async function createPacifica(ctx: VenueCreateContext): Promise<ExchangeA
   } else if (creds.pk !== null) {
     adapter = new PacificaAdapter(parseSolanaKeypair(creds.pk), ctx.network, true);
   } else {
-    // Read-only: no key material. index.ts:143 Keypair.generate() recorded as out of scope (§10.11).
+    // Read-only: no key material. index.ts:143 Keypair.generate() recorded as out of scope.
     adapter = new PacificaAdapter(Keypair.generate(), ctx.network, false);
   }
   const agent = await legacyAgentOf(ctx, creds, "pacifica");
@@ -144,7 +144,7 @@ export async function createHyperliquid(ctx: VenueCreateContext): Promise<Exchan
 export async function createLighterFamily(venue: LighterVenueId, ctx: VenueCreateContext): Promise<ExchangeAdapter> {
   const creds = effectiveCredentials(ctx);
   if (venue === "lighter-rh" && creds.pk !== null) {
-    // Design §10.3: the Lighter RH master key is an OWS wallet only — no env / raw-PK tier.
+    // The Lighter RH master key is an OWS wallet only — no env / raw-PK tier.
     throw new PerpError("NO_ENV_TIER", "Lighter RH does not accept a raw private key (env / --private-key / local wallet)", {
       remediation: "Import the key into OWS (perp wallet import, key via hidden prompt / stdin) and run with --ows <wallet>, or register an agent: perp wallet agent approve lighter-rh",
     });

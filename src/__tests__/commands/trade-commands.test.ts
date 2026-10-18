@@ -61,7 +61,7 @@ import { rmSync } from "node:fs";
 // client order ids = 128-bit hex cloids, per-order cancel proof via statuses[0] === "success".
 //
 // Positions and open orders are STATEFUL: trade close / close-all / flatten / reduce verify
-// every close as a measured position delta (closePerpVerified, design §12.3 / CHANGELOG
+// every close as a measured position delta (closePerpVerified, / CHANGELOG
 // "trade close / close-all / flatten / reduce use closePerpVerified"), and cancel-all /
 // flatten re-list open orders after cancelling (cancelAllV2). A static getPositions would
 // make every close ORDER_PENDING (quarantine), which is exactly what must not pass silently.
@@ -1403,7 +1403,7 @@ describe("scale-tp / scale-in — level sizing and outcome", () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// TP/SL direction validation (design §13.10 #12, CHANGELOG "--tp/--sl ... Direction checked
+// TP/SL direction validation (, CHANGELOG "--tp/--sl ... Direction checked
 // before the entry is sent (long: tp > ref > sl, short: reverse)") — nothing is sent on a
 // wrong-side trigger, which would otherwise fire immediately.
 // ══════════════════════════════════════════════════════════════

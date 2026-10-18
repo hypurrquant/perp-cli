@@ -168,7 +168,7 @@ export interface DelAgentParams {
 /**
  * Build the EIP-712 typed-data payload for `DELETE /fapi/v3/agent`.
  *
- * OPEN ITEM (docs/TEST-PLAN.md "Aster DelAgent struct — mainnet verification"): the
+ * OPEN ITEM (Aster DelAgent struct — mainnet verification): the
  * public Aster V3 docs (asterdex/api-docs, futures api v3 + testnet, checked 2026-10-02)
  * document no agent-delete endpoint or DelAgent struct, and HypurrQuant_FE has no
  * revoke method. This field set mirrors the ApproveAgent terminal fields (AgentAddress,

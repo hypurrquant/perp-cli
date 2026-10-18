@@ -1,5 +1,5 @@
 /**
- * Arcus agent (API key) lifecycle — design §10.4.
+ * Arcus agent (API key) lifecycle.
  *
  * approve:
  *  1. Resolve the master EVM signer from OWS (`masterOwsWallet`).

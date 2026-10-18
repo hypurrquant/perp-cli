@@ -25,7 +25,7 @@
 
 **왜 이 룰이 중요한가:** fallback 은 "현상은 가렸지만 진짜 원인은 안 고친" 코드를 양산한다. fallback 을 거부하면 SSOT 가 어디서 뚫리는지 즉시 드러난다.
 
-**출고 기본값(shipped default)은 fallback 이 아니라 설정이다 (2026-10-02, DESIGN-venue-abstraction §13.10 #2).** 다음 (a)–(e) 를 모두 만족하는 기본값은 "숨은 fallback" 이 아니라 문서화된 설정값이다:
+**출고 기본값(shipped default)은 fallback 이 아니라 설정이다 (2026-10-02).** 다음 (a)–(e) 를 모두 만족하는 기본값은 "숨은 fallback" 이 아니라 문서화된 설정값이다:
 - (a) `src/settings.ts` `DEFAULTS` **한 곳**에서 선언 (예: `defaultSlippageBps: 50`)
 - (b) **한 곳**에서 해석 (예: `resolveSlippage()` — `src/exchanges/slippage.ts`; 어댑터는 settings 를 읽지 않고 해석된 값을 인자로 받음)
 - (c) `perp settings show` / `--json` 에 "(shipped default)" 로 표시되고 `perp settings set` 으로 변경 가능
@@ -79,6 +79,6 @@
 
 ## Reference
 
-- HypurrQuant_FE CLAUDE.md (rule #2 원본): `/Users/hik/Documents/GitHub/HypurrQuant_FE/CLAUDE.md:150-164`
-- HypurrQuant_FE perp-data-ssot.md (Section 1 case study): `/Users/hik/Documents/GitHub/HypurrQuant_FE/docs/guide/web/architecture/perp-data-ssot.md:18-38`
+- HypurrQuant_FE CLAUDE.md (rule #2 원본): the downstream HypurrQuant_FE repo, `CLAUDE.md` rule #2
+- HypurrQuant_FE perp-data-ssot.md (Section 1 case study): the downstream HypurrQuant_FE repo, `docs/guide/web/architecture/perp-data-ssot.md` Section 1
 - Lighter keystore module (Rule #3 적용 사례): `src/agent-wallet/lighter-keystore.ts`

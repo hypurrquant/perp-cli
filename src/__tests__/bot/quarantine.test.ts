@@ -1,5 +1,5 @@
 /**
- * Position quarantine (design §12.3): GLOBAL per canonical symbol, persisted, re-read on
+ * Position quarantine: GLOBAL per canonical symbol, persisted, re-read on
  * every check, and FAIL-CLOSED — an unreadable file means "quarantined", never "clear".
  * HOME is isolated (helpers/isolate-home.ts): QUARANTINE_FILE lives in a temp dir.
  */

@@ -2,7 +2,7 @@
  * Venue definitions — the single source of truth for "which venue, on which
  * network, signed how, funded how, supporting what".
  *
- * See docs/DESIGN-venue-abstraction.md §10. One adapter class may serve several
+ * One adapter class may serve several
  * venues (LighterAdapter serves `lighter` and `lighter-rh`).
  *
  * Venue definition modules must load adapter code lazily (`import()` inside
@@ -69,7 +69,7 @@ export interface VenueDepositPins {
   sources: readonly string[];
 }
 
-// ── Capabilities (§3 L3 + §10.8) ──
+// ── Capabilities ──
 
 export type MarketOrderMode = "native" | "slippageBounded" | "rfq";
 export type TpSlMode = "attached" | "separateOrders" | "batchGroup" | "positionLevel";
@@ -91,7 +91,7 @@ export interface VenueCapabilities {
   withdrawAssets: string[] | null;
 }
 
-// ── Spot (§12) ──
+// ── Spot ──
 
 export type SpotAccountModel =
   | "unified"   // spot shares the perp account/margin (Pacifica)
@@ -204,7 +204,7 @@ export interface VenueDefinition {
   settlementIntervalHours: number | "perMarket";
   /**
    * false = the unit / meaning of the venue's published funding rate is not verified against
-   * settled funding payments yet (design §14.12 #6). Such a venue is left out of cross-venue
+   * settled funding payments yet. Such a venue is left out of cross-venue
    * funding comparison (fetchVenuesRates drops it unless includeUnverified is passed), its
    * adapter reports fundingRate null to bots, and funding-arb strategies refuse it as a leg.
    */
@@ -220,11 +220,10 @@ export interface VenueDefinition {
   publicData: VenuePublicData;
   /** null when the venue cannot produce an adapter (public data only). */
   create: ((ctx: VenueCreateContext) => Promise<ExchangeAdapter>) | null;
-  /** null = venue has no spot trading (§12). */
+  /** null = venue has no spot trading. */
   spot: VenueSpotDefinition | null;
   /**
-   * Largest slippage bound (bps) a market-type order may carry on this venue
-   * (design §13.10 #1). resolveSlippage() rejects anything above it with
+   * Largest slippage bound (bps) a market-type order may carry on this venue. resolveSlippage() rejects anything above it with
    * INVALID_PARAMS before sending — never clamps.
    */
   maxSlippageBps: number;
@@ -357,7 +356,7 @@ export function parseVenueRef(ref: string): VenueRef {
 
 /**
  * Funding basis for a venue ref. HIP-3 dexes use the Hyperliquid core basis
- * (current behavior preserved; see design §10.1 — verify against live data).
+ * (current behavior preserved; verify against live data).
  * Throws for venues whose basis is per-market; callers must use the market's value.
  */
 export function fundingBasisOf(ref: string): FundingRateBasis {
@@ -385,7 +384,7 @@ export function settlementIntervalOf(ref: string): number {
 /**
  * Refuse a venue whose funding rate is unverified (VenueDefinition.fundingVerified false) as a
  * leg of a funding strategy (arb scan ranking, arb exec / auto, funding bots). Uniform
- * CAPABILITY_UNSUPPORTED (design §13.6, §14.12 #6). Unknown venue refs throw UNKNOWN_VENUE.
+ * CAPABILITY_UNSUPPORTED. Unknown venue refs throw UNKNOWN_VENUE.
  */
 export function assertFundingArbVenue(ref: string): void {
   const def = getVenue(parseVenueRef(ref).venue);

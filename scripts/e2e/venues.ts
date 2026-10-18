@@ -1,8 +1,8 @@
 /**
  * E2E venue profiles — only what the venue definitions (src/exchanges/venues/*.ts)
  * do NOT already declare: test symbols, funding routes, faucets, access gates and
- * the design-doc verification items (docs/DESIGN-venue-abstraction.md §11 / §12.3)
- * each step settles. Capabilities (TIF set, tpsl method, amend, orderAck, spot
+ * the design verification items each step
+ * settles. Capabilities (TIF set, tpsl method, amend, orderAck, spot
  * model) are read from the built venue definition at runtime, never copied here.
  */
 
@@ -66,7 +66,7 @@ export interface VenueProfile {
   minNotionalFallback: { usd: number; source: string } | null;
   /** Environment the CLI needs for this network (e.g. a testnet host override). */
   testnetEnv: { name: string; suggested: string; why: string } | null;
-  /** Testnet funds and access gates — printed by preflight, mirrored in docs/TEST-PLAN.md. */
+  /** Testnet funds and access gates — printed by preflight. */
   prerequisites: Record<Net, string[]>;
   deposit: Record<Net, FundingRoute>;
   withdraw: Record<Net, FundingRoute>;
@@ -259,7 +259,7 @@ export const PROFILES: Record<E2eVenue, VenueProfile> = {
     testnetEnv: null,
     prerequisites: {
       testnet: [
-        "Access whitelist for the master address (account/order reads return 403 otherwise — §11 #8)",
+        "Access whitelist for the master address (account/order reads return 403 otherwise)",
         "Testnet app: ~$1k test funds button + USDG mint; RH testnet ETH for gas (no public faucet — ask Arcus/RH)",
         "perp wallet agent approve arcus -n testnet --master <ows-wallet> --account-index 0",
       ],
@@ -282,7 +282,7 @@ export const PROFILES: Record<E2eVenue, VenueProfile> = {
     },
     spotSymbol: { mainnet: "TSLA", testnet: "TSLA" },
   },
-  // QFEX (design §14.9, §14.12 #14). Order: UAT (testnet) first for every phase, then mainnet $20.
+  // QFEX. Order: UAT (testnet) first for every phase, then mainnet $20.
   // Until Q2 passes every reduce-only path (close / flatten / stop / tpsl / --tp/--sl) and amend
   // return CAPABILITY_UNSUPPORTED by design: run the generic trade phase only up to the plain
   // limit / cancel / market steps, and flatten a test position with a plain OPPOSITE order
@@ -320,7 +320,7 @@ export const PROFILES: Record<E2eVenue, VenueProfile> = {
   },
 };
 
-/** Design verification items — docs/DESIGN-venue-abstraction.md §11 table + §12.3 S-items. */
+/** Design verification items (numbered #n, S-items and QFEX Q-items). */
 export const DESIGN_ITEMS: Record<string, { venues: string; what: string }> = {
   "#1": { venues: "lighter-rh", what: "funding basis 8h assumption" },
   "#2": { venues: "lighter-rh", what: "L2 signing, ChangePubKey, withdraw, 60 req/min" },
@@ -365,7 +365,7 @@ export const DESIGN_ITEMS: Record<string, { venues: string; what: string }> = {
   S20: { venues: "arcus", what: "router TakerIntent field order" },
   S21: { venues: "lighter", what: "spot balance reflected at /tx status 2/3" },
   S22: { venues: "lighter", what: "spot event_info is/rs integer base units" },
-  // QFEX — docs/DESIGN-venue-abstraction.md §14.10 + §14.12 #14. [MAINNET BLOCKER] = must pass on UAT before any mainnet order.
+  // QFEX. [MAINNET BLOCKER] = must pass on UAT before any mainnet order.
   Q1: { venues: "qfex", what: "[MAINNET BLOCKER] a GTC order survives socket close (clean close + kill): cancel-on-disconnect is off by default" },
   Q2: { venues: "qfex", what: "add_order.reduce_only wire type (bool vs 0/1), default when omitted, and venue ENFORCEMENT: reduce-only qty > position and reduce-only with no position are rejected or capped; take_profit / stop_loss omitted vs 0. PASSED 2026-10-05 for the wire type (JSON boolean) and the no-position rejection → QFEX_REDUCE_ONLY_WIRE is set and manual close / reduce / flatten / IOC reduce-only are open. STILL OPEN: an oversize resting reduce-only order was accepted and match-time capping is unproven → gates QFEX_RESTING_REDUCE_ONLY_VERIFIED (limit --reduce-only GTC / ALO, scale-tp). Stops and TP/SL are gated by Q21, automation by QFEX_AUTOMATION_VERIFIED" },
   Q3: { venues: "qfex", what: "auth success / failure frame shapes, WS timestamp tolerance, close code after 1 minute unauthenticated" },

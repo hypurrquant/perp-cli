@@ -1,7 +1,7 @@
 /**
- * Hyperliquid venue definition (design §10.1, §10.8, §10.13 #4).
+ * Hyperliquid venue definition.
  * HIP-3 dexes are not venues: they are selected via VenueCreateContext.hlDex.
- * Adapter + public-data code are loaded lazily (§10.10).
+ * Adapter + public-data code are loaded lazily.
  */
 
 import type { Network, VenueDefinition, VenuePublicData } from "../venue.js";
@@ -75,11 +75,11 @@ export const hyperliquidVenue: VenueDefinition = {
   settlementIntervalHours: 1,
   fundingVerified: true,
   roles: ["marketData", "account", "trading"],
-  // marketOrder: IOC limit at a protection price (§13.2/§13.10 #5). Declared reference
+  // marketOrder: IOC limit at a protection price. Declared reference
   // price = l2Book mid ((best bid + best ask) / 2) for native perps, HIP-3 and spot —
   // no runtime substitute; a one-sided/empty book → PRICE_STALE. Rounding: 5 significant
   // figures, max 6 − szDecimals (perp) / 8 − szDecimals (spot) decimals, toward crossing.
-  // tpsl stays "separateOrders": HL `normalTpsl` grouping was evaluated (§13.10 #12) and not
+  // tpsl stays "separateOrders": HL `normalTpsl` grouping was evaluated and not
   // used — its children have a fixed size equal to the parent and are fully cancelled when
   // a partially filled parent is cancelled (HL docs, TP/SL orders), so a partially filled
   // IOC entry would be left unprotected; separateOrders sizes TP/SL to the verified fill.
@@ -102,7 +102,7 @@ export const hyperliquidVenue: VenueDefinition = {
   // HL docs "Rate limits and user limits": REST requests share an aggregated
   // weight of 1200/min per IP. Exchange actions weigh 1 (unbatched); light info
   // requests 2; most info requests 20; userRole 60.
-  // Declared only — per §10.9 the limiter is applied to new venues + lighter-rh.
+  // Declared only — per the limiter is applied to new venues + lighter-rh.
   rateLimit: {
     capacity: 1200,
     refillPerSec: 20,
@@ -114,7 +114,7 @@ export const hyperliquidVenue: VenueDefinition = {
   restrictedRegions: [],
   symbolIdentity: "baseTicker",
   publicData,
-  // §12: spot USDC is shared with perp margin when the account is unified (isUnifiedAccount, read at init).
+  // spot USDC is shared with perp margin when the account is unified (isUnifiedAccount, read at init).
   spot: {
     accountModel: "runtime",
     quoteAssets: { mainnet: ["USDC"], testnet: ["USDC"] },

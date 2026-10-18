@@ -1,5 +1,5 @@
 /**
- * QFEX raw REST client (design §14.1, §14.4, §14.6): raw fetch + node:crypto HMAC, no SDK.
+ * QFEX raw REST client: raw fetch + node:crypto HMAC, no SDK.
  *
  * Two hosts: the API (`api.qfex.*` — market data, account reads, leverage, subaccount
  * transfer) and the banker (`banker.qfex.*` — deposit address, withdraw). Both take the same

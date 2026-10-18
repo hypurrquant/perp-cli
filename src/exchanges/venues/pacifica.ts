@@ -1,6 +1,6 @@
 /**
- * Pacifica venue definition (design §10.1, §10.8, §10.13 #4).
- * Adapter + public-data code are loaded lazily (§10.10).
+ * Pacifica venue definition.
+ * Adapter + public-data code are loaded lazily.
  */
 
 import type { VenueDefinition, VenuePublicData } from "../venue.js";
@@ -73,12 +73,12 @@ export const pacificaVenue: VenueDefinition = {
   // docs.pacifica.fi "Rate limits": "Pacifica uses a credit-based rate limiting system with a
   // 60-second rolling window." Tier "Unidentified IP | 125" base credits/60s (valid API Config
   // Key: 300); "Standard request/action | 1" credit.
-  // Declared only — per §10.9 the limiter is applied to new venues + lighter-rh.
+  // Declared only — per the limiter is applied to new venues + lighter-rh.
   rateLimit: { capacity: 125, refillPerSec: 125 / 60, weights: null },
   restrictedRegions: [],
   symbolIdentity: "baseTicker",
   publicData,
-  // §12: spot (SOL-USDC) shares the perp account — USDC is perp margin, no transfer.
+  // spot (SOL-USDC) shares the perp account — USDC is perp margin, no transfer.
   spot: {
     accountModel: "unified",
     quoteAssets: { mainnet: ["USDC"], testnet: ["USDC"] },

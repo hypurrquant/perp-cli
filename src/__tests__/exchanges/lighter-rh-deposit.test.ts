@@ -1,5 +1,5 @@
 /**
- * Lighter RH deposit (TEST-PLAN §8 #5): plan from the venue API + RPC, approve only when
+ * Lighter RH deposit: plan from the venue API + RPC, approve only when
  * the allowance is short, deposit(_to, 3, route, amount), master raw-digest signing.
  * Venue API (fetch) and Robinhood Chain RPC (ethers JsonRpcProvider) are mocked — nothing is sent.
  */

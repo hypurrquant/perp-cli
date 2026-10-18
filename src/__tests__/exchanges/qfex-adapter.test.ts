@@ -1,5 +1,5 @@
 /**
- * QfexAdapter TradingV2 mapping (design §14.3 as amended by §14.12): protected IOC, GTC / ALO
+ * QfexAdapter TradingV2 mapping: protected IOC, GTC / ALO
  * acknowledged-not-open, venue-final IOC outcomes, the reduce-only pre-send rule + echo check, the stop gate, non-USD refusal,
  * per-symbol order type / TIF validation, bands and precision from /refdata, funding null,
  * the withdraw gate enforced inside withdraw(), deposit address assertion.
@@ -1013,7 +1013,7 @@ describe("account reads and funding", () => {
   });
 });
 
-// ── Funds: withdraw gate inside withdraw() (§14.12 #8) ──
+// ── Funds: withdraw gate inside withdraw() ──
 
 describe("withdraw gate (enforced inside QfexAdapter.withdraw)", () => {
   const GATE: WithdrawGate = { allowlist: [DEST], maxPerTx: 100, maxPerDay: 150 };

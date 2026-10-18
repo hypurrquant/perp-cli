@@ -1,5 +1,5 @@
 /**
- * Pacifica Spot Adapter (design §12).
+ * Pacifica Spot Adapter.
  *
  * Spot is a different `symbol` ("SOL-USDC") on the same Pacifica order
  * endpoints as perps, signed by the same Solana signer (incl. agent_wallet).
@@ -242,7 +242,7 @@ export class PacificaSpotAdapter implements SpotAdapter, SpotOpenOrdersCapable, 
 
   /**
    * Venue-final outcome of a SpotOrderResult returned by spotMarketOrder / IOC
-   * spotLimitOrder (IocOutcomeCapable, design §13.10 #4): set only when the polled
+   * spotLimitOrder (IocOutcomeCapable): set only when the polled
    * history row was terminal and reported filled_amount. null for anything else.
    */
   iocOutcomeOf(raw: unknown): IocOutcome | null {
@@ -289,7 +289,7 @@ export class PacificaSpotAdapter implements SpotAdapter, SpotOpenOrdersCapable, 
     try { // pre-send (see spotMarketOrder)
       await this.init();
       m = this._resolve(symbol);
-      tif = pacificaTif(opts?.tif); // §13.3 common mapping; FOK → CAPABILITY_UNSUPPORTED
+      tif = pacificaTif(opts?.tif); // common mapping; FOK → CAPABILITY_UNSUPPORTED
       px = requireOnTick(price, m.tick_size);
       requirePositive(size, "size");
       amount = floorSize(size, m.lot_size);

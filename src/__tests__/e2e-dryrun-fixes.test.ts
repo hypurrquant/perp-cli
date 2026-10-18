@@ -1,5 +1,5 @@
 /**
- * Fixes for the E2E dry-run findings (docs/TEST-PLAN.md §8 #1–#6). Network is mocked.
+ * Fixes for the E2E dry-run findings. Network is mocked.
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";

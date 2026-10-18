@@ -49,7 +49,7 @@ export type ExecutionResult =
 /**
  * closed = position fully closed; remainingSize = partially closed, this size is still open (hedged).
  * manual = the outcome is unknown / unverified or a leg is unhedged: the caller must quarantine
- * the position and never retry it automatically (design §12.3).
+ * the position and never retry it automatically.
  */
 export type CloseResult =
   | { closed: true; remainingSize: null; manual: false }
@@ -203,7 +203,7 @@ export class SpotPerpExecutor {
         return { success: false, error: `pre-trade balance: ${msg}` };
       }
 
-      // Step 1: Buy spot — the hedge is sized to what actually filled (§12.4 #5)
+      // Step 1: Buy spot — the hedge is sized to what actually filled
       let fill: SpotFill;
       try {
         fill = await spotMarketFill(spotAdapter, symbol, "buy", matched.size, spotStep);

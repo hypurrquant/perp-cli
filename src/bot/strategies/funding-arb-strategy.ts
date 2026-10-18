@@ -581,7 +581,7 @@ export class FundingArbStrategy implements Strategy {
         const perpRates = ratesByExchange.get(name);
         if (!perpRates) continue;
 
-        // Same-venue spot↔perp: canonical symbol + price-deviation guard (§12.4 #6).
+        // Same-venue spot↔perp: canonical symbol + price-deviation guard.
         const spotMarkets = await spotAdapter.getSpotMarkets();
         const matched = await botSpotPerpMatches(name, spotMarkets, [name], perpMarketsCache, (msg) => ctx.log(`  [ARB] ${msg}`));
         const spotSymbols = matched.get(name);
@@ -1151,7 +1151,7 @@ export class FundingArbStrategy implements Strategy {
       const transferAmt = Math.ceil(matched.notional * 1.02); // slight buffer for price movement
       if (await transferUsdcToSpot(spotAdapter, transferAmt)) ctx.log(`  [ARB] Transferred $${transferAmt} to spot`);
 
-      // Step 2: Buy spot — the hedge is sized to what actually filled (§12.4 #5).
+      // Step 2: Buy spot — the hedge is sized to what actually filled.
       let hedgeSize: string;
       let spotFill: { filledSize: number; avgPrice: number | null };
       try {

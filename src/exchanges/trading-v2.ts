@@ -1,6 +1,6 @@
 /**
  * TradingV2 — normalized order entry for venues added under the venue
- * abstraction (docs/DESIGN-venue-abstraction.md §3 L3, §10.7, §10.10).
+ * abstraction.
  *
  * Method names deliberately do not overlap the legacy ExchangeAdapter trading
  * methods, so an adapter can implement both without overloads.
@@ -45,7 +45,7 @@ export function isTradingV2(a: unknown): a is TradingV2 {
 }
 
 /**
- * Uniform "not supported" response (design §13.6, §13.10 #13): CAPABILITY_UNSUPPORTED
+ * Uniform "not supported" response: CAPABILITY_UNSUPPORTED
  * with details { venue, feature, reason } and an alternative in `remediation`.
  * `venue` is a venue id or display name; `feature` a short capability name
  * ("limitOrder", "fok", "postOnly", "amend", "trading", "orderbook", ...).
@@ -141,7 +141,7 @@ export function validateOrderRequest(venue: VenueDefinition, caps: VenueCapabili
   if (req.price !== null) requirePositive(req.price, "price");
   if (req.triggerPrice !== null) requirePositive(req.triggerPrice, "triggerPrice");
 
-  // Callers resolve the common default (GTC, design §13.3) before building the request;
+  // Callers resolve the common default (GTC) before building the request;
   // a missing TIF here is a programming error, never a user-facing TIF_REQUIRED.
   if (needsPrice && req.tif === null) {
     throw new PerpError("INVALID_PARAMS", `${venue.displayName} ${req.type} order is missing its resolved time-in-force`);
@@ -164,7 +164,7 @@ export function validateOrderRequest(venue: VenueDefinition, caps: VenueCapabili
       `Use --tif ${caps.reduceOnlyTif.join(" | ")}, or ${alternative}`);
   }
 
-  // Callers always pass resolveSlippage() output for market orders (§13.10 #1); a
+  // Callers always pass resolveSlippage() output for market orders; a
   // missing bound here is a programming error, never "send unbounded".
   if (req.type === "market" && req.slippage === null) {
     throw new PerpError("INVALID_PARAMS", `${venue.displayName} market order is missing its resolved slippage bound`);
@@ -195,7 +195,7 @@ export function validateOrderRequest(venue: VenueDefinition, caps: VenueCapabili
 }
 
 /**
- * Common TIF aliases (design §13.3): a common name the venue lists under its own
+ * Common TIF aliases: a common name the venue lists under its own
  * spelling, and venue spellings accepted for the common name. Only same-meaning
  * pairs: GTC ↔ GTT (resting until cancelled / venue expiry), ALO ↔ GTX (post-only).
  */
@@ -209,7 +209,7 @@ const TIF_ALIASES: Readonly<Partial<Record<TimeInForce, readonly TimeInForce[]>>
 /**
  * Resolve a CLI TIF input (common GTC/IOC/FOK/ALO or a venue alias GTT/GTX/TOB,
  * case-insensitive) to a value the venue declares in its capabilities. Never
- * substitutes a different meaning: FOK is never emulated (§13.3) and an
+ * substitutes a different meaning: FOK is never emulated and an
  * unknown / unoffered value is the uniform CAPABILITY_UNSUPPORTED response.
  */
 export function validateLegacyTif(venue: VenueDefinition, caps: VenueCapabilities, tif: string): TimeInForce {

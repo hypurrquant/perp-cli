@@ -1,5 +1,5 @@
 /**
- * Ondo Perps spot adapter (design §12, §12.4).
+ * Ondo Perps spot adapter.
  *
  * Same host and HMAC API key as perps (shares OndoAdapter's OndoClient).
  * Account model "separate": the Spot wallet ("spot") next to the Perps margin
@@ -35,7 +35,7 @@
  * Market orders: IOC LIMIT at
  *   alignProtectionPrice(slippagePrice(mid, side, bps), quoteIncrement, side)
  * which is the web app's own pattern. bps = the caller's resolveSlippage()
- * value (design §13.2). The mid comes from the spot
+ * value. The mid comes from the spot
  * ticker's bid/ask; a one-sided book is PRICE_STALE (no lastPrice fallback).
  *
  * Unverified (needs a funded key):
@@ -429,7 +429,7 @@ export class OndoSpotAdapter implements SpotAdapter, SpotTransferCapable, SpotOp
 }
 
 /**
- * Classify a POST /v1/spot/orders failure (design §12.3). Definite: a definite-code
+ * Classify a POST /v1/spot/orders failure. Definite: a definite-code
  * PerpError (auth, signer, validation) or a venue error envelope on HTTP 4xx (generic
  * EXCHANGE_ERROR → ORDER_REJECTED). RATE_LIMITED is kept (rejected before processing).
  * Unknown → ORDER_PENDING: network failure, HTTP 5xx, a non-JSON / result-less body,

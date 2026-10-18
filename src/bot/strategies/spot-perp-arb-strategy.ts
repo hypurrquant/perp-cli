@@ -288,7 +288,7 @@ export class SpotPerpArbStrategy implements Strategy {
       ctx.state.set("arbPositions", remaining.length);
     }
 
-    // ── Rotation check (only to perp venues that match the spot leg, §12.4 #6) ──
+    // ── Rotation check (only to perp venues that match the spot leg) ──
     const perpMarketsCache = new Map<string, Promise<VenueMarket[]>>();
     const allowedBySpotVenue = new Map<string, Map<string, Set<string>>>();
     const currentPositions = ctx.state.get("spaPositions") as SpotPerpPosition[];
@@ -366,7 +366,7 @@ export class SpotPerpArbStrategy implements Strategy {
       try {
         const spotAdapter = await getBotSpotAdapter(spotExName, spotExAdapter);
         if (!spotAdapter) continue;
-        // Canonical symbol + price guard (§12.4 #6): base → perp venues it may hedge on.
+        // Canonical symbol + price guard: base → perp venues it may hedge on.
         const allowedByBase = await this.spotPerpVenues(spotExName, await spotAdapter.getSpotMarkets(), adapters, perpMarketsCache, ctx);
         for (const [base, allowed] of allowedByBase) {
           // HL spot: skip tokens not in whitelist

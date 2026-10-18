@@ -1,6 +1,5 @@
 /**
  * Ondo Perps adapter — native TradingV2 + legacy ExchangeAdapter shim
- * (design §10.7, §10.10).
  *
  * Signer: HMAC API key only (OndoAgentMeta → ~/.perp/ondo-agents/<keyId>.json).
  * There is no master-key signing path for trading; read-only adapters serve
@@ -9,8 +8,8 @@
  * Order entry:
  *   - market orders: IOC LIMIT at the protection price
  *     alignProtectionPrice(slippagePrice(mark, side, bps), quoteIncrement, side),
- *     bps = the caller's resolveSlippage() value (design §13.2);
- *   - TIF (design §13.3): GTC | IOC | ALO, where ALO = GTC + postOnly; FOK is
+ *     bps = the caller's resolveSlippage() value;
+ *   - TIF: GTC | IOC | ALO, where ALO = GTC + postOnly; FOK is
  *     not offered (uniform CAPABILITY_UNSUPPORTED, never emulated); a limit order
  *     without a TIF is GTC;
  *   - limit orders without a caller clientOrderId get a generated one that
@@ -19,7 +18,7 @@
  *   - TP/SL attached to the entry via takeProfit/stopLoss;
  *   - stopMarket = position-level stop (POST /v1/perps/stop_order), reduce-only,
  *     mark-triggered; stopLimit is not offered by the venue;
- *   - amend = cancel, then place (design §13.10 #10, #11). `size` is the NEW OPEN
+ *   - amend = cancel, then place. `size` is the NEW OPEN
  *     size. The replacement keeps side / reduceOnly / TIF; post-only comes from
  *     the original's generated clientOrderId, or the caller's explicit TIF — an
  *     order whose post-only flag is not decodable (placed elsewhere / caller id)
@@ -145,7 +144,7 @@ function isPositive(s: string): boolean {
 }
 
 /**
- * Generated clientOrderId carrying the post-only flag (design §13.10 #11): the
+ * Generated clientOrderId carrying the post-only flag: the
  * Ondo API never returns postOnly, so amend recovers it from the id instead of
  * a local file. `pcli-p-` = post-only, `pcli-n-` = not post-only; 39 chars of
  * [A-Za-z0-9_-] (venue rule: 1–64).
@@ -517,7 +516,7 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   private async placeOrderOnVenue(input: OrderRequest): Promise<OrderResult> {
-    // §13.3: GTC is the uniform default for a limit order without a TIF.
+    // GTC is the uniform default for a limit order without a TIF.
     const tifRequested = input.tif;
     const req: OrderRequest = input.type === "limit" && input.tif === null ? { ...input, tif: "GTC" } : input;
     if (req.tif === "FOK") {
@@ -670,7 +669,7 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
       });
     }
 
-    // req.size = new OPEN size; fills that raced the cancel reduce the replacement (§13.10 #10).
+    // req.size = new OPEN size; fills that raced the cancel reduce the replacement.
     const racedFill = subDecimal(cancelled.filledSize, filledAtRead);
     const replace = subDecimal(req.size, racedFill.startsWith("-") ? "0" : racedFill);
     let size: string | null = null;
@@ -887,7 +886,7 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
     return listOf(rows).map(r => ({ time: parseOndoTime(r.time, "funding fee"), symbol: ondoPlainSymbol(r.market), payment: r.amount }));
   }
 
-  // ── Legacy ExchangeAdapter: trading (shim → TradingV2, design §10.7) ──
+  // ── Legacy ExchangeAdapter: trading (shim → TradingV2) ──
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { reduceOnly: boolean; slippage: ResolvedSlippage }): Promise<OrderResult> {
     return this.placeOrder({
@@ -899,7 +898,7 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
   async limitOrder(
     symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { reduceOnly?: boolean; tif?: string },
   ): Promise<OrderResult> {
-    // §13.3: no TIF → GTC (uniform default); FOK → uniform CAPABILITY_UNSUPPORTED.
+    // no TIF → GTC (uniform default); FOK → uniform CAPABILITY_UNSUPPORTED.
     const tifInput = opts?.tif;
     const tif = tifInput === undefined || tifInput === "" ? null : validateLegacyTif(this.venue, this.caps, tifInput);
     return this.placeOrder({

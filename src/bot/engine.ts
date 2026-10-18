@@ -1036,7 +1036,7 @@ const _spotPriceWarned = new Set<string>();
 async function fetchSpotPositions(
   adapter: ExchangeAdapter,
 ): Promise<{ positions: import("./tui/index.js").Position[]; error: string | null }> {
-  // Bot scope (§12.4 #3): only separate/runtime spot venues with transfer.
+  // Bot scope: only separate/runtime spot venues with transfer.
   const { getBotSpotAdapter, isSpotQuoteAsset, spotMarketsForValuation, spotNetworkOf, spotTokenBase } = await import("../exchanges/spot-factory.js");
   const { getVenue } = await import("../exchanges/venue.js");
   let raw: import("../exchanges/spot-interface.js").SpotBalance[];

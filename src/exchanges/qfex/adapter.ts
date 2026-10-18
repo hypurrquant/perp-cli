@@ -1,6 +1,5 @@
 /**
  * QFEX adapter — native TradingV2 + legacy ExchangeAdapter shim
- * (design §14.3–§14.6 as amended by §14.12; §10.7, §10.10, §13).
  *
  * Signer: imported HMAC API key only (QfexAgentMeta → ~/.perp/qfex-agents/<publicKey>.json).
  * Orders go over the Trade WebSocket (ws-transport.ts); account reads, leverage and transfers
@@ -438,7 +437,7 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
     if (QFEX_STOP_CLIENT_ID_ECHO === true) return null;
     return unsupported("qfex", "stopOrder",
       "the stop order acknowledgement is not documented to echo a client order id, so a stop cannot be correlated safely (Q21)",
-      "Set stops / TP / SL on the QFEX web app until docs/TEST-PLAN.md QFEX item Q21 passes");
+      "Set stops / TP / SL on the QFEX web app until QFEX item Q21 passes");
   }
 
   /**
@@ -664,7 +663,7 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
   /**
    * A reduce-only order the venue did not confirm as reduce-only (`reduce_only` false or absent
    * on an order frame — reduceOnlyUnconfirmedFrame — or on a read-back row of THIS order). The order may be live as a normal order, so the outcome is
-   * unknown (ORDER_PENDING, design §14.12 #4e: never re-sent). It is NOT cancelled here: a cancel
+   * unknown (ORDER_PENDING,e: never re-sent). It is NOT cancelled here: a cancel
    * is a second mutating command with its own unknown outcome and cannot undo a fill.
    */
   private reduceOnlyEchoError(i: QfexInstrument, orderId: string | null, clientOrderId: string, echo: unknown, venueRaw: unknown): PerpError {
@@ -834,7 +833,7 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
       }
       if (isZeroDecimal(filled)) {
         if (ctx.immediate) {
-          // A terminal frame with nothing filled — IOC_CANCELLED or CANCELLED alike (§13.10 #4).
+          // A terminal frame with nothing filled — IOC_CANCELLED or CANCELLED alike.
           throw new PerpError("ORDER_REJECTED", `QFEX ${i.venueSymbol}: the ${t.time_in_force} order filled nothing and was cancelled (${t.status})`, {
             exchange: "qfex", reason: "iocNoFill", venueStatus: t.status, orderId: add.orderId, clientOrderId: add.clientOrderId, venueRaw,
             remediation: "Nothing was filled. Widen --slippage-bps (within the price band), reduce the size, or place a resting limit order",
@@ -869,7 +868,7 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
 
   /**
    * Final filled size of an order placed through the legacy shim — non-null ONLY when a venue
-   * terminal frame was received (design §14.12 #3). A pending result is never an outcome.
+   * terminal frame was received. A pending result is never an outcome.
    */
   iocOutcomeOf(raw: unknown): IocOutcome | null {
     const r = raw as Partial<OrderResult> | null;
@@ -1330,7 +1329,7 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
       "See funding in the QFEX web app; net funding per position is in: perp account positions -e qfex --json");
   }
 
-  // ── Legacy ExchangeAdapter: trading (shim → TradingV2, design §10.7). Client ids are generated here. ──
+  // ── Legacy ExchangeAdapter: trading (shim → TradingV2). Client ids are generated here. ──
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { reduceOnly: boolean; slippage: ResolvedSlippage }): Promise<OrderResult> {
     return this.placeOrder({
@@ -1379,7 +1378,7 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
     });
   }
 
-  // ── Funds (design §14.6, §14.12 #8) ──
+  // ── Funds ──
 
   /**
    * Deposit address for USDC on Arbitrum One (banker GET /address). The address is returned

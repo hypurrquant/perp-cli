@@ -1,5 +1,5 @@
 /**
- * Aster Spot Adapter (design §12, §12.4 #8).
+ * Aster Spot Adapter.
  *
  * Host `sapi.asterdex.com` (testnet `sapi.asterdex-testnet.com`), paths
  * `/api/v3/*`. Signing is the perp EIP-712 Domain B scheme, reused through
@@ -11,7 +11,7 @@
  * Venue rules enforced locally (official spot V3 docs):
  *  - TIF GTC | IOC | GTX (post-only). FOK is rejected by the venue (-1115).
  *  - LIMIT price must be on PRICE_FILTER.tickSize (never rounded).
- *  - Market orders are IOC LIMIT at a protection price (design §13.2): bookTicker
+ *  - Market orders are IOC LIMIT at a protection price: bookTicker
  *    mid ± slippage, aligned toward crossing on tickSize, inside PRICE_FILTER
  *    min/max and PERCENT_PRICE (venue native MARKET is never sent).
  *  - quantity on LOT_SIZE step, min, max (MARKET_LOT_SIZE only for native MARKET).
@@ -211,7 +211,7 @@ export class AsterSpotAdapter implements SpotAdapter, SpotTransferCapable, SpotO
   // ── Trading ──
 
   async spotMarketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { slippage: ResolvedSlippage }): Promise<SpotOrderResult> {
-    // §13.2: IOC LIMIT at the protection price, never native MARKET (no price cap).
+    // IOC LIMIT at the protection price, never native MARKET (no price cap).
     // Pre-send (market, size, price, min notional, permission): a failure is a definite "not placed".
     let m: AsterSpotMarket;
     let qty: string;
@@ -314,7 +314,7 @@ export class AsterSpotAdapter implements SpotAdapter, SpotTransferCapable, SpotO
     opts?: { tif?: string },
   ): Promise<SpotOrderResult> {
     const m = this._resolveTrading(symbol);
-    // Aster is a legacy family: limit orders keep the GTC default (design §10.7 #6).
+    // Aster is a legacy family: limit orders keep the GTC default.
     const tif = this._mapTif(opts?.tif === undefined ? "GTC" : opts.tif);
     const px = requireOnTick(price, m.tickSize);
     const qty = this._sizeFor(m, size, false);
@@ -588,7 +588,7 @@ export class AsterSpotAdapter implements SpotAdapter, SpotTransferCapable, SpotO
     }
   }
 
-  /** §12.4 #8: gate only when the active signer is an agent lacking canSpotTrade. */
+  /** gate only when the active signer is an agent lacking canSpotTrade. */
   private _requireSpotPermission(): void {
     const meta = this._perp.activeAgentMeta();
     if (meta !== null && meta.permissions?.canSpotTrade !== true) {

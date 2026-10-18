@@ -1,6 +1,6 @@
 /**
  * Withdraw gate for venues whose withdrawals are authorized by an API key alone — no owner
- * signature (settings.withdraw.<venue>; today: qfex). Design §14.12 #8.
+ * signature (settings.withdraw.<venue>; today: qfex)..
  *
  * Before such a withdrawal is sent it must pass, locally:
  *   1. a gate is configured at all (absent → refused);

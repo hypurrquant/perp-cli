@@ -484,7 +484,7 @@ export function registerStrategyCommands(
       console.log();
     });
 
-  // ── quarantine (design §12.3): positions the bot refuses to touch until a human clears them ──
+  // ── quarantine: positions the bot refuses to touch until a human clears them ──
 
   bot
     .command("quarantine")

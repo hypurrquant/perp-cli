@@ -578,7 +578,7 @@ export function registerArbManageCommands(
 
       // Collect spot balances per exchange
       const spotBalancesByExchange = new Map<string, SpotBalance[]>();
-      // Bot/arb spot scope (§12.4 #3): configured venues with a separate spot balance + transfer.
+      // Bot/arb spot scope: configured venues with a separate spot balance + transfer.
       const configuredVenues = new Set<string>(await listConfiguredAccountVenues());
       for (const def of listBotSpotVenues()) {
         if (!configuredVenues.has(def.id)) continue;
@@ -996,7 +996,7 @@ export function registerArbManageCommands(
         return;
       }
 
-      // Global quarantine (design §12.3): an unknown / unhedged outcome was recorded for
+      // Global quarantine: an unknown / unhedged outcome was recorded for
       // this symbol. A human may still close it, but only knowingly (--force).
       const quarantined = quarantineEntryFor(sym, (m) => console.error(chalk.red(m)));
       if (quarantined !== null) {
@@ -1041,7 +1041,7 @@ export function registerArbManageCommands(
           console.log(chalk.cyan(`  [DRY-RUN] Would close spot-perp ${sym}: sell spot on ${spotExch} + buy back the perp short on ${perpExch}`));
           return;
         }
-        // One implementation for spot-perp close (fill-checked legs, §12.4 #5): arb-auto's handler.
+        // One implementation for spot-perp close (fill-checked legs): arb-auto's handler.
         if (handleSpotClose === undefined) throw new Error("spot-perp close handler is not registered (registerArbAutoCommands not called)");
         await handleSpotClose(sym, { spotExch, perpExch }, getAdapterForExchange, isJson);
         return;
@@ -1182,7 +1182,7 @@ export function registerArbManageCommands(
       // Close the legs sequentially (long, then short), reduce-only and verified, each
       // sized from the venue's own position size. No retries: a definite failure of the
       // long close changes nothing; an unknown outcome or a leg left open after the
-      // other closed quarantines the symbol (design §12.3).
+      // other closed quarantines the symbol.
       const results: { exchange: string; action: string; status: string; error?: string }[] = [];
       const closeRes = await closePerpPairVerified({
         source: "arb-close", sym,

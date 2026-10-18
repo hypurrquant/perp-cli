@@ -1,6 +1,6 @@
 /**
  * Public market data for the legacy venues without a native `getVenueMarkets`
- * (pacifica, hyperliquid core, aster) — design §10.6. Lighter uses
+ * (pacifica, hyperliquid core, aster). Lighter uses
  * exchanges/lighter-public.ts.
  *
  * Network-aware: the REST base comes from `legacyPublicBaseUrl(venue, net)`,

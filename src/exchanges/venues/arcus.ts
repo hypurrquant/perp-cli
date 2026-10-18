@@ -1,8 +1,7 @@
 /**
  * Arcus — perps on the Robinhood chain rootchain, USDG collateral
- * (design §4 Arcus column, §10.4, §10.10).
  * Not registered here; the registry module owns registerVenue().
- * Adapter and public-data code are loaded lazily (§10.10).
+ * Adapter and public-data code are loaded lazily.
  */
 
 import type { VenueDefinition, VenuePublicData } from "../venue.js";
@@ -87,7 +86,7 @@ export const arcusVenue: VenueDefinition = {
   restrictedRegions: ["US", "CA", "GB"],
   symbolIdentity: "baseTicker",
   publicData,
-  // §12: market swaps via router.spot.arcus.xyz, settled on-chain from the master EVM wallet.
+  // market swaps via router.spot.arcus.xyz, settled on-chain from the master EVM wallet.
   spot: {
     accountModel: "wallet",
     quoteAssets: { mainnet: ["USDG"], testnet: ["USDG"] },
@@ -102,7 +101,7 @@ export const arcusVenue: VenueDefinition = {
       return spot;
     },
   },
-  // Arcus venue limit per design §13.10 #1.
+  // Arcus venue limit per.
   maxSlippageBps: 1000,
   builderFee: BUILDER_FEE_CAPABILITIES["arcus"],
   apiStatus: { kind: "official" },

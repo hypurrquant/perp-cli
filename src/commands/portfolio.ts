@@ -374,7 +374,7 @@ async function fetchExchangeEntry(
       ),
     ]);
 
-    // Spot balances for every venue with def.spot (§12). Failures are surfaced on
+    // Spot balances for every venue with def.spot. Failures are surfaced on
     // stderr (the perp snapshot is still reported); unpriced tokens are excluded + warned.
     let spot: SpotHolding[] = [];
     let isUnified = false;
@@ -401,7 +401,7 @@ async function fetchExchangeEntry(
       ? null
       : fundingPayments.rows.filter(f => f.time >= cutoff24h).reduce((sum, f) => sum + Number(f.payment), 0);
 
-    // Shared balances (Pacifica USDC, HL unified USDC) are already in perp equity (§12.4 #8).
+    // Shared balances (Pacifica USDC, HL unified USDC) are already in perp equity.
     const nonUsdcSpotValue = spot.filter(b => !b.shared).reduce((s, b) => s + b.valueUsd, 0);
 
     return {

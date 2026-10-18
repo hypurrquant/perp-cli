@@ -1132,7 +1132,7 @@ export function registerFundsCommands(
       }
     });
 
-  // ── Arcus — uniform surface (design §13.1): same <amount> + --to,
+  // ── Arcus — uniform surface: same <amount> + --to,
   //    same jsonOk(result), global --dry-run plans without sending. ──
 
 
@@ -1229,7 +1229,7 @@ export function registerFundsCommands(
       });
   }
 
-  // ── QFEX (design §14.6, §14.12 #8) — custodial; deposit = address display, withdraw = banker POST
+  // ── QFEX — custodial; deposit = address display, withdraw = banker POST
   //    gated by settings.withdraw.qfex inside QfexAdapter.withdraw(); switched off (QFEX_WITHDRAW_ENABLED). ──
 
   /** QFEX adapter for the active network — the default imported key, or the one named by --agent. */

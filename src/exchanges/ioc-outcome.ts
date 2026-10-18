@@ -1,5 +1,5 @@
 /**
- * Venue-final IOC / market order outcome (design `docs/DESIGN-venue-abstraction.md` §13.10 #4).
+ * Venue-final IOC / market order outcome.
  *
  * An adapter whose market / IOC responses report the order's FINAL filled size (nothing
  * of the order can still execute) implements `iocOutcomeOf(raw)` on the RAW result its

@@ -321,8 +321,7 @@ function clearEnvLegacyKeys(): void {
 //
 // The functions above ARE the "lighter" venue store (`~/.perp/lighter-agents/`,
 // original file format, env migration). "lighter-rh" keys live in the generic
-// venue keystore under `~/.perp/lighter-rh-agents/<accountIndex>-<slot>.json`
-// (design §10.4). The venue argument is required — there is no implied venue.
+// venue keystore under `~/.perp/lighter-rh-agents/<accountIndex>-<slot>.json`. The venue argument is required — there is no implied venue.
 
 export type LighterFamilyVenue = "lighter" | "lighter-rh";
 type KeystoreNetwork = "mainnet" | "testnet";

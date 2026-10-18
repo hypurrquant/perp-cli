@@ -156,9 +156,9 @@ export function buildProgram(opts: { defaultExchange: string; version: string })
   let _adapter: ExchangeAdapter | null = null;
 
   /**
-   * One adapter per `${venueId}:${network}:${wallet}:${hlDex}` (design §3 L1 cache key).
+   * One adapter per `${venueId}:${network}:${wallet}:${hlDex}`.
    * Every adapter is built by the venue definition's create(ctx) — the single
-   * creation path shared with the MCP server (design §10.2).
+   * creation path shared with the MCP server.
    */
   const _adapters = new Map<string, ExchangeAdapter>();
 
@@ -176,7 +176,7 @@ export function buildProgram(opts: { defaultExchange: string; version: string })
     return `${venue}:${network}:${wallet}:${hlDex ?? "-"}`;
   }
 
-  /** restrictedRegions notice: stderr, once per venue per process (design §9.1 #2 — warn, never block). */
+  /** restrictedRegions notice: stderr, once per venue per process (warn, never block). */
   const _restrictedWarned = new Set<VenueId>();
   function warnRestrictedRegions(def: VenueDefinition): void {
     if (def.restrictedRegions.length === 0 || _restrictedWarned.has(def.id)) return;

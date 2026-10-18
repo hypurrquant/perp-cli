@@ -1,5 +1,5 @@
 /**
- * Verified perp market order for bot / arb legs (design §12.3).
+ * Verified perp market order for bot / arb legs.
  *
  * A resolved `marketOrder()` promise does not prove a fill: Lighter returns success
  * when its /tx poll times out ("assuming executed") or the IOC filled nothing, and a
@@ -22,7 +22,7 @@
  *    Likewise a plain (non-transport, non-5xx) "not a multiple of lot size N" rejection with
  *    the position measured unchanged → ORDER_REJECTED with details.lotSize (rejectedLotSize()).
  *
- * Venue-final IOC outcome (design §13.10 #4): when the adapter is IocOutcomeCapable and
+ * Venue-final IOC outcome: when the adapter is IocOutcomeCapable and
  * iocOutcomeOf(raw) reports the order's FINAL filled size, that report is authoritative
  * (no 80% rule) once cross-checked against the measured position delta (tolerance one lot
  * step, taken from the precision of the order size / reported fill):
@@ -184,7 +184,7 @@ export async function placePerpVerified(
     throw orderOutcomeUnknown(venue, what, e, `Do NOT resubmit — the order may still execute. Check the ${venue} ${symbol} position`);
   }
 
-  // Venue-final IOC outcome (§13.10 #4): the venue reported what this order filled; nothing more can fill.
+  // Venue-final IOC outcome: the venue reported what this order filled; nothing more can fill.
   const outcome = isIocOutcomeCapable(adapter) ? adapter.iocOutcomeOf(raw) : null;
   if (outcome !== null) {
     const reported = Number(outcome.filledSize);
@@ -255,7 +255,7 @@ export function isOutcomeUnknown(e: unknown): boolean {
 }
 
 /**
- * Second-leg residual correction (design §12.3): the second leg is sized to the first
+ * Second-leg residual correction: the second leg is sized to the first
  * leg's VERIFIED fill but may itself fill less (≥ 80% measured, or any venue-final partial fill). Reduce the first leg by exactly
  * this trade's excess (firstFilled − secondFilled, floored to `decimals`) — reduce-only,
  * verified, never the venue's whole position. `firstSide` is the side the first leg
@@ -291,7 +291,7 @@ export interface PerpCloseResult {
 }
 
 /**
- * Verified reduce-only close of `size` with residual handling (design §12.3, §13.10 #4). placePerpVerified
+ * Verified reduce-only close of `size` with residual handling. placePerpVerified
  * accepts a ≥ 80% measured fill or any venue-final partial IOC fill (cross-checked); a close must
  * not leave the rest silently open, so:
  *  1. reduce-only close of `size` (opts.place, e.g. a smartOrder IOC, or a market order);

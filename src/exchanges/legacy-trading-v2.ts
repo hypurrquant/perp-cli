@@ -1,6 +1,6 @@
 /**
  * TradingV2 for the four pre-existing venues (pacifica, hyperliquid, lighter /
- * lighter-rh, aster) — design §13.7, §13.10 #8.
+ * lighter-rh, aster).
  *
  * Composition, not modification: the legacy ExchangeAdapter methods keep returning
  * their raw venue responses (in-process contract for smart-order, perp-order,
@@ -54,7 +54,7 @@ export function toTradingV2(adapter: ExchangeAdapter, network: Network): Trading
   return new LegacyTradingV2(adapter, venue, venue.family, requireCapabilities(venue), network);
 }
 
-/** One reduce-only protective trigger (TP or SL) of a separateOrders venue (design §13.5). */
+/** One reduce-only protective trigger (TP or SL) of a separateOrders venue. */
 export interface TpSlLeg {
   symbol: string;
   /** Side that closes the protected position (sell closes a long). */

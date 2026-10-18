@@ -17,7 +17,7 @@ const { invalidateCache } = await import("../cache.js");
 
 // ── Helpers to build mock API responses ──
 //
-// Funding rates now fan out over every "marketData" venue's publicData (design §10.6):
+// Funding rates now fan out over every "marketData" venue's publicData:
 //  - Pacifica: GET /info (markets, instrument_type required) + GET /info/prices (mark,
 //    next_funding = the quoted funding rate);
 //  - Hyperliquid: POST /info metaAndAssetCtxs;

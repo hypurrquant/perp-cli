@@ -132,7 +132,7 @@ export function pairOrderMinimums(legs: readonly LegOrderMinimums[]): { minNotio
   };
 }
 
-// ── Verified perp-perp pair orders (design §12.3) ──
+// ── Verified perp-perp pair orders ──
 // Shared by the `arb auto` daemon, `arb exec` perp-perp and `arb dex-auto`: legs are
 // sequential and verified (placePerpVerified); the short is sized to the long's
 // VERIFIED fill; rollbacks, trims and closes are reduce-only and verified (plain market,
@@ -1002,7 +1002,7 @@ export function registerArbAutoCommands(
           for (let i = openPositions.length - 1; i >= 0; i--) {
             if (stop.requested()) break; // stopping: no new close sequence
             const pos = openPositions[i];
-            // Quarantined (design §12.3): hands off until a human clears it.
+            // Quarantined: hands off until a human clears it.
             if (isQuarantined(pos.symbol, (m) => console.log(chalk.red(m)))) continue;
             // Per-position isolation: one position's failing exit check (e.g. an
             // unknown funding basis in snapshotHourly) must not skip the others.
@@ -1064,7 +1064,7 @@ export function registerArbAutoCommands(
                     const longAdapter = await getAdapterForExchange(pos.longExchange);
                     const shortAdapter = await getAdapterForExchange(pos.shortExchange);
 
-                    // Sequential, reduce-only, verified (design §12.3): long first, then
+                    // Sequential, reduce-only, verified: long first, then
                     // short. A definite long-close failure changes nothing → retried next
                     // cycle, quarantined after MAX_PAIR_CLOSE_FAILURES in a row. An unknown
                     // outcome, a partial close or an unhedged leg quarantines (no retry).
@@ -1281,7 +1281,7 @@ export function registerArbAutoCommands(
             for (const snap of filtered) {
               if (stop.requested()) { console.log(chalk.yellow(`  ${now} STOP requested — no new entries`)); break; }
               if (openPositions.some(p => p.symbol === snap.symbol)) { skip(snap.symbol, "already open"); continue; }
-              // Global quarantine (design §12.3): unknown / unhedged outcome on this symbol somewhere.
+              // Global quarantine: unknown / unhedged outcome on this symbol somewhere.
               if (isQuarantined(snap.symbol, (m) => console.log(chalk.red(m)))) { skip(snap.symbol, "quarantined"); continue; }
               // A persisted spot-perp position on this symbol (not daemon-managed) blocks entry:
               // the state is keyed by symbol, so a new perp-perp entry would overwrite it.
@@ -1410,7 +1410,7 @@ export function registerArbAutoCommands(
                   const longAdapter = await getAdapterForExchange(longExchange);
                   const shortAdapter = await getAdapterForExchange(shortExchange);
 
-                  // Sequential verified legs (design §12.3): long, then short sized to the
+                  // Sequential verified legs: long, then short sized to the
                   // long's verified fill; reduce-only rollback / trim; unknown → quarantine.
                   legsStarted = true;
                   const res = await openPerpPairVerified({
@@ -2036,7 +2036,7 @@ export function registerArbAutoCommands(
         return;
       }
 
-      // Global quarantine (design §12.3): an unknown / unhedged outcome on this symbol
+      // Global quarantine: an unknown / unhedged outcome on this symbol
       // anywhere blocks new trades until a human clears it.
       const quarantined = quarantineEntryFor(sym, (m) => console.error(m));
       if (quarantined !== null) {
@@ -2045,7 +2045,7 @@ export function registerArbAutoCommands(
         });
       }
 
-      // A venue whose funding rate is unverified is never a funding-arb leg (design §14.12 #6).
+      // A venue whose funding rate is unverified is never a funding-arb leg.
       assertFundingArbVenue(longExch);
       assertFundingArbVenue(shortExch);
       const longAdapter = await getAdapterForExchange(longExch);
@@ -2170,7 +2170,7 @@ export function registerArbAutoCommands(
 
       if (!isJson()) console.log(chalk.gray(`    Executing legs sequentially (long, then short sized to the verified long fill)...\n`));
 
-      // 5. Sequential verified legs (design §12.3). The second leg is sized to the
+      // 5. Sequential verified legs. The second leg is sized to the
       //    first leg's VERIFIED fill, any shortfall is trimmed off the long
       //    (reduce-only, verified — always, --reconcile is implied), a definite short
       //    failure rolls the long back reduce-only, and an unknown outcome (incl. a
@@ -2251,7 +2251,7 @@ export function registerArbAutoCommands(
       spotExch = resolveVenueId(spotExch);
       perpExch = resolveVenueId(perpExch);
 
-      // Validate spot exchange: bot/arb spot scope (§12.4 #3) — throws CAPABILITY_UNSUPPORTED
+      // Validate spot exchange: bot/arb spot scope — throws CAPABILITY_UNSUPPORTED
       // for venues without spot or outside the scope (pacifica shared margin, arcus swaps).
       const spotDef = requireBotSpotVenue(spotExch.replace(/-spot$/, ""));
       spotExch = spotDef.id;
@@ -2276,7 +2276,7 @@ export function registerArbAutoCommands(
         console.log(chalk.red(`  ${msg}`));
       };
 
-      // Global quarantine (design §12.3): checked before anything is read or moved.
+      // Global quarantine: checked before anything is read or moved.
       const quarantined = quarantineEntryFor(sym, (m) => console.error(m));
       if (quarantined !== null) {
         throw new PerpError("RISK_VIOLATION", `${sym} is quarantined (${quarantined.strategy}: ${quarantined.reason})`, {
@@ -2449,7 +2449,7 @@ export function registerArbAutoCommands(
 
       // 7. Execute both legs. Same exchange shares a nonce → sequential; else parallel.
       if (!isJson()) console.log(chalk.gray(`    Executing ${sameVenue ? "sequentially" : "both legs simultaneously"}...\n`));
-      // The perp leg goes through placePerpVerified (design §12.3): a fill is the measured
+      // The perp leg goes through placePerpVerified: a fill is the measured
       // position delta; an unknown outcome is ORDER_PENDING (quarantine, never roll back).
       let spotResult: PromiseSettledResult<SpotFill>;
       let perpResult: PromiseSettledResult<PerpFill>;
@@ -2697,7 +2697,7 @@ export function registerArbAutoCommands(
         });
       }
 
-      // Load adapters (bot/arb spot scope — §12.4 #3)
+      // Load adapters (bot/arb spot scope)
       const spotDef = requireBotSpotVenue(spotExch.replace(/-spot$/, ""));
       const spotAdapter = await requireSpotAdapter(spotDef.id, await getAdapter(spotDef.id));
 
@@ -2731,12 +2731,12 @@ export function registerArbAutoCommands(
       const preCloseQuote = await readSpotQuoteAvailableFresh(spotAdapter);
 
       // Same exchange → sequential (nonce collision), different → parallel.
-      // The spot leg's REAL fill decides the outcome (§12.4 #5): only a confirmed spot sale
+      // The spot leg's REAL fill decides the outcome: only a confirmed spot sale
       // counts as closed; legs are re-matched so no naked short / unhedged spot is left.
       const sameVenue = spotDef.id === (tryResolveVenueId(perpExch) ?? perpExch);
       const closeDec = sizeDecimalsOf(closeSize);
-      // The perp buy-back and every re-match order go through placePerpVerified (design
-      // §12.3): only a measured position change counts; an unknown outcome stops the close.
+      // The perp buy-back and every re-match order go through placePerpVerified:
+      // only a measured position change counts; an unknown outcome stops the close.
       let spotResult: PromiseSettledResult<SpotFill>;
       let perpResult: PromiseSettledResult<PerpFill>;
       if (sameVenue) {
@@ -3289,7 +3289,7 @@ export function registerArbAutoCommands(
               const currentSpread = current?.annualSpread ?? 0;
 
               if (currentSpread <= closeSpread || !current) {
-                // Quarantined (design §12.3): hands off until a human clears it.
+                // Quarantined: hands off until a human clears it.
                 if (isQuarantined(pos.underlying, (m) => console.error(chalk.red(m)))) continue;
                 const reason = !current ? "pair disappeared" : `spread ${currentSpread.toFixed(1)}% <= ${closeSpread}%`;
                 if (!isJson()) console.log(chalk.yellow(`  ${now} CLOSE ${pos.underlying} — ${reason}`));

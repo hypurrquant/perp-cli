@@ -1,6 +1,5 @@
 /**
  * Lighter-family constants shared by the `lighter` and `lighter-rh` venues
- * (design §4 "Lighter RH" row, §10.3–§10.5, §10.8, §10.13 #4).
  *
  * Both venues run the same API/engine and the same LighterAdapter class; they
  * differ only in the values below. This module has no runtime imports so venue
@@ -106,17 +105,17 @@ export function lighterFamilyNetworks(venue: LighterVenueId): { mainnet: VenueNe
 }
 
 /**
- * §10.8 + §10.13 #4 + §13.3. timeInForce lists the CLI inputs the adapter accepts:
+ * + + . timeInForce lists the CLI inputs the adapter accepts:
  * GTC is mapped to GTT (28-day expiry, LIGHTER_GTT_EXPIRY_MS) by LighterAdapter.limitOrder;
  * ALO is sent as time-in-force 2 (POST_ONLY); FOK is not offered.
- * clientOrderId (§13.10 #9): Lighter `clientOrderIndex`, a numeric id — CLI format rule
+ * clientOrderId: Lighter `clientOrderIndex`, a numeric id — CLI format rule
  * in LIGHTER_CLIENT_ORDER_INDEX_MAX / lighterClientOrderIndex() (lighter.ts).
  */
 export const LIGHTER_CAPABILITIES: VenueCapabilities = {
   marketOrder: "slippageBounded",
   // ALO → time-in-force 2 = POST_ONLY (apidocs trading.md; signed by the official lighter-go
   // v1.0.9 WASM). Testnet confirmation that a crossing post-only is cancelled
-  // (canceled-post-only) is still pending (design §11).
+  // (canceled-post-only) is still pending.
   timeInForce: ["GTC", "GTT", "IOC", "ALO"],
   reduceOnlyTif: null,
   clientOrderId: true,
@@ -131,13 +130,12 @@ export const LIGHTER_CAPABILITIES: VenueCapabilities = {
 /**
  * GTC/GTT (and post-only) resting-order lifetime on both Lighter venues: orderExpiry -1 is
  * resolved to now + 28 days by LighterWasmSigner (the venue allows 5 min – 30 days).
- * Recorded as the execution record's expiry for GTC→GTT (§13.10 #14).
+ * Recorded as the execution record's expiry for GTC→GTT.
  */
 export const LIGHTER_GTT_EXPIRY_MS = 28 * 24 * 60 * 60 * 1000;
 
 /**
- * The ONE declared reference price for slippage-bounded orders on both Lighter venues
- * (§13.10 #5): mid of best bid / best ask from `/api/v1/orderBookOrders`. Replaces
+ * The ONE declared reference price for slippage-bounded orders on both Lighter venues: mid of best bid / best ask from `/api/v1/orderBookOrders`. Replaces
  * orderBookDetails `last_trade_price` (stale on thin RH stock books). No runtime
  * substitute: a missing side → PRICE_STALE before anything is sent.
  */

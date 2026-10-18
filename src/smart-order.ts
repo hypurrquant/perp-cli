@@ -16,7 +16,7 @@
  * - Saves 5-50+ bps vs raw market orders on thin books
  * - Predictable execution price
  *
- * Order-outcome typing (design §12.3): every failure BEFORE the IOC is sent (orderbook read,
+ * Order-outcome typing: every failure BEFORE the IOC is sent (orderbook read,
  * empty book, unusable price), an explicit venue rejection embedded in the response, and an
  * explicit IOC no-match (nothing filled, nothing rests) throw a definite ORDER_REJECTED
  * (orderNotSent), so placePerpVerified does not quarantine a leg that never traded. Anything

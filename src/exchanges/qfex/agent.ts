@@ -1,5 +1,5 @@
 /**
- * QFEX API key import (design §14.5 as amended by §14.12 #9).
+ * QFEX API key import.
  *
  * Keys are created on the QFEX website (Developer Settings, 2FA) — there is no programmatic
  * approval. The public key + secret are entered via hidden prompt / stdin only (never flags,

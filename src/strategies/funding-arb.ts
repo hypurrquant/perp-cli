@@ -111,7 +111,7 @@ async function fetchAllRates(): Promise<FundingRate[]> {
 // annualize: use computeAnnualSpread from funding.ts for cross-exchange comparison
 
 /**
- * `perp strategy funding-arb` loop. With autoExecute (design §12.3):
+ * `perp strategy funding-arb` loop. With autoExecute:
  *  - entry = openPerpPairVerified (long, then the short sized to the long's VERIFIED fill;
  *    definite short failure → reduce-only rollback; unknown outcome → quarantine). A lot-size
  *    rejection is never resubmitted blindly: the long is re-sized only when it was definitely

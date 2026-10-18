@@ -60,8 +60,8 @@ setSharedApiNetwork(MCP_NETWORK);
 
 // ── Adapter cache & factory ──
 //
-// Same creation path and signer tiers as the CLI (agent → OWS master → PK;
-// design §9.1 #1, §10.2). The MCP server has no CLI flags, so credentials come
+// Same creation path and signer tiers as the CLI (agent → OWS master → PK).
+// The MCP server has no CLI flags, so credentials come
 // from the registered agent, settings.owsActiveWallet, and (legacy venues) env.
 
 const adapters = new Map<VenueId, ExchangeAdapter>();
@@ -1878,9 +1878,9 @@ server.tool(
 
 /**
  * Place one order through TradingV2 (native on ondo/arcus, legacy wrapper on the four
- * pre-existing venues) and return OrderResult + execution (design §13.7). Pre-send
+ * pre-existing venues) and return OrderResult + execution. Pre-send
  * validation failures stay definite; anything thrown after the request may have reached
- * the venue becomes ORDER_PENDING ("do NOT resubmit", design §12.3).
+ * the venue becomes ORDER_PENDING ("do NOT resubmit").
  */
 async function placeViaV2(adapter: ExchangeAdapter, req: OrderRequest, what: string, remediation: string): Promise<PlacedOrder> {
   const def = getVenue(adapter.name);

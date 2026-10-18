@@ -76,7 +76,7 @@ function nonceArg(v: number): number {
 /**
  * One Go runtime of the official signer. The Go `main` registers its functions on
  * globalThis and then blocks; they are captured synchronously right after `go.run()`
- * and the globals restored, so several runtimes (one per venue+network, design §10.5)
+ * and the globals restored, so several runtimes (one per venue+network)
  * never see each other's functions.
  */
 export class LighterWasmSigner {

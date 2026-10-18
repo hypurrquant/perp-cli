@@ -219,7 +219,7 @@ function rotateHint(venue: VenueId): string {
     : `perp wallet agent rotate ${venue}`;
 }
 
-/** Why the wizard cannot register an agent for `venue` on `network`; null when it can (uniform wording, design §13.6). */
+/** Why the wizard cannot register an agent for `venue` on `network`; null when it can (uniform wording). */
 function approveBlocker(venue: VenueId, network: Network): string | null {
   const reason = agentApproveUnsupportedReason(venue, network, "approve");
   return reason === null ? null : `${getVenue(venue).displayName} agent management on ${network} not supported — ${reason}`;
@@ -243,7 +243,7 @@ export function nextStepCommands(venues: VenueId[], network: Network): string[] 
   return cmds;
 }
 
-/** Plain-language slippage explanation (design §13.2, §13.10 #3). */
+/** Plain-language slippage explanation. */
 export function slippageExplanation(venues: VenueId[]): string[] {
   const lines = [
     "Market orders are sent as immediate-or-cancel (IOC) limit orders. The limit price is the",

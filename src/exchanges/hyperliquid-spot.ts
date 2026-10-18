@@ -206,7 +206,7 @@ export class HyperliquidSpotAdapter implements SpotAdapter, SpotHoldingPricesCap
     // Reuse cached spot clearinghouse state (shared with getBalance() — saves 1 API call).
     const state = await this._hl._getSpotClearinghouseState({ fresh });
     const balances = (state?.balances ?? []) as Record<string, unknown>[];
-    // Unified HL accounts: spot USDC IS the perp margin (§12.4 #8) — mark it shared.
+    // Unified HL accounts: spot USDC IS the perp margin — mark it shared.
     // HIP-3 dex-scoped adapters report dex equity, which never contains spot USDC.
     const unified = this._hl.isUnifiedAccount === true && this._hl.dex === "";
     return balances.map((b) => ({
@@ -230,7 +230,7 @@ export class HyperliquidSpotAdapter implements SpotAdapter, SpotHoldingPricesCap
       const resolved = this._resolveBase(symbol);
       base = resolved.base;
 
-      // Reference = l2Book mid (the same single declared source as HL perps, §13.10 #5).
+      // Reference = l2Book mid (the same single declared source as HL perps).
       // Either side missing → PRICE_STALE (no one-sided "mid").
       const book = await this.getSpotOrderbook(symbol);
       const bestAsk = Number(book.asks[0]?.[0]);
@@ -240,7 +240,7 @@ export class HyperliquidSpotAdapter implements SpotAdapter, SpotHoldingPricesCap
       }
       const midPrice = (bestAsk + bestBid) / 2;
 
-      // Protection = mid ± the resolved slippage bound (design §13.2), aligned toward
+      // Protection = mid ± the resolved slippage bound, aligned toward
       // crossing on HL's spot grid (5 sig figs, max 8 − szDecimals decimals).
       const isBuy = side === "buy";
       const szDec = this.getSpotDecimals(base).size;
@@ -283,7 +283,7 @@ export class HyperliquidSpotAdapter implements SpotAdapter, SpotHoldingPricesCap
     const { base, spotIndex } = this._resolveBase(symbol);
     const assetIndex = 10000 + spotIndex;
 
-    // TIF aliases (§13.3): GTC/IOC/ALO or native spellings; FOK → CAPABILITY_UNSUPPORTED.
+    // TIF aliases: GTC/IOC/ALO or native spellings; FOK → CAPABILITY_UNSUPPORTED.
     const tif = hlTif(opts?.tif ?? "GTC");
 
     const szDec = this.getSpotDecimals(base).size;
@@ -416,7 +416,7 @@ export class HyperliquidSpotAdapter implements SpotAdapter, SpotHoldingPricesCap
     }
   }
 
-  /** SpotTransferCapable (§12.4 #4): USDC only; an `err` response is thrown, not returned. */
+  /** SpotTransferCapable: USDC only; an `err` response is thrown, not returned. */
   async transferToSpot(amount: string, asset: string): Promise<unknown> {
     return this._checkedTransfer(amount, asset, false);
   }

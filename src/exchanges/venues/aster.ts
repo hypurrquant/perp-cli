@@ -1,6 +1,6 @@
 /**
- * Aster venue definition (design §10.1, §10.8, §10.13 #4).
- * Adapter + public-data code are loaded lazily (§10.10).
+ * Aster venue definition.
+ * Adapter + public-data code are loaded lazily.
  */
 
 import type { VenueDefinition, VenuePublicData } from "../venue.js";
@@ -172,12 +172,12 @@ export const asterVenue: VenueDefinition = {
   },
   // GET /fapi/v1/exchangeInfo rateLimits: REQUEST_WEIGHT 2400/min
   // (ORDERS 1200/min and 300/10s are separate order-count limits, not modeled).
-  // Declared only — per §10.9 the limiter is applied to new venues + lighter-rh.
+  // Declared only — per the limiter is applied to new venues + lighter-rh.
   rateLimit: { capacity: 2400, refillPerSec: 40, weights: null },
   restrictedRegions: [],
   symbolIdentity: "baseTicker",
   publicData,
-  // §12: separate spot account (sapi /api/v3) + /asset/wallet/transfer. Agent signer needs canSpotTrade.
+  // separate spot account (sapi /api/v3) + /asset/wallet/transfer. Agent signer needs canSpotTrade.
   spot: {
     accountModel: "separate",
     quoteAssets: { mainnet: ["USDT", "USD1"], testnet: ["USDT", "USD1"] },
