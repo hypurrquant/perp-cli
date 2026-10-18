@@ -377,9 +377,9 @@ function requireInstrumentType(rows: MarketInfo[]): MarketInfo[] {
   return rows;
 }
 
-/** Perp markets of /info (spot rows such as SOL-USDC excluded, design §12). */
+/** Perp markets of /info: instrument_type "perpetual" only (spot rows such as SOL-USDC, or any other type, excluded; design §12). */
 function perpInfoRows(rows: MarketInfo[]): MarketInfo[] {
-  return requireInstrumentType(rows).filter((m) => m.instrument_type !== "spot");
+  return requireInstrumentType(rows).filter((m) => m.instrument_type === "perpetual");
 }
 
 /** Wire symbols of /info spot markets. */

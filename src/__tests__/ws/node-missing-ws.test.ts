@@ -53,7 +53,7 @@ describe("perp-cli/ws/node and the optional `ws` peer", () => {
     const browser = await import("../../ws/stream.js");
     let calls = 0;
     const transport = (url: string) => { calls++; return m.nodeTransport(url); };
-    const fetch = async () => ({ ok: true, status: 200, json: async () => ({ success: true, data: [{ symbol: "BTC" }] }) });
+    const fetch = async () => ({ ok: true, status: 200, json: async () => ({ success: true, data: [{ symbol: "BTC", instrument_type: "perpetual" }] }) });
     const opts = { transport, fetch, visibility: null };
     const stream = how === "browser" ? browser.createVenueStream(m.pacifica, opts) : m.createVenueStream(m.pacifica, opts);
     const states: string[] = [];

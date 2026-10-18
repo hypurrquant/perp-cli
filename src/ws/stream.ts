@@ -2,6 +2,11 @@
  * createVenueStream (§4): directory bootstrap, ref-counted wire subscriptions, dispatch of decoded
  * frames into merged market state, labelled REST refresh, error/state fan-out. Socket lifecycle is in
  * connection.ts; venue specifics are in the codec.
+ *
+ * Sockets: one per stream unless the codec's limits.maxSockets allows more (per-socket venue caps,
+ * e.g. Pacifica 20 per channel). Each wire lives on one socket (first fit under subscriptionsPerSocket
+ * and limits.perGroup); a socket reconnects and resubscribes its own wires. The stream state is the
+ * aggregate of its sockets; one socket stopping for good (reconnects exhausted) closes the stream.
  */
 
 import { defaultCanonicalize } from "./canonical.js";
@@ -22,8 +27,13 @@ import type {
 type AnyEvent = MarketUpdate | BboUpdate | BookUpdate | TradeUpdate | UserUpdate;
 type Sub = SubscriptionImpl<AnyEvent>;
 
+/** One socket of the stream. */
+interface Shard { id: number; conn: Connection }
+
 interface WireState {
   wire: WireSub;
+  /** The socket this wire is subscribed on (fixed for the wire's lifetime). */
+  shard: Shard;
   refs: Set<Sub>;
   reqId: number;
   sentAt: number | null;
@@ -38,7 +48,7 @@ interface WireState {
   ackTimer: ReturnType<typeof setTimeout> | null;
   /** Acked/data on some socket: a later resubscribe is a reconnect (non-replayable channels → gap). */
   everAcked: boolean;
-  /** Last venue ordering number seen (bbo); frames at or below it are dropped. Reset on resubscribe. */
+  /** Last venue ordering number seen (bbo: frames at or below it are dropped; user snapshots: below it). Reset on resubscribe. */
   lastSeq: number | null;
 }
 
@@ -206,67 +216,114 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     });
   }
 
-  const connection: Connection | null = url === null ? null : new Connection({
-    venue,
-    url,
-    transport,
-    clock,
-    redact,
-    ping: codec.ping,
-    reconnect: opts.reconnect === undefined ? { maxAttempts: null, baseMs: 1000, maxMs: 30_000 } : opts.reconnect,
-    newConnectionsPerMin: Math.min(codec.limits.newConnectionsPerMin, opts.budget?.newConnectionsPerMin === undefined ? Infinity : opts.budget.newConnectionsPerMin),
-    outboundPerMin: codec.limits.outboundPerMin,
-    visibility: opts.visibility === undefined ? defaultVisibility() : opts.visibility,
-    random: Math.random,
-  }, {
-    onOpen: () => {
-      const now = clock();
-      for (const w of wires.values()) {
-        const g = w.wire.gaps?.onReconnect;
-        if (w.everAcked && g !== undefined) {
-          for (const ch of g) {
-            emitGap(w, ch, "reconnected; the venue does not replay this channel");
-            if (ch === "orders") dispatchUser(w, userStore.clearOrders(now)); // pre-disconnect orders are unknown now
+  const shards: Shard[] = [];
+  /** Connect times shared by every socket: the new-connection budget is per stream. */
+  const connectLog: number[] = [];
+  /** Why the stream stopped for good (a socket's reconnects exhausted / transport failure), or null. */
+  let terminalReason: CloseReason | null = null;
+  let lastState: string | null = null;
+  const maxSockets = Math.min(codec.limits.maxSockets === undefined ? 1 : codec.limits.maxSockets,
+    opts.budget?.maxSockets === undefined ? Infinity : opts.budget.maxSockets);
+
+  function wiresOn(shard: Shard): WireState[] {
+    return Array.from(wires.values()).filter(w => w.shard === shard);
+  }
+
+  function newShard(): Shard {
+    const shard = { id: shards.length } as Shard;
+    shard.conn = new Connection({
+      venue,
+      url: url as string,
+      transport,
+      clock,
+      redact,
+      ping: codec.ping,
+      reconnect: opts.reconnect === undefined ? { maxAttempts: null, baseMs: 1000, maxMs: 30_000 } : opts.reconnect,
+      newConnectionsPerMin: Math.min(codec.limits.newConnectionsPerMin, opts.budget?.newConnectionsPerMin === undefined ? Infinity : opts.budget.newConnectionsPerMin),
+      connectLog,
+      outboundPerMin: codec.limits.outboundPerMin,
+      visibility: opts.visibility === undefined ? defaultVisibility() : opts.visibility,
+      random: Math.random,
+    }, {
+      onOpen: () => {
+        const now = clock();
+        for (const w of wiresOn(shard)) {
+          const g = w.wire.gaps?.onReconnect;
+          if (w.everAcked && g !== undefined) {
+            for (const ch of g) {
+              emitGap(w, ch, "reconnected; the venue does not replay this channel");
+              if (ch === "orders") dispatchUser(w, userStore.clearOrders(now)); // pre-disconnect orders are unknown now
+            }
           }
+          w.firstFrameSeen = false;
+          w.lastAt = null;
+          if (w.suspect) { w.sentAt = null; continue; } // probed one at a time below
+          sendSubscribe(w, now, false);
         }
-        w.firstFrameSeen = false;
-        w.lastAt = null;
-        if (w.suspect) { w.sentAt = null; continue; } // probed one at a time below
-        sendSubscribe(w, now, false);
-      }
-      probeNextSuspect();
-    },
-    // Ack timers belong to one socket: a reconnect delay must not fail a pending subscription.
-    onSocketDown: () => { for (const w of wires.values()) clearAckTimer(w); },
-    onText: (text, recvTs) => onText(text, recvTs),
-    onUnreadableFrame: () => {
-      const ev = errorEvent("WS_PROTOCOL_ERROR", "Unreadable (non-text) frame", null, null, false);
-      log("warn", "protocol-error", ev.type === "error" ? ev.message : "");
-      broadcast(ev);
-    },
-    onState: (s) => {
+        probeNextSuspect(shard);
+      },
+      // Ack timers belong to one socket: a reconnect delay must not fail a pending subscription.
+      onSocketDown: () => { for (const w of wiresOn(shard)) clearAckTimer(w); },
+      onText: (text, recvTs) => onText(shard, text, recvTs),
+      onUnreadableFrame: () => {
+        const ev = errorEvent("WS_PROTOCOL_ERROR", "Unreadable (non-text) frame", null, null, false);
+        log("warn", "protocol-error", ev.type === "error" ? ev.message : "");
+        broadcast(ev);
+      },
+      onState: (s) => onShardState(s),
+      onUnexpectedClose: (reason, opened, maxPayloadExceeded) =>
+        maxPayloadExceeded ? handleMaxPayloadClose(shard, reason) : handleBadSubscribeClose(shard, reason, opened),
+      liveness: () => {
+        const out: WireLiveness[] = [];
+        for (const w of wiresOn(shard)) {
+          if (w.sentAt === null) continue;
+          out.push({ key: w.wire.key, staleAfterMs: w.wire.staleAfterMs, lastAt: Math.max(w.sentAt, w.lastAt === null ? 0 : w.lastAt) });
+        }
+        return out;
+      },
+      log,
+    });
+    shards.push(shard);
+    return shard;
+  }
+  if (url !== null) newShard();
+
+  /**
+   * Stream state from its sockets (idle ones aside): closed > reconnecting > stale > connecting > live
+   * (sockets = live sockets, since = the latest of their since). One socket: its state as is.
+   */
+  function aggregateState(): ConnectionState {
+    if (shards.length === 1) return shards[0].conn.state;
+    const states = shards.map(sh => sh.conn.state).filter(st => st.status !== "idle");
+    for (const status of ["closed", "reconnecting", "stale", "connecting"] as const) {
+      const hit = states.find(st => st.status === status);
+      if (hit !== undefined) return hit;
+    }
+    if (states.length === 0) return { status: "idle" };
+    const since = Math.max(...states.map(st => (st.status === "live" ? st.since : 0)));
+    return { status: "live", since, sockets: states.length };
+  }
+
+  function onShardState(s: ConnectionState): void {
+    const failed = s.status === "closed" && s.reason.code !== "CLIENT_CLOSE" && terminalReason === null;
+    if (failed) terminalReason = s.reason;
+    const agg = aggregateState();
+    const key = JSON.stringify(agg);
+    // Several sockets: report changes of the aggregate only (one socket: every transition, as is).
+    if (shards.length === 1 || key !== lastState) {
+      lastState = key;
       for (const l of stateListeners) {
-        try { l(s); } catch (e) { log("warn", "listener-error", `onState listener threw: ${e instanceof Error ? e.message : String(e)}`); }
+        try { l(agg); } catch (e) { log("warn", "listener-error", `onState listener threw: ${e instanceof Error ? e.message : String(e)}`); }
       }
-      broadcast({ type: "state", venue, state: s });
-      if (s.status === "closed" && s.reason.code !== "CLIENT_CLOSE") {
-        const err = wsError(s.reason.code, s.reason.message,
-          s.reason.remediation === null ? undefined : s.reason.remediation);
-        for (const sub of Array.from(subs.keys())) dropSub(sub, err);
-      }
-    },
-    onUnexpectedClose: (reason, opened, maxPayloadExceeded) =>
-      maxPayloadExceeded ? handleMaxPayloadClose(reason) : handleBadSubscribeClose(reason, opened),
-    liveness: () => {
-      const out: WireLiveness[] = [];
-      for (const w of wires.values()) {
-        if (w.sentAt === null) continue;
-        out.push({ key: w.wire.key, staleAfterMs: w.wire.staleAfterMs, lastAt: Math.max(w.sentAt, w.lastAt === null ? 0 : w.lastAt) });
-      }
-      return out;
-    },
-    log,
-  });
+      broadcast({ type: "state", venue, state: agg });
+    }
+    if (failed && s.status === "closed" && s.reason.code !== "CLIENT_CLOSE") {
+      for (const sh of shards) sh.conn.fail(s.reason); // the other sockets stop too (no-op for the failed one)
+      const err = wsError(s.reason.code, s.reason.message,
+        s.reason.remediation === null ? undefined : s.reason.remediation);
+      for (const sub of Array.from(subs.keys())) dropSub(sub, err);
+    }
+  }
 
   function broadcast(e: StreamControl): void {
     for (const sub of subs.keys()) sub.emit(e);
@@ -329,7 +386,8 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
   }
 
   function sendSubscribe(w: WireState, now: number, probe: boolean): void {
-    if (connection === null || !connection.isOpen) return;
+    const connection = w.shard.conn;
+    if (!connection.isOpen) return;
     let auth: string | null = null;
     const need = w.wire.auth;
     if (need !== undefined) {
@@ -489,13 +547,13 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     if (users().length === 0) { tokens.delete(need.purpose); return; }
     // Offline: nothing to resubscribe. The reconnect's sendSubscribe uses the token while valid (and
     // refreshes then), or fetches a new one once it expired.
-    if (connection === null || !connection.isOpen) return;
+    if (!users().some(w => w.shard.conn.isOpen)) return;
     if (tokenLoops.has(need.purpose)) return; // a refresh (or reconnect fetch) is already running
     acquireToken(need,
       () => {
         for (const w of users()) {
-          if (connection === null || !connection.isOpen || w.sentAt === null) continue;
-          connection.send(codec.encodeUnsubscribe(w.wire, nextReqId++));
+          if (!w.shard.conn.isOpen || w.sentAt === null) continue;
+          w.shard.conn.send(codec.encodeUnsubscribe(w.wire, nextReqId++));
           w.firstFrameSeen = false;
           sendSubscribe(w, clock(), false);
         }
@@ -512,7 +570,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     const ms = w.wire.staleAfterMs === null ? codec.staleAfterMs : w.wire.staleAfterMs;
     w.ackTimer = setTimeout(() => {
       w.ackTimer = null;
-      if (closed || connection === null || !connection.isOpen || wires.get(w.wire.key) !== w || w.reqId !== reqId || w.acked) return;
+      if (closed || !w.shard.conn.isOpen || wires.get(w.wire.key) !== w || w.reqId !== reqId || w.acked) return;
       const msg = `${venue}: no acknowledgement or data for ${w.wire.key} within ${ms} ms of subscribing`;
       log("error", "ack-timeout", msg);
       const err = wsError("WS_PROTOCOL_ERROR", msg, "The venue ignored the subscription; check the channel/symbol or retry later");
@@ -523,7 +581,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
         if (sub.status === "pending") dropSub(sub, err);
         else sub.emit(errorEvent("WS_PROTOCOL_ERROR", msg, null, null, false));
       }
-      if (wasSuspect) probeNextSuspect();
+      if (wasSuspect) probeNextSuspect(w.shard);
     }, ms);
   }
 
@@ -543,7 +601,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     w.everAcked = true;
     w.probe = false;
     clearAckTimer(w);
-    if (w.suspect) { w.suspect = false; probeNextSuspect(); }
+    if (w.suspect) { w.suspect = false; probeNextSuspect(w.shard); }
     for (const sub of w.refs) maybeReady(sub);
   }
 
@@ -553,7 +611,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     return undefined;
   }
 
-  function onText(text: string, recvTs: number): void {
+  function onText(shard: Shard, text: string, recvTs: number): void {
     if (dir === null || store === null) {
       broadcast(errorEvent("WS_PROTOCOL_ERROR", "Frame received before the market directory loaded", null, text, false));
       return;
@@ -564,13 +622,14 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     } catch (e) {
       events = [{ t: "error", code: "WS_PROTOCOL_ERROR", message: `Codec failed: ${e instanceof Error ? e.message : String(e)}`, wire: null, fatal: false, remediation: null }];
     }
-    for (const ev of events) handleEvent(ev, text, recvTs);
+    for (const ev of events) handleEvent(shard, ev, text, recvTs);
   }
 
-  function handleEvent(ev: DecodedEvent, text: string, recvTs: number): void {
+  function handleEvent(shard: Shard, ev: DecodedEvent, text: string, recvTs: number): void {
+    const connection = shard.conn; // the socket the frame arrived on
     switch (ev.t) {
       case "pong":
-        connection?.notePong();
+        connection.notePong();
         return;
       case "ignore":
         return;
@@ -609,7 +668,15 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
         }
         w.lastAt = recvTs;
         markAcked(w);
-        connection?.markHealthy();
+        connection.markHealthy();
+        if (ev.seq !== undefined && ev.seq !== null) {
+          // An older snapshot than the one applied (delayed / out of order): stale, dropped. Equal is applied.
+          if (w.lastSeq !== null && ev.seq < w.lastSeq) {
+            log("info", "stale-snapshot", `${w.wire.key}: frame seq ${ev.seq} is older than ${w.lastSeq}; dropped`);
+            return;
+          }
+          w.lastSeq = ev.seq;
+        }
         for (const d of ev.deltas) {
           const r = userStore.apply(d, recvTs);
           // The replay snapshot does not reach back to fills seen before: fills in between may be missing.
@@ -626,7 +693,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
         }
         w.lastAt = recvTs;
         markAcked(w);
-        connection?.markHealthy();
+        connection.markHealthy();
         if (ev.seq !== null) {
           if (w.lastSeq !== null && ev.seq <= w.lastSeq) return; // out of order / duplicate (sequences are non-contiguous: no gap)
           w.lastSeq = ev.seq;
@@ -652,7 +719,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
         const s = store as MarketStore;
         w.lastAt = recvTs;
         markAcked(w);
-        connection?.markHealthy();
+        connection.markHealthy();
         const source = w.firstFrameSeen ? "ws" : "snapshot";
         w.firstFrameSeen = true;
         const unknown: string[] = [];
@@ -673,7 +740,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
           log("warn", "unknown-market", msg);
           for (const sub of w.refs) sub.emit(e);
         }
-        if (connection !== null && connection.state.status === "stale") connection.evaluate();
+        if (connection.state.status === "stale") connection.evaluate();
         return;
       }
     }
@@ -691,7 +758,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
    * fail the subscriptions on this socket with WS_PROTOCOL_ERROR instead of reconnecting forever. The
    * oversized frame is never parsed, so it cannot be attributed to one channel.
    */
-  function handleMaxPayloadClose(reason: CloseReason): boolean {
+  function handleMaxPayloadClose(shard: Shard, reason: CloseReason): boolean {
     const now = clock();
     while (maxPayloadCloses.length > 0 && now - maxPayloadCloses[0] > MAX_PAYLOAD_WINDOW_MS) maxPayloadCloses.shift();
     maxPayloadCloses.push(now);
@@ -702,14 +769,15 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
       `${venue}: inbound messages exceeded the transport's maxPayload ${MAX_PAYLOAD_CLOSES} times (WS_ERR_UNSUPPORTED_MESSAGE_LENGTH); stopped reconnecting`,
       reason.remediation === null ? undefined : reason.remediation, { wsCode: 1009 });
     log("error", "max-payload-repeated", err.message);
-    for (const sub of Array.from(subs.keys())) dropSub(sub, err);
-    return wires.size === 0;
+    const onShard = new Set(wiresOn(shard).flatMap(w => Array.from(w.refs)));
+    for (const sub of onShard) dropSub(sub, err);
+    return wiresOn(shard).length === 0;
   }
 
-  function handleBadSubscribeClose(reason: CloseReason, opened: boolean): boolean {
+  function handleBadSubscribeClose(shard: Shard, reason: CloseReason, opened: boolean): boolean {
     if (!codec.closesOnBadSubscribe || !opened) return false;
     const now = clock();
-    const suspects = Array.from(wires.values()).filter(w => w.probe && !w.acked && w.sentAt !== null && now - w.sentAt <= BAD_SUBSCRIBE_WINDOW_MS);
+    const suspects = wiresOn(shard).filter(w => w.probe && !w.acked && w.sentAt !== null && now - w.sentAt <= BAD_SUBSCRIBE_WINDOW_MS);
     if (suspects.length > 1) {
       // Ambiguous: resubscribe these one at a time after reconnecting so a bad one is isolated.
       for (const w of suspects) w.suspect = true;
@@ -724,13 +792,13 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
       "Check the symbol against stream.markets(); the other subscriptions reconnect");
     log("error", "bad-subscribe", err.message, { wsCode: reason.wsCode });
     for (const sub of Array.from(w.refs)) dropSub(sub, err);
-    return wires.size === 0;
+    return wiresOn(shard).length === 0;
   }
 
-  /** Send the next held suspect (if none is in flight) as a probe. */
-  function probeNextSuspect(): void {
-    if (connection === null || !connection.isOpen) return;
-    const held = Array.from(wires.values()).filter(w => w.suspect);
+  /** Send the next held suspect on this socket (if none is in flight) as a probe. */
+  function probeNextSuspect(shard: Shard): void {
+    if (!shard.conn.isOpen) return;
+    const held = wiresOn(shard).filter(w => w.suspect);
     if (held.length === 0 || held.some(w => w.sentAt !== null)) return;
     sendSubscribe(held[0], clock(), true);
   }
@@ -739,7 +807,8 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     const meta = subs.get(sub);
     subs.delete(sub);
     if (meta === undefined) return;
-    let releasedSuspect = false;
+    const touched = new Set<Shard>();
+    const releasedSuspect = new Set<Shard>();
     for (const key of meta.wires) {
       const w = wires.get(key);
       if (w === undefined) continue;
@@ -747,15 +816,17 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
       if (w.refs.size > 0) continue;
       clearAckTimer(w);
       wires.delete(key);
-      if (w.suspect) releasedSuspect = true;
-      if (connection !== null && connection.isOpen && w.sentAt !== null) {
-        connection.send(codec.encodeUnsubscribe(w.wire, nextReqId++));
+      touched.add(w.shard);
+      if (w.suspect) releasedSuspect.add(w.shard);
+      if (w.shard.conn.isOpen && w.sentAt !== null) {
+        w.shard.conn.send(codec.encodeUnsubscribe(w.wire, nextReqId++));
       }
     }
-    if (wires.size === 0 && connection !== null && !closed && connection.state.status !== "idle" && connection.state.status !== "closed") {
-      connection.closeIdle();
+    for (const sh of touched) {
+      const st = sh.conn.state.status;
+      if (wiresOn(sh).length === 0 && !closed && st !== "idle" && st !== "closed") sh.conn.closeIdle();
     }
-    if (releasedSuspect) probeNextSuspect(); // the released one may have been the probe in flight
+    for (const sh of releasedSuspect) probeNextSuspect(sh); // the released one may have been the probe in flight
   }
 
   function dropSub(sub: Sub, err: WsError): void {
@@ -766,7 +837,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
   async function activate(sub: Sub, target: MarketTarget): Promise<void> {
     if (closed) throw closedError(venue);
     terminalCheck();
-    if (connection === null) {
+    if (url === null) {
       throw wsError("CAPABILITY_UNSUPPORTED", `${venue} has no WebSocket on ${network}`,
         codec.capabilities.notes[`network:${network}`] === undefined ? undefined : codec.capabilities.notes[`network:${network}`]);
     }
@@ -825,24 +896,15 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
       list = codec.wiresFor(target, d, opts.staleAfterMs === undefined ? null : opts.staleAfterMs);
     }
     const fresh = list.filter(w => !wires.has(w.key));
-    const allowed = Math.min(codec.limits.subscriptionsPerSocket, opts.budget?.maxSubscriptions === undefined ? Infinity : opts.budget.maxSubscriptions);
     if (opts.budget?.maxSockets !== undefined && opts.budget.maxSockets < 1) {
       throw wsError("SUBSCRIPTION_LIMIT", `${venue} needs 1 socket; budget.maxSockets is ${opts.budget.maxSockets}`, "Raise budget.maxSockets", { needed: 1, allowed: opts.budget.maxSockets });
     }
+    const allowed = Math.min(codec.limits.subscriptionsPerSocket * maxSockets, opts.budget?.maxSubscriptions === undefined ? Infinity : opts.budget.maxSubscriptions);
     if (wires.size + fresh.length > allowed) {
       throw wsError("SUBSCRIPTION_LIMIT", `${venue}: ${wires.size + fresh.length} wire subscriptions needed, ${allowed} allowed`,
         "Unsubscribe something, narrow the symbols, or raise budget.maxSubscriptions (≤ the venue limit)", { needed: wires.size + fresh.length, allowed });
     }
-    const perGroup = codec.limits.perGroup;
-    if (perGroup !== undefined) {
-      for (const [group, cap] of Object.entries(perGroup)) {
-        const needed = Array.from(wires.values()).filter(w => w.wire.group === group).length + fresh.filter(w => w.group === group).length;
-        if (needed > cap) {
-          throw wsError("SUBSCRIPTION_LIMIT", `${venue}: ${needed} "${group}" channels needed on one connection, ${cap} allowed`,
-            `Unsubscribe some ${group} channels`, { needed, allowed: cap });
-        }
-      }
-    }
+    const placement = placeWires(fresh);
     subs.set(sub, {
       symbols: wanted === null ? null : new Set(wanted),
       wires: list.map(w => w.key),
@@ -852,8 +914,9 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     for (const w of list) {
       let st = wires.get(w.key);
       if (st === undefined) {
+        const slot = placement.get(w.key) as number;
         st = {
-          wire: w, refs: new Set(), reqId: 0, sentAt: null, lastAt: null, acked: false, firstFrameSeen: false,
+          wire: w, shard: slot < shards.length ? shards[slot] : newShard(), refs: new Set(), reqId: 0, sentAt: null, lastAt: null, acked: false, firstFrameSeen: false,
           probe: false, suspect: false, ackTimer: null, everAcked: false, lastSeq: null,
         };
         wires.set(w.key, st);
@@ -881,7 +944,46 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
       }
     }
     maybeReady(sub);
-    connection.ensureOpen();
+    for (const sh of new Set(list.map(w => (wires.get(w.key) as WireState).shard))) sh.conn.ensureOpen();
+  }
+
+  /**
+   * Socket index for each new wire: the first socket (existing, then new ones up to maxSockets) with
+   * room under subscriptionsPerSocket and the wire's limits.perGroup cap. Throws SUBSCRIPTION_LIMIT
+   * before anything is registered or sent.
+   */
+  function placeWires(fresh: WireSub[]): Map<string, number> {
+    const perGroup = codec.limits.perGroup === undefined ? {} : codec.limits.perGroup;
+    const inGroup = (groups: Map<string, number>, g: string): number => { const n = groups.get(g); return n === undefined ? 0 : n; };
+    const load = shards.map(sh => {
+      const on = wiresOn(sh);
+      const groups = new Map<string, number>();
+      for (const w of on) if (w.wire.group !== undefined) groups.set(w.wire.group, inGroup(groups, w.wire.group) + 1);
+      return { total: on.length, groups };
+    });
+    const out = new Map<string, number>();
+    for (const w of fresh) {
+      const cap = w.group === undefined ? undefined : perGroup[w.group];
+      const fits = (l: { total: number; groups: Map<string, number> }) =>
+        l.total < codec.limits.subscriptionsPerSocket && (cap === undefined || inGroup(l.groups, w.group as string) < cap);
+      let i = load.findIndex(fits);
+      if (i === -1 && load.length < maxSockets) { load.push({ total: 0, groups: new Map() }); i = load.length - 1; }
+      if (i === -1) {
+        if (cap !== undefined) {
+          const needed = Array.from(wires.values()).filter(x => x.wire.group === w.group).length + fresh.filter(x => x.group === w.group).length;
+          const max = cap * maxSockets;
+          throw wsError("SUBSCRIPTION_LIMIT", `${venue}: ${needed} "${w.group}" channels needed, ${cap} per connection × ${maxSockets} connection(s) = ${max} allowed`,
+            `Unsubscribe some ${w.group} channels${maxSockets < (codec.limits.maxSockets === undefined ? 1 : codec.limits.maxSockets) ? ", or raise budget.maxSockets (≤ the venue limit)" : ""}`,
+            { needed, allowed: max });
+        }
+        throw wsError("SUBSCRIPTION_LIMIT", `${venue}: no connection has room for ${w.key} (${codec.limits.subscriptionsPerSocket} per connection × ${maxSockets} connection(s))`,
+          "Unsubscribe something or narrow the symbols", { needed: wires.size + fresh.length, allowed: codec.limits.subscriptionsPerSocket * maxSockets });
+      }
+      load[i].total++;
+      if (w.group !== undefined) load[i].groups.set(w.group, inGroup(load[i].groups, w.group) + 1);
+      out.set(w.key, i);
+    }
+    return out;
   }
 
   function checkAllMarketsTarget(t: AllMarketsTarget): void {
@@ -961,8 +1063,10 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
 
   /** The connection stopped for good (reconnects exhausted): new subscriptions fail with its reason. */
   function terminalCheck(): void {
-    if (connection === null || connection.state.status !== "closed") return;
-    const r = connection.state.reason;
+    if (url === null) return;
+    const agg = aggregateState();
+    if (agg.status !== "closed") return;
+    const r = agg.reason;
     if (r.code === "CLIENT_CLOSE") throw closedError(venue);
     throw wsError(r.code, `${venue} stream is closed: ${r.message}`, r.remediation === null ? "Create a new stream" : r.remediation);
   }
@@ -987,10 +1091,10 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     capabilities: codec.capabilities,
     staleAfterMs: opts.staleAfterMs === undefined ? codec.staleAfterMs : opts.staleAfterMs,
     get state(): ConnectionState {
-      if (connection === null) {
+      if (url === null) {
         return { status: "closed", reason: { code: "CAPABILITY_UNSUPPORTED", message: `${venue} has no WebSocket on ${network}`, wsCode: null, remediation: null } };
       }
-      return connection.state;
+      return aggregateState();
     },
     subscribe: subscribe as unknown as VenueStream["subscribe"],
     onState(cb) {
@@ -1011,7 +1115,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
       tokenLoops.clear();
       for (const w of wires.values()) clearAckTimer(w);
       wires.clear();
-      connection?.close(); // subscribers see state → closed (CLIENT_CLOSE) first
+      for (const sh of shards) sh.conn.close(); // subscribers see state → closed (CLIENT_CLOSE) first
       for (const sub of Array.from(subs.keys())) {
         subs.delete(sub);
         sub.end();

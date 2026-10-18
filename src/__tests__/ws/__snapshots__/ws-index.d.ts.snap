@@ -653,10 +653,13 @@ type DecodedEvent = {
     t: "market";
     wire: string;
     patches: MarketPatch[];
-} | {
+}
+/** seq: a venue ordering number for the wire's snapshots (frames below the last seen are stale and dropped; equal is applied). */
+ | {
     t: "user";
     wire: string;
     deltas: UserDelta[];
+    seq?: number | null;
 }
 /** seq: a venue ordering number (only drops out-of-order/duplicate frames; never a gap signal). */
  | {
@@ -746,6 +749,9 @@ interface VenueCodec {
         outboundPerMin: number;
         /** Per-socket caps per WireSub.group. */
         perGroup?: Record<string, number>;
+        /** Sockets one stream may open to spread channels over the per-socket caps. Absent = 1 (the
+         * venue's limits are per IP, so extra sockets would not add room). */
+        maxSockets?: number;
     };
     /** true → the venue drops the socket (no error frame) on an invalid subscribe (HL). */
     readonly closesOnBadSubscribe: boolean;
@@ -778,6 +784,11 @@ interface VenueCodec {
  * createVenueStream (§4): directory bootstrap, ref-counted wire subscriptions, dispatch of decoded
  * frames into merged market state, labelled REST refresh, error/state fan-out. Socket lifecycle is in
  * connection.ts; venue specifics are in the codec.
+ *
+ * Sockets: one per stream unless the codec's limits.maxSockets allows more (per-socket venue caps,
+ * e.g. Pacifica 20 per channel). Each wire lives on one socket (first fit under subscriptionsPerSocket
+ * and limits.perGroup); a socket reconnects and resubscribes its own wires. The stream state is the
+ * aggregate of its sockets; one socket stopping for good (reconnects exhausted) closes the stream.
  */
 
 /** @experimental 0.15.x (stable from 0.16.0 after consumer sign-off) */
@@ -881,8 +892,12 @@ declare const hyperliquid: VenueCodec;
  * settled hourly rate, next_funding = predicted (Phase 0: == REST funding_rate history). open_interest
  * is base units; volume_24h USD. No bid/ask in `prices` (bbo channel, Phase 2).
  * An unknown symbol is acked with no data and no error frame → symbols are validated first.
+ * The directory is the `instrument_type: "perpetual"` rows of GET /info (spot rows such as SOL-USDC are
+ * also in /info and `prices`; a row without instrument_type fails the directory: it cannot be classified).
+ * Every wire carries `group` = its channel `source` (venue cap: 20 per channel per connection; the stream
+ * spreads further ones over more sockets, venue-static.ts).
  *
- * Docs: pacifica.gitbook.io/docs/api-documentation/api/websocket; fixtures in
+ * Docs: docs.pacifica.fi/api-documentation/api/websocket; fixtures in
  * src/__tests__/fixtures/ws/pacifica/.
  */
 

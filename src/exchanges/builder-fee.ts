@@ -21,7 +21,7 @@
  *     `builder: { b: <address>, f: <tenths of a bp> }`; max 0.1% perps / 1% spot; status
  *     info `{ type: "maxBuilderFee", user, builder }`. HIP-3 dexes are not covered by the
  *     docs → never attached there.
- * - pacifica     https://pacifica.gitbook.io/docs/programs/builder-program.md
+ * - pacifica     https://docs.pacifica.fi/programs/builder-program.md
  *     approve_builder_code { builder_code, max_fee_rate } signed by the account; per-order
  *     `builder_code` on create_market / create / stop/create / positions/tpsl. TWAP
  *     (create_twap_order) does not document builder_code → never sent there.
@@ -88,7 +88,7 @@ export const BUILDER_FEE_CAPABILITIES: { readonly [K in VenueId]: BuilderFeeCapa
   },
   pacifica: {
     approval: "master", identity: "code", perpCapBps: 10, spotCapBps: null, hip3: null, testnet: true,
-    feeStepBps: 0.01, feeKind: "max", docs: "https://pacifica.gitbook.io/docs/programs/builder-program.md",
+    feeStepBps: 0.01, feeKind: "max", docs: "https://docs.pacifica.fi/programs/builder-program.md",
   },
   aster: {
     approval: "master", identity: "address", perpCapBps: 10, spotCapBps: null, hip3: null, testnet: false,

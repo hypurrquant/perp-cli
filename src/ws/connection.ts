@@ -1,5 +1,5 @@
 /**
- * Connection core (§3, §5.2): one socket per venue stream with an explicit state machine
+ * Connection core (§3, §5.2): one socket (a venue stream holds one or more) with an explicit state machine
  * (idle → connecting → live ⇄ stale → reconnecting → … → closed), an app heartbeat, staleness from
  * MESSAGE timestamps (not timer ticks), visibility re-evaluation, bounded backoff with jitter, a
  * per-venue new-connection budget (delays, never skips) and an outbound rate limiter.
@@ -52,6 +52,8 @@ export interface ConnectionOptions {
   ping: { message: string; everyMs: number } | null;
   reconnect: { maxAttempts: number | null; baseMs: number; maxMs: number };
   newConnectionsPerMin: number;
+  /** Open times of recent connects, shared by every socket of one venue stream (the budget is per stream). */
+  connectLog: number[];
   outboundPerMin: number;
   visibility: { hidden(): boolean; onChange(cb: () => void): () => void } | null;
   random: () => number;
@@ -64,7 +66,6 @@ export class Connection {
   /** Consecutive failed attempts. Reset by the first data frame (markHealthy), not by open: a venue
    * that accepts and then drops the socket must still exhaust reconnect.maxAttempts. */
   private attempt = 0;
-  private connectTimes: number[] = [];
   private sendTimes: number[] = [];
   private sendQueue: string[] = [];
   private sendTimer: ReturnType<typeof setTimeout> | null = null;
@@ -173,9 +174,10 @@ export class Connection {
   }
 
   private budgetDelay(now: number): number {
-    this.connectTimes = this.connectTimes.filter(t => now - t < 60_000);
-    if (this.connectTimes.length < this.o.newConnectionsPerMin) return 0;
-    return this.connectTimes[0] + 60_000 - now;
+    const log = this.o.connectLog;
+    while (log.length > 0 && now - log[0] >= 60_000) log.shift();
+    if (log.length < this.o.newConnectionsPerMin) return 0;
+    return log[0] + 60_000 - now;
   }
 
   private connectWithBudget(): void {
@@ -199,7 +201,7 @@ export class Connection {
   }
 
   private connect(): void {
-    this.connectTimes.push(this.o.clock());
+    this.o.connectLog.push(this.o.clock());
     this.setState({ status: "connecting", attempt: this.attempt + 1 });
     this.opened = false;
     let ws: WsLike;

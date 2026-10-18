@@ -111,7 +111,7 @@ describe("pacifica user channels", () => {
     expect(r.of("error")).toEqual([]);
     expect(r.of("account")[0]).toMatchObject({ equity: "0.028483", available: "0.006282", marginUsed: "0", venueTs: 1791035103648 });
     expect(r.of("positions")[0]).toMatchObject({ snapshot: true, positions: [] });
-    r.t.last().message({ channel: "account_positions", data: [{ s: "BTC", d: "ask", a: "0.1", p: "83000", m: "0", f: "0", i: false, l: null, t: 9 }], li: 1 });
+    r.t.last().message({ channel: "account_positions", data: [{ s: "BTC", d: "ask", a: "0.1", p: "83000", m: "0", f: "0", i: false, l: null, t: 9, li: 900011 }], li: 900011 });
     expect(r.of("positions").at(-1)!.positions).toEqual([expect.objectContaining({ symbol: "BTC", side: "short", size: "0.1", entryPrice: "83000" })]);
     r.t.last().message({ channel: "account_order_updates", data: [{ i: 5, I: null, s: "BTC", d: "bid", p: "0", ip: "80000", a: "0.1", f: "0", os: "open", ot: "limit", r: false, ct: 1, ut: 1, li: 2 }] });
     expect(r.of("orders").at(-1)).toMatchObject({ snapshot: false, complete: false, orders: [{ orderId: "5", side: "buy", price: "80000" }] });
@@ -345,6 +345,77 @@ describe("fill snapshots, dedupe and replay gaps", () => {
   });
 });
 
+describe("pacifica docs sync (docs.pacifica.fi)", () => {
+  it("24 h forced close of a long-lived socket → reconnect, resubscribe, orders/fills refetch-required gaps", async () => {
+    const r = await userStream(pacifica, PACIFICA_ROUTES, pacUser, ["account", "positions", "orders", "fills"]);
+    const first = r.t.last();
+    first.open();
+    for (const f of fixtureFrames("pacifica", "private-account")) first.message(f);
+    await expect(r.sub.ready).resolves.toBeUndefined();
+    first.message({ channel: "account_order_updates", data: [{ i: 6, s: "ETH", d: "ask", ip: "3000", a: "1", f: "0", os: "open", ot: "limit", li: 900020 }] });
+    // 24 h of heartbeats: every 20 s ping answered (the venue's 60 s idle close never triggers).
+    for (let elapsed = 0; elapsed < 24 * 3_600_000; elapsed += 20_000) {
+      vi.advanceTimersByTime(20_000);
+      first.message({ channel: "pong" });
+    }
+    expect(r.t.sockets).toHaveLength(1);
+    const pings = first.sentJson().filter(m => (m as { method: string }).method === "ping").length;
+    expect(pings).toBeGreaterThan(4000);
+    const gapsBefore = r.of("gap").length;
+    first.serverClose(1000, "connection lifetime exceeded");
+    expect(r.stream.state).toMatchObject({ status: "reconnecting", reason: { wsCode: 1000 } });
+    vi.advanceTimersByTime(1_000);
+    expect(r.t.sockets).toHaveLength(2);
+    r.t.last().open();
+    expect((r.t.last().sentJson() as Array<{ params: { source: string } }>).map(m => m.params.source))
+      .toEqual(["account_info", "account_positions", "account_order_updates", "account_trades"]);
+    expect(r.of("gap").slice(gapsBefore).map(g => [g.channel, g.action])).toEqual([["orders", "refetch-required"], ["fills", "refetch-required"]]);
+    expect(r.of("orders").at(-1)).toMatchObject({ orders: [], complete: false });
+    // The resubscribe snapshot is the new baseline (its li may be anything): applied.
+    r.t.last().message({ channel: "account_positions", data: [{ s: "BTC", d: "bid", a: "1", p: "1", m: "0", f: "0", i: false, l: null, t: 1, li: 5 }], li: 5 });
+    expect(r.of("positions").at(-1)!.positions.map(p => p.symbol)).toEqual(["BTC"]);
+    expect(r.stream.state).toMatchObject({ status: "live" });
+  });
+
+  it("account_positions: a snapshot with an older envelope li is dropped; equal and newer are applied", async () => {
+    const r = await userStream(pacifica, PACIFICA_ROUTES, pacUser, ["positions"]);
+    r.t.last().open();
+    const pos = (sym: string, li: number) => ({ channel: "account_positions", data: [{ s: sym, d: "bid", a: "1", p: "1", m: "0", f: "0", i: false, l: null, t: 1, li }], li });
+    r.t.last().message(pos("BTC", 100));
+    r.t.last().message(pos("ETH", 99)); // delayed older snapshot
+    expect(r.of("positions").at(-1)!.positions.map(p => p.symbol)).toEqual(["BTC"]);
+    r.t.last().message(pos("SOL", 100));
+    expect(r.of("positions").at(-1)!.positions.map(p => p.symbol)).toEqual(["SOL"]);
+    r.t.last().message({ channel: "account_positions", data: [], li: 101 }); // closed → flat
+    expect(r.of("positions").at(-1)!.positions).toEqual([]);
+    r.t.last().message({ channel: "account_positions", data: [{ s: "BTC", d: "bid", a: "1", p: "1", m: "0", f: "0", i: false, l: null, t: 1 }] }); // no li: not ordered
+    expect(r.of("positions").at(-1)!.positions.map(p => p.symbol)).toEqual(["BTC"]);
+    expect(r.of("error")).toEqual([]);
+    expect(r.logs.filter(l => l.event === "stale-snapshot")).toHaveLength(1);
+  });
+
+  it("directory = instrument_type \"perpetual\" rows; spot rows in `prices` are skipped without an unknown-market warning", async () => {
+    const t = fakeTransport();
+    const stream = createVenueStream(pacifica, { transport: t.factory, fetch: fakeFetch(PACIFICA_ROUTES), visibility: null });
+    expect((await stream.markets()).map(m => m.symbol)).toEqual(["BTC", "ETH", "FARTCOIN", "TSLA"]);
+    const sub = stream.subscribe({ kind: "allMarkets" });
+    const ev: Array<{ type: string; symbol?: string }> = [];
+    sub.on(e => ev.push(e as { type: string; symbol?: string }));
+    await flush(40);
+    t.last().open();
+    const row = (symbol: string) => ({ symbol, mark: "1", oracle: "1", funding: "0", next_funding: "0", open_interest: "0", volume_24h: "0", timestamp: 1 });
+    t.last().message({ channel: "prices", data: [row("BTC"), row("SOL-USDC")] });
+    expect(ev.filter(e => e.type === "market").map(e => e.symbol)).toEqual(["BTC"]);
+    expect(ev.filter(e => e.type === "error")).toEqual([]);
+  });
+
+  it("a /info row without instrument_type fails the directory (cannot be classified perp vs spot)", async () => {
+    const routes = { "GET https://api.pacifica.fi/api/v1/info": { success: true, data: [{ symbol: "BTC", instrument_type: "perpetual" }, { symbol: "ETH" }] } };
+    const stream = createVenueStream(pacifica, { transport: fakeTransport().factory, fetch: fakeFetch(routes), visibility: null });
+    await expect(stream.markets()).rejects.toMatchObject({ structured: { code: "EXCHANGE_ERROR", message: expect.stringContaining("ETH without instrument_type") } });
+  });
+});
+
 describe("bbo channel", () => {
   async function bbo(codec: VenueCodec, routes: Record<string, unknown>, symbol: string, frames: unknown[]) {
     const t = fakeTransport();
@@ -390,16 +461,101 @@ describe("bbo channel", () => {
     expect(c.errors).toEqual([]);
   });
 
-  it("pacifica: a 21st bbo channel → SUBSCRIPTION_LIMIT before any send", async () => {
-    const symbols = Array.from({ length: 21 }, (_, i) => `S${i}`);
-    const routes = { "GET https://api.pacifica.fi/api/v1/info": { success: true, data: symbols.map(symbol => ({ symbol })) } };
-    const t = fakeTransport();
-    const stream = createVenueStream(pacifica, { transport: t.factory, fetch: fakeFetch(routes), visibility: null });
-    const subs = symbols.map(s => stream.subscribe({ kind: "market", symbol: s, channels: ["bbo"] }));
-    await flush(60);
-    await expect(subs[20].ready).rejects.toMatchObject({ structured: { code: "SUBSCRIPTION_LIMIT", details: { needed: 21, allowed: 20 } } });
-    expect(subs[19].status).toBe("pending");
+  const pacDir = (symbols: string[]) => ({
+    "GET https://api.pacifica.fi/api/v1/info": { success: true, data: symbols.map(symbol => ({ symbol, instrument_type: "perpetual", base_asset: symbol })) },
   });
+  const bboSource = (ws: { sentJson(): unknown[] }) =>
+    (ws.sentJson() as Array<{ method: string; params: { source: string; symbol?: string } }>).filter(m => m.method === "subscribe").map(m => m.params.symbol === undefined ? m.params.source : m.params.symbol);
+
+  it("pacifica: > 20 bbo channels are spread over sockets (20 per channel per connection), prices stays on the first", async () => {
+    const symbols = Array.from({ length: 45 }, (_, i) => `S${i}`);
+    const t = fakeTransport();
+    const stream = createVenueStream(pacifica, { transport: t.factory, fetch: fakeFetch(pacDir(symbols)), visibility: null });
+    const states: Array<{ status: string; sockets?: number }> = [];
+    stream.onState(st => states.push(st as { status: string; sockets?: number }));
+    const all = stream.subscribe({ kind: "allMarkets" });
+    const subs = symbols.map(s => stream.subscribe({ kind: "market", symbol: s, channels: ["bbo"] }));
+    await flush(80);
+    expect(t.sockets).toHaveLength(3);
+    for (const ws of t.sockets) ws.open();
+    expect(bboSource(t.sockets[0])).toEqual(["prices", ...symbols.slice(0, 20)]);
+    expect(bboSource(t.sockets[1])).toEqual(symbols.slice(20, 40));
+    expect(bboSource(t.sockets[2])).toEqual(symbols.slice(40));
+    expect(stream.state).toMatchObject({ status: "live", sockets: 3 });
+    // Acks / frames are routed by wire on whichever socket they arrive.
+    t.sockets[0].message({ channel: "subscribe", data: { source: "prices" } });
+    symbols.forEach((s, i) => t.sockets[Math.floor(i / 20)].message({ channel: "subscribe", data: { source: "bbo", symbol: s } }));
+    await expect(all.ready).resolves.toBeUndefined();
+    await Promise.all(subs.map(x => x.ready));
+    const got: BboUpdate[] = [];
+    subs[44].on(e => { if (e.type === "bbo") got.push(e as BboUpdate); });
+    t.sockets[2].message({ channel: "bbo", data: { s: "S44", i: 1, b: "1", B: "2", a: "3", A: "4", t: 5, li: 7 } });
+    expect(got.map(b => [b.symbol, b.bid, b.ask])).toEqual([["S44", "1", "3"]]);
+    // Releasing every wire of the third socket closes only that socket; the aggregate stays live.
+    for (const x of subs.slice(40)) await x.unsubscribe();
+    expect(t.sockets[2].closedWith).toEqual({ code: 1000, reason: "idle" });
+    expect(t.sockets[0].closedWith).toBeNull();
+    expect(stream.state).toMatchObject({ status: "live", sockets: 2 });
+    // The first two sockets are full for bbo: a new bbo channel reopens the idle third slot (no 4th slot).
+    const again = stream.subscribe({ kind: "market", symbol: "S40", channels: ["bbo"] });
+    await flush(40);
+    expect(t.sockets).toHaveLength(4);
+    t.last().open();
+    expect(bboSource(t.last())).toEqual(["S40"]);
+    expect(again.status).toBe("pending");
+    await stream.close();
+    expect(states.at(-1)).toMatchObject({ status: "closed" });
+  });
+
+  it("pacifica: bbo beyond 20 × budget.maxSockets → SUBSCRIPTION_LIMIT before any send", async () => {
+    const symbols = Array.from({ length: 41 }, (_, i) => `S${i}`);
+    const t = fakeTransport();
+    const stream = createVenueStream(pacifica, { transport: t.factory, fetch: fakeFetch(pacDir(symbols)), visibility: null, budget: { maxSockets: 2 } });
+    const subs = symbols.map(s => stream.subscribe({ kind: "market", symbol: s, channels: ["bbo"] }));
+    await flush(80);
+    await expect(subs[40].ready).rejects.toMatchObject({ structured: { code: "SUBSCRIPTION_LIMIT", details: { needed: 41, allowed: 40 } } });
+    expect(subs[39].status).toBe("pending");
+    expect(t.sockets).toHaveLength(2);
+    for (const ws of t.sockets) ws.open();
+    expect(t.sockets.flatMap(bboSource)).toEqual(symbols.slice(0, 40)); // the rejected one was never sent
+  });
+
+  it("pacifica: the new-connection budget is shared by the stream's sockets; one socket's reconnects exhausted closes the stream", async () => {
+    const symbols = Array.from({ length: 45 }, (_, i) => `S${i}`);
+    const t = fakeTransport();
+    const stream = createVenueStream(pacifica, {
+      transport: t.factory, fetch: fakeFetch(pacDir(symbols)), visibility: null,
+      budget: { newConnectionsPerMin: 2 }, reconnect: { maxAttempts: 1, baseMs: 1000, maxMs: 1000 },
+    });
+    const subs = symbols.map(s => stream.subscribe({ kind: "market", symbol: s, channels: ["bbo"] }));
+    await flush(80);
+    expect(t.sockets).toHaveLength(2); // the third socket waits for the per-stream budget
+    const ack = (ws: (typeof t.sockets)[number], from: number, to: number) => {
+      ws.open();
+      for (const sym of symbols.slice(from, to)) ws.message({ channel: "subscribe", data: { source: "bbo", symbol: sym } });
+    };
+    ack(t.sockets[0], 0, 20);
+    ack(t.sockets[1], 20, 40);
+    for (let i = 0; i < 3; i++) { vi.advanceTimersByTime(20_000); for (const ws of t.sockets) ws.message({ channel: "pong" }); }
+    expect(t.sockets).toHaveLength(3);
+    ack(t.sockets[2], 40, 45);
+    await Promise.all(subs.map(x => x.ready));
+    t.sockets[1].serverClose(1006);
+    vi.advanceTimersByTime(60_000);
+    t.last().serverClose(1006); // handshake fails again → attempts exhausted
+    expect(stream.state).toMatchObject({ status: "closed", reason: { code: "EXCHANGE_UNREACHABLE" } });
+    expect(subs.map(x => x.status)).toEqual(symbols.map(() => "closed")); // active subscriptions ended with the close reason
+    expect(t.sockets[0].closedWith).not.toBeNull(); // the healthy sockets were stopped too
+  });
+
+  it("hyperliquid (per-IP limits, no maxSockets): every channel stays on one socket", async () => {
+    const t = fakeTransport();
+    const stream = createVenueStream(hyperliquid, { transport: t.factory, fetch: fakeFetch(HL_ROUTES), visibility: null });
+    for (const s of ["BTC", "ETH", "SOL", "ATOM", "DYDX"]) stream.subscribe({ kind: "market", symbol: s, channels: ["bbo", "market"] });
+    await flush(80);
+    expect(t.sockets).toHaveLength(1);
+  });
+
 });
 
 describe("CLI credential provider", () => {

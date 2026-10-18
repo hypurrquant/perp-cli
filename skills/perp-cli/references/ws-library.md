@@ -235,7 +235,9 @@ null) and `notes` (why). lighter-rh has no testnet (`CAPABILITY_UNSUPPORTED`).
 
 `BboUpdate`: `bid, bidSize, ask, askSize` (null = that side of the book is empty), `venueTs, recvTs`.
 Venue sequence numbers only drop out-of-order frames (they are not contiguous; bbo never emits gaps).
-Pacifica allows ≤ 20 bbo channels per connection (`SUBSCRIPTION_LIMIT` beyond).
+Pacifica allows ≤ 20 subscriptions per channel per connection: the stream spreads further `bbo` channels
+over more sockets (≤ 50 per stream; `budget.maxSockets` lowers it; `SUBSCRIPTION_LIMIT` beyond).
+`live.sockets` counts the open ones.
 
 ## 5. Funding comparator
 
@@ -390,7 +392,8 @@ sub.on((e) => {
 Events:
 - `account` — `equity, available, marginUsed, unrealizedPnl` (+ `dex` on hyperliquid, one per perp dex);
   `source: "snapshot"` when the frame was a full snapshot.
-- `positions` / `orders` — always the **full current set** (snapshot + merged deltas).
+- `positions` / `orders` — always the **full current set** (snapshot + merged deltas). Pacifica
+  `account_positions` snapshots older than the last applied one (envelope `li`) are dropped.
   `orders.complete` = every part of the set came from a venue snapshot. **Pacifica sends no order
   snapshot: `complete` stays `false` — refetch open orders over REST.**
 - `fills` (`snapshot: true`) — ONE event per venue fill snapshot (HL / Arcus replay recent fills on every
@@ -443,7 +446,10 @@ Where an error surfaces:
 
 ## 8. Budgets and limits
 
-- `budget: { maxSubscriptions, newConnectionsPerMin }` caps below the venue limits (checked before sending).
+- `budget: { maxSubscriptions, maxSockets, newConnectionsPerMin }` caps below the venue limits (checked
+  before sending). One socket per stream, except venues whose caps are per connection (Pacifica: 20 per
+  channel per connection, 100 connections per IP → up to 50 sockets per stream). The new-connection
+  budget is per stream; one socket exhausting its reconnects closes the stream.
 - **Per-IP limits are shared by every tab and app on one IP** (HL: 10 connections, 1000 subscriptions,
   30 new connections/min, 10 users). Several tabs of one dashboard share them — keep one stream per venue
   per page.
