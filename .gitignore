@@ -26,3 +26,5 @@ GROWTH.md
 
 # Local mainnet verification log (wallet addresses, balances) — kept out of the repo
 docs/MAINNET-VERIFICATION-STATUS.md
+.codex/hooks.json
+.codex/hooks/
