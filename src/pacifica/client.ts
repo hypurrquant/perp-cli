@@ -698,4 +698,18 @@ export class PacificaClient {
   async batchOrders(actions: BatchAction[]): Promise<unknown> {
     return this.post("/orders/batch", { actions });
   }
+
+  /**
+   * One signed batch action body (docs rest-api/orders/batch-order: "Batch orders are not signed
+   * as a whole, but rather by its individual actions components"; each action's `data` carries the
+   * fields of its standalone endpoint, signed with that endpoint's operation type). Nothing is sent.
+   */
+  async signBatchAction(
+    operationType: string,
+    payload: Record<string, unknown>,
+    account: string,
+    signMessage: SignMessageFn,
+  ): Promise<Record<string, unknown>> {
+    return this.signedBody(operationType, payload, account, signMessage);
+  }
 }

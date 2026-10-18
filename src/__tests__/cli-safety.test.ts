@@ -238,7 +238,7 @@ const DRY_RUN_COMMANDS = [
   "wallet manage referral set", "wallet builder approve", "wallet builder revoke",
   "strategy plan execute", "strategy run",
   "trade buy", "trade cancel", "trade cancel-all", "trade close", "trade close-all", "trade edit", "trade flatten", "trade leverage",
-  "trade limit", "trade market", "trade reduce", "trade scale-in", "trade scale-tp", "trade sell", "trade split",
+  "trade atomic", "trade limit", "trade market", "trade reduce", "trade scale-in", "trade scale-tp", "trade sell", "trade split",
   "trade spot-buy", "trade spot-cancel", "trade spot-limit", "trade spot-sell", "trade spot-transfer", "trade stop", "trade tpsl",
 ].sort();
 

@@ -81,7 +81,8 @@ export interface TPSLParams {
   };
 }
 
-export type BatchActionType = "Create" | "Cancel";
+/** docs rest-api/orders/batch-order `type` (case sensitive; not the signing operation type). */
+export type BatchActionType = "Create" | "CreateMarket" | "Cancel" | "Edit" | "SetPositionTpsl" | "CancelStopOrder";
 
 export interface BatchAction {
   type: BatchActionType;

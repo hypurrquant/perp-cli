@@ -4,6 +4,16 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### NEW: Pacifica Atomic basket — `perp -e pacifica trade atomic`
+
+- **`trade atomic --long SYM[:W]... --short SYM[:W]... --usd <total>`** (Pacifica only; other venues → `CAPABILITY_UNSUPPORTED`): the docs' Atomic order (trading-on-pacifica/order-types/strategies/atomic) — up to 5 legs per side, each market once, weights relative, `--usd` split by weight and converted at each leg's mark price. Every leg is a `create_market_order`-signed `CreateMarket` action, all sent in ONE `POST /api/v1/orders/batch` (docs batch-order). Not all-or-nothing: the result is per leg (filled / partly filled / not filled / refused / unknown), each fill read back from `history_by_id`. Options: `--reduce-only` (every leg; `--long` legs must close shorts and `--short` legs longs, checked against the positions before sending), `--slippage-bps` (per leg, same 1..5000 bound as `trade market`), `--force` (risk limits only). Each leg's `client_order_id` is a generated UUID, reported.
+- **Validation before signing:** lot flooring, the market's `min_order_size` (USD) per leg, a positive mark (`PRICE_STALE`), perp markets only, missing `/info` fields → `EXCHANGE_ERROR` (no defaults); opening legs go through quarantine + local risk limits like `trade market`.
+- **Outcomes:** every leg filled → `ok`; any leg not confirmed (an accepted leg without `order_id`, no settled `history_by_id` row, an unreadable / mismatched batch response, a timeout / 5xx / undocumented 4xx after sending) → `ORDER_PENDING`, never resubmitted, and the leg's symbol is quarantined; nothing filled → `ORDER_REJECTED`; otherwise `ORDER_PARTIAL` (details list every leg). HTTP 400 on the batch = the documented whole-request refusal (`ORDER_REJECTED`); 429 → `RATE_LIMITED`.
+- **`--dry-run`** prints the exact batch body (signature replaced by a placeholder) and each leg's canonical signed message; nothing is signed or sent. A configured, approved builder code rides on every leg (`builder_code`, as on `trade market`).
+- **Not available (no API):** Pacifica's Chase, OCO, Trailing Stop, Swarm, Trigger Swarm and Conditional Market / Limit run in the web app only — the docs give no REST endpoint, signing operation type or order type code for them (api/signing/operation-types, batch-order action types, the `order_type` / `ot` lists).
+- **WS:** no new `account_order_updates` `ot` codes are documented; Atomic legs are `market`. Covered by tests: unknown `ot` values pass through verbatim, a missing one is `null`.
+- **Library:** `PacificaClient.signBatchAction()` (signs one batch action, sends nothing); `BatchActionType` gains the documented `CreateMarket`, `Edit`, `SetPositionTpsl`, `CancelStopOrder`.
+
 ### NEW: Pacifica REST reads its rate-limit headers and slows down before HTTP 429
 
 - **Headers (docs: rate-limits; live mainnet 2026-10-19):** `ratelimit: "credits";r=980;t=22` (remaining, seconds until refresh) and `ratelimit-policy: "credits";q=1000;w=60` (quota, window) — credits ×10 (`q=1000` = the documented 100 credits / 60 s per IP). Parsed strictly (`src/pacifica/rate-limit.ts`): absent / malformed → no info, never a guess. CloudFront cache hits (`x-cache: Hit…`, `age`) replay another caller's headers and are ignored.

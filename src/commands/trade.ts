@@ -29,6 +29,7 @@ import { exactUnits, floorSize, floorToStep, lotStepOf, unitsToString } from "..
 import type { VenueSpotDefinition } from "../exchanges/venue.js";
 import { isSpotOpenOrdersCapable, type SpotAdapter, type SpotOrderResult } from "../exchanges/spot-interface.js";
 import { builderPlanFor } from "../exchanges/builder-fee.js";
+import { registerPacificaOrderCommands } from "./pacifica-orders.js";
 import { HL_MIN_ORDER_VALUE_USD } from "../constants.js";
 import { defaultSpotQuote, readSpotQuoteAvailableFresh, requireSpotAdapter, requireSpotDefinition, transferQuoteToPerp, transferQuoteToSpot, transferShortfallError } from "../exchanges/spot-factory.js";
 
@@ -1625,6 +1626,9 @@ export function registerTradeCommands(
       if (isJson()) return printJson(jsonOk(result));
       console.log(chalk.green(`\n  TWAP order ${twapOrderId} cancelled on ${adapter.name}.\n`));
     });
+
+  // === Pacifica-only order types (trade atomic) ===
+  registerPacificaOrderCommands(trade, getAdapter, isJson, isDryRun);
 
   // === Hyperliquid-only commands ===
 
