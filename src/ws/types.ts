@@ -45,7 +45,9 @@ export interface CloseReason {
 export type ConnectionState =
   | { status: "idle" }
   | { status: "connecting"; attempt: number }
-  | { status: "live"; since: number; sockets: number }
+  /** Several sockets (Pacifica): `sockets` live ones; `pending` = sockets still opening for the first time
+   * (just added, or waiting on the new-connection budget) — their subscriptions are not ready yet. */
+  | { status: "live"; since: number; sockets: number; pending?: number }
   | { status: "stale"; since: number; silentMs: number; channel: string | null }
   | { status: "reconnecting"; attempt: number; inMs: number; reason: CloseReason }
   | { status: "closed"; reason: CloseReason };

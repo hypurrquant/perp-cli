@@ -34,4 +34,18 @@ describe("Pacifica getMarkets: instrument_type", () => {
     await expect(p).rejects.toBeInstanceOf(PerpError);
     await expect(p).rejects.toMatchObject({ message: expect.stringContaining("ETH has no instrument_type") });
   });
+
+  it("getOpenOrders leaves out orders on non-perp markets (spot / any other type)", async () => {
+    const a = Object.create(PacificaAdapter.prototype) as PacificaAdapter;
+    const o = (symbol: string, order_id: number) => ({ order_id, symbol, side: "bid", price: "1", initial_amount: "1", filled_amount: "0", order_status: "open", order_type: "limit" });
+    Object.assign(a as unknown as Record<string, unknown>, {
+      _hasRealKey: true,
+      account: "acct",
+      client: {
+        getInfo: vi.fn().mockResolvedValue([row("BTC", "perpetual"), row("SOL-USDC", "spot"), row("X", "dated_future")]),
+        getOrders: vi.fn().mockResolvedValue([o("BTC", 1), o("SOL-USDC", 2), o("X", 3)]),
+      },
+    });
+    expect((await a.getOpenOrders()).map((x) => x.orderId)).toEqual(["1"]);
+  });
 });

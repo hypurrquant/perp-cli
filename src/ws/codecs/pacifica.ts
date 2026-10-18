@@ -4,7 +4,8 @@
  * is base units; volume_24h USD. No bid/ask in `prices` (bbo channel, Phase 2).
  * An unknown symbol is acked with no data and no error frame → symbols are validated first.
  * The directory is the `instrument_type: "perpetual"` rows of GET /info (spot rows such as SOL-USDC are
- * also in /info and `prices`; a row without instrument_type fails the directory: it cannot be classified).
+ * also in /info and `prices`). A row without instrument_type cannot be classified: it is left out and
+ * reported as a directory warning (non-fatal EXCHANGE_ERROR on each subscription; the other markets stream).
  * Every wire carries `group` = its channel `source` (venue cap: 20 per channel per connection; the stream
  * spreads further ones over more sockets, venue-static.ts).
  *
@@ -13,6 +14,7 @@
  */
 
 import { badShape, fetchJson } from "../directory.js";
+import { isPacificaPerpetual } from "../pacifica-instrument.js";
 import { VENUE_STATIC } from "../venue-static.js";
 import type { DecodedEvent, FillRow, MarketDirectoryEntry, MarketPatch, OrderRow, PositionRow, VenueCodec, WireSub } from "../types.js";
 import {
@@ -71,10 +73,11 @@ export const pacifica: VenueCodec = {
     if (!isObj(raw) || !Array.isArray(raw.data)) throw badShape("pacifica", "GET /info has no data array");
     const entries: MarketDirectoryEntry[] = [];
     const nonPerp = new Set<string>();
+    const unclassified: string[] = [];
     for (const m of raw.data) {
       if (!isObj(m) || typeof m.symbol !== "string") throw badShape("pacifica", "GET /info market without symbol");
-      if (typeof m.instrument_type !== "string") throw badShape("pacifica", `GET /info market ${m.symbol} without instrument_type`);
-      if (m.instrument_type !== "perpetual") { nonPerp.add(m.symbol); continue; }
+      if (typeof m.instrument_type !== "string") { unclassified.push(m.symbol); nonPerp.add(m.symbol); continue; }
+      if (!isPacificaPerpetual(m)) { nonPerp.add(m.symbol); continue; }
       const base = m.symbol; // Pacifica perp symbols are the base asset (BTC, kBONK, …)
       const quote = "USDC"; // venue collateral / quote (venue definition)
       entries.push({
@@ -83,7 +86,10 @@ export const pacifica: VenueCodec = {
         rateIntervalHours: 1, settlementIntervalHours: 1, source: "rest:/api/v1/info",
       });
     }
-    return { entries, data: { nonPerp } satisfies PacificaData };
+    const warnings = unclassified.length === 0 ? [] : [
+      `pacifica GET /info: ${unclassified.length} market(s) without instrument_type left out (cannot tell perp from spot): ${unclassified.slice(0, 10).join(", ")}${unclassified.length > 10 ? ", …" : ""}`,
+    ];
+    return { entries, data: { nonPerp } satisfies PacificaData, warnings };
   },
 
   fundingMeta: () => ({

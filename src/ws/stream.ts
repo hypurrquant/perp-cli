@@ -5,8 +5,9 @@
  *
  * Sockets: one per stream unless the codec's limits.maxSockets allows more (per-socket venue caps,
  * e.g. Pacifica 20 per channel). Each wire lives on one socket (first fit under subscriptionsPerSocket
- * and limits.perGroup); a socket reconnects and resubscribes its own wires. The stream state is the
- * aggregate of its sockets; one socket stopping for good (reconnects exhausted) closes the stream.
+ * and limits.perGroup); a socket reconnects and resubscribes its own wires, and frames count only on the
+ * socket their wire lives on. The stream state is the aggregate of its sockets (aggregateState); one
+ * socket stopping for good (reconnects exhausted) closes the stream.
  */
 
 import { defaultCanonicalize } from "./canonical.js";
@@ -28,7 +29,16 @@ type AnyEvent = MarketUpdate | BboUpdate | BookUpdate | TradeUpdate | UserUpdate
 type Sub = SubscriptionImpl<AnyEvent>;
 
 /** One socket of the stream. */
-interface Shard { id: number; conn: Connection }
+interface Shard {
+  id: number;
+  conn: Connection;
+  /** The wires subscribed on this socket (insertion order). */
+  wires: Set<WireState>;
+  /** Not opened since it was created / last went idle: while it connects the stream can still be live. */
+  fresh: boolean;
+  /** Times of recent closes of this socket caused by an inbound message over the transport's maxPayload. */
+  payloadCloses: number[];
+}
 
 interface WireState {
   wire: WireSub;
@@ -188,8 +198,6 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
   const tokenFetches = new Map<string, Promise<TokenState>>();
   const tokenRetryTimers = new Set<ReturnType<typeof setTimeout>>();
   /** Running acquireToken loops per purpose, with everyone waiting on them. */
-  /** Times of recent closes caused by an inbound message over the transport's maxPayload. */
-  const maxPayloadCloses: number[] = [];
   const tokenLoops = new Map<string, Array<{ onOk: (t: TokenState) => void; onFail: (err: WsError) => void }>>();
 
   function log(level: StreamLog["level"], event: string, message: string, details?: Record<string, unknown>): void {
@@ -226,11 +234,11 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     opts.budget?.maxSockets === undefined ? Infinity : opts.budget.maxSockets);
 
   function wiresOn(shard: Shard): WireState[] {
-    return Array.from(wires.values()).filter(w => w.shard === shard);
+    return Array.from(shard.wires);
   }
 
   function newShard(): Shard {
-    const shard = { id: shards.length } as Shard;
+    const shard = { id: shards.length, wires: new Set(), fresh: true, payloadCloses: [] } as unknown as Shard;
     shard.conn = new Connection({
       venue,
       url: url as string,
@@ -247,6 +255,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     }, {
       onOpen: () => {
         const now = clock();
+        shard.fresh = false;
         for (const w of wiresOn(shard)) {
           const g = w.wire.gaps?.onReconnect;
           if (w.everAcked && g !== undefined) {
@@ -270,7 +279,10 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
         log("warn", "protocol-error", ev.type === "error" ? ev.message : "");
         broadcast(ev);
       },
-      onState: (s) => onShardState(s),
+      onState: (s) => {
+        if (s.status === "idle") shard.fresh = true;
+        onShardState(s);
+      },
       onUnexpectedClose: (reason, opened, maxPayloadExceeded) =>
         maxPayloadExceeded ? handleMaxPayloadClose(shard, reason) : handleBadSubscribeClose(shard, reason, opened),
       liveness: () => {
@@ -288,35 +300,52 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
   }
   if (url !== null) newShard();
 
+  /** A socket's state for the aggregate: idle with channels and a budget-deferred connect = connecting. */
+  function shardState(sh: Shard): ConnectionState {
+    return sh.conn.waiting && sh.wires.size > 0 ? { status: "connecting", attempt: 1 } : sh.conn.state;
+  }
+
   /**
-   * Stream state from its sockets (idle ones aside): closed > reconnecting > stale > connecting > live
-   * (sockets = live sockets, since = the latest of their since). One socket: its state as is.
+   * Stream state from its sockets (idle ones aside), worst first: closed > reconnecting > stale >
+   * connecting of a socket that was open before (its channels are down). Sockets opening for the first
+   * time (just added / waiting on the budget) do not hide the live ones: with ≥ 1 live socket the stream
+   * is live, `sockets` = live ones, `pending` = those still opening, `since` = the latest live since.
+   * One socket: its state as is (no `pending`).
    */
   function aggregateState(): ConnectionState {
-    if (shards.length === 1) return shards[0].conn.state;
-    const states = shards.map(sh => sh.conn.state).filter(st => st.status !== "idle");
-    for (const status of ["closed", "reconnecting", "stale", "connecting"] as const) {
-      const hit = states.find(st => st.status === status);
-      if (hit !== undefined) return hit;
+    if (shards.length === 1) return shardState(shards[0]);
+    const active = shards.map(sh => ({ sh, st: shardState(sh) })).filter(x => x.st.status !== "idle");
+    for (const status of ["closed", "reconnecting", "stale"] as const) {
+      const hit = active.find(x => x.st.status === status);
+      if (hit !== undefined) return hit.st;
     }
-    if (states.length === 0) return { status: "idle" };
-    const since = Math.max(...states.map(st => (st.status === "live" ? st.since : 0)));
-    return { status: "live", since, sockets: states.length };
+    const down = active.find(x => x.st.status === "connecting" && !x.sh.fresh);
+    if (down !== undefined) return down.st;
+    const live = active.filter(x => x.st.status === "live");
+    const opening = active.filter(x => x.st.status === "connecting");
+    if (live.length > 0) {
+      const since = Math.max(...live.map(x => (x.st.status === "live" ? x.st.since : 0)));
+      return { status: "live", since, sockets: live.length, pending: opening.length };
+    }
+    return opening.length > 0 ? opening[0].st : { status: "idle" };
+  }
+
+  /** Emit the aggregate state when it changed (listeners, then a `state` event to every subscription). */
+  function reportState(): void {
+    const agg = aggregateState();
+    const key = JSON.stringify(agg);
+    if (key === lastState) return;
+    lastState = key;
+    for (const l of stateListeners) {
+      try { l(agg); } catch (e) { log("warn", "listener-error", `onState listener threw: ${e instanceof Error ? e.message : String(e)}`); }
+    }
+    broadcast({ type: "state", venue, state: agg });
   }
 
   function onShardState(s: ConnectionState): void {
     const failed = s.status === "closed" && s.reason.code !== "CLIENT_CLOSE" && terminalReason === null;
     if (failed) terminalReason = s.reason;
-    const agg = aggregateState();
-    const key = JSON.stringify(agg);
-    // Several sockets: report changes of the aggregate only (one socket: every transition, as is).
-    if (shards.length === 1 || key !== lastState) {
-      lastState = key;
-      for (const l of stateListeners) {
-        try { l(agg); } catch (e) { log("warn", "listener-error", `onState listener threw: ${e instanceof Error ? e.message : String(e)}`); }
-      }
-      broadcast({ type: "state", venue, state: agg });
-    }
+    reportState();
     if (failed && s.status === "closed" && s.reason.code !== "CLIENT_CLOSE") {
       for (const sh of shards) sh.conn.fail(s.reason); // the other sockets stop too (no-op for the failed one)
       const err = wsError(s.reason.code, s.reason.message,
@@ -605,6 +634,15 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     for (const sub of w.refs) maybeReady(sub);
   }
 
+  /** The wire a data frame belongs to, when it lives on the socket the frame arrived on (else logged, undefined). */
+  function wireOn(shard: Shard, key: string): WireState | undefined {
+    const w = wires.get(key);
+    if (w === undefined) log("info", "late-frame", `frame for ${key} after its unsubscribe (in flight)`);
+    else if (w.shard !== shard) log("info", "late-frame", `frame for ${key} on socket ${shard.id}; it lives on socket ${w.shard.id}`);
+    else return w;
+    return undefined;
+  }
+
   function findWire(ev: { wire: string | null; reqId: number | null }): WireState | undefined {
     if (ev.wire !== null) return wires.get(ev.wire);
     if (ev.reqId !== null) for (const w of wires.values()) if (w.reqId === ev.reqId) return w;
@@ -636,8 +674,8 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
       case "ack": {
         if (ev.unsubscribe) return;
         const w = findWire(ev);
-        if (w === undefined) {
-          log("info", "late-ack", "ack for a channel that is no longer subscribed", { wire: ev.wire, reqId: ev.reqId });
+        if (w === undefined || w.shard !== shard) {
+          log("info", "late-ack", w === undefined ? "ack for a channel that is no longer subscribed" : `ack for ${w.wire.key} on socket ${shard.id}; it lives on socket ${w.shard.id}`, { wire: ev.wire, reqId: ev.reqId });
           return;
         }
         markAcked(w);
@@ -661,11 +699,8 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
         return;
       }
       case "user": {
-        const w = wires.get(ev.wire);
-        if (w === undefined) {
-          log("info", "late-frame", `frame for ${ev.wire} after its unsubscribe (in flight)`);
-          return;
-        }
+        const w = wireOn(shard, ev.wire);
+        if (w === undefined) return;
         w.lastAt = recvTs;
         markAcked(w);
         connection.markHealthy();
@@ -686,11 +721,8 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
         return;
       }
       case "bbo": {
-        const w = wires.get(ev.wire);
-        if (w === undefined) {
-          log("info", "late-frame", `frame for ${ev.wire} after its unsubscribe (in flight)`);
-          return;
-        }
+        const w = wireOn(shard, ev.wire);
+        if (w === undefined) return;
         w.lastAt = recvTs;
         markAcked(w);
         connection.markHealthy();
@@ -711,11 +743,8 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
         return;
       }
       case "market": {
-        const w = wires.get(ev.wire);
-        if (w === undefined) {
-          log("info", "late-frame", `frame for ${ev.wire} after its unsubscribe (in flight)`);
-          return;
-        }
+        const w = wireOn(shard, ev.wire);
+        if (w === undefined) return;
         const s = store as MarketStore;
         w.lastAt = recvTs;
         markAcked(w);
@@ -760,11 +789,12 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
    */
   function handleMaxPayloadClose(shard: Shard, reason: CloseReason): boolean {
     const now = clock();
-    while (maxPayloadCloses.length > 0 && now - maxPayloadCloses[0] > MAX_PAYLOAD_WINDOW_MS) maxPayloadCloses.shift();
-    maxPayloadCloses.push(now);
-    log("warn", "max-payload", reason.message, { count: maxPayloadCloses.length, limit: MAX_PAYLOAD_CLOSES });
-    if (maxPayloadCloses.length < MAX_PAYLOAD_CLOSES) return false;
-    maxPayloadCloses.length = 0;
+    const closes = shard.payloadCloses; // per socket: only the socket that keeps getting the frame fails
+    while (closes.length > 0 && now - closes[0] > MAX_PAYLOAD_WINDOW_MS) closes.shift();
+    closes.push(now);
+    log("warn", "max-payload", reason.message, { count: closes.length, limit: MAX_PAYLOAD_CLOSES, socket: shard.id });
+    if (closes.length < MAX_PAYLOAD_CLOSES) return false;
+    closes.length = 0;
     const err = wsError("WS_PROTOCOL_ERROR",
       `${venue}: inbound messages exceeded the transport's maxPayload ${MAX_PAYLOAD_CLOSES} times (WS_ERR_UNSUPPORTED_MESSAGE_LENGTH); stopped reconnecting`,
       reason.remediation === null ? undefined : reason.remediation, { wsCode: 1009 });
@@ -816,6 +846,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
       if (w.refs.size > 0) continue;
       clearAckTimer(w);
       wires.delete(key);
+      w.shard.wires.delete(w);
       touched.add(w.shard);
       if (w.suspect) releasedSuspect.add(w.shard);
       if (w.shard.conn.isOpen && w.sentAt !== null) {
@@ -823,10 +854,11 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
       }
     }
     for (const sh of touched) {
-      const st = sh.conn.state.status;
-      if (wiresOn(sh).length === 0 && !closed && st !== "idle" && st !== "closed") sh.conn.closeIdle();
+      // Idle too: cancels a budget-deferred connect, so no socket opens without channels.
+      if (sh.wires.size === 0 && !closed && sh.conn.state.status !== "closed") sh.conn.closeIdle();
     }
     for (const sh of releasedSuspect) probeNextSuspect(sh); // the released one may have been the probe in flight
+    if (!closed && touched.size > 0) reportState();
   }
 
   function dropSub(sub: Sub, err: WsError): void {
@@ -920,6 +952,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
           probe: false, suspect: false, ackTimer: null, everAcked: false, lastSeq: null,
         };
         wires.set(w.key, st);
+        st.shard.wires.add(st);
         sendSubscribe(st, now, true);
       }
       st.refs.add(sub);
@@ -945,6 +978,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     }
     maybeReady(sub);
     for (const sh of new Set(list.map(w => (wires.get(w.key) as WireState).shard))) sh.conn.ensureOpen();
+    reportState(); // a connect deferred by the budget changes no socket state: report it as connecting
   }
 
   /**
@@ -1115,6 +1149,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
       tokenLoops.clear();
       for (const w of wires.values()) clearAckTimer(w);
       wires.clear();
+      for (const sh of shards) sh.wires.clear();
       for (const sh of shards) sh.conn.close(); // subscribers see state → closed (CLIENT_CLOSE) first
       for (const sub of Array.from(subs.keys())) {
         subs.delete(sub);

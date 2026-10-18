@@ -139,9 +139,19 @@ export class Connection {
     if (this.state.status === "stale") this.setState({ status: "live", since: now, sockets: 1 });
   }
 
-  /** Close the socket because no wire subscription is left; state → idle. */
+  /** Idle, with a connect deferred by the new-connection budget (ensureOpen while the budget was spent). */
+  get waiting(): boolean {
+    return !this.terminal && this.state.status === "idle" && this.reconnectTimer !== null;
+  }
+
+  /** Close the socket because no wire subscription is left; state → idle. Idle with a deferred
+   * connect (waiting): the connect is cancelled, so no socket opens without channels. */
   closeIdle(): void {
     if (this.terminal) return;
+    if (this.state.status === "idle") {
+      if (this.reconnectTimer !== null) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+      return;
+    }
     this.teardown(1000, "idle");
     this.attempt = 0;
     this.setState({ status: "idle" });

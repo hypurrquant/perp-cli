@@ -132,10 +132,14 @@ type ConnectionState = {
 } | {
     status: "connecting";
     attempt: number;
-} | {
+}
+/** Several sockets (Pacifica): `sockets` live ones; `pending` = sockets still opening for the first time
+ * (just added, or waiting on the new-connection budget) — their subscriptions are not ready yet. */
+ | {
     status: "live";
     since: number;
     sockets: number;
+    pending?: number;
 } | {
     status: "stale";
     since: number;
@@ -787,8 +791,9 @@ interface VenueCodec {
  *
  * Sockets: one per stream unless the codec's limits.maxSockets allows more (per-socket venue caps,
  * e.g. Pacifica 20 per channel). Each wire lives on one socket (first fit under subscriptionsPerSocket
- * and limits.perGroup); a socket reconnects and resubscribes its own wires. The stream state is the
- * aggregate of its sockets; one socket stopping for good (reconnects exhausted) closes the stream.
+ * and limits.perGroup); a socket reconnects and resubscribes its own wires, and frames count only on the
+ * socket their wire lives on. The stream state is the aggregate of its sockets (aggregateState); one
+ * socket stopping for good (reconnects exhausted) closes the stream.
  */
 
 /** @experimental 0.15.x (stable from 0.16.0 after consumer sign-off) */
@@ -893,7 +898,8 @@ declare const hyperliquid: VenueCodec;
  * is base units; volume_24h USD. No bid/ask in `prices` (bbo channel, Phase 2).
  * An unknown symbol is acked with no data and no error frame → symbols are validated first.
  * The directory is the `instrument_type: "perpetual"` rows of GET /info (spot rows such as SOL-USDC are
- * also in /info and `prices`; a row without instrument_type fails the directory: it cannot be classified).
+ * also in /info and `prices`). A row without instrument_type cannot be classified: it is left out and
+ * reported as a directory warning (non-fatal EXCHANGE_ERROR on each subscription; the other markets stream).
  * Every wire carries `group` = its channel `source` (venue cap: 20 per channel per connection; the stream
  * spreads further ones over more sockets, venue-static.ts).
  *

@@ -43,6 +43,8 @@ const TESTNET_URLS = {
 } as const;
 
 export let PACIFICA_API_URL: string = MAINNET_URLS.pacifica;
+/** GET /info (instrument_type: which `prices` rows are perps). */
+export let PACIFICA_INFO_URL: string = `${PAC_MAINNET_REST}/info`;
 export let HYPERLIQUID_API_URL: string = MAINNET_URLS.hyperliquid;
 export let LIGHTER_API_URL: string = MAINNET_URLS.lighter;
 let _sharedNetwork: "mainnet" | "testnet" = "mainnet";
@@ -60,6 +62,7 @@ export function setSharedApiNetwork(network: "mainnet" | "testnet"): void {
   _sharedNetwork = network;
   const urls = network === "testnet" ? TESTNET_URLS : MAINNET_URLS;
   PACIFICA_API_URL = urls.pacifica;
+  PACIFICA_INFO_URL = `${network === "testnet" ? PAC_TESTNET_REST : PAC_MAINNET_REST}/info`;
   HYPERLIQUID_API_URL = urls.hyperliquid;
   LIGHTER_API_URL = urls.lighter;
 }
