@@ -10,7 +10,7 @@ import { PerpError, classifyError, type StructuredError } from "../errors.js";
 import { jsonOk, jsonError, printJson } from "../utils.js";
 import { resolvePassphrase } from "../agent-wallet/passphrase.js";
 import { loadOws } from "../signer/ows-loader.js";
-import { getVenue, listVenuesWithRole, networkConfig, tryResolveVenueId, type VenueDefinition } from "../exchanges/venue.js";
+import { getVenue, listVenuesWithRole, networkConfig, roleUnsupported, tryResolveVenueId, type VenueDefinition } from "../exchanges/venue.js";
 import "../exchanges/venues/index.js";
 import type { Network, VenueId } from "../exchanges/venue-types.js";
 import { maxDefaultSlippageBps, parseSlippageSettingBps } from "../exchanges/slippage.js";
@@ -143,6 +143,8 @@ export function setupVenues(): VenueDefinition[] {
 /** Resolve one venue id/alias for setup: must be a trading venue with an environment on `network`. */
 export function resolveSetupVenue(input: string, network: Network): VenueId {
   const id = tryResolveVenueId(input.trim());
+  // A release-gated venue (RISEx in 0.15.0) gets the uniform phase refusal, not "unknown".
+  if (id !== null && getVenue(id).gatedRoles !== null && !getVenue(id).roles.includes("trading")) throw roleUnsupported(getVenue(id), "setup");
   if (id === null || !getVenue(id).roles.includes("trading")) {
     throw new PerpError("INVALID_PARAMS", `Unknown trading venue "${input}"`, {
       remediation: `Use one of: ${setupVenues().map(v => v.id).join(", ")}`,
@@ -993,6 +995,7 @@ export async function runNonInteractiveSetup(opts: SetupOpts): Promise<void> {
     let defaultVenue: VenueId | null = null;
     if (defaultRaw !== undefined) {
       const id = tryResolveVenueId(defaultRaw);
+      if (id !== null && getVenue(id).gatedRoles !== null && !getVenue(id).roles.includes("trading")) throw roleUnsupported(getVenue(id), "setup");
       if (id === null || !getVenue(id).roles.includes("trading")) {
         throw new PerpError("INVALID_PARAMS", `Invalid --default-venue "${defaultRaw}"`, {
           remediation: `Use one of: ${(venues.length > 0 ? venues : setupVenues().map(v => v.id)).join(", ")}`,

@@ -75,6 +75,7 @@ export const hyperliquidVenue: VenueDefinition = {
   settlementIntervalHours: 1,
   fundingVerified: true,
   roles: ["marketData", "account", "trading"],
+  gatedRoles: null,
   // marketOrder: IOC limit at a protection price. Declared reference
   // price = l2Book mid ((best bid + best ask) / 2) for native perps, HIP-3 and spot —
   // no runtime substitute; a one-sided/empty book → PRICE_STALE. Rounding: 5 significant

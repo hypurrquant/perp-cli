@@ -32,7 +32,7 @@ import {
   newVenueClientOrderId, unsupported, validateLegacyTif, validateOrderRequest, type TradingV2,
 } from "../trading-v2.js";
 import type { VenueCapabilities, VenueCreateContext, VenueDefinition } from "../venue.js";
-import { networkConfig, requireCapabilities } from "../venue.js";
+import { networkConfig, requireCapabilities, roleUnsupported } from "../venue.js";
 import {
   parseOrderRef, toLegacyMarketInfo, withExecution,
   type AmendRequest, type CancelResult, type LeverageResult, type Network, type OrderRef, type OrderRequest,
@@ -110,7 +110,6 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
   readonly aliases = ["rise"] as const;
   readonly venue: VenueDefinition;
   readonly network: Network;
-  private readonly caps: VenueCapabilities;
   private readonly client: RisexClient;
   private readonly deps: RisexAdapterDeps;
   private markets: { at: number; raw: RisexRawMarket[] } | null = null;
@@ -118,7 +117,6 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
   constructor(def: VenueDefinition, network: Network, deps: RisexAdapterDeps) {
     this.venue = def;
     this.network = network;
-    this.caps = requireCapabilities(def);
     this.client = new RisexClient(networkConfig(def, network).restUrl, def.rateLimit, `risex:${network}`);
     this.deps = deps;
   }
@@ -170,6 +168,15 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
 
   // ── Internals ──
 
+  /**
+   * Trading capabilities — also the adapter-level release gate: while the trading role is gated
+   * (risex-release.ts) this throws CAPABILITY_UNSUPPORTED before any validation, nonce or
+   * signature. Read paths never touch it, so the adapter still serves market data / account reads.
+   */
+  private get caps(): VenueCapabilities {
+    return requireCapabilities(this.venue);
+  }
+
   private requireAccount(): string {
     if (this.deps.account === null) {
       throw new PerpError("NO_SIGNER_AVAILABLE", "RISEx account reads need an account address: select a master wallet (perp wallet use <name> / --ows <name>) or register a signer", {
@@ -180,6 +187,7 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   private requireSigner(): { account: string; signer: EvmSigner } {
+    requireCapabilities(this.venue); // release gate first: refuses before the signer is looked at
     if (this.deps.signer === null) {
       throw this.deps.noSignerReason ?? new PerpError("AGENT_NOT_REGISTERED", "No RISEx trading signer", {
         exchange: "risex", remediation: "perp wallet agent approve risex --master <ows-wallet>",
@@ -257,6 +265,7 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
 
   /** Testnet faucet: 1000 test USDC, once per wallet (also registers the account). Refused on mainnet. */
   async testnetFaucet(): Promise<{ txHash: string | null }> {
+    requireCapabilities(this.venue); // a write (registers the account): gated with trading
     if (this.network !== "testnet") {
       throw unsupported(this.venue.displayName, "faucet", "the test-USDC faucet exists only on testnet", "Run with -n testnet");
     }
@@ -798,6 +807,7 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
 
   /** Bots / TWAP / grid / funding-arb legs stay off until RISEx trading is verified on mainnet. */
   automationGate(): PerpError {
+    if (!this.venue.roles.includes("trading")) return roleUnsupported(this.venue, "automation");
     return unsupported(this.venue.displayName, "automation", "unattended trading on RISEx is not enabled until its trading path is verified on mainnet (and it has no TP/SL yet)", "Trade RISEx manually with perp trade …");
   }
 }

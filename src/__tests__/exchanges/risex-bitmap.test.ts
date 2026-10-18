@@ -5,6 +5,8 @@
  * reader / HTTP; no network.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+// The RISEx trading code is shipped but switched off in 0.15.0 (read-only phase): enable it here.
+vi.mock("../../exchanges/venues/risex-release.js", () => ({ RISEX_TRADING_ENABLED: true }));
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

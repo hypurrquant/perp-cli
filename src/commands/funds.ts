@@ -910,8 +910,11 @@ export function registerFundsCommands(
     });
 
   supportsDryRun(faucet.command("risex"))
-    .description("[testnet tooling] Get the RISEx testnet faucet's 1000 test USDC (once per wallet; also registers the account; refused on mainnet; supports --dry-run)")
+    .description("[testnet tooling] Get the RISEx testnet faucet's 1000 test USDC (once per wallet; also registers the account; refused on mainnet; supports --dry-run). Refused while RISEx is read-only (trading in a later release)")
     .action(async () => {
+      // Gated with RISEx trading (read-only release): the faucet is a venue write.
+      const risexDef = getVenue("risex");
+      if (!risexDef.roles.includes("trading")) throw roleUnsupported(risexDef, "faucet");
       const network = getNetwork();
       if (network !== "testnet") {
         throw unsupported("RISEx", `the test-USDC faucet on ${network}`, "the faucet exists only on testnet", "Run on testnet: perp -n testnet funds faucet risex");
@@ -1464,7 +1467,7 @@ export function registerFundsCommands(
             qfex: { chain: "Arbitrum", token: "USDC", min: null, method: "address display only: perp funds deposit qfex, then send USDC from your wallet" },
             aster: { chain: "BNB Chain (default) / Arbitrum", token: "USDT (default) / USDC", min: null, gas: "BNB / Arbitrum ETH", method: "approve + vault depositFor(token, forAddress, amount, broker 1) (mainnet only)", command: "perp funds deposit aster <amount> [--chain bsc|arbitrum] [--asset USDT|USDC]" },
             ondo: { chain: "Arbitrum (default) / Ethereum", token: "USDC", min: null, gas: "ETH", method: "USDC transfer to the account's funding address (mainnet only)", command: "perp funds deposit ondo <amount> [--chain arbitrum|ethereum] [--probe <amount>]" },
-            risex: { supported: false, note: `${RISEX_FUNDS_APP_ONLY.reason} — ${RISEX_FUNDS_APP_ONLY.remediation}`, testnet: "perp -n testnet funds faucet risex (1000 test USDC, once)" },
+            risex: { supported: false, note: `${RISEX_FUNDS_APP_ONLY.reason} — ${RISEX_FUNDS_APP_ONLY.remediation}`, testnet: getVenue("risex").roles.includes("trading") ? "perp -n testnet funds faucet risex (1000 test USDC, once)" : null },
             txflow: { supported: false, note: "TxFlow is market data only in perp-cli (unofficial read-only API)" },
           },
           withdraw: {

@@ -100,6 +100,7 @@ export const ondoVenue: VenueDefinition = {
   settlementIntervalHours: 1,
   fundingVerified: true,
   roles: ["marketData", "account", "trading"],
+  gatedRoles: null,
   capabilities: {
     // The venue offers native market orders; the adapter sends every market order
     // as an IOC LIMIT at the tick-aligned protection price (mark ± resolved

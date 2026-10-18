@@ -55,6 +55,7 @@ export const pacificaVenue: VenueDefinition = {
   settlementIntervalHours: 1,
   fundingVerified: true,
   roles: ["marketData", "account", "trading"],
+  gatedRoles: null,
   capabilities: {
     marketOrder: "slippageBounded",
     timeInForce: ["GTC", "IOC", "ALO", "TOB"],

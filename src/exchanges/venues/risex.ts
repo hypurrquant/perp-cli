@@ -7,6 +7,10 @@
  * master and then restricts it ON-CHAIN to the trading permission (no fund movement), and keeps its
  * key in OWS wallet `agent-risex-<master>[-testnet]` (SSOT Rule #3).
  *
+ * RELEASE PHASE: trading is implemented but switched OFF in this release (risex-release.ts
+ * RISEX_TRADING_ENABLED). RISEx is read-only here — market data and public-by-address account
+ * reads; every trading / signer path refuses with CAPABILITY_UNSUPPORTED (RISEX_TRADING_GATE).
+ *
  * Deposits and withdrawals are app-only (owner decision 2026-10-13): `funds deposit|withdraw risex`
  * refuse with CAPABILITY_UNSUPPORTED and point to app.rise.trade. Account reads are public by
  * address. TP/SL and builder fees are not implemented yet.
@@ -14,13 +18,20 @@
  */
 
 import type { VenueDefinition, VenuePublicData } from "../venue.js";
+import { RISEX_TRADING_ENABLED } from "./risex-release.js";
 
 export const RISEX_APP_URL = "https://app.rise.trade";
 
 /** The uniform deposit / withdraw refusal (owner decision: funds move through the RISEx app only). */
 export const RISEX_FUNDS_APP_ONLY = {
   reason: "RISEx deposits and withdrawals are done in the RISEx app; perp-cli does not move RISEx funds",
-  remediation: `Deposit / withdraw at ${RISEX_APP_URL} (Portfolio → Deposit / Withdraw). perp-cli trades the funds once they are in your RISEx account`,
+  remediation: `Deposit / withdraw at ${RISEX_APP_URL} (Portfolio → Deposit / Withdraw). perp-cli reads RISEx market data and your account (read-only in this release)`,
+} as const;
+
+/** The uniform refusal for every RISEx trading / signer path while RISEX_TRADING_ENABLED is false. */
+export const RISEX_TRADING_GATE = {
+  reason: "RISEx trading is planned for a later perp-cli release; in this version RISEx is read-only (market data and account reads)",
+  remediation: `Trade RISEx in the RISEx app (${RISEX_APP_URL}). perp-cli shows RISEx market data (perp -e risex market list|prices|funding|book) and account reads (perp -e risex account balance|positions)`,
 } as const;
 
 const publicData: VenuePublicData = {
@@ -74,7 +85,11 @@ export const risexVenue: VenueDefinition = {
   // records of 6 mainnet accounts / 23 markets / 31 hours in
   // src/__tests__/fixtures/risex/funding-payments-evidence.json, checked by risex-evidence.test.ts.
   fundingVerified: true,
-  roles: ["marketData", "account", "trading"],
+  // Phase 1 (0.15.0): read-only. The trading role comes back with RISEX_TRADING_ENABLED (phase 2).
+  roles: RISEX_TRADING_ENABLED ? ["marketData", "account", "trading"] : ["marketData", "account"],
+  gatedRoles: RISEX_TRADING_ENABLED ? null : { roles: ["trading"], ...RISEX_TRADING_GATE },
+  // Describes the implemented trading path; unreachable while the trading role is gated
+  // (requireCapabilities() checks the role first).
   capabilities: {
     // Market = order_type Market + IOC with a price_ticks bound (the venue requires FOK/IOC).
     marketOrder: "slippageBounded",

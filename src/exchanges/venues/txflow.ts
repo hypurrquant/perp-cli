@@ -58,6 +58,7 @@ export const txflowVenue: VenueDefinition = {
   // the published value moves every tick (a live estimate, not a settled print).
   fundingVerified: false,
   roles: ["marketData"],
+  gatedRoles: null,
   capabilities: null,
   // No rate-limit headers are published; conservative.
   rateLimit: { capacity: 20, refillPerSec: 2, weights: null },

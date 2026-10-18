@@ -4,6 +4,15 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### RISEx: read-only in 0.15.0 (trading in a later release)
+
+- **Owner decision 2026-10-19 — new venues ship in phases:** phase 1 (this release) is read-only data for **RISEx** and **Derive** (options, see below); trading follows in a later release. RISEx is an official API (`apiStatus: "official"`) and counts as an official venue in `perp health`.
+- **Works:** RISEx market data (`perp -e risex market list|prices|info|book|trades|kline|funding`), hourly verified funding in `arb scan` / `arb scan --rates` / funding comparisons, `perp health`, MCP market-data tools, and account reads that need only the master address (`portfolio`, `account balance|positions|orders|history|trades|funding-history` — public by address, nothing is signed, no signer needed). `wallet agent verify risex` (an on-chain read) keeps working for signers registered by an earlier build.
+- **Shipped but disabled:** the RISEx trading path (EIP-712 session-signer permits, trading-only on-chain signer restriction, market / limit GTC·IOC·FOK·ALO, cancel, cancel-all, leverage, margin mode, `wallet agent approve|revoke risex`) is in the package with its tests, but switched off by one flag (`src/exchanges/venues/risex-release.ts` `RISEX_TRADING_ENABLED = false`, which removes RISEx's `trading` role). Every gated entry point refuses with `CAPABILITY_UNSUPPORTED` ("RISEx trading is planned for a later perp-cli release; in this version RISEx is read-only", remediation app.rise.trade) before any key is read or request is sent — **also under `--dry-run`**: `perp trade …` writes with `-e risex`, `trade multi` legs, `arb exec|auto` legs, bots / plans / TWAP / grid / DCA (automation gate), `wallet agent approve|import|revoke|rotate risex`, `perp setup --venues risex` / `--default-venue risex` (RISEx is no longer offered by setup), `funds faucet risex`, and the MCP `trade_preview` / `trade_execute` / `trade_close` tools (refused before any credential lookup). `arb scan --basis` lists trading venues only, so RISEx is not in it.
+- **Funds:** unchanged — deposits / withdrawals are done in the RISEx app (`funds deposit|withdraw risex` → `CAPABILITY_UNSUPPORTED`).
+- **Venue definitions:** new required field `VenueDefinition.gatedRoles` (roles implemented but switched off in this release, with the refusal reason / remediation; `null` on every other venue). `roleUnsupported()` uses it, so the phase refusal is uniform everywhere.
+- No WebSocket codec for RISEx: `perp-cli/ws` is unchanged (RISEx is not a WS venue).
+
 ### FIX: Ondo Perps market reads broke on a new "Pre-IPO" tag
 
 - Ondo listed `OPENAI-USD.P` with the tag `Pre-IPO` (2026-10-19). The tag was unmapped, so every Ondo market read (`market list`, funding, `perp health`) failed with `EXCHANGE_ERROR` "cannot classify". `Pre-IPO` now maps to the existing `preIpo` asset class (explicit-only canonical symbol, never matched across venues by ticker). Unknown tags still fail visibly.

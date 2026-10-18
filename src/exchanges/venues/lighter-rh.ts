@@ -31,6 +31,7 @@ export const lighterRhVenue: VenueDefinition = {
   settlementIntervalHours: 1,
   fundingVerified: true,
   roles: ["marketData", "account", "trading"],
+  gatedRoles: null,
   capabilities: LIGHTER_RH_CAPABILITIES,
   // Applied by the rate limiter (new venues + lighter-rh).
   rateLimit: LIGHTER_RH_RATE_LIMIT,

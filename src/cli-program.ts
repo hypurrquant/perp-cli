@@ -7,7 +7,7 @@ import { cliCredentialOptsFrom, hasCredentials, resolveCredentials, type CliCred
 import { PacificaAdapter } from "./exchanges/pacifica.js";
 import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
 import type { ExchangeAdapter } from "./exchanges/interface.js";
-import { getVenue, listVenues, resolveVenueId, roleUnsupported, READ_ONLY_CREDENTIALS, type VenueDefinition } from "./exchanges/venue.js";
+import { getVenue, listVenues, resolveVenueId, roleUnsupported, tryResolveVenueId, READ_ONLY_CREDENTIALS, type VenueDefinition } from "./exchanges/venue.js";
 import { registerAdapterNetwork } from "./exchanges/adapter-network.js";
 import "./exchanges/venues/index.js";
 import type { Network as VenueNetwork, VenueId } from "./exchanges/venue-types.js";
@@ -342,6 +342,9 @@ export function buildProgram(opts: { defaultExchange: string; version: string })
 
   // Switch shared API URLs if --network testnet is used
 
+  // A venue without the trading role (market-data-only TxFlow, release-gated RISEx) refuses every
+  // trading command before anything else — also under --dry-run, whose plans skip the adapter.
+  program.hook("preAction", (_root, actionCommand) => assertCommandVenueRole(actionCommand, program.opts().exchange as string));
   // Validates -n and enforces default-deny --dry-run before any action runs.
   installDryRunGuard(program);
   // Secrets on argv (review L10): -k is rejected outright; --passphrase still works but warns loudly.
@@ -355,6 +358,39 @@ export function buildProgram(opts: { defaultExchange: string; version: string })
   program.hook("preAction", () => setQuarantineNetwork(networkOf(program)));
 
   return { program, getAdapterForExchange, isJson };
+}
+
+/** `perp trade <leaf>` commands that only read (order status, fills, P&L tracking, spot reads). */
+const TRADE_READ_COMMANDS = new Set(["status", "fills", "pnl-track", "spot-orders", "spot-balance"]);
+
+/**
+ * The trading-role gate at command resolution: `perp -e <venue> trade <write>`, every
+ * `perp trade multi <venue>:…` leg and `perp wallet agent approve|import|revoke|rotate <venue>`
+ * refuse with roleUnsupported() (CAPABILITY_UNSUPPORTED) when the venue has no trading role. Runs
+ * before the dry-run guard and before any action, so a dry-run plan can never present a gated
+ * venue as tradable. Unknown venue names are left to the command's own UNKNOWN_VENUE handling.
+ */
+export function assertCommandVenueRole(actionCommand: Command, exchangeOpt: string): void {
+  const path = commandPath(actionCommand).split(" ");
+  const leaf = path[path.length - 1];
+  let venueArgs: string[];
+  let feature: string;
+  if (leaf === "multi" && (path[0] === "trade" || path.length === 1)) {
+    venueArgs = actionCommand.args.map(leg => leg.split(":")[0]);
+    feature = "trading";
+  } else if (path[0] === "trade" && path.length === 2 && !TRADE_READ_COMMANDS.has(leaf)) {
+    venueArgs = [exchangeOpt];
+    feature = "trading";
+  } else if (path[0] === "wallet" && path[1] === "agent" && ["approve", "import", "revoke", "rotate"].includes(path[2] ?? "")) {
+    venueArgs = actionCommand.args.slice(0, 1);
+    feature = path[2] === "import" ? "agentImport" : `agent ${path[2]}`;
+  } else {
+    return;
+  }
+  for (const v of venueArgs) {
+    const id = tryResolveVenueId(v);
+    if (id !== null && !getVenue(id).roles.includes("trading")) throw roleUnsupported(getVenue(id), feature);
+  }
 }
 
 /** `perp a b c` path of a command (root name excluded). */
