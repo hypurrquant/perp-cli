@@ -33,6 +33,7 @@ function makeAdapter(name = "pacifica") {
   const sdk = {
     getInfo: vi.fn().mockResolvedValue(INFO),
     getPrices: vi.fn().mockResolvedValue(PRICES),
+    awaitBatchCapacity: vi.fn().mockResolvedValue(undefined),
     signBatchAction: vi.fn(async (_t: string, p: Record<string, unknown>) => {
       symbolOf.set(String(p.client_order_id), String(p.symbol));
       return { account: "ACCT", signature: "SIG", timestamp: 1, expiry_window: 5000, ...p };

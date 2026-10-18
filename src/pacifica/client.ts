@@ -32,6 +32,7 @@ import type {
   WithdrawParams,
   TransferFundsParams,
   BatchAction,
+  BatchActionType,
   CreateLakeParams,
   LakeDepositParams,
   LakeWithdrawParams,
@@ -67,6 +68,17 @@ const READ_OPERATIONS: ReadonlySet<string> = new Set(["list_subaccounts", "list_
 function writeNeed(cancel: boolean, maxWaitMs: number): RateNeed {
   const cost = cancel ? PACIFICA_COST_CANCEL : PACIFICA_COST_STANDARD;
   return { cost, reserve: 0, maxWaitMs };
+}
+
+/**
+ * Credits ×10 reserved for one POST /orders/batch. The docs (api/rate-limits "Credit Costs") price
+ * a "Standard request/action" at 1 credit and an "Order cancellation" at 0.5 and say nothing
+ * batch-specific (batch-order page: no cost); every action is individually signed and processed,
+ * so the batch is reserved per ACTION — the conservative reading (over-reserving only throttles
+ * earlier; the venue's ratelimit headers on the response settle the real count).
+ */
+export function pacificaBatchCost(types: readonly BatchActionType[]): number {
+  return types.reduce((a, t) => a + (t === "Cancel" || t === "CancelStopOrder" ? PACIFICA_COST_CANCEL : PACIFICA_COST_STANDARD), 0);
 }
 
 export interface PacificaClientConfig {
@@ -174,11 +186,11 @@ export class PacificaClient {
    * (nothing sent). A write needs only its own cost, never the read reserve. A fetch timeout (PACIFICA_POST_TIMEOUT_MS) on a write is ORDER_PENDING too;
  * on a listing read a timeout is TIMEOUT and any other transport failure EXCHANGE_UNREACHABLE.
    */
-  private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  private async post<T>(path: string, body: Record<string, unknown>, needOverride?: RateNeed): Promise<T> {
     const write = !READ_POST_PATHS.has(path);
     const what = `POST ${path}`;
     const remediation = `Do NOT resubmit — the request may have been executed. Check open orders, positions and balances first: perp -e pacifica account orders / portfolio`;
-    const ticket: RateTicket = await this.signedRate.acquire(what, write
+    const ticket: RateTicket = await this.signedRate.acquire(what, needOverride !== undefined ? needOverride : write
       ? writeNeed(CANCEL_POST_PATHS.has(path), PACIFICA_SIGNED_MAX_WAIT_MS)
       : { ...PACIFICA_READ_NEED, maxWaitMs: PACIFICA_SIGNED_MAX_WAIT_MS });
     try {
@@ -695,8 +707,24 @@ export class PacificaClient {
 
   // ==================== BATCH ====================
 
-  async batchOrders(actions: BatchAction[]): Promise<unknown> {
-    return this.post("/orders/batch", { actions });
+  /**
+   * POST /orders/batch with the per-action cost (pacificaBatchCost) reserved. `maxWaitMs` caps the
+   * post-sign throttle wait (default PACIFICA_SIGNED_MAX_WAIT_MS, never more): a caller with a
+   * tighter signature deadline passes what is left of it, so a wait can never send an expired batch
+   * — a longer wait fails fast with RATE_LIMITED (sent: false, nothing sent).
+   */
+  async batchOrders(actions: BatchAction[], opts: { maxWaitMs?: number } = {}): Promise<unknown> {
+    const maxWaitMs = Math.max(0, Math.min(opts.maxWaitMs !== undefined ? opts.maxWaitMs : PACIFICA_SIGNED_MAX_WAIT_MS, PACIFICA_SIGNED_MAX_WAIT_MS));
+    return this.post("/orders/batch", { actions }, { cost: pacificaBatchCost(actions.map(a => a.type)), reserve: 0, maxWaitMs });
+  }
+
+  /**
+   * Pre-sign throttle for a batch (like signedBody does for single writes): wait — up to
+   * PACIFICA_MAX_THROTTLE_WAIT_MS, else RATE_LIMITED with nothing signed or sent — until the
+   * batch's whole cost fits, so the post-sign acquire in batchOrders normally finds the credits.
+   */
+  async awaitBatchCapacity(types: readonly BatchActionType[]): Promise<void> {
+    await this.signedRate.awaitCapacity("POST /orders/batch", { cost: pacificaBatchCost(types), reserve: 0, maxWaitMs: PACIFICA_MAX_THROTTLE_WAIT_MS });
   }
 
   /**

@@ -368,6 +368,46 @@ describe("executeAtomic — real Ed25519 signing, one POST, unknown outcome neve
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("rate limit: waits for the whole batch's capacity BEFORE signing; the post-sign wait gets only what is left of the guard", async () => {
+    const { adapter, legs, payloads } = await setup();
+    let t = 5_000_000;
+    const capacity = vi.spyOn(adapter.sdk, "awaitBatchCapacity");
+    const sign = vi.spyOn(adapter.sdk, "signBatchAction").mockImplementation(async (_type, p, account, _s, header) => { t += 1_500; return { account, signature: "S", ...header, ...p }; });
+    const batch = vi.spyOn(adapter.sdk, "batchOrders").mockResolvedValue({ success: true, data: { results: [{ success: true, order_id: 1, error: null }, { success: true, order_id: 2, error: null }] } });
+    await executeAtomic(adapter, legs, payloads, { now: () => t, sleep: async () => {} });
+    expect(capacity).toHaveBeenCalledWith(["CreateMarket", "CreateMarket"]);
+    expect(capacity.mock.invocationCallOrder[0]).toBeLessThan(sign.mock.invocationCallOrder[0]);
+    // 3,000 ms of signing → 5,000 − 1,500 − 3,000 = 500 ms left for any post-sign wait.
+    expect(batch.mock.calls[0][1]).toEqual({ maxWaitMs: 500 });
+  });
+
+  it("rate limit: pre-sign RATE_LIMITED → nothing signed or sent", async () => {
+    const { adapter, legs, payloads } = await setup();
+    const { PerpError: E } = await import("../../errors.js");
+    vi.spyOn(adapter.sdk, "awaitBatchCapacity").mockRejectedValue(new E("RATE_LIMITED", "credits exhausted", { exchange: "pacifica", sent: false }));
+    const sign = vi.spyOn(adapter.sdk, "signBatchAction");
+    await expect(executeAtomic(adapter, legs, payloads, fastDeps())).rejects.toMatchObject({ structured: { code: "RATE_LIMITED", details: { sent: false } } });
+    expect(sign).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("rate limit: credits taken by another process after the pre-sign wait → the bounded post-sign wait refuses (RATE_LIMITED, not sent) instead of sending past expiry", async () => {
+    const { legs, payloads } = await setup();
+    const { pacificaRateLimiter, resetPacificaRateLimiters } = await import("../../pacifica/rate-limit.js");
+    resetPacificaRateLimiters();
+    const fresh = new (await import("../../exchanges/pacifica.js")).PacificaAdapter(Keypair.generate(), "mainnet");
+    vi.spyOn(fresh.sdk, "awaitBatchCapacity").mockResolvedValue(undefined);
+    let t = 7_000_000;
+    vi.spyOn(fresh.sdk, "signBatchAction").mockImplementation(async (_type, p, account, _s, header) => {
+      t += 1_700; // 3,400 ms in total → 100 ms left
+      pacificaRateLimiter("https://api.pacifica.fi/api/v1", undefined, "signed").observe(new Response(null, { headers: { ratelimit: '"credits";r=5;t=0', "ratelimit-policy": '"credits";q=1000;w=60' } }));
+      return { account, signature: "S", ...header, ...p };
+    });
+    await expect(executeAtomic(fresh, legs, payloads, { now: () => t, sleep: async () => {} })).rejects.toMatchObject({ structured: { code: "RATE_LIMITED", details: { sent: false } } });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    resetPacificaRateLimiters();
+  });
+
   it("HTTP 500 after sending → ORDER_PENDING; the batch is sent exactly once and no fill is read", async () => {
     const { adapter, resolve, byCloid, legs, payloads } = await setup();
     fetchSpy.mockResolvedValue(new Response("boom", { status: 500 }));

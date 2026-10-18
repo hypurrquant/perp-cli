@@ -451,7 +451,8 @@ export async function resolveAtomicLegOrderId(adapter: Pick<PacificaAdapter, "or
 }
 
 /**
- * Sign every leg (create_market_order) with ONE shared timestamp, send them in ONE batch, then
+ * Wait for rate-limit capacity, sign every leg (create_market_order) with ONE shared timestamp,
+ * send them in ONE batch (the post-sign throttle wait bounded by the signature deadline), then
  * read each accepted leg's fill back (in parallel — reads only). Signing failures and a signature
  * that would expire within ATOMIC_EXPIRY_MARGIN_MS (a slow signer) stop before anything is sent
  * (ORDER_REJECTED). Returns the per-leg outcomes; the caller decides with atomicIncompleteError.
@@ -466,6 +467,9 @@ export async function executeAtomic(
     throw new PerpError("INVALID_PARAMS", `Atomic basket must have 1..${PACIFICA_BATCH_MAX_ACTIONS} legs (got ${legs.length})`);
   }
   adapter.prepareSigning();
+  // Rate-limit wait BEFORE signing (up to 15 s; RATE_LIMITED = nothing signed or sent), for the
+  // whole batch's per-action cost — a wait after signing would eat the signature window.
+  await adapter.sdk.awaitBatchCapacity(payloads.map(() => ATOMIC_LEG_ACTION_TYPE));
   const header = { timestamp: deps.now(), expiry_window: DEFAULT_EXPIRY_WINDOW };
   const actions: BatchAction[] = [];
   for (const p of payloads) {
@@ -477,9 +481,12 @@ export async function executeAtomic(
       exchange: "pacifica", sent: false, remediation: "Nothing was sent. Retry; if the signer is slow (hardware / remote wallet), use fewer legs",
     });
   }
+  // The post-sign throttle may wait only for what is left before the guard margin: a longer wait
+  // fails fast (RATE_LIMITED, sent: false) instead of sending a batch past its expiry.
+  const leftMs = header.expiry_window - ATOMIC_EXPIRY_MARGIN_MS - elapsed;
   let raw: unknown;
   try {
-    raw = await adapter.sdk.batchOrders(actions);
+    raw = await adapter.sdk.batchOrders(actions, { maxWaitMs: leftMs });
   } catch (e) {
     throw atomicBatchError(e);
   }
