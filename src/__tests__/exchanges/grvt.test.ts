@@ -14,9 +14,10 @@ import { PerpError } from "../../errors.js";
 import { getVenue, resolveVenueId, requireCapabilities } from "../../exchanges/venue.js";
 import { GrvtClient } from "../../exchanges/grvt/client.js";
 import {
-  fetchGrvtFundingRates, fetchGrvtMarkets, grvtPercentToFraction, resolveGrvtMarket, toGrvtLeverage, toGrvtMarketMeta, toGrvtTicker,
-  type GrvtMarketMeta,
+  clearGrvtCaches, fetchGrvtFundingRates, fetchGrvtMarkets, grvtPercentToFraction, grvtPublicData, resolveGrvtMarket, toGrvtLeverage,
+  toGrvtMarketMeta, toGrvtTicker, GRVT_SHORT_TTL_MS, type GrvtMarketMeta,
 } from "../../exchanges/grvt/public.js";
+import { startJob } from "../../jobs.js";
 import { GrvtPublicAdapter } from "../../exchanges/grvt/adapter.js";
 import { GRVT_OTHER_RATE_LIMIT, GRVT_READ_ONLY_REMEDIATION, GRVT_TICKER_RATE_LIMIT } from "../../exchanges/venues/grvt.js";
 import { probeVenueHealth } from "../../venue-health.js";
@@ -35,13 +36,15 @@ function jsonResponse(status: number, body: unknown, headers: Record<string, str
 }
 
 /** Routes POST /full/v1/<endpoint> to the recorded fixtures. */
-function routeFixtures(overrides: { ticker?: (instrument: string) => unknown } = {}) {
+function routeFixtures(overrides: { ticker?: (instrument: string) => unknown; tickerStatus?: (instrument: string) => number | null; kline?: (body: Record<string, unknown>) => unknown } = {}) {
   return async (url: string, init?: RequestInit): Promise<Response> => {
     const endpoint = url.split("/full/v1/")[1];
     const body = JSON.parse(String(init?.body ?? "{}")) as { instrument?: string };
     switch (endpoint) {
       case "instruments": return jsonResponse(200, INSTRUMENTS);
       case "ticker": {
+        const status = overrides.tickerStatus?.(body.instrument!) ?? null;
+        if (status !== null) return jsonResponse(status, { code: status === 429 ? 1006 : 1002, message: "fail", status });
         const t = overrides.ticker?.(body.instrument!) ?? TICKERS[body.instrument!];
         return t === undefined ? jsonResponse(400, { code: 1003, message: "Request could not be processed due to malformed syntax", status: 400 }) : jsonResponse(200, t);
       }
@@ -49,7 +52,7 @@ function routeFixtures(overrides: { ticker?: (instrument: string) => unknown } =
       case "book": return jsonResponse(200, fx("book-btc.json"));
       case "trade": return jsonResponse(200, fx("trades-btc.json"));
       case "funding": return jsonResponse(200, fx(body.instrument === "SAMSUNG_USDT_Perp" ? "funding-samsung.json" : "funding-btc.json"));
-      case "kline": return jsonResponse(200, fx("kline-btc-1h.json"));
+      case "kline": return jsonResponse(200, overrides.kline?.(body as Record<string, unknown>) ?? fx("kline-btc-1h.json"));
       default: throw new Error(`unexpected endpoint ${endpoint}`);
     }
   };
@@ -57,6 +60,7 @@ function routeFixtures(overrides: { ticker?: (instrument: string) => unknown } =
 
 let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
+  clearGrvtCaches();
   fetchMock = vi.fn(async (url: string) => { throw new Error(`unexpected network call: ${url}`); });
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -194,7 +198,7 @@ describe("funding semantics and units", () => {
     }));
     const rows = await fetchGrvtFundingRates("mainnet", { warn: () => undefined });
     expect(rows.map(r => r.symbol)).not.toContain("ETH");
-    const markets = await fetchGrvtMarkets("mainnet", { warn: () => undefined });
+    const markets = await fetchGrvtMarkets("mainnet", { leverage: true }, { warn: () => undefined });
     expect(bySymbol(markets, "ETH").fundingRate).toBeNull();
   });
 });
@@ -202,7 +206,7 @@ describe("funding semantics and units", () => {
 describe("markets (recorded fixtures)", () => {
   it("mark / index / last / bid / ask / OI / 24 h volume, leverage from margin rules, null where unpublished", async () => {
     fetchMock.mockImplementation(routeFixtures());
-    const markets = await fetchGrvtMarkets("mainnet", { warn: () => undefined });
+    const markets = await fetchGrvtMarkets("mainnet", { leverage: true }, { warn: () => undefined });
     const btc = bySymbol(markets, "BTC");
     expect(btc).toMatchObject({
       venue: "grvt", venueSymbol: "BTC_USDT_Perp", quoteAsset: "USDT", settle: "USDT",
@@ -230,7 +234,7 @@ describe("markets (recorded fixtures)", () => {
     expect(toGrvtTicker({ mark_price: "1", best_bid_price: "" }).bestBid).toBeNull();
     fetchMock.mockImplementation(routeFixtures({ ticker: i => (i === "SPY_USDT_Perp" ? { result: { instrument: i } } : undefined) }));
     const warn = vi.fn();
-    const markets = await fetchGrvtMarkets("mainnet", { warn });
+    const markets = await fetchGrvtMarkets("mainnet", { leverage: true }, { warn });
     expect(markets.map(m => m.symbol)).not.toContain("SPY");
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("without a mark price are not shown: SPY"));
   });
@@ -288,6 +292,36 @@ describe("public-only adapter", () => {
     expect(JSON.parse(String((bookCall[1] as RequestInit).body))).toEqual({ instrument: "BTC_USDT_Perp", depth: 50 });
   });
 
+  it("orderbook is sliced to the requested depth (GRVT serves 10 / 50 / 100 / 500)", async () => {
+    fetchMock.mockImplementation(routeFixtures());
+    const book = await adapter().getOrderbook("BTC", 5);
+    expect(book.bids).toHaveLength(5);
+    expect(book.asks).toHaveLength(5);
+    const bookCall = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/book"))!;
+    expect(JSON.parse(String((bookCall[1] as RequestInit).body))).toMatchObject({ depth: 10 });
+  });
+
+  it("klines follow the `next` cursor past a full 1000-bar page; a cap warns", async () => {
+    const bar = (t: number) => ({ open_time: `${t}000000`, close_time: `${t + 59_999}000000`, open: "1", close: "1", high: "1", low: "1", volume_b: "1", volume_q: "1", trades: 1, instrument: "BTC_USDT_Perp" });
+    const page = (from: number, n: number) => Array.from({ length: n }, (_, i) => bar(from - i * 60_000));
+    const bodies: Array<Record<string, unknown>> = [];
+    fetchMock.mockImplementation(routeFixtures({
+      kline: b => {
+        bodies.push(b);
+        return b.cursor === undefined ? { result: page(1_800_000_000_000, 1000), next: "c1" } : { result: page(1_800_000_000_000 - 1000 * 60_000, 3), next: "c2" };
+      },
+    }));
+    const k = await adapter().getKlines("BTC", "1m", 0, 1_800_000_000_000);
+    expect(k).toHaveLength(1003);
+    expect(bodies.map(b => b.cursor)).toEqual([undefined, "c1"]);
+    expect(k[0].time).toBeLessThan(k[k.length - 1].time);
+
+    const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    fetchMock.mockImplementation(routeFixtures({ kline: () => ({ result: page(1_800_000_000_000, 1000), next: "again" }) }));
+    expect(await adapter().getKlines("BTC", "1m", 0, 1_800_000_000_000)).toHaveLength(10_000);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("stopped after 10000 bars"));
+  });
+
   it("recent trades: taker side, ns → ms, no fee", async () => {
     fetchMock.mockImplementation(routeFixtures());
     const trades = await adapter().getRecentTrades("btc", 3);
@@ -340,6 +374,142 @@ describe("public-only adapter", () => {
   });
 });
 
+const endpointsCalled = (): string[] => fetchMock.mock.calls.map(([u]) => String(u).split("/full/v1/")[1]);
+const countOf = (e: string): number => endpointsCalled().filter(x => x === e).length;
+
+describe("request budget", () => {
+  it("price mode (registry path: MCP get_prices / market://prices): instruments + tickers once, then reused; never margin_rules", async () => {
+    fetchMock.mockImplementation(routeFixtures());
+    for (let i = 0; i < 3; i++) expect(await grvtPublicData.fetchMarkets("mainnet")).toHaveLength(9);
+    expect(countOf("instruments")).toBe(1);
+    expect(countOf("ticker")).toBe(9);
+    expect(countOf("margin_rules")).toBe(0);
+    expect((await grvtPublicData.fetchMarkets("mainnet")).every(m => m.maxLeverage === null)).toBe(true);
+  });
+
+  it("after the short TTL the tickers are read again", async () => {
+    fetchMock.mockImplementation(routeFixtures());
+    const t0 = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(t0);
+    await grvtPublicData.fetchFundingRates("mainnet");
+    now.mockReturnValue(t0 + GRVT_SHORT_TTL_MS + 1);
+    await grvtPublicData.fetchFundingRates("mainnet");
+    expect(countOf("instruments")).toBe(2);
+    expect(countOf("ticker")).toBe(18);
+  });
+
+  it("market list fetches margin_rules once; they come from the long-lived cache afterwards", async () => {
+    fetchMock.mockImplementation(routeFixtures());
+    const t0 = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(t0);
+    const a = new GrvtPublicAdapter(getVenue("grvt"), "mainnet");
+    expect(bySymbol(await a.getMarkets(), "BTC").maxLeverage).toBe(50);
+    now.mockReturnValue(t0 + GRVT_SHORT_TTL_MS + 1); // in-process tickers expired, margin cache (6 h) not
+    expect(bySymbol(await a.getMarkets(), "BTC").maxLeverage).toBe(50);
+    expect(countOf("margin_rules")).toBe(9);
+    expect(countOf("ticker")).toBe(18);
+  });
+
+  it("market info <sym>: the directory, ONE ticker and ONE margin_rules read", async () => {
+    fetchMock.mockImplementation(routeFixtures());
+    const info = await new GrvtPublicAdapter(getVenue("grvt"), "mainnet").getMarketInfo("btc");
+    expect(info).toMatchObject({ symbol: "BTC", markPrice: "81129.562093259", maxLeverage: 50, fundingHours: 8, fundingRateKind: "predicted" });
+    expect(endpointsCalled()).toEqual(["instruments", "ticker", "margin_rules"]);
+    await expect(new GrvtPublicAdapter(getVenue("grvt"), "mainnet").getMarketInfo("NOPE")).rejects.toMatchObject({ structured: { code: "SYMBOL_NOT_FOUND" } });
+    expect(endpointsCalled()).toEqual(["instruments", "ticker", "margin_rules"]);
+  });
+
+  it("CLI `market info BTC -e grvt` takes the single-market path", async () => {
+    fetchMock.mockImplementation(routeFixtures());
+    const out: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((m) => { out.push(String(m)); });
+    vi.spyOn(process.stdout, "write").mockImplementation((m) => { out.push(String(m)); return true; });
+    const { program } = buildProgram({ defaultExchange: "hyperliquid", version: "test" });
+    await program.parseAsync(["node", "perp", "--json", "-e", "grvt", "market", "info", "BTC"]);
+    vi.restoreAllMocks();
+    const env = JSON.parse(out.join("").trim()) as { ok: boolean; data: { symbol: string; maxLeverage: number } };
+    expect(env).toMatchObject({ ok: true, data: { symbol: "BTC", maxLeverage: 50 } });
+    expect(endpointsCalled()).toEqual(["instruments", "ticker", "margin_rules"]);
+  });
+});
+
+describe("per-market failure isolation", () => {
+  it("a failed ticker drops only that market, with a warning naming it", async () => {
+    fetchMock.mockImplementation(routeFixtures({ tickerStatus: i => (i === "ETH_USDT_Perp" ? 500 : null) }));
+    const warn = vi.fn();
+    const rows = await fetchGrvtFundingRates("mainnet", { warn });
+    expect(rows.map(r => r.symbol)).not.toContain("ETH");
+    expect(rows).toHaveLength(8);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/1 market\(s\) whose ticker could not be read are not shown: ETH \(GRVT ticker: HTTP 500/));
+  });
+
+  it("every ticker failing fails the venue with the first error", async () => {
+    fetchMock.mockImplementation(routeFixtures({ tickerStatus: () => 500 }));
+    await expect(fetchGrvtFundingRates("mainnet", { warn: () => undefined })).rejects.toMatchObject({ structured: { code: "EXCHANGE_UNREACHABLE" } });
+  });
+
+  it("RATE_LIMITED fails the venue and stops the remaining workers", async () => {
+    // 184 live markets: the first 429 stops the fan-out long before all of them are asked.
+    let tickers = 0;
+    const all = fx<{ result: unknown[] }>("instruments-all.json");
+    const route = routeFixtures({ tickerStatus: () => 429 });
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/instruments")) return jsonResponse(200, all);
+      if (String(url).endsWith("/ticker")) tickers++;
+      return route(url, init);
+    });
+    await expect(fetchGrvtFundingRates("mainnet", { warn: () => undefined })).rejects.toMatchObject({ structured: { code: "RATE_LIMITED" } });
+    expect(tickers).toBeLessThanOrEqual(8); // at most one request per worker in flight
+  });
+
+  it("a failed margin_rules read leaves that market's leverage unknown (null, warned, not cached)", async () => {
+    const route = routeFixtures();
+    let failBtc = true;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/margin_rules") && failBtc && String(init?.body).includes("BTC_USDT_Perp")) {
+        return jsonResponse(500, { code: 1002, message: "Internal Server Error", status: 500 });
+      }
+      return route(url, init);
+    });
+    const warn = vi.fn();
+    const first = await fetchGrvtMarkets("mainnet", { leverage: true }, { warn });
+    expect(bySymbol(first, "BTC")).toMatchObject({ maxLeverage: null, marginTiers: null });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("margin rules unreadable for 1 market(s) — max leverage unknown: BTC_USDT_Perp"));
+    failBtc = false;
+    const second = await fetchGrvtMarkets("mainnet", { leverage: true }, { warn });
+    expect(bySymbol(second, "BTC").maxLeverage).toBe(50);
+    expect(countOf("margin_rules")).toBe(10); // 9, then only BTC again
+  });
+});
+
+describe("equity whitelist (full live list, instruments-all.json 2026-10-19)", () => {
+  it("classifies every live EQUITY market without an unreviewed warning", () => {
+    const all = fx<{ result: Array<Record<string, unknown>> }>("instruments-all.json").result;
+    expect(all).toHaveLength(184);
+    const warn = vi.fn();
+    const dir = all.map(r => toGrvtMarketMeta(r, warn)).filter((m): m is GrvtMarketMeta => m !== null);
+    expect(dir).toHaveLength(184);
+    expect(warn).not.toHaveBeenCalled();
+    const equities = dir.filter((_, i) => all[i].asset_class === "EQUITY");
+    expect(equities).toHaveLength(98);
+    const nullCanon = equities.filter(m => m.canonical === null).map(m => m.symbol).sort();
+    expect(nullCanon).toEqual(["ANTHROPIC", "BBX", "BRKB", "CBRS", "DRAM", "KSTR", "OPENAI", "PAYP", "QNTX", "SAMSUNGEM", "SKHY", "SPACEX", "STXX"]);
+    for (const m of equities) if (m.canonical !== null) expect(m.canonical).toBe(m.symbol);
+    expect(equities.filter(m => m.assetClass === "preIpo").map(m => m.symbol).sort()).toEqual(["ANTHROPIC", "OPENAI", "SPACEX"]);
+    expect(equities.filter(m => m.assetClass === "etf")).toHaveLength(15);
+  });
+
+  it("a new, unreviewed EQUITY ticker is explicit-only (canonical null) and warned once", () => {
+    const btc = INSTRUMENTS.result.find(r => r.instrument === "BTC_USDT_Perp")!;
+    const warn = vi.fn();
+    const row = { ...btc, instrument: "NEWIPO_USDT_Perp", base: "NEWIPO", asset_class: "EQUITY" };
+    expect(toGrvtMarketMeta(row, warn)).toMatchObject({ symbol: "NEWIPO", assetClass: "equity", canonical: null });
+    toGrvtMarketMeta(row, warn);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("NEWIPO: equity market not yet reviewed"));
+  });
+});
+
 describe("health", () => {
   it("GRVT is probed with one instrument read and counted as an official venue", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { result: {} }));
@@ -348,6 +518,21 @@ describe("health", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0][0])).toBe("https://market-data.grvt.io/full/v1/instrument");
     expect(h.skipped).toEqual([]);
+  });
+});
+
+describe("background jobs", () => {
+  it("startJob refuses grvt / grv (venue or exchange) through the registry role check", () => {
+    const base = { strategy: "twap", exchange: "grvt", network: "mainnet" as const, dryRun: false, params: {}, cliArgs: [], selectors: { ows: null, wallet: null, noAgent: false, dex: null, noBuilder: false } };
+    for (const o of [base, { ...base, exchange: "hyperliquid", venue: "GRV" }]) {
+      try {
+        startJob(o as never);
+        throw new Error("not refused");
+      } catch (e) {
+        expect((e as PerpError).structured).toMatchObject({ code: "CAPABILITY_UNSUPPORTED", remediation: GRVT_READ_ONLY_REMEDIATION });
+        expect((e as Error).message).toMatch(/^Background job "twap" refused: GRVT has no trading in perp-cli — /);
+      }
+    }
   });
 });
 

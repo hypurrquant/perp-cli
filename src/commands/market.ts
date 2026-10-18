@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import type { ExchangeAdapter } from "../exchanges/index.js";
-import { tapeSkippedOf, type CurrentFundingTerms, type RfqQuotes } from "../exchanges/interface.js";
+import { tapeSkippedOf, type CurrentFundingTerms, type ExchangeMarketInfo, type RfqQuotes } from "../exchanges/interface.js";
 import { makeTable, formatUsd, formatPercent, printJson, jsonOk, jsonError, withJsonErrors, normalizeSymbolArg } from "../utils.js";
 import chalk from "chalk";
 import { PerpError } from "../errors.js";
@@ -17,7 +17,7 @@ const usdOrDash = (v: string | null): string => (v === null ? chalk.gray("-") : 
 
 /**
  * Funding cell. On a venue whose funding interval is per market (VenueDefinition.fundingRateBasis
- * "perMarket": Variational, Aster) the raw rate is labelled with its interval ("+0.0079%/8h"), since
+ * "perMarket": Variational, Aster, GRVT) the raw rate is labelled with its interval ("+0.0079%/8h"), since
  * the rows of one table cover different periods.
  */
 function fundingCell(m: { fundingRate: string | null; fundingHours?: number | null }, perMarket: boolean): string {
@@ -266,6 +266,16 @@ export function registerMarketCommands(
     .description("Detailed info for a single market")
     .action(async (symbol: string) => {
       const adapter = await getAdapter();
+      // A venue that serves one market directly (GRVT: one ticker + one margin-rules read instead
+      // of the whole fan-out) answers here; SYMBOL_NOT_FOUND comes from its own directory.
+      const single = (adapter as { getMarketInfo?: (s: string) => Promise<ExchangeMarketInfo> }).getMarketInfo;
+      if (typeof single === "function") {
+        return void await withJsonErrors(isJson(), async () => {
+          const one = await single.call(adapter, symbol);
+          if (isJson()) return printJson(jsonOk(one));
+          printMarketInfo(adapter.name, one);
+        });
+      }
       const markets = await adapter.getMarkets();
       const sym = symbol.toUpperCase();
       const m = markets.find(
@@ -288,15 +298,7 @@ export function registerMarketCommands(
         });
       }
       if (isJson()) return printJson(jsonOk(m));
-
-      console.log(chalk.cyan.bold(`\n  ${m.symbol} on ${adapter.name}\n`));
-      console.log(`  Mark Price:     $${formatUsd(m.markPrice)}`);
-      console.log(`  Index Price:    ${usdOrDash(m.indexPrice)}`);
-      console.log(`  Funding Rate:   ${m.fundingRate != null ? formatPercent(m.fundingRate) : chalk.gray("N/A")}`);
-      console.log(`  24h Volume:     ${usdOrDash(m.volume24h)}`);
-      console.log(`  Open Interest:  ${formatOpenInterest(m, true)}`);
-      console.log(`  Max Leverage:   ${m.maxLeverage === null ? chalk.gray("-") : `${m.maxLeverage}x`}`);
-      console.log();
+      printMarketInfo(adapter.name, m);
     });
 
   market
@@ -527,4 +529,16 @@ export function registerMarketCommands(
         console.log(chalk.gray(`  Example: perp -e hl --dex xyz market list\n`));
       });
     });
+}
+
+function printMarketInfo(venue: string, m: ExchangeMarketInfo): void {
+  console.log(chalk.cyan.bold(`\n  ${m.symbol} on ${venue}\n`));
+  console.log(`  Mark Price:     $${formatUsd(m.markPrice)}`);
+  console.log(`  Index Price:    ${usdOrDash(m.indexPrice)}`);
+  // Per-market funding interval (GRVT 4h / 8h, Variational, Aster): the rate carries its interval.
+  console.log(`  Funding Rate:   ${fundingCell(m, perMarketFunding(venue))}`);
+  console.log(`  24h Volume:     ${usdOrDash(m.volume24h)}`);
+  console.log(`  Open Interest:  ${formatOpenInterest(m, true)}`);
+  console.log(`  Max Leverage:   ${m.maxLeverage === null ? chalk.gray("-") : `${m.maxLeverage}x`}`);
+  console.log();
 }

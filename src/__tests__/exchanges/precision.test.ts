@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import {
-  alignProtectionPrice, floorSize, floorToStep, lotStepOf, requireOnTick, slippagePrice,
+  addDecimal, alignProtectionPrice, floorSize, floorToStep, lotStepOf, requireOnTick, slippagePrice,
 } from "../../exchanges/precision.js";
 import type { ExchangeAdapter } from "../../exchanges/interface.js";
 
@@ -137,5 +137,21 @@ describe("lotStepOf", () => {
 
   it("throws SYMBOL_NOT_FOUND for an unknown market", async () => {
     await expect(lotStepOf(adapter([]), "BTC")).rejects.toMatchObject({ structured: { code: "SYMBOL_NOT_FOUND" } });
+  });
+});
+
+describe("addDecimal", () => {
+  it("adds plain decimals exactly (no float drift), any sign and scale", () => {
+    expect(addDecimal("0.1", "0.2")).toBe("0.3");
+    expect(addDecimal("83727862.0893", "83936487.2396")).toBe("167664349.3289");
+    expect(addDecimal("1", "-1.5")).toBe("-0.5");
+    expect(addDecimal("-0.25", "-0.75")).toBe("-1");
+    expect(addDecimal("0", "0.000")).toBe("0");
+    expect(addDecimal("10", "0.000001")).toBe("10.000001");
+  });
+
+  it("rejects non-plain decimals (INVALID_PARAMS), never coerced", () => {
+    expect(code(() => addDecimal("1e3", "1"))).toBe("INVALID_PARAMS");
+    expect(code(() => addDecimal("1", " 2"))).toBe("INVALID_PARAMS");
   });
 });

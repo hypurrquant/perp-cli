@@ -129,19 +129,29 @@ async function tryGetAdapter(exchange: string): Promise<ExchangeAdapter | null> 
   }
 }
 
-/** Fetch markets using the venue's public data path (no key needed). Unofficial-API rows carry venueApi. */
+/**
+ * Fetch markets using the venue's public data path (no key needed). Unofficial-API rows carry
+ * venueApi; rows of a venue whose funding is unverified (QFEX, GRVT, TxFlow) carry fundingVerified false.
+ */
 async function fetchMarketsPublic(exchange: string) {
   const def = getVenue(exchange);
   const rows = await def.publicData.fetchMarkets(MCP_NETWORK);
-  return def.apiStatus.kind === "unofficial" ? rows.map(r => ({ ...r, venueApi: "unofficial" as const, fundingVerified: def.fundingVerified })) : rows;
+  if (def.apiStatus.kind === "unofficial") return rows.map(r => ({ ...r, venueApi: "unofficial" as const, fundingVerified: def.fundingVerified }));
+  return def.fundingVerified ? rows : rows.map(r => ({ ...r, fundingVerified: false as const }));
 }
 
-/** meta fields every market-data tool adds for its venue: apiStatus, and the note for an unofficial API. */
+/**
+ * meta fields every market-data tool adds for its venue: apiStatus, the note for an unofficial API,
+ * and fundingVerified false (with a note) when the venue's funding rate is unverified.
+ */
 function apiMeta(exchange: string): Record<string, unknown> {
   const def = getVenue(exchange);
-  return def.apiStatus.kind === "unofficial"
-    ? { apiStatus: "unofficial", apiNote: `${def.displayName}: UNOFFICIAL API — ${def.apiStatus.note}`, fundingVerified: def.fundingVerified }
-    : { apiStatus: "official" };
+  if (def.apiStatus.kind === "unofficial") {
+    return { apiStatus: "unofficial", apiNote: `${def.displayName}: UNOFFICIAL API — ${def.apiStatus.note}`, fundingVerified: def.fundingVerified };
+  }
+  return def.fundingVerified
+    ? { apiStatus: "official" }
+    : { apiStatus: "official", fundingVerified: false, fundingNote: `${def.displayName}: funding rate UNVERIFIED (not confirmed against settled payments) — display only, never a basis for trading` };
 }
 
 type BookLevels = { bids: [string, string][]; asks: [string, string][] };

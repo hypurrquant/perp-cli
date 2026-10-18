@@ -17,7 +17,7 @@ import { roleUnsupported, type VenueDefinition } from "../venue.js";
 import type { Network } from "../venue-types.js";
 import { grvtShapeError, type GrvtClient } from "./client.js";
 import {
-  fetchGrvtDirectory, fetchGrvtMarkets, grvtClient, resolveGrvtMarket,
+  fetchGrvtMarket, fetchGrvtMarkets, grvtClient, grvtDirectory, resolveGrvtMarket,
   type GrvtMarketMeta, type GrvtVenueMarket,
 } from "./public.js";
 
@@ -27,6 +27,12 @@ export const GRVT_KLINE_INTERVALS: Readonly<Record<string, string>> = {
   "1h": "CI_1_H", "2h": "CI_2_H", "4h": "CI_4_H", "6h": "CI_6_H", "8h": "CI_8_H", "12h": "CI_12_H",
   "1d": "CI_1_D", "3d": "CI_3_D", "5d": "CI_5_D", "1w": "CI_1_W", "2w": "CI_2_W", "3w": "CI_3_W", "4w": "CI_4_W",
 };
+
+/** Bars per kline page (the documented max) and pages read before stopping with a warning. */
+export const GRVT_KLINE_PAGE = 1000;
+export const GRVT_KLINE_MAX_PAGES = 10;
+
+const WARN = (msg: string) => { process.stderr.write(`${msg}\n`); };
 
 /** Order book depths GRVT serves (api_orderbook_levels_request). */
 export const GRVT_BOOK_DEPTHS = [10, 50, 100, 500] as const;
@@ -98,28 +104,29 @@ export class GrvtPublicAdapter implements ExchangeAdapter {
   readonly name = "grvt" as const;
   readonly aliases = ["grv"] as const;
   private readonly client: GrvtClient;
-  private dir: Promise<GrvtMarketMeta[]> | null = null;
 
   constructor(readonly venue: VenueDefinition, readonly network: Network) {
     this.client = grvtClient(network);
   }
 
   private async market(symbol: string): Promise<GrvtMarketMeta> {
-    if (this.dir === null) {
-      this.dir = fetchGrvtDirectory(this.client, msg => process.stderr.write(`${msg}\n`));
-      this.dir.catch(() => { this.dir = null; });
-    }
-    return resolveGrvtMarket(await this.dir, symbol);
+    return resolveGrvtMarket(await grvtDirectory(this.client, this.network, WARN), symbol);
   }
 
   // ── Market data ──
 
+  /** Every market with leverage (`market list`): margin_rules come from the 6 h file cache. */
   async getVenueMarkets(): Promise<GrvtVenueMarket[]> {
-    return fetchGrvtMarkets(this.network);
+    return fetchGrvtMarkets(this.network, { leverage: true });
   }
 
   async getMarkets(): Promise<GrvtMarketInfo[]> {
     return (await this.getVenueMarkets()).map(toGrvtMarketInfo);
+  }
+
+  /** One market (`market info`): the directory, its ticker and its margin rules — no fan-out. */
+  async getMarketInfo(symbol: string): Promise<GrvtMarketInfo> {
+    return toGrvtMarketInfo(await fetchGrvtMarket(this.network, symbol));
   }
 
   async getOrderbook(symbol: string, depth = 50): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
@@ -134,7 +141,8 @@ export class GrvtPublicAdapter implements ExchangeAdapter {
       const x = r as { price?: unknown; size?: unknown };
       return [dec(x.price, `${what} price`), dec(x.size, `${what} size`)];
     });
-    return { bids: side(res.bids, "bid"), asks: side(res.asks, "ask") };
+    // GRVT serves 10 / 50 / 100 / 500 levels: return exactly the `depth` requested.
+    return { bids: side(res.bids.slice(0, depth), "bid"), asks: side(res.asks.slice(0, depth), "ask") };
   }
 
   async getRecentTrades(symbol: string, limit = 50): Promise<ExchangePublicTrade[]> {
@@ -186,11 +194,25 @@ export class GrvtPublicAdapter implements ExchangeAdapter {
       });
     }
     const m = await this.market(symbol);
-    const res = await this.client.result<unknown>("kline", {
-      instrument: m.instrument, interval: ci, type: "TRADE", start_time: msToNs(startTime), end_time: msToNs(endTime), limit: 1000,
-    });
-    if (!Array.isArray(res)) throw grvtShapeError("kline result is not an array");
-    return res.map(c => {
+    // Reverse-chronological pages of up to 1000 bars, followed by `next` until start_time is reached.
+    const rows: unknown[] = [];
+    let cursor = "";
+    for (let page = 0; ; page++) {
+      const res = await this.client.post<{ result?: unknown; next?: unknown }>("kline", {
+        instrument: m.instrument, interval: ci, type: "TRADE", start_time: msToNs(startTime), end_time: msToNs(endTime), limit: GRVT_KLINE_PAGE,
+        ...(cursor !== "" ? { cursor } : {}),
+      });
+      if (res === null || typeof res !== "object" || !Array.isArray(res.result)) throw grvtShapeError("kline result is not an array");
+      rows.push(...res.result);
+      const next = typeof res.next === "string" ? res.next : "";
+      if (res.result.length < GRVT_KLINE_PAGE || next === "") break;
+      if (page + 1 >= GRVT_KLINE_MAX_PAGES) {
+        WARN(`[grvt] kline ${m.instrument} ${interval}: stopped after ${GRVT_KLINE_MAX_PAGES * GRVT_KLINE_PAGE} bars — older bars in the window are not shown (narrow the range)`);
+        break;
+      }
+      cursor = next;
+    }
+    return rows.map(c => {
       const x = c as Record<string, unknown>;
       return {
         time: nsToMs(x.open_time, "kline open_time"),

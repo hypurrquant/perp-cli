@@ -22,9 +22,15 @@
  *    "centibeeps", which would make every rate 100× smaller than its own settled prints — not used.
  *    Converted to a fraction per interval by an exact × 0.01; basis perHours = funding_interval_hours.
  *  - volume24h = buy + sell 24 h quote volume (the docs' "24 hour volume"), exact decimal sum.
- *  - unknown / absent values are null; a ticker without a mark price drops the market (warned).
+ *  - unknown / absent values are null; a ticker without a mark price, or whose read fails, drops
+ *    that market (warned by name).
+ *  - request budget: the registry path (fetchMarkets / fetchFundingRates) is price-only
+ *    (instruments + one ticker per market, both reused in-process for 15 s); margin_rules (leverage)
+ *    only for `market list` / `info`, file-cached 6 h per network.
  */
 
+import { getCached, invalidateCache, setCached } from "../../cache.js";
+import { PerpError, extractErrorMessage } from "../../errors.js";
 import { canonicalFor } from "../canonical-symbols.js";
 import { addDecimal, mulDecimal } from "../precision.js";
 import { symbolNotFound } from "../unknown-symbol.js";
@@ -36,16 +42,43 @@ import { grvtShapeError, GrvtClient } from "./client.js";
 /** Requests in flight at once for the per-instrument fan-out (ticker / margin_rules). */
 export const GRVT_FANOUT_CONCURRENCY = 8;
 
-/**
- * Markets GRVT lists as EQUITY that are pre-IPO private companies: never matched by ticker (a
- * pre-IPO perp references a private valuation, not an exchange-listed share).
- */
-const PRE_IPO: ReadonlySet<string> = new Set(["ANTHROPIC", "OPENAI", "SPACEX"]);
+/** In-process reuse of the directory and of each ticker (repeated MCP / dashboard reads). */
+export const GRVT_SHORT_TTL_MS = 15_000;
+/** margin_rules brackets change rarely: file cache (src/cache.ts), per network. */
+export const GRVT_MARGIN_TTL_MS = 6 * 3_600_000;
 
-/** Exchange-traded funds among GRVT's EQUITY markets (label only; matching is by ticker either way). */
+/**
+ * GRVT EQUITY markets that may match other venues by ticker identity: exchange-listed shares and
+ * ETFs (or, for Korean / HK listings, the plain company name every venue uses). Reviewed against
+ * the live list 2026-10-19. Any other EQUITY market is explicit-only (canonical null) — a new
+ * pre-IPO or synthetic listing is never matched by a look-alike ticker.
+ */
+const MATCHABLE_EQUITY: ReadonlySet<string> = new Set([
+  "AAOI", "AAPL", "AMAT", "AMD", "AMZN", "ARM", "ASML", "ASTS", "AVGO", "AXTI", "BABA", "BE", "BMNR", "BX", "COHR", "COIN",
+  "CRCL", "CRDO", "CRM", "CRWD", "CRWV", "CSCO", "DELL", "DIS", "FLNC", "GLW", "GOOGL", "GS", "HANMI", "HD", "HOOD", "HYUNDAI",
+  "IBM", "INTC", "IREN", "JPM", "LGELECTRONICS", "LITE", "LLY", "META", "MINIMAX", "MRNA", "MRVL", "MSFT", "MSTR", "MU", "NAVER",
+  "NBIS", "NFLX", "NOK", "NOW", "NVDA", "NVO", "ONDS", "ORCL", "PLTR", "QCOM", "RKLB", "SAMSUNG", "SKHYNIX", "SMCI", "SNDK",
+  "STRC", "TSLA", "TSM", "UBER", "USAR", "V", "WDC", "WMT",
+]);
+
+/** Exchange-traded funds among GRVT's EQUITY markets (matchable by ticker, labelled etf). */
 const ETF: ReadonlySet<string> = new Set([
   "SPY", "QQQ", "IWM", "EWJ", "EWT", "EWY", "EWZ", "SOXL", "TQQQ", "SQQQ", "UVXY", "URNM", "XLE", "KORU", "KODEX200",
 ]);
+
+/** Pre-IPO private companies GRVT lists as EQUITY (a private valuation, not a listed share). */
+const PRE_IPO: ReadonlySet<string> = new Set(["ANTHROPIC", "OPENAI", "SPACEX"]);
+
+/**
+ * Reviewed EQUITY markets that stay explicit-only without a warning: tickers that are not a plain
+ * exchange ticker or are ambiguous across venues (BRKB vs BRK.B, SKHY next to SKHYNIX, SAMSUNGEM,
+ * DRAM, …). Unreviewed tickers are explicit-only too, but warned once per process.
+ */
+const EXPLICIT_ONLY_EQUITY: ReadonlySet<string> = new Set([
+  "BBX", "BRKB", "CBRS", "DRAM", "KSTR", "PAYP", "QNTX", "SAMSUNGEM", "SKHY", "STXX",
+]);
+
+const warnedUnreviewed = new Set<string>();
 
 // ── Directory ──
 
@@ -84,6 +117,20 @@ function assetClassOf(symbol: string, raw: unknown): AssetClass | null {
 }
 
 /**
+ * Cross-venue key: crypto / commodity / preIpo through canonical-symbols.ts; an equity / etf only
+ * when whitelisted (MATCHABLE_EQUITY / ETF), else null — warned once when not reviewed at all.
+ */
+export function grvtCanonicalOf(symbol: string, assetClass: AssetClass, warn: (msg: string) => void): string | null {
+  if (assetClass !== "equity" && assetClass !== "etf") return canonicalFor("grvt", symbol, assetClass);
+  if (MATCHABLE_EQUITY.has(symbol) || ETF.has(symbol)) return canonicalFor("grvt", symbol, assetClass);
+  if (!EXPLICIT_ONLY_EQUITY.has(symbol) && !warnedUnreviewed.has(symbol)) {
+    warnedUnreviewed.add(symbol);
+    warn(`[grvt] ${symbol}: equity market not yet reviewed for cross-venue matching — not matched (canonical null)`);
+  }
+  return null;
+}
+
+/**
  * Parse one instruments row. Returns null for a row that is not a listed perpetual (another kind,
  * an expiring settlement period); shape drift on a perpetual row is EXCHANGE_ERROR.
  */
@@ -111,7 +158,7 @@ export function toGrvtMarketMeta(raw: unknown, warn: (msg: string) => void): Grv
     minNotional: decOrNull(r.min_notional),
     fundingIntervalHours: fi,
     assetClass,
-    canonical: canonicalFor("grvt", symbol, assetClass),
+    canonical: grvtCanonicalOf(symbol, assetClass, warn),
     tradable: r.status === "ACTIVE",
   };
 }
@@ -210,19 +257,40 @@ export function toGrvtLeverage(raw: unknown): GrvtLeverage | null {
   return { maxLeverage: tiers[0].maxLeverage, tiers };
 }
 
-// ── Fan-out ──
+// ── Fan-out (each market settled on its own) ──
 
-async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
+type Settled<R> = { ok: true; value: R } | { ok: false; error: unknown };
+
+function isRateLimited(e: unknown): boolean {
+  return e instanceof PerpError && e.structured.code === "RATE_LIMITED";
+}
+
+/**
+ * Run `fn` over `items` with `limit` in flight; each item settles on its own. RATE_LIMITED stops
+ * every worker (nothing new is sent) and is re-thrown — the venue told us to back off.
+ */
+export async function settleEach<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<Settled<R>[]> {
+  const out: Settled<R>[] = new Array(items.length);
   let next = 0;
+  let rateLimited: unknown = null;
   const worker = async () => {
-    while (next < items.length) {
+    while (rateLimited === null && next < items.length) {
       const i = next++;
-      out[i] = await fn(items[i]);
+      try {
+        out[i] = { ok: true, value: await fn(items[i]) };
+      } catch (e) {
+        if (isRateLimited(e)) { rateLimited = e; return; }
+        out[i] = { ok: false, error: e };
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  if (rateLimited !== null) throw rateLimited;
   return out;
+}
+
+function failureList(names: string[], errors: unknown[]): string {
+  return names.map((n, i) => `${n} (${extractErrorMessage(errors[i])})`).join(", ");
 }
 
 export function fetchGrvtTicker(client: GrvtClient, instrument: string): Promise<GrvtTicker> {
@@ -231,6 +299,62 @@ export function fetchGrvtTicker(client: GrvtClient, instrument: string): Promise
 
 export function fetchGrvtLeverage(client: GrvtClient, instrument: string): Promise<GrvtLeverage | null> {
   return client.post<unknown>("margin_rules", { instrument }).then(toGrvtLeverage);
+}
+
+// ── Caches ──
+
+const dirCache = new Map<string, { at: number; value: Promise<GrvtMarketMeta[]> }>();
+const tickerCache = new Map<string, { at: number; value: GrvtTicker }>();
+
+const marginCacheKey = (net: Network) => `grvt-margin-rules-${net}`;
+
+/** Drop every GRVT cache (in-process directory / tickers and the margin-rules file cache). */
+export function clearGrvtCaches(): void {
+  dirCache.clear();
+  tickerCache.clear();
+  invalidateCache("grvt-");
+}
+
+/** The directory, reused for GRVT_SHORT_TTL_MS; a failed read is not kept. */
+export function grvtDirectory(client: GrvtClient, net: Network, warn: (msg: string) => void): Promise<GrvtMarketMeta[]> {
+  const hit = dirCache.get(net);
+  if (hit !== undefined && Date.now() - hit.at < GRVT_SHORT_TTL_MS) return hit.value;
+  const value = fetchGrvtDirectory(client, warn);
+  dirCache.set(net, { at: Date.now(), value });
+  value.catch(() => { if (dirCache.get(net)?.value === value) dirCache.delete(net); });
+  return value;
+}
+
+/** One ticker, reused for GRVT_SHORT_TTL_MS. */
+export async function grvtTicker(client: GrvtClient, net: Network, instrument: string): Promise<GrvtTicker> {
+  const key = `${net}|${instrument}`;
+  const hit = tickerCache.get(key);
+  if (hit !== undefined && Date.now() - hit.at < GRVT_SHORT_TTL_MS) return hit.value;
+  const value = await fetchGrvtTicker(client, instrument);
+  tickerCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+/**
+ * Leverage per instrument from the margin-rules file cache (GRVT_MARGIN_TTL_MS, JSON: instrument →
+ * GrvtLeverage | null); only instruments not cached are fetched. A failed read leaves that market's
+ * leverage unknown (null, warned, not cached).
+ */
+export async function grvtLeverageFor(client: GrvtClient, net: Network, instruments: readonly string[], warn: (msg: string) => void): Promise<Record<string, GrvtLeverage | null>> {
+  const cached = getCached<Record<string, GrvtLeverage | null>>(marginCacheKey(net)) ?? {};
+  const missing = instruments.filter(i => !(i in cached));
+  if (missing.length > 0) {
+    const settled = await settleEach(missing, GRVT_FANOUT_CONCURRENCY, i => fetchGrvtLeverage(client, i));
+    const failed: string[] = [];
+    const errors: unknown[] = [];
+    settled.forEach((r, k) => {
+      if (r.ok) cached[missing[k]] = r.value;
+      else { failed.push(missing[k]); errors.push(r.error); }
+    });
+    if (failed.length > 0) warn(`[grvt] margin rules unreadable for ${failed.length} market(s) — max leverage unknown: ${failureList(failed, errors)}`);
+    setCached(marginCacheKey(net), cached, GRVT_MARGIN_TTL_MS);
+  }
+  return Object.fromEntries(instruments.map(i => [i, i in cached ? cached[i] : null]));
 }
 
 // ── Mapping ──
@@ -266,6 +390,8 @@ export function toGrvtVenueMarket(m: GrvtMarketMeta, t: GrvtTicker & { markPrice
     minNotional: m.minNotional,
     maxLeverage: lev === null ? null : lev.maxLeverage,
     marginTiers: lev === null ? null : lev.tiers,
+    // Not mapped: the ticker's `session` ("REGULAR" on every market, 2026-10-19) is not in GRVT's
+    // documented schema and its other values / their meaning (open hours, price bands) are unknown.
     session: null,
     tradable: m.tradable,
     lastPrice: t.lastPrice,
@@ -285,33 +411,63 @@ export function grvtClient(net: Network): GrvtClient {
   return new GrvtClient(networkConfig(grvtVenue, net).restUrl, net);
 }
 
-/** Directory + one ticker per market, joined; a market whose ticker has no mark price is dropped (warned). */
-async function fetchPriced(client: GrvtClient, deps: GrvtPublicDeps): Promise<Array<{ meta: GrvtMarketMeta; ticker: GrvtTicker & { markPrice: string } }>> {
-  const dir = await fetchGrvtDirectory(client, deps.warn);
-  const tickers = await mapLimit(dir, GRVT_FANOUT_CONCURRENCY, m => fetchGrvtTicker(client, m.instrument));
-  const out: Array<{ meta: GrvtMarketMeta; ticker: GrvtTicker & { markPrice: string } }> = [];
+type Priced = { meta: GrvtMarketMeta; ticker: GrvtTicker & { markPrice: string } };
+
+function priced(meta: GrvtMarketMeta, t: GrvtTicker): Priced | null {
+  return t.markPrice !== null && Number(t.markPrice) > 0 ? { meta, ticker: { ...t, markPrice: t.markPrice } } : null;
+}
+
+/**
+ * Directory + one ticker per market. A market whose ticker read fails, or has no mark price, is
+ * dropped with a warning naming it; the venue fails only when every ticker read fails (or on
+ * RATE_LIMITED).
+ */
+async function fetchPriced(client: GrvtClient, net: Network, deps: GrvtPublicDeps): Promise<Priced[]> {
+  const dir = await grvtDirectory(client, net, deps.warn);
+  const settled = await settleEach(dir, GRVT_FANOUT_CONCURRENCY, m => grvtTicker(client, net, m.instrument));
+  const out: Priced[] = [];
   const unpriced: string[] = [];
+  const failed: string[] = [];
+  const errors: unknown[] = [];
   dir.forEach((meta, i) => {
-    const t = tickers[i];
-    if (t.markPrice === null || !(Number(t.markPrice) > 0)) { unpriced.push(meta.symbol); return; }
-    out.push({ meta, ticker: { ...t, markPrice: t.markPrice } });
+    const r = settled[i];
+    if (!r.ok) { failed.push(meta.symbol); errors.push(r.error); return; }
+    const p = priced(meta, r.value);
+    if (p === null) unpriced.push(meta.symbol);
+    else out.push(p);
   });
+  if (dir.length > 0 && failed.length === dir.length) throw errors[0];
+  if (failed.length > 0) deps.warn(`[grvt] ${failed.length} market(s) whose ticker could not be read are not shown: ${failureList(failed, errors)}`);
   if (unpriced.length > 0) deps.warn(`[grvt] ${unpriced.length} market(s) without a mark price are not shown: ${unpriced.join(", ")}`);
   return out;
 }
 
-/** Markets with leverage (margin_rules per market). */
-export async function fetchGrvtMarkets(net: Network, deps: GrvtPublicDeps = DEFAULT_DEPS): Promise<GrvtVenueMarket[]> {
-  const client = grvtClient(net);
-  const priced = await fetchPriced(client, deps);
-  const lev = await mapLimit(priced, GRVT_FANOUT_CONCURRENCY, p => fetchGrvtLeverage(client, p.meta.instrument));
-  return priced.map((p, i) => toGrvtVenueMarket(p.meta, p.ticker, lev[i]));
+export interface GrvtMarketsOptions {
+  /** true: also max leverage / margin tiers (margin_rules, file-cached); false: price-only (instruments + tickers). */
+  leverage: boolean;
 }
 
-/** Funding rows (ticker only — no margin_rules): fraction per the market's own interval. */
+export async function fetchGrvtMarkets(net: Network, opts: GrvtMarketsOptions, deps: GrvtPublicDeps = DEFAULT_DEPS): Promise<GrvtVenueMarket[]> {
+  const client = grvtClient(net);
+  const rows = await fetchPriced(client, net, deps);
+  const lev = opts.leverage ? await grvtLeverageFor(client, net, rows.map(p => p.meta.instrument), deps.warn) : null;
+  return rows.map(p => toGrvtVenueMarket(p.meta, p.ticker, lev === null ? null : lev[p.meta.instrument]));
+}
+
+/** One market: directory (cached) + its ticker + its margin rules — no fan-out. */
+export async function fetchGrvtMarket(net: Network, symbol: string, deps: GrvtPublicDeps = DEFAULT_DEPS): Promise<GrvtVenueMarket> {
+  const client = grvtClient(net);
+  const meta = resolveGrvtMarket(await grvtDirectory(client, net, deps.warn), symbol);
+  const p = priced(meta, await grvtTicker(client, net, meta.instrument));
+  if (p === null) throw grvtShapeError(`${meta.instrument} ticker has no mark price`);
+  const lev = await grvtLeverageFor(client, net, [meta.instrument], deps.warn);
+  return toGrvtVenueMarket(p.meta, p.ticker, lev[meta.instrument]);
+}
+
+/** Funding rows (tickers only — no margin_rules): fraction per the market's own interval. */
 export async function fetchGrvtFundingRates(net: Network, deps: GrvtPublicDeps = DEFAULT_DEPS): Promise<VenueFundingRate[]> {
   const out: VenueFundingRate[] = [];
-  for (const { meta, ticker } of await fetchPriced(grvtClient(net), deps)) {
+  for (const { meta, ticker } of await fetchPriced(grvtClient(net), net, deps)) {
     const rate = grvtPercentToFraction(ticker.fundingPct);
     if (rate === null) continue;
     out.push({
@@ -328,7 +484,8 @@ export async function fetchGrvtFundingRates(net: Network, deps: GrvtPublicDeps =
   return out;
 }
 
+/** The registry's public data path (MCP get_prices / get_markets, market://prices, arb, dashboards): price-only. */
 export const grvtPublicData: VenuePublicData = {
-  fetchMarkets: net => fetchGrvtMarkets(net),
+  fetchMarkets: net => fetchGrvtMarkets(net, { leverage: false }),
   fetchFundingRates: net => fetchGrvtFundingRates(net),
 };

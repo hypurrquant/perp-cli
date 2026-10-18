@@ -15,6 +15,7 @@ import {
 } from "../../exchanges/txflow/public.js";
 import { TxflowPublicAdapter } from "../../exchanges/txflow/adapter.js";
 import { buildProgram } from "../../cli-program.js";
+import { parseVenueList, resolveSetupVenue } from "../../commands/init.js";
 
 const META = {
   universe: [
@@ -296,4 +297,17 @@ describe("write-refusal table: -e txflow writes refuse before any I/O", () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
   }
+});
+
+describe("setup venue selection", () => {
+  it("txflow / txf is a capability refusal (CAPABILITY_UNSUPPORTED), not an unknown venue", () => {
+    for (const v of ["txflow", "txf"]) {
+      expect(() => resolveSetupVenue(v, "mainnet")).toThrow(expect.objectContaining({
+        structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED", details: expect.objectContaining({ venue: "txflow", feature: "setup trading" }) }),
+      }));
+    }
+    expect(() => parseVenueList("hyperliquid,txflow", "mainnet")).toThrow(expect.objectContaining({ structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED" }) }));
+    // A name that is not a venue at all stays INVALID_PARAMS.
+    expect(() => resolveSetupVenue("nope", "mainnet")).toThrow(expect.objectContaining({ structured: expect.objectContaining({ code: "INVALID_PARAMS" }) }));
+  });
 });
