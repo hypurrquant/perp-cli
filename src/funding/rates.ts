@@ -78,6 +78,8 @@ export const TOP_SYMBOLS = [
 /** Mark-price source preference for `bestMarkPrice` (most liquid first). */
 const MARK_PRICE_PREFERENCE: readonly VenueId[] = [
   "hyperliquid", "pacifica", "lighter", "aster", "lighter-rh", "ondo", "arcus", "risex", "qfex",
+  // RFQ venue: the mark is the single maker's (OLP) price.
+  "variational",
   // Unofficial API: last resort as a mark-price source.
   "txflow",
 ];

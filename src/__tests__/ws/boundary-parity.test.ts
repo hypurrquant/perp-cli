@@ -23,9 +23,9 @@ const CODECS = [hyperliquid, pacifica, lighter, lighterRh, aster, arcus];
 
 /**
  * CLI venues with no perp-cli/ws codec yet. Explicit and test-visible: ondo/qfex arrive in 0.15.1;
- * risex/txflow are CLI venues without a ws codec.
+ * risex/txflow are CLI venues without a ws codec; variational documents no WebSocket at all.
  */
-const CLI_VENUES_WITHOUT_WS = ["ondo", "qfex", "risex", "txflow"];
+const CLI_VENUES_WITHOUT_WS = ["ondo", "qfex", "risex", "txflow", "variational"];
 
 function tsFiles(dir: string): string[] {
   return readdirSync(dir).flatMap(n => {

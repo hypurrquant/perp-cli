@@ -195,7 +195,7 @@ export interface VenueDefinition {
   id: VenueId;
   aliases: readonly string[];
   displayName: string;
-  family: "pacifica" | "hyperliquid" | "lighter" | "aster" | "ondo" | "arcus" | "qfex" | "risex" | "txflow";
+  family: "pacifica" | "hyperliquid" | "lighter" | "aster" | "ondo" | "arcus" | "qfex" | "risex" | "txflow" | "variational";
   masterKeyKind: MasterKeyKind;
   agentKeyKind: AgentKeyKind;
   secretStorage: SecretStorage;
@@ -241,6 +241,11 @@ export interface VenueDefinition {
   builderFee: BuilderFeeCapability | null;
   /** Official documented API, or an unofficial one that is labelled everywhere (VenueApiStatus). */
   apiStatus: VenueApiStatus;
+  /**
+   * Remediation of every role refusal (roleUnsupported) on a venue that is read-only in this
+   * version but planned for trading (GRVT). Absent = the generic market-data-only remediation.
+   */
+  readOnlyRemediation?: string;
 }
 
 // ── Registry ──
@@ -320,7 +325,11 @@ export function roleUnsupported(def: VenueDefinition, feature: string, role: Ven
   const reason = def.apiStatus.kind === "unofficial"
     ? `${def.displayName} is integrated through an unofficial read-only API (market data only)`
     : `${def.displayName} is available for market data only (no ${role} role)`;
-  const remediation = def.apiStatus.kind === "unofficial"
+  // Precedence: gatedRoles (above: a role switched off this release, e.g. RISEx) → the venue's own
+  // readOnlyRemediation (official read-only venues, e.g. Variational) → the generic text (TxFlow).
+  const remediation = def.readOnlyRemediation !== undefined
+    ? def.readOnlyRemediation
+    : def.apiStatus.kind === "unofficial"
     ? `Trade on the ${def.displayName} website; perp-cli shows ${def.displayName} market data only (perp -e ${def.id} market list|info|funding|book|trades|kline)`
     : `Use the market-data commands for ${def.id} (perp -e ${def.id} market list|funding)`;
   return new PerpError("CAPABILITY_UNSUPPORTED", `${def.id} does not support ${feature} — ${reason}`, {

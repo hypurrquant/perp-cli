@@ -107,6 +107,7 @@ export const BUILDER_FEE_CAPABILITIES: { readonly [K in VenueId]: BuilderFeeCapa
   arcus: null,
   risex: null,
   txflow: null,
+  variational: null,
 };
 
 /** Why a venue has no builder-fee support (shown in CAPABILITY_UNSUPPORTED). */
@@ -115,6 +116,7 @@ export const BUILDER_FEE_UNSUPPORTED: { readonly [K in VenueId]?: string } = {
   "lighter-rh": "not yet implemented in perp-cli — Lighter RH uses the same official lighter-go signer; partner-attribution fields are sent as 0 (https://apidocs.rh.lighter.xyz/docs/partner-attribution.md)",
   risex: "not implemented yet in perp-cli (RISEx builder codes are planned; note the venue's \"bps\" field is parts-per-million)",
   txflow: "TxFlow is integrated through an unofficial read-only API (market data only)",
+  variational: "Variational is read-only (market data) in perp-cli; Variational has no public trading API yet",
   arcus: "Arcus has no perps builder fee; its integrator fee applies to the spot router only and needs a partner key from Arcus (https://docs.arcus.xyz/concepts/spot-router)",
 };
 

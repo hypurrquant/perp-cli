@@ -298,6 +298,8 @@ function signingSummary(p: ApproveAgentParams, master: { evm: string | null; sol
       ];
     case "txflow":
       return ["Nothing — TxFlow is market data only (unofficial read-only API)."];
+    case "variational":
+      return ["Nothing — Variational is read-only (market data) in perp-cli; Variational has no public trading API yet."];
   }
 }
 

@@ -8,6 +8,7 @@ import { midDecimal } from "../exchanges/precision.js";
 import { hasPacificaSdk, isDexCapable, klinesNeedAuth } from "../exchanges/capabilities.js";
 import { getVenue, listVenuesWithRole, tryResolveVenueId, unofficialApiNote } from "../exchanges/venue.js";
 import "../exchanges/venues/index.js";
+import type { VariationalFundingTerms, VariationalRfqQuotes } from "../exchanges/variational/adapter.js";
 
 /** Venues with an adapter (market-data-only venues have none — see `perp arb scan`). */
 const EXCHANGES = listVenuesWithRole("account").map(v => v.id);
@@ -30,6 +31,57 @@ function formatOpenInterest(m: { symbol: string; markPrice: string; openInterest
   const mark = Number(m.markPrice);
   if (!withUsd || !Number.isFinite(oi) || !(mark > 0)) return base;
   return `${base} ${chalk.gray(`(≈ $${formatUsd(oi * mark)} at mark)`)}`;
+}
+
+/** Duck-typed: an RFQ venue adapter serves maker quotes instead of an order book. */
+function isRfqQuoteAdapter(a: unknown): a is { getRfqQuotes(symbol: string): Promise<VariationalRfqQuotes> } {
+  return typeof (a as { getRfqQuotes?: unknown } | null)?.getRfqQuotes === "function";
+}
+
+/** Duck-typed: the adapter serves current funding terms instead of a funding history. */
+function isFundingTermsAdapter(a: unknown): a is { getFundingTerms(symbol: string): Promise<VariationalFundingTerms> } {
+  return typeof (a as { getFundingTerms?: unknown } | null)?.getFundingTerms === "function";
+}
+
+function printRfqQuotes(q: VariationalRfqQuotes, json: boolean): void {
+  if (json) return printJson(jsonOk(q));
+  console.log(chalk.cyan.bold(`\n  RFQ quotes: ${q.ticker} (${q.venue}) — not an order book\n`));
+  console.log(`  Mark: $${formatUsd(q.markPrice)}   Base spread: ${q.baseSpreadBps === null ? chalk.gray("-") : `${Number(q.baseSpreadBps).toFixed(2)} bps`}   Quoted at: ${q.updatedAt ?? chalk.gray("-")}`);
+  if (q.quotes.length === 0) {
+    console.log(chalk.gray("\n  No quotes published right now (the market may be closed).\n"));
+  } else {
+    console.log(makeTable(["Size", "Bid", "Ask", "Spread"], q.quotes.map(t => {
+      const bid = Number(t.bid);
+      const ask = Number(t.ask);
+      const mid = (bid + ask) / 2;
+      return [
+        t.notionalUsd === null ? "min order" : `$${formatUsd(t.notionalUsd)}`,
+        chalk.green(`$${formatUsd(t.bid)}`),
+        chalk.red(`$${formatUsd(t.ask)}`),
+        mid > 0 ? `${((ask - bid) / mid * 10_000).toFixed(2)} bps` : chalk.gray("-"),
+      ];
+    })));
+  }
+  console.log(chalk.gray(`  ${q.note}\n`));
+}
+
+function printFundingTerms(t: VariationalFundingTerms, json: boolean): void {
+  if (json) return printJson(jsonOk(t));
+  console.log(chalk.cyan.bold(`\n  Funding: ${t.ticker} (${t.venue}) — current terms, no history published\n`));
+  if (t.swap !== null) {
+    const row = (label: string, r: NonNullable<typeof t.swap>["last"]) => r === null
+      ? [label, chalk.gray("-"), chalk.gray("-"), chalk.gray("-"), chalk.gray("-")]
+      : [label, formatPercent(r.intervalLong), formatPercent(r.intervalShort), formatPercent(r.annualizedLong), formatPercent(r.annualizedShort)];
+    console.log(makeTable(["Payment", "Long / day", "Short / day", "Long APR", "Short APR"], [row("last applied", t.swap.last), row("next", t.swap.next)]));
+  } else {
+    console.log(`  Rate kind:      ${t.rateKind ?? chalk.gray("-")}`);
+    console.log(`  Interval:       ${t.intervalHours === null ? chalk.gray("-") : `${t.intervalHours}h`}`);
+    console.log(`  Per interval:   ${t.intervalRate === null ? chalk.gray("N/A") : formatPercent(t.intervalRate)}`);
+    console.log(`  Hourly:         ${t.hourlyRate === null ? chalk.gray("N/A") : formatPercent(t.hourlyRate)}`);
+    console.log(`  APR:            ${t.annualizedPct === null ? chalk.gray("N/A") : `${t.annualizedPct.toFixed(2)}%`}`);
+  }
+  console.log(`  Next funding:   ${t.nextFundingTime === null ? chalk.gray("-") : new Date(t.nextFundingTime).toLocaleString()}`);
+  console.log(chalk.gray(`  ${t.note}\n`));
 }
 
 export function registerMarketCommands(
@@ -247,6 +299,8 @@ export function registerMarketCommands(
     .action(async (symbol: string, opts: { depth: string }) => {
       const adapter = await getAdapter();
       const sym = normalizeSymbolArg(symbol);
+      // RFQ venue (Variational): no order book — the maker's indicative quotes, labelled as such.
+      if (isRfqQuoteAdapter(adapter)) return printRfqQuotes(await adapter.getRfqQuotes(sym), isJson());
       const book = await adapter.getOrderbook(sym);
       if (isJson()) return printJson(jsonOk(book));
 
@@ -327,6 +381,8 @@ export function registerMarketCommands(
     .option("-l, --limit <n>", "Number of records", "10")
     .action(async (symbol: string, opts: { limit: string }) => {
       const adapter = await getAdapter();
+      // A venue without a funding-history API (Variational): its current funding terms, labelled as such.
+      if (isFundingTermsAdapter(adapter)) return printFundingTerms(await adapter.getFundingTerms(normalizeSymbolArg(symbol)), isJson());
       const history = await adapter.getFundingHistory(normalizeSymbolArg(symbol), parseInt(opts.limit));
       if (isJson()) return printJson(jsonOk(history));
       if (history.length === 0) {

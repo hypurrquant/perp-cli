@@ -1,0 +1,594 @@
+{
+ "total_volume_24h": "937943090.961943",
+ "cumulative_volume": "420440168186.363406",
+ "tvl": "231154997.380812238319",
+ "open_interest": "1962265758.5608851584570723040",
+ "num_markets": 575,
+ "loss_refund": {
+  "pool_size": "0",
+  "refunded_24h": "0"
+ },
+ "listings": [
+  {
+   "ticker": "BTC-PERP",
+   "contract_type": "perpetual",
+   "name": "Bitcoin",
+   "mark_price": "81038.7709949208",
+   "volume_24h": "422794952.364246",
+   "open_interest": {
+    "long_open_interest": "109562848.48108053220428310000",
+    "short_open_interest": "89279873.96266528298811905000"
+   },
+   "funding": {
+    "last": {
+     "annualized_rate": "0.08893",
+     "interval_rate": "0.00008121"
+    },
+    "next": {
+     "annualized_rate": "0.08893",
+     "interval_rate": "0.00008121"
+    },
+    "interval_seconds": 28800,
+    "next_timestamp": 1792368000
+   },
+   "base_spread_bps": "1.328993501231036978478520000",
+   "quotes": {
+    "updated_at": "2026-10-18T17:17:29.477480587Z",
+    "base": {
+     "bid": "81048.3",
+     "ask": "81059.07"
+    },
+    "size_1k": {
+     "bid": "81048.3",
+     "ask": "81059.07"
+    },
+    "size_100k": {
+     "bid": "81048.3",
+     "ask": "81059.07"
+    },
+    "size_1m": {
+     "bid": "81035.07",
+     "ask": "81060.21"
+    }
+   }
+  },
+  {
+   "ticker": "ETH-PERP",
+   "contract_type": "perpetual",
+   "name": "Ethereum",
+   "mark_price": "2371.023887887248",
+   "volume_24h": "258868652.324675",
+   "open_interest": {
+    "long_open_interest": "77545162.828712025544404920000",
+    "short_open_interest": "62310603.189836746296140240000"
+   },
+   "funding": {
+    "last": {
+     "annualized_rate": "0.09101",
+     "interval_rate": "0.00008312"
+    },
+    "next": {
+     "annualized_rate": "0.09101",
+     "interval_rate": "0.00008312"
+    },
+    "interval_seconds": 28800,
+    "next_timestamp": 1792368000
+   },
+   "base_spread_bps": "1.0965726719509292273768150000",
+   "quotes": {
+    "updated_at": "2026-10-18T17:17:59.605823916Z",
+    "base": {
+     "bid": "2372.43",
+     "ask": "2372.69"
+    },
+    "size_1k": {
+     "bid": "2372.43",
+     "ask": "2372.69"
+    },
+    "size_100k": {
+     "bid": "2372.43",
+     "ask": "2372.69"
+    },
+    "size_1m": {
+     "bid": "2371.73",
+     "ask": "2373.02"
+    }
+   }
+  },
+  {
+   "ticker": "SPX-PERP",
+   "contract_type": "perpetual",
+   "name": "SPX6900",
+   "mark_price": "0.3597952303658384",
+   "volume_24h": "462452.786506",
+   "open_interest": {
+    "long_open_interest": "192005.85796978399572857000000",
+    "short_open_interest": "21964.138104632288986470000000"
+   },
+   "funding": {
+    "last": {
+     "annualized_rate": "-0.4586",
+     "interval_rate": "-0.0002094"
+    },
+    "next": {
+     "annualized_rate": "-0.4586",
+     "interval_rate": "-0.0002094"
+    },
+    "interval_seconds": 14400,
+    "next_timestamp": 1792353600
+   },
+   "base_spread_bps": "11.117434758467519027025056000",
+   "quotes": {
+    "updated_at": "2026-10-18T17:17:35.744553996Z",
+    "base": {
+     "bid": "0.3596",
+     "ask": "0.36"
+    },
+    "size_1k": {
+     "bid": "0.3596",
+     "ask": "0.3602"
+    },
+    "size_100k": {
+     "bid": "0.3584",
+     "ask": "0.3623"
+    }
+   }
+  },
+  {
+   "ticker": "US500-PERP",
+   "contract_type": "perpetual",
+   "name": "State Street SPDR S&P 500 ETF Trust",
+   "mark_price": "760.781512982764",
+   "volume_24h": "2112065.194330",
+   "open_interest": {
+    "long_open_interest": "12617983.927974221922489200000",
+    "short_open_interest": "9532094.697141492863009300000"
+   },
+   "funding": {
+    "last": {
+     "annualized_rate": "0",
+     "interval_rate": "0"
+    },
+    "next": {
+     "annualized_rate": "0",
+     "interval_rate": "0"
+    },
+    "interval_seconds": 28800,
+    "next_timestamp": 1792368000
+   },
+   "base_spread_bps": "3.7855809465039514875724140000",
+   "quotes": {
+    "updated_at": "2026-10-18T17:18:03.919086170Z",
+    "base": {
+     "bid": "760.75",
+     "ask": "761.038"
+    },
+    "size_1k": {
+     "bid": "760.75",
+     "ask": "761.038"
+    },
+    "size_100k": {
+     "bid": "760.618",
+     "ask": "761.245"
+    }
+   }
+  },
+  {
+   "ticker": "XAU-PERP",
+   "contract_type": "perpetual",
+   "name": "Gold",
+   "mark_price": "4156.087840301258",
+   "volume_24h": "9324012.416976",
+   "open_interest": {
+    "long_open_interest": "19934760.308553062150415600000",
+    "short_open_interest": "22092594.674055238158010900000"
+   },
+   "funding": {
+    "last": {
+     "annualized_rate": "0",
+     "interval_rate": "0"
+    },
+    "next": {
+     "annualized_rate": "0",
+     "interval_rate": "0"
+    },
+    "interval_seconds": 14400,
+    "next_timestamp": 1792353600
+   },
+   "base_spread_bps": "3.1038804990861143994989080000",
+   "quotes": {
+    "updated_at": "2026-10-18T17:18:08.395434560Z",
+    "base": {
+     "bid": "4155.88",
+     "ask": "4157.17"
+    },
+    "size_1k": {
+     "bid": "4155.88",
+     "ask": "4157.17"
+    },
+    "size_100k": {
+     "bid": "4155.88",
+     "ask": "4157.47"
+    }
+   }
+  },
+  {
+   "ticker": "CL-PERP",
+   "contract_type": "perpetual",
+   "name": "WTI Crude Oil",
+   "mark_price": "98.9636658758896",
+   "volume_24h": "3415260.728823",
+   "open_interest": {
+    "long_open_interest": "8353776.303186850619933640000",
+    "short_open_interest": "4785433.8034371361673869200000"
+   },
+   "funding": {
+    "last": {
+     "annualized_rate": "0",
+     "interval_rate": "0"
+    },
+    "next": {
+     "annualized_rate": "0",
+     "interval_rate": "0"
+    },
+    "interval_seconds": 14400,
+    "next_timestamp": 1792353600
+   },
+   "base_spread_bps": "4.4460762048952824385066280000",
+   "quotes": {
+    "updated_at": "2026-10-18T17:17:39.331849803Z",
+    "base": {
+     "bid": "98.9297",
+     "ask": "98.9737"
+    },
+    "size_1k": {
+     "bid": "98.9297",
+     "ask": "98.9737"
+    },
+    "size_100k": {
+     "bid": "98.9271",
+     "ask": "98.9776"
+    }
+   }
+  },
+  {
+   "ticker": "AAPL-PERP",
+   "contract_type": "perpetual",
+   "name": "Apple Inc.",
+   "mark_price": "343.525",
+   "volume_24h": "2538285.700954",
+   "open_interest": {
+    "long_open_interest": "2199469.23538408095400000000",
+    "short_open_interest": "1351227.03560164706400000000"
+   },
+   "funding": {
+    "last": {
+     "annualized_rate": "0",
+     "interval_rate": "0"
+    },
+    "next": {
+     "annualized_rate": "0",
+     "interval_rate": "0"
+    },
+    "interval_seconds": 28800,
+    "next_timestamp": 1792368000
+   },
+   "base_spread_bps": "4.0753948038716250636780440000",
+   "quotes": {
+    "updated_at": "2026-10-18T17:17:52.604893325Z",
+    "base": {
+     "bid": "343.122",
+     "ask": "343.262"
+    },
+    "size_1k": {
+     "bid": "343.122",
+     "ask": "343.274"
+    },
+    "size_100k": {
+     "bid": "343.002",
+     "ask": "343.5"
+    }
+   }
+  },
+  {
+   "ticker": "QNTX-PERP",
+   "contract_type": "perpetual",
+   "name": "Quantinuum Inc. Class A Common Stock",
+   "mark_price": "36.27918591584467",
+   "volume_24h": "35917.033213",
+   "open_interest": {
+    "long_open_interest": "53287.889906823133532800000000",
+    "short_open_interest": "6865.1115924490135145500000000"
+   },
+   "funding": {
+    "last": {
+     "annualized_rate": "0",
+     "interval_rate": "0"
+    },
+    "next": {
+     "annualized_rate": "0",
+     "interval_rate": "0"
+    },
+    "interval_seconds": 28800,
+    "next_timestamp": 1792368000
+   },
+   "base_spread_bps": "12.514062500000001635321287000",
+   "quotes": {
+    "updated_at": "2026-10-18T17:18:10.445428647Z",
+    "base": {
+     "bid": "36.2767",
+     "ask": "36.3221"
+    },
+    "size_1k": {
+     "bid": "36.2574",
+     "ask": "36.3221"
+    },
+    "size_100k": {
+     "bid": "35.7601",
+     "ask": "36.7456"
+    }
+   }
+  },
+  {
+   "ticker": "OPN_OPINION-PERP",
+   "contract_type": "perpetual",
+   "name": "Opinion",
+   "mark_price": "0.0488400549381945",
+   "volume_24h": "21292.399950",
+   "open_interest": {
+    "long_open_interest": "3402.5759490573085646400000000",
+    "short_open_interest": "89.43150355849663968000000000"
+   },
+   "funding": {
+    "last": {
+     "annualized_rate": "0.1095",
+     "interval_rate": "0.000050"
+    },
+    "next": {
+     "annualized_rate": "0.1095",
+     "interval_rate": "0.000050"
+    },
+    "interval_seconds": 14400,
+    "next_timestamp": 1792353600
+   },
+   "base_spread_bps": "18.427497699151254212242243000",
+   "quotes": {
+    "updated_at": "2026-10-18T17:18:07.056364357Z",
+    "base": {
+     "bid": "0.04871",
+     "ask": "0.0488"
+    },
+    "size_1k": {
+     "bid": "0.04867",
+     "ask": "0.0488"
+    },
+    "size_100k": {
+     "bid": "0.04576",
+     "ask": "0.0528"
+    }
+   }
+  },
+  {
+   "ticker": "ERA-PERP",
+   "contract_type": "perpetual",
+   "name": "Caldera",
+   "mark_price": "0.0695210935588107",
+   "volume_24h": "352821.016275",
+   "open_interest": {
+    "long_open_interest": "26654.561145100314028500000000",
+    "short_open_interest": "19011.772478237202832500000000"
+   },
+   "funding": {
+    "last": {
+     "annualized_rate": "-6.01100",
+     "interval_rate": "-0.0006862"
+    },
+    "next": {
+     "annualized_rate": "-6.01100",
+     "interval_rate": "-0.0006862"
+    },
+    "interval_seconds": 3600,
+    "next_timestamp": 1792346400
+   },
+   "base_spread_bps": "8.630474137931040664893727000",
+   "quotes": {
+    "updated_at": "2026-10-18T17:17:56.253909567Z",
+    "base": {
+     "bid": "0.06949",
+     "ask": "0.06955"
+    },
+    "size_1k": {
+     "bid": "0.06944",
+     "ask": "0.06959"
+    },
+    "size_100k": {
+     "bid": "0.06849",
+     "ask": "0.07063"
+    }
+   }
+  },
+  {
+   "ticker": "STO-PERP",
+   "contract_type": "perpetual",
+   "name": "StakeStone",
+   "mark_price": "0.0318938005363912",
+   "volume_24h": "340.316920",
+   "open_interest": {
+    "long_open_interest": "420.70679485578722955000000000",
+    "short_open_interest": "2856.8793107753776335000000000"
+   },
+   "funding": {
+    "last": {
+     "annualized_rate": "0.1095",
+     "interval_rate": "0.000050"
+    },
+    "next": {
+     "annualized_rate": "0.1095",
+     "interval_rate": "0.000050"
+    },
+    "interval_seconds": 14400,
+    "next_timestamp": 1792353600
+   },
+   "base_spread_bps": "18.812433448167864845741215000",
+   "quotes": {
+    "updated_at": "2026-10-18T17:18:01.033826978Z",
+    "base": {
+     "bid": "0.03184",
+     "ask": "0.0319"
+    },
+    "size_1k": {
+     "bid": "0.03181",
+     "ask": "0.03193"
+    },
+    "size_100k": {
+     "bid": "0.03124",
+     "ask": "0.03275"
+    }
+   }
+  },
+  {
+   "ticker": "QQQ-PERP",
+   "contract_type": "perpetual",
+   "name": "Invesco QQQ Trust, Series 1",
+   "mark_price": "706.360344612311",
+   "volume_24h": "3999177.471248",
+   "open_interest": {
+    "long_open_interest": "11095691.071889331851228600000",
+    "short_open_interest": "7958458.107095541477273800000"
+   },
+   "funding": {
+    "last": {
+     "annualized_rate": "0",
+     "interval_rate": "0"
+    },
+    "next": {
+     "annualized_rate": "0",
+     "interval_rate": "0"
+    },
+    "interval_seconds": 28800,
+    "next_timestamp": 1792368000
+   },
+   "base_spread_bps": "3.8082545552248100794227790000",
+   "quotes": {
+    "updated_at": "2026-10-18T17:17:46.581189544Z",
+    "base": {
+     "bid": "706.232",
+     "ask": "706.501"
+    },
+    "size_1k": {
+     "bid": "706.232",
+     "ask": "706.501"
+    },
+    "size_100k": {
+     "bid": "706.003",
+     "ask": "706.673"
+    }
+   }
+  },
+  {
+   "ticker": "ANTHROPIC-PERP",
+   "contract_type": "perpetual",
+   "name": "Anthropic",
+   "mark_price": "1872.568360594331",
+   "volume_24h": "1538363.056032",
+   "open_interest": {
+    "long_open_interest": "1760241.0222979150996812000000",
+    "short_open_interest": "485488.68002736927966206000000"
+   },
+   "funding": {
+    "last": {
+     "annualized_rate": "0.05475",
+     "interval_rate": "0.00005"
+    },
+    "next": {
+     "annualized_rate": "0.05475",
+     "interval_rate": "0.00005"
+    },
+    "interval_seconds": 28800,
+    "next_timestamp": 1792368000
+   },
+   "base_spread_bps": "8.491011775374399939412603000",
+   "quotes": {
+    "updated_at": "2026-10-18T17:18:15.008461405Z",
+    "base": {
+     "bid": "1871.94",
+     "ask": "1873.53"
+    },
+    "size_1k": {
+     "bid": "1871.36",
+     "ask": "1873.82"
+    },
+    "size_100k": {
+     "bid": "1863.43",
+     "ask": "1887.22"
+    }
+   }
+  },
+  {
+   "ticker": "XAU-SWAP",
+   "contract_type": "swap",
+   "name": "Swap on Gold Spot",
+   "mark_price": "4165.440000000001",
+   "volume_24h": "0",
+   "open_interest": {
+    "long_open_interest": "38596129.161744009265798850000",
+    "short_open_interest": "6421697.3955456015416612400000"
+   },
+   "funding": {
+    "last": {
+     "annualized_long_rate": "0.05843",
+     "annualized_short_rate": "0.02569",
+     "interval_long_rate": "0.0001623",
+     "interval_short_rate": "0.00007135"
+    },
+    "next": null,
+    "interval_seconds": 86400,
+    "next_timestamp": null
+   }
+  },
+  {
+   "ticker": "US500-SWAP",
+   "contract_type": "swap",
+   "name": "Swap on US 500",
+   "mark_price": "7655.38",
+   "volume_24h": "0",
+   "open_interest": {
+    "long_open_interest": "14588986.96536820000000",
+    "short_open_interest": "6654802.00656580000000"
+   },
+   "funding": {
+    "last": {
+     "annualized_long_rate": "0.1464",
+     "annualized_short_rate": "0.08640",
+     "interval_long_rate": "0.0004067",
+     "interval_short_rate": "0.0002400"
+    },
+    "next": null,
+    "interval_seconds": 86400,
+    "next_timestamp": null
+   }
+  },
+  {
+   "ticker": "DXI-SWAP",
+   "contract_type": "swap",
+   "name": "Swap on Dollar Index",
+   "mark_price": "101.487",
+   "volume_24h": "0",
+   "open_interest": {
+    "long_open_interest": "7232721.179860200000000",
+    "short_open_interest": "7563972.565889700000000"
+   },
+   "funding": {
+    "last": {
+     "annualized_long_rate": "-0.03629",
+     "annualized_short_rate": "-0.03629",
+     "interval_long_rate": "-0.0001008",
+     "interval_short_rate": "-0.0001008"
+    },
+    "next": null,
+    "interval_seconds": 86400,
+    "next_timestamp": null
+   }
+  }
+ ]
+}
