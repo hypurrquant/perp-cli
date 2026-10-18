@@ -103,6 +103,7 @@ const TAG_TO_ASSET_CLASS: Readonly<Record<string, AssetClass>> = {
   Index: "index",
   Commodity: "commodity",
   FX: "fx",
+  "Pre-IPO": "preIpo", // live 2026-10-19: OPENAI-USD.P
 };
 
 export function ondoAssetClass(market: string, tags: readonly string[] | null | undefined): AssetClass {
