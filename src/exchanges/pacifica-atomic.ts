@@ -29,6 +29,7 @@ import type { MarketInfo, PriceInfo } from "../pacifica/types/market.js";
 import type { BatchAction } from "../pacifica/types/order.js";
 import { isPacificaPerpetual } from "../ws/pacifica-instrument.js";
 import { floorSize } from "./precision.js";
+import { effectiveLimit, type RiskAssessment } from "../risk.js";
 import { symbolNotFound } from "./unknown-symbol.js";
 import type { PacificaAdapter, PacificaOrderOutcome } from "./pacifica.js";
 
@@ -159,10 +160,12 @@ export function atomicMarketsOf(specs: readonly AtomicLegSpec[], info: readonly 
 
 /**
  * Size every leg: total × weight / Σweights in USD → token amount at the mark, floored to the
- * lot. A leg under one lot, or under the market's USD minimum after flooring → SIZE_TOO_SMALL
- * (nothing sent). Reduce-only legs are held to the minimum too (no exemption is documented).
+ * lot. A leg under one lot → SIZE_TOO_SMALL (nothing sent). Its notional at the mark must be at
+ * least the market's USD minimum × (1 + slippage bound), so a sell leg still meets the minimum when
+ * it fills at the worst price the bound allows. Reduce-only legs are held to it too (no exemption is
+ * documented).
  */
-export function sizeAtomicLegs(specs: readonly AtomicLegSpec[], totalUsd: string, markets: ReadonlyMap<string, AtomicMarket>): AtomicLeg[] {
+export function sizeAtomicLegs(specs: readonly AtomicLegSpec[], totalUsd: string, markets: ReadonlyMap<string, AtomicMarket>, slippageBps: number): AtomicLeg[] {
   const total = Number(totalUsd);
   if (!Number.isFinite(total) || !(total > 0)) throw new PerpError("INVALID_PARAMS", `--usd must be a positive amount (got "${totalUsd}")`);
   const sum = specs.reduce((a, s) => a + s.weight, 0);
@@ -182,9 +185,10 @@ export function sizeAtomicLegs(specs: readonly AtomicLegSpec[], totalUsd: string
       });
     }
     const notionalUsd = Number(size) * Number(m.mark);
-    if (notionalUsd < Number(m.minOrderUsd)) {
-      throw new PerpError("SIZE_TOO_SMALL", `Atomic leg ${m.symbol}: ${size} (≈ $${notionalUsd.toFixed(2)}) is below the venue minimum order of $${m.minOrderUsd}; nothing was sent`, {
-        exchange: "pacifica", symbol: m.symbol, size, minOrderUsd: m.minOrderUsd,
+    const requiredUsd = Number(m.minOrderUsd) * (1 + slippageBps / 10_000);
+    if (notionalUsd < requiredUsd) {
+      throw new PerpError("SIZE_TOO_SMALL", `Atomic leg ${m.symbol}: ${size} (≈ $${notionalUsd.toFixed(2)}) is below the venue minimum order of $${m.minOrderUsd} plus the ${slippageBps} bps slippage bound (≈ $${requiredUsd.toFixed(2)}); nothing was sent`, {
+        exchange: "pacifica", symbol: m.symbol, size, minOrderUsd: m.minOrderUsd, requiredUsd,
         remediation: "Raise --usd or this leg's weight",
       });
     }
@@ -222,6 +226,45 @@ export function atomicLegClientOrderId(): string {
 }
 
 /**
+ * Basis points → Pacifica `slippage_percent` as an exact decimal string (1.1 bps → "0.011", not
+ * the float "0.011000000000000001"; 50 → "0.5").
+ */
+export function bpsToPercent(bps: number): string {
+  const s = String(bps);
+  if (!/^\d+(\.\d+)?$/.test(s)) throw new PerpError("INVALID_PARAMS", `slippage ${s} bps is not a plain decimal`);
+  const [int, frac = ""] = s.split(".");
+  const digits = (int + frac).replace(/^0+(?=\d)/, "");
+  const scale = frac.length + 2;
+  const padded = digits.padStart(scale + 1, "0");
+  const out = `${padded.slice(0, padded.length - scale)}.${padded.slice(padded.length - scale)}`.replace(/\.?0+$/, "");
+  return out === "" ? "0" : out;
+}
+
+/**
+ * Basket-level risk gate (on top of the per-leg enforceOrderRisk, which checks each leg against
+ * the max position size): the WHOLE basket's notional against the total-exposure limit and the
+ * number of legs that open a new market against max positions — preTradeCheck's rules applied
+ * to the basket as one order. Violations → RISK_VIOLATION (nothing sent). --force skips it.
+ */
+export function atomicBasketRiskCheck(assessment: RiskAssessment, legs: readonly AtomicLeg[], positions: ReadonlyArray<{ symbol: string; size: string }>): void {
+  const refuse = (reason: string) => new PerpError("RISK_VIOLATION", `Atomic basket: ${reason}`, {
+    exchange: "pacifica", remediation: "Lower --usd / fewer legs, or adjust the limits (perp risk limits …); --force skips the local risk check",
+  });
+  if (!assessment.canTrade) throw refuse("trading suspended: critical risk violation active");
+  const lim = assessment.limits;
+  const m = assessment.metrics;
+  const basket = legs.reduce((a, l) => a + l.notionalUsd, 0);
+  const effExposure = effectiveLimit(lim.maxTotalExposureUsd, lim.maxExposurePct, m.totalEquity);
+  if (m.totalExposure + basket > effExposure) {
+    throw refuse(`would exceed the total exposure limit ($${(m.totalExposure + basket).toFixed(0)} > $${effExposure.toFixed(0)})`);
+  }
+  const opening = legs.filter(l => !positions.some(p => p.symbol.toUpperCase() === l.symbol.toUpperCase() && Number(p.size) !== 0)).length;
+  if (m.positionCount + opening > lim.maxPositions) {
+    throw refuse(`would exceed max positions (${m.positionCount} + ${opening} new > ${lim.maxPositions})`);
+  }
+}
+
+/**
  * The create_market_order payload of one leg (create-market-order docs: symbol, amount, side,
  * slippage_percent, reduce_only, client_order_id, optional builder_code). Signed as-is.
  */
@@ -230,7 +273,7 @@ export function atomicLegPayload(leg: AtomicLeg, o: { reduceOnly: boolean; slipp
     symbol: leg.symbol,
     amount: leg.size,
     side: leg.side === "buy" ? "bid" : "ask",
-    slippage_percent: String(o.slippageBps / 100),
+    slippage_percent: bpsToPercent(o.slippageBps),
     reduce_only: o.reduceOnly,
     client_order_id: o.clientOrderId,
     ...(o.builderCode !== null ? { builder_code: o.builderCode } : {}),
@@ -336,19 +379,23 @@ export interface AtomicLegOutcome {
   detail: string | null;
 }
 
-/** Leg outcome from its ack and (accepted legs) its history_by_id outcome (null = not resolved). */
-export function atomicLegOutcome(leg: AtomicLeg, clientOrderId: string, ack: AtomicAck, history: PacificaOrderOutcome | null): AtomicLegOutcome {
+/**
+ * Leg outcome from its ack, the order id it was traced to (the ack's, or one resolved from the
+ * leg's client_order_id; null = never traced) and that order's history_by_id outcome (null = not
+ * resolved).
+ */
+export function atomicLegOutcome(leg: AtomicLeg, clientOrderId: string, ack: AtomicAck, orderId: string | null, history: PacificaOrderOutcome | null): AtomicLegOutcome {
   const base = { symbol: leg.symbol, side: leg.side, size: leg.size, clientOrderId };
   if (ack.kind === "rejected") return { ...base, orderId: null, status: "rejected", filledSize: "0", detail: ack.error };
   if (ack.kind === "unknown") return { ...base, orderId: null, status: "unknown", filledSize: null, detail: ack.reason };
-  if (ack.orderId === null) {
-    return { ...base, orderId: null, status: "unknown", filledSize: null, detail: "accepted without an order_id: the fill cannot be read back" };
+  if (orderId === null) {
+    return { ...base, orderId: null, status: "unknown", filledSize: null, detail: `accepted without an order_id, and client_order_id ${clientOrderId} was not found in open orders / order history` };
   }
-  if (history === null) return { ...base, orderId: ack.orderId, status: "unknown", filledSize: null, detail: "accepted; fill not confirmed (history_by_id)" };
+  if (history === null) return { ...base, orderId, status: "unknown", filledSize: null, detail: "accepted; fill not confirmed (history_by_id)" };
   const map: Record<PacificaOrderOutcome["status"], AtomicLegOutcome["status"]> = {
     filled: "filled", partiallyFilled: "partiallyFilled", cancelled: "notFilled", rejected: "rejected", open: "unknown",
   };
-  return { ...base, orderId: ack.orderId, status: map[history.status], filledSize: history.filledSize, detail: `history_by_id ${history.venueStatus}` };
+  return { ...base, orderId, status: map[history.status], filledSize: history.filledSize, detail: `history_by_id ${history.venueStatus}` };
 }
 
 /**
@@ -372,23 +419,63 @@ export function atomicIncompleteError(legs: readonly AtomicLegOutcome[]): PerpEr
   });
 }
 
+/** Safety margin under the signature expiry: the batch is not sent when less than this is left. */
+export const ATOMIC_EXPIRY_MARGIN_MS = 1_500;
+/** client_order_id → order_id lookups for a leg accepted without an order_id. */
+export const ATOMIC_CLOID_POLLS = 6;
+export const ATOMIC_CLOID_POLL_MS = 500;
+
+export interface AtomicDeps {
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
+}
+const REAL_DEPS: AtomicDeps = { now: () => Date.now(), sleep: (ms) => new Promise(r => setTimeout(r, ms)) };
+
 /**
- * Sign every leg (create_market_order), send them in ONE batch, read each accepted leg's fill back.
- * Signing failures happen before anything is sent (ORDER_REJECTED via the client). Returns the
- * per-leg outcomes; the caller decides with atomicIncompleteError.
+ * order_id of a leg accepted without one (the batch docs' CreateMarket result carries
+ * `order_id: null`), found by its client_order_id in open orders / order history
+ * (PacificaAdapter.orderByClientId). Bounded: ATOMIC_CLOID_POLLS reads ATOMIC_CLOID_POLL_MS apart;
+ * read errors poll again. null = never found (the leg stays unknown).
+ */
+export async function resolveAtomicLegOrderId(adapter: Pick<PacificaAdapter, "orderByClientId">, clientOrderId: string, deps: AtomicDeps = REAL_DEPS): Promise<string | null> {
+  for (let attempt = 0; attempt < ATOMIC_CLOID_POLLS; attempt++) {
+    await deps.sleep(ATOMIC_CLOID_POLL_MS);
+    try {
+      const hit = await adapter.orderByClientId(clientOrderId);
+      if (hit !== null) return hit.orderId;
+    } catch {
+      // A failed read proves nothing either way: poll again; never found → the leg stays unknown.
+    }
+  }
+  return null;
+}
+
+/**
+ * Sign every leg (create_market_order) with ONE shared timestamp, send them in ONE batch, then
+ * read each accepted leg's fill back (in parallel — reads only). Signing failures and a signature
+ * that would expire within ATOMIC_EXPIRY_MARGIN_MS (a slow signer) stop before anything is sent
+ * (ORDER_REJECTED). Returns the per-leg outcomes; the caller decides with atomicIncompleteError.
  */
 export async function executeAtomic(
   adapter: PacificaAdapter,
   legs: readonly AtomicLeg[],
   payloads: ReadonlyArray<Record<string, unknown>>,
+  deps: AtomicDeps = REAL_DEPS,
 ): Promise<{ outcomes: AtomicLegOutcome[]; venueRaw: unknown }> {
   if (legs.length !== payloads.length || legs.length === 0 || legs.length > PACIFICA_BATCH_MAX_ACTIONS) {
     throw new PerpError("INVALID_PARAMS", `Atomic basket must have 1..${PACIFICA_BATCH_MAX_ACTIONS} legs (got ${legs.length})`);
   }
   adapter.prepareSigning();
+  const header = { timestamp: deps.now(), expiry_window: DEFAULT_EXPIRY_WINDOW };
   const actions: BatchAction[] = [];
   for (const p of payloads) {
-    actions.push({ type: ATOMIC_LEG_ACTION_TYPE, data: await adapter.sdk.signBatchAction(ATOMIC_LEG_SIGNING_TYPE, p, adapter.publicKey, adapter.signer) });
+    actions.push({ type: ATOMIC_LEG_ACTION_TYPE, data: await adapter.sdk.signBatchAction(ATOMIC_LEG_SIGNING_TYPE, p, adapter.publicKey, adapter.signer, header) });
+  }
+  const elapsed = deps.now() - header.timestamp;
+  if (elapsed >= header.expiry_window - ATOMIC_EXPIRY_MARGIN_MS) {
+    throw new PerpError("ORDER_REJECTED", `Pacifica Atomic batch not sent: signing ${legs.length} legs took ${elapsed} ms, leaving less than ${ATOMIC_EXPIRY_MARGIN_MS} ms of the ${header.expiry_window} ms signature window`, {
+      exchange: "pacifica", sent: false, remediation: "Nothing was sent. Retry; if the signer is slow (hardware / remote wallet), use fewer legs",
+    });
   }
   let raw: unknown;
   try {
@@ -397,13 +484,14 @@ export async function executeAtomic(
     throw atomicBatchError(e);
   }
   const acks = parseAtomicBatchResponse(raw, legs.length);
-  const outcomes: AtomicLegOutcome[] = [];
-  for (const [i, leg] of legs.entries()) {
+  const outcomes = await Promise.all(legs.map(async (leg, i): Promise<AtomicLegOutcome> => {
     const ack = acks[i];
-    const history = ack.kind === "accepted" && ack.orderId !== null
-      ? await adapter.resolveOrderOutcome(ack.orderId, `atomic ${leg.side} ${leg.size} ${leg.symbol}`, { terminalOnly: true })
-      : null;
-    outcomes.push(atomicLegOutcome(leg, String(payloads[i].client_order_id), ack, history));
-  }
+    const cloid = String(payloads[i].client_order_id);
+    if (ack.kind !== "accepted") return atomicLegOutcome(leg, cloid, ack, null, null);
+    const orderId = ack.orderId !== null ? ack.orderId : await resolveAtomicLegOrderId(adapter, cloid, deps);
+    const history = orderId === null ? null
+      : await adapter.resolveOrderOutcome(orderId, `atomic ${leg.side} ${leg.size} ${leg.symbol}`, { terminalOnly: true });
+    return atomicLegOutcome(leg, cloid, ack, orderId, history);
+  }));
   return { outcomes, venueRaw: raw };
 }

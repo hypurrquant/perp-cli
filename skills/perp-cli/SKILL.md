@@ -186,7 +186,7 @@ perp --json --dry-run -e <ex> trade buy <SYM> <SIZE> --smart
 >
 > `--smart` (IOC at best bid/ask ± 1 tick) exists only on pacifica / hyperliquid / lighter / aster, and is refused (`CAPABILITY_UNSUPPORTED`) together with `--tp`/`--sl` or `--client-id`/`--auto-id`.
 >
-> Pacifica basket (pair trade): `perp --json --dry-run -e pacifica trade atomic --long BTC:50 --short ETH:50 --usd 1000` — one batch of market orders, NOT all-or-nothing (a leg can fill while another is refused → `ORDER_PARTIAL`; an unconfirmed leg → `ORDER_PENDING` + quarantine). Pacifica's Chase / OCO / Trailing Stop / Swarm / Trigger Swarm / Conditional orders are web-app only (no API); do not try to emulate them.
+> Pacifica basket (pair trade): `perp --json --dry-run -e pacifica trade atomic --long BTC:50 --short ETH:50 --usd 1000` — one batch of market orders, NOT all-or-nothing (a leg can fill while another is refused → `ORDER_PARTIAL`; an unconfirmed leg → `ORDER_PENDING` + quarantine). A batch failure other than HTTP 400 / 429 quarantines every leg. Pacifica's Chase / OCO / Trailing Stop / Swarm / Trigger Swarm / Conditional orders have no documented API / SDK path (as of 2026-10-19); nearest here: `trade twap` (≈ Swarm) and `trade tpsl` (≈ OCO bracket exit).
 
 Show the dry-run output to the user. Wait for confirmation.
 

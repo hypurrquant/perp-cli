@@ -3,9 +3,11 @@
  *
  * Of Pacifica's strategy order types (docs trading-on-pacifica/order-types/strategies) only Atomic
  * has an API path: it is a batch of ordinary market orders (POST /orders/batch). Chase, OCO,
- * Trailing Stop, Swarm, Trigger Swarm and Conditional Market / Limit have no REST endpoint, no
- * signing operation type (api/signing/operation-types) and no order-type code — they run in the
- * Pacifica web app only, so perp-cli does not offer them.
+ * Trailing Stop, Swarm, Trigger Swarm and Conditional Market / Limit have no documented API / SDK
+ * path (as of 2026-10-19): no REST endpoint, no signing operation type (api/signing/operation-types),
+ * no batch action type and no order-type code; the official python-sdk and Pacifica MCP server
+ * expose none. Nearest perp-cli equivalents: `trade twap` (≈ Swarm: a split market execution) and
+ * `trade tpsl` (≈ OCO bracket exit: position take-profit + stop-loss).
  */
 
 import type { Command } from "commander";
@@ -15,14 +17,16 @@ import { PerpError, extractErrorMessage, parsePositiveDecimal } from "../errors.
 import type { ExchangeAdapter } from "../exchanges/interface.js";
 import type { PacificaAdapter } from "../exchanges/pacifica.js";
 import {
-  atomicDryRunPlan, atomicIncompleteError, atomicLegClientOrderId, atomicLegPayload, atomicMarketsOf,
+  atomicBasketRiskCheck, atomicDryRunPlan, atomicIncompleteError, atomicLegClientOrderId, atomicLegPayload, atomicMarketsOf,
   executeAtomic, parseAtomicLegs, requireAtomicReduceOnly, sizeAtomicLegs, type AtomicLegOutcome,
 } from "../exchanges/pacifica-atomic.js";
 import { resolveSlippage } from "../exchanges/slippage.js";
+import { parseSlippageBpsFlag } from "./trade.js";
 import { reduceOnlyGateOf, unsupported } from "../exchanges/trading-v2.js";
 import { getVenue } from "../exchanges/venue.js";
 import { quarantineEntryFor, quarantineSymbol } from "../bot/quarantine.js";
 import { enforceOrderRisk } from "../trade-validator.js";
+import { assessRisk, loadRiskLimits } from "../risk.js";
 import { logExecution } from "../execution-log.js";
 import { invalidateCache } from "../cache.js";
 import { printJson, jsonOk } from "../utils.js";
@@ -36,7 +40,9 @@ export function registerPacificaOrderCommands(
   isDryRun: () => boolean,
 ): void {
   supportsDryRun(trade.command("atomic"))
-    .description("Pacifica only: weighted basket of market orders across markets, sent in ONE batch request. Each leg fills or fails on its own (not all-or-nothing)")
+    .description("Pacifica only: weighted basket of market orders across markets, sent in ONE batch request. Each leg fills or fails on its own (not all-or-nothing). "
+      + "An unconfirmed leg → ORDER_PENDING and its symbol is quarantined; a batch failure other than HTTP 400 / 429 (timeout, 5xx, unreadable answer) quarantines EVERY leg. "
+      + "Pacifica Chase / OCO / Trailing / Swarm have no documented API (as of 2026-10-19) — nearest here: trade twap (≈ Swarm), trade tpsl (≈ OCO)")
     .requiredOption("--usd <total>", "Total basket notional in USD, split across the legs by weight at each mark price")
     .option("--long <legs...>", "Buy legs: SYMBOL[:WEIGHT] (up to 5; no weight = 1)")
     .option("--short <legs...>", "Sell legs: SYMBOL[:WEIGHT] (up to 5; no weight = 1)")
@@ -53,16 +59,11 @@ export function registerPacificaOrderCommands(
       const pac = adapter as PacificaAdapter;
       const specs = parseAtomicLegs(opts.long ?? [], opts.short ?? []);
       const usd = parsePositiveDecimal(opts.usd, "--usd");
-      let flagBps: number | null = null;
-      if (opts.slippageBps !== undefined) {
-        flagBps = Number(opts.slippageBps);
-        if (!Number.isFinite(flagBps) || flagBps <= 0) throw new PerpError("INVALID_PARAMS", `--slippage-bps must be a positive number (got "${opts.slippageBps}")`);
-      }
-      const slippage = resolveSlippage("pacifica", flagBps);
+      const slippage = resolveSlippage("pacifica", parseSlippageBpsFlag(opts.slippageBps));
       const reduceOnly = opts.reduceOnly === true;
 
       const [info, prices] = await Promise.all([pac.sdk.getInfo(), pac.sdk.getPrices()]);
-      const legs = sizeAtomicLegs(specs, usd, atomicMarketsOf(specs, info, prices));
+      const legs = sizeAtomicLegs(specs, usd, atomicMarketsOf(specs, info, prices), slippage.bps);
 
       // Pre-send gates (read only), before the dry-run return so a dry run reports the same refusal.
       if (reduceOnly) {
@@ -80,6 +81,12 @@ export function registerPacificaOrderCommands(
             });
           }
           await enforceOrderRisk(adapter, { symbol: l.symbol, size: Number(l.size), price: Number(l.mark), force: opts.force });
+        }
+        // The basket as one order: total notional vs total exposure, new markets vs max positions.
+        if (opts.force !== true) {
+          const [balance, positions] = await Promise.all([adapter.getBalance(), adapter.getPositions()]);
+          const assessment = assessRisk([{ exchange: adapter.name, balance }], positions.map(position => ({ exchange: adapter.name, position })), loadRiskLimits());
+          atomicBasketRiskCheck(assessment, legs, positions);
         }
       }
 

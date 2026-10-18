@@ -1,5 +1,5 @@
 import { MAINNET_REST, type Network, getNetworkConfig } from "./constants.js";
-import { buildSignedRequest, buildAgentSignedRequest } from "./signing.js";
+import { buildSignedRequest, buildAgentSignedRequest, signWithWallet } from "./signing.js";
 import { PerpError, extractErrorMessage, orderNotSent, orderOutcomeUnknown, sendFailure } from "../errors.js";
 import { invalidateCache } from "../cache.js";
 import {
@@ -703,13 +703,30 @@ export class PacificaClient {
    * One signed batch action body (docs rest-api/orders/batch-order: "Batch orders are not signed
    * as a whole, but rather by its individual actions components"; each action's `data` carries the
    * fields of its standalone endpoint, signed with that endpoint's operation type). Nothing is sent.
+   * `header` fixes the signed timestamp / expiry window, so every action of one batch can share
+   * one timestamp. agent_wallet is attached when an agent is the active signer. A signing failure
+   * → ORDER_REJECTED (orderNotSent).
    */
   async signBatchAction(
     operationType: string,
     payload: Record<string, unknown>,
     account: string,
     signMessage: SignMessageFn,
+    header: { timestamp: number; expiry_window: number },
   ): Promise<Record<string, unknown>> {
-    return this.signedBody(operationType, payload, account, signMessage);
+    const full = { type: operationType, timestamp: header.timestamp, expiry_window: header.expiry_window };
+    try {
+      const [, signature] = await signWithWallet(full, payload, signMessage);
+      return {
+        account,
+        ...(this.requestAgentWallet ? { agent_wallet: this.requestAgentWallet } : {}),
+        signature,
+        timestamp: full.timestamp,
+        expiry_window: full.expiry_window,
+        ...payload,
+      };
+    } catch (e) {
+      throw orderNotSent("pacifica", operationType, e);
+    }
   }
 }

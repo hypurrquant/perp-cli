@@ -55,7 +55,7 @@ function isLegacyOrderVenue(def: VenueDefinition): boolean {
   return LEGACY_ORDER_FAMILIES.has(def.family);
 }
 
-function parseSlippageBpsFlag(raw: string | undefined): number | null {
+export function parseSlippageBpsFlag(raw: string | undefined): number | null {
   if (raw === undefined) return null;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) throw new PerpError("INVALID_PARAMS", `--slippage-bps must be a positive number (got "${raw}")`);
