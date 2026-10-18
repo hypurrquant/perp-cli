@@ -1,0 +1,72 @@
+{
+ "id": "b61a86be-eb28-4b25-8928-a1f8524848e7",
+ "result": [
+  {
+   "currency": "BNB",
+   "market_type": "SRM_PERP_ONLY",
+   "spot_price": "719.714543306724"
+  },
+  {
+   "currency": "BTC",
+   "market_type": "ALL",
+   "spot_price": "81594.91060246277",
+   "option": {
+    "name": "BTC-OPTION",
+    "address": "0xd0711b9eBE84b778483709CDe62BacFDBAE13623",
+    "universes": [
+     {
+      "risk_universe_id": 1,
+      "risk_universe_name": "PRIME",
+      "oi": {
+       "current_open_interest": "8101.135741153178",
+       "interest_cap": "300000"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "currency": "ETH",
+   "market_type": "ALL",
+   "spot_price": "2405.888521829883",
+   "option": {
+    "name": "ETH-OPTION",
+    "address": "0x4BB4C3CDc7562f08e9910A0C7D8bB7e108861eB4",
+    "universes": [
+     {
+      "risk_universe_id": 1,
+      "risk_universe_name": "PRIME",
+      "oi": {
+       "current_open_interest": "315721.779704199265",
+       "interest_cap": "6000000"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "currency": "HYPE",
+   "market_type": "ALL",
+   "spot_price": "78.70185881732083",
+   "option": {
+    "name": "HYPE-OPTION",
+    "address": "0x7344Bf2aFFF9aFCd6d024865Fc0cA53bf03464D9",
+    "universes": [
+     {
+      "risk_universe_id": 2,
+      "risk_universe_name": "MIDCAP",
+      "oi": {
+       "current_open_interest": "3453977.922098273283",
+       "interest_cap": "25000000"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "currency": "USDC",
+   "market_type": "SRM_BASE_ONLY",
+   "spot_price": "0.9999010327239427"
+  }
+ ]
+}

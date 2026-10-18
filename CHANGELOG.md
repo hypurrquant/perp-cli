@@ -4,6 +4,13 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### NEW: read-only options market data — Derive (`perp -e derive options …`)
+
+- **`perp options underlyings | expiries <U> | chain <U> [--expiry YYYY-MM-DD] [--strikes N] | quote <INSTRUMENT>`** with `-e derive` (alias `drv`): Derive (derive.xyz, formerly Lyra) options through its official public v3 API — keyless; no orders, no account, no signing. Chain rows are `{strike, call, put}` with bid / ask (price + size), mark, index, forward, IV (mark / bid / ask), greeks (delta, gamma, theta, vega, rho), open interest and 24h stats; `--strikes N` keeps the N strikes closest to the ATM reference (forward, else index); no `--expiry` = the nearest active expiry (`expirySelection: "nearest"`). One `get_tickers` request per chain. `-n testnet` reads `testnet.api.derive.xyz`.
+- **New, separate JSON shapes** (`src/exchanges/options-interface.ts`, `schema: 1`, venue-agnostic `OptionsVenue`): decimals are strings; unknown is `null` — an empty book side (Derive `"0"` / `"0"`) is `bid` / `ask: null`, an IV Derive could not compute (`"0"`, e.g. a quote below intrinsic) is `null`, 24h high / low are `null` without trades. Unknown underlying / expiry / instrument → `SYMBOL_NOT_FOUND`; a perp instrument in `quote` → `INVALID_PARAMS`; no `-e` / a perp venue → `CAPABILITY_UNSUPPORTED`; Derive rate limit (RPC -32000, HTTP 429) → `RATE_LIMITED`.
+- **MCP:** `get_option_expiries`, `get_option_chain`, `get_option_quote` (`venue: "derive"`).
+- Additive only: Derive is not a perp venue — no change to `perp health`, arb, `market`, existing MCP tools or `perp-cli/ws`.
+
 ### FIX: Pacifica synced with the revamped docs (docs.pacifica.fi)
 
 - **WS limits (docs: rate-limits):** max 20 subscriptions per channel per connection and 100 connections per IP (the old comment said "300 conns/IP"). Every Pacifica wire carries `group` = its channel (`prices`, `bbo`, `account_*`, cap 20 each), and the stream now **spreads channels over several sockets** instead of rejecting: e.g. 45 `bbo` symbols → 3 sockets (20 + 20 + 5; `prices` stays on the first). Up to 50 sockets per stream (half the per-IP cap); `budget.maxSockets` lowers it; beyond → `SUBSCRIPTION_LIMIT` (`details.needed` / `allowed` = 20 × sockets) before anything is sent. Before, a 21st `bbo` channel rejected `SUBSCRIPTION_LIMIT`. Venues whose limits are per IP (hyperliquid, lighter, aster, arcus) keep one socket. Each socket reconnects and resubscribes its own channels; `stream.state` is the aggregate (`live.sockets` = open sockets); the new-connection budget is per stream; one socket exhausting `reconnect.maxAttempts` closes the stream (all subscriptions end with that reason).

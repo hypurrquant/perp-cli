@@ -19,6 +19,7 @@ import { createRequire } from "node:module";
 config({ path: resolve(process.env.HOME || "~", ".perp", ".env") });
 import chalk from "chalk";
 import { listVenues } from "./exchanges/venue.js";
+import { optionsVenueWords } from "./exchanges/options-venues.js";
 import { PerpError } from "./errors.js";
 import { loadSettings } from "./settings.js";
 import { jsonError, jsonOk, printCliError, printJson } from "./utils.js";
@@ -52,7 +53,7 @@ const { program, getAdapterForExchange, isJson } = buildProgram({ defaultExchang
 
 // Smart landing page: `perp` with no subcommand
 const rawArgs = process.argv.slice(2);
-const _venueWords = listVenues().flatMap(v => [v.id, ...v.aliases]);
+const _venueWords = [...listVenues().flatMap(v => [v.id, ...v.aliases]), ...optionsVenueWords()];
 const hasSubcommand = rawArgs.some((a) => !a.startsWith("-") && ![..._venueWords, "mainnet", "testnet"].includes(a));
 
 // `history list -n 5` (old record-count flag) → INVALID_PARAMS with the --limit migration, before

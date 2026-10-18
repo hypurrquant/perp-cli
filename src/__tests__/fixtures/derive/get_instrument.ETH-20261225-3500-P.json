@@ -1,0 +1,35 @@
+{
+ "id": "b1fc3ec5-28db-4b29-8a03-8b9dd329185c",
+ "result": {
+  "instrument_type": "option",
+  "instrument_name": "ETH-20261225-3500-P",
+  "risk_universe_id": 1,
+  "scheduled_activation": 1774598400,
+  "scheduled_deactivation": 1798185540,
+  "is_active": true,
+  "tick_size": "0.1",
+  "minimum_amount": "0.1",
+  "maximum_amount": "10000",
+  "amount_step": "0.01",
+  "mark_price_fee_rate_cap": "0.125",
+  "maker_fee_rate": "0.0001",
+  "taker_fee_rate": "0.0003",
+  "base_fee": "0.5",
+  "base_currency": "ETH",
+  "quote_currency": "USDC",
+  "option_details": {
+   "index": "ETH-USD",
+   "expiry": 1798185600,
+   "strike": "3500",
+   "option_type": "P",
+   "settlement_price": null
+  },
+  "perp_details": null,
+  "erc20_details": null,
+  "base_asset_address": "0x4BB4C3CDc7562f08e9910A0C7D8bB7e108861eB4",
+  "base_asset_sub_id": "1503238553601798185600",
+  "pro_rata_fraction": "0.8",
+  "fifo_min_allocation": "10",
+  "pro_rata_amount_step": "1"
+ }
+}

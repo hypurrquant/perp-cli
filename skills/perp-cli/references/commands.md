@@ -181,6 +181,23 @@ Encoding formula: `enc = 10 * outcome + side`; asset id = `100,000,000 + enc`.
 
 Settlement at `expiryMs` is venue-side: winning side → 1 quote token per share, losing → 0. Decide before expiry whether to self-close or let the venue settle.
 
+## Options market data (read-only, `-e derive`)
+
+Derive (derive.xyz, formerly Lyra) options through its official public v3 API — keyless, no orders, no account. Options venues are separate from the perp venues (not in `perp health`, arb or `market`). JSON objects carry `schema: 1`; decimals are strings; unknown is `null` (empty book side → `bid`/`ask` `null`; IV the venue could not compute → `null`; 24h high/low `null` without trades).
+
+```bash
+perp --json -e derive options underlyings                     # underlyings with options (spot price)
+perp --json -e derive options expiries ETH                    # active expiries: expiry (YYYY-MM-DD UTC), expiryMs, strikes, instruments
+perp --json -e derive options chain ETH                       # nearest expiry (expirySelection: "nearest"), every strike
+perp --json -e derive options chain ETH --expiry 2026-12-25 --strikes 10   # 10 strikes closest to ATM (forward, else index)
+perp --json -e derive options quote ETH-20261225-3500-P       # one option
+```
+
+- Chain row: `{strike, call, put}`; each side is an option quote: `bid`/`ask` `{price, size}`, `mark`, `index`, `forward`, `discountFactor`, `iv {mark, bid, ask}`, `greeks {delta, gamma, theta, vega, rho}` (venue units, verbatim), `openInterest` (contracts), `stats24h {contracts, notional, premium, trades, high, low}`, `timestampMs`. Chain level: `index`, `forward`, `atm {strike, reference, price}`, `strikesListed`, `missingTickers`.
+- Errors: unknown underlying / expiry / instrument → `SYMBOL_NOT_FOUND` (remediation names the listing command / active expiries); a perp name in `quote` → `INVALID_PARAMS`; no `-e` or a perp venue → `CAPABILITY_UNSUPPORTED`; Derive's rate limit → `RATE_LIMITED` (retryable).
+- Cost: `expiries` 1 request, `chain` 2 (instruments + ONE tickers call for the expiry), `quote` 2. Derive's public budget is 5 requests/s per IP.
+- `-n testnet` reads `testnet.api.derive.xyz`. MCP: `get_option_expiries`, `get_option_chain`, `get_option_quote` (`venue: "derive"`).
+
 ## Funds (deposit, withdraw, transfer, bridge, rebalance)
 
 All fund movement lives under `perp funds`.
