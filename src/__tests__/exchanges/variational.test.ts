@@ -25,15 +25,16 @@ vi.mock("../../cache.js", async (importOriginal) => {
 
 import "../../exchanges/venues/index.js";
 import { PerpError } from "../../errors.js";
-import { getVenue, requireCapabilities, resolveVenueId } from "../../exchanges/venue.js";
+import { getVenue, listVenues, requireCapabilities, resolveVenueId } from "../../exchanges/venue.js";
 import { rateToHourly } from "../../exchanges/venue-types.js";
 import { VariationalClient } from "../../exchanges/variational/client.js";
 import {
-  fetchVariationalFundingRates, fetchVariationalMarkets, parseVariationalStats, perpRateConsistent, resolveVariationalListing,
+  canonicalHintFor, fetchVariationalFundingRates, fetchVariationalMarkets, parseVariationalStats, perpRateConsistent, resolveVariationalListing,
   statsCacheKey, toVariationalVenueMarket, VARIATIONAL_STATS_TTL_MS, type VariationalPublicDeps,
 } from "../../exchanges/variational/public.js";
 import { VariationalPublicAdapter } from "../../exchanges/variational/adapter.js";
-import { fetchVenuesRates } from "../../funding/rates.js";
+import { fetchAllFundingRates, fetchVenuesRates } from "../../funding/rates.js";
+import { startJob } from "../../jobs.js";
 import { probeVenueHealth } from "../../venue-health.js";
 import { buildProgram } from "../../cli-program.js";
 
@@ -75,12 +76,12 @@ afterEach(() => {
 });
 
 describe("Variational venue definition", () => {
-  it("is market-data only, OFFICIAL API, funding verified by its documented unit, aliases var / omni, no testnet / ws", () => {
+  it("is market-data only, OFFICIAL API, funding UNVERIFIED (predicted, no settled-payment check), aliases var / omni, no testnet / ws", () => {
     const def = getVenue("variational");
     expect(def.roles).toEqual(["marketData"]);
     expect(def.capabilities).toBeNull();
     expect(def.apiStatus).toEqual({ kind: "official" });
-    expect(def.fundingVerified).toBe(true);
+    expect(def.fundingVerified).toBe(false);
     expect(def.fundingRateBasis).toBe("perMarket");
     expect(resolveVenueId("var")).toBe("variational");
     expect(resolveVenueId("omni")).toBe("variational");
@@ -98,6 +99,8 @@ describe("Variational venue definition", () => {
     const s = (err as PerpError).structured;
     expect(s.code).toBe("CAPABILITY_UNSUPPORTED");
     expect(s.remediation).toMatch(/^Variational is read-only \(market data\) in perp-cli; Variational has no public trading API yet/);
+    // The single source: the venue definition's readOnlyRemediation.
+    expect(s.remediation).toBe(getVenue("variational").readOnlyRemediation);
   });
 });
 
@@ -116,11 +119,12 @@ describe("parsing the recorded stats payload", () => {
     for (const t of btc.quotes!.tiers) { expect(typeof t.bid).toBe("string"); expect(typeof t.ask).toBe("string"); }
   });
 
-  it("asset class and canonical symbols: ticker identity for crypto / equity, explicit commodities, SPY override, swaps / pre-IPO never matched", () => {
+  it("asset class and canonical symbols: ticker identity for crypto / equity, explicit commodities, SPY override, SPX / QNT / swaps / pre-IPO never matched", () => {
     const ls = parseVariationalStats(FIXTURE, vi.fn());
     const by = (t: string) => ls.find(l => l.ticker === t)!;
     expect(by("BTC-PERP")).toMatchObject({ assetClass: "crypto", canonical: "BTC" });
-    expect(by("SPX-PERP")).toMatchObject({ assetClass: "crypto", canonical: "SPX" }); // SPX6900 (same token as HL SPX)
+    // SPX6900: "SPX" is the S&P 500 index key and HL / Aster / Lighter exclude their SPX6900 too.
+    expect(by("SPX-PERP")).toMatchObject({ assetClass: "crypto", canonical: null });
     expect(by("US500-PERP")).toMatchObject({ assetClass: "etf", canonical: "SPY" }); // SPDR S&P 500 ETF, not the index
     expect(by("XAU-PERP")).toMatchObject({ assetClass: "commodity", canonical: "GOLD" });
     expect(by("CL-PERP")).toMatchObject({ assetClass: "commodity", canonical: "CRUDE_OIL_WTI" });
@@ -131,6 +135,9 @@ describe("parsing the recorded stats payload", () => {
     expect(by("XAU-SWAP")).toMatchObject({ assetClass: "commodity", canonical: null });
     expect(by("US500-SWAP")).toMatchObject({ assetClass: "index", canonical: null });
     expect(by("DXI-SWAP")).toMatchObject({ assetClass: "fx", canonical: null });
+    // QNT = Quant (crypto) here, Quantinuum on Arcus / QFEX — excluded like Lighter's LIGHTER_AMBIGUOUS.
+    const [qnt] = parseVariationalStats({ listings: [{ ...listing("STO-PERP"), ticker: "QNT-PERP", name: "Quant" }] }, vi.fn());
+    expect(qnt).toMatchObject({ assetClass: "crypto", canonical: null });
   });
 
   it("an unclassified TradFi-looking perp is equity with NO canonical (never merged by ticker)", () => {
@@ -209,6 +216,7 @@ describe("funding semantics and units", () => {
     expect(btc).toMatchObject({ venue: "variational", venueSymbol: "BTC-PERP", canonical: "BTC", basis: { kind: "perHours", hours: 8 }, nextFundingTime: raw.next_timestamp * 1000 });
     expect(typeof btc.rate).toBe("string");
     expect(rows.find(r => r.symbol === "ANTHROPIC")!.canonical).toBeNull();
+    expect(rows.find(r => r.symbol === "SPX")!.canonical).toBeNull();
   });
 
   it("swap funding: long / short rates kept on the Variational row, fundingRate null, next / next_timestamp nullable", async () => {
@@ -227,7 +235,7 @@ describe("funding semantics and units", () => {
     const a = new VariationalPublicAdapter(getVenue("variational"), "mainnet");
     const t = await a.getFundingTerms("ETH");
     const raw = listing("ETH-PERP").funding as { last: { interval_rate: string; annualized_rate: string }; interval_seconds: number; next_timestamp: number };
-    expect(t).toMatchObject({ kind: "variationalCurrentFunding", ticker: "ETH-PERP", rateKind: "predicted", intervalRate: raw.last.interval_rate, intervalHours: 8, nextFundingTime: raw.next_timestamp * 1000, venueAnnualizedRate: raw.last.annualized_rate });
+    expect(t).toMatchObject({ kind: "currentFunding", ticker: "ETH-PERP", rateKind: "predicted", intervalRate: raw.last.interval_rate, intervalHours: 8, nextFundingTime: raw.next_timestamp * 1000, venueAnnualizedRate: raw.last.annualized_rate });
     expect(t.hourlyRate).toBeCloseTo(Number(raw.last.interval_rate) / 8, 15);
     expect(t.annualizedPct).toBeCloseTo(Number(raw.last.interval_rate) / 8 * 8760 * 100, 9);
   });
@@ -336,6 +344,36 @@ describe("rate limit and shared cache: one request serves many reads", () => {
     expect(n).toBe(2);
   });
 
+  it("concurrent callers share ONE rejected in-flight request: all reject with the same error, nothing cached, the next read retries", async () => {
+    let n = 0;
+    let fail!: (e: unknown) => void;
+    const d = { ...deps(), stats: () => { n++; return n === 1 ? new Promise<unknown>((_, rej) => { fail = rej; }) : Promise.resolve(clone(FIXTURE)); } };
+    const calls = [fetchVariationalMarkets("mainnet", d), fetchVariationalFundingRates("mainnet", d), fetchVariationalMarkets("mainnet", d)];
+    const err = new PerpError("EXCHANGE_UNREACHABLE", "timeout");
+    fail(err);
+    const settled = await Promise.allSettled(calls);
+    expect(n).toBe(1);
+    for (const s of settled) expect(s).toMatchObject({ status: "rejected", reason: err });
+    expect(d.store.size).toBe(0);
+    await fetchVariationalMarkets("mainnet", d);
+    expect(n).toBe(2);
+  });
+
+  it("only a body of the documented shape is cached: drift fails the read and is not shared", async () => {
+    const d = deps({ data: [] });
+    await expect(fetchVariationalMarkets("mainnet", d)).rejects.toMatchObject({ structured: { code: "EXCHANGE_ERROR" } });
+    expect(d.store.size).toBe(0);
+  });
+
+  it("a repeated warning is printed once per process (the body is re-parsed on every read)", async () => {
+    const row = { ...listing("ETH-PERP"), ticker: "DUPWARN-PERP", mark_price: 1 };
+    const d = deps({ listings: [row, listing("BTC-PERP")] });
+    await fetchVariationalMarkets("mainnet", d);
+    d.store.clear();
+    await fetchVariationalMarkets("mainnet", d);
+    expect(d.warns.filter(w => w.includes("DUPWARN-PERP"))).toHaveLength(1);
+  });
+
   it("the cache holds only the raw JSON body (JSON-safe) with the short TTL", async () => {
     const set = vi.fn();
     const d = { ...deps(), cache: { get: () => null, set } };
@@ -403,15 +441,86 @@ describe("health and the funding comparison", () => {
     expect(h.probes[0]).toMatchObject({ ok: false, error: expect.stringMatching(/HTTP 500/) });
   });
 
-  it("arb funding comparison includes Variational rows by default (verified, official), normalized per market interval", async () => {
+  it("funding comparison: Variational is unverified — left out by default (not even fetched), present only with includeUnverified", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, FIXTURE));
-    const { rates, exchangeStatus } = await fetchVenuesRates([getVenue("variational")], "mainnet", false);
+    const off = await fetchVenuesRates([getVenue("variational")], "mainnet", false);
+    expect(off.rates).toEqual([]);
+    expect(off.exchangeStatus).toEqual({});
+    expect(fetchMock).not.toHaveBeenCalled();
+    const { rates, exchangeStatus } = await fetchVenuesRates([getVenue("variational")], "mainnet", true);
     expect(exchangeStatus).toEqual({ variational: "ok" });
     const btc = rates.find(r => r.canonical === "BTC")!;
-    expect(btc).toMatchObject({ exchange: "variational", apiStatus: "official", fundingVerified: true, basis: { kind: "perHours", hours: 8 } });
+    expect(btc).toMatchObject({ exchange: "variational", apiStatus: "official", fundingVerified: false, basis: { kind: "perHours", hours: 8 } });
     expect(btc.hourlyRate).toBeCloseTo(btc.fundingRate / 8, 15);
     expect(rates.find(r => r.canonical === "SPY")!.symbol).toBe("US500");
-    expect(rates.some(r => r.symbol.endsWith("-SWAP") || r.symbol === "ANTHROPIC")).toBe(false);
+    expect(rates.some(r => r.symbol.endsWith("-SWAP") || r.symbol === "ANTHROPIC" || r.symbol === "SPX")).toBe(false);
+  });
+
+  it("arb scan --compare US500 (a Variational ticker compared as SPY) prints a hint", async () => {
+    expect(canonicalHintFor("us500")).toMatch(/compared as SPY: perp arb scan --compare SPY --include-unverified/);
+    expect(canonicalHintFor("SPX-PERP")).toMatch(/never matched/);
+    expect(canonicalHintFor("BTC")).toBeNull();
+  });
+});
+
+/** One funding row on a non-Variational venue (spied publicData). */
+const vRate = (venue: string, symbol: string, canonical: string, mark: string, rate = "0.0001") =>
+  ({ venue, venueSymbol: symbol, symbol, canonical, rate, basis: { kind: "perHours", hours: 1 }, markPrice: mark, nextFundingTime: null });
+
+describe("cross-venue comparison with Variational present (fetchAllFundingRates, includeUnverified)", () => {
+  /** Variational from a fixture through fetch; every other venue from `rows` (spied, [] when absent). */
+  function venuesWith(rows: Record<string, ReturnType<typeof vRate>[]>, variationalListings: Array<Record<string, unknown>>) {
+    fetchMock.mockResolvedValue(jsonResponse(200, { listings: variationalListings }));
+    for (const v of listVenues()) {
+      if (v.id === "variational") continue;
+      vi.spyOn(v.publicData, "fetchFundingRates").mockResolvedValue((rows[v.id] ?? []) as never);
+      vi.spyOn(v.publicData, "fetchMarkets").mockResolvedValue([]);
+    }
+  }
+  const at = (ticker: string, mark: string, name = "Token") => ({ ...listing("STO-PERP"), ticker, name, mark_price: mark });
+
+  it("bestMarkPrice ranks Variational below the order-book venues and above TxFlow", async () => {
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    venuesWith({ hyperliquid: [vRate("hyperliquid", "STO", "STO", "0.0319")], txflow: [vRate("txflow", "BTC", "BTC", "81000")] },
+      [listing("STO-PERP"), listing("BTC-PERP")]);
+    const snap = await fetchAllFundingRates({ includeUnverified: true, network: "mainnet" });
+    const sto = snap.symbols.find(s => s.symbol === "STO")!;
+    expect(sto.rates.map(r => r.exchange).sort()).toEqual(["hyperliquid", "variational"]);
+    expect(sto.bestMarkPrice).toBe(0.0319); // Hyperliquid's, not Variational's
+    const btc = snap.symbols.find(s => s.symbol === "BTC")!;
+    const varBtc = btc.rates.find(r => r.exchange === "variational")!;
+    expect(btc.bestMarkPrice).toBe(varBtc.markPrice); // Variational's, not TxFlow's
+  });
+
+  it("same-ticker different assets never pair with Variational: ZETA / DIA / BEAM dropped by the price guard, SPX / QNT never matched", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    venuesWith({
+      qfex: [vRate("qfex", "ZETA", "ZETA", "31.59"), vRate("qfex", "BEAM", "BEAM", "23.56"), vRate("qfex", "US500", "SPX", "7621.7"), vRate("qfex", "QNT", "QNT", "36.32")],
+      lighter: [vRate("lighter", "DIA", "DIA", "505.77")],
+      hyperliquid: [vRate("hyperliquid", "STO", "STO", "0.0319")],
+    }, [at("ZETA-PERP", "0.0408"), at("DIA-PERP", "0.1533"), at("BEAM-PERP", "0.0027"), at("SPX-PERP", "0.3604", "SPX6900"), at("QNT-PERP", "189.9", "Quant"), listing("STO-PERP")]);
+    const snap = await fetchAllFundingRates({ includeUnverified: true, network: "mainnet" });
+    for (const sym of ["ZETA", "DIA", "BEAM", "SPX", "QNT"]) {
+      const c = snap.symbols.find(s => s.symbol === sym);
+      expect(c === undefined || !c.rates.some(r => r.exchange === "variational"), sym).toBe(true);
+    }
+    expect(snap.symbols.find(s => s.symbol === "STO")!.rates.map(r => r.exchange).sort()).toEqual(["hyperliquid", "variational"]);
+    expect(stderr.mock.calls.map(c => String(c[0])).join("")).toMatch(/excluded (variational|qfex) ZETA/);
+  });
+});
+
+describe("background jobs and bots refuse Variational", () => {
+  it("startJob refuses variational / var / omni (venue or exchange) before tmux is touched", () => {
+    const base = { strategy: "twap", exchange: "variational", network: "mainnet" as const, dryRun: false, cliArgs: [], selectors: { ows: null, wallet: null, noAgent: false, dex: null, noBuilder: false } };
+    for (const o of [base, { ...base, exchange: "var" }, { ...base, exchange: "hyperliquid", venue: "omni" }, { ...base, exchange: "OMNI" }]) {
+      let err: unknown;
+      try { startJob(o as never); } catch (e) { err = e; }
+      expect(err, JSON.stringify(o)).toBeInstanceOf(PerpError);
+      const s = (err as PerpError).structured;
+      expect(s.code).toBe("CAPABILITY_UNSUPPORTED");
+      expect((err as PerpError).message).toMatch(/^Background job "twap" refused: Variational has no trading in perp-cli — /);
+      expect(s.remediation).toBe(getVenue("variational").readOnlyRemediation);
+    }
   });
 });
 
@@ -469,6 +578,8 @@ describe("write-refusal table: -e variational writes refuse before any I/O", () 
     ["-e", "variational", "strategy", "grid", "BTC", "--upper", "90000", "--lower", "80000", "--grids", "5", "--size", "0.001"],
     ["-e", "variational", "strategy", "dca", "BTC", "buy", "10", "1h"],
     ["arb", "exec", "BTC", "variational", "hyperliquid", "10"],
+    ["strategy", "quick-arb", "--exchanges", "hyperliquid,variational"],
+    ["strategy", "funding-arb", "--exchanges", "hyperliquid,variational"],
   ];
 
   for (const args of CASES) {

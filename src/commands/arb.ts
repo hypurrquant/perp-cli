@@ -443,7 +443,14 @@ export async function handleCompare(isJson: () => boolean, symbol: string, inclu
   if (!isJson()) console.log(chalk.cyan(`  Fetching funding rates for ${symbol.toUpperCase()}...\n`));
   const comparison = await fetchSymbolFundingRates(symbol, includeUnverified);
   if (comparison) warnUnverifiedFunding(comparison.rates);
-  if (!comparison) { if (isJson()) return printJson(jsonOk({ symbol: symbol.toUpperCase(), available: false })); console.log(chalk.gray(`  ${symbol.toUpperCase()} not found on at least 2 exchanges.\n`)); return; }
+  if (!comparison) {
+    // A venue ticker whose canonical symbol differs (Variational US500-PERP = SPY): say where to look.
+    const hint = (await import("../exchanges/variational/public.js")).canonicalHintFor(symbol);
+    if (isJson()) return printJson(jsonOk({ symbol: symbol.toUpperCase(), available: false, ...(hint !== null ? { hint } : {}) }));
+    console.log(chalk.gray(`  ${symbol.toUpperCase()} not found on at least 2 exchanges.\n`));
+    if (hint !== null) console.log(chalk.yellow(`  Hint: ${hint}\n`));
+    return;
+  }
   if (isJson()) return printJson(jsonOk(comparison));
   printDetailedComparison(comparison);
 }

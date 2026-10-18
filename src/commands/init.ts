@@ -12,6 +12,7 @@ import { resolvePassphrase } from "../agent-wallet/passphrase.js";
 import { loadOws } from "../signer/ows-loader.js";
 import { getVenue, listVenuesWithRole, networkConfig, roleUnsupported, tryResolveVenueId, type VenueDefinition } from "../exchanges/venue.js";
 import "../exchanges/venues/index.js";
+import { VARIATIONAL_READ_ONLY_REMEDIATION } from "../exchanges/venues/variational.js";
 import type { Network, VenueId } from "../exchanges/venue-types.js";
 import { maxDefaultSlippageBps, parseSlippageSettingBps } from "../exchanges/slippage.js";
 import {
@@ -299,7 +300,7 @@ function signingSummary(p: ApproveAgentParams, master: { evm: string | null; sol
     case "txflow":
       return ["Nothing — TxFlow is market data only (unofficial read-only API)."];
     case "variational":
-      return ["Nothing — Variational is read-only (market data) in perp-cli; Variational has no public trading API yet."];
+      return [`Nothing — ${VARIATIONAL_READ_ONLY_REMEDIATION}.`];
   }
 }
 

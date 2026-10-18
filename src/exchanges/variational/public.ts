@@ -35,6 +35,7 @@ import type { AssetClass, FundingRateBasis, Network, VenueFundingRate, VenueMark
 import { variationalVenue } from "../venues/variational.js";
 import { variationalShapeError, VariationalClient } from "./client.js";
 import { symbolNotFound } from "../unknown-symbol.js";
+import type { SwapFundingRates } from "../interface.js";
 
 /** How long one stats payload serves every reader (the venue itself sends max-age=30). */
 export const VARIATIONAL_STATS_TTL_MS = 5_000;
@@ -79,18 +80,36 @@ const TRADFI_PERP_CLASS: Readonly<Record<string, AssetClass>> = {
  * Variational tickers whose canonical symbol is NOT the ticker:
  *  - US500-PERP is "State Street SPDR S&P 500 ETF Trust" (SPY, mark ≈ $760), not the S&P 500 index
  *    that other venues list as US500 (→ SPX).
- * `null` = never matched across venues.
+ * `null` = never matched across venues — the same exclusions the other venues apply:
+ *  - SPX-PERP is the SPX6900 token; "SPX" is the canonical key of the S&P 500 index, and
+ *    Hyperliquid / Aster / Lighter all exclude their SPX6900 (legacy-public.ts AMBIGUOUS,
+ *    lighter-public.ts LIGHTER_AMBIGUOUS), so it could only ever pair with the index.
+ *  - QNT-PERP is Quant (crypto); QNT is Quantinuum on Arcus / QFEX (LIGHTER_AMBIGUOUS too).
  *
  * Live cross-venue survey (2026-10-19, 440 Variational canonicals shared with another venue):
- * crypto tickers that mean an equity / index elsewhere — ZETA (ZetaChain vs QFEX Zeta Global),
- * DIA (DIA oracle vs Lighter DIA ETF), QNT (Quant vs Arcus / QFEX Quantinuum), BEAM (Beam vs QFEX
- * Beam Global), SPX (SPX6900 vs QFEX US500 → SPX) — keep ticker identity because the same ticker
- * IS the same token on the crypto venues (e.g. Hyperliquid SPX); the wrong pairing is dropped,
- * with a stderr warning, by the cross-venue price guard (rates.ts dropPriceOutliers / pair gap).
+ * ZETA (ZetaChain vs QFEX Zeta Global), DIA (DIA oracle vs Lighter DIA ETF) and BEAM (Beam vs QFEX
+ * Beam Global) also collide with an equity / ETF elsewhere but are the same token on the crypto
+ * venues; the wrong pairing is dropped, with a stderr warning, by the cross-venue price guard
+ * (rates.ts dropPriceOutliers / pair gap).
  */
 const CANONICAL_OVERRIDE: Readonly<Record<string, string | null>> = {
   US500: "SPY",
+  SPX: null,
+  QNT: null,
 };
+
+/**
+ * Hint for a cross-venue lookup by a Variational ticker whose canonical symbol differs (arb scan
+ * --compare US500): where it is compared instead, or that it is never matched. null = no override.
+ */
+export function canonicalHintFor(symbol: string): string | null {
+  const up = symbol.trim().toUpperCase().replace(/-PERP$/, "");
+  if (!(up in CANONICAL_OVERRIDE)) return null;
+  const canonical = CANONICAL_OVERRIDE[up];
+  return canonical === null
+    ? `Variational's ${up}-PERP is never matched across venues (the ticker means a different asset elsewhere)`
+    : `Variational's ${up}-PERP is compared as ${canonical}: perp arb scan --compare ${canonical} --include-unverified`;
+}
 
 /** Swaps (daily-funded TradFi swaps) by class — display only: swaps never get a canonical symbol. */
 const SWAP_CLASS: Readonly<Record<string, AssetClass>> = {
@@ -108,6 +127,14 @@ export function looksTradFi(name: string | null): boolean {
   return name !== null && TRADFI_NAME.test(name);
 }
 
+/** Each distinct warning once per process (the stats body is re-parsed on every read). */
+const warned = new Set<string>();
+export function warnOnce(warn: (msg: string) => void, msg: string): void {
+  if (warned.has(msg)) return;
+  warned.add(msg);
+  warn(msg);
+}
+
 // ── Parsed listing ──
 
 export type QuoteTier = "base" | "size_1k" | "size_100k" | "size_1m";
@@ -121,7 +148,7 @@ export interface VariationalQuote { tier: QuoteTier; notionalUsd: string | null;
 export interface VariationalQuotes { updatedAt: string; tiers: VariationalQuote[] }
 
 export interface VariationalPerpRate { annualized: string; interval: string }
-export interface VariationalSwapRate { annualizedLong: string; annualizedShort: string; intervalLong: string; intervalShort: string }
+export type VariationalSwapRate = SwapFundingRates;
 
 export type VariationalFunding =
   | { kind: "perpetual"; intervalSeconds: number; nextFundingTime: number | null; last: VariationalPerpRate; next: VariationalPerpRate | null }
@@ -282,7 +309,7 @@ export function parseVariationalStats(body: unknown, warn: (msg: string) => void
       dropped.push(`${ticker} (${e.message})`);
     }
   }
-  if (dropped.length > 0) warn(`[variational] dropped ${dropped.length} listing(s): ${dropped.join(", ")}`);
+  if (dropped.length > 0) warnOnce(warn, `[variational] dropped ${dropped.length} listing(s): ${dropped.join(", ")}`);
   return out;
 }
 
@@ -308,7 +335,7 @@ export function currentPerpRate(l: VariationalListing, warn: (msg: string) => vo
   const f = l.funding;
   if (f === null || f.kind !== "perpetual") return null;
   if (!perpRateConsistent(f.last, f.intervalSeconds)) {
-    warn(`[variational] ${l.ticker}: interval_rate ${f.last.interval} disagrees with annualized_rate ${f.last.annualized} over ${f.intervalSeconds}s — funding not shown`);
+    warnOnce(warn, `[variational] ${l.ticker}: interval_rate ${f.last.interval} disagrees with annualized_rate ${f.last.annualized} over ${f.intervalSeconds}s — funding not shown`);
     return null;
   }
   return f.last.interval;
@@ -348,6 +375,8 @@ export function fetchVariationalStatsRaw(net: Network, deps: VariationalPublicDe
     const hit = deps.cache.get(key);
     if (hit !== null && hit !== undefined) return hit;
     const body = await deps.stats(net);
+    // Only a body of the documented shape is shared; drift fails this read and is never cached.
+    if (!Array.isArray((body as { listings?: unknown } | null)?.listings)) throw variationalShapeError("payload has no listings array");
     deps.cache.set(key, body, VARIATIONAL_STATS_TTL_MS);
     return body;
   })().finally(() => { inflight.delete(key); });
@@ -401,7 +430,7 @@ export async function fetchVariationalMarkets(net: Network, deps: VariationalPub
     if (m === null) noFunding.push(l.ticker);
     else out.push(m);
   }
-  if (noFunding.length > 0) deps.warn(`[variational] ${noFunding.length} market(s) publish no funding terms (interval unknown) and are not shown here: ${noFunding.join(", ")}`);
+  if (noFunding.length > 0) warnOnce(deps.warn, `[variational] ${noFunding.length} market(s) publish no funding terms (interval unknown) and are not shown here: ${noFunding.join(", ")}`);
   return out;
 }
 

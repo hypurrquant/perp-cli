@@ -9,6 +9,7 @@
  */
 
 import type {
+  CurrentFundingTerms, RfqQuotes,
   ExchangeAdapter, ExchangeBalance, ExchangeFundingPayment, ExchangeKline, ExchangeMarketInfo, ExchangeOrder,
   ExchangePosition, ExchangeTrade, ExchangePublicTrade,
 } from "../interface.js";
@@ -18,47 +19,8 @@ import { rateToHourly, type Network } from "../venue-types.js";
 import { annualizeHourlyRate } from "../../funding/normalize.js";
 import {
   currentPerpRate, fetchVariationalListings, fundingBasisOf, resolveVariationalListing,
-  type VariationalListing, type VariationalQuote, type VariationalSwapRate,
+  type VariationalListing, type VariationalSwapRate,
 } from "./public.js";
-
-/** Funding terms of one market, normalized like the cross-venue comparison (hourly, APR %). */
-export interface VariationalFundingTerms {
-  kind: "variationalCurrentFunding";
-  venue: "variational";
-  symbol: string;
-  ticker: string;
-  contractType: "perpetual" | "swap";
-  /** "predicted": the rate the OLP will charge at nextFundingTime, recomputed during the window. */
-  rateKind: "predicted" | null;
-  /** Fraction per interval as published (perpetual); null for a swap or when unknown. */
-  intervalRate: string | null;
-  intervalHours: number | null;
-  /** intervalRate / intervalHours. */
-  hourlyRate: number | null;
-  /** hourlyRate × 24 × 365 × 100 (same normalization as arb scan). */
-  annualizedPct: number | null;
-  /** The venue's own annualized_rate (fraction), for cross-checking. */
-  venueAnnualizedRate: string | null;
-  /** Unix ms; null when not published (a swap between payments). */
-  nextFundingTime: number | null;
-  /** Swap only: separate long / short rates per daily payment (last applied, upcoming). */
-  swap: { last: VariationalSwapRate | null; next: VariationalSwapRate | null } | null;
-  note: string;
-}
-
-/** The OLP's indicative quotes at fixed notionals — RFQ quotes, NOT order-book levels. */
-export interface VariationalRfqQuotes {
-  kind: "rfqQuotes";
-  venue: "variational";
-  symbol: string;
-  ticker: string;
-  markPrice: string;
-  /** null = the market publishes no quotes right now (e.g. a closed swap). */
-  updatedAt: string | null;
-  baseSpreadBps: string | null;
-  quotes: VariationalQuote[];
-  note: string;
-}
 
 /** Legacy market row plus the Variational-only fields every row carries in JSON output. */
 export type VariationalMarketInfo = ExchangeMarketInfo & {
@@ -122,11 +84,11 @@ export class VariationalPublicAdapter implements ExchangeAdapter {
   }
 
   /** Current funding terms of one market (the API publishes no funding history). */
-  async getFundingTerms(symbol: string): Promise<VariationalFundingTerms> {
+  async getFundingTerms(symbol: string): Promise<CurrentFundingTerms> {
     const l = await this.listing(symbol);
     const f = l.funding;
     const rate = currentPerpRate(l, m => this.warn(m));
-    const base = { kind: "variationalCurrentFunding" as const, venue: "variational" as const, symbol: l.symbol, ticker: l.ticker, contractType: l.contractType };
+    const base = { kind: "currentFunding" as const, venue: "variational" as const, symbol: l.symbol, ticker: l.ticker, contractType: l.contractType };
     if (f === null) {
       return { ...base, rateKind: null, intervalRate: null, intervalHours: null, hourlyRate: null, annualizedPct: null, venueAnnualizedRate: null, nextFundingTime: null, swap: null, note: "Variational publishes no funding terms for this market right now" };
     }
@@ -156,7 +118,7 @@ export class VariationalPublicAdapter implements ExchangeAdapter {
   }
 
   /** The OLP's indicative RFQ quotes (Variational has no order book). */
-  async getRfqQuotes(symbol: string): Promise<VariationalRfqQuotes> {
+  async getRfqQuotes(symbol: string): Promise<RfqQuotes> {
     const l = await this.listing(symbol);
     return {
       kind: "rfqQuotes",

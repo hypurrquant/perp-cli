@@ -19,6 +19,9 @@ import type { VenueDefinition, VenuePublicData } from "../venue.js";
 export const VARIATIONAL_REST_URL = "https://omni-client-api.prod.ap-northeast-1.variational.io";
 export const VARIATIONAL_API_DOCS = "https://docs.variational.io/technical-documentation/api";
 
+/** Every role refusal's remediation (VenueDefinition.readOnlyRemediation, read by roleUnsupported). */
+export const VARIATIONAL_READ_ONLY_REMEDIATION = "Variational is read-only (market data) in perp-cli; Variational has no public trading API yet. Trade on omni.variational.io; perp-cli shows Variational market data (perp -e variational market list|prices|info|funding|book, perp arb scan --rates --include-unverified)";
+
 /** Lazy: public.ts is only loaded when market data is actually requested. */
 const publicData: VenuePublicData = {
   async fetchFundingRates(net) {
@@ -57,12 +60,13 @@ export const variationalVenue: VenueDefinition = {
   // funding.interval_seconds is per market (1h / 4h / 8h perps; 24h swaps).
   fundingRateBasis: "perMarket",
   settlementIntervalHours: "perMarket",
-  // The unit is documented: funding.last.interval_rate is a decimal fraction for one
-  // interval_seconds window, positive = longs pay. Cross-checked on every perp of the live payload
-  // (2026-10-19, 557 perps): interval_rate = annualized_rate × interval_seconds / 365 d within
-  // rounding (max relative deviation 6e-4); a row that breaks that identity gets no rate.
-  // Not checked against settled payments (no public account API).
-  fundingVerified: true,
+  // UNVERIFIED (design §14.12 #6: verified = checked against settled payments). The unit is
+  // documented (funding.last.interval_rate = fraction per interval_seconds, positive = longs pay)
+  // and interval_rate = annualized_rate × interval / 365 d holds on every live perp (2026-10-19),
+  // but that only shows the published fields agree: the rate is a moving prediction, there is no
+  // public account API to check settled payments, and the accrual hours of equity / ETF perps are
+  // not documented. Shown only on request (arb scan --rates --include-unverified).
+  fundingVerified: false,
   roles: ["marketData"],
   gatedRoles: null,
   capabilities: null,
@@ -78,6 +82,7 @@ export const variationalVenue: VenueDefinition = {
   maxSlippageBps: 1,
   builderFee: null,
   apiStatus: { kind: "official" },
+  readOnlyRemediation: VARIATIONAL_READ_ONLY_REMEDIATION,
   // A public-only adapter: market data works, every account / trading method refuses.
   async create(ctx) {
     const { VariationalPublicAdapter } = await import("../variational/adapter.js");

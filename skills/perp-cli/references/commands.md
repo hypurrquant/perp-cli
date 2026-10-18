@@ -326,7 +326,7 @@ perp --json arb scan --compare <SYMBOL>                     # compare a symbol a
 perp --json arb scan --positions                            # position funding impact; actual24h null + fundingHistoryErrors when a venue's history is unreadable
 perp --json arb scan --live --interval 60                   # continuous monitoring
 perp --json arb scan --top 10 --hold-days 7 --bridge-cost 0 --size 100  # cost-aware filtering
-perp --json arb scan --rates --include-unverified           # also show QFEX and TxFlow (unverified funding; TxFlow rows apiStatus "unofficial"; display only, never ranked)
+perp --json arb scan --rates --include-unverified           # also show QFEX, TxFlow and Variational (unverified funding; TxFlow rows apiStatus "unofficial"; display only, never ranked)
 # netSpread / grossSpread = annualized % (netSpread = gross minus round-trip costs amortized over --hold-days)
 # spot-perp rows: netSpreadPct / grossSpreadPct, spotExchanges[], perpExchange, direction
 

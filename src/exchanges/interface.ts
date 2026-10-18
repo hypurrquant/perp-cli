@@ -148,6 +148,63 @@ export interface ExchangeKline {
   trades: number | null;
 }
 
+/** One indicative quote of an RFQ venue's maker at a fixed size. */
+export interface RfqQuoteTier {
+  /** Venue tier id ("base" = the market's minimum order size). */
+  tier: string;
+  /** USD notional of the tier; null when the venue does not publish it (minimum order size). */
+  notionalUsd: string | null;
+  bid: string;
+  ask: string;
+}
+
+/** An RFQ venue's indicative maker quotes — NOT order-book levels (`market book` on such a venue). */
+export interface RfqQuotes {
+  kind: "rfqQuotes";
+  venue: string;
+  symbol: string;
+  ticker: string;
+  markPrice: string;
+  /** null = no quotes published right now (e.g. a closed market). */
+  updatedAt: string | null;
+  baseSpreadBps: string | null;
+  quotes: RfqQuoteTier[];
+  note: string;
+}
+
+/** Separate long / short rates of one daily swap funding payment (fractions). */
+export interface SwapFundingRates {
+  annualizedLong: string;
+  annualizedShort: string;
+  intervalLong: string;
+  intervalShort: string;
+}
+
+/** Current funding terms of one market, for a venue that publishes no funding history (`market funding`). */
+export interface CurrentFundingTerms {
+  kind: "currentFunding";
+  venue: string;
+  symbol: string;
+  ticker: string;
+  contractType: "perpetual" | "swap";
+  /** "predicted": the rate charged at nextFundingTime, recomputed during the window. */
+  rateKind: "predicted" | null;
+  /** Fraction per interval as published (perpetual); null for a swap or when unknown. */
+  intervalRate: string | null;
+  intervalHours: number | null;
+  /** intervalRate / intervalHours. */
+  hourlyRate: number | null;
+  /** hourlyRate × 24 × 365 × 100 (same normalization as arb scan). */
+  annualizedPct: number | null;
+  /** The venue's own annualized rate (fraction), for cross-checking. */
+  venueAnnualizedRate: string | null;
+  /** Unix ms; null when not published. */
+  nextFundingTime: number | null;
+  /** Swap only: long / short rates of the last applied and the upcoming payment. */
+  swap: { last: SwapFundingRates | null; next: SwapFundingRates | null } | null;
+  note: string;
+}
+
 export interface ExchangeAdapter {
   readonly name: string;
   readonly chain?: string;
@@ -162,6 +219,10 @@ export interface ExchangeAdapter {
   getRecentTrades(symbol: string, limit?: number): Promise<ExchangePublicTrade[]>;
   getFundingHistory(symbol: string, limit?: number): Promise<{ time: number; rate: string; price: string | null }[]>;
   getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]>;
+  /** RFQ venue (no order book): the maker's indicative quotes. Absent = the venue has an order book. */
+  getRfqQuotes?(symbol: string): Promise<RfqQuotes>;
+  /** Venue without a funding-history API: the current funding terms. Absent = use getFundingHistory. */
+  getFundingTerms?(symbol: string): Promise<CurrentFundingTerms>;
 
   // ── Account ──
   getBalance(): Promise<ExchangeBalance>;

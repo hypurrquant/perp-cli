@@ -8,6 +8,7 @@
 import { mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { randomBytes } from "crypto";
 
 const CACHE_DIR = join(tmpdir(), "perp-cli-cache");
 
@@ -56,7 +57,9 @@ export function setCached<T>(key: string, data: T, ttlMs: number): void {
     const entry: CacheEntry<T> = { ts: Date.now(), ttl: ttlMs, data };
     const content = JSON.stringify(entry);
     const file = join(CACHE_DIR, `${safeKey(key)}.json`);
-    const tmp = file + ".tmp";
+    // Unique per writer: concurrent processes writing the same key must not share one tmp file
+    // (a rename of another writer's half-written tmp would publish a partial entry).
+    const tmp = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
     writeFileSync(tmp, content);
     renameSync(tmp, file);
   } catch {
@@ -106,7 +109,7 @@ export function invalidateCache(keyPrefix?: string): void {
     const prefix = keyPrefix ? safeKey(keyPrefix) : "";
     const files = readdirSync(CACHE_DIR);
     for (const f of files) {
-      if (!f.endsWith(".json")) continue;
+      if (!f.endsWith(".json")) continue; // also skips in-flight "<key>.json.<pid>.<rand>.tmp" files
       if (!prefix || f.startsWith(prefix)) {
         try { unlinkSync(join(CACHE_DIR, f)); } catch { /* ignore */ }
       }
