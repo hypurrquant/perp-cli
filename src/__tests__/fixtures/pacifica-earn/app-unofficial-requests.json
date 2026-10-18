@@ -1,0 +1,20 @@
+{
+  "_source": "app.pacifica.fi production JS bundle, read 2026-10-19 (no request was sent). Not in the Pacifica API docs (apiStatus: unofficial).",
+  "_bundle": {
+    "endpoints": "/_next/static/chunks/7246-cccf0d7de9e270d5.js module 23949 (game API: accounts, history_summary, history, config, preview, deposit, end)",
+    "signTypes": "/_next/static/chunks/7246-cccf0d7de9e270d5.js module 57813 (preview_game_account, deposit_to_game, end_game)",
+    "signer": "/_next/static/chunks/2076-fdec458c8e8489bb.js module 4811 (agent-wallet signer BU / b6; expiry_window = 78505.A9 = 300000)",
+    "whitelist": "/_next/static/chunks/3554-b7988cea568e08c1.js (GET /api/v1/lake/get_deposit_whitelist?lake=, reads data.addresses)"
+  },
+  "end_game": {
+    "request": "POST /api/v1/game/end",
+    "signedMessage": { "timestamp": "<ms>", "expiry_window": 300000, "type": "end_game", "data": { "game_account": "<print order address>" } },
+    "body": { "account": "<main account>", "agent_wallet": "<agent pubkey>", "signature": "<base58>", "timestamp": "<ms>", "expiry_window": 300000, "game_account": "<print order address>" },
+    "responseUsed": { "data": { "scheduled_end_at_ms": "<ms>" } },
+    "appCall": "e2=mutationFn: async e => I({game_account: e}); onSuccess reads e.data.scheduled_end_at_ms"
+  },
+  "get_deposit_whitelist": {
+    "request": "GET /api/v1/lake/get_deposit_whitelist?lake=<vault address>",
+    "liveResponse2026-10-19": { "success": true, "data": { "addresses": [] }, "error": null, "code": null }
+  }
+}

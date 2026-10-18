@@ -7,7 +7,8 @@ const LOG_FILE = resolve(PERP_DIR, "executions.jsonl");
 export interface ExecutionRecord {
   id: string;
   timestamp: string;
-  type: "market_order" | "limit_order" | "cancel" | "stop_order" | "edit_order" | "rebalance" | "arb_entry" | "arb_close" | "bridge" | "multi_leg" | "multi_leg_rollback" | "split_order";
+  type: "market_order" | "limit_order" | "cancel" | "stop_order" | "edit_order" | "rebalance" | "arb_entry" | "arb_close" | "bridge" | "multi_leg" | "multi_leg_rollback" | "split_order"
+    | "print_deposit" | "print_end" | "vault_deposit" | "vault_withdraw";
   exchange: string;
   symbol: string;
   side: string;

@@ -583,6 +583,16 @@ export class PacificaAdapter implements ExchangeAdapter {
     });
   }
 
+  /**
+   * The active signer for an account request whose body the caller builds itself (Print / vault
+   * writes): `account` (master address) and `agentWallet` (agent pubkey, or null when the master
+   * signs). Resolving it signs nothing. NO_SIGNER_AVAILABLE / AGENT_EXPIRED as `_resolveSigner`.
+   */
+  signingIdentity(): { tier: "agent" | "master" | "pk"; account: string; agentWallet: string | null; signMessage: (msg: Uint8Array) => Promise<Uint8Array> } {
+    const r = this._resolveSigner();
+    return { tier: r.tier, account: this.account, agentWallet: r.tier === "agent" ? r.address : null, signMessage: (msg) => r.signer.signMessage(msg) };
+  }
+
   /** Access the underlying Keypair (only available with LocalSolanaSigner). */
   get keypair(): Keypair {
     if (this._solanaSigner instanceof LocalSolanaSigner) {

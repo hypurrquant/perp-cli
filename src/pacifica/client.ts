@@ -649,6 +649,68 @@ export class PacificaClient {
     return this.post("/lake/withdraw", body);
   }
 
+  // ==================== PRINT (game) + VAULT READS / PRE-SIGNED WRITES ====================
+  // Shapes and parsing live in src/exchanges/pacifica-print.ts / pacifica-vaults.ts.
+
+  /**
+   * Unauthenticated GET that keeps the whole {success, data, has_more, next_cursor} envelope.
+   * Same credit limiter as get() (unsigned IP quota, PACIFICA_READ_NEED: may wait for the window,
+   * else RATE_LIMITED sent:false); the response headers are recorded; HTTP 429 → RATE_LIMITED
+   * (structural, never retried). Timeout → TIMEOUT, transport failure → EXCHANGE_UNREACHABLE,
+   * non-JSON / non-object body → EXCHANGE_ERROR (a read: nothing can have changed).
+   */
+  async getEnvelope(path: string, params: Record<string, string> = {}): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}${path}`);
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    const what = `GET ${path}`;
+    const ticket = await this.rate.acquire(what, PACIFICA_READ_NEED);
+    let res: Response;
+    let text: string;
+    try {
+      res = await fetch(url.toString(), { headers: this.headers(), signal: AbortSignal.timeout(PACIFICA_POST_TIMEOUT_MS) });
+      ticket.settle(res);
+      text = await res.text();
+    } catch (e) {
+      const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+      throw new PerpError(timedOut ? "TIMEOUT" : "EXCHANGE_UNREACHABLE", `Pacifica GET ${path} ${timedOut ? `timed out after ${PACIFICA_POST_TIMEOUT_MS} ms` : `failed: ${extractErrorMessage(e)}`}`, {
+        exchange: "pacifica", remediation: "Retry; if it keeps failing check the network and Pacifica's status",
+      });
+    } finally {
+      ticket.release(); // no-op once settled; a transport failure frees the reservation
+    }
+    if (res.status === 429) throw this.rate.rateLimitedError(what, res, text);
+    if (!res.ok) throw new Error(`GET ${path} failed (${res.status}): ${text}`);
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new PerpError("EXCHANGE_ERROR", `Pacifica GET ${path} returned a non-JSON body (HTTP ${res.status}): ${text.slice(0, 160)}`, { exchange: "pacifica" });
+    }
+    if (json === null || typeof json !== "object" || Array.isArray(json)) {
+      throw new PerpError("EXCHANGE_ERROR", `Pacifica GET ${path} returned a non-object body: ${text.slice(0, 160)}`, { exchange: "pacifica" });
+    }
+    return json as Record<string, unknown>;
+  }
+
+  /**
+   * POST a body the caller already built and signed (Print / vault writes sign their own canonical
+   * message so `--dry-run` can show the exact body). Same unknown-outcome rules as every write.
+   */
+  async postPresigned(path: "/game/deposit" | "/game/end" | "/lake/deposit" | "/lake/withdraw", body: Record<string, unknown>): Promise<unknown> {
+    return this.post(path, body);
+  }
+
+  /**
+   * Pre-sign credit wait for a pre-signed write (same rule as signedBody / amend): call BEFORE
+   * building + signing, so the post-sign wait in post() (≤ PACIFICA_SIGNED_MAX_WAIT_MS, inside the
+   * 5 s expiry_window) finds credits. Cost: the docs' rate-limits table lists no Print / vault
+   * entry — "Standard request/action: 1 credit" applies (end_game is not an order cancellation).
+   * Fail-fast RATE_LIMITED here sent and signed nothing (details.sent === false).
+   */
+  async awaitPresignedCapacity(operationType: string): Promise<void> {
+    await this.signedRate.awaitCapacity(operationType, writeNeed(false, PACIFICA_MAX_THROTTLE_WAIT_MS));
+  }
+
   // ==================== BUILDER CODE ====================
 
   async approveBuilderCode(

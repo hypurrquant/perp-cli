@@ -46,6 +46,7 @@ import { logMcpExecution, mcpPreTradeGate, mcpReduceOnlyGate, resolveMcpNetwork 
 import { setSharedApiNetwork } from "./api/public/urls.js";
 import { logClientId } from "./client-id-tracker.js";
 import { loadSettings } from "./settings.js";
+import { registerPacificaEarnMcpTools } from "./mcp-pacifica-earn.js";
 
 /**
  * The one network this server serves: PERP_NETWORK, validated like `-n` (an invalid value
@@ -253,6 +254,9 @@ const server = new McpServer(
   { name: "perp-cli", version: _pkg.version },
   { capabilities: { tools: {}, resources: {}, prompts: {} } },
 );
+
+// Pacifica Print + vaults: read-only tools (src/mcp-pacifica-earn.ts).
+registerPacificaEarnMcpTools(server, MCP_NETWORK, ok, errOf);
 
 // ============================================================
 // Market Data tools (read-only, no private key needed)

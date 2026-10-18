@@ -131,9 +131,17 @@ export function registerWalletManageCommands(
     .description("Create a new vault (lake)")
     .option("--manager <address>", "Manager address (omit to create a fresh vault with no manager)")
     .option("--nickname <name>", "Display name for the vault")
-    .option("--initial-deposit <amount>", "Seed deposit in USDC from the creator")
+    .option("--initial-deposit <amount>", "Seed deposit in USDC from the creator (master-signed only: refused with an agent key)")
     .action(async (opts: { manager?: string; nickname?: string; initialDeposit?: string }) => {
       const a = await pac();
+      // A seed deposit moves funds into a vault like `vault deposit`: master-signed only (an agent
+      // key must not be able to fund a vault it names the manager of).
+      if (opts.initialDeposit !== undefined && (a as { activeSignerTier?: unknown }).activeSignerTier !== "master" && (a as { activeSignerTier?: unknown }).activeSignerTier !== "pk") {
+        throw new PerpError("NO_SIGNER_AVAILABLE", "A vault seed deposit (--initial-deposit) must be signed by the master wallet, not the agent key", {
+          exchange: "pacifica",
+          remediation: "Re-run with --no-agent (master wallet), or create the vault without --initial-deposit and deposit with: perp -e pacifica vault deposit <vault> <amount>",
+        });
+      }
       const result = await a.sdk.createLake(
         {
           manager: opts.manager === undefined ? null : opts.manager,
@@ -148,33 +156,20 @@ export function registerWalletManageCommands(
       console.log(JSON.stringify(result, null, 2));
     });
 
-  lake
-    .command("deposit <lake> <amount>")
-    .description("Deposit USDC into a vault (<lake> = vault address)")
-    .action(async (lakeAddress: string, amount: string) => {
-      const a = await pac();
-      const result = await a.sdk.depositToLake(
-        { lake: lakeAddress, amount: parsePositiveDecimal(amount, "deposit amount") },
-        a.publicKey,
-        a.signer
-      );
-      if (isJson()) return printJson(jsonOk(result));
-      console.log(chalk.green(`\n  Deposited $${amount} to vault ${lakeAddress}.\n`));
-    });
-
-  lake
-    .command("withdraw <lake> <shares>")
-    .description("Redeem vault shares (<lake> = vault address, <shares> = number of shares, not USDC)")
-    .action(async (lakeAddress: string, shares: string) => {
-      const a = await pac();
-      const result = await a.sdk.withdrawFromLake(
-        { lake: lakeAddress, shares: parsePositiveDecimal(shares, "shares") },
-        a.publicKey,
-        a.signer
-      );
-      if (isJson()) return printJson(jsonOk(result));
-      console.log(chalk.green(`\n  Redeemed ${shares} shares from vault ${lakeAddress}.\n`));
-    });
+  // deposit / withdraw moved to the validated path (`perp -e pacifica vault deposit|withdraw`):
+  // nickname / address resolution, documented limits, --dry-run, unknown-outcome handling, and a
+  // master-only vault deposit. These stubs refuse before any key is loaded or anything is signed.
+  for (const [sub, args, target] of [["deposit", "<lake> <amount>", "vault deposit <vault> <amount>"], ["withdraw", "<lake> <shares>", "vault withdraw <vault> <shares>|--all"]] as const) {
+    lake
+      .command(`${sub} ${args}`)
+      .description(`Moved: use perp -e pacifica ${target} (validated, supports --dry-run)`)
+      .action(() => {
+        throw new PerpError("INVALID_PARAMS", `wallet manage lake ${sub} was replaced by: perp -e pacifica ${target}`, {
+          exchange: "pacifica",
+          remediation: `Run: perp -e pacifica --dry-run ${target} — then without --dry-run (nothing was signed or sent)`,
+        });
+      });
+  }
 
   // Pacifica builder-OWNER tools. A user's builder approval / revoke / status is
   // `perp wallet builder approve|revoke|status <venue>` (settings builder.<venue>).
