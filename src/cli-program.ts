@@ -322,7 +322,19 @@ export function buildProgram(opts: { defaultExchange: string; version: string })
 
   // Background processes & strategies
   registerBackgroundCommands(program, isJson, getAdapterForExchange);
-  registerStrategyCommands(program, getAdapter, getAdapterForExchange, isJson);
+  // Every strategy command (bots, plans, TWAP / DCA / grid, `strategy run`, `--exchanges` legs,
+  // config-file venues) builds its adapters through these: a venue without the trading role
+  // (TxFlow, release-gated RISEx) is refused here, before any key is opened — also under --dry-run.
+  const strategyVenueGate = (venue: string): void => {
+    const def = getVenue(venue);
+    if (!def.roles.includes("trading")) throw roleUnsupported(def, "automation");
+  };
+  registerStrategyCommands(
+    program,
+    async () => { strategyVenueGate(getExchange()); return getAdapter(); },
+    async (exchange) => { strategyVenueGate(exchange); return getAdapterForExchange(exchange); },
+    isJson,
+  );
 
   // Agent-friendly commands
   registerRiskCommands(program, getAdapterForExchange, isJson);
@@ -366,7 +378,7 @@ const TRADE_READ_COMMANDS = new Set(["status", "fills", "pnl-track", "spot-order
 /**
  * The trading-role gate at command resolution: `perp -e <venue> trade <write>`, every
  * `perp trade multi <venue>:…` leg and `perp wallet agent approve|import|revoke|rotate <venue>`
- * refuse with roleUnsupported() (CAPABILITY_UNSUPPORTED) when the venue has no trading role. Runs
+ * (revoke --force / --local-only excepted: local cleanup only) and every `strategy … --exchanges` leg refuse with roleUnsupported() (CAPABILITY_UNSUPPORTED) when the venue has no trading role. Runs
  * before the dry-run guard and before any action, so a dry-run plan can never present a gated
  * venue as tradable. Unknown venue names are left to the command's own UNKNOWN_VENUE handling.
  */
@@ -378,10 +390,18 @@ export function assertCommandVenueRole(actionCommand: Command, exchangeOpt: stri
   if (leaf === "multi" && (path[0] === "trade" || path.length === 1)) {
     venueArgs = actionCommand.args.map(leg => leg.split(":")[0]);
     feature = "trading";
+  } else if (path[0] === "strategy" && typeof actionCommand.opts().exchanges === "string") {
+    // `--exchanges` legs (strategy run / funding-arb / quick-arb / delta-neutral, incl. their defaults):
+    // refused before the first leg's adapter is built. The -e venue is gated by the strategy adapter factory.
+    venueArgs = String(actionCommand.opts().exchanges).split(",").map(v => v.trim()).filter(v => v !== "");
+    feature = "automation";
   } else if (path[0] === "trade" && path.length === 2 && !TRADE_READ_COMMANDS.has(leaf)) {
     venueArgs = [exchangeOpt];
     feature = "trading";
   } else if (path[0] === "wallet" && path[1] === "agent" && ["approve", "import", "revoke", "rotate"].includes(path[2] ?? "")) {
+    // `revoke --force` / `--local-only` only clears local records (nothing signed or sent): allowed.
+    const o = actionCommand.opts() as { force?: boolean; localOnly?: boolean };
+    if (path[2] === "revoke" && (o.force === true || o.localOnly === true)) return;
     venueArgs = actionCommand.args.slice(0, 1);
     feature = path[2] === "import" ? "agentImport" : `agent ${path[2]}`;
   } else {

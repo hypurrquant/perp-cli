@@ -139,6 +139,12 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
       masterAddress = new Wallet(ctx.credentials.pk).address;
     }
     const meta = ctx.noAgent ? null : ctx.credentials.agent;
+    // Read-only release (trading role gated): reads need only an account address — the master's, else
+    // the one recorded with a stored signer. The signer's key is never opened.
+    if (!def.roles.includes("trading")) {
+      const recorded = meta !== null && isRisexMeta(meta) && meta.network === ctx.network ? meta.accountAddress : null;
+      return new RisexAdapter(def, ctx.network, { account: masterAddress ?? recorded, signer: null, meta: null, noSignerReason: null });
+    }
     if (meta === null || !isRisexMeta(meta)) {
       return new RisexAdapter(def, ctx.network, {
         account: masterAddress, signer: null, meta: null,

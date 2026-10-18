@@ -1436,6 +1436,9 @@ server.tool(
         symbol: s.symbol,
         maxSpreadAnnual: `${s.maxSpreadAnnual.toFixed(2)}%`,
         strategy: `Long ${s.longExchange} / Short ${s.shortExchange}`,
+        // false = a leg is on a read-only venue (RISEx in this release): data only, not tradable here.
+        executable: s.executable,
+        readOnlyLegs: s.readOnlyLegs,
         estHourlyIncomePerK: `$${s.estHourlyIncomeUsd.toFixed(4)}`,
         rates: s.rates.map(r => ({
           exchange: r.exchange,

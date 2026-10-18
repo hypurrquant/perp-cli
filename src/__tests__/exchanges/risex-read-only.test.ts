@@ -17,6 +17,11 @@ vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
   },
 }));
 vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({ StdioServerTransport: class {} }));
+const owsCreate = vi.fn((name: string) => ({ getAddress: () => (name === "main" ? "0x00000000000000000000000000000000000000c3" : "0x00000000000000000000000000000000000000a1") }));
+vi.mock("../../signer/ows-evm.js", () => ({ OwsEvmSigner: { create: (name: string, _p: string) => owsCreate(name) } }));
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import "../../exchanges/venues/index.js";
 import { PerpError } from "../../errors.js";
 import {
@@ -95,8 +100,14 @@ describe("release switch + venue definition", () => {
 });
 
 describe("adapter: reads work, every write refuses before any request", () => {
+  // A signer IS present: the release gate must refuse before it is ever used.
+  const spySigner = {
+    getAddress: vi.fn(() => "0x00000000000000000000000000000000000000a1"),
+    signTypedData: vi.fn(async () => "0x"),
+    signMessage: vi.fn(async () => "0x"),
+  };
   const adapter = () => new RisexAdapter(getVenue("risex"), "mainnet", {
-    account: ACCOUNT, signer: null, meta: null, noSignerReason: new PerpError("AGENT_NOT_REGISTERED", "no signer"),
+    account: ACCOUNT, signer: spySigner, meta: null, noSignerReason: null,
   });
 
   it("market data and account reads (public by address)", async () => {
@@ -122,6 +133,8 @@ describe("adapter: reads work, every write refuses before any request", () => {
     it(`${name} → CAPABILITY_UNSUPPORTED (phase refusal), nothing sent`, async () => {
       await expect(call(adapter())).rejects.toMatchObject({ structured: { code: "CAPABILITY_UNSUPPORTED" }, message: expect.stringMatching(GATED) });
       expect(fetchMock).not.toHaveBeenCalled();
+      expect(spySigner.signTypedData).not.toHaveBeenCalled();
+      expect(spySigner.signMessage).not.toHaveBeenCalled();
     });
   }
 
@@ -186,6 +199,16 @@ describe("CLI entry points (with and without --dry-run)", () => {
     ["-e", "risex", "trade", "reduce", "BTC", "50"],
     ["-e", "risex", "trade", "check", "BTC", "buy", "0.001"],
     ["-e", "risex", "trade", "atomic", "--usd", "20", "--long", "BTC", "--short", "ETH"],
+    ["-e", "risex", "trade", "twap", "BTC", "buy", "0.01", "10m"],
+    ["-e", "risex", "trade", "scale-in", "BTC", "buy", "--levels", "60000:50,59000:50", "--size", "0.001"],
+    ["-e", "risex", "trade", "scale-tp", "BTC", "--levels", "90000:50,95000:50"],
+    ["-e", "risex", "trade", "spot-buy", "BTC", "0.001"],
+    ["-e", "risex", "trade", "spot-sell", "BTC", "0.001"],
+    ["-e", "risex", "trade", "spot-limit", "BTC", "buy", "50000", "0.001"],
+    ["-e", "risex", "trade", "spot-cancel", "BTC", "1"],
+    ["-e", "risex", "trade", "spot-transfer", "to-spot", "10"],
+    ["-e", "risex", "trade", "cancel-stop", "BTC", "1"],
+    ["-e", "risex", "trade", "cancel-twap", "BTC", "1"],
     ["-e", "rise", "trade", "market", "BTC", "buy", "0.001"],
     ["trade", "multi", "risex:BTC:buy:0.001", "hyperliquid:BTC:sell:0.001"],
     ["arb", "exec", "BTC", "risex", "hyperliquid", "100"],
@@ -207,6 +230,74 @@ describe("CLI entry points (with and without --dry-run)", () => {
       });
     }
   }
+
+  describe("strategies and plans (the gate runs before the adapter is built — no key opened)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "risex-gate-"));
+    const planFile = join(dir, "plan.json");
+    writeFileSync(planFile, JSON.stringify({ version: "1.0", steps: [{ id: "1", action: "set_leverage", params: { symbol: "BTC", leverage: 5 } }, { id: "2", action: "cancel_all", params: {} }] }));
+    const configFile = join(dir, "bot.json");
+    writeFileSync(configFile, JSON.stringify({ exchange: "risex", symbol: "BTC", strategy: { type: "grid" } }));
+    const strategies: string[][] = [
+      ["-e", "risex", "strategy", "plan", "execute", planFile],
+      ["-e", "risex", "strategy", "run", "grid", "BTC", "--headless"],
+      ["strategy", "run", "grid", "BTC", "--headless", "--exchanges", "hyperliquid,risex"],
+      ["strategy", "start", configFile, "--headless"],
+      ["-e", "risex", "strategy", "grid", "BTC", "--upper", "90000", "--lower", "80000"],
+      ["-e", "risex", "strategy", "quick-grid", "BTC"],
+      ["-e", "risex", "strategy", "dca", "BTC", "buy", "10", "1m"],
+      ["-e", "risex", "strategy", "twap", "BTC", "buy", "0.01", "10m"],
+      ["-e", "risex", "strategy", "trailing-stop", "BTC", "--trail", "2"],
+      ["strategy", "funding-arb", "--exchanges", "hyperliquid,risex"],
+    ];
+    for (const base of strategies) {
+      for (const args of [base, ["--dry-run", ...base]]) {
+        it(`perp ${args.join(" ")} → CAPABILITY_UNSUPPORTED`, async () => {
+          const create = vi.spyOn(getVenue("risex"), "create" as never);
+          const env = await run(args);
+          expect(env.ok).toBe(false);
+          // --dry-run on a command that cannot simulate is refused by the dry-run guard first (INVALID_PARAMS).
+          if (env.error!.code === "INVALID_PARAMS") expect(env.error!.message).toMatch(/does not support --dry-run/);
+          else {
+            expect(env.error!.code).toBe("CAPABILITY_UNSUPPORTED");
+            expect(env.error!.message).toMatch(GATED);
+          }
+          expect(create).not.toHaveBeenCalled();
+          expect(writeCalls()).toEqual([]);
+        });
+      }
+    }
+  });
+
+  describe("wallet agent revoke risex", () => {
+    const META = {
+      kind: "risex", agentName: "perp-cli-risex", agentWalletName: "agent-risex-main",
+      signerAddress: "0x00000000000000000000000000000000000000a1", accountAddress: ACCOUNT,
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      permissions: { tradingOnly: true, disabled: [0, 1, 3, 4], verifiedAt: "2026-10-14T00:00:00Z" },
+      network: "mainnet", approvedAt: "2026-10-14T00:00:00Z", source: "approved",
+    };
+    const writeMeta = () => {
+      const d = resolve(process.env.HOME as string, ".perp");
+      mkdirSync(d, { recursive: true });
+      writeFileSync(resolve(d, "settings.json"), JSON.stringify({ agents: { risex: { "perp-cli-risex": META } } }));
+    };
+
+    it("the on-chain revoke stays gated", async () => {
+      writeMeta();
+      const env = await run(["wallet", "agent", "revoke", "risex", "perp-cli-risex"]);
+      expect(env.error!.code).toBe("CAPABILITY_UNSUPPORTED");
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("--force only clears the local record (nothing signed or sent)", async () => {
+      writeMeta();
+      const env = await run(["wallet", "agent", "revoke", "risex", "perp-cli-risex", "--force"]);
+      expect(env).toMatchObject({ ok: true, data: { revoked: false, local: true, txHash: null } });
+      const { getVenueAgent } = await import("../../agent-wallet/store.js");
+      expect(getVenueAgent("risex", "perp-cli-risex")).toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
 
   it("perp -e risex market list still works (public data)", async () => {
     const env = await run(["-e", "risex", "market", "list"]);
@@ -239,5 +330,60 @@ describe("MCP write tools", () => {
     const env = JSON.parse(r.content[0].text) as { ok: boolean; data?: unknown };
     expect(env.ok).toBe(true);
     expect(JSON.stringify(env.data)).toContain("BTC");
+  });
+});
+
+describe("RisexAdapter.create while trading is gated", () => {
+  const meta = {
+    kind: "risex", agentName: "perp-cli-risex", agentWalletName: "agent-risex-stale",
+    signerAddress: "0x00000000000000000000000000000000000000a1", accountAddress: ACCOUNT,
+    expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    permissions: { tradingOnly: true, disabled: [0, 1, 3, 4], verifiedAt: "2026-10-14T00:00:00Z" },
+    network: "mainnet", approvedAt: "2026-10-14T00:00:00Z", source: "approved",
+  };
+  const ctx = (owsWallet: string | null) => ({
+    network: "mainnet" as const, noAgent: false, hlDex: null, readOnly: false, noBuilder: false,
+    credentials: { pk: null, owsWallet, owsPassphrase: "", owsKeyToken: null, agent: meta as never },
+  });
+
+  it("with a master wallet: reads its address, never opens the stored signer's key", async () => {
+    owsCreate.mockClear();
+    const a = await RisexAdapter.create(getVenue("risex"), ctx("main"));
+    expect(owsCreate.mock.calls.map(c => c[0])).toEqual(["main"]);
+    expect(a.accountAddress()).toBe("0x00000000000000000000000000000000000000c3");
+    expect((await a.getBalance()).equity).toBe("1000.5");
+  });
+
+  it("without a master wallet: reads the recorded account, opens no key at all", async () => {
+    owsCreate.mockClear();
+    const a = await RisexAdapter.create(getVenue("risex"), ctx(null));
+    expect(owsCreate).not.toHaveBeenCalled();
+    expect(a.accountAddress()).toBe(ACCOUNT);
+  });
+});
+
+describe("executePlan / runBot refuse a gated venue (dry-run included)", () => {
+  const fake = { name: "risex" } as never;
+  it("executePlan", async () => {
+    const { executePlan } = await import("../../plan-executor.js");
+    for (const dryRun of [false, true]) {
+      await expect(executePlan(fake, { version: "1.0", steps: [{ id: "1", action: "cancel_all", params: {} }] } as never, { dryRun }))
+        .rejects.toMatchObject({ structured: { code: "CAPABILITY_UNSUPPORTED" } });
+    }
+  });
+  it("runBot", async () => {
+    const { runBot } = await import("../../bot/engine.js");
+    for (const dryRun of [false, true]) {
+      await expect(runBot(fake, { strategy: { type: "grid" } } as never, undefined, () => undefined, undefined, "headless" as never, dryRun))
+        .rejects.toMatchObject({ structured: { code: "CAPABILITY_UNSUPPORTED" } });
+    }
+  });
+});
+
+describe("funding comparisons label read-only legs (data stays visible)", () => {
+  it("pairExecutability", async () => {
+    const { pairExecutability } = await import("../../funding/rates.js");
+    expect(pairExecutability("hyperliquid", "risex")).toEqual({ executable: false, readOnlyLegs: ["risex"] });
+    expect(pairExecutability("hyperliquid", "pacifica")).toEqual({ executable: true, readOnlyLegs: [] });
   });
 });

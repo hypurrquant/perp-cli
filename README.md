@@ -167,14 +167,15 @@ Every mark below comes from a real-money mainnet run, not from code reading — 
 | `account margin` with a position | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Spot (`trade spot-*`) | ✅ | — | ✅ | ✅ | ✅ | ❌ (needs USDT) | ✅ | ❌ (needs an Arcus-issued key) | — |
 | Deposit via perp-cli | ✅ | (HL) | ✅ | ✅ | ✅ | ✅ | ✅ | — (web app) | — (address only) |
-| Withdraw (to your own address) | ✅ | (HL) | ✅ | ✅ | ✅ | ✅ (`--asset USDC`) | ❌⁴ | ✅ | ❌⁵ |
+| Withdraw (to your own address)⁶ | ✅ | (HL) | ✅ | ✅ | ✅ | ✅ (`--asset USDC`) | ⛔⁴ | ✅ | ⛔⁵ |
 
 RISEx and TxFlow are not in this table: neither trades in this release. RISEx trading (shipped but disabled in 0.15.0) was exercised on **testnet** only (2026-10-14); no mainnet RISEx order has been run.
 
 ² perp-cli has no native TWAP for this venue: `trade twap` runs the client-side TWAP (slices) instead. Whether the venue's API offers one is not checked.  
 ³ Verified in the session; no saved log file.  
 ⁴ Not available: the Ondo Perps API does not allow withdrawals (`funds withdraw ondo` → `CAPABILITY_UNSUPPORTED`). Withdraw in the Ondo web app.  
-⁵ Disabled in perp-cli for now (`funds withdraw qfex` → `CAPABILITY_UNSUPPORTED`). Withdraw in the QFEX web app.
+⁵ Disabled in perp-cli for now (`funds withdraw qfex` → `CAPABILITY_UNSUPPORTED`). Withdraw in the QFEX web app.  
+⁶ Mainnet, 2026-10-13: one withdrawal per venue to the account's own address, received amount checked on the destination chain — `funds withdraw hyperliquid 12.22` (Arbitrum USDC), `funds withdraw pacifica 12.98` (Solana USDC), `-e lighter funds withdraw lighter 15.95` (Ethereum USDC), `-e lighter-rh funds withdraw lighter 12.96` and `funds withdraw arcus 9.94` (Robinhood Chain USDG), `funds withdraw aster 8.74 --chain arbitrum --asset USDC` (Arbitrum USDC).
 
 Automation, verified live (bounded runs at minimum size, stopped and flattened afterwards):
 
@@ -185,7 +186,7 @@ Automation, verified live (bounded runs at minimum size, stopped and flattened a
 | Execution helpers | `strategy twap` (Aster), `trade twap --background` (Arcus), `strategy plan execute` (9 of 10 action types — `cancel_order` not run), `perp background stop` (graceful: orders cancelled, positions listed) |
 | Hyperliquid HIP-4 outcomes | GTC place / cancel, IOC buy, `outcome sell --all` / `--size` |
 
-Funds and bridge, verified live:
+Funds and bridge, verified live (mainnet, 2026-10-13 — `funds bridge send` runs, `funds rebalance plan` + `execute --withdraw-only` after a $11 HL deposit, alerts rule commands without a channel):
 
 | Area | Verified | Not verified |
 |---|---|---|
@@ -242,7 +243,7 @@ perp health                                   # RISEx is probed as an official v
 perp -e risex account positions --ows <master>   # account reads are public by address — nothing is signed
 ```
 
-- **Refused in this release** (`CAPABILITY_UNSUPPORTED`, "RISEx trading is planned for a later perp-cli release", before any key is read or request is sent — also under `--dry-run`): every `perp -e risex trade …` write, `trade multi` / `arb exec` / `arb auto` legs, bots / plans / TWAP / grid / DCA, `wallet agent approve|import|revoke|rotate risex`, `perp setup --venues risex`, `funds faucet risex`, and the MCP `trade_preview` / `trade_execute` / `trade_close` tools. `arb scan --basis` covers trading venues only, so RISEx is not in it.
+- **Refused in this release** (`CAPABILITY_UNSUPPORTED`, "RISEx trading is planned for a later perp-cli release", before any key is read or request is sent — also under `--dry-run`): every `perp -e risex trade …` write, `trade multi` / `arb exec` / `arb auto` legs, every `strategy …` command (bots, plans, TWAP / grid / DCA, `--exchanges` legs), `wallet agent approve|import|revoke|rotate risex` (`revoke --force` only clears the local record), `perp setup --venues risex`, `funds faucet risex`, and the MCP `trade_preview` / `trade_execute` / `trade_close` tools. `arb scan --basis` covers trading venues only, so RISEx is not in it; in `arb scan` a pair with a RISEx leg is marked `executable: false` / "(read-only)".
 - **Funds:** deposits and withdrawals are done in the RISEx app (app.rise.trade). `funds deposit|withdraw risex`, `funds transfer -e risex` and `funds rebalance execute` with risex refuse with `CAPABILITY_UNSUPPORTED` (also under `--dry-run`).
 - The trading code (session signer restricted on-chain to trading only, EIP-712 permits) ships with its tests but is switched off by one flag (`RISEX_TRADING_ENABLED` in `src/exchanges/venues/risex-release.ts`).
 

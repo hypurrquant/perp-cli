@@ -272,7 +272,7 @@ function printSnapshotTable(snapshot: FundingRateSnapshot): void {
         return r ? formatPercent(r.fundingRate) : chalk.gray("-");
       }),
       spreadColor(`${s.maxSpreadAnnual.toFixed(1)}%`), trend,
-      s.maxSpreadAnnual >= 5 ? `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}` : chalk.gray("-"),
+      s.maxSpreadAnnual >= 5 ? `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}${s.executable ? "" : chalk.gray(" (read-only)")}` : chalk.gray("-"),
       formatAvgRate(bestRate?.historicalAvg?.avg8h), formatAvgRate(bestRate?.historicalAvg?.avg24h), formatAvgRate(bestRate?.historicalAvg?.avg7d),
     ];
   });
@@ -302,7 +302,7 @@ function printDetailedComparison(comparison: SymbolFundingComparison): void {
   }
   const spreadColor = comparison.maxSpreadAnnual >= 30 ? chalk.green.bold : comparison.maxSpreadAnnual >= 10 ? chalk.yellow : chalk.white;
   console.log(`\n  Max Spread:     ${spreadColor(`${comparison.maxSpreadAnnual.toFixed(1)}%`)} annual`);
-  console.log(`  Direction:      Long ${exAbbr(comparison.longExchange)} / Short ${exAbbr(comparison.shortExchange)}`);
+  console.log(`  Direction:      Long ${exAbbr(comparison.longExchange)} / Short ${exAbbr(comparison.shortExchange)}${comparison.executable ? "" : chalk.yellow(`  — not executable: ${comparison.readOnlyLegs.join(", ")} is read-only in perp-cli`)}`);
   console.log(`  Est. Income:    $${comparison.estHourlyIncomeUsd.toFixed(4)}/hr per $1K notional\n`);
 }
 

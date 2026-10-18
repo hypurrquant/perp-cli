@@ -31,7 +31,7 @@ export const RISEX_FUNDS_APP_ONLY = {
 /** The uniform refusal for every RISEx trading / signer path while RISEX_TRADING_ENABLED is false. */
 export const RISEX_TRADING_GATE = {
   reason: "RISEx trading is planned for a later perp-cli release; in this version RISEx is read-only (market data and account reads)",
-  remediation: `Trade RISEx in the RISEx app (${RISEX_APP_URL}). perp-cli shows RISEx market data (perp -e risex market list|prices|funding|book) and account reads (perp -e risex account balance|positions)`,
+  remediation: `Trade RISEx in the RISEx app (${RISEX_APP_URL}). perp-cli shows RISEx market data (perp -e risex market list|prices|funding|book) and account reads (perp -e risex portfolio, perp -e risex account positions)`,
 } as const;
 
 const publicData: VenuePublicData = {
