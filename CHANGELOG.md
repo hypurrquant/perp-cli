@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### FIX: Ondo Perps market reads broke on a new "Pre-IPO" tag
+
+- Ondo listed `OPENAI-USD.P` with the tag `Pre-IPO` (2026-10-19). The tag was unmapped, so every Ondo market read (`market list`, funding, `perp health`) failed with `EXCHANGE_ERROR` "cannot classify". `Pre-IPO` now maps to the existing `preIpo` asset class (explicit-only canonical symbol, never matched across venues by ticker). Unknown tags still fail visibly.
+
 ### NEW: Pacifica Print (`perp print`) and vaults (`perp vault`)
 
 - **Print** (docs.pacifica.fi/print): strike orders that earn a premium every cycle and fill only at a cycle checkpoint, at the target. Reads (unauthenticated GET, never signed): `print games` (`/game/config`: cycle, max leverage, product / pool deposit caps, allowed target range), `print quote` (local validation + preview: notional, size on fill, `docsLiquidationPrice`, `maxLoss`, lock period; `estimatedPremium: null` — the venue's premium preview `preview_game_account` is a signed request and is never called on a read path), `print positions` (`/game/accounts`), `print history` (`/game/history_summary`, `--limit` / `--cursor`), `print events <printAddress>` (`/game/history`). Writes: `print deposit` (POST `/game/deposit`, `deposit_to_game`, fresh `idempotency_key`, `--cycles` → `total_segments`) and `print cancel` (POST `/game/end`, `end_game` — not in the API docs; the payload `{game_account}` is the one app.pacifica.fi sends; only a `printing` order).
