@@ -37,6 +37,7 @@ import { tradingV2Of } from "./exchanges/legacy-trading-v2.js";
 import { PerpError, classifyError, extractErrorMessage, isDefiniteOrderFailure, orderOutcomeUnknown, parsePositiveDecimal } from "./errors.js";
 import { invalidateCache } from "./cache.js";
 import { probeVenueHealth } from "./venue-health.js";
+import { getOptionsVenue, listOptionsVenueIds } from "./exchanges/options-venues.js";
 import { fetchAllFundingRates } from "./funding-rates.js";
 import { loadArbState } from "./arb/state.js";
 import { validateTrade } from "./trade-validator.js";
@@ -434,6 +435,61 @@ server.tool(
       return { content: [{ type: "text", text: ok(book, { outcome, side, assetId: HyperliquidOutcomeAdapter.assetId(outcome, side) }) }] };
     } catch (e) {
       return { content: [{ type: "text", text: errOf(e, { outcome, side }) }], isError: true };
+    }
+  },
+);
+
+// ============================================================
+// Options market data (read-only, keyless; venues: src/exchanges/options-venues.ts)
+// ============================================================
+
+const OPTIONS_VENUE_ARG = z.string().describe(`Options venue: ${listOptionsVenueIds().join(", ")}`);
+
+server.tool(
+  "get_option_expiries",
+  "List the active option expiries of an underlying on an options venue (Derive): per expiry the UTC date (YYYY-MM-DD), expiry ms, strike and instrument counts, soonest first. Public read — no API key needed.",
+  { venue: OPTIONS_VENUE_ARG, underlying: z.string().describe("Underlying, e.g. ETH, BTC") },
+  async ({ venue, underlying }) => {
+    try {
+      const data = await (await getOptionsVenue(venue, MCP_NETWORK)).listExpiries(underlying);
+      return { content: [{ type: "text", text: ok(data, { venue, count: data.expiries.length }) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: errOf(e, { venue, underlying }) }], isError: true };
+    }
+  },
+);
+
+server.tool(
+  "get_option_chain",
+  "Option chain for one expiry (Derive): rows per strike with call and put quotes — bid / ask (price + size; null = empty side), mark, index, forward, IV (mark / bid / ask; null = not computable), greeks (delta, gamma, theta, vega, rho), open interest, 24h volume — plus the ATM strike. Decimals are strings. One venue request per expiry. Public read.",
+  {
+    venue: OPTIONS_VENUE_ARG,
+    underlying: z.string().describe("Underlying, e.g. ETH, BTC"),
+    expiry: z.string().optional().describe("Expiry date YYYY-MM-DD (UTC); omit for the nearest active expiry (result expirySelection: \"nearest\")"),
+    strikes: z.number().int().min(1).optional().describe("Only the N strikes closest to the ATM reference (forward, else index); omit for all strikes"),
+  },
+  async ({ venue, underlying, expiry, strikes }) => {
+    try {
+      const chain = await (await getOptionsVenue(venue, MCP_NETWORK)).getChain({
+        underlying, expiry: expiry === undefined ? null : expiry, strikesAroundAtm: strikes === undefined ? null : strikes,
+      });
+      return { content: [{ type: "text", text: ok(chain, { venue, expiry: chain.expiry, rows: chain.rows.length }) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: errOf(e, { venue, underlying }) }], isError: true };
+    }
+  },
+);
+
+server.tool(
+  "get_option_quote",
+  "Quote one option instrument (Derive name, e.g. ETH-20261225-3500-P): bid / ask (price + size), mark, index, forward, IV, greeks, open interest, 24h stats. Unknown instrument → SYMBOL_NOT_FOUND. Public read.",
+  { venue: OPTIONS_VENUE_ARG, instrument: z.string().describe("Venue instrument name, e.g. ETH-20261225-3500-P") },
+  async ({ venue, instrument }) => {
+    try {
+      const q = await (await getOptionsVenue(venue, MCP_NETWORK)).getQuote(instrument);
+      return { content: [{ type: "text", text: ok(q, { venue, instrument: q.instrument }) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: errOf(e, { venue, instrument }) }], isError: true };
     }
   },
 );

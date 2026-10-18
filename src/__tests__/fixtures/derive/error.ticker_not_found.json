@@ -1,0 +1,7 @@
+{
+ "error": {
+  "code": -32602,
+  "message": "Invalid params",
+  "data": "Ticker not found for instrument"
+ }
+}

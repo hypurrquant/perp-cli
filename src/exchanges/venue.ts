@@ -16,6 +16,7 @@ import type {
   FundingRateBasis, LegacyVenueId, Network, TimeInForce, VenueFundingRate, VenueId, VenueMarket,
 } from "./venue-types.js";
 import { isVenueId } from "./venue-types.js";
+import { optionsVenueWords } from "./options-venues.js";
 import type { AnyAgentMeta } from "../settings.js";
 import type { BuilderFeeCapability } from "./builder-fee.js";
 
@@ -254,8 +255,12 @@ export function registerVenue(def: VenueDefinition): void {
 }
 
 function unknownVenue(input: string): PerpError {
+  // An options venue (e.g. derive) is not a perp venue: say where it works instead.
+  const optionsOnly = optionsVenueWords().includes(input.toLowerCase())
+    ? ` — ${input} is options-only: perp -e ${input} options …`
+    : "";
   return new PerpError("UNKNOWN_VENUE", `Unknown venue: "${input}"`, {
-    remediation: `Use one of: ${[..._venues.keys()].join(", ")}`,
+    remediation: `Use one of: ${[..._venues.keys()].join(", ")}${optionsOnly}`,
   });
 }
 

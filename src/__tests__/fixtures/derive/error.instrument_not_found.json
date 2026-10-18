@@ -1,0 +1,7 @@
+{
+ "error": {
+  "code": 12001,
+  "message": "Instrument not found",
+  "data": "Instrument not found"
+ }
+}
