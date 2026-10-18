@@ -50,6 +50,13 @@ export interface SymbolFundingComparison {
   shortExchange: string;        // go short where funding is highest (you get paid)
   bestMarkPrice: number;        // mark price of the most liquid venue present (MARK_PRICE_PREFERENCE)
   estHourlyIncomeUsd: number;   // estimated hourly income for $1000 notional
+  /**
+   * false = a leg of the long/short pair sits on a venue without the trading role (RISEx while its
+   * trading is gated in this release): the spread is data only — `arb exec` refuses it.
+   */
+  executable: boolean;
+  /** Venues of the long/short pair that perp-cli cannot trade (read-only); [] when executable. */
+  readOnlyLegs: string[];
 }
 
 export interface FundingRateSnapshot {
@@ -255,6 +262,12 @@ export async function fetchCanonicalPriceGroups(venues: VenueDefinition[], opts?
   return { groups: groupByCanonical(prices, opts?.symbols, opts?.tag ?? "prices"), exchangeStatus, exchangeErrors };
 }
 
+/** Whether perp-cli can trade both legs of a long/short pair (the trading role), and which it cannot. */
+export function pairExecutability(longExchange: string, shortExchange: string): { executable: boolean; readOnlyLegs: string[] } {
+  const readOnlyLegs = [...new Set([longExchange, shortExchange])].filter(v => !getVenue(v).roles.includes("trading"));
+  return { executable: readOnlyLegs.length === 0, readOnlyLegs };
+}
+
 function bestMarkPrice(rates: ExchangeFundingRate[]): number {
   const rank = (id: VenueId) => MARK_PRICE_PREFERENCE.indexOf(id);
   return [...rates].sort((a, b) => rank(a.exchange) - rank(b.exchange))[0].markPrice;
@@ -332,6 +345,7 @@ export async function fetchAllFundingRates(opts?: {
       shortExchange: highest.exchange, // short where funding is highest
       bestMarkPrice: bestMarkPrice(rates),
       estHourlyIncomeUsd,
+      ...pairExecutability(lowest.exchange, highest.exchange),
     });
   }
 

@@ -29,6 +29,7 @@ export const lighterVenue: VenueDefinition = {
   settlementIntervalHours: 1,
   fundingVerified: true,
   roles: ["marketData", "account", "trading"],
+  gatedRoles: null,
   capabilities: LIGHTER_CAPABILITIES,
   // Declared only — per the limiter is applied to new venues + lighter-rh, not lighter.
   rateLimit: LIGHTER_RATE_LIMIT,

@@ -89,7 +89,7 @@ interface ArbPosition {
 // ── Fee-Adjusted Net Spread Calculation ──
 
 import { getTakerFee } from "../constants.js";
-import { assertFundingArbVenue, getVenue, listVenuesWithRole, networkConfig, resolveVenueId, tryResolveVenueId } from "../exchanges/venue.js";
+import { assertFundingArbVenue, getVenue, listVenuesWithRole, networkConfig, resolveVenueId, roleUnsupported, tryResolveVenueId } from "../exchanges/venue.js";
 import { sharedApiNetwork } from "../api/public/urls.js";
 import { findSpotQuoteBalance, readSpotQuoteAvailableFresh, requireBotSpotVenue, requireSpotAdapter, spotNetworkOf, spotPairSymbol, spotSharesPerpMargin, sweepSpotQuoteToPerp, transferQuoteToPerp, transferQuoteToSpot } from "../exchanges/spot-factory.js";
 import { fillSizeString, readSpotBalancesFresh, sizeDecimalsOf, spotLotStepOf, spotMarketFill, type SpotFill } from "../exchanges/spot-result.js";
@@ -2025,6 +2025,7 @@ export function registerArbAutoCommands(
       for (const ex of [longExch, shortExch]) {
         const venue = getVenue(ex);
         if (!venue.roles.includes("trading")) {
+          if (venue.gatedRoles !== null) throw roleUnsupported(venue, "trading");
           throw unsupported(venue.displayName, "trading", "no trading API — it cannot be an arb leg", `Use a trading venue: ${listVenuesWithRole("trading").map(v => v.id).join(", ")}`);
         }
       }
@@ -2257,6 +2258,7 @@ export function registerArbAutoCommands(
       spotExch = spotDef.id;
       perpExch = tryResolveVenueId(perpExch) ?? perpExch;
       if (!getVenue(perpExch).roles.includes("trading")) {
+        if (getVenue(perpExch).gatedRoles !== null) throw roleUnsupported(getVenue(perpExch), "trading");
         throw unsupported(perpExch, "trading", "no trading API — it cannot be the perp leg", `Use a trading venue: ${listVenuesWithRole("trading").map(v => v.id).join(", ")}`);
       }
       assertFundingArbVenue(perpExch);

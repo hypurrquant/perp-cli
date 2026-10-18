@@ -1436,6 +1436,9 @@ server.tool(
         symbol: s.symbol,
         maxSpreadAnnual: `${s.maxSpreadAnnual.toFixed(2)}%`,
         strategy: `Long ${s.longExchange} / Short ${s.shortExchange}`,
+        // false = a leg is on a read-only venue (RISEx in this release): data only, not tradable here.
+        executable: s.executable,
+        readOnlyLegs: s.readOnlyLegs,
         estHourlyIncomePerK: `$${s.estHourlyIncomeUsd.toFixed(4)}`,
         rates: s.rates.map(r => ({
           exchange: r.exchange,
@@ -1760,6 +1763,8 @@ server.tool(
   },
   async ({ exchange, symbol, side, size, orderType, price, tif, reduceOnly }) => {
     try {
+      // No trading role (TxFlow, release-gated RISEx) → CAPABILITY_UNSUPPORTED before any credential.
+      requireCapabilities(getVenue(exchange));
       const adapter = await getOrCreateAdapter(exchange);
       const sym = symbol.toUpperCase();
       const isLimit = orderType === "limit";
@@ -1913,6 +1918,7 @@ server.tool(
     try {
       // One parsed size for the risk gate and the order ("1,000" / "abc" refused before any read or send).
       const size = parsePositiveDecimal(rawSize, "size");
+      requireCapabilities(getVenue(exchange)); // trading role first, before any credential
       const adapter = await getOrCreateAdapter(exchange);
       const def = getVenue(adapter.name);
       const caps = requireCapabilities(def);
@@ -2044,6 +2050,7 @@ server.tool(
   },
   async ({ exchange, symbol }) => {
     try {
+      requireCapabilities(getVenue(exchange)); // trading role first, before any credential
       const adapter = await getOrCreateAdapter(exchange);
       const def = getVenue(adapter.name);
       const caps = requireCapabilities(def);

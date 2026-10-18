@@ -81,6 +81,7 @@ export const qfexVenue: VenueDefinition = {
   // hourly × 8760 overstates it. Until both are settled QFEX is not a funding-arb venue.
   fundingVerified: false,
   roles: ["marketData", "account", "trading"],
+  gatedRoles: null,
   capabilities: {
     // The venue offers a native MARKET order (bounded only by the price band — docs /qfex/risk-limits
     // "Dynamic price bands": 1.65%–10% by product preset and session; "integrations should use

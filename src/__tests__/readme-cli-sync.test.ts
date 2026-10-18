@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { buildProgram } from "../cli-program.js";
 
 /**
  * Source of truth for the top-level command groups registered by `perp`.
@@ -15,16 +16,18 @@ import { dirname, resolve } from "node:path";
  * regression guard. Adding a top-level group should fail this test until
  * all three locations are updated.
  *
- * Caveat: this file is hand-maintained. A future P2 step is to derive the
- * list dynamically from a Commander program-builder factory so the SSOT
- * collapses to one place. Until then, drift between this list and
- * src/index.ts is detectable only through manual review or `perp --help`.
+ * The list is hand-maintained (it fixes the README order); the last test checks it against the
+ * visible top-level commands of the real Commander tree (buildProgram), so a new group cannot be
+ * added without updating this list and the README.
  */
 const KNOWN_TOP_LEVEL_GROUPS = [
   "market",
   "account",
   "trade",
   "outcome",
+  "options",
+  "print",
+  "vault",
   "arb",
   "strategy",
   "funds",
@@ -80,5 +83,14 @@ describe("README ↔ command-group sync (Section 9 — docs cannot drift from CL
     // ordering. Loosen to set comparison if a re-order is desired.
     const readmeGroups = parseReadmeCommandGroupsTable();
     expect(readmeGroups).toEqual([...KNOWN_TOP_LEVEL_GROUPS]);
+  });
+
+  it("the known groups are exactly the visible top-level commands of the CLI (hidden aliases excluded)", () => {
+    const { program } = buildProgram({ defaultExchange: "pacifica", version: "test" });
+    const visible = program.commands
+      .filter(c => c.name() !== "help" && (c as unknown as { _hidden?: boolean })._hidden !== true)
+      .map(c => c.name())
+      .sort();
+    expect(visible).toEqual([...KNOWN_TOP_LEVEL_GROUPS].sort());
   });
 });

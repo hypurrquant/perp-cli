@@ -210,6 +210,12 @@ export interface VenueDefinition {
    */
   fundingVerified: boolean;
   roles: readonly VenueRole[];
+  /**
+   * Roles that are implemented but switched off in this release (phased venue rollout, e.g.
+   * RISEx trading in 0.15.0). They are NOT in `roles`; roleUnsupported() uses `reason` /
+   * `remediation` for them. null = nothing held back.
+   */
+  gatedRoles: { roles: readonly VenueRole[]; reason: string; remediation: string } | null;
   /** null when the venue has no trading role. */
   capabilities: VenueCapabilities | null;
   rateLimit: RateLimitPolicy;
@@ -305,6 +311,12 @@ export function networkConfig(def: VenueDefinition, net: Network): VenueNetworkC
  * credential is resolved or any request is sent.
  */
 export function roleUnsupported(def: VenueDefinition, feature: string, role: VenueRole = "trading"): PerpError {
+  if (def.gatedRoles !== null && def.gatedRoles.roles.includes(role)) {
+    const { reason, remediation } = def.gatedRoles;
+    return new PerpError("CAPABILITY_UNSUPPORTED", `${def.id} does not support ${feature} — ${reason}`, {
+      venue: def.id, feature, reason, remediation,
+    });
+  }
   const reason = def.apiStatus.kind === "unofficial"
     ? `${def.displayName} is integrated through an unofficial read-only API (market data only)`
     : `${def.displayName} is available for market data only (no ${role} role)`;

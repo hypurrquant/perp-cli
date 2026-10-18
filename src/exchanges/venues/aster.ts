@@ -148,6 +148,7 @@ export const asterVenue: VenueDefinition = {
   settlementIntervalHours: "perMarket",
   fundingVerified: true,
   roles: ["marketData", "account", "trading"],
+  gatedRoles: null,
   capabilities: {
     // Market = IOC LIMIT at mark ± slippage (adapter marketOrder), never native MARKET.
     marketOrder: "slippageBounded",

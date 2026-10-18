@@ -1,3 +1,4 @@
+import { getVenue, requireRole, tryResolveVenueId } from "../exchanges/venue.js";
 import { assertCanClosePositions } from "../exchanges/trading-v2.js";
 import type { ExchangeAdapter } from "../exchanges/index.js";
 import { resolveAdapterSlippage } from "../exchanges/slippage.js";
@@ -144,6 +145,11 @@ export async function runBot(
   /** Global --dry-run: strategy actions are logged, never sent; non-simulatable strategies are refused. */
   isDryRun: boolean,
 ): Promise<{ fills: number; ordersPlaced: number; totalPnl: number; runtime: number }> {
+  // A venue without the trading role (TxFlow, release-gated RISEx) runs no bot — dry-run included.
+  for (const a of [adapter, ...(extraAdapters?.values() ?? [])]) {
+    const venueId = tryResolveVenueId(a.name);
+    if (venueId !== null) requireRole(getVenue(venueId), "trading", "automation");
+  }
   if (isDryRun) {
     assertStrategySimulatable(config.strategy.type);
     adapter = dryRunAdapter(adapter);

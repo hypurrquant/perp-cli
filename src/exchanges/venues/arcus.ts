@@ -53,6 +53,7 @@ export const arcusVenue: VenueDefinition = {
   settlementIntervalHours: 1,
   fundingVerified: true,
   roles: ["marketData", "account", "trading"],
+  gatedRoles: null,
   capabilities: {
     marketOrder: "slippageBounded",
     // GTC = GTT at goodTil now + 40 days (ARCUS_GOOD_TIL_HORIZON_MS); GTT kept as the venue alias.

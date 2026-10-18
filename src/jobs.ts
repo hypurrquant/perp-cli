@@ -6,6 +6,8 @@ import { randomBytes } from "node:crypto";
 import type { Command } from "commander";
 import { parse as parseDotenv } from "dotenv";
 import type { Network } from "./exchanges/venue-types.js";
+import { getVenue, roleUnsupported } from "./exchanges/venue.js";
+import "./exchanges/venues/index.js";
 import { PerpError } from "./errors.js";
 import { QFEX_AUTOMATION_VERIFIED, QFEX_REDUCE_ONLY_WIRE, qfexAutomationGate, qfexReduceOnlyGate } from "./exchanges/qfex/signing.js";
 import { startRefusal, unsupported } from "./exchanges/trading-v2.js";
@@ -232,6 +234,9 @@ export function startJob(opts: StartJobOpts): JobEntry {
       const what = `Background job "${opts.strategy}"`;
       // RISEx: unattended trading stays off until its trading path is verified on mainnet (no TP/SL yet).
       if (id === "risex" || id === "rise") {
+        // Read-only release (trading role gated): the uniform phase refusal.
+        const risex = getVenue("risex");
+        if (!risex.roles.includes("trading")) throw startRefusal(what, "it would trade unattended", roleUnsupported(risex, "automation"));
         throw startRefusal(what, "it would trade unattended", unsupported("RISEx", "automation", "unattended trading on RISEx is not enabled until its trading path is verified on mainnet (and it has no TP/SL yet)", "Trade RISEx manually with perp trade …"));
       }
       // TxFlow: market data only (unofficial read-only API).

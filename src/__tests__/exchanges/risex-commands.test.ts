@@ -4,6 +4,8 @@
  * The RISEx agent module is mocked — no network, no OWS.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+// The RISEx trading code is shipped but switched off in 0.15.0 (read-only phase): enable it here.
+vi.mock("../../exchanges/venues/risex-release.js", () => ({ RISEX_TRADING_ENABLED: true }));
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 

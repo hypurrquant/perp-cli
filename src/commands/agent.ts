@@ -14,6 +14,7 @@ import {
   agentNetworkOf, recordedAgentNetworkOf, assertAgentNetwork, getAgentForNetwork, agentSourceOf,
 } from "../agent-wallet/store.js";
 import { getVenue, networkConfig, resolveVenueId, roleUnsupported } from "../exchanges/venue.js";
+import { RISEX_APP_URL } from "../exchanges/venues/risex.js";
 import { listConfiguredAccountVenues } from "../config.js";
 import "../exchanges/venues/index.js";
 import type { Network, VenueId } from "../exchanges/venue-types.js";
@@ -544,8 +545,14 @@ export function confirmImportAccount(explicitAccountId: string | null, json: boo
 /** RISEx: session-key status on the venue and the on-chain permission bitmap (read-only). */
 async function verifyRisex(network: Network, opts: VerifyOpts): Promise<VerifyResult> {
   const meta = opts.agentName !== undefined ? getVenueAgent("risex", opts.agentName) : getVenueAgentForNetwork("risex", network);
+  // Read-only release (trading role gated): approve / revoke are refused, so point to the RISEx app.
+  const tradingGated = !getVenue("risex").roles.includes("trading");
   if (!meta) {
-    throw new PerpError("AGENT_NOT_REGISTERED", `No RISEx signer registered for ${network}`, { remediation: `perp${network === "testnet" ? " -n testnet" : ""} wallet agent approve risex --master <ows-wallet>` });
+    throw new PerpError("AGENT_NOT_REGISTERED", `No RISEx signer registered for ${network}`, {
+      remediation: tradingGated
+        ? `RISEx is read-only in this perp-cli release (trading in a later release): manage signers in the RISEx app (${RISEX_APP_URL})`
+        : `perp${network === "testnet" ? " -n testnet" : ""} wallet agent approve risex --master <ows-wallet>`,
+    });
   }
   const { verifyRisexAgent } = await import("../exchanges/risex/agent.js");
   const v = await verifyRisexAgent(meta);
@@ -556,7 +563,9 @@ async function verifyRisex(network: Network, opts: VerifyOpts): Promise<VerifyRe
     // An active signer that can do more than trade is a failure, never ok:true.
     throw new PerpError("POLICY_DENIED", `RISEx signer ${meta.signerAddress} ("${meta.agentName}") is NOT restricted to trading-only (on-chain ${JSON.stringify(v.permissions)}, bitmap ${String(v.bitmap)}; recorded tradingOnly=${String(meta.permissions.tradingOnly)})${v.reason !== null ? ` — ${v.reason}` : ""}`, {
       exchange: "risex", signer: meta.signerAddress, permissions: v.permissions, bitmap: v.bitmap,
-      remediation: `Revoke it: perp${network === "testnet" ? " -n testnet" : ""} wallet agent revoke risex ${meta.agentName}, then approve a new one`,
+      remediation: tradingGated
+        ? `Revoke it in the RISEx app (${RISEX_APP_URL}); then remove the local record: perp${network === "testnet" ? " -n testnet" : ""} wallet agent revoke risex ${meta.agentName} --force`
+        : `Revoke it: perp${network === "testnet" ? " -n testnet" : ""} wallet agent revoke risex ${meta.agentName}, then approve a new one`,
     });
   }
   return {
@@ -1653,7 +1662,9 @@ Examples:
         // (e.g. an imported Aster testnet key).
         const rec = exchange === "ondo" || exchange === "arcus" || exchange === "qfex" || exchange === "risex" ? getVenueAgent(exchange, agentName) : getAgent(exchange, agentName);
         // QFEX keys only exist as imports: a missing record is "already removed", never an approve-capability error.
-        if (exchange !== "qfex" && (rec === null || agentSourceOf(exchange, rec) !== "imported")) assertAgentApproveSupported(exchange, network, "revoke");
+        // A release-gated venue (RISEx in 0.15.0) still lets --force / --local-only clear local state: nothing is signed or sent.
+        const localCleanupOfGated = localOnly && getVenue(exchange).gatedRoles !== null;
+        if (exchange !== "qfex" && !localCleanupOfGated && (rec === null || agentSourceOf(exchange, rec) !== "imported")) assertAgentApproveSupported(exchange, network, "revoke");
       } catch (e) {
         reportErrorAndExit(e);
       }

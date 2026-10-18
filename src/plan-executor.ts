@@ -1,4 +1,5 @@
 import { assertCanClosePositions } from "./exchanges/trading-v2.js";
+import { getVenue, requireRole, tryResolveVenueId } from "./exchanges/venue.js";
 import type { ExchangeAdapter } from "./exchanges/index.js";
 import { symbolMatch } from "./utils.js";
 import { logExecution } from "./execution-log.js";
@@ -122,6 +123,9 @@ export async function executePlan(
   const completedSteps = new Map<string, StepResult>();
   const dryRun = opts?.dryRun ?? false;
   const log = opts?.log ?? (() => {});
+  // A venue without the trading role (TxFlow, release-gated RISEx) runs no plan — dry-run included.
+  const venueId = tryResolveVenueId(adapter.name);
+  if (venueId !== null) requireRole(getVenue(venueId), "trading", "plan");
   // A plan that places orders must be able to close them (rollback / close_position are
   // reduce-only): refuse before the first step on a venue that cannot.
   if (!dryRun && plan.steps.some(s => PLAN_ORDER_ACTIONS.has(s.action))) {
