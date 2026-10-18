@@ -27,7 +27,7 @@ import { jsonOk, makeTable, printJson } from "../utils.js";
 import { mulDecimal } from "../exchanges/precision.js";
 import { cmpDecimal, isPlainDecimal, trimDecimal } from "../exchanges/pacifica-decimal.js";
 import { fundsFailStatus } from "./funds.js";
-import { requireIdempotencyKey, sendPresigned, signPresigned, type PresignedIdentity, type PresignedRequest } from "../exchanges/pacifica-presigned.js";
+import { requireIdempotencyKey, restampPresigned, sendPresigned, signPresigned, type PresignedIdentity, type PresignedRequest } from "../exchanges/pacifica-presigned.js";
 import type { ExecutionRecord } from "../execution-log.js";
 import {
   buildPrintDepositRequest, buildPrintEndRequest, daysUntil, fetchPrintEvents, fetchPrintGames, fetchPrintHistory,
@@ -124,6 +124,10 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
     if (s.sign === null) throw new Error("send without a signer");
     const base = { type: o.logType, exchange: "pacifica", symbol: o.symbol, side: req.type, size: o.size, dryRun: false, meta: { ...o.meta, signer: s.tier, idempotencyKey: req.idempotencyKey, before: o.before } } as const;
     try {
+      // Credit wait BEFORE signing (a post-sign wait would eat the 5 s expiry_window). The body's
+      // timestamp is re-stamped after the wait so the signature window starts now.
+      await s.client.awaitPresignedCapacity(req.type);
+      req = restampPresigned(req, Date.now());
       const body = await signPresigned(req, s.sign);
       const data = await sendPresigned(s.client, req, body, { what: o.what, check: o.check, before: o.before });
       logExecution({ ...base, status: "success", meta: { ...base.meta, response: data } });

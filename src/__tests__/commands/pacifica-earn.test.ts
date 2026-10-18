@@ -20,6 +20,9 @@ import { PerpError } from "../../errors.js";
 import { LocalSolanaSigner } from "../../signer/solana-local.js";
 import { registerWalletManageCommands } from "../../commands/manage.js";
 import type { AgentMeta } from "../../settings.js";
+import { pacificaRateLimiter, resetPacificaRateLimiters } from "../../pacifica/rate-limit.js";
+import { MAINNET_REST } from "../../pacifica/constants.js";
+import { PacificaClient } from "../../pacifica/client.js";
 
 const FX = resolve(__dirname, "../fixtures/pacifica-earn");
 const fixture = (n: string): unknown => JSON.parse(readFileSync(resolve(FX, n), "utf8"));
@@ -73,7 +76,7 @@ beforeEach(() => {
     }
   }));
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); adapterKind = "master"; adapterBuilds = 0; });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); adapterKind = "master"; adapterBuilds = 0; resetPacificaRateLimiters(); });
 
 const AGENT_KP = Keypair.generate();
 const AGENT = AGENT_KP.publicKey.toBase58();
@@ -419,5 +422,62 @@ describe("venue guard", () => {
     const r = await run(["-e", "hyperliquid", "print", "games"]);
     expect(r.error?.structured.code).toBe("INVALID_PARAMS");
     expect((await run(["-e", "pac", "print", "games"])).error).toBeUndefined();
+  });
+});
+
+/** A response carrying Pacifica rate-limit headers (credits ×10). */
+const limited = (r: number, t: number, status = 200, body = "{}") => new Response(body, { status, headers: { ratelimit: `"credits";r=${r};t=${t}`, "ratelimit-policy": '"credits";q=1000;w=60' } });
+
+describe("rate limiter integration (PR #35)", () => {
+  it("getEnvelope 429 → RATE_LIMITED sent:false (structural), headers recorded, in-flight back to 0; the next read fails fast without a fetch", async () => {
+    let gets = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => { gets++; return limited(0, 40, 429, JSON.stringify({ success: false, error: "Rate limit exceeded", code: 429 })); }));
+    const c = new PacificaClient({ network: "mainnet" });
+    await expect(c.getEnvelope("/game/config")).rejects.toMatchObject({ structured: { code: "RATE_LIMITED", details: { exchange: "pacifica", sent: false, httpStatus: 429 } } });
+    const snap = pacificaRateLimiter(MAINNET_REST, undefined, "unsigned").snapshot();
+    expect(snap).toMatchObject({ remaining: 0, inFlight: 0 });
+    await expect(c.getEnvelope("/lake/list")).rejects.toMatchObject({ structured: { code: "RATE_LIMITED", details: { sent: false } } });
+    expect(gets).toBe(1);
+  });
+
+  it("getEnvelope records the headers of a 200 and leaves nothing in flight", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => limited(800, 30, 200, JSON.stringify({ success: true, data: { configs: [] } }))));
+    await new PacificaClient({ network: "mainnet" }).getEnvelope("/game/config");
+    expect(pacificaRateLimiter(MAINNET_REST, undefined, "unsigned").snapshot()).toMatchObject({ remaining: 800, inFlight: 0 });
+  });
+
+  it("a presigned write waits for credits BEFORE signing, then signs with a fresh timestamp and sends once", async () => {
+    pacificaRateLimiter(MAINNET_REST, undefined, "signed").observe(limited(0, 1));
+    const original = LocalSolanaSigner.prototype.signMessage;
+    let signedAt = 0;
+    const sign = vi.spyOn(LocalSolanaSigner.prototype, "signMessage").mockImplementation(function (this: LocalSolanaSigner, m: Uint8Array) { signedAt = Date.now(); return original.call(this, m); });
+    postReply = () => json(200, env({ amount_withdrawn: "1" }));
+    const start = Date.now();
+    const r = await run(["vault", "withdraw", HATCH, "10"]);
+    expect(r.data).toMatchObject({ withdrawn: true });
+    expect(sign).toHaveBeenCalledTimes(1);
+    expect(signedAt - start).toBeGreaterThanOrEqual(1000); // the ~1.25 s window wait happened before signing
+    expect(posts).toHaveLength(1);
+    expect(Number(posts[0].body.timestamp)).toBeGreaterThanOrEqual(start + 1000); // re-stamped after the wait
+  }, 10_000);
+
+  it("pre-sign capacity exhausted → RATE_LIMITED sent:false: nothing signed, nothing sent", async () => {
+    pacificaRateLimiter(MAINNET_REST, undefined, "signed").observe(limited(0, 59));
+    const sign = vi.spyOn(LocalSolanaSigner.prototype, "signMessage");
+    const r = await run(DEPOSIT);
+    expect(r.error?.structured).toMatchObject({ code: "RATE_LIMITED", details: { sent: false } });
+    expect(sign).not.toHaveBeenCalled();
+    expect(posts).toHaveLength(0);
+  });
+
+  it("HTTP 429 on a presigned write → RATE_LIMITED (not executed), sent exactly once, never retried, never ORDER_PENDING", async () => {
+    postReply = () => limited(0, 30, 429, JSON.stringify({ success: false, error: "Rate limit exceeded", code: 429 }));
+    for (const argv of [DEPOSIT, ["vault", "deposit", HATCH, "25"], ["vault", "withdraw", HATCH, "10"]]) {
+      resetPacificaRateLimiters();
+      const before = posts.length;
+      const r = await run(argv);
+      expect(r.error?.structured).toMatchObject({ code: "RATE_LIMITED", details: { exchange: "pacifica", sent: false, httpStatus: 429 } });
+      expect(posts.length - before).toBe(1);
+    }
   });
 });

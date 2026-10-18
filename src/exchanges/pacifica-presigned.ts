@@ -67,6 +67,19 @@ export function buildPresigned(p: {
   return { type: p.type, path: p.path, message, body, idempotencyKey: typeof key === "string" ? key : null };
 }
 
+/**
+ * The same request with a new timestamp (message + body re-derived; payload, identity, expiry
+ * window and idempotency key unchanged) — used after the pre-sign credit wait so the signature's
+ * expiry window starts when it is signed.
+ */
+export function restampPresigned(req: PresignedRequest, timestamp: number): PresignedRequest {
+  const { account, agent_wallet, timestamp: _t, expiry_window, ...payload } = req.body;
+  return buildPresigned({
+    type: req.type, path: req.path, payload, timestamp, expiryWindow: expiry_window as number,
+    identity: { account: account as string, agentWallet: typeof agent_wallet === "string" ? agent_wallet : null },
+  });
+}
+
 /** Sign the canonical message; returns the full body (`signature` added). A signing failure is "not sent". */
 export async function signPresigned(req: PresignedRequest, signMessage: (msg: Uint8Array) => Promise<Uint8Array>): Promise<Record<string, unknown>> {
   try {
