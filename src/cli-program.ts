@@ -16,6 +16,7 @@ import { registerMarketCommands } from "./commands/market.js";
 import { registerAccountCommands } from "./commands/account.js";
 import { registerOutcomeCommands } from "./commands/outcome.js";
 import { registerOptionsCommands } from "./commands/options.js";
+import { registerPacificaEarnCommands } from "./commands/pacifica-earn.js";
 import { registerTradeCommands } from "./commands/trade.js";
 // manage commands now register under `wallet manage ...` via registerWalletCommands.
 // stream commands removed — WS feeds still used by dashboard/event-stream internally
@@ -284,6 +285,7 @@ export function buildProgram(opts: { defaultExchange: string; version: string })
   registerAccountCommands(program, getAdapter, isJson, getAdapterForExchange);
   registerOutcomeCommands(program, getAdapterForExchange, isJson);
   registerOptionsCommands(program, isJson);
+  registerPacificaEarnCommands(program, getAdapterForExchange, isJson);
   registerTradeCommands(program, getAdapter, isJson, isDryRunFlag, getAdapterForExchange);
   // manage tree wired inside registerWalletCommands below.
   // stream commands removed

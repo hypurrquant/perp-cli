@@ -235,6 +235,8 @@ const DRY_RUN_COMMANDS = [
   "funds withdraw arcus", "funds withdraw aster", "funds withdraw hyperliquid", "funds withdraw lighter", "funds withdraw ondo", "funds withdraw pacifica", "funds withdraw qfex",
   "funds withdraw risex", "funds withdraw txflow",
   "outcome buy", "outcome sell",
+  // Pacifica Print / vaults: --dry-run prints the exact message + body, signs and sends nothing.
+  "print cancel", "print deposit", "vault deposit", "vault withdraw",
   "wallet manage referral set", "wallet builder approve", "wallet builder revoke",
   "strategy plan execute", "strategy run",
   "trade buy", "trade cancel", "trade cancel-all", "trade close", "trade close-all", "trade edit", "trade flatten", "trade leverage",

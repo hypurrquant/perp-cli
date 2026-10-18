@@ -25,7 +25,7 @@ Activate whenever the user wants to do anything against perp-cli, including: sca
 
 This skill uses progressive disclosure. Read these on demand:
 
-- `references/commands.md` — full command tree for every group (market, account, trade, outcome, options, arb, funds, wallet, risk, history, strategy, background, alerts, settings, backtest)
+- `references/commands.md` — full command tree for every group (market, account, trade, outcome, options, print, vault, arb, funds, wallet, risk, history, strategy, background, alerts, settings, backtest)
 - `references/agent-operations.md` — non-interactive setup flows, idempotency rules, error codes, common mistakes
 - `references/strategies.md` — funding-arb decision framework + risk-management playbook (read before designing arb strategy)
 - `references/ws-library.md` — WebSocket library (0.15.0, @experimental), published standalone as **`@hypurrquant/perp-ws`** (zero dependencies; recommended for integrators — `npm install @hypurrquant/perp-ws`) and inside perp-cli as `perp-cli/ws` (same code, use it when perp-cli is already installed): build a live dashboard / funding comparison / account feed in the browser or Node (streams, events, nullability, comparator, user channels, errors, capability matrix). Cross-venue subscriptions use `canonicals` (e.g. `{ kind: "allMarkets", canonicals: ["BTC"] }`), never `symbols` (those are per-venue directory symbols); always surface `ready` rejections — an `idle` venue is not "fine"
@@ -240,6 +240,13 @@ perp --json -e <ex> trade close <SYM>                           # close one symb
 perp --json -e <ex> trade close-all                             # close all positions on this exchange
 perp --json -e <ex> trade flatten                               # close ALL + cancel ALL orders
 ```
+
+### Pacifica Print and vaults (`perp print`, `perp vault`)
+
+Pacifica-only, details in `references/commands.md`. Reads first (`print games`, `print quote`, `print positions`, `vault list|info|positions`); every write is `--dry-run` first and needs the user's confirmation:
+- **Print** (`print deposit <game> long|short <usd> --strike <px> --leverage <n> [--cycles 1-1000]`) locks the deposit until a fill or until a cancel settles at the END of the running cycle (up to 30 days on `BTC_1M`). Before asking, show the user: cycle length, `--cycles`, leverage, `maxLoss` (deposit + premiums), and that `docsLiquidationPrice` is an outer bound — Pacifica liquidates earlier. The premium is not quoted by perp-cli.
+- **Vaults** (`vault deposit <vault> <usd>`, `vault withdraw <vault> <shares>|--all`): third-party trading pools (can lose the whole deposit); every deposit restarts the lock-up for the whole balance; withdrawals only go to the own account, inside the vault's window.
+- `ORDER_PENDING` on any of them → NEVER resubmit; check `print positions` / `vault positions` (the `idempotencyKey` is in the error details).
 
 ### Funds workflow (deposit / withdraw / transfer / bridge / rebalance)
 
@@ -456,7 +463,7 @@ qfex: `builder.qfex <uuid>` is a fee share (no extra fee, no approval; mainnet o
 
 ## MCP Server
 
-The package also ships a 25-tool MCP server (no API keys required for read-only market data — `get_markets`, `get_orderbook`, `get_funding_rates`, `get_prices`, `get_outcome_markets`, `get_outcome_view`, `get_outcome_book`, `get_option_expiries`, `get_option_chain`, `get_option_quote` (Derive options), plus 15 account/advisor tools):
+The package also ships a 29-tool MCP server (no API keys required for read-only market data — `get_markets`, `get_orderbook`, `get_funding_rates`, `get_prices`, `get_outcome_markets`, `get_outcome_view`, `get_outcome_book`, `get_option_expiries`, `get_option_chain`, `get_option_quote` (Derive options), the read-only Pacifica Print / vault tools `pacifica_print_products`, `pacifica_print_quote`, `pacifica_print_positions`, `pacifica_vaults`, plus 15 account/advisor tools):
 
 MCP network: `PERP_NETWORK=mainnet|testnet` (validated; unset = mainnet); every result's `meta.network` says which. The only write tools, `trade_execute` / `trade_close`, run the same local risk gate as `perp trade` (no override over MCP), refuse non-reduce-only orders on quarantined symbols, and log every order.
 

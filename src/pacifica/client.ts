@@ -649,6 +649,31 @@ export class PacificaClient {
     return this.post("/lake/withdraw", body);
   }
 
+  // ==================== PRINT (game) + VAULT READS / PRE-SIGNED WRITES ====================
+  // Shapes and parsing live in src/exchanges/pacifica-print.ts / pacifica-vaults.ts.
+
+  /** Unauthenticated GET that keeps the whole {success, data, has_more, next_cursor} envelope. */
+  async getEnvelope(path: string, params: Record<string, string> = {}): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}${path}`);
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    const res = await fetch(url.toString(), { headers: this.headers() });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`GET ${path} failed (${res.status}): ${text}`);
+    const json: unknown = JSON.parse(text);
+    if (json === null || typeof json !== "object" || Array.isArray(json)) {
+      throw new PerpError("EXCHANGE_ERROR", `Pacifica GET ${path} returned a non-object body: ${text.slice(0, 160)}`, { exchange: "pacifica" });
+    }
+    return json as Record<string, unknown>;
+  }
+
+  /**
+   * POST a body the caller already built and signed (Print / vault writes sign their own canonical
+   * message so `--dry-run` can show the exact body). Same unknown-outcome rules as every write.
+   */
+  async postPresigned(path: "/game/deposit" | "/game/end" | "/lake/deposit" | "/lake/withdraw", body: Record<string, unknown>): Promise<unknown> {
+    return this.post(path, body);
+  }
+
   // ==================== BUILDER CODE ====================
 
   async approveBuilderCode(

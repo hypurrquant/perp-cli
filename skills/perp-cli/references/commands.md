@@ -208,6 +208,38 @@ perp --json -e derive options quote ETH-20261225-3500-P       # one option
 - Cost: `expiries` 1 request, `chain` 2 (instruments + ONE tickers call for the expiry), `quote` 2. Derive's public budget is 5 requests/s per IP.
 - `-n testnet` reads `testnet.api.derive.xyz`. MCP: `get_option_expiries`, `get_option_chain`, `get_option_quote` (`venue: "derive"`).
 
+## Pacifica Print (`perp print`) and vaults (`perp vault`)
+
+Pacifica-only products: these commands always use Pacifica (`-e <other venue>` → `INVALID_PARAMS`). Reads are unauthenticated GETs and never sign; `--account <address>` reads any account without a key. Writes are signed by the active Pacifica signer — the agent key when one is approved (Pacifica accepts `agent_wallet` on these operations), else the master — and support `--dry-run`, which prints the exact message to sign and the body (`signature: null`) and sends nothing. `--account` on a write only plans (with `--dry-run`); a live write with `--account` is refused.
+
+### Print — strike orders that earn a premium every cycle
+A Print order locks a USDC deposit (min 10) as margin at a target price: **long** = target BELOW mark, **short** = target ABOVE mark, 0.5% … 10% / 20% / 40% from mark for a 24-hour / 7-day / 30-day cycle. Leverage 1 … product max (`print games`). The premium is credited to the order at the START of each cycle; at the END (checkpoint only) the order fills AT the target as a normal perp position (size = deposit × leverage ÷ target), rolls to a new target at the same % distance, or is liquidated. Max loss = deposit + premiums. `--cycles 1…1000` caps the cycles (default: roll until cancelled). A cancel takes effect only at the end of the running cycle — funds stay locked until then (up to 30 days on BTC_1M).
+```bash
+perp --json -e pacifica print games                                  # products: cycle, max lev, caps, allowed target range
+perp --json -e pacifica print quote BTC_24H long 100 --strike 79000 --leverage 10 [--cycles 7]
+#   read-only preview: notional, size on fill, docsLiquidationPrice, maxLoss, lock; estimatedPremium is null
+#   (the venue's premium preview is a signed request — never called on a read path)
+perp --json -e pacifica print positions [--account <addr>]           # current orders: printing | cancelling | filled | liquidated | cancelled | completed | ended
+perp --json -e pacifica print history [--account <addr>] [--limit N] [--cursor C]
+perp --json -e pacifica print events <printAddress> [--limit N] [--cursor C]   # created / premium / end_requested / position_opened / liquidated
+perp --json -e pacifica --dry-run print deposit BTC_24H long 100 --strike 79000 --leverage 10 --cycles 7
+perp --json -e pacifica print deposit BTC_24H long 100 --strike 79000 --leverage 10 --cycles 7   # POST /game/deposit (deposit_to_game)
+perp --json -e pacifica --dry-run print cancel <printAddress>         # POST /game/end (end_game): only a `printing` order
+```
+- `docsLiquidationPrice` is the docs formula (margin fully lost). **Pacifica liquidates earlier** (maintenance margin, at checkpoints — live: a ZEC_24H short liquidated at mark 1216.84 vs formula ≈ 1269). Treat it as an outer bound and show the user `maxLoss`.
+- Every deposit carries a fresh `idempotency_key` (in the result and in `ORDER_PENDING` details). `ORDER_PENDING` → do NOT resubmit; check `print positions`.
+
+### Vaults (API: lakes)
+A vault is a Pacifica account traded by its manager; LPs get shares at NAV (lp_balance ÷ lp_shares). Min deposit 10 USDC; `deposit_cap` caps the LP balance; the manager takes `manager_profit_share` above the high-water mark. A withdrawal redeems shares into YOUR OWN trading balance (the API has no destination) only after `deposit_min_duration_ms` since your LAST deposit (each deposit restarts the lock for your whole balance), inside the withdrawal window when one is set (open while now_s mod window < duration), and from the vault's free balance (a fully deployed vault may pay partially). APY is not published (`apy: null`).
+```bash
+perp --json -e pacifica vault list [--account <addr>]                 # TVL, NAV/share, fee, lock-up, window, config
+perp --json -e pacifica vault info <address|nickname>                 # + live equity, positions, deposit whitelist, window open now?
+perp --json -e pacifica vault positions [--account <addr>]            # your LP (or manager) shares and value
+perp --json -e pacifica --dry-run vault deposit <vault> <amount>      # POST /lake/deposit (deposit_to_lake)
+perp --json -e pacifica --dry-run vault withdraw <vault> <shares>|--all   # POST /lake/withdraw (withdraw_from_lake)
+```
+MCP (read-only): `pacifica_print_products`, `pacifica_print_quote`, `pacifica_print_positions`, `pacifica_vaults`. Print / vault writes are CLI-only.
+
 ## Funds (deposit, withdraw, transfer, bridge, rebalance)
 
 All fund movement lives under `perp funds`.
