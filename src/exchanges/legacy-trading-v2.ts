@@ -15,6 +15,7 @@
 import { PerpError, orderOutcomeUnknown } from "../errors.js";
 import type { ExchangeAdapter } from "./interface.js";
 import { isPacificaStopType, pacificaRefused, type PacificaAdapter, type PacificaCancelRefusal } from "./pacifica.js";
+import { isPacificaRateLimited } from "../pacifica/rate-limit.js";
 import { iocLotTolerance, isIocOutcomeCapable } from "./ioc-outcome.js";
 import { isQueryOrderCapable } from "./capabilities.js";
 import type { ResolvedSlippage } from "./slippage.js";
@@ -640,7 +641,11 @@ class LegacyTradingV2 implements TradingV2 {
       // a definite refusal of THIS request — settled from the order's history_by_id, never "cancelled".
       if (this.family !== "pacifica" || !pacificaRefused(e)) throw e;
       raw = { error: e instanceof Error ? e.message : String(e) };
-      refusal = await (this.adapter as unknown as PacificaAdapter).cancelRefusalOutcome(ref.value, e);
+      // RATE_LIMITED with sent:false (local throttle or HTTP 429): this cancel was not executed —
+      // failed (nothing cancelled), no history read needed. Unknown-after-send never lands here.
+      refusal = isPacificaRateLimited(e)
+        ? { kind: "failed", error: `cancel of ${ref.value} not executed (rate limited, nothing sent / refused): ${e instanceof Error ? e.message : String(e)}` }
+        : await (this.adapter as unknown as PacificaAdapter).cancelRefusalOutcome(ref.value, e);
     }
     const out = (v: "cancelled" | "pending" | { error: string }, reason = ""): CancelResult => {
       if (v === "cancelled") return { venue: this.venue.id, cancelled: [ref], failed: [], pending: [], venueRaw: raw };

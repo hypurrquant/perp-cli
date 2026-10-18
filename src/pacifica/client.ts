@@ -2,7 +2,10 @@ import { MAINNET_REST, type Network, getNetworkConfig } from "./constants.js";
 import { buildSignedRequest, buildAgentSignedRequest } from "./signing.js";
 import { PerpError, extractErrorMessage, orderNotSent, orderOutcomeUnknown, sendFailure } from "../errors.js";
 import { invalidateCache } from "../cache.js";
-import { PACIFICA_SIGNED_MAX_WAIT_MS, pacificaRateLimiter, type PacificaRateLimiter } from "./rate-limit.js";
+import {
+  PACIFICA_COST_CANCEL, PACIFICA_COST_STANDARD, PACIFICA_MAX_THROTTLE_WAIT_MS, PACIFICA_READ_NEED, PACIFICA_SIGNED_MAX_WAIT_MS,
+  pacificaRateLimiter, type PacificaRateLimiter, type RateNeed, type RateTicket,
+} from "./rate-limit.js";
 import type {
   MarketInfo,
   PriceInfo,
@@ -51,6 +54,19 @@ const DEFINITE_4XX_PATHS: ReadonlySet<string> = new Set(["/positions/tpsl", "/ac
 /** POST endpoints that only read (signed listings): a failure there is an ordinary read error. */
 const READ_POST_PATHS: ReadonlySet<string> = new Set(["/account/subaccount/list", "/agent/list", "/account/api_keys"]);
 
+/** Cancels cost 0.5 credits (docs: rate-limits "Order cancellation 0.5"), by path and by signed operation type. */
+const CANCEL_POST_PATHS: ReadonlySet<string> = new Set(["/orders/cancel", "/orders/stop/cancel", "/orders/cancel_all", "/orders/twap/cancel"]);
+const CANCEL_OPERATIONS: ReadonlySet<string> = new Set(["cancel_order", "cancel_stop_order", "cancel_all_orders", "cancel_twap_order"]);
+
+/**
+ * A signed write needs only its own cost (never the read reserve); `maxWaitMs` = how long it may
+ * wait at this point (before signing: the normal bound; after signing: inside expiry_window).
+ */
+function writeNeed(cancel: boolean, maxWaitMs: number): RateNeed {
+  const cost = cancel ? PACIFICA_COST_CANCEL : PACIFICA_COST_STANDARD;
+  return { cost, reserve: 0, maxWaitMs };
+}
+
 export interface PacificaClientConfig {
   network?: Network;
   baseUrl?: string;
@@ -67,8 +83,10 @@ export class PacificaClient {
    * against the agent key. Undefined for master/PK signers.
    */
   private requestAgentWallet?: string;
-  /** Credit-quota state for this base URL + key tier (rate-limit.ts; process-local). */
+  /** Credit-quota state for this base URL + key tier (rate-limit.ts; process-local): unsigned GETs (IP quota) … */
   private readonly rate: PacificaRateLimiter;
+  /** … and signed POSTs (may report the account's quota) kept apart. */
+  private readonly signedRate: PacificaRateLimiter;
 
   /** Attach (or clear) the agent wallet used for subsequent signed requests. */
   setRequestAgentWallet(agentWallet?: string): void {
@@ -84,7 +102,7 @@ export class PacificaClient {
   ): Promise<Record<string, unknown>> {
     // Throttle BEFORE signing: a wait after signing would eat into the body's expiry_window.
     // A fail-fast RATE_LIMITED here sent nothing (details.sent === false).
-    await this.rate.throttle(operationType);
+    await this.signedRate.awaitCapacity(operationType, writeNeed(CANCEL_OPERATIONS.has(operationType), PACIFICA_MAX_THROTTLE_WAIT_MS));
     try {
       return await (this.requestAgentWallet
         ? buildAgentSignedRequest(operationType, payload, account, this.requestAgentWallet, signMessage)
@@ -99,7 +117,8 @@ export class PacificaClient {
     this.baseUrl =
       config.baseUrl || getNetworkConfig(config.network).restUrl;
     this.apiKey = config.apiKey;
-    this.rate = pacificaRateLimiter(this.baseUrl, this.apiKey);
+    this.rate = pacificaRateLimiter(this.baseUrl, this.apiKey, "unsigned");
+    this.signedRate = pacificaRateLimiter(this.baseUrl, this.apiKey, "signed");
   }
 
   private headers(): Record<string, string> {
@@ -115,9 +134,13 @@ export class PacificaClient {
         if (v !== undefined && v !== null) url.searchParams.set(k, v);
       });
     }
-    await this.rate.throttle(`GET ${path}`);
-    this.rate.noteSent();
-    const res = await fetch(url.toString(), { headers: this.headers() });
+    const ticket = await this.rate.acquire(`GET ${path}`, PACIFICA_READ_NEED);
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), { headers: this.headers() });
+    } finally {
+      ticket.release();
+    }
     this.rate.observe(res);
     if (!res.ok) {
       const text = await res.text();
@@ -140,28 +163,31 @@ export class PacificaClient {
    * at all → not sent. A 4xx is the venue's refusal and keeps the plain `POST <path> failed
    * (<status>): <body>` error the adapters map (422 business codes) — except on
    * DEFINITE_4XX_PATHS, where it is a definite ACTION_REJECTED. HTTP 429 → RATE_LIMITED
-   * (details.sent === false, retryAfterMs) — never retried, a write is never resubmitted. Before
-   * sending, the credit throttle may wait up to PACIFICA_SIGNED_MAX_WAIT_MS (the body is already
-   * signed) or fail fast with RATE_LIMITED (nothing sent). A fetch timeout (PACIFICA_POST_TIMEOUT_MS) on a write is ORDER_PENDING too;
+   * (details.sent === false, retryAfterMs) — never retried, a write is never resubmitted.
+   * "429 = not executed" is our reading of the docs ("When credits are exhausted, requests return
+   * HTTP 429"), not an explicit Pacifica statement. Before sending, the credit throttle may wait up
+   * to PACIFICA_SIGNED_MAX_WAIT_MS (the body is already signed) or fail fast with RATE_LIMITED
+   * (nothing sent). A write needs only its own cost, never the read reserve. A fetch timeout (PACIFICA_POST_TIMEOUT_MS) on a write is ORDER_PENDING too;
  * on a listing read a timeout is TIMEOUT and any other transport failure EXCHANGE_UNREACHABLE.
    */
   private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
     const write = !READ_POST_PATHS.has(path);
     const what = `POST ${path}`;
     const remediation = `Do NOT resubmit — the request may have been executed. Check open orders, positions and balances first: perp -e pacifica account orders / portfolio`;
-    await this.rate.throttle(what, PACIFICA_SIGNED_MAX_WAIT_MS);
+    const ticket: RateTicket = await this.signedRate.acquire(what, write
+      ? writeNeed(CANCEL_POST_PATHS.has(path), PACIFICA_SIGNED_MAX_WAIT_MS)
+      : { ...PACIFICA_READ_NEED, maxWaitMs: PACIFICA_SIGNED_MAX_WAIT_MS });
     try {
       let res: Response;
       let text: string;
       try {
-        this.rate.noteSent();
         res = await fetch(`${this.baseUrl}${path}`, {
           method: "POST",
           headers: this.headers(),
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(PACIFICA_POST_TIMEOUT_MS),
         });
-        this.rate.observe(res);
+        ticket.settle(res);
         text = await res.text();
       } catch (e) {
         if (write) throw sendFailure("pacifica", what, e, remediation);
@@ -177,7 +203,7 @@ export class PacificaClient {
         throw orderOutcomeUnknown("pacifica", what, new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`), remediation);
       }
       // Refused before processing (credits exhausted): nothing executed, never resubmitted here.
-      if (res.status === 429) throw this.rate.rateLimitedError(what, res, text);
+      if (res.status === 429) throw this.signedRate.rateLimitedError(what, res, text);
       if (!res.ok) {
         if (DEFINITE_4XX_PATHS.has(path) && res.status >= 400 && res.status < 500) {
           throw new PerpError("ACTION_REJECTED", `Pacifica ${what} refused (HTTP ${res.status}, nothing was changed): ${text.slice(0, 300)}`, {
@@ -195,6 +221,7 @@ export class PacificaClient {
         throw orderOutcomeUnknown("pacifica", what, new Error(`unreadable response (HTTP ${res.status}): ${text.slice(0, 200)}`), remediation);
       }
     } finally {
+      ticket.release(); // no-op once settled; a transport failure frees the reservation
       // Every POST is an account write (order / cancel / TP/SL / leverage / transfer): drop the
       // shared acct: disk cache so no later read serves the pre-write positions / orders.
       invalidateCache("acct");

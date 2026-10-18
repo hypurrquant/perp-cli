@@ -2,9 +2,9 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { PerpError, isDefiniteOrderFailure } from "../../errors.js";
 import { PacificaClient } from "../../pacifica/client.js";
 import {
-  PACIFICA_MAX_THROTTLE_WAIT_MS, PACIFICA_RATE_RESERVE, PacificaRateLimiter, isPacificaRateLimited,
-  pacificaRateLimitOf, pacificaRateLimiter, parsePacificaRateLimit, parseRetryAfterMs, resetPacificaRateLimiters,
-  type RateClock,
+  PACIFICA_COST_CANCEL, PACIFICA_COST_STANDARD, PACIFICA_MAX_THROTTLE_WAIT_MS, PACIFICA_READ_NEED, PACIFICA_READ_RESERVE,
+  PACIFICA_SIGNED_MAX_WAIT_MS, PacificaRateLimiter, isPacificaRateLimited, pacificaRateLimitOf, pacificaRateLimiter,
+  parsePacificaRateLimit, parseRetryAfterMs, resetPacificaRateLimiters, type RateClock, type RateNeed,
 } from "../../pacifica/rate-limit.js";
 import { pacificaCreateRejection, pacificaRefused } from "../../exchanges/pacifica.js";
 
@@ -67,83 +67,163 @@ function fakeClock(start = 1_000_000): RateClock & { t: number; sleeps: number[]
   };
   return c;
 }
-const headers = (rl: string) => ({ headers: new Headers({ ratelimit: rl, "ratelimit-policy": LIVE_POLICY }) });
+const headers = (rl: string, policy = LIVE_POLICY) => ({ headers: new Headers({ ratelimit: rl, "ratelimit-policy": policy }) });
+const READ = PACIFICA_READ_NEED;
+const WRITE: RateNeed = { cost: PACIFICA_COST_STANDARD, reserve: 0, maxWaitMs: PACIFICA_SIGNED_MAX_WAIT_MS };
+const CANCEL: RateNeed = { cost: PACIFICA_COST_CANCEL, reserve: 0, maxWaitMs: PACIFICA_SIGNED_MAX_WAIT_MS };
 
 describe("PacificaRateLimiter throttle (fake clock)", () => {
   it("no info → sends immediately", async () => {
     const c = fakeClock();
-    await new PacificaRateLimiter("t", c).throttle("GET /x");
+    (await new PacificaRateLimiter("t", c).acquire("GET /x", READ)).release();
     expect(c.sleeps).toEqual([]);
   });
 
-  it("at / above the reserve → no wait; below → waits until the window refreshes, then clears", async () => {
+  it("reads: at / above the reserve → no wait; below → waits until the window refreshes, then clears", async () => {
     const c = fakeClock();
     const l = new PacificaRateLimiter("t", c);
-    l.observe(headers(`"credits";r=${PACIFICA_RATE_RESERVE};t=8`));
-    expect(l.waitMs()).toBe(0);
-    l.observe(headers(`"credits";r=${PACIFICA_RATE_RESERVE - 1};t=8`));
+    l.observe(headers(`"credits";r=${PACIFICA_READ_RESERVE + PACIFICA_COST_STANDARD};t=8`));
+    expect(l.waitMs(READ)).toBe(0);
+    resetObs(l);
+    l.observe(headers(`"credits";r=${PACIFICA_READ_RESERVE + PACIFICA_COST_STANDARD - 1};t=8`));
     c.t += 3000;
-    await l.throttle("GET /x");
+    (await l.acquire("GET /x", READ)).release();
     expect(c.sleeps).toEqual([5250]); // 8 s − 3 s elapsed + 250 ms margin
     expect(l.snapshot()).toBeNull();
-    await l.throttle("GET /x");
+    (await l.acquire("GET /x", READ)).release();
     expect(c.sleeps).toHaveLength(1);
   });
 
-  it("requests sent since the last header count against the reserve", () => {
-    const l = new PacificaRateLimiter("t", fakeClock());
-    l.observe(headers(`"credits";r=${PACIFICA_RATE_RESERVE + 10};t=8`));
-    l.noteSent();
-    expect(l.waitMs()).toBe(0);
-    l.noteSent();
-    expect(l.waitMs()).toBeGreaterThan(0);
+  it("writes need only their own cost: a drained quota (amend's replacement leg) is not blocked by the read reserve", async () => {
+    const c = fakeClock();
+    const l = new PacificaRateLimiter("t", c);
+    l.observe(headers('"credits";r=10;t=40')); // 1 credit left: reads wait, a create / cancel goes
+    expect(l.waitMs(READ)).toBeGreaterThan(0);
+    const t = await l.acquire("POST /orders/create", WRITE);
+    expect(c.sleeps).toEqual([]);
+    t.settle(headers('"credits";r=0;t=40'));
+    // Below its own cost and the wait exceeds the post-sign cap → fails locally (nothing sent).
+    await expect(l.acquire("POST /orders/create", WRITE)).rejects.toMatchObject({ structured: { code: "RATE_LIMITED", details: { sent: false } } });
+    // A cancel (0.5 credits) fits where a create (1 credit) does not.
+    resetObs(l);
+    l.observe(headers('"credits";r=5;t=40'));
+    await expect(l.acquire("POST /orders/create", WRITE)).rejects.toMatchObject({ structured: { code: "RATE_LIMITED" } });
+    (await l.acquire("POST /orders/cancel", CANCEL)).release();
   });
 
   it("a wait above the max fails fast: RATE_LIMITED, sent:false, retryAfterMs, remediation — no sleep", async () => {
     const c = fakeClock();
     const l = new PacificaRateLimiter("t", c);
     l.observe(headers('"credits";r=0;t=40'));
-    const e = await l.throttle("POST /orders/create").catch((x: unknown) => x);
+    const e = await l.acquire("GET /x", READ).catch((x: unknown) => x);
     expect(e).toBeInstanceOf(PerpError);
     expect((e as PerpError).structured).toMatchObject({ code: "RATE_LIMITED", details: { exchange: "pacifica", sent: false, retryAfterMs: 40_250 } });
     expect((e as PerpError).structured.remediation).toMatch(/Nothing was sent/);
     expect(c.sleeps).toEqual([]);
     expect(isPacificaRateLimited(e)).toBe(true);
     expect(isDefiniteOrderFailure(e)).toBe(true);
-    // The signed-POST bound is tighter.
-    l.observe(headers('"credits";r=0;t=3'));
-    await expect(l.throttle("POST /orders/create", 2000)).rejects.toMatchObject({ structured: { code: "RATE_LIMITED" } });
     expect(PACIFICA_MAX_THROTTLE_WAIT_MS).toBe(15_000);
   });
 
-  it("an expired window is spent; a clock stepping backwards never lengthens the wait", () => {
+  it("a backwards clock step does not stretch the wall-clock stall", async () => {
     const c = fakeClock();
     const l = new PacificaRateLimiter("t", c);
     l.observe(headers('"credits";r=0;t=10'));
-    c.t -= 60_000;
-    expect(l.waitMs()).toBe(10_250);
-    c.t += 60_000 + 10_250;
-    expect(l.waitMs()).toBe(0);
-    expect(l.snapshot()).toBeNull();
+    c.t += 4000;
+    expect(l.waitMs(READ)).toBe(6250);
+    c.t -= 60_000; // a non-monotonic clock steps back a minute: re-anchored, not restarted
+    (await l.acquire("GET /x", READ)).release();
+    expect(c.sleeps).toEqual([6250]); // 10 s − 4 s really elapsed + margin, not 10 s or 70 s
+  });
+
+  it("the default clock is monotonic: a Date.now() step back does not lengthen the real wait", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
+    try {
+      const l = new PacificaRateLimiter("t");
+      l.observe(headers('"credits";r=0;t=1'));
+      const wall = Date.now();
+      vi.spyOn(Date, "now").mockReturnValue(wall - 60_000);
+      let done = false;
+      const p = l.acquire("GET /x", READ).then((t) => { t.release(); done = true; });
+      await vi.advanceTimersByTimeAsync(1249);
+      expect(done).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await p;
+      expect(done).toBe(true); // released after exactly 1 s + margin of (fake) real time
+    } finally {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
+  });
+
+  it("concurrent acquires reserve synchronously: Promise.all never overshoots the observed credits", async () => {
+    const c = fakeClock();
+    const l = new PacificaRateLimiter("t", c);
+    l.observe(headers(`"credits";r=${PACIFICA_READ_RESERVE + 35};t=50`)); // room for 3 reads (10 each) above the reserve
+    const settled = await Promise.allSettled(Array.from({ length: 6 }, () => l.acquire("GET /x", { ...READ, maxWaitMs: 0 })));
+    expect(settled.filter((s) => s.status === "fulfilled")).toHaveLength(3);
+    expect(settled.filter((s) => s.status === "rejected")).toHaveLength(3);
+    expect(l.snapshot()).toMatchObject({ inFlight: 30 });
+    // A header landing meanwhile does not wipe the in-flight count; settling releases it.
+    l.observe(headers(`"credits";r=${PACIFICA_READ_RESERVE + 20};t=50`));
+    expect(l.snapshot()).toMatchObject({ remaining: PACIFICA_READ_RESERVE + 20, inFlight: 30 });
+    for (const s of settled) if (s.status === "fulfilled") s.value.release();
+    expect(l.snapshot()).toMatchObject({ inFlight: 0 });
+  });
+
+  it("a stale, late response (higher r) and another quota's response (different q) are dropped within the window", () => {
+    const l = new PacificaRateLimiter("t", fakeClock());
+    l.observe(headers('"credits";r=300;t=30'));
+    l.observe(headers('"credits";r=900;t=31')); // late response from before others landed
+    expect(l.snapshot()).toMatchObject({ remaining: 300 });
+    l.observe(headers('"credits";r=200;t=30', '"credits";q=3000;w=60')); // account quota, not this IP's
+    expect(l.snapshot()).toMatchObject({ remaining: 300 });
+    l.observe(headers('"credits";r=250;t=29'));
+    expect(l.snapshot()).toMatchObject({ remaining: 250 });
+  });
+
+  it("after a sleep, a newer observation that landed meanwhile is kept and re-checked", async () => {
+    let l!: PacificaRateLimiter;
+    const c = fakeClock();
+    const sleep = c.sleep;
+    c.sleep = async (ms) => { await sleep(ms); l.observe(headers('"credits";r=0;t=1')); };
+    l = new PacificaRateLimiter("t", c);
+    l.observe(headers('"credits";r=0;t=1'));
+    await expect(l.acquire("GET /x", { ...READ, maxWaitMs: 2000 })).rejects.toMatchObject({ structured: { code: "RATE_LIMITED" } });
+    expect(c.sleeps).toEqual([1250]); // the second wait would exceed the remaining 750 ms budget
+  });
+
+  it("t and Retry-After are clamped to the window (+1 s)", async () => {
+    const l = new PacificaRateLimiter("t", fakeClock());
+    l.observe(headers('"credits";r=0;t=99999'));
+    expect(l.snapshot()?.resetInMs).toBe(61_250);
+    const e = l.rateLimitedError("GET /x", { status: 429, headers: new Headers({ "retry-after": "3600" }) }, "");
+    expect(e.structured.details?.retryAfterMs).toBe(61_000);
   });
 
   it("malformed / cached headers leave the state unchanged", () => {
     const l = new PacificaRateLimiter("t", fakeClock());
     l.observe(headers('"credits";r=0;t=10'));
     l.observe(headers('"credits";r=oops;t=10'));
-    l.observe({ headers: new Headers({ ratelimit: '"credits";r=2980;t=38', "x-cache": "Hit from cloudfront" }) });
-    expect(l.snapshot()).toMatchObject({ remaining: 0 });
+    l.observe({ headers: new Headers({ ratelimit: '"credits";r=0;t=38', "x-cache": "Hit from cloudfront" }) });
+    expect(l.snapshot()).toMatchObject({ remaining: 0, resetInMs: 10_250 });
   });
 
-  it("state is per base URL and per credential tier", () => {
-    const main = pacificaRateLimiter("https://api.pacifica.fi/api/v1", undefined);
-    expect(pacificaRateLimiter("https://api.pacifica.fi/api/v1", undefined)).toBe(main);
-    expect(pacificaRateLimiter("https://test-api.pacifica.fi/api/v1", undefined)).not.toBe(main);
-    const keyed = pacificaRateLimiter("https://api.pacifica.fi/api/v1", "k1");
+  it("state is per base URL, per credential tier and per request kind (signed / unsigned)", () => {
+    const main = pacificaRateLimiter("https://api.pacifica.fi/api/v1", undefined, "unsigned");
+    expect(pacificaRateLimiter("https://api.pacifica.fi/api/v1", undefined, "unsigned")).toBe(main);
+    expect(pacificaRateLimiter("https://api.pacifica.fi/api/v1", undefined, "signed")).not.toBe(main);
+    expect(pacificaRateLimiter("https://test-api.pacifica.fi/api/v1", undefined, "unsigned")).not.toBe(main);
+    const keyed = pacificaRateLimiter("https://api.pacifica.fi/api/v1", "k1", "unsigned");
     expect(keyed).not.toBe(main);
-    expect(pacificaRateLimiter("https://api.pacifica.fi/api/v1", "k2")).not.toBe(keyed);
+    expect(pacificaRateLimiter("https://api.pacifica.fi/api/v1", "k2", "unsigned")).not.toBe(keyed);
   });
 });
+
+/** Forget a limiter's observation (test helper: lets a lower-then-higher sequence be set up). */
+function resetObs(l: PacificaRateLimiter): void {
+  (l as unknown as { obs: unknown }).obs = null;
+}
 
 type Internals = { get(p: string): Promise<unknown>; post(p: string, b: object): Promise<unknown> };
 const client = () => new PacificaClient({ network: "testnet" }) as unknown as Internals;

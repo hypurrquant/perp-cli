@@ -4,7 +4,7 @@ import { isPacificaPerpetual } from "../../ws/pacifica-instrument.js";
 import { assertOk } from "./_http.js";
 import { withCache, TTL_MARKET } from "../../cache.js";
 import { getNetworkConfig } from "../../pacifica/constants.js";
-import { pacificaRateLimiter } from "../../pacifica/rate-limit.js";
+import { PACIFICA_COST_STANDARD, PACIFICA_READ_NEED, pacificaRateLimiter } from "../../pacifica/rate-limit.js";
 
 // ── Types ──
 
@@ -16,15 +16,23 @@ interface PacificaAsset {
 
 // ── Fetchers ──
 
+const publicRate = () => pacificaRateLimiter(getNetworkConfig(sharedApiNetwork()).restUrl, undefined, "unsigned");
+
 /**
  * Unauthenticated GET through the shared Pacifica credit limiter (the IP quota the adapter's
- * keyless client also spends): pre-send throttle, headers recorded, HTTP 429 → RATE_LIMITED.
+ * keyless client also spends): headers recorded, HTTP 429 → RATE_LIMITED. Never waits
+ * (maxWaitMs 0): arb / dashboard callers settle venues with allSettled, so a nearly spent quota
+ * fails this leg fast (RATE_LIMITED, nothing sent) instead of stalling the scan.
  */
 async function pacificaPublicGet(url: string, what: string): Promise<Response> {
-  const rate = pacificaRateLimiter(getNetworkConfig(sharedApiNetwork()).restUrl, undefined);
-  await rate.throttle(what);
-  rate.noteSent();
-  const res = await fetch(url);
+  const rate = publicRate();
+  const ticket = await rate.acquire(what, { ...PACIFICA_READ_NEED, maxWaitMs: 0 });
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } finally {
+    ticket.release();
+  }
   rate.observe(res);
   if (res.status === 429) throw rate.rateLimitedError(what, res, await res.text());
   return res;
@@ -132,10 +140,16 @@ export function parsePacificaRaw(raw: unknown): { rates: Map<string, number>; pr
 
 export async function pingPacifica(): Promise<{ ok: boolean; latencyMs: number; status: number }> {
   const start = Date.now();
+  // A health probe asks the venue itself (never throttled locally — an exhausted quota shows as the
+  // venue's HTTP 429), but its cost and headers go through the shared limiter.
+  const rate = publicRate();
+  const ticket = rate.track(PACIFICA_COST_STANDARD);
   try {
     const res = await fetch(PACIFICA_API_URL);
+    ticket.settle(res);
     return { ok: res.ok, latencyMs: Date.now() - start, status: res.status };
   } catch {
+    ticket.release();
     return { ok: false, latencyMs: Date.now() - start, status: 0 };
   }
 }
