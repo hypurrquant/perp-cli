@@ -25,7 +25,7 @@
  *   GET  /game/history?game_account=           event log of one Print order (paginated)
  *   POST /game/deposit   type deposit_to_game  create (documented)
  *   POST /game/end       type end_game         end at the cycle's close — UNOFFICIAL: not in the API docs,
- *                                              shape captured from app.pacifica.fi (fixture app-end-game-request.json)
+ *                                              shape captured from app.pacifica.fi (fixture app-unofficial-requests.json)
  * `preview_game_account` (POST /game/preview, the app's premium quote) is a SIGNED request; read
  * paths never sign, so the premium of a new order is not quoted here (estimatedPremium: null).
  */
