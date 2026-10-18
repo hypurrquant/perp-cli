@@ -185,6 +185,7 @@ describe("CLI entry points (with and without --dry-run)", () => {
     ["-e", "risex", "trade", "flatten"],
     ["-e", "risex", "trade", "reduce", "BTC", "50"],
     ["-e", "risex", "trade", "check", "BTC", "buy", "0.001"],
+    ["-e", "risex", "trade", "atomic", "--usd", "20", "--long", "BTC", "--short", "ETH"],
     ["-e", "rise", "trade", "market", "BTC", "buy", "0.001"],
     ["trade", "multi", "risex:BTC:buy:0.001", "hyperliquid:BTC:sell:0.001"],
     ["arb", "exec", "BTC", "risex", "hyperliquid", "100"],

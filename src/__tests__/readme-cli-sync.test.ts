@@ -26,6 +26,8 @@ const KNOWN_TOP_LEVEL_GROUPS = [
   "trade",
   "outcome",
   "options",
+  "print",
+  "vault",
   "arb",
   "strategy",
   "funds",

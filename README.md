@@ -31,7 +31,7 @@ What each venue supports in this release, derived from the code (venue definitio
 | Venue | Market data (CLI) | Funding | WS stream (`perp-cli/ws`) | Trading | Deposit via perp-cli | Withdraw via perp-cli | Extras | API |
 |---|---|---|---|---|---|---|---|---|
 | Hyperliquid (incl. HIP-3 via `--dex`) | ✅ | ✅ hourly | ✅ public + user (HIP-3 dexes opt-in) | ✅ | ✅ (USDC from Arbitrum) | ✅ (CCTP) | spot, outcomes (HIP-4), native TWAP | official |
-| Pacifica | ✅ | ✅ hourly | ✅ public + user | ✅ | ✅ | ✅ | spot (unified margin), native TWAP (master-signed only), Lake vaults (`wallet manage lake`, not yet verified live); Print / Atomic — not in this release | official |
+| Pacifica | ✅ | ✅ hourly | ✅ public + user | ✅ | ✅ | ✅ | spot (unified margin), native TWAP (master-signed only); Print (`perp print`), Vaults (`perp vault`; deposit master-only) and Atomic basket (`trade atomic`) — each not yet verified live; legacy `wallet manage lake`: `create` still works, `deposit` / `withdraw` refuse and point to `perp vault` | official |
 | Lighter | ✅ | ✅ hourly | ✅ public + user | ✅ | ✅ (L1 or CCTP) | ✅ | spot, client-side TWAP | official |
 | Lighter RH | ✅ | ✅ hourly | ✅ public + user (mainnet; testnet WS → HTTP 403) | ✅ | ✅ (USDG, mainnet) | ✅ (`-e lighter-rh funds withdraw lighter`) | spot, client-side TWAP | official |
 | Aster | ✅ | ✅ per symbol | ✅ public only (user channels: known gap) | ✅ | ✅ (USDT / USDC, mainnet) | ✅ (agent with `--can-withdraw --ip-whitelist`) | spot, client-side TWAP | official |
@@ -147,7 +147,7 @@ Secrets are stored once (see `docs/SSOT_RULES.md` Rule #3): Lighter RH → `~/.p
 
 ### What works — mainnet verification (2026-10-13)
 
-Every mark below comes from a real-money mainnet run, not from code reading — at the venue minimum, with the per-venue cap raised to about $25–30 for multi-slice / multi-level checks and about $110 for the Hyperliquid TWAP. Details, evidence and the open issues: [`docs/MAINNET-VERIFICATION-STATUS.md`](docs/MAINNET-VERIFICATION-STATUS.md).
+Every mark below comes from a real-money mainnet run, not from code reading — at the venue minimum, with the per-venue cap raised to about $25–30 for multi-slice / multi-level checks and about $110 for the Hyperliquid TWAP.
 
 ✅ verified live · ⛔ not supported (refused before anything is sent) · ❌ implemented but not run on mainnet yet · — not offered by the venue
 
@@ -310,6 +310,8 @@ perp --json -e <EX> trade spot-balance
 | `trade` | Market/limit/stop orders, close, scale, split execution |
 | `outcome` | Hyperliquid Outcome (HIP-4) — binary/range contracts, quoted per outcome (outcomeMeta `quoteToken`, USDC today), no leverage |
 | `options` | Options market data, read-only (Derive: `-e derive options underlyings / expiries / chain / quote`) |
+| `print` | Pacifica Print — strike orders earning a premium per cycle: games, quote, positions, history, events, deposit / cancel (`--dry-run`) |
+| `vault` | Pacifica vaults (API: lakes) — list, info, positions, deposit (master wallet only) / withdraw (`--dry-run`) |
 | `arb` | Funding rate arb — scan, exec, close, monitor (perp-perp & spot-perp) |
 | `strategy` | 19 bot algorithms (grid, dca, twap, APEX, REFLECT, presets) + nested scripted plans |
 | `funds` | Deposit, withdraw, transfer, cross-chain bridge (multi-provider), inter-exchange rebalance |
@@ -476,7 +478,7 @@ Global flags: `--json`, `--fields <f>`, `--ndjson`, `--dry-run`, `--dex <name>` 
 
 [![Glama MCP server](https://glama.ai/mcp/servers/hypurrquant/perp-cli/badges/score.svg)](https://glama.ai/mcp/servers/hypurrquant/perp-cli)
 
-perp-cli includes a full-featured MCP server (25 tools, 3 resources, 2 prompts) for Claude Desktop, Cursor, and other MCP clients.
+perp-cli includes a full-featured MCP server (29 tools, 3 resources, 2 prompts) for Claude Desktop, Cursor, and other MCP clients.
 
 **No API keys required for market data** — explore prices, orderbooks, funding rates, and arb opportunities without any setup. Add keys only when you want to trade.
 
@@ -502,7 +504,7 @@ For trading and account data, run `perp setup` first: the MCP server reads the s
 }
 ```
 
-**Read-only tools (no keys):** `get_markets`, `get_orderbook`, `get_funding_rates`, `get_prices`, `get_outcome_markets`, `get_outcome_view`, `get_outcome_book`, `get_option_expiries`, `get_option_chain`, `get_option_quote` (Derive options), `arb_scan`, `health_check`
+**Read-only tools (no keys):** `get_markets`, `get_orderbook`, `get_funding_rates`, `get_prices`, `get_outcome_markets`, `get_outcome_view`, `get_outcome_book`, `get_option_expiries`, `get_option_chain`, `get_option_quote` (Derive options), `pacifica_print_products`, `pacifica_print_quote`, `pacifica_print_positions`, `pacifica_vaults` (Pacifica Print / vaults; writes are CLI-only), `arb_scan`, `health_check`
 
 **Advisor tools (no keys):** `suggest_command`, `explain_command`
 
