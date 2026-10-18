@@ -308,21 +308,25 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
   /**
    * Stream state from its sockets (idle ones aside), worst first: closed > reconnecting > stale >
    * connecting of a socket that was open before (its channels are down). Sockets opening for the first
-   * time (just added / waiting on the budget) do not hide the live ones: with ≥ 1 live socket the stream
+   * time (just added / waiting on the budget / retrying a failed first handshake) do not hide the live ones: with ≥ 1 live socket the stream
    * is live, `sockets` = live ones, `pending` = those still opening, `since` = the latest live since.
    * One socket: its state as is (no `pending`).
    */
   function aggregateState(): ConnectionState {
     if (shards.length === 1) return shardState(shards[0]);
     const active = shards.map(sh => ({ sh, st: shardState(sh) })).filter(x => x.st.status !== "idle");
-    for (const status of ["closed", "reconnecting", "stale"] as const) {
-      const hit = active.find(x => x.st.status === status);
+    const closedHit = active.find(x => x.st.status === "closed");
+    if (closedHit !== undefined) return closedHit.st;
+    // A socket that never opened yet (fresh) retrying its handshake is "pending", not "reconnecting":
+    // the live sockets' channels are fine. reconnect.maxAttempts still closes the stream (closed above).
+    for (const status of ["reconnecting", "stale"] as const) {
+      const hit = active.find(x => x.st.status === status && !(status === "reconnecting" && x.sh.fresh));
       if (hit !== undefined) return hit.st;
     }
     const down = active.find(x => x.st.status === "connecting" && !x.sh.fresh);
     if (down !== undefined) return down.st;
     const live = active.filter(x => x.st.status === "live");
-    const opening = active.filter(x => x.st.status === "connecting");
+    const opening = active.filter(x => x.sh.fresh && (x.st.status === "connecting" || x.st.status === "reconnecting"));
     if (live.length > 0) {
       const since = Math.max(...live.map(x => (x.st.status === "live" ? x.st.since : 0)));
       return { status: "live", since, sockets: live.length, pending: opening.length };
@@ -683,6 +687,11 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
       }
       case "error": {
         const w = ev.wire !== null ? wires.get(ev.wire) : ev.reqId !== undefined ? findWire({ wire: null, reqId: ev.reqId }) : undefined;
+        if (w !== undefined && w.shard !== shard) {
+          // A late error for the wire's previous socket: it says nothing about the wire's current socket.
+          log("info", "late-frame", `error for ${w.wire.key} on socket ${shard.id}; it lives on socket ${w.shard.id}`, { code: ev.code, fatal: ev.fatal });
+          return;
+        }
         const e = errorEvent(ev.code, ev.message, ev.remediation, text, ev.fatal);
         log(ev.fatal ? "error" : "warn", "protocol-error", e.type === "error" ? e.message : "", { wire: ev.wire });
         if (w === undefined) {

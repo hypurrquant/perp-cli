@@ -44,8 +44,60 @@ describe("Pacifica public prices: perps only", () => {
     expect(rates.has("SOL-USDC")).toBe(false);
   });
 
+  it("a non-object /info row → EXCHANGE_ERROR with remediation (no TypeError)", async () => {
+    stubFetch([...INFO, null]);
+    await expect(fetchPacificaPricesRaw()).rejects.toMatchObject({ structured: { code: "EXCHANGE_ERROR", remediation: expect.any(String) }, message: expect.stringContaining("row is not an object") });
+  });
+
   it("an /info row without instrument_type → EXCHANGE_ERROR (cannot be classified)", async () => {
     stubFetch([...INFO, { symbol: "ETH" }]);
     await expect(fetchPacificaPricesRaw()).rejects.toMatchObject({ message: expect.stringContaining("ETH has no instrument_type") });
+  });
+});
+
+describe("Pacifica public prices with the REAL file cache (JSON on disk)", () => {
+  async function freshModules() {
+    vi.doUnmock("../cache.js");
+    vi.resetModules();
+    const { mkdtempSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(join(tmpdir(), "perp-cache-test-"));
+    vi.stubEnv("TMPDIR", dir); // cache.ts resolves its dir from os.tmpdir() at import
+    const pub = await import("../api/public/pacifica.js");
+    const arb = await import("../commands/arb.js");
+    return { dir, pub, arb };
+  }
+
+  afterEach(() => { vi.unstubAllEnvs(); vi.resetModules(); });
+
+  it("fetchPacificaPricesRaw then fetchPacificaPrices within the TTL both work (the perp list is cached JSON-safe)", async () => {
+    const { dir, pub } = await freshModules();
+    stubFetch(INFO);
+    expect([...pub.parsePacificaRaw(await pub.fetchPacificaPricesRaw()).prices.keys()]).toEqual(["BTC", "SOL"]);
+    expect((await pub.fetchPacificaPrices()).map((p) => p.symbol)).toEqual(["BTC", "SOL"]);
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const entry = JSON.parse(readFileSync(join(dir, "perp-cli-cache", "pub_pac_mainnet_perps_list.json"), "utf8")) as { data: unknown };
+    expect(entry.data).toEqual(["BTC", "SOL"]);
+  });
+
+  it("/info 500 with /info/prices OK → the Pacifica leg rejects visibly; the other venues still appear", async () => {
+    const { arb } = await freshModules();
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((m: unknown) => { errors.push(String(m)); });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const body = url.endsWith("/info/prices") ? { success: true, data: [price("BTC", "100000")] }
+        : url.endsWith("api.pacifica.fi/api/v1/info") ? null
+        : url.includes("hyperliquid") ? { BTC: "100005" }
+        : url.endsWith("/api/v1/orderBookDetails") ? { order_book_details: [{ symbol: "BTC", last_trade_price: 100010 }] }
+        : undefined;
+      if (body === undefined) throw new Error(`unexpected ${url}`);
+      return { ok: body !== null, status: body === null ? 500 : 200, json: async () => body, text: async () => "internal error" };
+    }));
+    const snaps = await arb.fetchAllPrices();
+    expect(snaps.map((x) => [x.symbol, x.pacPrice, x.hlPrice, x.ltPrice])).toEqual([["BTC", null, 100005, 100010]]);
+    expect(errors.some((e) => e.includes("[arb] pacifica fetch failed") && e.includes("500"))).toBe(true);
+    vi.restoreAllMocks();
   });
 });

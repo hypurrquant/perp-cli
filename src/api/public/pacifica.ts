@@ -14,28 +14,41 @@ interface PacificaAsset {
 
 // ── Fetchers ──
 
+const INFO_REMEDIATION = "The Pacifica /info response shape changed; retry, and report it if it persists";
+
 /**
  * Symbols of GET /info rows with instrument_type "perpetual". `/info/prices` also lists spot
  * markets (SOL-USDC) — they must not reach arb / funding-arb as perps. A row without the field
  * cannot be classified → EXCHANGE_ERROR (same rule as the adapter's getMarkets).
+ * Cached as a string[] (the file cache is JSON: a Set would come back as `{}`); the Set is built
+ * outside withCache.
  */
-function fetchPacificaPerpSymbols(): Promise<Set<string>> {
-  return withCache(`pub:pac:${sharedApiNetwork()}:perps`, TTL_MARKET, async () => {
+async function fetchPacificaPerpSymbols(): Promise<Set<string>> {
+  const symbols = await withCache(`pub:pac:${sharedApiNetwork()}:perps:list`, TTL_MARKET, async (): Promise<string[]> => {
     const res = await fetch(PACIFICA_INFO_URL);
     await assertOk(res, "Pacifica info");
-    const json = (await res.json()) as Record<string, unknown>;
-    if (!Array.isArray(json.data)) {
-      throw new PerpError("EXCHANGE_ERROR", "Pacifica GET /info has no data array", { exchange: "pacifica" });
+    const json = (await res.json()) as unknown;
+    if (json === null || typeof json !== "object" || !Array.isArray((json as Record<string, unknown>).data)) {
+      throw new PerpError("EXCHANGE_ERROR", "Pacifica GET /info has no data array", { exchange: "pacifica", remediation: INFO_REMEDIATION });
     }
-    const out = new Set<string>();
-    for (const m of json.data as Record<string, unknown>[]) {
-      if (typeof m.instrument_type !== "string") {
-        throw new PerpError("EXCHANGE_ERROR", `Pacifica /info row ${String(m.symbol)} has no instrument_type`, { exchange: "pacifica" });
+    const out: string[] = [];
+    for (const m of (json as { data: unknown[] }).data) {
+      if (m === null || typeof m !== "object" || Array.isArray(m)) {
+        throw new PerpError("EXCHANGE_ERROR", `Pacifica GET /info row is not an object: ${JSON.stringify(m)}`, { exchange: "pacifica", remediation: INFO_REMEDIATION });
       }
-      if (isPacificaPerpetual(m)) out.add(String(m.symbol));
+      const row = m as Record<string, unknown>;
+      if (typeof row.instrument_type !== "string") {
+        throw new PerpError("EXCHANGE_ERROR", `Pacifica /info row ${String(row.symbol)} has no instrument_type`, { exchange: "pacifica", remediation: INFO_REMEDIATION });
+      }
+      if (isPacificaPerpetual(row)) out.push(String(row.symbol));
     }
     return out;
   });
+  if (!Array.isArray(symbols)) {
+    // A cache entry from before the string[] format (or a corrupt one) is not trusted.
+    throw new PerpError("EXCHANGE_ERROR", "Pacifica /info perp list cache entry is not a list", { exchange: "pacifica", remediation: INFO_REMEDIATION });
+  }
+  return new Set(symbols);
 }
 
 /** `/info/prices` envelope reduced to perp rows (`{ data }`, the shape parsePacificaRaw reads). */

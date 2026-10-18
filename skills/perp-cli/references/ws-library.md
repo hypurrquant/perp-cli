@@ -198,8 +198,9 @@ await Promise.all(streams.map((s) => s.close()));
   its own channels (gaps only for channels on it). `reconnect.maxAttempts` counts per socket, but **one
   socket exhausting it closes the whole stream** (every subscription ends with that reason). The state is
   the aggregate, worst first: `closed` > `reconnecting` > `stale` > `connecting` (of a socket that was
-  open before) > `live`. A socket opening for the first time (just added, or waiting on the
-  new-connection budget) does not turn a live stream into `connecting`: it stays `live` with
+  open before) > `live`. A socket opening for the first time (just added, waiting on the
+  new-connection budget, or retrying a failed first handshake) does not turn a live stream into
+  `connecting` / `reconnecting`: it stays `live` with
   `sockets` = open sockets and `pending` = sockets still opening — the channels on those are not ready
   yet (their `ready` resolves when they open). `pending` is present only on multi-socket streams.
 - `closed` is terminal: a later `subscribe` rejects with the close reason. A handshake failure before

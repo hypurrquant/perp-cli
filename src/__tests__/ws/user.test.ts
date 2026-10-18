@@ -668,6 +668,48 @@ describe("bbo channel", () => {
     expect(r.subs[20].status).toBe("active");
   });
 
+  it("a new socket whose first handshake keeps failing is pending (stream stays live), then closes the stream at maxAttempts", async () => {
+    const r = await spread(21, { reconnect: { maxAttempts: 2, baseMs: 1000, maxMs: 1000 } });
+    r.t.sockets[0].open();
+    ackAll(r.t.sockets[0]);
+    const before = r.states.length;
+    r.t.sockets[1].serverClose(1006); // handshake failed before open
+    expect(sockState(r.stream.state)).toMatchObject({ status: "live", sockets: 1, pending: 1 });
+    vi.advanceTimersByTime(1_000);
+    r.t.last().serverClose(1006); // 2nd failure
+    expect(sockState(r.stream.state)).toMatchObject({ status: "live", sockets: 1, pending: 1 });
+    expect(r.states.slice(before).map(sockState).map(s => s.status)).toEqual([]); // no live ↔ reconnecting flapping
+    vi.advanceTimersByTime(1_000);
+    r.t.last().serverClose(1006); // 3rd: attempts exhausted → the stream closes
+    expect(r.stream.state).toMatchObject({ status: "closed", reason: { code: "EXCHANGE_UNREACHABLE" } });
+    expect(r.subs[0].status).toBe("closed");
+  });
+
+  it("a fatal late error for a wire on its previous socket does not end the wire re-added on another socket", async () => {
+    const boom = { ...pacifica, decode: (text: string, d: Parameters<VenueCodec["decode"]>[1], ts: number) =>
+      text.includes("boom") ? [{ t: "error" as const, code: "WS_PROTOCOL_ERROR" as const, message: "boom", wire: "bbo:S20", fatal: true, remediation: null }] : pacifica.decode(text, d, ts) };
+    const symbols = Array.from({ length: 22 }, (_, i) => `S${i}`);
+    const t = fakeTransport();
+    const logs: StreamLog[] = [];
+    const stream = createVenueStream(boom, { transport: t.factory, fetch: fakeFetch(pacDir(symbols)), visibility: null, logger: l => logs.push(l) });
+    const subs = symbols.map(sym => stream.subscribe({ kind: "market", symbol: sym, channels: ["bbo"] }));
+    await flush(80);
+    for (const ws of t.sockets) { ws.open(); ackAll(ws); }
+    await Promise.all(subs.map(x => x.ready));
+    await subs[5].unsubscribe(); // room on socket 0
+    await subs[20].unsubscribe(); // S20 leaves socket 1 (S21 keeps it open)
+    const again = stream.subscribe({ kind: "market", symbol: "S20", channels: ["bbo"] });
+    await flush(40);
+    expect(bboSource(t.sockets[0]).at(-1)).toBe("S20"); // re-added on socket 0
+    t.sockets[0].message({ channel: "subscribe", data: { source: "bbo", symbol: "S20" } });
+    await again.ready;
+    t.sockets[1].message("boom"); // late fatal error from socket 1
+    expect(again.status).toBe("active");
+    expect(logs.some(l => l.event === "late-frame" && l.message === "error for bbo:S20 on socket 1; it lives on socket 0")).toBe(true);
+    t.sockets[0].message("boom"); // the same error on its own socket ends it
+    expect(again.status).toBe("closed");
+  });
+
   it("maxPayload closes count per socket: 3 on socket 1 fail only its subscriptions", async () => {
     const r = await spread(25);
     for (const ws of r.t.sockets) { ws.open(); ackAll(ws); }
