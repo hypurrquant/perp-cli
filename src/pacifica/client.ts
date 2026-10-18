@@ -57,6 +57,8 @@ const READ_POST_PATHS: ReadonlySet<string> = new Set(["/account/subaccount/list"
 /** Cancels cost 0.5 credits (docs: rate-limits "Order cancellation 0.5"), by path and by signed operation type. */
 const CANCEL_POST_PATHS: ReadonlySet<string> = new Set(["/orders/cancel", "/orders/stop/cancel", "/orders/cancel_all", "/orders/twap/cancel"]);
 const CANCEL_OPERATIONS: ReadonlySet<string> = new Set(["cancel_order", "cancel_stop_order", "cancel_all_orders", "cancel_twap_order"]);
+/** Signed operation types of the READ_POST_PATHS listings: the read need applies before and after signing. */
+const READ_OPERATIONS: ReadonlySet<string> = new Set(["list_subaccounts", "list_agent_wallets", "list_api_keys"]);
 
 /**
  * A signed write needs only its own cost (never the read reserve); `maxWaitMs` = how long it may
@@ -102,7 +104,9 @@ export class PacificaClient {
   ): Promise<Record<string, unknown>> {
     // Throttle BEFORE signing: a wait after signing would eat into the body's expiry_window.
     // A fail-fast RATE_LIMITED here sent nothing (details.sent === false).
-    await this.signedRate.awaitCapacity(operationType, writeNeed(CANCEL_OPERATIONS.has(operationType), PACIFICA_MAX_THROTTLE_WAIT_MS));
+    await this.signedRate.awaitCapacity(operationType, READ_OPERATIONS.has(operationType)
+      ? PACIFICA_READ_NEED
+      : writeNeed(CANCEL_OPERATIONS.has(operationType), PACIFICA_MAX_THROTTLE_WAIT_MS));
     try {
       return await (this.requestAgentWallet
         ? buildAgentSignedRequest(operationType, payload, account, this.requestAgentWallet, signMessage)

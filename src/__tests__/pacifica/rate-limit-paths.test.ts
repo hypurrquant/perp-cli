@@ -113,3 +113,58 @@ describe("a cancel refused by the limiter / HTTP 429 is failed (not executed), n
     expect(r.failed[0].error).toMatch(/not executed \(rate limited/);
   });
 });
+
+describe("in-flight credits are always released (a leak would stall the client forever)", () => {
+  const inFlight = (kind: "signed" | "unsigned") =>
+    (pacificaRateLimiter(MAINNET_REST, undefined, kind) as unknown as { inFlight: number }).inFlight;
+  const named = (name: string, msg: string) => Object.assign(new Error(msg), { name });
+  const outcomes: Array<[string, () => Promise<Response>]> = [
+    ["throw (TypeError)", async () => { throw new TypeError("fetch failed"); }],
+    ["timeout", async () => { throw named("TimeoutError", "The operation was aborted due to timeout"); }],
+    ["abort", async () => { throw named("AbortError", "This operation was aborted"); }],
+    ["429", async () => new Response("busy", { status: 429, headers: { "retry-after": "1" } })],
+    ["5xx", async () => new Response("upstream", { status: 503 })],
+    ["bad JSON", async () => new Response("<html>not json", { status: 200 })],
+    ["200", async () => new Response('{"success":true,"data":[]}', { status: 200 })],
+  ];
+  const paths: Array<[string, "signed" | "unsigned", (c: Internals) => Promise<unknown>]> = [
+    ["GET", "unsigned", (c) => c.get("/info/prices")],
+    ["POST create", "signed", (c) => c.post("/orders/create", {})],
+    ["POST cancel", "signed", (c) => c.post("/orders/cancel", {})],
+  ];
+  for (const [pathName, kind, call] of paths) {
+    for (const [outcome, respond] of outcomes) {
+      it(`${pathName} — ${outcome} → inFlight 0`, async () => {
+        vi.stubGlobal("fetch", vi.fn(respond));
+        await call(client()).catch(() => undefined);
+        expect(inFlight(kind)).toBe(0);
+      });
+    }
+  }
+});
+
+describe("signed listing reads use the read need before AND after signing", () => {
+  const signer = () => vi.fn(async () => new Uint8Array(64));
+
+  it("below the read reserve → refused before signing (nothing signed, nothing sent)", async () => {
+    const f = vi.fn(async () => ok('"credits";r=20;t=50'));
+    vi.stubGlobal("fetch", f);
+    pacificaRateLimiter(MAINNET_REST, undefined, "signed").observe(ok('"credits";r=125;t=50')); // 12.5 credits: a write fits, a read does not
+    const sign = signer();
+    const e = await new PacificaClient({ network: "mainnet" }).listAgentWallets("acct", sign).catch((x: unknown) => x);
+    expect((e as PerpError).structured).toMatchObject({ code: "RATE_LIMITED", details: { sent: false } });
+    expect((e as PerpError).message).toMatch(/list_agent_wallets not sent/); // the pre-sign check, not the post-sign one
+    expect(sign).not.toHaveBeenCalled();
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it("above the read reserve → signed and sent", async () => {
+    const f = vi.fn(async () => ok('"credits";r=200;t=50'));
+    vi.stubGlobal("fetch", f);
+    pacificaRateLimiter(MAINNET_REST, undefined, "signed").observe(ok('"credits";r=200;t=50'));
+    const sign = signer();
+    await new PacificaClient({ network: "mainnet" }).listAgentWallets("acct", sign);
+    expect(sign).toHaveBeenCalledTimes(1);
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+});
