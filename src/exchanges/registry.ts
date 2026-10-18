@@ -1,6 +1,6 @@
 /**
  * Adapter registry — legacy name/alias API, now derived from the venue
- * definitions (src/exchanges/venues/, design §10.10). New venues are added by
+ * definitions (src/exchanges/venues/). New venues are added by
  * registering a VenueDefinition, not here.
  */
 

@@ -200,7 +200,7 @@ export async function executePlan(
 
       if (ORDER_ACTIONS.has(step.action) && isOutcomeUnknown(err)) {
         // The order may have been placed: never treat it as failed, never resubmit or roll it
-        // back. Stop the plan and quarantine the symbol (design §12.3).
+        // back. Stop the plan and quarantine the symbol.
         const sym = String(step.params.symbol ?? "").toUpperCase();
         log(`[plan:${planId}] Step ${step.id} (${step.action}): OUTCOME UNKNOWN — ${message}`);
         quarantine(sym, `step ${step.id} (${step.action}) outcome unknown: ${message}`);
@@ -363,7 +363,7 @@ async function executeStep(
       const closeSide = pos.side === "long" ? "sell" : "buy";
       // Size from the live position (abs), reduce-only: a stale / repeated close can never open
       // or flip a position — the venue rejects it instead. Fill measured (ORDER_PENDING when unconfirmed).
-      // A partial close (venue-final IOC partial fills are accepted, §13.10 #4) gets ONE residual
+      // A partial close (venue-final IOC partial fills are accepted) gets ONE residual
       // close (closePerpVerified); a residual still open fails the step with ORDER_PARTIAL.
       const liveSize = pos.size.replace(/^-/, "");
       const c = await closePerpVerified(adapter, adapter.name, pos.symbol, closeSide, liveSize);

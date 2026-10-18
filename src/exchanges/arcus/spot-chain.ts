@@ -1,5 +1,5 @@
 /**
- * Robinhood Chain reads/txs for Arcus spot (design §12.4 #7), over
+ * Robinhood Chain reads/txs for Arcus spot, over
  * `VenueNetworkConfig.rpcUrl` with ethers.
  *
  * Permit2 allowance logic ported from @arcus-xyz/arcus-spot-sdk@1.0.2

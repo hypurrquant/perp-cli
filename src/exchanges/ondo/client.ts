@@ -1,5 +1,5 @@
 /**
- * Ondo Perps raw REST client (design §9.2: raw fetch + node:crypto HMAC, no SDK).
+ * Ondo Perps raw REST client (raw fetch + node:crypto HMAC, no SDK).
  *
  * Auth (live-verified, scratchpad/sdk-findings.md §2 — the OpenAPI spec's
  * `X-API-KEY-ID` header name is wrong):
@@ -276,7 +276,7 @@ export class OndoClient {
 
     // Timeout covers the whole exchange (headers + body). A GET failure is definite
     // (nothing changed); a POST failure may have reached the venue → outcome unknown
-    // (ORDER_PENDING, never resubmit — design §12.3).
+    // (ORDER_PENDING, never resubmit).
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), ONDO_REQUEST_TIMEOUT_MS);
     let res: Response;

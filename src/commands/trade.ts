@@ -33,7 +33,7 @@ import { registerPacificaOrderCommands } from "./pacifica-orders.js";
 import { HL_MIN_ORDER_VALUE_USD } from "../constants.js";
 import { defaultSpotQuote, readSpotQuoteAvailableFresh, requireSpotAdapter, requireSpotDefinition, transferQuoteToPerp, transferQuoteToSpot, transferShortfallError } from "../exchanges/spot-factory.js";
 
-// ── Uniform order surface (design §13) ──
+// ── Uniform order surface ──
 //
 // Every venue's trade market/buy/sell/limit/stop/edit/cancel goes through TradingV2:
 // native on ondo/arcus, the legacy wrapper (exchanges/legacy-trading-v2.ts) on
@@ -43,7 +43,7 @@ import { defaultSpotQuote, readSpotQuoteAvailableFresh, requireSpotAdapter, requ
 /** Families with the legacy smart-order path (--smart: IOC at best book ± 1 tick). */
 const LEGACY_ORDER_FAMILIES: ReadonlySet<VenueDefinition["family"]> = new Set(["pacifica", "hyperliquid", "lighter", "aster"]);
 
-/** Common default time-in-force for every venue (design §13.3; venues map GTC internally, e.g. GTT). */
+/** Common default time-in-force for every venue (venues map GTC internally, e.g. GTT). */
 const DEFAULT_TIF = "GTC";
 
 function tradingVenueOf(adapter: ExchangeAdapter): { def: VenueDefinition; caps: VenueCapabilities } {
@@ -86,7 +86,7 @@ const V2_CLIENT_ID_RULES: Readonly<Partial<Record<VenueDefinition["id"], { re: R
 /**
  * Venues whose client order ids perp-cli GENERATES and never takes from the user: QFEX ids are
  * not unique on the venue, so a reused id would attribute another order's fills / cancels to
- * this one (design §14.12 #4c). --auto-id still works (the generated id is reported).
+ * this one (c). --auto-id still works (the generated id is reported).
  */
 const GENERATED_CLIENT_ID_ONLY: ReadonlySet<VenueDefinition["id"]> = new Set(["qfex"]);
 
@@ -131,7 +131,7 @@ function v2ClientOrderId(def: VenueDefinition, caps: VenueCapabilities, userId: 
  * --auto-id: venue-format id where the venue has client ids; a venue without them refuses it
  * (v2ClientOrderId — the locally generated id is never sent).
  * Ondo / Pacifica limit orders: undefined — the adapter generates its own id, which encodes
- * post-only (Ondo) / the TIF (Pacifica) for a later edit (design §13.10 #10, #11); the result
+ * post-only (Ondo) / the TIF (Pacifica) for a later edit; the result
  * reports that id. A Pacifica market order has no generated id, so --auto-id sends a UUID.
  * Generated-only venues (qfex): undefined — v2ClientOrderId generates the venue id itself.
  */
@@ -281,7 +281,7 @@ function prevalidateAmend(adapter: ExchangeAdapter): void {
   }
 }
 
-// ── TP/SL (design §13.5, §13.10 #12) ──
+// ── TP/SL ──
 
 /** Validated --tp / --sl prices of an entry or a position (null = that leg not requested). */
 interface TpSlPrices { tp: string | null; sl: string | null }
@@ -343,7 +343,7 @@ function positionTpSlAdapter(adapter: ExchangeAdapter): PositionTpSlAdapter {
   return adapter as PositionTpSlAdapter;
 }
 
-/** Refuse when position-level TP/SL orders already exist (never overwrite, §13.10 #12). */
+/** Refuse when position-level TP/SL orders already exist (never overwrite). */
 async function refuseExistingPositionTpSl(adapter: PositionTpSlAdapter, def: VenueDefinition, symbol: string): Promise<void> {
   const existing = await adapter.positionTpSlOrders(symbol);
   if (existing.length > 0) {
@@ -660,7 +660,7 @@ export function registerTradeCommands(
   }
 
   /**
-   * Validate an entry's --tp/--sl before anything is sent (design §13.10 #12): the venue has
+   * Validate an entry's --tp/--sl before anything is sent: the venue has
    * TP/SL, the entry opens (not reduce-only), separateOrders / positionLevel venues need an
    * immediate entry (market or IOC — a resting entry has no verified fill to size the legs to),
    * and the prices sit on the right sides of `ref`.
@@ -681,7 +681,7 @@ export function registerTradeCommands(
 
   /**
    * Place an entry carrying --tp/--sl — one meaning on every venue: protect THIS entry's
-   * verified fill (design §13.5, §13.10 #12).
+   * verified fill.
    *  - attached (ondo) / batchGroup (arcus): the venue attaches the legs to the entry.
    *  - separateOrders (hl, lighter, aster): entry fill VERIFIED (placePerpVerified: venue-final
    *    report cross-checked with the position delta), then reduce-only TP/SL triggers sized to it.
@@ -1250,7 +1250,7 @@ export function registerTradeCommands(
       // Fallback: client-side TWAP for any exchange without native support
       let result: unknown;
       if (hasPacificaSdk(adapter)) {
-        // One slippage resolver (design §13.2): bps → Pacifica's slippage_percent.
+        // One slippage resolver: bps → Pacifica's slippage_percent.
         const slippage = resolveAdapterSlippage(adapter, parseSlippageBpsFlag(opts.slippageBps));
         requirePacificaTwapSigner(adapter, "TWAP order");
         const sdk = adapter.sdk as Record<string, (...args: any[]) => any>;
@@ -1685,7 +1685,7 @@ export function registerTradeCommands(
   }
 
   /**
-   * One verified reduce-only close (design §12.3, §13.10 #4): closePerpVerified (placePerpVerified
+   * One verified reduce-only close: closePerpVerified (placePerpVerified
    * + one residual market close), so the reported `closed` is a measured / venue-final fill, never
    * the requested size. Logged "success" only when fully verified. A residual or an unknown outcome
    * quarantines the symbol (CLI path "trade-close"); a definite rejection propagates unchanged.
@@ -2282,7 +2282,7 @@ export function registerTradeCommands(
       console.log(chalk.yellow(`\n  PnL tracker stopped.\n`));
     });
 
-  // === Spot Trading (venue definitions, design §12) ===
+  // === Spot Trading (venue definitions) ===
 
   /** Spot adapter for the current venue via the factory; CAPABILITY_UNSUPPORTED when def.spot is null. */
   async function spotContext(confirmOnchainApprove: boolean): Promise<{ def: VenueDefinition; spotDef: VenueSpotDefinition; spot: SpotAdapter }> {
@@ -2296,7 +2296,7 @@ export function registerTradeCommands(
     return { def, spotDef, spot };
   }
 
-  /** Uniform feature name per spot capability (§13.6). */
+  /** Uniform feature name per spot capability. */
   const SPOT_FEATURE: Readonly<Record<keyof VenueSpotDefinition["capabilities"], string>> = {
     limitOrder: "spotLimitOrder", orderbook: "spotOrderbook", cancel: "spotCancel", transfer: "spotTransfer",
   };
@@ -2367,7 +2367,7 @@ export function registerTradeCommands(
   }
 
   /**
-   * Execution record of a spot market order, same fields for every venue (design §13.8):
+   * Execution record of a spot market order, same fields for every venue:
    * the resolved bound (bps + source) and, where the adapter reports it, the protection
    * price actually sent and its reference (`protection` on the raw result / venueRaw).
    */

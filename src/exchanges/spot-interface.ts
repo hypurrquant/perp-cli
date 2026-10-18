@@ -3,10 +3,10 @@
  * Separate from ExchangeAdapter because spot uses balance-based tracking
  * (not position-based) and has no leverage, liquidation, or funding concepts.
  *
- * Venues declare spot support in their VenueDefinition (`spot`, design §12);
+ * Venues declare spot support in their VenueDefinition (`spot`);
  * adapters are created only through `getSpotAdapter()` in spot-factory.ts.
  *
- * Symbol rule (§12.4 #6): `SpotMarketInfo.symbol` is "BASE/QUOTE". Adapter
+ * Symbol rule: `SpotMarketInfo.symbol` is "BASE/QUOTE". Adapter
  * methods accept a bare base ("ETH" → BASE/quoteAssets[0]) or "BASE/QUOTE"
  * and translate to the venue's wire form.
  */
@@ -36,12 +36,12 @@ export interface SpotBalance {
   entryNtl?: string;     // cost basis in USDC (HL only)
   /**
    * true = this balance is the same money as the perp account (Pacifica USDC,
-   * HL unified). Aggregators must not add it on top of perp equity (§12.4 #8).
+   * HL unified). Aggregators must not add it on top of perp equity.
    */
   shared: boolean;
 }
 
-/** Normalized spot order result for venues added under §12 (legacy HL/Lighter return unknown). */
+/** Normalized spot order result for venue-definition spot venues (legacy HL/Lighter return unknown). */
 export interface SpotOrderResult {
   venue: string;
   symbol: string;
@@ -158,7 +158,7 @@ export interface SpotAdapter {
   getSpotBalances(): Promise<SpotBalance[]>;
 
   // Trading — accepts raw numbers, adapter handles precision + min size validation
-  /** Market order within the resolved slippage bound (design §13.2 — same rule as perps). */
+  /** Market order within the resolved slippage bound (same rule as perps). */
   spotMarketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { slippage: ResolvedSlippage }): Promise<unknown>;
   spotLimitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { tif?: string }): Promise<unknown>;
   spotCancelOrder(symbol: string, orderId: string): Promise<unknown>;

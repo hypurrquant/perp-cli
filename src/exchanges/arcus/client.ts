@@ -221,7 +221,7 @@ export class ArcusClient {
   private async send<T>(method: "GET" | "POST", url: string, endpoint: string, headers: Record<string, string>, body: string | null): Promise<ArcusResponse<T>> {
     // Timeout covers fetch + body read. A GET failure is definite (TIMEOUT /
     // EXCHANGE_UNREACHABLE); a POST failure may have reached the venue → outcome
-    // unknown (ORDER_PENDING, never resubmit — design §12.3).
+    // unknown (ORDER_PENDING, never resubmit).
     const signal = AbortSignal.timeout(TIMEOUT_MS);
     let res: Response;
     let text: string;

@@ -336,7 +336,7 @@ export class LighterSpotAdapter implements SpotAdapter {
 
   async spotMarketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { slippage: ResolvedSlippage }): Promise<unknown> {
     // Everything up to sendTx is pre-send: a failure there is a definite "not placed"
-    // (ORDER_REJECTED); sendTx transport failures are ORDER_PENDING (design §12.3).
+    // (ORDER_REJECTED); sendTx transport failures are ORDER_PENDING.
     let prep: PreparedSpotOrder;
     try {
       prep = await this._prepareMarketOrder(symbol, side, size, opts.slippage.bps);
@@ -450,7 +450,7 @@ export class LighterSpotAdapter implements SpotAdapter {
       throw new Error(`Size ${size} below min_base_amount ${minSize.base} for ${resolved}`);
     }
 
-    // Protection price = best opposite quote ± the resolved slippage bound (design §13.2)
+    // Protection price = best opposite quote ± the resolved slippage bound
     const ob = await this.getSpotOrderbook(resolved);
     let refPrice: number;
     if (side === "buy") {
@@ -506,7 +506,7 @@ export class LighterSpotAdapter implements SpotAdapter {
     const tick = dec.price <= 0 ? "1" : `0.${"0".repeat(dec.price - 1)}1`;
 
     // Size floored to the size step (never rounded up); price must already be on tick
-    // (INVALID_TICK, never rounded — design §10.10).
+    // (INVALID_TICK, never rounded).
     const sentSize = floorSize(size, sizeStep);
     const sentPrice = requireOnTick(price, tick);
 
@@ -562,7 +562,7 @@ export class LighterSpotAdapter implements SpotAdapter {
   }
 
   /**
-   * TIF mapping, as perps (§13.3): GTC/GTT → GTT, IOC → IOC, ALO / POST_ONLY → post-only (2).
+   * TIF mapping, as perps: GTC/GTT → GTT, IOC → IOC, ALO / POST_ONLY → post-only (2).
    * FOK and anything else → CAPABILITY_UNSUPPORTED (never silently GTT).
    */
   private _limitTif(tif: string | undefined): number {
@@ -713,7 +713,7 @@ export class LighterSpotAdapter implements SpotAdapter {
     return this._selfTransfer(String(amount), 1, 0); // route: Spot(1) → Perp(0)
   }
 
-  /** SpotTransferCapable (§12.4 #4): only the venue collateral (USDC on Lighter, USDG on Lighter RH). */
+  /** SpotTransferCapable: only the venue collateral (USDC on Lighter, USDG on Lighter RH). */
   async transferToSpot(amount: string, asset: string): Promise<unknown> {
     return this._selfTransfer(this._transferAmount(amount, asset), 0, 1);
   }
@@ -962,8 +962,7 @@ export class LighterSpotAdapter implements SpotAdapter {
   }
 
   /**
-   * POST /sendTx. `kind` "place" (order placement): failures are typed (design
-   * §12.3): before the request → ORDER_REJECTED; transport error, HTTP 5xx or an
+   * POST /sendTx. `kind` "place" (order placement): failures are typed: before the request → ORDER_REJECTED; transport error, HTTP 5xx or an
    * unreadable body after it → ORDER_PENDING (the tx may have been accepted — never
    * resubmit); an explicit non-200 code → ORDER_REJECTED. "order" (cancels) / "action"
    * (transfers): an explicit non-200 code → ORDER_REJECTED / ACTION_REJECTED

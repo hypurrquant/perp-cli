@@ -4,7 +4,7 @@
  * History: the first implementation was cancel + replace that defaulted the side to "buy"
  * when the order was missing (Rule #2 — a phantom replace on the wrong side can open/flip
  * a position) and dropped reduceOnly. It was then fixed to read the raw order, and is now
- * (design §13.10 #10: "Aster 정정의 기존 버그(체결분 무시 → 이중 수량) 수정, Aster v3 native
+ * ("Aster 정정의 기존 버그(체결분 무시 → 이중 수량) 수정, Aster v3 native
  * modify(PUT /fapi/v3/order) 존재 시 native로"; venues/aster.ts capabilities.amend "native")
  * a NATIVE modify: one signed PUT /fapi/v3/order on the SAME order — no cancel, no new order,
  * so side and reduceOnly are kept by the venue. `size` = the new OPEN (unfilled) size; the

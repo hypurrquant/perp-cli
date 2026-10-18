@@ -242,8 +242,7 @@ export interface Settings {
   /** OWS-native agent wallets registered per exchange (Phase 2a: Aster only) */
   agents?: AgentsByExchange;
   /**
-   * Per-venue slippage bound override (basis points) for market-type orders
-   * (design §13.2). Absent key = use `defaultSlippageBps`.
+   * Per-venue slippage bound override (basis points) for market-type orders. Absent key = use `defaultSlippageBps`.
    * Resolved only by resolveSlippage() (src/exchanges/slippage.ts).
    */
   slippageBps: { [K in VenueId]?: number };

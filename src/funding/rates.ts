@@ -1,11 +1,11 @@
 /**
  * Real-time cross-venue funding rate comparison.
  *
- * Fans out over every venue with the "marketData" role (design §10.6) using
+ * Fans out over every venue with the "marketData" role using
  * each venue's `publicData.fetchFundingRates(net)`, normalizes every row to a
  * per-hour rate with the row's own basis (Lighter
  * family 8h, Aster per-symbol), and matches markets across venues by
- * `canonical` (null → excluded, §10.9).
+ * `canonical` (null → excluded).
  *
  * A venue that fails is reported in `exchangeStatus` ("error") and
  * `exchangeErrors` (message) — its rows are absent, never silently empty.
@@ -56,7 +56,7 @@ export interface FundingRateSnapshot {
   timestamp: string;
   symbols: SymbolFundingComparison[];
   exchangeStatus: Record<string, "ok" | "error">;
-  /** Error message per venue whose status is "error" (§10.13 #3). */
+  /** Error message per venue whose status is "error". */
   exchangeErrors: Record<string, string>;
 }
 
@@ -379,7 +379,7 @@ export interface SpotPerpSpread {
 /**
  * Fetch spot+perp funding rate spreads.
  * Since spot has 0 funding cost, the spread is simply |perp funding rate|.
- * Only includes symbols available on at least one bot spot venue (def.spot, §12.4 #3).
+ * Only includes symbols available on at least one bot spot venue (def.spot).
  *
  * Key safety checks:
  * - U-token mapping: UBTC→BTC, UETH→ETH, USOL→SOL, UFART→FARTCOIN
@@ -396,8 +396,8 @@ export async function fetchSpotPerpSpreads(opts?: {
   exchangeStatus: Record<string, "ok" | "error">;
   exchangeErrors: Record<string, string>;
 }> {
-  // Spot legs come from the venue definitions (def.spot, §12): only bot/arb spot venues
-  // (separate/runtime account + transfer, §12.4 #3). Perp legs: those venues + pacifica.
+  // Spot legs come from the venue definitions (def.spot): only bot/arb spot venues
+  // (separate/runtime account + transfer). Perp legs: those venues + pacifica.
   ensureVenuesRegistered();
   const net = opts?.network ?? sharedApiNetwork();
   const { listBotSpotVenues, requireSpotAdapter, defaultSpotQuote } = await import("../exchanges/spot-factory.js");

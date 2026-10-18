@@ -28,9 +28,9 @@ import { approvalFromMax, builderGateOf, hlFeeTenthsBps, NO_BUILDER, requireFeeB
 export type HlTif = "Gtc" | "Ioc" | "Alo";
 
 /**
- * Map a TIF input to HL's native value (design §13.3). Accepts the common names
+ * Map a TIF input to HL's native value. Accepts the common names
  * GTC/IOC/ALO and the native spellings case-insensitively. FOK is not offered by
- * HL (no FOK emulation, §13.3) → CAPABILITY_UNSUPPORTED; anything else likewise.
+ * HL (no FOK emulation) → CAPABILITY_UNSUPPORTED; anything else likewise.
  */
 export function hlTif(raw: string): HlTif {
   const t = raw.trim().toUpperCase();
@@ -49,7 +49,7 @@ export function hlSizeStep(szDecimals: number): string {
 }
 
 /**
- * Slippage-bounded IOC protection price (design §13.2, §13.10 #5).
+ * Slippage-bounded IOC protection price.
  *
  * `reference` × (1 ± bps/10000), then aligned TOWARD CROSSING (buy → up, sell →
  * down) on HL's price grid: at most 5 significant figures and at most
@@ -75,8 +75,8 @@ export function hlProtectionPrice(
 }
 
 /**
- * A USER-SUPPLIED limit / trigger / modify price checked against HL's price grid (design §10.10:
- * an off-grid limit price is refused, never rounded — rounding to nearest can move a buy price UP).
+ * A USER-SUPPLIED limit / trigger / modify price checked against HL's price grid:
+ * an off-grid limit price is refused, never rounded — rounding to nearest can move a buy price UP.
  * HL docs (trading/tick-and-lot-size): "Prices can have up to 5 significant figures, but no more
  * than MAX_DECIMALS - szDecimals decimal places where MAX_DECIMALS is 6 for perps and 8 for spot.
  * Integer prices are always allowed, regardless of the number of significant figures."
@@ -163,7 +163,7 @@ export async function assertHlAppliedBps(appliedBps: number, what: string): Prom
 
 /**
  * Definite IOC outcome of a raw HL `order` response (shared contract with the
- * perp-order lane, design §13.10 #4). Reads `response.data.statuses[0]`:
+ * perp-order lane). Reads `response.data.statuses[0]`:
  * - `{ filled: { totalSz } }` with a plain decimal totalSz → that size, final;
  * - `{ error }` that is HL's IOC no-match cancel ("could not immediately match")
  *   → the venue explicitly cancelled the IOC with nothing filled → "0", final;
@@ -1349,11 +1349,11 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   /**
-   * Market order = slippage-bounded IOC limit (design §13.2, §13.10 #1/#5) for
+   * Market order = slippage-bounded IOC limit for
    * native perps and HIP-3 dexes alike. Replaces the SDK's marketOpen/marketClose
    * (hidden built-in slippage) and the former HIP-3 5% constant.
    *
-   * Reference price (the single declared source, §13.10 #5): the l2Book mid
+   * Reference price (the single declared source): the l2Book mid
    * (best bid + best ask) / 2 of this coin — see referencePrice(). No runtime
    * substitute (mark, allMids, last trade): a missing side → PRICE_STALE before
    * anything is sent. Protection = reference ± opts.slippage.bps, aligned toward
@@ -1658,7 +1658,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async limitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { reduceOnly?: boolean; tif?: string; clientOrderId?: string }) {
-    // TIF aliases (§13.3): GTC/IOC/ALO or native spellings; FOK → CAPABILITY_UNSUPPORTED.
+    // TIF aliases: GTC/IOC/ALO or native spellings; FOK → CAPABILITY_UNSUPPORTED.
     let action: Record<string, unknown>;
     const cloid = opts?.clientOrderId === undefined ? null : HyperliquidAdapter.requireCloid(opts.clientOrderId);
     try { // pre-send (see marketOrder)
@@ -1807,7 +1807,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   // ── Interface methods ──
 
   /**
-   * Amend (design §13.4, §13.10 #10) via HL native batchModify. `size` = the NEW
+   * Amend via HL native batchModify. `size` = the NEW
    * open (unfilled) size — native-modify semantics, not the original total. The
    * order's own tif (Gtc/Alo) and reduceOnly are read from frontendOpenOrders
    * and preserved; nothing is hardcoded.
@@ -2109,7 +2109,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * Place a trigger order (stop loss / take profit).
    * Python SDK: order() with trigger type {"trigger": {triggerPx, isMarket, tpsl: "tp"|"sl"}}
    *
-   * Pricing (design §13.10 #3):
+   * Pricing:
    * - isMarket (default): HL native market trigger; `p` = trigger ± 10 % (the venue's documented
    *   market TP/SL slippage tolerance, HL_MARKET_TPSL_SLIPPAGE_BPS), aligned toward crossing.
    * - limit trigger with an explicit `limitPrice`: that price, rounded to HL's grid.

@@ -1,7 +1,7 @@
 /**
  * QFEX public data from REAL captured payloads (public GET /refdata, /md/contracts and one MDS
  * market_stats frame, 2026-10-04; trimmed to a few symbols): markets, symbols, canonical
- * mapping, non-USD refusal, sessions, funding rows (design §14.1, §14.8, §14.12 #6, #7, #10).
+ * mapping, non-USD refusal, sessions, funding rows.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";

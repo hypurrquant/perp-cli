@@ -33,7 +33,7 @@ import { PACIFICA_UUID_RE, pacificaVenue } from "./venues/pacifica.js";
 import { approvalFromCeiling, builderGateOf, rateToBps, requireFeeBps, type BuilderApproval, type BuilderDecision, type BuilderFeeGate, type BuilderTarget, NO_BUILDER } from "./builder-fee.js";
 
 /**
- * CLI TIF → Pacifica TIF (design §13.3). GTC / IOC / ALO / TOB are native; venue
+ * CLI TIF → Pacifica TIF. GTC / IOC / ALO / TOB are native; venue
  * aliases GTT → GTC and GTX → ALO; no TIF → GTC (uniform default). FOK (never
  * emulated) and unknown values → uniform CAPABILITY_UNSUPPORTED.
  */
@@ -43,7 +43,7 @@ export function pacificaTif(tif: string | undefined): PacificaTif {
 }
 
 /**
- * Generated client_order_id carrying the order's TIF (design §13.4, §13.10 #10, like Ondo's
+ * Generated client_order_id carrying the order's TIF (like Ondo's
  * `pcli-<p|n>-…`): Pacifica takes a full UUID and never returns the TIF (GET /orders has no
  * tif field), so amend recovers it from the id. Layout: a UUID v4 whose first 6 hex digits are
  * `5ac1f` + TIF code (1 GTC, 2 IOC, 3 ALO, 4 TOB). The native edit keeps the client_order_id.
@@ -381,7 +381,7 @@ function requireInstrumentType(rows: MarketInfo[]): MarketInfo[] {
   return rows;
 }
 
-/** Perp markets of /info: instrument_type "perpetual" only (spot rows such as SOL-USDC, or any other type, excluded; design §12). */
+/** Perp markets of /info: instrument_type "perpetual" only (spot rows such as SOL-USDC, or any other type, excluded). */
 function perpInfoRows(rows: MarketInfo[]): MarketInfo[] {
   return requireInstrumentType(rows).filter(isPacificaPerpetual);
 }
@@ -664,7 +664,7 @@ export class PacificaAdapter implements ExchangeAdapter {
       this._getPrices(),
     ]);
     const priceMap = new Map(prices.map((p) => [p.symbol, p]));
-    // /info also lists spot markets (e.g. SOL-USDC); those are not perps (§12).
+    // /info also lists spot markets (e.g. SOL-USDC); those are not perps.
     const result = perpInfoRows(markets).map((m) => {
       const p = priceMap.get(m.symbol);
       // Derive sizeDecimals from lot_size (e.g. "0.001" → 3, "1" → 0)
@@ -915,7 +915,7 @@ export class PacificaAdapter implements ExchangeAdapter {
             const filled = parseFloat(String(latest.filled_amount ?? "0"));
             if (status === "filled" || filled > 0) {
               // Terminal row (filled / cancelled remainder) with a reported filled_amount = the
-              // order's final fill (design §13.10 #4). A non-terminal partial row is not final.
+              // order's final fill. A non-terminal partial row is not final.
               const reported = latest.filled_amount;
               const terminal = status === "filled" || status === "cancelled" || status === "rejected";
               if (terminal && reported !== undefined && reported !== null && String(reported).trim() !== ""
@@ -961,7 +961,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   /**
-   * Venue-final outcome of a raw marketOrder() result (IocOutcomeCapable, design §13.10 #4),
+   * Venue-final outcome of a raw marketOrder() result (IocOutcomeCapable),
    * parsed from the result's content (so copies of it work): its `fillReport` — the terminal
    * history_by_id row (filled / cancelled / rejected) with a reported filled_amount — for the
    * same order id as the create response. null otherwise — reduce-only orders (not polled),
@@ -1017,7 +1017,7 @@ export class PacificaAdapter implements ExchangeAdapter {
    */
   async limitOrder(symbol: string, side: "buy" | "sell", price: string, size: string, opts?: { reduceOnly?: boolean; tif?: string; clientOrderId?: string }) {
     this.ensureSigner();
-    const tif = pacificaTif(opts?.tif); // §13.3 common mapping; FOK → CAPABILITY_UNSUPPORTED
+    const tif = pacificaTif(opts?.tif); // common mapping; FOK → CAPABILITY_UNSUPPORTED
     // The caller's client order id (validated UUID) is sent as given; without one a generated
     // client_order_id records the TIF for a later TIF-preserving amend. Either way the id sent
     // rides on the result (`clientOrderId`).
@@ -1174,7 +1174,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   /**
-   * Amend that keeps the order's TIF (design §13.4, §13.10 #10). `size` = new open size.
+   * Amend that keeps the order's TIF. `size` = new open size.
    * TIF = `tif` when the caller gives one, else the TIF encoded in the order's generated
    * client_order_id; unknown → uniform CAPABILITY_UNSUPPORTED (never guessed).
    *  - ALO: native edit (the venue re-creates the order as ALO, keeping its client_order_id).

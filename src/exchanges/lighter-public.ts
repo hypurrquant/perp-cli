@@ -1,5 +1,5 @@
 /**
- * Lighter-family public market data (`lighter`, `lighter-rh`) — design §10.6.
+ * Lighter-family public market data (`lighter`, `lighter-rh`).
  *
  * Sources (REST base from venues/lighter-family.ts, per venue + network):
  *   GET /api/v1/orderBookDetails  → perps in `order_book_details` (decimals, min
@@ -11,7 +11,7 @@
  *       venue's own; the RH host labels its own rows "lighter" too (live
  *       2026-09-30: 57 "lighter" rows = RH's 57 perps, matched by market_id).
  *
- * FUNDING: basis 8h per quoted rate, hourly settlement (design §10.1, Lighter
+ * FUNDING: basis 8h per quoted rate, hourly settlement (Lighter
  * and Lighter RH identical).
  *
  * ASSET CLASS: the API has no asset-class field (the undocumented

@@ -1,5 +1,5 @@
 /**
- * QFEX venue definition (design §14.1 as amended by §14.12).
+ * QFEX venue definition.
  *
  * TradFi perpetuals (equities, indices, commodities; no spot) on a custodial, off-chain
  * matching engine. All markets are cross-margin, margin asset USDC. Orders go over the Trade
@@ -86,7 +86,7 @@ export const qfexVenue: VenueDefinition = {
     // "Dynamic price bands": 1.65%–10% by product preset and session; "integrations should use
     // that live value rather than hardcoding a percentage"); the
     // adapter sends every market order as an IOC LIMIT at the tick-aligned protection price
-    // (mark ± resolved slippage, design §13.2) — the same declaration as Ondo.
+    // (mark ± resolved slippage) — the same declaration as Ondo.
     marketOrder: "native",
     // ALO = order_type "ALO" + GTC.
     timeInForce: ["GTC", "IOC", "FOK", "ALO"],

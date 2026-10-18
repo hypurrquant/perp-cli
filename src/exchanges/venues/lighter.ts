@@ -1,5 +1,5 @@
 /**
- * Lighter (main) venue definition (design §10.1, §10.8, §10.13 #4).
+ * Lighter (main) venue definition.
  * Shares LighterAdapter and constants with lighter-rh (./lighter-family.ts).
  */
 
@@ -30,12 +30,12 @@ export const lighterVenue: VenueDefinition = {
   fundingVerified: true,
   roles: ["marketData", "account", "trading"],
   capabilities: LIGHTER_CAPABILITIES,
-  // Declared only — per §10.9 the limiter is applied to new venues + lighter-rh, not lighter.
+  // Declared only — per the limiter is applied to new venues + lighter-rh, not lighter.
   rateLimit: LIGHTER_RATE_LIMIT,
   restrictedRegions: [],
   symbolIdentity: "baseTicker",
   publicData,
-  // §12: per account (account_trading_mode, read by LighterSpotAdapter.init): Unified (1) shares
+  // per account (account_trading_mode, read by LighterSpotAdapter.init): Unified (1) shares
   // the collateral between spot and perp (no transfer); Classic (0) = separate spot balance +
   // self-transfer of the venue collateral.
   spot: {

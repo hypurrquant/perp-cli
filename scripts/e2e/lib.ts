@@ -204,7 +204,7 @@ export interface RunReport {
   capabilities: Record<string, unknown> | null;
   prerequisites: string[];
   steps: StepRecord[];
-  /** Design items (§11 / §12.3) → outcome summary from the steps that settle them. */
+  /** Design items → outcome summary from the steps that settle them. */
   designItems: Record<string, { what: string; steps: string[]; status: string }>;
   stopReason: string | null;
   cleanup: string[];
@@ -258,7 +258,7 @@ export function renderMarkdown(r: RunReport): string {
     if (s.envelope !== null) out.push("", "<details><summary>envelope</summary>", "", "```json", JSON.stringify(s.envelope, null, 2), "```", "", "</details>");
     if (s.stderrTail !== null && s.stderrTail !== "") out.push("", "<details><summary>stderr (tail)</summary>", "", "```", s.stderrTail, "```", "", "</details>");
   }
-  out.push("", "## Design items (§11 / §12.3)", "", "| item | what | steps | status |", "|---|---|---|---|");
+  out.push("", "## Design items", "", "| item | what | steps | status |", "|---|---|---|---|");
   for (const [k, v] of Object.entries(r.designItems)) out.push(`| ${k} | ${cell(v.what)} | ${v.steps.join(", ")} | ${cell(v.status)} |`);
   if (r.cleanup.length > 0) out.push("", "## Cleanup / verify by hand", ...r.cleanup.map(c => `- \`${c}\``));
   out.push("");

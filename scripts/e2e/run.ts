@@ -1,7 +1,7 @@
 #!/usr/bin/env -S npx tsx
 /**
  * perp E2E runner — deposit → trading → withdraw per venue, testnet first, then
- * tiny real-money runs. Operator runbook: docs/TEST-PLAN.md.
+ * tiny real-money runs.
  *
  *   pnpm e2e -- --venue <id> --network testnet|mainnet
  *               --phase preflight|trade|spot|deposit|withdraw|all (comma list ok)
@@ -471,7 +471,7 @@ const ITEM_VENUES: Record<string, E2eVenue[] | "all"> = {
   Q19: ["qfex"], Q20: ["qfex"], Q21: ["qfex"], Q22: ["qfex"], Q23: ["qfex"],
 };
 
-/** Items no runner step can settle, with the reason (also listed in docs/TEST-PLAN.md). */
+/** Items no runner step can settle, with the reason. */
 const NOT_COVERED: Record<string, string> = {
   "#3": "P3: run `perp -n <net> --json account positions` (no -e) with lighter + lighter-rh agents — runner records it in live preflight only",
   "#7": "ondo withdraw is a manual CLI step (`funds withdraw ondo --to <address-book address>`); CLI uses no WS login",
@@ -480,11 +480,11 @@ const NOT_COVERED: Record<string, string> = {
   "#13": "ALO is disabled on lighter(+rh) (CAPABILITY_UNSUPPORTED) — needs a dedicated SDK probe on testnet",
   "#18": "CLI refuses a crossed trigger before sending (INVALID_PARAMS); the venue-rejection → ORDER_PARTIAL path is unreachable from the CLI",
   S6: "no spot orderbook command; exercised only indirectly by spot-buy",
-  S10: "the denied path needs an agent WITHOUT --can-spot — manual step in TEST-PLAN (spot-balance before `wallet agent rotate aster --can-spot`)",
-  S12: "needs an agent WITHOUT --can-spot — manual step in TEST-PLAN (expect POLICY_DENIED from spot-buy)",
+  S10: "the denied path needs an agent WITHOUT --can-spot — manual step (spot-balance before `wallet agent rotate aster --can-spot`)",
+  S12: "needs an agent WITHOUT --can-spot — manual step (expect POLICY_DENIED from spot-buy)",
   S15: "P3 — `perp -n <net> --json arb scan --mode spot-perp` (public, keyless)",
-  // QFEX: no generic runner step settles these — each is a manual UAT drill in docs/TEST-PLAN.md (QFEX section).
-  Q1: "manual UAT drill: place GTC, close / kill the socket, re-list (TEST-PLAN QFEX)",
+  // QFEX: no generic runner step settles these — each is a manual UAT drill (QFEX section).
+  Q1: "manual UAT drill: place GTC, close / kill the socket, re-list",
   Q2: "manual UAT drill with a raw add_order — perp-cli refuses every reduce-only order until this passes",
   Q3: "manual UAT drill (auth frames)", Q4: "manual: compare /executions funding amounts with position notional",
   Q5: "manual UAT drill with a raw modify_order — perp-cli refuses amend until this passes",
@@ -1208,7 +1208,7 @@ export async function runLeg(opts: Opts, report: RunReport, leg: "hip3" | null):
           return out;
         },
         observe: env => ({ newOrderId: (env.data as { orderId?: unknown }).orderId, oldOrderId: gtcId, execution: (env.data as { execution?: unknown }).execution, venueRaw: (env.data as { venueRaw?: unknown }).venueRaw }),
-        note: opts.venue === "pacifica" ? "pacifica edit re-creates as ALO (design §11 #14) — TIF change is observed, not asserted" : undefined });
+        note: opts.venue === "pacifica" ? "pacifica edit re-creates as ALO — TIF change is observed, not asserted" : undefined });
       gtcId = orderIdOf(edit, gtcId);
       if (live && !wasSkipped("t-edit")) {
         const ords = await ordersEnv("t-orders-edit", PH);
@@ -1352,7 +1352,7 @@ export async function runLeg(opts: Opts, report: RunReport, leg: "hip3" | null):
         const ords = onSym(await ordersEnv("t-orders-stop", PH));
         const hit = ords.find(o => o.orderId === stopId.replace(/^c:/, ""));
         internal("t-stop-visible", "stop visible in open orders", PH, hit !== undefined ? "pass" : opts.venue === "ondo" ? "fail" : "observed", { orders: ords }, ["#6"], hit !== undefined ? null : "stop not in account orders");
-        if (hit === undefined && opts.venue === "ondo") throw new StopRun("ondo position stop not visible in GET /v1/perps/orders (§11 #6)", "fail");
+        if (hit === undefined && opts.venue === "ondo") throw new StopRun("ondo position stop not visible in GET /v1/perps/orders", "fail");
       }
       if (isLighter) {
         await step({ id: "t-edit-stop", title: "edit a trigger order → uniform refusal", phase: PH, args: ["trade", "edit", S, stopId, sz.stopPrice2, sz.unit], write: true, worstCase: null, needs: ["t-stop"],
@@ -1438,7 +1438,7 @@ export async function runLeg(opts: Opts, report: RunReport, leg: "hip3" | null):
           if (cands === null) {
             const hint = profile.spotSymbol[net] !== null ? ` (suggested: --spot-symbol ${profile.spotSymbol[net]})` : "";
             internal("s-pick", "spot market auto-selection", PH, live ? "fail" : "planned", {}, [], `no public spot reader for ${opts.venue} — pass --spot-symbol and --spot-size${hint}`);
-            if (live) throw new StopRun(`spot phase on ${opts.venue} needs --spot-symbol and --spot-size (no automatic selection for this venue${hint}) — see TEST-PLAN`, "preflight-fail");
+            if (live) throw new StopRun(`spot phase on ${opts.venue} needs --spot-symbol and --spot-size (no automatic selection for this venue${hint})`, "preflight-fail");
           } else {
             const pool = opts.spotSymbol !== null ? cands.filter(c => c.symbol.toUpperCase() === opts.spotSymbol!.split("/")[0]) : cands;
             if (pool.length === 1) spotBookRef = pool[0].bookRef;
@@ -1487,7 +1487,7 @@ export async function runLeg(opts: Opts, report: RunReport, leg: "hip3" | null):
         const quoteAmt = notional !== null ? spotQuoteNeed(notional).toFixed(2) : "<QUOTE_AMOUNT>";
         internal("s-plan", `spot ${sym} size ${size}`, PH, "observed", { accountModel: sp.accountModel, quote: sp.quoteAssets[net], caps: sp.capabilities, refPrice: ref, notional, quoteNeed: notional !== null ? Number(quoteAmt) : null }, [],
           notional !== null ? `notional ≈ $${notional.toFixed(2)}; quote needed ≈ ${quoteAmt} ${spotQuote} (1.05 × notional; the far limit reuses the sell proceeds)` : null);
-        if (live && (sym.startsWith("<") || spotSize === null)) throw new StopRun("spot phase needs --spot-symbol and --spot-size (venue minimum — see TEST-PLAN)", "preflight-fail");
+        if (live && (sym.startsWith("<") || spotSize === null)) throw new StopRun("spot phase needs --spot-symbol and --spot-size (venue minimum)", "preflight-fail");
         if (live && notional === null) throw new StopRun(`no reference price for ${sym} — pass --spot-ref-price`, "preflight-fail");
         const worst = notional ?? null;
         const yes = opts.venue === "arcus" && opts.allowOnchainApprove ? ["--yes"] : [];

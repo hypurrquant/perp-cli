@@ -132,7 +132,7 @@ function readPipedStdin(): Promise<string> {
 }
 
 /**
- * Ondo API key id + secret, from stdin only (design §10.4 — never flags).
+ * Ondo API key id + secret, from stdin only (never flags).
  * TTY: key id prompt, then hidden secret prompt. Piped: line 1 = key id, line 2 = secret.
  */
 /** Lighter ChangePubKey settlement window when confirming a slot (docs example: 30 s, 1 s apart; kept under the 60 req/min budget). */
@@ -516,7 +516,7 @@ async function verifyQfex(network: Network, opts: VerifyOpts): Promise<VerifyRes
 }
 
 /**
- * Confirmation of the account a QFEX key was resolved to (design §14.12 #9). In a terminal: a
+ * Confirmation of the account a QFEX key was resolved to. In a terminal: a
  * y/N prompt showing the UUID. Without one (piped stdin, --json): only an explicit --account-id
  * that equals the resolved account counts — the resolved UUID is printed on stderr either way.
  */
@@ -773,7 +773,7 @@ export async function approveVenueAgent(p: ApproveAgentParams): Promise<ApproveA
   assertAgentApproveSupported(p.venue, p.network, "approve");
   const agentName = p.agentName ?? defaultAgentName(p.venue, p.network);
 
-  // Ondo: HMAC key entered on stdin only (design §10.4)
+  // Ondo: HMAC key entered on stdin only
   if (p.venue === "ondo") {
     assertVenueAgentNameFree("ondo", agentName, p.network);
     if (getVenueAgent("ondo", agentName) && !p.rotate) {
@@ -788,7 +788,7 @@ export async function approveVenueAgent(p: ApproveAgentParams): Promise<ApproveA
     return { venue: "ondo", meta };
   }
 
-  // Arcus: OWS Ed25519 agent + EIP-712 createApiKey (design §10.4)
+  // Arcus: OWS Ed25519 agent + EIP-712 createApiKey
   if (p.venue === "arcus") {
     const masterName = requireMaster(p.master);
     assertVenueAgentNameFree("arcus", agentName, p.network);

@@ -1,5 +1,5 @@
 /**
- * Ondo Perps API-key ("agent") registration (design §10.4).
+ * Ondo Perps API-key ("agent") registration.
  *
  * The HMAC key id + secret are created by the user in the Ondo Perps UI and
  * entered via stdin by the CLI (never flags). The secret is persisted only in

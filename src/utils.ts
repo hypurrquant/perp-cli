@@ -284,7 +284,7 @@ export async function withJsonErrors<T>(
 /**
  * Central CLI error printer. JSON: the structured envelope incl. details and
  * remediation. Human: the uniform "not supported" line for CAPABILITY_UNSUPPORTED
- * (design §13.6) — `✗ <Venue>: <feature> not supported — <reason>. Alternative: <remediation>` —
+ * — `✗ <Venue>: <feature> not supported — <reason>. Alternative: <remediation>` —
  * otherwise `Error: <message>` plus the remediation.
  */
 export function printCliError(err: unknown, isJson: boolean, exchange?: string): void {
@@ -312,14 +312,14 @@ export function printCliError(err: unknown, isJson: boolean, exchange?: string):
 }
 
 /**
- * JSON payload of an order result (design §13.7): the uniform OrderResult (+ execution)
+ * JSON payload of an order result: the uniform OrderResult (+ execution)
  * with the venue's raw response duplicated under `legacy` for one release.
  */
 export function orderResultJson(r: OrderResult & { remediation?: string | null }, extra?: Record<string, unknown>): Record<string, unknown> {
   return { ...r, ...extra, legacy: r.venueRaw };
 }
 
-/** Human lines for an order result — one format for every venue (design §13.7). */
+/** Human lines for an order result — one format for every venue. */
 export function formatOrderResult(r: OrderResult & { remediation?: string | null }): string[] {
   const lines: string[] = [];
   const statusColor = r.status === "filled" ? chalk.green

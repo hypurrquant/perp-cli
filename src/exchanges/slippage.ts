@@ -1,5 +1,5 @@
 /**
- * Single slippage resolver for every market-type order (design §13.2, §13.10 #1).
+ * Single slippage resolver for every market-type order.
  *
  * Precedence (all explicit configuration, no hidden constants):
  *   --slippage-bps flag → settings.slippageBps[venue] → settings.defaultSlippageBps.

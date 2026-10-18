@@ -1,5 +1,5 @@
 /**
- * Order-entry precision (design §10.10): sizes floor to the lot, protection prices align
+ * Order-entry precision: sizes floor to the lot, protection prices align
  * TOWARD crossing (buy up / sell down), limit prices off tick are REJECTED (never rounded).
  */
 import { describe, it, expect, vi } from "vitest";

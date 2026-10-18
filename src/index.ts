@@ -136,7 +136,7 @@ if (rawArgs.length === 0 || (!hasSubcommand && !rawArgs.includes("-h") && !rawAr
             const adapter = await withTimeout(getAdapterForExchange(ex), 5000);
             const [balance, positions] = await withTimeout(Promise.all([adapter.getBalance(), adapter.getPositions()]), 5000);
             const posCount = positions.filter(p => Number(p.size) > 0).length;
-            // Spot value on top of perp equity for venues with def.spot (§12). Shared balances
+            // Spot value on top of perp equity for venues with def.spot. Shared balances
             // (already in perp equity) are skipped; unpriced tokens are excluded + warned.
             let spotValue = 0;
             const spotDef = getVenue(ex);
@@ -197,7 +197,7 @@ program.parseAsync().then(() => {
 }).catch(async (err) => {
   // Central printer (utils.printCliError): typed PerpError code / remediation / details
   // are preserved (Rule #2: stay loud, keep semantic envelope); generic Errors go
-  // through classifyError; CAPABILITY_UNSUPPORTED prints the uniform §13.6 line.
+  // through classifyError; CAPABILITY_UNSUPPORTED prints the uniform line.
   const { printCliError } = await import("./utils.js");
   printCliError(err, isJson());
   _origExit(1);

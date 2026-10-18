@@ -60,7 +60,7 @@ export class OwsEvmSigner implements EvmSigner {
 
   /**
    * Sign an unsigned EVM transaction (on-chain txs sent by the master wallet — Lighter RH
-   * deposit, design §13). The digest is computed HERE from the transaction (`unsignedHash`),
+   * deposit). The digest is computed HERE from the transaction (`unsignedHash`),
    * so callers can never feed an arbitrary 32-byte hash to the master key. Returns the
    * 65-byte 0x signature; the caller attaches it and checks the recovered sender.
    */

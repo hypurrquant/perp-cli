@@ -1,5 +1,5 @@
 /**
- * QFEX status / error-frame / REST → PerpError mapping (design §14.3 table, §14.12 #8, #11).
+ * QFEX status / error-frame / REST → PerpError mapping.
  */
 import { describe, it, expect } from "vitest";
 import {

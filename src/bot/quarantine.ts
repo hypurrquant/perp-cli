@@ -1,5 +1,5 @@
 /**
- * Position quarantine (design §12.3) — GLOBAL per symbol.
+ * Position quarantine — GLOBAL per symbol.
  *
  * A spot leg whose outcome is unknown (ORDER_PENDING), a perp leg that could not be
  * confirmed, a close whose post-trade verification failed, or a position left unhedged

@@ -1,6 +1,5 @@
 /**
  * QFEX signing vectors + wire-number conversion + the unverified-format gates
- * (design §14.2, §14.3, §14.12 #1).
  */
 import { describe, it, expect } from "vitest";
 import { createHmac } from "node:crypto";

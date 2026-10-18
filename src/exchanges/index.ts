@@ -28,7 +28,7 @@ export { AsterAdapter } from "./aster.js";
 export { HyperliquidSpotAdapter } from "./hyperliquid-spot.js";
 export { LighterSpotAdapter } from "./lighter-spot.js";
 
-// Venue abstraction (docs/DESIGN-venue-abstraction.md §10)
+// Venue abstraction
 export {
   getVenue, listVenues, listVenuesWithRole, resolveVenueId, tryResolveVenueId, parseVenueRef,
   networkConfig, requireCapabilities, fundingBasisOf, settlementIntervalOf, isLegacyVenue, isVenueId,

@@ -1,5 +1,5 @@
 /**
- * placePerpVerified / closePerpVerified (design §12.3, §13.10 #4): a resolved order call
+ * placePerpVerified / closePerpVerified: a resolved order call
  * is not a fill. The fill is the venue-final IOC report cross-checked against the measured
  * position delta, else the measured delta (≥ 80%); anything unprovable is ORDER_PENDING.
  */
@@ -172,7 +172,7 @@ describe("placePerpVerified — measured path (adapter reports no venue-final ou
   });
 });
 
-describe("placePerpVerified — venue-final IOC outcome (§13.10 #4)", () => {
+describe("placePerpVerified — venue-final IOC outcome", () => {
   const reportsFilled = (raw: unknown) => ({ filledSize: (raw as { filled: string }).filled, final: true as const });
 
   it("venue-final PARTIAL fill agreeing with the delta → filledSize = the venue-reported size (no 80% rule)", async () => {

@@ -4,7 +4,7 @@
 import { describe, it, expect, vi } from "vitest";
 
 // ── BUG 1: HL editOrder preserves original side ──
-// modifyOrder now also carries the original order's TIF (design §13.10 #10: "HL modifyOrder의
+// modifyOrder now also carries the original order's TIF ("HL modifyOrder의
 // tif: \"Gtc\" 하드코딩 → 원 주문 tif 전달 (frontendOpenOrders)"), so fixtures carry `tif`.
 describe("BUG 1: HL editOrder preserves side", () => {
   // editOrder reads the RAW frontendOpenOrders record (not the mapped
@@ -134,7 +134,7 @@ describe("HL modifyOrder surfaces per-order rejections", () => {
 });
 
 // ── BUG 2: Lighter market order never prices off a zero / missing reference ──
-// The reference price is now the orderbook mid (design §13.2, LIGHTER_REFERENCE_PRICE_SOURCE):
+// The reference price is now the orderbook mid (LIGHTER_REFERENCE_PRICE_SOURCE):
 // a book missing a side → PRICE_STALE, and the order is NOT signed or sent (definite, pre-send).
 describe("BUG 2: Lighter marketOrder refuses without a usable reference price", () => {
   const build = async (book: unknown) => {

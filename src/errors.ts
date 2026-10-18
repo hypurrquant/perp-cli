@@ -27,7 +27,7 @@ export const ERROR_CODES = {
   INVALID_PASSPHRASE:   { code: "INVALID_PASSPHRASE",   status: 401, retryable: false },
   NOT_IMPLEMENTED:      { code: "NOT_IMPLEMENTED",      status: 501, retryable: false },
 
-  // Venue abstraction (docs/DESIGN-venue-abstraction.md §10)
+  // Venue abstraction
   UNKNOWN_VENUE:        { code: "UNKNOWN_VENUE",        status: 400, retryable: false },
   TIF_REQUIRED:         { code: "TIF_REQUIRED",         status: 400, retryable: false },
   INVALID_TICK:         { code: "INVALID_TICK",         status: 400, retryable: false },
@@ -38,7 +38,7 @@ export const ERROR_CODES = {
   ORDER_PARTIAL:        { code: "ORDER_PARTIAL",        status: 500, retryable: false },
   /** The order was submitted but its outcome is not confirmed; retrying could double-trade. */
   ORDER_PENDING:        { code: "ORDER_PENDING",        status: 202, retryable: false },
-  /** The order was definitely NOT placed: the venue rejected it, or it failed before it was sent (design §12.3). */
+  /** The order was definitely NOT placed: the venue rejected it, or it failed before it was sent. */
   ORDER_REJECTED:       { code: "ORDER_REJECTED",       status: 422, retryable: false },
   /**
    * The venue explicitly refused a non-order account action (withdraw / transfer / approval) and
@@ -278,7 +278,7 @@ export class PerpError extends Error {
   }
 }
 
-// ── Order outcome classification (design §12.3) ──
+// ── Order outcome classification ──
 
 /**
  * Codes that mean "the order was definitely not placed / filled nothing": a validation

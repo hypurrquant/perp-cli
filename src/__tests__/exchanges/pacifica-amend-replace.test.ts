@@ -1,5 +1,5 @@
 /**
- * PacificaAdapter.amendKeepingTif — cancel → replace (design §13.10 #11): the native edit
+ * PacificaAdapter.amendKeepingTif — cancel → replace: the native edit
  * re-creates an order as ALO, so a non-ALO order is cancelled and replaced. The replacement
  * size is the requested open size MINUS what filled between the read and the cancel:
  *

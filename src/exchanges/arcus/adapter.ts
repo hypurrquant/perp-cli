@@ -1,5 +1,5 @@
 /**
- * Arcus adapter — native TradingV2 + legacy ExchangeAdapter shim (design §10.7).
+ * Arcus adapter — native TradingV2 + legacy ExchangeAdapter shim.
  *
  * Signing: the agent API key is an Ed25519 key in OWS wallet
  * `meta.agentWalletName` (raw signMessage on the Solana account — no prefix).
@@ -7,12 +7,12 @@
  * (master creds only, for spot swaps) every perp private call throws
  * AGENT_NOT_REGISTERED from requireAccount().
  *
- * Order entry rules (docs.arcus.xyz, design §10.10):
+ * Order entry rules (docs.arcus.xyz):
  * - every order carries goodTilTime ≥ 1 month ahead (ARCUS_GOOD_TIL_HORIZON_MS),
  *   body in µs, signed `g` in ns;
  * - market orders = IOC LIMIT at a protection price derived from mark and an
  *   explicit slippage bound, rejected locally when > 10 % from mark;
- * - TIF (design §13.3): common GTC is sent as GTT with goodTil = now +
+ * - TIF: common GTC is sent as GTT with goodTil = now +
  *   ARCUS_GOOD_TIL_HORIZON_MS (recorded as execution.expiresAt); IOC / FOK / ALO
  *   are native; a limit order without a TIF is GTC;
  * - clientId is always sent (orderAck async) and every OrderResult from a
@@ -321,13 +321,13 @@ export class ArcusAdapter implements ExchangeAdapter, TradingV2 {
     const meta = ctx.noAgent ? null : ctx.credentials.agent;
     if (meta === null) {
       if (!hasMaster) {
-        // §12.4 #7: no agent key and no master EVM key — nothing can sign.
+        // no agent key and no master EVM key — nothing can sign.
         throw new PerpError("NO_SIGNER_AVAILABLE", "No Arcus signer: no agent API key and no master EVM wallet / private key", {
           remediation: "Spot swaps: pass --wallet <ows-wallet> (master EVM key). Perp trading: perp wallet agent approve arcus --master <ows-wallet>",
         });
       }
       // Master-only (also --no-agent): spot swaps (master EVM signer) work; perp
-      // private calls throw AGENT_NOT_REGISTERED in requireAccount() (design §12.4 #7).
+      // private calls throw AGENT_NOT_REGISTERED in requireAccount().
       this.client = new ArcusClient(ctx.network, null);
       this.account = null;
       return;
@@ -597,7 +597,7 @@ export class ArcusAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   async placeOrder(input: OrderRequest): Promise<OrderResult> {
-    // §13.3: GTC is the uniform default for a limit order without a TIF.
+    // GTC is the uniform default for a limit order without a TIF.
     const tifRequested = input.tif;
     const req: OrderRequest = input.type === "limit" && input.tif === null ? { ...input, tif: "GTC" } : input;
     validateOrderRequest(this.venue, this.caps, req);
@@ -747,7 +747,7 @@ export class ArcusAdapter implements ExchangeAdapter, TradingV2 {
   /**
    * modifyOrder (docs modify-order / authentication).
    *
-   * Size: the CLI's `req.size` is the new OPEN (unfilled) size (design §13.4), while
+   * Size: the CLI's `req.size` is the new OPEN (unfilled) size, while
    * Arcus modifies take the order's new TOTAL size, filled quantity included
    * (OrderRejectionReason MODIFY_SIZE_ALREADY_FILLED: "the order's new TOTAL size,
    * filled quantity included"). So body `quantity` and signed `q` are
@@ -1153,7 +1153,7 @@ export class ArcusAdapter implements ExchangeAdapter, TradingV2 {
     return out;
   }
 
-  // ── Legacy: trading shims (§10.7) ──
+  // ── Legacy: trading shims ──
 
   /** `clientOrderId`: the caller's id when given; otherwise one is generated (orderAck async needs one). */
   async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { reduceOnly: boolean; slippage: ResolvedSlippage; clientOrderId?: string }): Promise<unknown> {
@@ -1201,7 +1201,7 @@ export class ArcusAdapter implements ExchangeAdapter, TradingV2 {
       tif: isLimit ? "GTC" : null, // sent as GTT at the max horizon
       reduceOnly: opts?.reduceOnly === true, // non-reduce-only → CAPABILITY_UNSUPPORTED in validation
       clientOrderId: newClientOrderId(),
-      // The caller's resolved bound (the adapter never reads settings, §13.10 #1);
+      // The caller's resolved bound (the adapter never reads settings);
       // a stop-market without it → INVALID_PARAMS in placeOrder.
       slippage: isLimit ? null : opts?.slippage ?? null,
       tpsl: null,
@@ -1228,7 +1228,7 @@ export class ArcusAdapter implements ExchangeAdapter, TradingV2 {
     }
   }
 
-  /** Master EVM signer for on-chain actions outside the Arcus API (spot swaps, design §12.4 #7). */
+  /** Master EVM signer for on-chain actions outside the Arcus API (spot swaps). */
   async masterEvmSigner(): Promise<EvmSigner> {
     this.requireMasterKey();
     return this.masterSigner();

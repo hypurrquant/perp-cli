@@ -1,6 +1,5 @@
 /**
- * Arcus spot = Stock Token swaps through the Arcus Spot Router (design §12,
- * §12.4 #5 #7). Not an exchange account: balances are the master wallet's
+ * Arcus spot = Stock Token swaps through the Arcus Spot Router. Not an exchange account: balances are the master wallet's
  * ERC-20 balances on Robinhood Chain, and every trade is an exact-input swap
  * settled on-chain (Permit2 `PermitWitnessTransferFrom` + `TakerIntent`).
  *
@@ -355,7 +354,7 @@ export class ArcusSpotAdapter implements SpotAdapter, SpotPricesCapable {
    *   all-in buy price at that notional. The signed intent must then carry
    *   minBuyAmount ≥ size × (1 − slippageBps), else nothing is signed.
    * Both sides also require minBuyAmount ≥ quote.buyAmount × (1 − slippageBps).
-   * slippageBps = the caller's resolveSlippage() value (design §13.2); the router
+   * slippageBps = the caller's resolveSlippage() value; the router
    * takes an integer bound.
    */
   async spotMarketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { slippage: ResolvedSlippage }): Promise<SpotOrderResult> {

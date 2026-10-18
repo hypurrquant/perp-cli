@@ -1,7 +1,7 @@
 /**
- * Lighter RH venue definition (design §4 "Lighter RH", §10.1, §10.3, §10.8).
+ * Lighter RH venue definition.
  * Same engine/adapter as Lighter; USDG collateral on the Robinhood chain.
- * Master key = OWS wallet only (no env / raw-PK tier); referral off (§10.3).
+ * Master key = OWS wallet only (no env / raw-PK tier); referral off.
  */
 
 import type { VenueDefinition, VenuePublicData } from "../venue.js";
@@ -26,18 +26,18 @@ export const lighterRhVenue: VenueDefinition = {
   agentKeyKind: "lighter-l2",
   secretStorage: { kind: "perp-keystore", dir: "lighter-rh-agents" },
   networks: LIGHTER_RH_NETWORKS,
-  // "Lighter RH is the same API/engine as Lighter" → Lighter's basis/interval (§10.1; live-data check pending).
+  // "Lighter RH is the same API/engine as Lighter" → Lighter's basis/interval (live-data check pending).
   fundingRateBasis: { kind: "perHours", hours: 8 },
   settlementIntervalHours: 1,
   fundingVerified: true,
   roles: ["marketData", "account", "trading"],
   capabilities: LIGHTER_RH_CAPABILITIES,
-  // Applied by the rate limiter (§10.9: new venues + lighter-rh).
+  // Applied by the rate limiter (new venues + lighter-rh).
   rateLimit: LIGHTER_RH_RATE_LIMIT,
   restrictedRegions: [],
   symbolIdentity: "baseTicker",
   publicData,
-  // §12: per account (account_trading_mode, read by LighterSpotAdapter.init): Unified (1) shares
+  // per account (account_trading_mode, read by LighterSpotAdapter.init): Unified (1) shares
   // the collateral between spot and perp (no transfer); Classic (0) = separate spot balance +
   // self-transfer of the venue collateral.
   spot: {

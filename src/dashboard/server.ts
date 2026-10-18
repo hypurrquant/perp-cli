@@ -193,7 +193,7 @@ async function pollArbData(): Promise<DashboardSnapshot["arb"]> {
       const row: DexAssetRow = {
         base,
         dexes: assets.map((a) => {
-          // Venue ref: "hyperliquid" for native, "hl:<dex>" for HIP-3 (same basis, §10.1)
+          // Venue ref: "hyperliquid" for native, "hl:<dex>" for HIP-3 (same basis)
           const ann = annualizeRate(a.fundingRate, a.dex === "hl" ? "hyperliquid" : `hl:${a.dex}`);
           return { dex: a.dex, rate: a.fundingRate, annualizedPct: ann, markPrice: a.markPrice, oi: a.openInterest };
         }),

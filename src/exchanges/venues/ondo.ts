@@ -1,5 +1,5 @@
 /**
- * Ondo Perps venue definition (design §4, §10).
+ * Ondo Perps venue definition.
  *
  * Off-chain matching engine; collateral is USDC plus eligible Ondo Global
  * Markets tokenized stocks (docs collateral-assets). Hot-path key = HMAC API
@@ -103,7 +103,7 @@ export const ondoVenue: VenueDefinition = {
   capabilities: {
     // The venue offers native market orders; the adapter sends every market order
     // as an IOC LIMIT at the tick-aligned protection price (mark ± resolved
-    // slippage, design §13.2).
+    // slippage).
     marketOrder: "native",
     timeInForce: ["GTC", "IOC", "ALO"],
     // A reduce-only limit order must be IOC: the venue refuses a resting one with HTTP 400
@@ -126,7 +126,7 @@ export const ondoVenue: VenueDefinition = {
   restrictedRegions: ["US", "PA"],
   symbolIdentity: "baseTicker",
   publicData,
-  // §12: separate spot wallet + POST /v1/spot/transfers (spot ↔ margin).
+  // separate spot wallet + POST /v1/spot/transfers (spot ↔ margin).
   spot: {
     accountModel: "separate",
     quoteAssets: { mainnet: ["USDC"], testnet: ["USDC"] },

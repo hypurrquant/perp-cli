@@ -1,7 +1,6 @@
 /**
  * Cross-venue canonical symbols — the single mapping source used to decide
- * that two markets on different venues are the same underlying
- * (design §4 L4, §10.9).
+ * that two markets on different venues are the same underlying.
  *
  * Rules by asset class:
  * - crypto:  ticker identity after the adapter strips its quote suffix, plus

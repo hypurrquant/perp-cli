@@ -77,7 +77,7 @@ function lighterStep(decimals: number): string {
 }
 
 /**
- * CLI format rule for a Lighter client order id (§13.10 #9): the venue's
+ * CLI format rule for a Lighter client order id: the venue's
  * `clientOrderIndex` is numeric, so the id must be a plain decimal integer string
  * (digits only, no sign / leading zero / exponent) in 1 ≤ n ≤ 2^48 − 1.
  * Anything else → INVALID_PARAMS before anything is sent.
@@ -511,7 +511,7 @@ function candleNumber(v: unknown): string | null {
 }
 
 export class LighterAdapter implements ExchangeAdapter {
-  /** GTC→GTT resting-order lifetime (28 days) for the execution record (§13.10 #14). */
+  /** GTC→GTT resting-order lifetime (28 days) for the execution record. */
   static readonly gttExpiryMs = LIGHTER_GTT_EXPIRY_MS;
   /** Venue id ("lighter" | "lighter-rh"). */
   readonly name: LighterVenueId;
@@ -792,7 +792,7 @@ export class LighterAdapter implements ExchangeAdapter {
     }
     if (this._evmSigner) return { tier: "master" };
     if (this._evmKey) return { tier: "pk" };
-    // Lighter RH master key is OWS-only (design §10.3): no env-key remediation for it.
+    // Lighter RH master key is OWS-only: no env-key remediation for it.
     const remediation = this.venueId === "lighter"
       ? "Run one of: (a) perp wallet agent approve lighter --master <wallet>; (b) perp wallet generate && perp -e lighter --ows <wallet>; (c) export LIGHTER_PRIVATE_KEY=0x..."
       : `Run one of: (a) perp wallet agent approve ${this.name} --master <wallet>; (b) perp wallet generate && perp -e ${this.name} --ows <wallet>`;
@@ -1091,7 +1091,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   /**
-   * Definite IOC outcome (§13.10 #4) from the executed tx: poll /tx by hash. A taker order the
+   * Definite IOC outcome from the executed tx: poll /tx by hash. A taker order the
    * venue reports "filled" (event_info `to.st` 3, `is` = sent) filled the whole order. Any other
    * status (the remainder was cancelled — the venue zeroes `rs`, so is − rs is NOT a fill) →
    * the venue's own `filled_base_amount` from accountOrders by client order index. Zero fill →
@@ -1227,7 +1227,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   /**
-   * Final outcome of a placed resting / post-only order (§13.10 #4 analogue for non-IOC): poll
+   * Final outcome of a placed resting / post-only order (analogue for non-IOC): poll
    * /tx (rejected → ORDER_REJECTED). Our order (`to`, matched by client order index) reported
    * "filled" in event_info → filled = is (the whole order). Any other status — open, or a
    * canceled-* whose remainder the venue zeroed (`rs` 0, so is − rs is NOT a fill) — or an
@@ -1583,7 +1583,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   /**
-   * Slippage-bounded IOC (§13.2): protection price = orderbook mid ± opts.slippage.bps,
+   * Slippage-bounded IOC: protection price = orderbook mid ± opts.slippage.bps,
    * tick-aligned toward crossing. The returned raw sendTx result carries `protection`
    * and, when the venue reported the fill, `iocOutcome` (see iocOutcomeOf).
    * `opts.clientOrderIndex` (optional) = caller's numeric client order id (lighterClientOrderIndex rule).
@@ -1635,9 +1635,9 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   /**
-   * TIF mapping (§13.3): GTC/GTT → GTT (28-day expiry, gttExpiryMs), IOC → IOC,
+   * TIF mapping: GTC/GTT → GTT (28-day expiry, gttExpiryMs), IOC → IOC,
    * ALO / POST_ONLY → time-in-force 2 (POST_ONLY per apidocs trading.md and the official
-   * lighter-go signer; 28-day expiry like GTT — testnet confirmation pending, design §11).
+   * lighter-go signer; 28-day expiry like GTT — testnet confirmation pending).
    * FOK and any other value → CAPABILITY_UNSUPPORTED (never silently GTT).
    * `opts.clientOrderIndex` as in marketOrder.
    * IOC: the same definite outcome as marketOrder (awaitIocOutcome — zero fill →
@@ -1963,7 +1963,7 @@ export class LighterAdapter implements ExchangeAdapter {
   /**
    * Trigger order. Market trigger (no limitPrice): execution price bound = trigger price ±
    * `opts.slippage` bps (the caller's resolveSlippage() output — required; the adapter never
-   * reads settings, §13.10 #1), tick-aligned toward crossing (§13.10 #3), recorded in the
+   * reads settings), tick-aligned toward crossing, recorded in the
    * result as `protection`. Accepted risk: a fast move through the bound leaves the
    * triggered order unfilled.
    * TP vs SL: `opts.kind` given (TP/SL legs) → that type as given (a trigger already crossed
@@ -2583,7 +2583,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   /**
-   * One WASM signer (one Go runtime) per `${venueId}:${network}` (design §10.5).
+   * One WASM signer (one Go runtime) per `${venueId}:${network}`.
    * lighter-go keys its clients by (accountIndex, apiKeyIndex) only and keeps a
    * package-global chainId for L1 messages, so two venues must never share a
    * runtime. Keyed by venue+network rather than chainId because Lighter testnet

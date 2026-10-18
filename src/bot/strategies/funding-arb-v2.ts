@@ -13,7 +13,7 @@ import { isPositionGone, assertFundingArbLegs, cancelBotSymbols } from "./fundin
  * Auto-scans all available exchanges for funding rate divergence.
  * Position management: tracks entry spread, auto-closes when spread converges.
  *
- * Execution safety (design §12.3):
+ * Execution safety:
  *  - legs are placed one at a time and verified by the position delta
  *    (placePerpVerified); the short is sized to the long's VERIFIED fill, and a short
  *    that fills less trims the long by this trade's excess (reduce-only, verified);

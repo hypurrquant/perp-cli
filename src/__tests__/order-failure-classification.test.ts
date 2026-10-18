@@ -1,5 +1,5 @@
 /**
- * Definite vs unknown order failures (errors.ts, design §12.3): only a typed definite
+ * Definite vs unknown order failures (errors.ts): only a typed definite
  * code means "not placed". Anything raised after sending — untyped errors, transport
  * failures, 5xx, non-definite PerpErrors — is an UNKNOWN outcome (ORDER_PENDING, never
  * resubmitted, never read as a rejection).

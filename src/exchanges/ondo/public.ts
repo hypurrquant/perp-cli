@@ -1,5 +1,5 @@
 /**
- * Ondo Perps public market data (design §10.6).
+ * Ondo Perps public market data.
  *
  * Sources (all public, live-verified 2026-09-30):
  *   GET /v1/markets           result.perps.tradingPairs[] — increments, margin

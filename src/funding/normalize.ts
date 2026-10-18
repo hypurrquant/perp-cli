@@ -1,5 +1,5 @@
 /**
- * Funding rate normalization (design §10.1, §10.13 #1).
+ * Funding rate normalization.
  *
  * The number of hours one quoted rate covers (the funding BASIS) comes from the
  * venue definition — `VenueDefinition.fundingRateBasis`, read through

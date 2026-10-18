@@ -1,5 +1,5 @@
 /**
- * Venue-level data contracts (docs/DESIGN-venue-abstraction.md §10).
+ * Venue-level data contracts.
  *
  * SSOT Rule #2: every "unknown" value is `T | null`, never optional, never a
  * silently substituted default.
@@ -32,7 +32,7 @@ export function isLegacyVenueId(s: string): s is LegacyVenueId {
 
 export type Network = "mainnet" | "testnet";
 
-// ── Funding (§10.1) ──
+// ── Funding ──
 
 /** How many hours one quoted funding rate covers (used for normalization). */
 export type FundingRateBasis = { kind: "perHours"; hours: number } | { kind: "annualized" };
@@ -43,7 +43,7 @@ export function rateToHourly(rate: number, basis: FundingRateBasis): number {
   return rate / (24 * 365);
 }
 
-// ── Markets (§10.6) ──
+// ── Markets ──
 
 export type AssetClass = "crypto" | "equity" | "index" | "etf" | "commodity" | "fx" | "preIpo";
 
@@ -69,7 +69,7 @@ export interface VenueMarket {
   /**
    * Currency prices are quoted in ("USD", "KRW", ...); null = this venue's data path does not
    * record it. A non-USD quote is never traded through perp-cli (sizing, risk limits and
-   * notionals assume USD) — see QFEX, design §14.12 #7.
+   * notionals assume USD) — see QFEX,.
    */
   quoteAsset: string | null;
   markPrice: string;
@@ -137,7 +137,7 @@ export interface VenueFundingRate {
   nextFundingTime: number | null;
 }
 
-// ── Orders (§10.10) ──
+// ── Orders ──
 
 /** CLI-level TIF inputs. "TOB" = Pacifica top-of-book, "GTX" = Aster post-only. */
 export type TimeInForce = "GTC" | "GTT" | "IOC" | "FOK" | "ALO" | "TOB" | "GTX";
@@ -159,7 +159,7 @@ export interface OrderRequest {
   /** Required when the venue's orderAck is "async". */
   clientOrderId: string | null;
   /**
-   * Resolved slippage bound (resolveSlippage(), design §13.10 #1). Required for
+   * Resolved slippage bound (resolveSlippage()). Required for
    * type "market"; adapters whose stopMarket / TP-SL legs are protection-priced
    * (Arcus) require it there too. null only for orders that carry no market leg.
    */
@@ -185,14 +185,13 @@ export interface OrderResult {
   /** Filled base size; null = the venue response does not report it (never "0" as a stand-in). */
   filledSize: string | null;
   avgPrice: string | null;
-  /** How the venue adapter actually executed the request (design §13.1 #3, §13.10 #14). */
+  /** How the venue adapter actually executed the request. */
   execution: OrderExecution;
   venueRaw: unknown;
 }
 
 /**
- * Transparent record of the venue-specific handling behind a uniform order
- * (design §13.1 #3, §13.2, §13.10 #14). Every field is required; a value the
+ * Transparent record of the venue-specific handling behind a uniform order. Every field is required; a value the
  * venue / adapter did not report is null (SSOT Rule #2), never a guess.
  */
 export interface OrderExecution {

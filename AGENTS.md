@@ -115,4 +115,4 @@ docker exec perp-qa perp <command>
 
 - 정본 (SSOT 규칙): `docs/SSOT_RULES.md`
 - 정본 (QA 워크플로우): `docs/QA_WORKFLOW.md`
-- HypurrQuant_FE AGENTS.md (rule #2 원본): `/Users/hik/Documents/GitHub/HypurrQuant_FE/AGENTS.md:150-164`
+- HypurrQuant_FE AGENTS.md (rule #2 원본): the downstream HypurrQuant_FE repo, `AGENTS.md` rule #2

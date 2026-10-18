@@ -1,7 +1,7 @@
 /**
- * Spot order outcome → filled size, for bots / arb (design §12.4 #5).
+ * Spot order outcome → filled size, for bots / arb.
  *
- * A resolved `spotMarketOrder()` promise does NOT mean "filled": the §12 adapters
+ * A resolved `spotMarketOrder()` promise does NOT mean "filled": the adapters
  * return a `SpotOrderResult` (rejected / cancelled / pending / partial / filled),
  * and the legacy Hyperliquid / Lighter adapters return a venue payload. Every bot /
  * arb spot leg goes through `spotMarketFill()` so the hedge is sized to what
@@ -31,7 +31,7 @@
  *    zero delta is ORDER_PENDING (the IOC may still be unconfirmed), never "nothing
  *    filled"; a failed read is never zero.
  *
- * Venue-final IOC outcome (design §13.10 #4): when the spot adapter is IocOutcomeCapable
+ * Venue-final IOC outcome: when the spot adapter is IocOutcomeCapable
  * and iocOutcomeOf(result) reports the order's FINAL filled size, that report is used in
  * preference to the balance delta, cross-checked against a fresh base-balance delta:
  *  - final 0 and the balance did not move (≤ one lot) → ORDER_REJECTED (definite);

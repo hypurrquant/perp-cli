@@ -1,5 +1,5 @@
 /**
- * Decimal-string precision helpers for order entry (design §10.10).
+ * Decimal-string precision helpers for order entry.
  *
  * All math is done on scaled BigInt to avoid float drift. Rules:
  * - limit prices that are not on tick are REJECTED (INVALID_TICK), never rounded;

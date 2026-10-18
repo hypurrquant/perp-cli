@@ -12,11 +12,11 @@ import type { VenueCredentials } from "./exchanges/venue.js";
 const _require = createRequire(import.meta.url);
 
 
-/** @deprecated alias — every venue id is an exchange id (design §10.3). */
+/** @deprecated alias — every venue id is an exchange id. */
 export type Exchange = VenueId;
 
 /**
- * Legacy env private-key variables (design §10.3). New venues have no env tier:
+ * Legacy env private-key variables. New venues have no env tier:
  * loadPrivateKey()/resolveCredentials() never read env keys for them.
  * v0.12.10 restored ASTER_PRIVATE_KEY so Aster Tier 3 env-PK loading works.
  */
@@ -79,7 +79,7 @@ function envKeyOf(venue: LegacyVenueId): string | null {
     const v = process.env[envVar];
     if (v) return v;
   }
-  // config.ts generic PRIVATE_KEY — recorded as out of scope in §10.11, legacy venues only.
+  // config.ts generic PRIVATE_KEY — out of scope (legacy venues only).
   const generic = process.env.PRIVATE_KEY;
   return generic ? generic : null;
 }
@@ -186,12 +186,12 @@ function owsPassphraseOf(opts: CliCredentialOpts): string {
 
 function owsKeyTokenOf(opts: CliCredentialOpts): string | null {
   if (opts.owsKey !== null) return opts.owsKey;
-  // OWS_API_KEY env: recorded as out of scope in §10.11 (kept as before).
+  // OWS_API_KEY env: recorded as out of scope in (kept as before).
   const env = process.env.OWS_API_KEY;
   return env ? env : null;
 }
 
-/** CLI/MCP-shared credential resolution (design §10.2). */
+/** CLI/MCP-shared credential resolution. */
 export async function resolveCredentials(venue: VenueId, opts: CliCredentialOpts, network: Network): Promise<VenueCredentials> {
   const withToken: CliCredentialOpts = { ...opts, owsKey: owsKeyTokenOf(opts) };
   // Custodial venues (masterKeyKind "none": qfex) have no master key to resolve.

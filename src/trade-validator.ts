@@ -54,7 +54,7 @@ export async function validateTrade(
   const checks: CheckResult[] = [];
   const warnings: string[] = [];
   const sym = params.symbol.toUpperCase();
-  // Liquidity threshold = the bound a market order on this venue would carry (design §13.10 #14).
+  // Liquidity threshold = the bound a market order on this venue would carry.
   const maxSlippage = resolveAdapterSlippage(adapter, null).bps / 10_000;
 
   // Fetch market list, balance, and positions in parallel.

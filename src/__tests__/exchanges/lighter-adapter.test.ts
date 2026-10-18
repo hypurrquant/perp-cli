@@ -221,7 +221,7 @@ describe("LighterAdapter.withdraw — non-USDC assets refuse instead of mis-scal
     adapter._apiKeyIndex = 4;
     adapter._accountIndex = 42;
     // Object.create bypasses the constructor: set the venue network config it would derive
-    // (collateral / collateralAssetIndex come from venues/lighter-family.ts, design §10).
+    // (collateral / collateralAssetIndex come from venues/lighter-family.ts).
     adapter._network = lighterFamilyNetworks("lighter").mainnet;
     adapter.venueId = "lighter";
     adapter.name = "lighter";

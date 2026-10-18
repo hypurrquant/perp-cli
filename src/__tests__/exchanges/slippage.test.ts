@@ -1,5 +1,5 @@
 /**
- * resolveSlippage (design §13.2, §13.10 #1): one resolver for every market-type order.
+ * resolveSlippage: one resolver for every market-type order.
  * Precedence: --slippage-bps flag → settings.slippageBps[venue] → settings.defaultSlippageBps.
  * Out of range (< 1 or > venue maxSlippageBps) → INVALID_PARAMS before sending; NEVER clamped.
  *

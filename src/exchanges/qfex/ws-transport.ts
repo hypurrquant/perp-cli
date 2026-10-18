@@ -1,5 +1,5 @@
 /**
- * QFEX Trade WebSocket transport (design §14.2 as amended by §14.12 #2, #3, #4, #11, #13).
+ * QFEX Trade WebSocket transport.
  *
  * The venue has no request id. Correlation therefore rests on four rules:
  *  1. ONE command at a time per connection (FIFO) — reads share the queue.
@@ -39,7 +39,7 @@ import {
   sumDecimals, type QfexCredentials,
 } from "./signing.js";
 
-// ── Timeouts (design §14.2) ──
+// ── Timeouts ──
 
 export interface QfexTimeouts {
   connectMs: number;
@@ -140,7 +140,7 @@ export function fillResponseOf(frame: QfexFrame): QfexFillResponse | null {
 }
 
 /**
- * Error frame in any documented shape (design §14.12 #11):
+ * Error frame in any documented shape:
  *   { "err": { error_code, message, incoming_message } }            /websocket/errors + AsyncAPI
  *   { "type": "Err", error_code, message, incoming_message }         /websocket/rate
  *   { "type": "error", error_code, message }                         the docs' own client samples
@@ -158,7 +158,7 @@ export function errFrameOf(frame: QfexFrame): QfexErrFrame | null {
   return { errorCode: body.error_code, message: typeof body.message === "string" ? body.message : null, echo };
 }
 
-/** Auth outcome frame: both documented success shapes are accepted (§14.12 #11). */
+/** Auth outcome frame: both documented success shapes are accepted. */
 function authVerdictOf(frame: QfexFrame): boolean | null {
   if (typeof frame.authenticated === "boolean") return frame.authenticated;
   if (frame.type === "auth" && typeof frame.result === "string") return frame.result === "success";

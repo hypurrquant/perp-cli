@@ -1,5 +1,5 @@
 /**
- * QFEX venue status / error → PerpError (design §14.3 error table, §14.12 #3, #8, #11).
+ * QFEX venue status / error → PerpError.
  *
  * Three sources:
  *  - order_response.status   engine verdict on one order (definite once correlated);
@@ -109,7 +109,7 @@ const STATUS_REMEDIATION: Readonly<Record<string, string>> = {
   CANNOT_MODIFY_PARTIAL_FILL: "A partially filled order cannot be modified — cancel it and place a new order",
   CANNOT_MODIFY_ALO_WOULD_CROSS: "The new price would cross the book — choose a passive price, or cancel and place a LIMIT order",
   REJECTED_MARKET_CLOSED: "The market is closed for this order right now — check the session: perp market info <symbol> -e qfex",
-  INVALID_CLIENT_ORDER_ID: "The venue refused the generated client order id — report it (docs/TEST-PLAN.md QFEX Q18)",
+  INVALID_CLIENT_ORDER_ID: "The venue refused the generated client order id — report it (QFEX item Q18)",
 };
 
 /** "… retry after 200ms" / "… retry after 2 seconds" → ms; null when the message carries no hint. */

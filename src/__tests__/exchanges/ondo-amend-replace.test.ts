@@ -1,5 +1,5 @@
 /**
- * OndoAdapter.amendOrder — cancel → replace (design §13.10 #10/#11): Ondo has no native
+ * OndoAdapter.amendOrder — cancel → replace: Ondo has no native
  * amend. req.size is the new OPEN size; fills that raced the cancel reduce the replacement:
  *
  *   replace = size − max(0, filledAtCancel − filledAtRead), floored to baseIncrement

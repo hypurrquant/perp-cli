@@ -66,7 +66,7 @@ interface AsterPriceFilters {
   percent: { up: number; down: number } | null;
 }
 
-/** Common TIF (§13.3) → Aster perp timeInForce. Live exchangeInfo lists GTC/IOC/GTX/HIDDEN — no FOK. */
+/** Common TIF → Aster perp timeInForce. Live exchangeInfo lists GTC/IOC/GTX/HIDDEN — no FOK. */
 function asterTif(raw: string): "GTC" | "IOC" | "GTX" {
   const t = raw.toUpperCase();
   if (t === "GTC" || t === "IOC" || t === "GTX") return t;
@@ -358,7 +358,7 @@ export class AsterAdapter implements ExchangeAdapter {
     }
   }
 
-  // ── Spot host access (design §12, used by AsterSpotAdapter) ──
+  // ── Spot host access (used by AsterSpotAdapter) ──
 
   /**
    * Aster spot REST host. Spot shares the perp EIP-712 Domain B signing
@@ -572,7 +572,7 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   /**
-   * Declared protection-price reference (§13.10 #5): the venue mark price from
+   * Declared protection-price reference: the venue mark price from
    * GET /fapi/v3/premiumIndex — the same price PERCENT_PRICE is evaluated against.
    * No runtime substitute (no mid / last fallback): unavailable → PRICE_STALE.
    */
@@ -1101,7 +1101,7 @@ export class AsterAdapter implements ExchangeAdapter {
   // ── Trading ──
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { reduceOnly: boolean; slippage: ResolvedSlippage; clientOrderId?: string }): Promise<unknown> {
-    // Design §13.2 / §13.10 #6: never native MARKET (no price cap) — an IOC LIMIT at the
+    // Never native MARKET (no price cap) — an IOC LIMIT at the
     // protection price (mark ± opts.slippage.bps, tick-aligned toward crossing, inside
     // PRICE_FILTER / PERCENT_PRICE). newOrderRespType=RESULT makes the response carry the
     // final IOC status (FILLED / EXPIRED) and executedQty.
@@ -1200,7 +1200,7 @@ export class AsterAdapter implements ExchangeAdapter {
     const clientOrderId = opts?.clientOrderId === undefined ? null : requireAsterClientOrderId(opts.clientOrderId);
     let params: Record<string, string | number | boolean>;
     try {
-      // Common TIF names (§13.3): GTC / IOC / ALO→GTX (GTX accepted as alias); FOK unsupported.
+      // Common TIF names: GTC / IOC / ALO→GTX (GTX accepted as alias); FOK unsupported.
       const tif = asterTif(opts?.tif ?? "GTC");
       // Price must already be on PRICE_FILTER.tickSize — validated, never rounded (INVALID_TICK).
       const px = requireOnTick(price, (await this._symbolPriceFilters(apiSymbol)).tickSize);
@@ -1229,7 +1229,7 @@ export class AsterAdapter implements ExchangeAdapter {
   /**
    * Native modify (PUT /fapi/v3/order, V3 futures docs "Modify Order"): LIMIT orders
    * only; TIF (incl. GTX) and reduceOnly stay on the order. `size` is the NEW UNFILLED
-   * quantity (§13.10 #10); the venue's `quantity` is the order total, so
+   * quantity; the venue's `quantity` is the order total, so
    * quantity = size + executedQty (read just before). A fill landing between the read
    * and the PUT can only shrink the remainder, never over-size it. A venue rejection
    * leaves the original order untouched (docs).

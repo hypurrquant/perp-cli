@@ -1,5 +1,5 @@
 /**
- * TEST-PLAN §8 #3: public `market` commands must not resolve credentials.
+ * Public `market` commands must not resolve credentials.
  *
  * Repro of the E2E finding: an OWS master wallet is configured (settings.owsActiveWallet)
  * but no Ondo API key → the credentialed adapter throws NO_SIGNER_AVAILABLE. `market list`

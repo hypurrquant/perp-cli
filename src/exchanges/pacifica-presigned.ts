@@ -9,7 +9,7 @@
  * `{ account, agent_wallet?, signature, timestamp, expiry_window, ...payload }` — the same shape
  * as `buildSignedRequest` / `buildAgentSignedRequest`.
  *
- * Send outcome (money-safety rules, docs/TEST-PLAN.md):
+ * Send outcome (money-safety rules):
  *  - HTTP 4xx (except 409 / 429): the venue refused — ACTION_REJECTED, nothing happened;
  *  - HTTP 409 "duplicate idempotency key": a request with this key already exists — ORDER_PENDING;
  *  - HTTP 429: RATE_LIMITED, nothing happened;

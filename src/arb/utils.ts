@@ -12,8 +12,7 @@ ensureVenuesRegistered();
 
 /**
  * Settlement schedules per venue (UTC hours when settlement occurs), generated
- * from `VenueDefinition.settlementIntervalHours`, anchored at 00:00 UTC
- * (design §10.1, §10.13 #1). Venues whose interval is per-market (Aster)
+ * from `VenueDefinition.settlementIntervalHours`, anchored at 00:00 UTC. Venues whose interval is per-market (Aster)
  * have no entry — pass the market's interval to getLastSettlement().
  */
 export const SETTLEMENT_SCHEDULES: Record<string, number[]> = Object.fromEntries(

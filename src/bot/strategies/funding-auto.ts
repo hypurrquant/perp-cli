@@ -8,7 +8,7 @@ import { fillSizeString, sizeDecimalsOf } from "../../exchanges/spot-result.js";
 import { PerpError } from "../../errors.js";
 import { assertFundingArbLegs } from "./funding-arb-utils.js";
 
-/** Market basis first (ExchangeMarketInfo.fundingHours), else the venue definition's basis (§10.1). */
+/** Market basis first (ExchangeMarketInfo.fundingHours), else the venue definition's basis. */
 function hourlyOf(info: { rate: number; fundingHours: number | null }, exchange: string): number {
   return info.fundingHours !== null ? info.rate / info.fundingHours : toHourlyRate(info.rate, exchange);
 }
@@ -57,7 +57,7 @@ function normalizeSymbol(raw: string): string {
  *
  * Position tracking: discovered from live exchange data every tick (survives restarts).
  *
- * Order safety (design §12.3): entry legs are sequential and verified (placePerpVerified),
+ * Order safety: entry legs are sequential and verified (placePerpVerified),
  * the short sized to the long's verified fill; rollbacks, trims and closes are
  * reduce-only and verified, closes sized from the venue's own position size. An unknown
  * outcome, an unhedged leg, or MAX_CLOSE_FAILURES consecutive close failures
@@ -257,7 +257,7 @@ class FundingAutoStrategy implements Strategy {
     const surviving: ActivePosition[] = [];
     for (const pos of positions) {
       if (isQuarantined(pos.symbol, ctx.log)) {
-        // Unknown / unhedged outcome recorded by some bot or arb path: hands off (design §12.3).
+        // Unknown / unhedged outcome recorded by some bot or arb path: hands off.
         surviving.push(pos);
         continue;
       }

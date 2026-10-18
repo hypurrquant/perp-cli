@@ -1,5 +1,5 @@
 /**
- * QFEX gates outside the adapter (design §14.12 #1, #4c, #6, #8, #13):
+ * QFEX gates outside the adapter:
  *  - funding exclusion: fetchVenuesRates drops unverified-funding venues unless asked; funding
  *    strategies and arb legs refuse them;
  *  - MCP: a reduce-only order on a reduce-only-gated venue is refused before any read / risk call;

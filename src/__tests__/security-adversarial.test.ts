@@ -178,7 +178,7 @@ describe("Command injection attempts", () => {
 // ══════════════════════════════════════════════════════════════
 
 describe("Extreme and malformed numeric values", () => {
-  // BEHAVIOR CHANGE (design §13.3 validateOrderRequest / precision.floorSize, CHANGELOG
+  // BEHAVIOR CHANGE (validateOrderRequest / precision.floorSize, CHANGELOG
   // "Entry sizes are floored"): malformed or sub-lot sizes are now rejected by the CLI BEFORE
   // anything is sent (they used to be passed to the adapter "as-is"). Safer: assert not sent.
   // Sizes are parsed once up front (parsePositiveDecimal): not a positive plain decimal → INVALID_PARAMS.
@@ -231,7 +231,7 @@ describe("Extreme and malformed numeric values", () => {
     expect(adapter.marketOrder).toHaveBeenCalledWith("BTC", "buy", "0.000000001", entryOpts);
   });
 
-  // validateOrderRequest rejects non-positive prices before sending (design §10.10).
+  // validateOrderRequest rejects non-positive prices before sending.
   it.each(["0", "-1"])("price = %s in limit order: rejected, never sent", async (price) => {
     const adapter = mockAdapter();
     const program = createTradeProgram(adapter);

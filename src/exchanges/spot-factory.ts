@@ -1,5 +1,5 @@
 /**
- * Spot adapter factory — the only place spot adapters are created (design §12.4 #1).
+ * Spot adapter factory — the only place spot adapters are created.
  *
  * - `getSpotAdapter` returns null iff the venue has no spot (`def.spot === null`).
  *   Creation / init / network errors propagate (SSOT Rule #2 — no catch).
@@ -8,8 +8,8 @@
  *   so the key is the adapter's own network, not the process-wide one) and per
  *   on-chain-approve option. Read-only and signed perp adapters keep separate entries.
  *
- * Bot scope (§12.4 #3): bots only trade spot on venues where `isBotSpotVenue(def)`.
- * Quote/base detection (§12.4 #6) goes through `def.spot.quoteAssets`.
+ * Bot scope: bots only trade spot on venues where `isBotSpotVenue(def)`.
+ * Quote/base detection goes through `def.spot.quoteAssets`.
  */
 
 import { classifyError, extractErrorMessage, PerpError } from "../errors.js";
@@ -91,7 +91,7 @@ export async function requireSpotAdapter(venue: string, perp: ExchangeAdapter, o
   return spot;
 }
 
-// ── Bot scope (§12.4 #3) ──
+// ── Bot scope ──
 
 /**
  * Bots (funding-arb*, spot-perp-*, arb-auto, arb/index) only use spot venues with a
@@ -128,7 +128,7 @@ export async function getBotSpotAdapter(name: string, perp: ExchangeAdapter): Pr
   return getSpotAdapter(id, perp);
 }
 
-// ── Quote / base helpers (§12.4 #6) ──
+// ── Quote / base helpers ──
 
 /** Upper-cased token with venue balance suffixes removed ("USDC_SPOT" / "PURR-SPOT" → base). */
 export function spotTokenBase(token: string): string {
@@ -200,7 +200,7 @@ export function valueSpotBalances(
   markets: readonly SpotValuationPrice[],
   warn: (msg: string) => void,
 ): ValuedSpotBalance[] {
-  // markPrice null = no usable price (§12 SpotMarketInfo) → the token is excluded below.
+  // markPrice null = no usable price (SpotMarketInfo) → the token is excluded below.
   const prices = new Map(markets.flatMap(m => (m.markPrice === null ? [] : [[m.baseToken.toUpperCase(), Number(m.markPrice)] as const])));
   const out: ValuedSpotBalance[] = [];
   for (const b of balances) {
@@ -286,7 +286,7 @@ export async function withSpotTimeout<T>(p: Promise<T>, what: string, timeoutMs:
   }
 }
 
-// ── Transfers (§12.4 #4) ──
+// ── Transfers ──
 
 function ownerOf(spot: SpotAdapter): { def: VenueDefinition & { spot: VenueSpotDefinition }; perp: ExchangeAdapter; net: Network } {
   const o = _owner.get(spot);
@@ -407,7 +407,7 @@ export async function sweepSpotQuoteToPerp(spot: SpotAdapter, minAmount: number,
   return (await transferQuoteToPerp(spot, amount)) ? amount : 0;
 }
 
-// ── Spot ↔ perp matching for bots (§12.4 #6) ──
+// ── Spot ↔ perp matching for bots ──
 
 export interface SpotPerpMatch {
   /** Spot base as the spot adapter names it (bare base → quoteAssets[0]). */

@@ -16,7 +16,7 @@ import { assertFundingArbVenue, tryResolveVenueId } from "../../exchanges/venue.
 import "../../exchanges/venues/index.js";
 
 /**
- * Funding strategies refuse a venue whose funding rate is unverified as a leg (design §14.12
+ * Funding strategies refuse a venue whose funding rate is unverified as a leg (
  * #6): every adapter of the run (primary + extraAdapters) is checked when the strategy starts.
  * Adapter names that are not registered venues (test doubles) are not venues and are skipped.
  */
@@ -55,7 +55,7 @@ export function buildAdapterMap(ctx: StrategyContext): Map<string, ExchangeAdapt
   return adapters;
 }
 
-// ── Transfer helpers (§12.4 #4) ──
+// ── Transfer helpers ──
 // Spot adapters come from the factory (src/exchanges/spot-factory.ts, getBotSpotAdapter).
 
 /**
@@ -72,7 +72,7 @@ export async function transferUsdcToPerp(spotAdapter: SpotAdapter, amount: numbe
   return transferQuoteToPerp(spotAdapter, amount);
 }
 
-// ── Spot ↔ perp matching (§12.4 #6) ──
+// ── Spot ↔ perp matching ──
 
 /**
  * Bot spot↔perp candidates: spot bases on `spotVenue` matched to each perp venue by
@@ -222,7 +222,7 @@ function hasPerSymbolFundingHours(adapter: ExchangeAdapter): adapter is Exchange
 /**
  * Funding basis (hours one quoted rate covers) for a market: the market's own
  * value when the venue publishes one per symbol, else the venue definition.
- * History timestamp spacing is settlement timing, never the basis (§10.13 #2).
+ * History timestamp spacing is settlement timing, never the basis.
  * @returns null when the venue publishes per-symbol values and this symbol has none
  */
 async function marketFundingHours(adapter: ExchangeAdapter, exchangeName: string, symbol: string): Promise<number | null> {
@@ -276,7 +276,7 @@ export async function fetchRates(
   const markets = await adapter.getMarkets();
   const withRates = markets.filter(m => m.fundingRate != null);
 
-  // fundingHours = basis (§10.13 #7): market value first, then the venue definition.
+  // fundingHours = basis: market value first, then the venue definition.
   // Per-symbol venues (Aster) load their whole table in one call; symbols it
   // does not list stay null and are skipped below.
   for (const m of withRates) {

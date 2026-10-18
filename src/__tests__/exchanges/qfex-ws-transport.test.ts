@@ -1,6 +1,5 @@
 /**
- * QFEX Trade WebSocket transport against an in-process fake `ws` server
- * (design §14.2 as amended by §14.12 #2, #3, #4, #11, #13):
+ * QFEX Trade WebSocket transport against an in-process fake `ws` server:
  * auth shapes, correlation by generated client id, foreign frames ignored, the "sent"
  * boundary, unknown outcome → ORDER_PENDING + session destroyed, cancel_on_disconnect never
  * sent, idle handles unref'd.

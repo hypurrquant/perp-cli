@@ -3,7 +3,7 @@ import { PerpError } from "./errors.js";
 import { getVenue, tryResolveVenueId } from "./exchanges/venue.js";
 import "./exchanges/venues/index.js";
 
-/** Settlement chains with no withdraw → bridge → deposit route in this CLI (design §10.10). */
+/** Settlement chains with no withdraw → bridge → deposit route in this CLI. */
 const NO_ROUTE_CHAINS = new Set(["robinhood", "offchain"]);
 
 /** Throws NO_BRIDGE_ROUTE when the venue's funds live where no bridge route exists. */

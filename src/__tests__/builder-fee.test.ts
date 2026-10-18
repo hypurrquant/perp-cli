@@ -644,7 +644,7 @@ describe("Ondo builderCode", () => {
   });
 });
 
-// ── QFEX: fee SHARE (feeKind "share", feeBps null) — design §14.7, §14.12 #12 ──
+// ── QFEX: fee SHARE (feeKind "share", feeBps null) ──
 
 describe("QFEX builder code (fee share)", () => {
   const CODE = "11111111-1111-4111-8111-111111111111";
