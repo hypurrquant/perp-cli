@@ -145,6 +145,7 @@ export function importSecretLabel(venue: VenueId): string {
     case "risex": return "RISEx signer private key";
     case "txflow": return "TxFlow key (not supported)";
     case "variational": return "Variational key (not supported)";
+    case "grvt": return "GRVT key (not supported)";
   }
 }
 
@@ -841,6 +842,7 @@ export async function importVenueAgent(p: ImportAgentParams): Promise<ImportAgen
       case "risex":
       case "txflow":
       case "variational":
+      case "grvt":
         // Unreachable: assertImportSupported() refused these before the lock.
         throw new PerpError("CAPABILITY_UNSUPPORTED", `${p.venue} keys cannot be imported`);
     }

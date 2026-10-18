@@ -128,6 +128,14 @@ export function midDecimal(a: string, b: string): string {
   return format((rescale(x, scale) + rescale(y, scale)) / 2n, scale);
 }
 
+/** Exact decimal a + b (plain decimal strings). */
+export function addDecimal(a: string, b: string): string {
+  const x = parseDecimal(a);
+  const y = parseDecimal(b);
+  const scale = Math.max(x.scale, y.scale);
+  return format(rescale(x, scale) + rescale(y, scale), scale);
+}
+
 /** Exact decimal a − b (plain decimal strings). */
 export function subDecimal(a: string, b: string): string {
   const x = parseDecimal(a);

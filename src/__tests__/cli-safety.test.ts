@@ -228,12 +228,12 @@ const DRY_RUN_COMMANDS = [
   "funds address-book add",
   "funds bridge exchange", "funds bridge send",
   "funds deposit aster", "funds deposit hyperliquid", "funds deposit lighter cctp", "funds deposit lighter ethereum", "funds deposit lighter-rh", "funds deposit ondo", "funds deposit pacifica", "funds deposit qfex",
-  // Refusing subcommands (app-only RISEx funds; market-data-only TxFlow / Variational): refused also under --dry-run.
-  "funds deposit risex", "funds deposit txflow", "funds deposit variational",
+  // Refusing subcommands (app-only RISEx funds; market-data-only TxFlow / Variational / GRVT): refused also under --dry-run.
+  "funds deposit risex", "funds deposit txflow", "funds deposit variational", "funds deposit grvt",
   "funds faucet pacifica", "funds faucet risex",
   "funds rebalance execute", "funds transfer",
   "funds withdraw arcus", "funds withdraw aster", "funds withdraw hyperliquid", "funds withdraw lighter", "funds withdraw ondo", "funds withdraw pacifica", "funds withdraw qfex",
-  "funds withdraw risex", "funds withdraw txflow", "funds withdraw variational",
+  "funds withdraw risex", "funds withdraw txflow", "funds withdraw variational", "funds withdraw grvt",
   "outcome buy", "outcome sell",
   // Pacifica Print / vaults: --dry-run prints the exact message + body, signs and sends nothing.
   "print cancel", "print deposit", "vault deposit", "vault withdraw",

@@ -195,7 +195,7 @@ export interface VenueDefinition {
   id: VenueId;
   aliases: readonly string[];
   displayName: string;
-  family: "pacifica" | "hyperliquid" | "lighter" | "aster" | "ondo" | "arcus" | "qfex" | "risex" | "txflow" | "variational";
+  family: "pacifica" | "hyperliquid" | "lighter" | "aster" | "ondo" | "arcus" | "qfex" | "risex" | "txflow" | "variational" | "grvt";
   masterKeyKind: MasterKeyKind;
   agentKeyKind: AgentKeyKind;
   secretStorage: SecretStorage;
@@ -243,7 +243,7 @@ export interface VenueDefinition {
   apiStatus: VenueApiStatus;
   /**
    * Remediation of every role refusal (roleUnsupported) on a venue that is read-only in this
-   * version but planned for trading (GRVT). Absent = the generic market-data-only remediation.
+   * version (Variational, GRVT). Absent = the generic market-data-only remediation.
    */
   readOnlyRemediation?: string;
 }
