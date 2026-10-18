@@ -2,7 +2,7 @@
  * Pacifica agent-wallet signing builders (Phase 2c).
  *
  * Pacifica auth model — off-chain signed messages over Solana Ed25519.
- * Reference: https://pacifica.gitbook.io/docs/api-documentation/api/signing.md
+ * Reference: https://docs.pacifica.fi/api-documentation/api/signing.md
  *
  * Canonical JSON rules (from Pacifica signing spec + production reference
  * `src/pacifica/signing.ts:prepareMessage()`):

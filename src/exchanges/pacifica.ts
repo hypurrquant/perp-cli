@@ -18,6 +18,7 @@ import type { SolanaSigner } from "../signer/index.js";
 import { LocalSolanaSigner } from "../signer/index.js";
 import type { AgentMeta } from "../settings.js";
 import { isExpired } from "../agent-wallet/expiry.js";
+import { isPacificaPerpetual } from "../ws/pacifica-instrument.js";
 import { randomUUID } from "crypto";
 import { PerpError, extractErrorMessage, isDefiniteOrderFailure, orderNotSent, orderOutcomeUnknown } from "../errors.js";
 import { parseFiniteVenueNumber, venueRateField } from "../utils/numeric.js";
@@ -377,14 +378,14 @@ function requireInstrumentType(rows: MarketInfo[]): MarketInfo[] {
   return rows;
 }
 
-/** Perp markets of /info (spot rows such as SOL-USDC excluded, design §12). */
+/** Perp markets of /info: instrument_type "perpetual" only (spot rows such as SOL-USDC, or any other type, excluded; design §12). */
 function perpInfoRows(rows: MarketInfo[]): MarketInfo[] {
-  return requireInstrumentType(rows).filter((m) => m.instrument_type !== "spot");
+  return requireInstrumentType(rows).filter(isPacificaPerpetual);
 }
 
-/** Wire symbols of /info spot markets. */
-function spotInfoSymbols(rows: MarketInfo[]): Set<string> {
-  return new Set(requireInstrumentType(rows).filter((m) => m.instrument_type === "spot").map((m) => m.symbol));
+/** Wire symbols of /info markets that are not perps (spot, any other instrument_type). */
+function nonPerpInfoSymbols(rows: MarketInfo[]): Set<string> {
+  return new Set(requireInstrumentType(rows).filter((m) => !isPacificaPerpetual(m)).map((m) => m.symbol));
 }
 
 /** Pacifica order_type of a stop / TP / SL order (stop_market, stop_limit, take_profit_*, stop_loss_*). */
@@ -842,8 +843,8 @@ export class PacificaAdapter implements ExchangeAdapter {
     if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
     // GET /orders covers every market; spot orders (SOL-USDC) belong to the spot adapter.
     const [orders, info] = await Promise.all([this.client.getOrders(this.account), this.client.getInfo()]);
-    const spotSymbols = spotInfoSymbols(info);
-    return orders.filter((o) => !spotSymbols.has(String((o as unknown as Record<string, unknown>).symbol))).map((o) => {
+    const nonPerp = nonPerpInfoSymbols(info);
+    return orders.filter((o) => !nonPerp.has(String((o as unknown as Record<string, unknown>).symbol))).map((o) => {
       const raw = o as unknown as Record<string, unknown>;
       return {
         orderId: String(raw.order_id),

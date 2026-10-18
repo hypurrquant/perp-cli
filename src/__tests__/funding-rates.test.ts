@@ -31,7 +31,7 @@ function json(body: unknown) {
 }
 
 function pacificaInfo(rates: { symbol: string }[]) {
-  return { success: true, data: rates.map(r => ({ symbol: r.symbol, instrument_type: "perp", max_leverage: 20, tick_size: "0.01", lot_size: "0.001", min_order_size: "10" })) };
+  return { success: true, data: rates.map(r => ({ symbol: r.symbol, instrument_type: "perpetual", max_leverage: 20, tick_size: "0.01", lot_size: "0.001", min_order_size: "10" })) };
 }
 
 function pacificaPrices(rates: { symbol: string; funding: number; mark: number; next_funding?: number }[]) {

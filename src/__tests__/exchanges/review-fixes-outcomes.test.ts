@@ -413,7 +413,7 @@ describe("Pacifica market order / amend — post-send unknowns", () => {
     const cancel = vi.fn();
     a.client = {
       getOrders: vi.fn().mockResolvedValue([{ order_id: 9, symbol: "BTC", order_type: "limit", side: "bid", client_order_id: null }]),
-      getInfo: vi.fn().mockResolvedValue([{ symbol: "BTC", tick_size: "1", lot_size: "0.001", instrument_type: "perp" }]),
+      getInfo: vi.fn().mockResolvedValue([{ symbol: "BTC", tick_size: "1", lot_size: "0.001", instrument_type: "perpetual" }]),
       cancelOrder: cancel,
     };
     a.getMarkets = vi.fn().mockResolvedValue([{ symbol: "BTC", stepSize: "0.001" }]);

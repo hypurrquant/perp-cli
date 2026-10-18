@@ -3,12 +3,18 @@
  * settled hourly rate, next_funding = predicted (Phase 0: == REST funding_rate history). open_interest
  * is base units; volume_24h USD. No bid/ask in `prices` (bbo channel, Phase 2).
  * An unknown symbol is acked with no data and no error frame → symbols are validated first.
+ * The directory is the `instrument_type: "perpetual"` rows of GET /info (spot rows such as SOL-USDC are
+ * also in /info and `prices`). A row without instrument_type cannot be classified: it is left out and
+ * reported as a directory warning (non-fatal EXCHANGE_ERROR on each subscription; the other markets stream).
+ * Every wire carries `group` = its channel `source` (venue cap: 20 per channel per connection; the stream
+ * spreads further ones over more sockets, venue-static.ts).
  *
- * Docs: pacifica.gitbook.io/docs/api-documentation/api/websocket; fixtures in
+ * Docs: docs.pacifica.fi/api-documentation/api/websocket; fixtures in
  * src/__tests__/fixtures/ws/pacifica/.
  */
 
 import { badShape, fetchJson } from "../directory.js";
+import { isPacificaPerpetual } from "../pacifica-instrument.js";
 import { VENUE_STATIC } from "../venue-static.js";
 import type { DecodedEvent, FillRow, MarketDirectoryEntry, MarketPatch, OrderRow, PositionRow, VenueCodec, WireSub } from "../types.js";
 import {
@@ -17,6 +23,11 @@ import {
 
 const S = VENUE_STATIC.pacifica;
 const PRICES = "prices";
+
+interface PacificaData {
+  /** /info symbols that are not perps (spot, any other instrument_type): their `prices` rows are skipped. */
+  nonPerp: Set<string>;
+}
 
 function sourceKey(d: unknown): string | null {
   if (!isObj(d) || typeof d.source !== "string") return null;
@@ -39,7 +50,8 @@ export const pacifica: VenueCodec = {
       nextFundingTime: "Not in `prices`",
       openInterest: "Base units",
       user: "By account (Solana address), no auth. account_order_updates / account_trades send no snapshot → gap refetch-required for orders (at subscribe and after a reconnect) and fills (after a reconnect)",
-      bbo: "bbo{symbol} ≤ 20 per connection; `li` orders frames (non-contiguous)",
+      bbo: "bbo{symbol} ≤ 20 per connection (more are spread over further sockets); `li` orders frames (non-contiguous)",
+      positions: "account_positions envelope `li` orders snapshots: an older one than the last applied is dropped",
       clientId: "orders and fills: `I` (client order id; null when the order has none)",
       liquidationPrice: "`l` (null when not applicable, per the venue)",
       fee: "trade `f`; feeToken not stated → null",
@@ -50,7 +62,7 @@ export const pacifica: VenueCodec = {
   secretKeys: [],
   secretUrlPatterns: [/PF-API-KEY=[^&\s"']+/gi],
   ping: S.ping,
-  limits: { ...S.limits, perGroup: { bbo: 20 } },
+  limits: S.limits,
   closesOnBadSubscribe: false,
   staleAfterMs: S.staleAfterMs,
   openInterest: { unit: "base", sides: null },
@@ -60,8 +72,12 @@ export const pacifica: VenueCodec = {
     const raw = await fetchJson(ctx.fetch, "pacifica", `${ctx.restUrl}/info`);
     if (!isObj(raw) || !Array.isArray(raw.data)) throw badShape("pacifica", "GET /info has no data array");
     const entries: MarketDirectoryEntry[] = [];
+    const nonPerp = new Set<string>();
+    const unclassified: string[] = [];
     for (const m of raw.data) {
       if (!isObj(m) || typeof m.symbol !== "string") throw badShape("pacifica", "GET /info market without symbol");
+      if (typeof m.instrument_type !== "string") { unclassified.push(m.symbol); nonPerp.add(m.symbol); continue; }
+      if (!isPacificaPerpetual(m)) { nonPerp.add(m.symbol); continue; }
       const base = m.symbol; // Pacifica perp symbols are the base asset (BTC, kBONK, …)
       const quote = "USDC"; // venue collateral / quote (venue definition)
       entries.push({
@@ -70,7 +86,10 @@ export const pacifica: VenueCodec = {
         rateIntervalHours: 1, settlementIntervalHours: 1, source: "rest:/api/v1/info",
       });
     }
-    return { entries, data: null };
+    const warnings = unclassified.length === 0 ? [] : [
+      `pacifica GET /info: ${unclassified.length} market(s) without instrument_type left out (cannot tell perp from spot): ${unclassified.slice(0, 10).join(", ")}${unclassified.length > 10 ? ", …" : ""}`,
+    ];
+    return { entries, data: { nonPerp } satisfies PacificaData, warnings };
   },
 
   fundingMeta: () => ({
@@ -79,7 +98,7 @@ export const pacifica: VenueCodec = {
   }),
 
   wiresFor(target, _dir, staleOverrideMs): WireSub[] {
-    const prices: WireSub = { key: PRICES, staleAfterMs: staleOverrideMs === null ? S.staleAfterMs : staleOverrideMs, params: { source: PRICES } };
+    const prices: WireSub = { key: PRICES, staleAfterMs: staleOverrideMs === null ? S.staleAfterMs : staleOverrideMs, group: PRICES, params: { source: PRICES } };
     if (target.kind === "allMarkets") return [prices];
     const out: WireSub[] = [];
     if (target.channels.includes("market")) out.push(prices);
@@ -90,7 +109,7 @@ export const pacifica: VenueCodec = {
     inPageSecrets: false,
     wires(ref, channels) {
       if (ref.venue !== "pacifica") return [];
-      const w = (source: string, gaps?: WireSub["gaps"]): WireSub => ({ key: source, staleAfterMs: null, params: { source, account: ref.account }, ...(gaps === undefined ? {} : { gaps }) });
+      const w = (source: string, gaps?: WireSub["gaps"]): WireSub => ({ key: source, staleAfterMs: null, group: source, params: { source, account: ref.account }, ...(gaps === undefined ? {} : { gaps }) });
       const out: WireSub[] = [];
       if (channels.includes("account")) out.push(w("account_info"));
       if (channels.includes("positions")) out.push(w("account_positions"));
@@ -102,7 +121,7 @@ export const pacifica: VenueCodec = {
   encodeSubscribe: (w) => JSON.stringify({ method: "subscribe", params: w.params }),
   encodeUnsubscribe: (w) => JSON.stringify({ method: "unsubscribe", params: w.params }),
 
-  decode(text): DecodedEvent[] {
+  decode(text, dir): DecodedEvent[] {
     const p = parseFrame(text);
     if (!p.ok) return [p.ev];
     const f = p.v;
@@ -116,7 +135,7 @@ export const pacifica: VenueCodec = {
       case "account_info":
         return decodeAccount(f.data);
       case "account_positions":
-        return decodePositions(f.data);
+        return decodePositions(f.data, f.li);
       case "account_order_updates":
         return decodeOrders(f.data);
       case "account_trades":
@@ -128,8 +147,10 @@ export const pacifica: VenueCodec = {
         const patches: MarketPatch[] = [];
         const badRows: Array<{ symbol: string; fields: string[] }> = [];
         const out: DecodedEvent[] = [];
+        const nonPerp = (dir.data as PacificaData).nonPerp;
         for (const r of f.data) {
           if (!isObj(r) || typeof r.symbol !== "string") { badRows.push({ symbol: "?", fields: ["symbol"] }); continue; }
+          if (nonPerp.has(r.symbol)) continue; // spot market (not a perp)
           const bad: string[] = [];
           patches.push(compact({
             symbol: r.symbol,
@@ -172,8 +193,9 @@ function decodeAccount(d: unknown): DecodedEvent[] {
   return out;
 }
 
-function decodePositions(d: unknown): DecodedEvent[] {
-  // Every frame is the account's full position set ("closed" = an empty array; docs).
+function decodePositions(d: unknown, li: unknown): DecodedEvent[] {
+  // Every frame is the account's full position set ("closed" = an empty array; docs). The envelope
+  // `li` orders the sets (docs: Last ID): the stream drops one older than the last applied.
   if (!Array.isArray(d)) return [protocolError("pacifica account_positions data is not an array", "account_positions")];
   const bad: string[] = [];
   const rows: PositionRow[] = [];
@@ -186,7 +208,10 @@ function decodePositions(d: unknown): DecodedEvent[] {
       liquidationPrice: dec(p, "l", bad), marginUsed: dec(p, "m", bad), leverage: null, venueTs: ts(p, "t", bad),
     });
   }
-  const out: DecodedEvent[] = [{ t: "user", wire: "account_positions", deltas: [{ kind: "positions", snapshot: true, scope: "", rows, remove: [] }] }];
+  const out: DecodedEvent[] = [{
+    t: "user", wire: "account_positions", seq: typeof li === "number" ? li : null,
+    deltas: [{ kind: "positions", snapshot: true, scope: "", rows, remove: [] }],
+  }];
   if (bad.length > 0) out.push(badFieldsError("pacifica", "account_positions", [{ symbol: "positions", fields: bad }]));
   return out;
 }

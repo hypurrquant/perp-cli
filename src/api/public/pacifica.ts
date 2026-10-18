@@ -1,4 +1,6 @@
-import { PACIFICA_API_URL, sharedApiNetwork } from "./urls.js";
+import { PACIFICA_API_URL, PACIFICA_INFO_URL, sharedApiNetwork } from "./urls.js";
+import { PerpError } from "../../errors.js";
+import { isPacificaPerpetual } from "../../ws/pacifica-instrument.js";
 import { assertOk } from "./_http.js";
 import { withCache, TTL_MARKET } from "../../cache.js";
 
@@ -12,17 +14,60 @@ interface PacificaAsset {
 
 // ── Fetchers ──
 
+const INFO_REMEDIATION = "The Pacifica /info response shape changed; retry, and report it if it persists";
+
+/**
+ * Symbols of GET /info rows with instrument_type "perpetual". `/info/prices` also lists spot
+ * markets (SOL-USDC) — they must not reach arb / funding-arb as perps. A row without the field
+ * cannot be classified → EXCHANGE_ERROR (same rule as the adapter's getMarkets).
+ * Cached as a string[] (the file cache is JSON: a Set would come back as `{}`); the Set is built
+ * outside withCache.
+ */
+async function fetchPacificaPerpSymbols(): Promise<Set<string>> {
+  const symbols = await withCache(`pub:pac:${sharedApiNetwork()}:perps:list`, TTL_MARKET, async (): Promise<string[]> => {
+    const res = await fetch(PACIFICA_INFO_URL);
+    await assertOk(res, "Pacifica info");
+    const json = (await res.json()) as unknown;
+    if (json === null || typeof json !== "object" || !Array.isArray((json as Record<string, unknown>).data)) {
+      throw new PerpError("EXCHANGE_ERROR", "Pacifica GET /info has no data array", { exchange: "pacifica", remediation: INFO_REMEDIATION });
+    }
+    const out: string[] = [];
+    for (const m of (json as { data: unknown[] }).data) {
+      if (m === null || typeof m !== "object" || Array.isArray(m)) {
+        throw new PerpError("EXCHANGE_ERROR", `Pacifica GET /info row is not an object: ${JSON.stringify(m)}`, { exchange: "pacifica", remediation: INFO_REMEDIATION });
+      }
+      const row = m as Record<string, unknown>;
+      if (typeof row.instrument_type !== "string") {
+        throw new PerpError("EXCHANGE_ERROR", `Pacifica /info row ${String(row.symbol)} has no instrument_type`, { exchange: "pacifica", remediation: INFO_REMEDIATION });
+      }
+      if (isPacificaPerpetual(row)) out.push(String(row.symbol));
+    }
+    return out;
+  });
+  if (!Array.isArray(symbols)) {
+    // A cache entry from before the string[] format (or a corrupt one) is not trusted.
+    throw new PerpError("EXCHANGE_ERROR", "Pacifica /info perp list cache entry is not a list", { exchange: "pacifica", remediation: INFO_REMEDIATION });
+  }
+  return new Set(symbols);
+}
+
+/** `/info/prices` envelope reduced to perp rows (`{ data }`, the shape parsePacificaRaw reads). */
+async function fetchPacificaPerpPrices(): Promise<{ data: Record<string, unknown>[] }> {
+  const [res, perps] = await Promise.all([fetch(PACIFICA_API_URL), fetchPacificaPerpSymbols()]);
+  await assertOk(res, "Pacifica prices");
+  const json = await res.json();
+  const data = (json as Record<string, unknown>).data ?? json;
+  if (!Array.isArray(data)) return { data: [] };
+  return { data: (data as Record<string, unknown>[]).filter((p) => perps.has(String(p.symbol))) };
+}
+
 export function fetchPacificaPrices(): Promise<PacificaAsset[]> {
   // SSOT rule #2: error must propagate. Row-level skipping is applied for
   // missing/invalid mark or funding so a 0 doesn't reach downstream paths.
-  return withCache(`pub:pac:${sharedApiNetwork()}:prices`, TTL_MARKET, async () => {
-    const res = await fetch(PACIFICA_API_URL);
-    await assertOk(res, "Pacifica prices");
-    const json = await res.json();
-    const data = (json as Record<string, unknown>).data ?? json;
-    if (!Array.isArray(data)) return [];
+  return withCache(`pub:pac:${sharedApiNetwork()}:prices:perp`, TTL_MARKET, async () => {
+    const { data } = await fetchPacificaPerpPrices();
     const out: PacificaAsset[] = [];
-    for (const p of data as Record<string, unknown>[]) {
+    for (const p of data) {
       const symbol = String(p.symbol ?? "");
       const fundingRaw = p.next_funding ?? p.funding;
       const funding = Number(fundingRaw);
@@ -42,11 +87,8 @@ export function fetchPacificaPricesRaw(): Promise<unknown> {
   // Callers should wrap with Promise.allSettled to keep multi-DEX comparisons
   // running when one DEX is down. Non-2xx responses are also rejected so a
   // 5xx JSON body cannot fulfill as if it were valid data.
-  return withCache(`pub:pac:${sharedApiNetwork()}:prices:raw`, TTL_MARKET, async () => {
-    const res = await fetch(PACIFICA_API_URL);
-    await assertOk(res, "Pacifica prices");
-    return res.json();
-  });
+  // Perp rows only (spot SOL-USDC dropped via /info instrument_type).
+  return withCache(`pub:pac:${sharedApiNetwork()}:prices:raw:perp`, TTL_MARKET, fetchPacificaPerpPrices);
 }
 
 export function parsePacificaRaw(raw: unknown): { rates: Map<string, number>; prices: Map<string, number> } {

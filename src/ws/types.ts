@@ -45,7 +45,9 @@ export interface CloseReason {
 export type ConnectionState =
   | { status: "idle" }
   | { status: "connecting"; attempt: number }
-  | { status: "live"; since: number; sockets: number }
+  /** Several sockets (Pacifica): `sockets` live ones; `pending` = sockets still opening for the first time
+   * (just added, waiting on the new-connection budget, or retrying a failed first handshake) — their subscriptions are not ready yet. */
+  | { status: "live"; since: number; sockets: number; pending?: number }
   | { status: "stale"; since: number; silentMs: number; channel: string | null }
   | { status: "reconnecting"; attempt: number; inMs: number; reason: CloseReason }
   | { status: "closed"; reason: CloseReason };
@@ -423,7 +425,8 @@ export interface MarketPatch {
 
 export type DecodedEvent =
   | { t: "market"; wire: string; patches: MarketPatch[] }
-  | { t: "user"; wire: string; deltas: UserDelta[] }
+  /** seq: a venue ordering number for the wire's snapshots (frames below the last seen are stale and dropped; equal is applied). */
+  | { t: "user"; wire: string; deltas: UserDelta[]; seq?: number | null }
   /** seq: a venue ordering number (only drops out-of-order/duplicate frames; never a gap signal). */
   | { t: "bbo"; wire: string; symbol: string; seq: number | null; bid: Dec | null; bidSize: Dec | null; ask: Dec | null; askSize: Dec | null; venueTs: number | null }
   | { t: "ack"; wire: string | null; reqId: number | null; unsubscribe: boolean }
@@ -492,6 +495,9 @@ export interface VenueCodec {
     outboundPerMin: number;
     /** Per-socket caps per WireSub.group. */
     perGroup?: Record<string, number>;
+    /** Sockets one stream may open to spread channels over the per-socket caps. Absent = 1 (the
+     * venue's limits are per IP, so extra sockets would not add room). */
+    maxSockets?: number;
   };
   /** true → the venue drops the socket (no error frame) on an invalid subscribe (HL). */
   readonly closesOnBadSubscribe: boolean;

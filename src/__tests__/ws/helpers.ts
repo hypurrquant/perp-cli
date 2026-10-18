@@ -68,7 +68,14 @@ export const HL_ROUTES = {
 };
 
 export const PACIFICA_ROUTES = {
-  "GET https://api.pacifica.fi/api/v1/info": { success: true, data: ["BTC", "ETH", "FARTCOIN", "TSLA"].map(symbol => ({ symbol })) },
+  // Live /info rows carry instrument_type; SOL-USDC is a spot row (also in `prices`), not a perp.
+  "GET https://api.pacifica.fi/api/v1/info": {
+    success: true,
+    data: [
+      ...["BTC", "ETH", "FARTCOIN", "TSLA"].map(symbol => ({ symbol, instrument_type: "perpetual", base_asset: symbol })),
+      { symbol: "SOL-USDC", instrument_type: "spot", base_asset: "SOL" },
+    ],
+  },
 };
 
 export const LIGHTER_ROUTES = {

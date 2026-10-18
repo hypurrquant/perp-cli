@@ -8,7 +8,7 @@ import { arcus, aster, createVenueStream, hyperliquid, lighter, pacifica } from 
 import type { BboUpdate, CredentialProvider, StreamControl, StreamLog, UserUpdate, VenueCodec, VenueStreamOptions } from "../../ws/index.js";
 import { createCliCredentialProvider } from "../../ws-cli/credentials.js";
 import {
-  ARCUS_ROUTES, ASTER_ROUTES, HL_ROUTES, LIGHTER_ROUTES, PACIFICA_ROUTES, fakeFetch, fakeTransport, fixtureFrames, flush,
+  ARCUS_ROUTES, ASTER_ROUTES, HL_ROUTES, LIGHTER_ROUTES, PACIFICA_ROUTES, fakeFetch, fakeTransport, fixtureFrames, flush, type FakeWs,
 } from "./helpers.js";
 
 const EVM = "0x000000000000000000000000000000000000dEaD" as const;
@@ -111,7 +111,7 @@ describe("pacifica user channels", () => {
     expect(r.of("error")).toEqual([]);
     expect(r.of("account")[0]).toMatchObject({ equity: "0.028483", available: "0.006282", marginUsed: "0", venueTs: 1791035103648 });
     expect(r.of("positions")[0]).toMatchObject({ snapshot: true, positions: [] });
-    r.t.last().message({ channel: "account_positions", data: [{ s: "BTC", d: "ask", a: "0.1", p: "83000", m: "0", f: "0", i: false, l: null, t: 9 }], li: 1 });
+    r.t.last().message({ channel: "account_positions", data: [{ s: "BTC", d: "ask", a: "0.1", p: "83000", m: "0", f: "0", i: false, l: null, t: 9, li: 900011 }], li: 900011 });
     expect(r.of("positions").at(-1)!.positions).toEqual([expect.objectContaining({ symbol: "BTC", side: "short", size: "0.1", entryPrice: "83000" })]);
     r.t.last().message({ channel: "account_order_updates", data: [{ i: 5, I: null, s: "BTC", d: "bid", p: "0", ip: "80000", a: "0.1", f: "0", os: "open", ot: "limit", r: false, ct: 1, ut: 1, li: 2 }] });
     expect(r.of("orders").at(-1)).toMatchObject({ snapshot: false, complete: false, orders: [{ orderId: "5", side: "buy", price: "80000" }] });
@@ -345,6 +345,87 @@ describe("fill snapshots, dedupe and replay gaps", () => {
   });
 });
 
+describe("pacifica docs sync (docs.pacifica.fi)", () => {
+  it("24 h forced close of a long-lived socket → reconnect, resubscribe, orders/fills refetch-required gaps", async () => {
+    const r = await userStream(pacifica, PACIFICA_ROUTES, pacUser, ["account", "positions", "orders", "fills"]);
+    const first = r.t.last();
+    first.open();
+    for (const f of fixtureFrames("pacifica", "private-account")) first.message(f);
+    await expect(r.sub.ready).resolves.toBeUndefined();
+    first.message({ channel: "account_order_updates", data: [{ i: 6, s: "ETH", d: "ask", ip: "3000", a: "1", f: "0", os: "open", ot: "limit", li: 900020 }] });
+    // 24 h of heartbeats: every 20 s ping answered (the venue's 60 s idle close never triggers).
+    for (let elapsed = 0; elapsed < 24 * 3_600_000; elapsed += 20_000) {
+      vi.advanceTimersByTime(20_000);
+      first.message({ channel: "pong" });
+    }
+    expect(r.t.sockets).toHaveLength(1);
+    const pings = first.sentJson().filter(m => (m as { method: string }).method === "ping").length;
+    expect(pings).toBeGreaterThan(4000);
+    const gapsBefore = r.of("gap").length;
+    first.serverClose(1000, "connection lifetime exceeded");
+    expect(r.stream.state).toMatchObject({ status: "reconnecting", reason: { wsCode: 1000 } });
+    vi.advanceTimersByTime(1_000);
+    expect(r.t.sockets).toHaveLength(2);
+    r.t.last().open();
+    expect((r.t.last().sentJson() as Array<{ params: { source: string } }>).map(m => m.params.source))
+      .toEqual(["account_info", "account_positions", "account_order_updates", "account_trades"]);
+    expect(r.of("gap").slice(gapsBefore).map(g => [g.channel, g.action])).toEqual([["orders", "refetch-required"], ["fills", "refetch-required"]]);
+    expect(r.of("orders").at(-1)).toMatchObject({ orders: [], complete: false });
+    // The resubscribe snapshot is the new baseline (its li may be anything): applied.
+    r.t.last().message({ channel: "account_positions", data: [{ s: "BTC", d: "bid", a: "1", p: "1", m: "0", f: "0", i: false, l: null, t: 1, li: 5 }], li: 5 });
+    expect(r.of("positions").at(-1)!.positions.map(p => p.symbol)).toEqual(["BTC"]);
+    expect(r.stream.state).toMatchObject({ status: "live" });
+  });
+
+  it("account_positions: a snapshot with an older envelope li is dropped; equal and newer are applied", async () => {
+    const r = await userStream(pacifica, PACIFICA_ROUTES, pacUser, ["positions"]);
+    r.t.last().open();
+    const pos = (sym: string, li: number) => ({ channel: "account_positions", data: [{ s: sym, d: "bid", a: "1", p: "1", m: "0", f: "0", i: false, l: null, t: 1, li }], li });
+    r.t.last().message(pos("BTC", 100));
+    r.t.last().message(pos("ETH", 99)); // delayed older snapshot
+    expect(r.of("positions").at(-1)!.positions.map(p => p.symbol)).toEqual(["BTC"]);
+    r.t.last().message(pos("SOL", 100));
+    expect(r.of("positions").at(-1)!.positions.map(p => p.symbol)).toEqual(["SOL"]);
+    r.t.last().message({ channel: "account_positions", data: [], li: 101 }); // closed → flat
+    expect(r.of("positions").at(-1)!.positions).toEqual([]);
+    r.t.last().message({ channel: "account_positions", data: [{ s: "BTC", d: "bid", a: "1", p: "1", m: "0", f: "0", i: false, l: null, t: 1 }] }); // no li: not ordered
+    expect(r.of("positions").at(-1)!.positions.map(p => p.symbol)).toEqual(["BTC"]);
+    expect(r.of("error")).toEqual([]);
+    expect(r.logs.filter(l => l.event === "stale-snapshot")).toHaveLength(1);
+  });
+
+  it("directory = instrument_type \"perpetual\" rows; spot rows in `prices` are skipped without an unknown-market warning", async () => {
+    const t = fakeTransport();
+    const stream = createVenueStream(pacifica, { transport: t.factory, fetch: fakeFetch(PACIFICA_ROUTES), visibility: null });
+    expect((await stream.markets()).map(m => m.symbol)).toEqual(["BTC", "ETH", "FARTCOIN", "TSLA"]);
+    const sub = stream.subscribe({ kind: "allMarkets" });
+    const ev: Array<{ type: string; symbol?: string }> = [];
+    sub.on(e => ev.push(e as { type: string; symbol?: string }));
+    await flush(40);
+    t.last().open();
+    const row = (symbol: string) => ({ symbol, mark: "1", oracle: "1", funding: "0", next_funding: "0", open_interest: "0", volume_24h: "0", timestamp: 1 });
+    t.last().message({ channel: "prices", data: [row("BTC"), row("SOL-USDC")] });
+    expect(ev.filter(e => e.type === "market").map(e => e.symbol)).toEqual(["BTC"]);
+    expect(ev.filter(e => e.type === "error")).toEqual([]);
+  });
+
+  it("a /info row without instrument_type is left out with a non-fatal directory warning; the rest stream", async () => {
+    const routes = { "GET https://api.pacifica.fi/api/v1/info": { success: true, data: [{ symbol: "BTC", instrument_type: "perpetual" }, { symbol: "ETH" }] } };
+    const t = fakeTransport();
+    const stream = createVenueStream(pacifica, { transport: t.factory, fetch: fakeFetch(routes), visibility: null });
+    expect((await stream.markets()).map(m => m.symbol)).toEqual(["BTC"]);
+    const sub = stream.subscribe({ kind: "allMarkets" });
+    const ev: Array<{ type: string; code?: string; fatal?: boolean; message?: string; symbol?: string }> = [];
+    sub.on(e => ev.push(e as (typeof ev)[number]));
+    await flush(40);
+    expect(ev.filter(e => e.type === "error")).toEqual([expect.objectContaining({ code: "EXCHANGE_ERROR", fatal: false, message: expect.stringContaining("without instrument_type left out (cannot tell perp from spot): ETH") })]);
+    t.last().open();
+    const row = (symbol: string) => ({ symbol, mark: "1", oracle: "1", funding: "0", next_funding: "0", open_interest: "0", volume_24h: "0", timestamp: 1 });
+    t.last().message({ channel: "prices", data: [row("BTC"), row("ETH")] });
+    expect(ev.filter(e => e.type === "market").map(e => e.symbol)).toEqual(["BTC"]); // ETH skipped, no unknown-market warning
+    expect(ev.filter(e => e.type === "error")).toHaveLength(1);
+  });});
+
 describe("bbo channel", () => {
   async function bbo(codec: VenueCodec, routes: Record<string, unknown>, symbol: string, frames: unknown[]) {
     const t = fakeTransport();
@@ -390,16 +471,273 @@ describe("bbo channel", () => {
     expect(c.errors).toEqual([]);
   });
 
-  it("pacifica: a 21st bbo channel → SUBSCRIPTION_LIMIT before any send", async () => {
-    const symbols = Array.from({ length: 21 }, (_, i) => `S${i}`);
-    const routes = { "GET https://api.pacifica.fi/api/v1/info": { success: true, data: symbols.map(symbol => ({ symbol })) } };
-    const t = fakeTransport();
-    const stream = createVenueStream(pacifica, { transport: t.factory, fetch: fakeFetch(routes), visibility: null });
-    const subs = symbols.map(s => stream.subscribe({ kind: "market", symbol: s, channels: ["bbo"] }));
-    await flush(60);
-    await expect(subs[20].ready).rejects.toMatchObject({ structured: { code: "SUBSCRIPTION_LIMIT", details: { needed: 21, allowed: 20 } } });
-    expect(subs[19].status).toBe("pending");
+  const pacDir = (symbols: string[]) => ({
+    "GET https://api.pacifica.fi/api/v1/info": { success: true, data: symbols.map(symbol => ({ symbol, instrument_type: "perpetual", base_asset: symbol })) },
   });
+  const bboSource = (ws: { sentJson(): unknown[] }) =>
+    (ws.sentJson() as Array<{ method: string; params: { source: string; symbol?: string } }>).filter(m => m.method === "subscribe").map(m => m.params.symbol === undefined ? m.params.source : m.params.symbol);
+
+  it("pacifica: > 20 bbo channels are spread over sockets (20 per channel per connection), prices stays on the first", async () => {
+    const symbols = Array.from({ length: 45 }, (_, i) => `S${i}`);
+    const t = fakeTransport();
+    const stream = createVenueStream(pacifica, { transport: t.factory, fetch: fakeFetch(pacDir(symbols)), visibility: null });
+    const states: Array<{ status: string; sockets?: number }> = [];
+    stream.onState(st => states.push(st as { status: string; sockets?: number }));
+    const all = stream.subscribe({ kind: "allMarkets" });
+    const subs = symbols.map(s => stream.subscribe({ kind: "market", symbol: s, channels: ["bbo"] }));
+    await flush(80);
+    expect(t.sockets).toHaveLength(3);
+    for (const ws of t.sockets) ws.open();
+    expect(bboSource(t.sockets[0])).toEqual(["prices", ...symbols.slice(0, 20)]);
+    expect(bboSource(t.sockets[1])).toEqual(symbols.slice(20, 40));
+    expect(bboSource(t.sockets[2])).toEqual(symbols.slice(40));
+    expect(stream.state).toMatchObject({ status: "live", sockets: 3 });
+    // Acks / frames are routed by wire on whichever socket they arrive.
+    t.sockets[0].message({ channel: "subscribe", data: { source: "prices" } });
+    symbols.forEach((s, i) => t.sockets[Math.floor(i / 20)].message({ channel: "subscribe", data: { source: "bbo", symbol: s } }));
+    await expect(all.ready).resolves.toBeUndefined();
+    await Promise.all(subs.map(x => x.ready));
+    const got: BboUpdate[] = [];
+    subs[44].on(e => { if (e.type === "bbo") got.push(e as BboUpdate); });
+    t.sockets[2].message({ channel: "bbo", data: { s: "S44", i: 1, b: "1", B: "2", a: "3", A: "4", t: 5, li: 7 } });
+    expect(got.map(b => [b.symbol, b.bid, b.ask])).toEqual([["S44", "1", "3"]]);
+    // Releasing every wire of the third socket closes only that socket; the aggregate stays live.
+    for (const x of subs.slice(40)) await x.unsubscribe();
+    expect(t.sockets[2].closedWith).toEqual({ code: 1000, reason: "idle" });
+    expect(t.sockets[0].closedWith).toBeNull();
+    expect(stream.state).toMatchObject({ status: "live", sockets: 2 });
+    // The first two sockets are full for bbo: a new bbo channel reopens the idle third slot (no 4th slot).
+    const again = stream.subscribe({ kind: "market", symbol: "S40", channels: ["bbo"] });
+    await flush(40);
+    expect(t.sockets).toHaveLength(4);
+    t.last().open();
+    expect(bboSource(t.last())).toEqual(["S40"]);
+    expect(again.status).toBe("pending");
+    await stream.close();
+    expect(states.at(-1)).toMatchObject({ status: "closed" });
+  });
+
+  it("pacifica: bbo beyond 20 × budget.maxSockets → SUBSCRIPTION_LIMIT before any send", async () => {
+    const symbols = Array.from({ length: 41 }, (_, i) => `S${i}`);
+    const t = fakeTransport();
+    const stream = createVenueStream(pacifica, { transport: t.factory, fetch: fakeFetch(pacDir(symbols)), visibility: null, budget: { maxSockets: 2 } });
+    const subs = symbols.map(s => stream.subscribe({ kind: "market", symbol: s, channels: ["bbo"] }));
+    await flush(80);
+    await expect(subs[40].ready).rejects.toMatchObject({ structured: { code: "SUBSCRIPTION_LIMIT", details: { needed: 41, allowed: 40 } } });
+    expect(subs[39].status).toBe("pending");
+    expect(t.sockets).toHaveLength(2);
+    for (const ws of t.sockets) ws.open();
+    expect(t.sockets.flatMap(bboSource)).toEqual(symbols.slice(0, 40)); // the rejected one was never sent
+  });
+
+  it("pacifica: the new-connection budget is shared by the stream's sockets; one socket's reconnects exhausted closes the stream", async () => {
+    const symbols = Array.from({ length: 45 }, (_, i) => `S${i}`);
+    const t = fakeTransport();
+    const stream = createVenueStream(pacifica, {
+      transport: t.factory, fetch: fakeFetch(pacDir(symbols)), visibility: null,
+      budget: { newConnectionsPerMin: 2 }, reconnect: { maxAttempts: 1, baseMs: 1000, maxMs: 1000 },
+    });
+    const subs = symbols.map(s => stream.subscribe({ kind: "market", symbol: s, channels: ["bbo"] }));
+    await flush(80);
+    expect(t.sockets).toHaveLength(2); // the third socket waits for the per-stream budget
+    const ack = (ws: (typeof t.sockets)[number], from: number, to: number) => {
+      ws.open();
+      for (const sym of symbols.slice(from, to)) ws.message({ channel: "subscribe", data: { source: "bbo", symbol: sym } });
+    };
+    ack(t.sockets[0], 0, 20);
+    ack(t.sockets[1], 20, 40);
+    for (let i = 0; i < 3; i++) { vi.advanceTimersByTime(20_000); for (const ws of t.sockets) ws.message({ channel: "pong" }); }
+    expect(t.sockets).toHaveLength(3);
+    ack(t.sockets[2], 40, 45);
+    await Promise.all(subs.map(x => x.ready));
+    t.sockets[1].serverClose(1006);
+    vi.advanceTimersByTime(60_000);
+    t.last().serverClose(1006); // handshake fails again → attempts exhausted
+    expect(stream.state).toMatchObject({ status: "closed", reason: { code: "EXCHANGE_UNREACHABLE" } });
+    expect(subs.map(x => x.status)).toEqual(symbols.map(() => "closed")); // active subscriptions ended with the close reason
+    expect(t.sockets[0].closedWith).not.toBeNull(); // the healthy sockets were stopped too
+  });
+
+  /** Pacifica stream with `n` bbo symbols (+ optional user channels), sockets opened and every channel acked. */
+  async function spread(n: number, extra: VenueStreamOptions = {}, user = false) {
+    const symbols = Array.from({ length: n }, (_, i) => `S${i}`);
+    const t = fakeTransport();
+    const logs: StreamLog[] = [];
+    const stream = createVenueStream(pacifica, { transport: t.factory, fetch: fakeFetch(pacDir(symbols)), visibility: null, credentials: pacUser, logger: l => logs.push(l), ...extra });
+    const states: unknown[] = [];
+    stream.onState(st => states.push(st));
+    const userEv: Ev[] = [];
+    const usub = user ? stream.subscribe({ kind: "user", channels: ["orders", "fills"] }) : null;
+    usub?.on(e => userEv.push(e as Ev));
+    await flush(40);
+    const subs = symbols.map(sym => stream.subscribe({ kind: "market", symbol: sym, channels: ["bbo"] }));
+    await flush(80);
+    return { symbols, t, stream, states, subs, usub, userEv, logs };
+  }
+  const ackAll = (ws: FakeWs) => {
+    for (const m of ws.sentJson() as Array<{ method: string; params: { source: string; symbol?: string; account?: string } }>) {
+      if (m.method === "subscribe") ws.message({ channel: "subscribe", data: m.params });
+    }
+  };
+  const sockState = (st: unknown) => st as { status: string; sockets?: number; pending?: number };
+
+  it("state sequence when a 2nd socket is added (budget ok, then budget-deferred), and M1: a deferred socket whose channels are all released never opens", async () => {
+    const r = await spread(21, { budget: { newConnectionsPerMin: 1 } });
+    // Socket 0 connected; socket 1 is deferred by the budget (1/min): it reports as pending, not idle.
+    expect(r.t.sockets).toHaveLength(1);
+    expect(r.stream.state).toEqual({ status: "connecting", attempt: 1 });
+    r.t.sockets[0].open();
+    ackAll(r.t.sockets[0]);
+    expect(sockState(r.stream.state)).toMatchObject({ status: "live", sockets: 1, pending: 1 });
+    // Release the 21st (the only channel on the deferred socket): its connect is cancelled.
+    await r.subs[20].unsubscribe();
+    expect(sockState(r.stream.state)).toMatchObject({ status: "live", sockets: 1, pending: 0 });
+    for (let i = 0; i < 6; i++) { vi.advanceTimersByTime(20_000); r.t.sockets[0].message({ channel: "pong" }); }
+    expect(r.t.sockets).toHaveLength(1); // no empty socket opened after the budget window
+    // Re-adding it: budget available now → socket 1 connects; the stream stays live (pending 1) until it opens.
+    const again = r.stream.subscribe({ kind: "market", symbol: "S20", channels: ["bbo"] });
+    await flush(40);
+    expect(r.t.sockets).toHaveLength(2);
+    r.t.sockets[1].open();
+    expect(r.states.map(sockState).map(s => [s.status, s.sockets, s.pending])).toEqual([
+      ["connecting", undefined, undefined], ["live", 1, 1], ["live", 1, 0], ["live", 1, 1], ["live", 2, 0],
+    ]);
+    ackAll(r.t.sockets[1]);
+    await expect(again.ready).resolves.toBeUndefined();
+  });
+
+  it("one socket reconnecting: the stream reports reconnecting; only that socket resubscribes; gaps only for channels on it", async () => {
+    const r = await spread(25, {}, true); // socket 0: account_order_updates, account_trades + S0..S19; socket 1: S20..S24
+    for (const ws of r.t.sockets) { ws.open(); ackAll(ws); }
+    expect(r.t.sockets).toHaveLength(2);
+    expect(bboSource(r.t.sockets[0]).slice(0, 2)).toEqual(["account_order_updates", "account_trades"]);
+    await Promise.all([...r.subs.map(x => x.ready), r.usub!.ready]);
+    const gaps0 = r.userEv.filter(e => e.type === "gap").length;
+    const sent0 = r.t.sockets[0].sent.length;
+    r.t.sockets[1].serverClose(1006);
+    expect(r.stream.state).toMatchObject({ status: "reconnecting" });
+    vi.advanceTimersByTime(1_000);
+    expect(r.t.sockets).toHaveLength(3);
+    r.t.last().open();
+    expect(bboSource(r.t.last())).toEqual(r.symbols.slice(20)); // only socket 1's channels
+    expect(r.t.sockets[0].sent.length).toBe(sent0); // socket 0 untouched
+    expect(r.userEv.filter(e => e.type === "gap").length).toBe(gaps0); // its user channels had no gap
+    expect(sockState(r.stream.state)).toMatchObject({ status: "live", sockets: 2, pending: 0 });
+    // Socket 0 dropping → gaps for the user channels on it.
+    r.t.sockets[0].serverClose(1006);
+    vi.advanceTimersByTime(1_000);
+    r.t.last().open();
+    expect(r.userEv.filter(e => e.type === "gap").slice(gaps0).map(g => (g as { channel: string }).channel)).toEqual(["orders", "fills"]);
+  });
+
+  it("a stale socket makes the stream stale (channel named); data recovers it to live with every socket counted", async () => {
+    const r = await spread(25);
+    const all = r.stream.subscribe({ kind: "allMarkets" });
+    await flush(40);
+    for (const ws of r.t.sockets) { ws.open(); ackAll(ws); }
+    expect(bboSource(r.t.sockets[0])).toContain("prices");
+    await all.ready;
+    const row = { symbol: "S0", mark: "1", oracle: "1", funding: "0", next_funding: "0", open_interest: "0", volume_24h: "0", timestamp: 1 };
+    r.t.sockets[0].message({ channel: "prices", data: [row] });
+    vi.advanceTimersByTime(11_000);
+    for (const ws of r.t.sockets) ws.message({ channel: "pong" });
+    expect(r.stream.state).toMatchObject({ status: "stale", channel: "prices" });
+    r.t.sockets[0].message({ channel: "prices", data: [row] });
+    expect(sockState(r.stream.state)).toMatchObject({ status: "live", sockets: 2, pending: 0 });
+  });
+
+  it("a frame / ack for a wire that lives on another socket is ignored (late-frame logged)", async () => {
+    const r = await spread(25);
+    for (const ws of r.t.sockets) ws.open();
+    ackAll(r.t.sockets[0]);
+    // S20's ack arrives on socket 0 (it lives on socket 1): not an ack.
+    r.t.sockets[0].message({ channel: "subscribe", data: { source: "bbo", symbol: "S20" } });
+    r.t.sockets[0].message({ channel: "bbo", data: { s: "S20", b: "1", B: "1", a: "2", A: "1", t: 1, li: 1 } });
+    expect(r.subs[20].status).toBe("pending");
+    const got: BboUpdate[] = [];
+    r.subs[20].on(e => { if (e.type === "bbo") got.push(e as BboUpdate); });
+    r.t.sockets[0].message({ channel: "bbo", data: { s: "S20", b: "1", B: "1", a: "2", A: "1", t: 1, li: 2 } });
+    expect(got).toEqual([]);
+    expect(r.logs.filter(l => l.event === "late-ack" || l.event === "late-frame").map(l => l.message)).toEqual([
+      "ack for bbo:S20 on socket 0; it lives on socket 1",
+      "frame for bbo:S20 on socket 0; it lives on socket 1",
+      "frame for bbo:S20 on socket 0; it lives on socket 1",
+    ]);
+    r.t.sockets[1].message({ channel: "bbo", data: { s: "S20", b: "1", B: "1", a: "2", A: "1", t: 1, li: 3 } });
+    expect(got).toHaveLength(1);
+    expect(r.subs[20].status).toBe("active");
+  });
+
+  it("a new socket whose first handshake keeps failing is pending (stream stays live), then closes the stream at maxAttempts", async () => {
+    const r = await spread(21, { reconnect: { maxAttempts: 2, baseMs: 1000, maxMs: 1000 } });
+    r.t.sockets[0].open();
+    ackAll(r.t.sockets[0]);
+    const before = r.states.length;
+    r.t.sockets[1].serverClose(1006); // handshake failed before open
+    expect(sockState(r.stream.state)).toMatchObject({ status: "live", sockets: 1, pending: 1 });
+    vi.advanceTimersByTime(1_000);
+    r.t.last().serverClose(1006); // 2nd failure
+    expect(sockState(r.stream.state)).toMatchObject({ status: "live", sockets: 1, pending: 1 });
+    expect(r.states.slice(before).map(sockState).map(s => s.status)).toEqual([]); // no live ↔ reconnecting flapping
+    vi.advanceTimersByTime(1_000);
+    r.t.last().serverClose(1006); // 3rd: attempts exhausted → the stream closes
+    expect(r.stream.state).toMatchObject({ status: "closed", reason: { code: "EXCHANGE_UNREACHABLE" } });
+    expect(r.subs[0].status).toBe("closed");
+  });
+
+  it("a fatal late error for a wire on its previous socket does not end the wire re-added on another socket", async () => {
+    const boom = { ...pacifica, decode: (text: string, d: Parameters<VenueCodec["decode"]>[1], ts: number) =>
+      text.includes("boom") ? [{ t: "error" as const, code: "WS_PROTOCOL_ERROR" as const, message: "boom", wire: "bbo:S20", fatal: true, remediation: null }] : pacifica.decode(text, d, ts) };
+    const symbols = Array.from({ length: 22 }, (_, i) => `S${i}`);
+    const t = fakeTransport();
+    const logs: StreamLog[] = [];
+    const stream = createVenueStream(boom, { transport: t.factory, fetch: fakeFetch(pacDir(symbols)), visibility: null, logger: l => logs.push(l) });
+    const subs = symbols.map(sym => stream.subscribe({ kind: "market", symbol: sym, channels: ["bbo"] }));
+    await flush(80);
+    for (const ws of t.sockets) { ws.open(); ackAll(ws); }
+    await Promise.all(subs.map(x => x.ready));
+    await subs[5].unsubscribe(); // room on socket 0
+    await subs[20].unsubscribe(); // S20 leaves socket 1 (S21 keeps it open)
+    const again = stream.subscribe({ kind: "market", symbol: "S20", channels: ["bbo"] });
+    await flush(40);
+    expect(bboSource(t.sockets[0]).at(-1)).toBe("S20"); // re-added on socket 0
+    t.sockets[0].message({ channel: "subscribe", data: { source: "bbo", symbol: "S20" } });
+    await again.ready;
+    t.sockets[1].message("boom"); // late fatal error from socket 1
+    expect(again.status).toBe("active");
+    expect(logs.some(l => l.event === "late-frame" && l.message === "error for bbo:S20 on socket 1; it lives on socket 0")).toBe(true);
+    t.sockets[0].message("boom"); // the same error on its own socket ends it
+    expect(again.status).toBe("closed");
+  });
+
+  it("maxPayload closes count per socket: 3 on socket 1 fail only its subscriptions", async () => {
+    const r = await spread(25);
+    for (const ws of r.t.sockets) { ws.open(); ackAll(ws); }
+    await Promise.all(r.subs.map(x => x.ready));
+    const tooBig = (ws: FakeWs) => { ws.onerror?.({ code: "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH" }); ws.serverClose(1006); };
+    const tick = () => { vi.advanceTimersByTime(20_000); for (const ws of r.t.sockets) ws.message({ channel: "pong" }); };
+    tooBig(r.t.sockets[0]); // one on socket 0
+    tick();
+    const s0 = r.t.last();
+    s0.open(); ackAll(s0);
+    let ws1 = r.t.sockets[1];
+    for (let i = 0; i < 3; i++) {
+      tooBig(ws1);
+      if (i < 2) { tick(); ws1 = r.t.last(); ws1.open(); ackAll(ws1); }
+    }
+    expect(r.subs.slice(20).map(x => x.status)).toEqual(Array(5).fill("closed"));
+    expect(r.subs.slice(0, 20).every(x => x.status === "active")).toBe(true);
+    expect(sockState(r.stream.state)).toMatchObject({ status: "live", sockets: 1 });
+  });
+
+  it("hyperliquid (per-IP limits, no maxSockets): every channel stays on one socket", async () => {
+    const t = fakeTransport();
+    const stream = createVenueStream(hyperliquid, { transport: t.factory, fetch: fakeFetch(HL_ROUTES), visibility: null });
+    for (const s of ["BTC", "ETH", "SOL", "ATOM", "DYDX"]) stream.subscribe({ kind: "market", symbol: s, channels: ["bbo", "market"] });
+    await flush(80);
+    expect(t.sockets).toHaveLength(1);
+  });
+
 });
 
 describe("CLI credential provider", () => {

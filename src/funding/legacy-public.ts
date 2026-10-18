@@ -28,6 +28,7 @@
  */
 
 import { HL_MIN_ORDER_VALUE_USD } from "../constants.js";
+import { isPacificaPerpetual } from "../ws/pacifica-instrument.js";
 import { PerpError } from "../errors.js";
 import { venueRateString } from "../utils/numeric.js";
 import { assertOk } from "../api/public/_http.js";
@@ -143,11 +144,11 @@ async function pacificaRows(net: Network): Promise<Row[]> {
   const unclassified: string[] = [];
   const unpriced: string[] = [];
   for (const m of info) {
-    // /info lists spot markets too (e.g. SOL-USDC). A row without the field cannot be classified.
+    // /info lists spot markets too (e.g. SOL-USDC): perps only. A row without the field cannot be classified.
     if (typeof m.instrument_type !== "string") {
       throw new PerpError("EXCHANGE_ERROR", `Pacifica /info row ${String(m.symbol)} has no instrument_type`, { exchange: "pacifica" });
     }
-    if (m.instrument_type === "spot") continue;
+    if (!isPacificaPerpetual(m)) continue;
     const symbol = String(m.symbol ?? "");
     const assetClass = classifyPacifica(symbol);
     if (assetClass === null) { unclassified.push(symbol); continue; }

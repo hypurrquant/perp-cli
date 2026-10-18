@@ -15,7 +15,13 @@ export interface VenueStatic {
   fundingVerified: boolean;
   ping: { message: string; everyMs: number } | null;
   staleAfterMs: number;
-  limits: { subscriptionsPerSocket: number; newConnectionsPerMin: number; outboundPerMin: number };
+  limits: {
+    subscriptionsPerSocket: number; newConnectionsPerMin: number; outboundPerMin: number;
+    /** Per-socket caps per WireSub.group (VenueCodec.limits.perGroup). */
+    perGroup?: Record<string, number>;
+    /** Sockets one stream may open (VenueCodec.limits.maxSockets; absent = 1). */
+    maxSockets?: number;
+  };
 }
 
 export const VENUE_STATIC: Record<"hyperliquid" | "pacifica" | "lighter" | "lighter-rh" | "aster" | "arcus", VenueStatic> & Partial<Record<VenueId, VenueStatic>> = {
@@ -40,9 +46,16 @@ export const VENUE_STATIC: Record<"hyperliquid" | "pacifica" | "lighter" | "ligh
     fundingVerified: true,
     ping: { message: JSON.stringify({ method: "ping" }), everyMs: 20_000 },
     staleAfterMs: 10_000, // `prices` every 3 s
-    // 300 conns/IP. No documented per-socket market-channel cap, new-connection rate or outbound
-    // rate: these are library self-limits, not venue values.
-    limits: { subscriptionsPerSocket: 1000, newConnectionsPerMin: 60, outboundPerMin: 1000 },
+    // docs.pacifica.fi/api-documentation/api/rate-limits: max 100 concurrent connections per IP, max
+    // 20 subscriptions per channel per connection → perGroup (one group per channel `source`) and up
+    // to 50 sockets per stream (half the per-IP cap: other streams / processes share the IP). The
+    // server closes a socket after 60 s without a client message (ping every 20 s) and at 24 h
+    // (reconnect + resubscribe). No documented total per socket, new-connection rate or outbound
+    // rate: those are library self-limits, not venue values.
+    limits: {
+      subscriptionsPerSocket: 100, newConnectionsPerMin: 60, outboundPerMin: 1000, maxSockets: 50,
+      perGroup: { prices: 20, bbo: 20, account_info: 20, account_positions: 20, account_order_updates: 20, account_trades: 20 },
+    },
   },
   lighter: {
     wsUrl: { mainnet: "wss://mainnet.zklighter.elliot.ai/stream", testnet: "wss://testnet.zklighter.elliot.ai/stream" },
