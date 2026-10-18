@@ -17,6 +17,9 @@ import { addRootSafetyOptions, installDryRunGuard } from "../../cli-flags.js";
 import { registerPacificaEarnCommands } from "../../commands/pacifica-earn.js";
 import { PacificaAdapter } from "../../exchanges/pacifica.js";
 import { PerpError } from "../../errors.js";
+import { LocalSolanaSigner } from "../../signer/solana-local.js";
+import { registerWalletManageCommands } from "../../commands/manage.js";
+import type { AgentMeta } from "../../settings.js";
 
 const FX = resolve(__dirname, "../fixtures/pacifica-earn");
 const fixture = (n: string): unknown => JSON.parse(readFileSync(resolve(FX, n), "utf8"));
@@ -28,6 +31,8 @@ const HATCH = "9GN1GztuBJWWRC1q39P4fFtiN341ZbqC5FNXkL1MAxUh";
 
 type PostReply = () => Response | Promise<Response>;
 let postReply: PostReply;
+let gameAccounts: () => unknown;
+let lakeList: () => unknown;
 let posts: Array<{ path: string; body: Record<string, unknown> }>;
 let out: string[];
 
@@ -44,6 +49,8 @@ beforeEach(() => {
   posts = [];
   out = [];
   postReply = () => json(200, env({ game_account_address: "NewPrint1111111111111111111111111111111111" }));
+  gameAccounts = () => fixture("game-accounts.json");
+  lakeList = lakeListWithShares;
   vi.spyOn(console, "log").mockImplementation((s: unknown) => { out.push(String(s)); });
   vi.stubGlobal("fetch", vi.fn(async (input: unknown, init?: { method?: string; body?: string }) => {
     const url = new URL(String(input));
@@ -54,26 +61,53 @@ beforeEach(() => {
     }
     switch (path) {
       case "/game/config": return json(200, fixture("game-config.json"));
-      case "/game/accounts": return json(200, fixture("game-accounts.json"));
+      case "/game/accounts": return json(200, gameAccounts());
+      case "/game/history_summary": return json(200, fixture("game-history-summary-page.json"));
       case "/info/prices": return json(200, env([{ symbol: "BTC", mark: "70000" }]));
       case "/info": return json(200, env([{ symbol: "BTC", tick_size: "1" }]));
       case "/account": return json(200, env({ available_to_withdraw: "1000", account_equity: "1000" }));
       case "/positions": return json(200, env([]));
-      case "/lake/list": return json(200, lakeListWithShares());
+      case "/lake/list": return json(200, lakeList());
       case "/lake/get_deposit_whitelist": return json(200, fixture("lake-deposit-whitelist.json"));
       default: throw new Error(`unexpected GET ${path}`);
     }
   }));
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); adapterKind = "master"; adapterBuilds = 0; });
+
+const AGENT_KP = Keypair.generate();
+const AGENT = AGENT_KP.publicKey.toBase58();
+function agentMeta(): AgentMeta {
+  return {
+    agentName: "t", agentWalletName: "t", agentEvmAddress: "0x0000000000000000000000000000000000000000", userEvmAddress: "0x0000000000000000000000000000000000000000",
+    agentSolanaAddress: AGENT, userSolanaAddress: ACCOUNT, masterWalletName: "", owsApiKeyId: "", owsPolicyId: "", expiresAt: "2099-01-01T00:00:00.000Z",
+    approvedAt: "2026-10-19T00:00:00.000Z", permissions: { canPerpTrade: true, canSpotTrade: false, canWithdraw: false }, asterApprovalNonce: "", status: "active", network: "mainnet",
+  } as AgentMeta;
+}
+/** master = the account key only; agent = master + approved agent; agentOnly = agent key, no master on this machine. */
+function makeAdapter(kind: "master" | "agent" | "agentOnly"): PacificaAdapter {
+  const a = kind === "agentOnly" ? new PacificaAdapter(Keypair.generate(), "mainnet", false) : new PacificaAdapter(KP, "mainnet", true);
+  if (kind !== "master") a.setAgentSigner(agentMeta(), new LocalSolanaSigner(AGENT_KP));
+  return a;
+}
+let adapterKind: "master" | "agent" | "agentOnly" = "master";
+let adapterBuilds = 0;
+
+function verify(body: Record<string, unknown>, type: string, kp: Keypair): boolean {
+  const { signature, account: _a, agent_wallet: _w, timestamp, expiry_window, ...payload } = body;
+  const sort = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
+  const message = JSON.stringify({ data: sort(payload), expiry_window, timestamp, type });
+  return nacl.sign.detached.verify(new TextEncoder().encode(message), bs58.decode(signature as string), kp.publicKey.toBytes());
+}
 
 async function run(argv: string[]): Promise<{ data?: Record<string, unknown>; error?: PerpError }> {
   const prog = addRootSafetyOptions(new Command());
   prog.exitOverride();
   prog.option("-e, --exchange <venue>", "venue", "hyperliquid").option("--json");
   prog.configureOutput({ writeErr: () => {}, writeOut: () => {} });
-  const adapter = new PacificaAdapter(KP, "mainnet", true);
-  registerPacificaEarnCommands(prog, async () => adapter, () => true);
+  const getter = async () => { adapterBuilds++; return makeAdapter(adapterKind); };
+  registerPacificaEarnCommands(prog, getter, () => true);
+  registerWalletManageCommands(prog.command("wallet"), getter, () => true, () => null);
   installDryRunGuard(prog);
   try {
     await prog.parseAsync(["node", "perp", ...argv]);
@@ -135,7 +169,10 @@ describe("print deposit", () => {
     postReply = reply as PostReply;
     const r = await run(DEPOSIT);
     expect(r.error?.structured.code).toBe("ORDER_PENDING");
-    expect(r.error?.structured.remediation).toMatch(/Do NOT resubmit.*print positions/);
+    expect(r.error?.structured.remediation).toMatch(/Do NOT resubmit.*print positions — look for a new BTC_24H long order with strikePrice 69000 and deposit 100 \(1 current order\(s\) before/);
+    expect(r.error?.structured.remediation).toContain(`--idempotency-key ${String(posts[0].body.idempotency_key)}`);
+    expect(r.error?.structured.remediation).toMatch(/dedupe window is unverified/);
+    expect(r.error?.structured.details?.before).toEqual({ printOrders: 1 });
     expect(r.error?.structured.details?.idempotencyKey).toBe(posts[0].body.idempotency_key);
     expect(posts).toHaveLength(1);
   });
@@ -175,7 +212,38 @@ describe("print reads never sign or POST", () => {
   });
 });
 
-describe("print cancel", () => {
+describe("print cancel (unofficial /game/end)", () => {
+  const running = () => {
+    const f = fixture("game-accounts.json") as { data: { game_accounts: Record<string, unknown>[] } };
+    return { ...f, data: { game_accounts: f.data.game_accounts.map((g) => ({ ...g, user_initiated_game_end: false })) } };
+  };
+  const ADDR = () => String((running().data.game_accounts[0] as Record<string, unknown>).address);
+
+  it("live run without --unverified-endpoint → INVALID_PARAMS (apiStatus unofficial), nothing sent", async () => {
+    gameAccounts = running;
+    const r = await run(["print", "cancel", ADDR()]);
+    expect(r.error?.structured).toMatchObject({ code: "INVALID_PARAMS", details: { apiStatus: "unofficial" } });
+    expect(posts).toHaveLength(0);
+  });
+
+  it("--dry-run is labelled apiStatus: unofficial; nothing sent", async () => {
+    gameAccounts = running;
+    const r = await run(["--dry-run", "print", "cancel", ADDR()]);
+    expect(r.data).toMatchObject({ dryRun: true, sent: false, apiStatus: "unofficial", request: { type: "end_game", body: { game_account: ADDR() } } });
+    expect(posts).toHaveLength(0);
+  });
+
+  it("with --unverified-endpoint and an agent: one POST, agent_wallet set, signature by the agent key", async () => {
+    gameAccounts = running;
+    adapterKind = "agent";
+    postReply = () => json(200, env({ scheduled_end_at_ms: 1792421813444 }));
+    const r = await run(["print", "cancel", ADDR(), "--unverified-endpoint"]);
+    expect(r.data).toMatchObject({ endRequested: true, apiStatus: "unofficial", scheduledEndAt: 1792421813444 });
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toMatchObject({ account: ACCOUNT, agent_wallet: AGENT, game_account: ADDR() });
+    expect(verify(posts[0].body, "end_game", AGENT_KP)).toBe(true);
+  });
+
   it("refuses an order that is already cancelling (fixture) — nothing sent", async () => {
     const accounts = fixture("game-accounts.json") as { data: { game_accounts: Array<{ address: string }> } };
     const r = await run(["print", "cancel", accounts.data.game_accounts[0].address]);
@@ -220,6 +288,129 @@ describe("vault", () => {
     expect(posts).toHaveLength(0);
     const p = await run(["vault", "positions"]);
     expect(p.data?.positions).toEqual([expect.objectContaining({ vault: HATCH, shares: "100", role: "lp" })]);
+  });
+});
+
+describe("signer policy", () => {
+  it("print deposit with an approved agent: agent_wallet in the body, signature verifies against the AGENT key", async () => {
+    adapterKind = "agent";
+    await run(DEPOSIT);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toMatchObject({ account: ACCOUNT, agent_wallet: AGENT });
+    expect(verify(posts[0].body, "deposit_to_game", AGENT_KP)).toBe(true);
+    expect(verify(posts[0].body, "deposit_to_game", KP)).toBe(false);
+  });
+
+  it("vault withdraw with an agent: agent-signed, pays the own account", async () => {
+    adapterKind = "agent";
+    postReply = () => json(200, env({ amount_withdrawn: "1" }));
+    await run(["vault", "withdraw", HATCH, "10"]);
+    expect(posts[0].body).toMatchObject({ account: ACCOUNT, agent_wallet: AGENT, lake: HATCH });
+    expect(verify(posts[0].body, "withdraw_from_lake", AGENT_KP)).toBe(true);
+  });
+
+  it("vault deposit is master-only: master + agent → signed by the MASTER (no agent_wallet)", async () => {
+    adapterKind = "agent";
+    postReply = () => json(200, env({ shares_minted: "20" }));
+    const r = await run(["vault", "deposit", HATCH, "25"]);
+    expect(r.data).toMatchObject({ deposited: true, sharesMinted: "20" });
+    expect(posts[0].body).not.toHaveProperty("agent_wallet");
+    expect(verify(posts[0].body, "deposit_to_lake", KP)).toBe(true);
+  });
+
+  it("vault deposit with only an agent key → NO_SIGNER_AVAILABLE, nothing signed or sent (also in --dry-run)", async () => {
+    adapterKind = "agentOnly";
+    const sign = vi.spyOn(LocalSolanaSigner.prototype, "signMessage");
+    for (const argv of [["vault", "deposit", HATCH, "25"], ["--dry-run", "vault", "deposit", HATCH, "25"]]) {
+      const r = await run(argv);
+      expect(r.error?.structured).toMatchObject({ code: "NO_SIGNER_AVAILABLE", remediation: expect.stringMatching(/master wallet/) });
+    }
+    expect(sign).not.toHaveBeenCalled();
+    expect(posts).toHaveLength(0);
+  });
+
+  it("vault deposit unknown outcome: ORDER_PENDING names the pre-write shares and the key retry", async () => {
+    postReply = () => json(502, "bad gateway");
+    const r = await run(["vault", "deposit", HATCH, "25"]);
+    expect(r.error?.structured.code).toBe("ORDER_PENDING");
+    expect(r.error?.structured.details?.before).toEqual({ shares: "100" });
+    expect(r.error?.structured.remediation).toMatch(/vault positions — shares in vault 9GN1.* \(100 before this request\).*--idempotency-key/);
+    expect(posts).toHaveLength(1);
+  });
+
+  it("--idempotency-key re-sends the given key; a non-UUID is refused before anything is sent", async () => {
+    const key = "550e8400-e29b-41d4-a716-446655440000";
+    await run([...DEPOSIT, "--idempotency-key", key.toUpperCase()]);
+    expect(posts[0].body.idempotency_key).toBe(key);
+    const r = await run([...DEPOSIT, "--idempotency-key", "abc"]);
+    expect(r.error?.structured.code).toBe("INVALID_PARAMS");
+    expect(posts).toHaveLength(1);
+  });
+
+  it("every --dry-run write never calls signMessage", async () => {
+    const sign = vi.spyOn(LocalSolanaSigner.prototype, "signMessage");
+    adapterKind = "agent";
+    gameAccounts = () => {
+      const f = fixture("game-accounts.json") as { data: { game_accounts: Record<string, unknown>[] } };
+      return { ...f, data: { game_accounts: f.data.game_accounts.map((g) => ({ ...g, user_initiated_game_end: false })) } };
+    };
+    const end = (fixture("game-accounts.json") as { data: { game_accounts: Array<{ address: string }> } }).data.game_accounts[0].address;
+    for (const argv of [["--dry-run", ...DEPOSIT], ["--dry-run", "print", "cancel", end], ["--dry-run", "vault", "deposit", HATCH, "25"], ["--dry-run", "vault", "withdraw", HATCH, "--all"]]) {
+      const r = await run(argv);
+      expect(r.data?.sent).toBe(false);
+    }
+    expect(sign).not.toHaveBeenCalled();
+    expect(posts).toHaveLength(0);
+  });
+
+  it("--account reads and --account dry-runs never build the adapter (no key loaded)", async () => {
+    for (const argv of [["print", "positions", "--account", HATCH], ["print", "history", "--account", HATCH], ["vault", "positions", "--account", HATCH],
+      ["--dry-run", ...DEPOSIT, "--account", HATCH], ["--dry-run", "vault", "deposit", "Growi HF", "25", "--account", HATCH]]) {
+      expect((await run(argv)).error).toBeUndefined();
+    }
+    expect(adapterBuilds).toBe(0);
+  });
+});
+
+describe("ambiguous vault nickname", () => {
+  beforeEach(() => {
+    lakeList = () => {
+      const l = lakeListWithShares() as { data: { lakes: Record<string, unknown>[] } };
+      const hatch = l.data.lakes.find((x) => x.address === HATCH) as Record<string, unknown>;
+      const copy = { ...hatch, address: "CopyCatVau1t111111111111111111111111111111", nickname: "the hatch", manager: "Attacker1111111111111111111111111111111111" };
+      return { ...l, data: { lakes: [copy, ...l.data.lakes] } };
+    };
+  });
+  it.each([
+    [["vault", "deposit", "The Hatch", "25"]],
+    [["--dry-run", "vault", "deposit", "The Hatch", "25"]],
+    [["vault", "withdraw", "The Hatch", "10"]],
+    [["vault", "info", "The Hatch"]],
+  ])("%j → INVALID_PARAMS listing both candidates; nothing sent", async (argv) => {
+    const r = await run(argv as string[]);
+    expect(r.error?.structured.code).toBe("INVALID_PARAMS");
+    const c = (r.error?.structured.details?.candidates as Array<{ address: string; manager: string }>).map((x) => x.address).sort();
+    expect(c).toEqual(["CopyCatVau1t111111111111111111111111111111", HATCH].sort());
+    expect(posts).toHaveLength(0);
+  });
+  it("the address still resolves; the plan names the resolved vault and manager", async () => {
+    const r = await run(["--dry-run", "vault", "deposit", HATCH, "25"]);
+    expect(r.data?.plan).toMatchObject({ vault: HATCH, manager: expect.any(String) });
+  });
+});
+
+describe("wallet manage lake (legacy)", () => {
+  it.each([[["wallet", "manage", "lake", "deposit", HATCH, "25"]], [["wallet", "manage", "lake", "withdraw", HATCH, "1"]]])("%j → refused with a pointer to the validated command; no adapter, nothing signed", async (argv) => {
+    const r = await run(argv as string[]);
+    expect(r.error?.structured).toMatchObject({ code: "INVALID_PARAMS", message: expect.stringMatching(/perp -e pacifica vault (deposit|withdraw)/) });
+    expect(adapterBuilds).toBe(0);
+    expect(posts).toHaveLength(0);
+  });
+  it("lake create --initial-deposit with an agent signer → NO_SIGNER_AVAILABLE before anything is sent", async () => {
+    adapterKind = "agent";
+    const r = await run(["wallet", "manage", "lake", "create", "--initial-deposit", "100"]);
+    expect(r.error?.structured.code).toBe("NO_SIGNER_AVAILABLE");
+    expect(posts).toHaveLength(0);
   });
 });
 

@@ -6,11 +6,14 @@
  *    long = target BELOW mark, short = target ABOVE mark, 0.5% … 10% / 20% / 40% from mark for a
  *    24-hour / 7-day / 30-day cycle. Leverage 1× … the product's max (live /game/config).
  *  - Each cycle the Print pool pays a premium ("yield") at the START of the cycle; it is added to
- *    the order's locked margin. At the END of each cycle (checkpoint only): mark at/through the
- *    target → the order fills AT the target as an ordinary leveraged perp position
- *    (size = deposit × leverage / target); otherwise it rolls to a new target at the same %
- *    distance from the new mark. Mark beyond the liquidation price at a checkpoint → liquidated,
- *    the margin (deposit + premiums) is lost. Max loss = deposit + premiums, nothing more.
+ *    the order's locked margin. WHILE RESTING (before a fill) the order is evaluated only at the
+ *    END of each cycle: mark at/through the target → it fills AT the target; otherwise it rolls to
+ *    a new target at the same % distance from the new mark; mark beyond the liquidation level at
+ *    that checkpoint → liquidated, the margin (deposit + premiums) is lost.
+ *  - AFTER a fill it is an ordinary perp position in the main account (size = deposit × leverage
+ *    / target): continuous mark-price liquidation, it nets with an existing position in the same
+ *    market and may be cross-margined — read it with `perp -e pacifica account positions`.
+ *  - Max loss of the resting order = deposit + premiums.
  *  - `total_segments` 1 … 1000 caps the number of cycles; omitted = rolls until ended.
  *  - Ending ("cancel", signing type `end_game`, POST /game/end) takes effect only at the end of
  *    the current cycle; funds return to the trading balance then. No in-place edit.
@@ -21,7 +24,8 @@
  *   GET  /game/history_summary?account=        every Print order of the account (paginated)
  *   GET  /game/history?game_account=           event log of one Print order (paginated)
  *   POST /game/deposit   type deposit_to_game  create (documented)
- *   POST /game/end       type end_game         end at the cycle's close (app.pacifica.fi; not in the API docs)
+ *   POST /game/end       type end_game         end at the cycle's close — UNOFFICIAL: not in the API docs,
+ *                                              shape captured from app.pacifica.fi (fixture app-end-game-request.json)
  * `preview_game_account` (POST /game/preview, the app's premium quote) is a SIGNED request; read
  * paths never sign, so the premium of a new order is not quoted here (estimatedPremium: null).
  */
@@ -47,12 +51,12 @@ const DAY_MS = 86_400_000;
 
 /**
  * The docs formula (target ∓ (deposit + yield) × target / (leverage × deposit)) is where the margin
- * is fully lost. The venue liquidates before that: live mainnet 2026-10-16, a ZEC_24H short (strike
- * 1150.95, 10×, deposit 922.93, premium 23.80) was liquidated at the checkpoint with mark 1216.836,
- * while the formula gives ≈ 1269.0 — the fill would have opened below maintenance margin. The
- * venue's own figure comes only from the signed preview (preview_game_account), not called here.
+ * is fully lost. A liquidation was observed earlier than that in one live case (mainnet 2026-10-16:
+ * a ZEC_24H short, strike 1150.95, 10×, deposit 922.93, premium 23.80, liquidated at the checkpoint
+ * with mark 1216.836 while the formula gives ≈ 1269.0). The venue's trigger is unpublished; its own
+ * figure comes only from the signed preview (preview_game_account), not called here.
  */
-export const PRINT_LIQUIDATION_NOTE = "docsLiquidationPrice is the docs formula (margin fully lost). Pacifica liquidates earlier — at maintenance margin, checked at each checkpoint — so treat it as an outer bound, not the trigger.";
+export const PRINT_LIQUIDATION_NOTE = "docsLiquidationPrice is the docs formula (margin fully lost) — an outer bound, not the trigger: a liquidation was observed earlier in one live case (2026-10-16); the venue's trigger is unpublished. After a fill the position follows ordinary perp liquidation (continuous mark price, main account).";
 
 // ── Models ──────────────────────────────────────────────────────────────
 
@@ -66,8 +70,8 @@ export interface PrintGame {
   /** Cycle length in days (segment_kind fixed_days), null when the venue reports another kind. */
   cycleDays: number | null;
   maxLeverage: string | null;
-  /** Cap on open deposits of this product (USDC). */
-  depositCap: string | null;
+  /** Cap on the TOTAL open deposits of this product across all users (USDC) — not a per-order limit. */
+  productDepositCap: string | null;
   /** Cap on open deposits of the whole Print pool (USDC). */
   poolDepositCap: string | null;
   capScope: string | null;
@@ -204,7 +208,7 @@ export function parsePrintGames(data: unknown): PrintGame[] {
       asset: reqStr(r, "target_asset", "/game/config row"),
       cycleDays: days !== null && days > 0 ? days : null,
       maxLeverage: optDec(r, "max_leverage"),
-      depositCap: optDec(r, "deposit_cap"),
+      productDepositCap: optDec(r, "deposit_cap"),
       poolDepositCap: optDec(r, "lake_deposit_cap"),
       capScope: optStr(r, "cap_scope"),
       poolAddress: optStr(r, "lake_address"),
@@ -417,10 +421,13 @@ function invalid(msg: string, remediation: string): PerpError {
   return new PerpError("INVALID_PARAMS", msg, { exchange: "pacifica", remediation });
 }
 
-/** Strict USDC amount: plain positive decimal, at most 6 fractional digits (USDC precision). */
+/** Plain non-negative decimal without leading zeros ("0.5", "10", "10.25"; not "010", "1e3", ".5"). */
+export const PLAIN_POSITIVE = /^(0|[1-9]\d*)(\.\d+)?$/;
+
+/** Strict USDC amount: plain positive decimal, no leading zeros, at most 6 fractional digits (USDC precision). */
 export function requireUsdcAmount(raw: string, what: string): string {
   const s = String(raw).trim();
-  if (!/^\d+(\.\d+)?$/.test(s) || !(Number(s) > 0)) throw invalid(`${what} must be a positive decimal number (got "${raw}")`, "Pass a plain decimal amount, e.g. 100 or 100.5");
+  if (!PLAIN_POSITIVE.test(s) || !(Number(s) > 0)) throw invalid(`${what} must be a positive decimal number without leading zeros (got "${raw}")`, "Pass a plain decimal amount, e.g. 100 or 100.5");
   if (fractionDigits(s) > USDC_DECIMALS) throw invalid(`${what} ${s} has more than ${USDC_DECIMALS} decimals (USDC precision)`, `Round to ${USDC_DECIMALS} decimals`);
   return trimDecimal(s);
 }
@@ -443,15 +450,14 @@ export function quotePrintOrder(game: PrintGame, input: PrintOrderInput, market:
   if (cmpDecimal(deposit, PRINT_MIN_DEPOSIT_USDC) < 0) {
     throw invalid(`${where}: deposit ${deposit} USDC is below the ${PRINT_MIN_DEPOSIT_USDC} USDC minimum`, `Deposit at least ${PRINT_MIN_DEPOSIT_USDC} USDC`);
   }
-  if (game.depositCap !== null && cmpDecimal(deposit, game.depositCap) > 0) {
-    throw invalid(`${where}: deposit ${deposit} USDC exceeds the product's deposit cap ${game.depositCap} USDC`, `Deposit at most ${game.depositCap} USDC`);
-  }
+  // No local deposit_cap check: it caps the product's total open deposits (all users), so only the
+  // venue knows the remaining room — its refusal decides.
   if (!/^[1-9]\d*$/.test(input.leverage) || cmpDecimal(input.leverage, game.maxLeverage) > 0) {
     throw invalid(`${where}: leverage must be a whole number from 1 to ${game.maxLeverage} (got "${input.leverage}")`, `Pass --leverage 1 … ${game.maxLeverage}`);
   }
   const leverage = input.leverage;
   const strike = String(input.strikePrice).trim();
-  if (!/^\d+(\.\d+)?$/.test(strike) || !(Number(strike) > 0)) throw invalid(`${where}: strike must be a positive price (got "${input.strikePrice}")`, "Pass --strike <price>");
+  if (!PLAIN_POSITIVE.test(strike) || !(Number(strike) > 0)) throw invalid(`${where}: strike must be a positive price (got "${input.strikePrice}")`, "Pass --strike <price>");
   if (exactUnits(strike, market.tickSize) === null) {
     throw new PerpError("INVALID_TICK", `${where}: strike ${strike} is not a multiple of the ${game.asset} tick ${market.tickSize}`, {
       exchange: "pacifica", remediation: `Use a strike that is a multiple of ${market.tickSize}`,
@@ -495,11 +501,12 @@ export function quotePrintOrder(game: PrintGame, input: PrintOrderInput, market:
     liquidationNote: PRINT_LIQUIDATION_NOTE,
     estimatedPremium: null,
     notes: [
-      `Fill and liquidation are checked only at each ${game.cycleDays}-day checkpoint; a fill opens ${size} ${game.asset} at exactly ${strike}.`,
+      `While resting, fill and liquidation are checked only at each ${game.cycleDays}-day checkpoint; a fill opens ${size} ${game.asset} at exactly ${strike}.`,
+      `After a fill it is an ordinary position in your main account: continuous mark-price liquidation, it nets with any ${game.asset} position you hold and may be cross-margined — see perp -e pacifica account positions.`,
       `Max loss: the ${deposit} USDC deposit plus every premium credited to it — never more.`,
       `Cancelling resolves at the end of the running cycle (up to ${game.cycleDays} day${game.cycleDays === 1 ? "" : "s"}); funds stay locked until then.`,
       "The premium is set by the venue at the start of each cycle; its quote (preview_game_account) is a signed request and is not called here.",
-      "Product and pool deposit caps are shared by all users: the venue may refuse when they are full.",
+      "Product and pool deposit caps are totals shared by all users: the venue refuses when they are full (not checkable here).",
     ],
   };
 }

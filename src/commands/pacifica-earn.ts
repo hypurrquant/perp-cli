@@ -3,11 +3,15 @@
  *
  * Pacifica-only products: the commands always talk to Pacifica (an explicit `-e <other venue>` is
  * refused). Reads are unauthenticated GETs and never sign; `--account <address>` reads any
- * account without loading a key. Writes (`print deposit|cancel`, `vault deposit|withdraw`) are
- * signed by the active Pacifica signer — the agent key when one is approved (the venue accepts
- * `agent_wallet` on these operations, and app.pacifica.fi signs them with its agent key), else the
- * master — and support `--dry-run`, which prints the exact canonical message and body (no
- * signature) and sends nothing. An unknown send outcome is ORDER_PENDING: never resubmitted.
+ * account without loading a key or building the adapter.
+ *
+ * Signer policy (perp-cli rule, stricter than the venue, which accepts `agent_wallet` on all four):
+ *  - `vault deposit` (deposit_to_lake) is MASTER-ONLY, like `funds withdraw pacifica`: a leaked agent
+ *    key must not be able to move the whole balance into a vault an attacker manages;
+ *  - `vault withdraw` (pays only into the own account), `print deposit` and `print cancel` are
+ *    signed by the active signer (agent when approved, else master).
+ * Every write supports `--dry-run` (exact canonical message + body, never signs, never sends). An
+ * unknown send outcome is ORDER_PENDING: never resubmitted except with the same --idempotency-key.
  */
 import { randomUUID } from "node:crypto";
 import { Command } from "commander";
@@ -23,14 +27,15 @@ import { jsonOk, makeTable, printJson } from "../utils.js";
 import { mulDecimal } from "../exchanges/precision.js";
 import { cmpDecimal, isPlainDecimal, trimDecimal } from "../exchanges/pacifica-decimal.js";
 import { fundsFailStatus } from "./funds.js";
-import { sendPresigned, signPresigned, type PresignedIdentity, type PresignedRequest } from "../exchanges/pacifica-presigned.js";
+import { requireIdempotencyKey, sendPresigned, signPresigned, type PresignedIdentity, type PresignedRequest } from "../exchanges/pacifica-presigned.js";
+import type { ExecutionRecord } from "../execution-log.js";
 import {
   buildPrintDepositRequest, buildPrintEndRequest, daysUntil, fetchPrintEvents, fetchPrintGames, fetchPrintHistory,
   fetchPrintMarket, fetchPrintPositions, findPrintGame, quotePrintOrder, requireEndable,
   type PrintDirection, type PrintPosition, type PrintQuote,
 } from "../exchanges/pacifica-print.js";
 import {
-  buildVaultDepositRequest, buildVaultWithdrawRequest, fetchDepositWhitelist, fetchVaults, findVault, heldShares,
+  buildVaultDepositRequest, buildVaultWithdrawRequest, DEPOSIT_WHITELIST_API_STATUS, fetchDepositWhitelist, fetchVaults, findVault, heldShares,
   planVaultDeposit, planVaultWithdraw, withdrawWindowAt, type PacificaVault,
 } from "../exchanges/pacifica-vaults.js";
 
@@ -81,10 +86,31 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
     return { identity: { account: id.account, agentWallet: id.agentWallet }, tier: id.tier, sign: id.signMessage, client: a.sdk };
   }
 
+  /**
+   * Master-only identity (vault deposit): the master Solana signer, never the agent — even when an
+   * agent is approved. No master on this machine → NO_SIGNER_AVAILABLE. Mirrors PacificaAdapter.withdraw.
+   */
+  async function masterSigning(accountOpt: string | undefined, dryRun: boolean): Promise<Signing> {
+    if (accountOpt !== undefined) {
+      const plan = await signing(accountOpt, dryRun);
+      return { ...plan, tier: null };
+    }
+    const a = await pacificaAdapter();
+    const refuse = (): PerpError => new PerpError("NO_SIGNER_AVAILABLE", "A Pacifica vault deposit must be signed by the account's master wallet (an agent key cannot fund a vault), and it is not loaded", {
+      exchange: "pacifica",
+      remediation: "Run with the master wallet: perp -e pacifica --ows <wallet> vault deposit … (or deposit on the Pacifica website)",
+    });
+    let master;
+    try { master = a.masterSolanaSigner(); } catch { throw refuse(); }
+    if (master.getPublicKeyBase58() !== a.publicKey) throw refuse();
+    return { identity: { account: a.publicKey, agentWallet: null }, tier: "master", sign: (m) => master.signMessage(m), client: a.sdk };
+  }
+
   /** Dry-run: the exact request a live run would sign and send (no signature). */
-  function printDryRun(plan: unknown, req: PresignedRequest, tier: Signing["tier"]): void {
+  function printDryRun(plan: unknown, req: PresignedRequest, tier: Signing["tier"], extra: Record<string, unknown> = {}): void {
     const request = { path: `POST /api/v1${req.path}`, type: req.type, signer: tier ?? "not loaded (--account plan)", signedMessage: req.message, body: { ...req.body, signature: null } };
-    if (isJson()) return printJson(jsonOk({ dryRun: true, sent: false, plan, request }));
+    if (isJson()) return printJson(jsonOk({ dryRun: true, sent: false, ...extra, plan, request }));
+    if (extra.apiStatus === "unofficial") console.log(chalk.yellow(`  ! ${req.path} is UNOFFICIAL (not in the Pacifica API docs; shape captured from app.pacifica.fi)`));
     console.log(chalk.yellow(`\n  [dry-run] ${req.type} — nothing signed, nothing sent`));
     console.log(`  POST /api/v1${req.path}   signer: ${request.signer}`);
     console.log(chalk.gray("  message to sign:"));
@@ -93,19 +119,22 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
     console.log(`  ${JSON.stringify(request.body)}\n`);
   }
 
-  /** Sign + send; log the outcome (unknown outcome → "unverified", rethrown as ORDER_PENDING). */
-  async function send(s: Signing, req: PresignedRequest, what: string, check: string, meta: Record<string, unknown>, size: string): Promise<Record<string, unknown>> {
+  /** Sign + send; log every outcome incl. a signing failure (unknown outcome → "unverified", ORDER_PENDING). */
+  async function send(s: Signing, req: PresignedRequest, o: { what: string; check: string; logType: ExecutionRecord["type"]; symbol: string; size: string; meta: Record<string, unknown>; before: Record<string, unknown> }): Promise<Record<string, unknown>> {
     if (s.sign === null) throw new Error("send without a signer");
-    const body = await signPresigned(req, s.sign);
+    const base = { type: o.logType, exchange: "pacifica", symbol: o.symbol, side: req.type, size: o.size, dryRun: false, meta: { ...o.meta, signer: s.tier, idempotencyKey: req.idempotencyKey, before: o.before } } as const;
     try {
-      const data = await sendPresigned(s.client, req, body, { what, check });
-      logExecution({ type: "bridge", exchange: "pacifica", symbol: "USDC", side: req.type, size, status: "success", dryRun: false, meta: { ...meta, idempotencyKey: req.idempotencyKey, response: data } });
+      const body = await signPresigned(req, s.sign);
+      const data = await sendPresigned(s.client, req, body, { what: o.what, check: o.check, before: o.before });
+      logExecution({ ...base, status: "success", meta: { ...base.meta, response: data } });
       return data;
     } catch (err) {
-      logExecution({ type: "bridge", exchange: "pacifica", symbol: "USDC", side: req.type, size, status: fundsFailStatus(err), dryRun: false, error: err instanceof Error ? err.message : String(err), meta: { ...meta, idempotencyKey: req.idempotencyKey } });
+      logExecution({ ...base, status: fundsFailStatus(err), error: err instanceof Error ? err.message : String(err) });
       throw err;
     }
   }
+
+  const keyOf = (raw: string | undefined): string => (raw === undefined ? randomUUID() : requireIdempotencyKey(raw));
 
   // ═══════════════════════════ PRINT ═══════════════════════════
 
@@ -118,10 +147,10 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
       const games = await fetchPrintGames(publicClient());
       if (isJson()) return printJson(jsonOk(games));
       console.log(chalk.white.bold("\n  Pacifica Print products"));
-      console.log(makeTable(["game", "asset", "cycle", "max lev", "target from mark", "deposit cap", "pool cap"],
+      console.log(makeTable(["game", "asset", "cycle", "max lev", "target from mark", "product cap (total)", "pool cap (total)"],
         games.map((g) => [g.game, g.asset, g.cycleDays === null ? "?" : `${g.cycleDays}d`, g.maxLeverage === null ? "?" : `${g.maxLeverage}x`,
-          g.targetDistancePct.max === null ? "?" : `${g.targetDistancePct.min}%–${g.targetDistancePct.max}%`, g.depositCap ?? "—", g.poolDepositCap ?? "—"])));
-      console.log(chalk.gray(`  Min deposit ${games[0]?.minDeposit ?? "10"} USDC · fills/liquidation only at each cycle's checkpoint · cancel settles at the cycle's end\n`));
+          g.targetDistancePct.max === null ? "?" : `${g.targetDistancePct.min}%–${g.targetDistancePct.max}%`, g.productDepositCap ?? "—", g.poolDepositCap ?? "—"])));
+      console.log(chalk.gray(`  Min deposit ${games[0]?.minDeposit ?? "10"} USDC · while resting, fill/liquidation only at each cycle's checkpoint · after a fill: ordinary perp position · cancel settles at the cycle's end\n`));
     });
 
   const orderArgs = (c: Command): Command => c
@@ -190,20 +219,27 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
   supportsDryRun(orderArgs(print.command("deposit").alias("open")))
     .description("Place a Print order (POST /game/deposit, deposit_to_game) — locks the deposit until it fills or a cancel settles at a cycle's end; supports --dry-run")
     .option("--account <address>", "With --dry-run: plan for this account without loading a key")
-    .action(async (gameArg: string, dirArg: string, deposit: string, o: { strike: string; leverage: string; cycles?: string; account?: string }, cmd: Command) => {
+    .option("--idempotency-key <uuid>", "Re-send an earlier attempt with ITS key (only safe retry after ORDER_PENDING; default: a fresh key)")
+    .action(async (gameArg: string, dirArg: string, deposit: string, o: { strike: string; leverage: string; cycles?: string; account?: string; idempotencyKey?: string }, cmd: Command) => {
       assertPacifica();
       const dryRun = isDryRun(cmd);
+      const idempotencyKey = keyOf(o.idempotencyKey);
       const q = await quoteFrom(gameArg, dirArg, deposit, o);
       const s = await signing(o.account, dryRun);
+      const ordersBefore = (await fetchPrintPositions(publicClient(), s.identity.account)).length;
       const available = availableOf(await publicClient().getAccount(s.identity.account), s.identity.account);
       if (cmpDecimal(available, q.deposit) < 0) {
         throw new PerpError("INSUFFICIENT_BALANCE", `Print deposit ${q.deposit} USDC exceeds available_to_withdraw ${available}`, { exchange: "pacifica", remediation: "Deposit less, or free margin first (perp -e pacifica portfolio)" });
       }
-      const req = buildPrintDepositRequest(q, s.identity, { timestamp: Date.now(), idempotencyKey: randomUUID() });
+      const req = buildPrintDepositRequest(q, s.identity, { timestamp: Date.now(), idempotencyKey });
       if (!isJson()) printQuote(q);
       if (dryRun) return printDryRun(q, req, s.tier);
-      const data = await send(s, req, `Print deposit ${q.deposit} USDC ${q.game} ${q.direction} @ ${q.strikePrice}`, `perp -e pacifica print positions (idempotency_key ${req.idempotencyKey})`,
-        { action: "print_deposit", game: q.game, direction: q.direction, strike: q.strikePrice, leverage: q.leverage, cycles: q.cycles }, q.deposit);
+      const data = await send(s, req, {
+        what: `Print deposit ${q.deposit} USDC ${q.game} ${q.direction} @ ${q.strikePrice}`,
+        check: `perp -e pacifica print positions — look for a new ${q.game} ${q.direction} order with strikePrice ${q.strikePrice} and deposit ${q.deposit} (${ordersBefore} current order(s) before this request)`,
+        logType: "print_deposit", symbol: q.game, size: q.deposit, before: { printOrders: ordersBefore },
+        meta: { game: q.game, direction: q.direction, strike: q.strikePrice, leverage: q.leverage, cycles: q.cycles },
+      });
       const printAddress = typeof data.game_account_address === "string" ? data.game_account_address : null;
       if (isJson()) return printJson(jsonOk({ placed: true, printAddress, quote: q, idempotencyKey: req.idempotencyKey, response: data }));
       console.log(chalk.green(`\n  Print order placed: ${printAddress ?? "(no address in response)"}`));
@@ -211,20 +247,31 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
     });
 
   supportsDryRun(print.command("cancel <printAddress>").alias("end"))
-    .description("End a running Print order (POST /game/end, end_game) — it still runs to the end of the current cycle, then fills or returns the deposit + premiums; supports --dry-run")
+    .description("[UNOFFICIAL endpoint] End a running Print order (POST /game/end, end_game — not in the API docs; shape captured from app.pacifica.fi). It still runs to the end of the current cycle, then fills or returns the deposit + premiums. Live run needs --unverified-endpoint; supports --dry-run")
     .option("--account <address>", "With --dry-run: plan for this account without loading a key")
-    .action(async (addr: string, o: { account?: string }, cmd: Command) => {
+    .option("--unverified-endpoint", "Acknowledge that /game/end is undocumented (required for a live run)")
+    .action(async (addr: string, o: { account?: string; unverifiedEndpoint?: boolean }, cmd: Command) => {
       assertPacifica();
       const dryRun = isDryRun(cmd);
+      if (!dryRun && o.unverifiedEndpoint !== true) {
+        throw new PerpError("INVALID_PARAMS", "print cancel uses POST /game/end (end_game), which is not in the Pacifica API docs (apiStatus: unofficial)", {
+          exchange: "pacifica", apiStatus: "unofficial",
+          remediation: "Check it first with --dry-run, then re-run with --unverified-endpoint — or end the order on app.pacifica.fi",
+        });
+      }
       const s = await signing(o.account, dryRun);
       const p = requireEndable(await fetchPrintPositions(publicClient(), s.identity.account), requireAddress(addr));
       const req = buildPrintEndRequest(p.address, s.identity, { timestamp: Date.now() });
       const plan = { printAddress: p.address, game: p.game, settlesAt: p.currentCycleEndAt, settlesInDays: daysUntil(p.currentCycleEndAt, Date.now()), lockedNow: p.maxLoss };
       if (!isJson()) console.log(chalk.cyan(`\n  End ${p.address} (${p.game}): it keeps running until ${ts(p.currentCycleEndAt)}, then fills or returns ${p.maxLoss ?? p.deposit} USDC`));
-      if (dryRun) return printDryRun(plan, req, s.tier);
-      const data = await send(s, req, `Print end ${p.address}`, `perp -e pacifica print positions (status cancelling = accepted)`, { action: "print_end", printAddress: p.address, game: p.game }, p.deposit);
+      if (dryRun) return printDryRun(plan, req, s.tier, { apiStatus: "unofficial" });
+      const data = await send(s, req, {
+        what: `Print end ${p.address}`,
+        check: `perp -e pacifica print positions — order ${p.address} shows status "cancelling" if the end was accepted (it was "${p.status}" before)`,
+        logType: "print_end", symbol: p.game, size: p.deposit, before: { status: p.status }, meta: { printAddress: p.address, game: p.game, apiStatus: "unofficial" },
+      });
       const at = typeof data.scheduled_end_at_ms === "number" ? data.scheduled_end_at_ms : null;
-      if (isJson()) return printJson(jsonOk({ endRequested: true, printAddress: p.address, scheduledEndAt: at, response: data }));
+      if (isJson()) return printJson(jsonOk({ endRequested: true, apiStatus: "unofficial", printAddress: p.address, scheduledEndAt: at, response: data }));
       console.log(chalk.green(`\n  End requested for ${p.address} — settles at ${ts(at)} (the order runs until then).\n`));
     });
 
@@ -253,11 +300,11 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
       assertPacifica();
       const c = publicClient();
       const v = findVault(await fetchVaults(c, null), ref);
-      const [acct, positions, whitelist] = await Promise.all([c.getAccount(v.address), c.getPositions(v.address), fetchDepositWhitelist(c, v.address)]);
+      const [acct, positions, whitelist] = await Promise.all([c.getAccount(v.address), c.getPositions(v.address), whitelistOrNull(c, v.address)]);
       const out = {
         ...v,
         live: { accountEquity: acct.account_equity ?? null, availableToWithdraw: acct.available_to_withdraw ?? null, positions: positions.map((p) => ({ symbol: p.symbol, side: p.side, amount: p.amount, entryPrice: p.entry_price })) },
-        depositWhitelist: whitelist,
+        depositWhitelist: { apiStatus: DEPOSIT_WHITELIST_API_STATUS, addresses: whitelist },
         withdrawWindow: withdrawWindowAt(v.config, Date.now()),
       };
       if (isJson()) return printJson(jsonOk(out));
@@ -268,7 +315,7 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
         "vault free balance": out.live.availableToWithdraw ?? "—", "performance fee": v.config.managerProfitShare ?? "none", "deposit cap": v.config.depositCap ?? "none",
         "lock-up after deposit": v.config.depositMinDurationMs === null ? "none" : `${(v.config.depositMinDurationMs / 3_600_000).toFixed(2)} h (reset by every deposit)`,
         "withdrawal window": `${windowLabel(v)}${out.withdrawWindow.restricted ? ` — now ${out.withdrawWindow.open ? "OPEN until" : "closed, opens"} ${ts(out.withdrawWindow.nextChangeAt)}` : ""}`,
-        "deposit whitelist": whitelist.length === 0 ? "none (anyone)" : `${whitelist.length} address(es)`, APY: "not published",
+        "deposit whitelist": `${whitelist === null ? "unknown" : whitelist.length === 0 ? "none (anyone)" : `${whitelist.length} address(es)`} (unofficial endpoint; the venue decides)`, APY: "not published",
       })) console.log(`  ${k.padEnd(22)} ${val}`);
       if (out.live.positions.length > 0) console.log("\n" + makeTable(["symbol", "side", "amount", "entry"], out.live.positions.map((p) => [p.symbol, p.side, p.amount, p.entryPrice])));
       console.log("");
@@ -291,18 +338,25 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
   supportsDryRun(vault.command("deposit <vault> <amount>"))
     .description("Deposit USDC from the trading balance into a vault (POST /lake/deposit, deposit_to_lake) for shares at NAV; supports --dry-run")
     .option("--account <address>", "With --dry-run: plan for this account without loading a key")
-    .action(async (ref: string, amount: string, o: { account?: string }, cmd: Command) => {
+    .option("--idempotency-key <uuid>", "Re-send an earlier attempt with ITS key (only safe retry after ORDER_PENDING; default: a fresh key)")
+    .action(async (ref: string, amount: string, o: { account?: string; idempotencyKey?: string }, cmd: Command) => {
       assertPacifica();
       const dryRun = isDryRun(cmd);
+      const idempotencyKey = keyOf(o.idempotencyKey);
       const c = publicClient();
-      const s = await signing(o.account, dryRun);
+      const s = await masterSigning(o.account, dryRun);
       const v = findVault(await fetchVaults(c, s.identity.account), ref);
-      const [info, whitelist] = await Promise.all([c.getAccount(s.identity.account), fetchDepositWhitelist(c, v.address)]);
+      const [info, whitelist] = await Promise.all([c.getAccount(s.identity.account), whitelistOrNull(c, v.address)]);
       const plan = planVaultDeposit(v, s.identity.account, amount, { availableToWithdraw: availableOf(info, s.identity.account), whitelist });
-      const req = buildVaultDepositRequest(v.address, plan.amount, s.identity, { timestamp: Date.now(), idempotencyKey: randomUUID() });
-      if (!isJson()) printWarnings(`Depositing ${plan.amount} USDC into ${v.nickname ?? v.address} (≈ ${plan.estimatedShares ?? "?"} shares)`, plan.warnings);
-      if (dryRun) return printDryRun(plan, req, s.tier);
-      const data = await send(s, req, `vault deposit ${plan.amount} USDC into ${v.address}`, `perp -e pacifica vault positions (idempotency_key ${req.idempotencyKey})`, { action: "vault_deposit", vault: v.address }, plan.amount);
+      const sharesBefore = heldShares(v, s.identity.account).shares ?? "0";
+      const req = buildVaultDepositRequest(v.address, plan.amount, s.identity, { timestamp: Date.now(), idempotencyKey });
+      if (!isJson()) printWarnings(`Depositing ${plan.amount} USDC into vault ${v.address} "${v.nickname ?? ""}" (manager ${v.manager ?? "none"}) — ≈ ${plan.estimatedShares ?? "?"} shares; signer: master`, plan.warnings);
+      if (dryRun) return printDryRun(plan, req, s.tier === null ? null : "master");
+      const data = await send(s, req, {
+        what: `vault deposit ${plan.amount} USDC into ${v.address}`,
+        check: `perp -e pacifica vault positions — shares in vault ${v.address} (${sharesBefore} before this request)`,
+        logType: "vault_deposit", symbol: "USDC", size: plan.amount, before: { shares: sharesBefore }, meta: { vault: v.address, manager: v.manager },
+      });
       const minted = typeof data.shares_minted === "string" ? data.shares_minted : null;
       if (isJson()) return printJson(jsonOk({ deposited: true, vault: v.address, amount: plan.amount, sharesMinted: minted, idempotencyKey: req.idempotencyKey, response: data }));
       console.log(chalk.green(`\n  Deposited ${plan.amount} USDC — shares minted: ${minted ?? "(not in response)"}\n`));
@@ -312,22 +366,28 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
     .description("Redeem vault shares back into YOUR OWN trading balance (POST /lake/withdraw, withdraw_from_lake; no destination exists); supports --dry-run")
     .option("--all", "Redeem every share the account holds")
     .option("--account <address>", "With --dry-run: plan for this account without loading a key")
-    .action(async (ref: string, shares: string | undefined, o: { all?: boolean; account?: string }, cmd: Command) => {
+    .option("--idempotency-key <uuid>", "Re-send an earlier attempt with ITS key (only safe retry after ORDER_PENDING; default: a fresh key)")
+    .action(async (ref: string, shares: string | undefined, o: { all?: boolean; account?: string; idempotencyKey?: string }, cmd: Command) => {
       assertPacifica();
       if ((shares === undefined) === (o.all !== true)) {
         throw new PerpError("INVALID_PARAMS", "vault withdraw: give exactly one of <shares> or --all", { remediation: "e.g. perp -e pacifica vault withdraw <vault> 50 | --all" });
       }
       const dryRun = isDryRun(cmd);
+      const idempotencyKey = keyOf(o.idempotencyKey);
       const c = publicClient();
       const s = await signing(o.account, dryRun);
       const v = findVault(await fetchVaults(c, s.identity.account), ref);
       const lake = await c.getAccount(v.address);
       const plan = planVaultWithdraw(v, s.identity.account, o.all === true ? "all" : (shares as string), { nowMs: Date.now(), vaultAvailableToWithdraw: isPlainDecimal(lake.available_to_withdraw) ? lake.available_to_withdraw : null });
-      const req = buildVaultWithdrawRequest(v.address, plan.shares, s.identity, { timestamp: Date.now(), idempotencyKey: randomUUID() });
+      const req = buildVaultWithdrawRequest(v.address, plan.shares, s.identity, { timestamp: Date.now(), idempotencyKey });
       if (req.body.account !== s.identity.account) throw new Error("vault withdraw body account mismatch");
-      if (!isJson()) printWarnings(`Redeeming ${plan.shares} shares (≈ ${plan.estimatedAmount ?? "?"} USDC) from ${v.nickname ?? v.address} to ${plan.destination}`, plan.warnings);
+      if (!isJson()) printWarnings(`Redeeming ${plan.shares} shares (≈ ${plan.estimatedAmount ?? "?"} USDC) from vault ${v.address} "${v.nickname ?? ""}" (manager ${v.manager ?? "none"}) to ${plan.destination}`, plan.warnings);
       if (dryRun) return printDryRun(plan, req, s.tier);
-      const data = await send(s, req, `vault withdraw ${plan.shares} shares from ${v.address}`, `perp -e pacifica vault positions and perp -e pacifica portfolio (idempotency_key ${req.idempotencyKey})`, { action: "vault_withdraw", vault: v.address, shares: plan.shares }, plan.estimatedAmount ?? plan.shares);
+      const data = await send(s, req, {
+        what: `vault withdraw ${plan.shares} shares from ${v.address}`,
+        check: `perp -e pacifica vault positions — shares in vault ${v.address} (${plan.heldShares} before this request)`,
+        logType: "vault_withdraw", symbol: "USDC", size: plan.shares, before: { shares: plan.heldShares }, meta: { vault: v.address, estimatedAmount: plan.estimatedAmount },
+      });
       const amt = typeof data.amount_withdrawn === "string" ? data.amount_withdrawn : null;
       if (isJson()) return printJson(jsonOk({ withdrawn: true, vault: v.address, shares: plan.shares, amountWithdrawn: amt, destination: plan.destination, idempotencyKey: req.idempotencyKey, response: data }));
       console.log(chalk.green(`\n  Redeemed ${plan.shares} shares → ${amt ?? "(amount not in response)"} USDC credited to ${plan.destination}\n`));
@@ -335,6 +395,11 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────
+
+/** Unofficial whitelist read: null when unreadable (advisory only — the venue's refusal is final). */
+async function whitelistOrNull(c: PacificaClient, vault: string): Promise<string[] | null> {
+  try { return await fetchDepositWhitelist(c, vault); } catch { return null; }
+}
 
 function requireAddress(s: string): string {
   const a = s.trim();
@@ -387,7 +452,8 @@ function printQuote(q: PrintQuote): void {
     leverage: `${q.leverage}x  → notional ${q.notional} USDC`,
     "target / mark": `${q.strikePrice} / ${q.markPrice}  (${q.targetDistancePct}% away; allowed ${q.allowedTargetDistancePct.min}%–${q.allowedTargetDistancePct.max}%)`,
     "size on fill": `${q.size} ${q.asset} at exactly ${q.strikePrice}`,
-    "liquidation": `${q.docsLiquidationPrice ?? "none (≤ 0)"} by the docs formula — the venue liquidates EARLIER (maintenance margin, at checkpoints)`,
+    "liquidation": `${q.docsLiquidationPrice ?? "unknown (docs formula gives ≤ 0)"} — docs-formula outer bound only; observed earlier in one live case, venue trigger unpublished`,
+    "after a fill": "ordinary position in your main account: continuous mark-price liquidation, nets with an existing position, may be cross-margined (perp -e pacifica account positions)",
     "MAX LOSS": `${q.maxLoss} USDC deposit + every premium credited — never more`,
     cycles: q.cycles === null ? `rolls every ${q.cycleDays}d until cancelled` : `${q.cycles} × ${q.cycleDays}d (up to ${q.maxDurationDays} days)`,
     "cancel settles": `at the end of the running cycle (up to ${q.cancelSettlesWithinDays}d)`,

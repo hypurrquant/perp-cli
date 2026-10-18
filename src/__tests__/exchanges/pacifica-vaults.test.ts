@@ -80,6 +80,29 @@ describe("parsing", () => {
 
 function hatchAddr(): string { return findVault(live, "The Hatch").address; }
 
+describe("findVault: duplicate nicknames are never resolved silently", () => {
+  // live /lake/list 2026-10-19: "Pacifica Vault" (49CuhGAM…) and "Pacifica vault" (6zZcfPBx…), different managers
+  const a = parseVault({ ...DOC_LAKE, address: "49CuhGAMaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", nickname: "Pacifica Vault", manager: "4kfunezuMgrA" });
+  const b = parseVault({ ...DOC_LAKE, address: "6zZcfPBxbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", nickname: "Pacifica vault", manager: "9oR4tFBZMgrB" });
+  const list = [b, a, doc];
+  it("2+ case-insensitive matches → INVALID_PARAMS listing every candidate (address, manager, TVL)", () => {
+    for (const ref of ["Pacifica Vault", "pacifica vault", "Pacifica vault"]) {
+      try { findVault(list, ref); throw new Error("no throw"); } catch (e) {
+        const st = (e as { structured: { code: string; message: string; details: { candidates: Array<{ address: string; manager: string; tvl: string }> } } }).structured;
+        expect(st.code).toBe("INVALID_PARAMS");
+        expect(st.details.candidates.map((c) => c.address).sort()).toEqual([a.address, b.address].sort());
+        expect(st.details.candidates[0]).toHaveProperty("tvl");
+        expect(st.message).toMatch(/4kfunezuMgrA/);
+        expect(st.message).toMatch(/9oR4tFBZMgrB/);
+      }
+    }
+  });
+  it("the address always resolves; a unique nickname resolves", () => {
+    expect(findVault(list, b.address)).toBe(b);
+    expect(findVault(list, "btc basis vault")).toBe(doc);
+  });
+});
+
 describe("withdrawal window (epoch-anchored, docs example: 1h every day)", () => {
   const c = { ...doc.config, withdrawWindowS: 86400, withdrawDurationS: 3600 };
   it("open 00:00–01:00 UTC, closed after", () => {
@@ -107,9 +130,26 @@ describe("planVaultDeposit", () => {
     expect(planVaultDeposit(doc, "8zFqj1Kp...", "200000", { ...ok, availableToWithdraw: "1000000" }).role).toBe("manager");
   });
 
-  it("a non-empty deposit whitelist must include the account", () => {
-    expect(code(() => planVaultDeposit(doc, LP, "10", { ...ok, whitelist: ["Someone"] }))).toBe("POLICY_DENIED");
-    expect(code(() => planVaultDeposit(doc, LP, "10", { ...ok, whitelist: [LP] }))).toBeUndefined();
+  it("deposit whitelist (unofficial endpoint) is advisory: a warning, the venue's refusal is final", () => {
+    const excluded = planVaultDeposit(doc, LP, "10", { ...ok, whitelist: ["Someone"] });
+    expect(excluded.warnings.join(" ")).toMatch(/unofficial endpoint.*will likely refuse/);
+    expect(planVaultDeposit(doc, LP, "10", { ...ok, whitelist: null }).warnings.join(" ")).toMatch(/whitelist unknown/);
+    expect(planVaultDeposit(doc, LP, "10", { ...ok, whitelist: [LP] }).warnings.join(" ")).not.toMatch(/whitelist/);
+  });
+
+  it("refuses a class whose NAV is zero or undefined (live XAU_Stable_Growth: lp_shares 10, lp_balance 0)", () => {
+    const zero = parseVault({ ...DOC_LAKE, nickname: "XAU_Stable_Growth", lp_shares: "10.00000000000000330077666654", lp_balance: "0", user_share: null });
+    expect(code(() => planVaultDeposit(zero, LP, "10", ok))).toBe("INVALID_PARAMS");
+    const undef = parseVault({ ...DOC_LAKE, lp_shares: "0", lp_balance: "5", user_share: null });
+    expect(code(() => planVaultDeposit(undef, LP, "10", ok))).toBe("INVALID_PARAMS");
+    const empty = parseVault({ ...DOC_LAKE, lp_shares: "0", lp_balance: "0", user_share: null });
+    expect(planVaultDeposit(empty, LP, "10", ok).estimatedShares).toBe("10"); // 1:1
+  });
+
+  it("the plan names the resolved vault address and manager; leading zeros refused", () => {
+    expect(planVaultDeposit(doc, LP, "10", ok)).toMatchObject({ vault: doc.address, manager: doc.manager });
+    expect(planVaultDeposit(doc, LP, "10", ok).warnings.join(" ")).toMatch(/Manager: 8zFqj1Kp/);
+    expect(code(() => planVaultDeposit(doc, LP, "010", ok))).toBe("INVALID_PARAMS");
   });
 
   it("warns about the lock-up reset, window and fee; estimates shares at NAV", () => {
@@ -130,6 +170,7 @@ describe("planVaultWithdraw", () => {
     expect(p).toMatchObject({ role: "lp", shares: "500", destination: LP, estimatedAmount: "505.5555555555" });
     expect(code(() => planVaultWithdraw(unrestricted, LP, "500.01", { nowMs: now, vaultAvailableToWithdraw: null }))).toBe("SIZE_TOO_LARGE");
     expect(code(() => planVaultWithdraw(unrestricted, LP, "-1", { nowMs: now, vaultAvailableToWithdraw: null }))).toBe("INVALID_PARAMS");
+    expect(code(() => planVaultWithdraw(unrestricted, LP, "010", { nowMs: now, vaultAvailableToWithdraw: null }))).toBe("INVALID_PARAMS");
   });
 
   it("manager redeems manager shares", () => {

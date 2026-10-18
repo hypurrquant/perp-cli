@@ -86,12 +86,12 @@ export async function sendPresigned(
   client: Pick<PacificaClient, "postPresigned">,
   req: PresignedRequest,
   signedBody: Record<string, unknown>,
-  ctx: { what: string; check: string },
+  ctx: { what: string; check: string; before?: Record<string, unknown> },
 ): Promise<Record<string, unknown>> {
-  const details = { exchange: "pacifica", path: req.path, idempotencyKey: req.idempotencyKey };
+  const details = { exchange: "pacifica", path: req.path, idempotencyKey: req.idempotencyKey, ...(ctx.before !== undefined ? { before: ctx.before } : {}) };
   const pending = (why: string): PerpError => new PerpError("ORDER_PENDING", `Pacifica ${ctx.what}: outcome unknown — ${why}`, {
     ...details,
-    remediation: `Do NOT resubmit — the ${ctx.what} may have been executed. Check first: ${ctx.check}`,
+    remediation: pendingRemediation(ctx.what, ctx.check, req.idempotencyKey),
   });
   let raw: unknown;
   try {
@@ -128,6 +128,27 @@ export async function sendPresigned(
     throw pending(`response without a data object: ${JSON.stringify(raw).slice(0, 200)}`);
   }
   return data as Record<string, unknown>;
+}
+
+/**
+ * ORDER_PENDING remediation. With an idempotency key, the ONLY safe retry is the same request with
+ * the same key (`--idempotency-key`): the venue answers a duplicate with HTTP 409 instead of
+ * executing it twice. How long Pacifica remembers a key is not documented (unverified).
+ */
+export function pendingRemediation(what: string, check: string, idempotencyKey: string | null): string {
+  const base = `Do NOT resubmit with a new request — the ${what} may have been executed. Check first: ${check}.`;
+  return idempotencyKey === null
+    ? `${base} This action carries no idempotency key: run it again only once that check shows it did not take effect.`
+    : `${base} If you must retry, the only safe way is the same command with --idempotency-key ${idempotencyKey} (the venue refuses a duplicate key with HTTP 409; its dedupe window is unverified).`;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** `--idempotency-key`: a full UUID string (API docs), lowercased; refused otherwise. */
+export function requireIdempotencyKey(raw: string): string {
+  const k = raw.trim();
+  if (!UUID.test(k)) throw new PerpError("INVALID_PARAMS", `--idempotency-key must be a full UUID (got "${raw}")`, { remediation: "Pass the idempotencyKey reported by the earlier attempt" });
+  return k.toLowerCase();
 }
 
 function venueErrorOf(text: string): string {

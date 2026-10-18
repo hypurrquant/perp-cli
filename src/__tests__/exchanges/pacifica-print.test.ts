@@ -100,13 +100,13 @@ describe("live /game/config parsing", () => {
     expect(byId.get("BTC_24H")).toMatchObject({ schema: 1, asset: "BTC", cycleDays: 1, maxLeverage: "40", minDeposit: "10", targetDistancePct: { min: "0.5", max: "10" } });
     expect(byId.get("BTC_7D")).toMatchObject({ cycleDays: 7, targetDistancePct: { max: "20" } });
     expect(byId.get("BTC_1M")).toMatchObject({ cycleDays: 30, targetDistancePct: { max: "40" } });
-    expect(byId.get("BTC_24H")?.depositCap).toBe("250000");
+    expect(byId.get("BTC_24H")?.productDepositCap).toBe("250000");
     expect(byId.get("BTC_24H")?.poolAddress).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
   });
 
   it("an undocumented cycle kind → cycleDays / max distance null (never a guessed range)", () => {
     const [g] = parsePrintGames({ configs: [{ game: "X_2H", target_asset: "X", segment_kind: "fixed_hours", segment_value: 2, max_leverage: "5" }] });
-    expect(g).toMatchObject({ cycleDays: null, targetDistancePct: { max: null }, depositCap: null });
+    expect(g).toMatchObject({ cycleDays: null, targetDistancePct: { max: null }, productDepositCap: null });
     expect(() => quotePrintOrder(g, order({ game: "X_2H" }), MARKET)).toThrow(expect.objectContaining({ structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED" }) }));
   });
 
@@ -172,7 +172,7 @@ describe("live /game/accounts, /game/history_summary, /game/history parsing", ()
     const liqMark = Number(ev[0].markPrice);
     const docs = Number(printLiquidationPrice("short", "1150.95", "922.93", "10", "23.797135"));
     expect(docs).toBeGreaterThan(liqMark);
-    expect(PRINT_LIQUIDATION_NOTE).toMatch(/earlier/);
+    expect(PRINT_LIQUIDATION_NOTE).toMatch(/observed earlier in one live case \(2026-10-16\); the venue's trigger is unpublished/);
   });
 });
 
@@ -211,15 +211,22 @@ describe("quotePrintOrder validation (documented limits)", () => {
     const r = quotePrintOrder(btc24, order({ cycles: 7 }), MARKET);
     expect(r).toMatchObject({ schema: 1, leverage: "10", cycles: 7, maxDurationDays: 7, maxLoss: "100", cancelSettlesWithinDays: 1, estimatedPremium: null, targetDistancePct: "1.4285" });
     expect(r.notes.join(" ")).toMatch(/Max loss/);
+    // resting vs filled risk: checkpoint-only applies BEFORE a fill; after it, ordinary perp rules
+    expect(r.notes.join(" ")).toMatch(/While resting, fill and liquidation are checked only at each 1-day checkpoint/);
+    expect(r.notes.join(" ")).toMatch(/After a fill it is an ordinary position in your main account: continuous mark-price liquidation, it nets/);
+    expect(r.notes.join(" ")).toMatch(/account positions/);
     expect(quotePrintOrder(btc24, order(), MARKET).maxDurationDays).toBeNull();
   });
 
-  it("deposit: min 10, USDC decimals, product cap", () => {
+  it("deposit: min 10, USDC decimals, no leading zeros; the product cap (a pool-wide total) is left to the venue", () => {
     expect(code(q({ deposit: "9.99" }))).toBe("INVALID_PARAMS");
     expect(code(q({ deposit: "10" }))).toBeUndefined();
     expect(code(q({ deposit: "10.1234567" }))).toBe("INVALID_PARAMS");
     expect(code(q({ deposit: "1e3" }))).toBe("INVALID_PARAMS");
-    expect(code(q({ deposit: "250000.01", leverage: "1" }))).toBe("INVALID_PARAMS");
+    expect(code(q({ deposit: "0100" }))).toBe("INVALID_PARAMS");
+    expect(code(q({ deposit: "00.5" }))).toBe("INVALID_PARAMS");
+    expect(code(q({ strikePrice: "069000" }))).toBe("INVALID_PARAMS");
+    expect(code(q({ deposit: "250000.01", leverage: "1" }))).toBeUndefined();
   });
 
   it("leverage: whole number 1 … product max", () => {
@@ -260,5 +267,30 @@ describe("requireEndable", () => {
   it("accepts a printing order", () => {
     const running = parsePrintPosition({ ...(fx("game-accounts.json").data as { game_accounts: Record<string, unknown>[] }).game_accounts[0], user_initiated_game_end: false });
     expect(requireEndable([running], running.address).status).toBe("printing");
+  });
+});
+
+describe("unofficial end_game matches the captured app.pacifica.fi request shape", () => {
+  const app = fx("app-unofficial-requests.json") as { end_game: { signedMessage: { type: string; data: Record<string, unknown> }; body: Record<string, unknown> } };
+  it("same type, data keys and body keys (expiry_window value aside: the app uses 300000)", () => {
+    const r = buildPrintEndRequest("PrintAcc", { account: "ACC", agentWallet: "AG" }, { timestamp: 1 });
+    const msg = JSON.parse(r.message) as { type: string; data: Record<string, unknown> };
+    expect(msg.type).toBe(app.end_game.signedMessage.type);
+    expect(Object.keys(msg.data)).toEqual(Object.keys(app.end_game.signedMessage.data));
+    expect(Object.keys(r.body).sort()).toEqual(Object.keys(app.end_game.body).filter((k) => k !== "signature").sort());
+  });
+});
+
+describe("PacificaClient.getEnvelope (read path)", () => {
+  it("non-JSON 200 → EXCHANGE_ERROR; timeout → TIMEOUT; always with a fetch timeout signal", async () => {
+    const { PacificaClient } = await import("../../pacifica/client.js");
+    const { vi } = await import("vitest");
+    const signals: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_u: unknown, init?: { signal?: unknown }) => { signals.push(init?.signal); return new Response("<html>maintenance</html>", { status: 200 }); }));
+    await expect(new PacificaClient().getEnvelope("/game/config")).rejects.toMatchObject({ structured: { code: "EXCHANGE_ERROR" } });
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
+    vi.stubGlobal("fetch", vi.fn(async () => { throw Object.assign(new Error("timeout"), { name: "TimeoutError" }); }));
+    await expect(new PacificaClient().getEnvelope("/game/config")).rejects.toMatchObject({ structured: { code: "TIMEOUT" } });
+    vi.unstubAllGlobals();
   });
 });

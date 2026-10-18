@@ -27,7 +27,7 @@ import { PerpError } from "../errors.js";
 import type { PacificaClient } from "../pacifica/client.js";
 import { mulDecimal, subDecimal } from "./precision.js";
 import { cmpDecimal, divDecimal, isPlainDecimal, trimDecimal } from "./pacifica-decimal.js";
-import { envelopeData, requireUsdcAmount } from "./pacifica-print.js";
+import { envelopeData, requireUsdcAmount, PLAIN_POSITIVE } from "./pacifica-print.js";
 import { buildPresigned, type PresignedIdentity, type PresignedRequest } from "./pacifica-presigned.js";
 
 /** docs vaults/depositing: "Minimum deposit — Constant 10 USDC." */
@@ -158,15 +158,31 @@ export async function fetchVaults(client: Reader, account: string | null): Promi
   return parseVaultList(envelopeData(env, "/lake/list"));
 }
 
+/**
+ * Vault by address, or by a nickname (case-insensitive) that matches EXACTLY ONE vault. Nicknames
+ * are not unique in practice (live 2026-10-19: "Pacifica Vault" / "Pacifica vault", "Shark vault" /
+ * "shark vault"), so two or more matches are INVALID_PARAMS listing every candidate — never the
+ * first / newest one (a copycat vault must not receive a deposit).
+ */
 export function findVault(vaults: PacificaVault[], ref: string): PacificaVault {
-  const v = vaults.find((x) => x.address === ref) ?? vaults.find((x) => x.nickname !== null && x.nickname.toLowerCase() === ref.toLowerCase());
-  if (v === undefined) {
-    throw new PerpError("SYMBOL_NOT_FOUND", `No Pacifica vault "${ref}" (address or exact nickname)`, {
+  const r = ref.trim();
+  const byAddress = vaults.find((x) => x.address === r);
+  if (byAddress !== undefined) return byAddress;
+  const matches = vaults.filter((x) => x.nickname !== null && x.nickname.toLowerCase() === r.toLowerCase());
+  if (matches.length === 1) return matches[0];
+  if (matches.length === 0) {
+    throw new PerpError("SYMBOL_NOT_FOUND", `No Pacifica vault "${ref}" (address or nickname)`, {
       exchange: "pacifica", remediation: "List them: perp -e pacifica vault list",
     });
   }
-  return v;
+  const candidates = matches.map((x) => ({ address: x.address, nickname: x.nickname, manager: x.manager, tvl: x.tvl }));
+  throw new PerpError("INVALID_PARAMS", `Vault nickname "${ref}" is ambiguous — ${matches.length} vaults match: ${candidates.map((c) => `${c.address} (${c.nickname}, manager ${c.manager ?? "none"}, TVL ${c.tvl})`).join("; ")}`, {
+    exchange: "pacifica", candidates, remediation: "Pass the vault ADDRESS (check its manager first: perp -e pacifica vault info <address>)",
+  });
 }
+
+/** UNOFFICIAL endpoint (not in the API docs; used by app.pacifica.fi). Advisory only — the venue's own refusal is final. */
+export const DEPOSIT_WHITELIST_API_STATUS = "unofficial" as const;
 
 export async function fetchDepositWhitelist(client: Reader, vault: string): Promise<string[]> {
   const data = envelopeData(await client.getEnvelope("/lake/get_deposit_whitelist", { lake: vault }), "/lake/get_deposit_whitelist");
@@ -204,6 +220,7 @@ export interface VaultDepositPlan {
   schema: 1;
   vault: string;
   nickname: string | null;
+  manager: string | null;
   role: "manager" | "lp";
   amount: string;
   /** amount × shares ÷ balance of the class now (the venue mints at the post-sync NAV). */
@@ -216,27 +233,38 @@ export interface VaultDepositPlan {
  * Validate a deposit (docs vaults/depositing: min 10 USDC, deposit cap on the LP balance,
  * available_to_withdraw, deposit whitelist). Throws INVALID_PARAMS / INSUFFICIENT_BALANCE / POLICY_DENIED.
  */
-export function planVaultDeposit(v: PacificaVault, account: string, amountRaw: string, ctx: { availableToWithdraw: string; whitelist: string[] }): VaultDepositPlan {
+export function planVaultDeposit(v: PacificaVault, account: string, amountRaw: string, ctx: { availableToWithdraw: string; whitelist: string[] | null }): VaultDepositPlan {
   const amount = requireUsdcAmount(amountRaw, "vault deposit");
   const where = `vault ${v.nickname ?? v.address}`;
   if (cmpDecimal(amount, VAULT_MIN_DEPOSIT_USDC) < 0) {
     throw new PerpError("INVALID_PARAMS", `${where}: deposit ${amount} USDC is below the ${VAULT_MIN_DEPOSIT_USDC} USDC minimum`, { exchange: "pacifica", remediation: `Deposit at least ${VAULT_MIN_DEPOSIT_USDC} USDC` });
   }
   const { role } = heldShares(v, account);
+  // NAV of the class receiving the deposit must be defined and positive (docs: shares = amount ×
+  // shares ÷ balance; 1:1 only when the class is EMPTY). Live: XAU_Stable_Growth had lp_shares 10,
+  // lp_balance 0 — a deposit there would be priced at NAV 0.
+  const [clsShares, clsBalance] = role === "lp" ? [v.lpShares, v.lpBalance] : [v.managerShares, v.managerBalance];
+  const sharesZero = cmpDecimal(clsShares, "0") === 0;
+  if (sharesZero ? cmpDecimal(clsBalance, "0") !== 0 : cmpDecimal(clsBalance, "0") <= 0) {
+    throw new PerpError("INVALID_PARAMS", `${where}: ${role} NAV is ${sharesZero ? "undefined" : "zero"} (${role} shares ${clsShares}, balance ${clsBalance}) — a deposit cannot be priced`, {
+      exchange: "pacifica", remediation: "Pick another vault (perp -e pacifica vault list)",
+    });
+  }
   if (role === "lp" && v.config.depositCap !== null && cmpDecimal(add(v.lpBalance, amount), v.config.depositCap) > 0) {
     throw new PerpError("INVALID_PARAMS", `${where}: LP balance ${v.lpBalance} + ${amount} exceeds the deposit cap ${v.config.depositCap} USDC`, {
       exchange: "pacifica", remediation: `Deposit at most ${subDecimal(v.config.depositCap, v.lpBalance)} USDC`,
     });
-  }
-  if (ctx.whitelist.length > 0 && !ctx.whitelist.includes(account)) {
-    throw new PerpError("POLICY_DENIED", `${where} accepts deposits only from its whitelist, which does not include ${account}`, { exchange: "pacifica", remediation: "Ask the vault creator to whitelist the account, or pick another vault" });
   }
   if (cmpDecimal(ctx.availableToWithdraw, amount) < 0) {
     throw new PerpError("INSUFFICIENT_BALANCE", `${where}: deposit ${amount} USDC exceeds available_to_withdraw ${ctx.availableToWithdraw}`, { exchange: "pacifica", remediation: "Deposit less, or free margin first (perp -e pacifica portfolio)" });
   }
   const warnings: string[] = [
     "A vault is a third-party trading pool: you can lose up to the whole deposit (Pacifica does not vet or insure managers).",
+    `Manager: ${v.manager ?? "none"} — verify this address is the manager you intend to fund.`,
   ];
+  // Unofficial whitelist endpoint: advisory only; the venue's refusal is final.
+  if (ctx.whitelist === null) warnings.push("Deposit whitelist unknown (unofficial endpoint unreadable); the venue refuses if the vault restricts depositors.");
+  else if (ctx.whitelist.length > 0 && !ctx.whitelist.includes(account)) warnings.push(`The vault's deposit whitelist (unofficial endpoint) lists ${ctx.whitelist.length} address(es), not ${account}: the venue will likely refuse.`);
   const lock = v.config.depositMinDurationMs;
   if (lock !== null && lock > 0) warnings.push(`Lock-up: no withdrawal for ${(lock / 3_600_000).toFixed(2)} h after this deposit — and the timer restarts for your WHOLE balance in this vault.`);
   if (v.config.withdrawWindowS !== null && v.config.withdrawDurationS !== null) {
@@ -245,7 +273,7 @@ export function planVaultDeposit(v: PacificaVault, account: string, amountRaw: s
   if (v.manager === null) warnings.push("The vault has no manager yet (fresh vault): nobody trades it until a manager claims the seat.");
   if (v.config.managerProfitShare !== null) warnings.push(`Manager performance fee: ${v.config.managerProfitShare} of profit above the high-water mark.`);
   return {
-    schema: 1, vault: v.address, nickname: v.nickname, role, amount,
+    schema: 1, vault: v.address, nickname: v.nickname, manager: v.manager, role, amount,
     // docs: shares_minted = amount × shares ÷ balance of the class (1:1 when the class is empty)
     estimatedShares: role === "lp"
       ? (cmpDecimal(v.lpShares, "0") === 0 ? amount : divDecimal(mulDecimal(amount, v.lpShares), v.lpBalance, 6))
@@ -258,6 +286,7 @@ export interface VaultWithdrawPlan {
   schema: 1;
   vault: string;
   nickname: string | null;
+  manager: string | null;
   role: "manager" | "lp";
   shares: string;
   heldShares: string;
@@ -280,7 +309,7 @@ export function planVaultWithdraw(v: PacificaVault, account: string, sharesRaw: 
   if (sharesRaw === "all") shares = held.shares;
   else {
     const s = String(sharesRaw).trim();
-    if (!/^\d+(\.\d+)?$/.test(s) || !(Number(s) > 0)) throw new PerpError("INVALID_PARAMS", `shares must be a positive decimal number (got "${sharesRaw}")`, { exchange: "pacifica", remediation: "Pass the shares to redeem, or --all" });
+    if (!PLAIN_POSITIVE.test(s) || !(Number(s) > 0)) throw new PerpError("INVALID_PARAMS", `shares must be a positive decimal number without leading zeros (got "${sharesRaw}")`, { exchange: "pacifica", remediation: "Pass the shares to redeem, or --all" });
     shares = trimDecimal(s);
   }
   if (cmpDecimal(shares, held.shares) > 0) {
@@ -299,7 +328,7 @@ export function planVaultWithdraw(v: PacificaVault, account: string, sharesRaw: 
   if (estimatedAmount !== null && ctx.vaultAvailableToWithdraw !== null && cmpDecimal(estimatedAmount, ctx.vaultAvailableToWithdraw) > 0) {
     warnings.push(`The vault's free balance ${ctx.vaultAvailableToWithdraw} USDC is below the ≈${estimatedAmount} USDC redeemed: the venue may pay only part.`);
   }
-  return { schema: 1, vault: v.address, nickname: v.nickname, role: held.role, shares, heldShares: held.shares, estimatedAmount, destination: account, window, warnings };
+  return { schema: 1, vault: v.address, nickname: v.nickname, manager: v.manager, role: held.role, shares, heldShares: held.shares, estimatedAmount, destination: account, window, warnings };
 }
 
 // ── Write requests (pure) ───────────────────────────────────────────────

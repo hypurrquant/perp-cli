@@ -652,14 +652,32 @@ export class PacificaClient {
   // ==================== PRINT (game) + VAULT READS / PRE-SIGNED WRITES ====================
   // Shapes and parsing live in src/exchanges/pacifica-print.ts / pacifica-vaults.ts.
 
-  /** Unauthenticated GET that keeps the whole {success, data, has_more, next_cursor} envelope. */
+  /**
+   * Unauthenticated GET that keeps the whole {success, data, has_more, next_cursor} envelope.
+   * Timeout → TIMEOUT, transport failure → EXCHANGE_UNREACHABLE, non-JSON / non-object body →
+   * EXCHANGE_ERROR (a read: nothing can have changed).
+   */
   async getEnvelope(path: string, params: Record<string, string> = {}): Promise<Record<string, unknown>> {
     const url = new URL(`${this.baseUrl}${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-    const res = await fetch(url.toString(), { headers: this.headers() });
-    const text = await res.text();
+    let res: Response;
+    let text: string;
+    try {
+      res = await fetch(url.toString(), { headers: this.headers(), signal: AbortSignal.timeout(PACIFICA_POST_TIMEOUT_MS) });
+      text = await res.text();
+    } catch (e) {
+      const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+      throw new PerpError(timedOut ? "TIMEOUT" : "EXCHANGE_UNREACHABLE", `Pacifica GET ${path} ${timedOut ? `timed out after ${PACIFICA_POST_TIMEOUT_MS} ms` : `failed: ${extractErrorMessage(e)}`}`, {
+        exchange: "pacifica", remediation: "Retry; if it keeps failing check the network and Pacifica's status",
+      });
+    }
     if (!res.ok) throw new Error(`GET ${path} failed (${res.status}): ${text}`);
-    const json: unknown = JSON.parse(text);
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new PerpError("EXCHANGE_ERROR", `Pacifica GET ${path} returned a non-JSON body (HTTP ${res.status}): ${text.slice(0, 160)}`, { exchange: "pacifica" });
+    }
     if (json === null || typeof json !== "object" || Array.isArray(json)) {
       throw new PerpError("EXCHANGE_ERROR", `Pacifica GET ${path} returned a non-object body: ${text.slice(0, 160)}`, { exchange: "pacifica" });
     }
