@@ -3,6 +3,8 @@ import { PerpError } from "../../errors.js";
 import { isPacificaPerpetual } from "../../ws/pacifica-instrument.js";
 import { assertOk } from "./_http.js";
 import { withCache, TTL_MARKET } from "../../cache.js";
+import { getNetworkConfig } from "../../pacifica/constants.js";
+import { pacificaRateLimiter } from "../../pacifica/rate-limit.js";
 
 // ── Types ──
 
@@ -13,6 +15,20 @@ interface PacificaAsset {
 }
 
 // ── Fetchers ──
+
+/**
+ * Unauthenticated GET through the shared Pacifica credit limiter (the IP quota the adapter's
+ * keyless client also spends): pre-send throttle, headers recorded, HTTP 429 → RATE_LIMITED.
+ */
+async function pacificaPublicGet(url: string, what: string): Promise<Response> {
+  const rate = pacificaRateLimiter(getNetworkConfig(sharedApiNetwork()).restUrl, undefined);
+  await rate.throttle(what);
+  rate.noteSent();
+  const res = await fetch(url);
+  rate.observe(res);
+  if (res.status === 429) throw rate.rateLimitedError(what, res, await res.text());
+  return res;
+}
 
 const INFO_REMEDIATION = "The Pacifica /info response shape changed; retry, and report it if it persists";
 
@@ -25,7 +41,7 @@ const INFO_REMEDIATION = "The Pacifica /info response shape changed; retry, and 
  */
 async function fetchPacificaPerpSymbols(): Promise<Set<string>> {
   const symbols = await withCache(`pub:pac:${sharedApiNetwork()}:perps:list`, TTL_MARKET, async (): Promise<string[]> => {
-    const res = await fetch(PACIFICA_INFO_URL);
+    const res = await pacificaPublicGet(PACIFICA_INFO_URL, "GET /info");
     await assertOk(res, "Pacifica info");
     const json = (await res.json()) as unknown;
     if (json === null || typeof json !== "object" || !Array.isArray((json as Record<string, unknown>).data)) {
@@ -53,7 +69,7 @@ async function fetchPacificaPerpSymbols(): Promise<Set<string>> {
 
 /** `/info/prices` envelope reduced to perp rows (`{ data }`, the shape parsePacificaRaw reads). */
 async function fetchPacificaPerpPrices(): Promise<{ data: Record<string, unknown>[] }> {
-  const [res, perps] = await Promise.all([fetch(PACIFICA_API_URL), fetchPacificaPerpSymbols()]);
+  const [res, perps] = await Promise.all([pacificaPublicGet(PACIFICA_API_URL, "GET /info/prices"), fetchPacificaPerpSymbols()]);
   await assertOk(res, "Pacifica prices");
   const json = await res.json();
   const data = (json as Record<string, unknown>).data ?? json;

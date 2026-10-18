@@ -4,6 +4,13 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### NEW: Pacifica REST reads its rate-limit headers and slows down before HTTP 429
+
+- **Headers (docs: rate-limits; live mainnet 2026-10-19):** `ratelimit: "credits";r=980;t=22` (remaining, seconds until refresh) and `ratelimit-policy: "credits";q=1000;w=60` (quota, window) — credits ×10 (`q=1000` = the documented 100 credits / 60 s per IP). Parsed strictly (`src/pacifica/rate-limit.ts`): absent / malformed → no info, never a guess. CloudFront cache hits (`x-cache: Hit…`, `age`) replay another caller's headers and are ignored.
+- **Pre-send throttle:** every Pacifica REST request (adapter GET / signed POST, spot, and the public `/info` + `/info/prices` fetchers) checks the last observed quota; below a 12-credit reserve it waits for the window to refresh — at most 15 s (2 s after signing, inside the 5 s `expiry_window`; signed actions are throttled before signing). A longer wait fails fast with `RATE_LIMITED` (`details.sent: false`, `retryAfterMs`, remediation): nothing was sent.
+- **HTTP 429 is structural:** `RATE_LIMITED` by status code (no longer by matching "429" in the message), with `httpStatus: 429`, `sent: false` and `retryAfterMs` from `Retry-After` or the `ratelimit` reset. Nothing is retried; a write is never resubmitted. A 429 on an order / cancel stays a definite "not executed" (as the plain 4xx was before): cancel-all / amend report it as refused, not `ORDER_PENDING`.
+- **Scope:** state per network (REST base URL) and credential tier (no key = IP quota; an API Config Key has its own). Process-local: several perp-cli processes on one IP share the venue quota unseen.
+
 ### NEW: read-only options market data — Derive (`perp -e derive options …`)
 
 - **`perp options underlyings | expiries <U> | chain <U> [--expiry YYYY-MM-DD] [--strikes N] | quote <INSTRUMENT>`** with `-e derive` (alias `drv`): Derive (derive.xyz, formerly Lyra) options through its official public v3 API — keyless; no orders, no account, no signing. Chain rows are `{strike, call, put}` with bid / ask (price + size), mark, index, forward, IV (mark / bid / ask), greeks (delta, gamma, theta, vega, rho), open interest and 24h stats; `--strikes N` keeps the N strikes closest to the ATM reference (forward, else index); no `--expiry` = the nearest active expiry (`expirySelection: "nearest"`). One `get_tickers` request per chain. `-n testnet` reads `testnet.api.derive.xyz`.

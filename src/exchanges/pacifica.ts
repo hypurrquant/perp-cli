@@ -2,6 +2,7 @@ import { nonEmptyOrListed, symbolNotFound } from "./unknown-symbol.js";
 import { withTapeSkipped } from "./interface.js";
 import { Keypair } from "@solana/web3.js";
 import { PacificaClient, type Network } from "../pacifica/index.js";
+import { isPacificaRateLimited } from "../pacifica/rate-limit.js";
 import type {
   ExchangeAdapter,
   ExchangeMarketInfo,
@@ -303,7 +304,9 @@ export function pacificaWithdrawRejection(e: unknown, amount: string): unknown {
   return new PerpError("ACTION_REJECTED", `Pacifica withdraw ${amount} USDC refused (nothing was withdrawn): ${body.error}`, details);
 }
 
+/** A POST the venue refused with HTTP 4xx — incl. RATE_LIMITED (429 / pre-send throttle, nothing sent). */
 export function pacificaRefused(e: unknown): boolean {
+  if (isPacificaRateLimited(e)) return true;
   return !(e instanceof PerpError) && /^POST \S+ failed \(4\d\d\)/.test(extractErrorMessage(e));
 }
 

@@ -2,6 +2,7 @@ import { MAINNET_REST, type Network, getNetworkConfig } from "./constants.js";
 import { buildSignedRequest, buildAgentSignedRequest } from "./signing.js";
 import { PerpError, extractErrorMessage, orderNotSent, orderOutcomeUnknown, sendFailure } from "../errors.js";
 import { invalidateCache } from "../cache.js";
+import { PACIFICA_SIGNED_MAX_WAIT_MS, pacificaRateLimiter, type PacificaRateLimiter } from "./rate-limit.js";
 import type {
   MarketInfo,
   PriceInfo,
@@ -66,6 +67,8 @@ export class PacificaClient {
    * against the agent key. Undefined for master/PK signers.
    */
   private requestAgentWallet?: string;
+  /** Credit-quota state for this base URL + key tier (rate-limit.ts; process-local). */
+  private readonly rate: PacificaRateLimiter;
 
   /** Attach (or clear) the agent wallet used for subsequent signed requests. */
   setRequestAgentWallet(agentWallet?: string): void {
@@ -79,6 +82,9 @@ export class PacificaClient {
     account: string,
     signMessage: SignMessageFn,
   ): Promise<Record<string, unknown>> {
+    // Throttle BEFORE signing: a wait after signing would eat into the body's expiry_window.
+    // A fail-fast RATE_LIMITED here sent nothing (details.sent === false).
+    await this.rate.throttle(operationType);
     try {
       return await (this.requestAgentWallet
         ? buildAgentSignedRequest(operationType, payload, account, this.requestAgentWallet, signMessage)
@@ -93,6 +99,7 @@ export class PacificaClient {
     this.baseUrl =
       config.baseUrl || getNetworkConfig(config.network).restUrl;
     this.apiKey = config.apiKey;
+    this.rate = pacificaRateLimiter(this.baseUrl, this.apiKey);
   }
 
   private headers(): Record<string, string> {
@@ -108,9 +115,14 @@ export class PacificaClient {
         if (v !== undefined && v !== null) url.searchParams.set(k, v);
       });
     }
+    await this.rate.throttle(`GET ${path}`);
+    this.rate.noteSent();
     const res = await fetch(url.toString(), { headers: this.headers() });
+    this.rate.observe(res);
     if (!res.ok) {
       const text = await res.text();
+      // Structural (by status): RATE_LIMITED with retryAfterMs; never retried here.
+      if (res.status === 429) throw this.rate.rateLimitedError(`GET ${path}`, res, text);
       throw new Error(`GET ${path} failed (${res.status}): ${text}`);
     }
     const json = await res.json();
@@ -127,24 +139,29 @@ export class PacificaClient {
    * outcome unknown → ORDER_PENDING (sendFailure), never a retryable network error. No connection
    * at all → not sent. A 4xx is the venue's refusal and keeps the plain `POST <path> failed
    * (<status>): <body>` error the adapters map (422 business codes) — except on
-   * DEFINITE_4XX_PATHS, where it is a definite ACTION_REJECTED (429 stays the plain error →
-   * RATE_LIMITED). A fetch timeout (PACIFICA_POST_TIMEOUT_MS) on a write is ORDER_PENDING too;
+   * DEFINITE_4XX_PATHS, where it is a definite ACTION_REJECTED. HTTP 429 → RATE_LIMITED
+   * (details.sent === false, retryAfterMs) — never retried, a write is never resubmitted. Before
+   * sending, the credit throttle may wait up to PACIFICA_SIGNED_MAX_WAIT_MS (the body is already
+   * signed) or fail fast with RATE_LIMITED (nothing sent). A fetch timeout (PACIFICA_POST_TIMEOUT_MS) on a write is ORDER_PENDING too;
  * on a listing read a timeout is TIMEOUT and any other transport failure EXCHANGE_UNREACHABLE.
    */
   private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
     const write = !READ_POST_PATHS.has(path);
     const what = `POST ${path}`;
     const remediation = `Do NOT resubmit — the request may have been executed. Check open orders, positions and balances first: perp -e pacifica account orders / portfolio`;
+    await this.rate.throttle(what, PACIFICA_SIGNED_MAX_WAIT_MS);
     try {
       let res: Response;
       let text: string;
       try {
+        this.rate.noteSent();
         res = await fetch(`${this.baseUrl}${path}`, {
           method: "POST",
           headers: this.headers(),
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(PACIFICA_POST_TIMEOUT_MS),
         });
+        this.rate.observe(res);
         text = await res.text();
       } catch (e) {
         if (write) throw sendFailure("pacifica", what, e, remediation);
@@ -159,8 +176,10 @@ export class PacificaClient {
       if (write && res.status >= 500) {
         throw orderOutcomeUnknown("pacifica", what, new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`), remediation);
       }
+      // Refused before processing (credits exhausted): nothing executed, never resubmitted here.
+      if (res.status === 429) throw this.rate.rateLimitedError(what, res, text);
       if (!res.ok) {
-        if (DEFINITE_4XX_PATHS.has(path) && res.status >= 400 && res.status < 500 && res.status !== 429) {
+        if (DEFINITE_4XX_PATHS.has(path) && res.status >= 400 && res.status < 500) {
           throw new PerpError("ACTION_REJECTED", `Pacifica ${what} refused (HTTP ${res.status}, nothing was changed): ${text.slice(0, 300)}`, {
             exchange: "pacifica",
             httpStatus: res.status,
