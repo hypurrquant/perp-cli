@@ -253,7 +253,10 @@ const QFEX_NON_FUNDING_SESSIONS: ReadonlySet<string> = new Set(["weekend", "clos
 export function qfexFundingWindowClosed(marketHours: Record<string, unknown> | null, windowStartMs: number, rate: number): boolean {
   if (rate !== 0) return false;
   const from = windowStartMs - 3_600_000;
-  for (const t of [from, from + 900_000, from + 1_800_000, from + 2_700_000, windowStartMs - 1_000]) {
+  // Sampled inside the hour, never on its edges: market_hours closes are inclusive and often on
+  // the hour (GOLD-USD Fri close "17:00:00"), so a sample AT `from` would put the hour after the
+  // close inside the session (GOLD printed 0 for Fri 17:00–18:00 ET on 2026-10-09 and 10-16).
+  for (const t of [from + 1_000, from + 900_000, from + 1_800_000, from + 2_700_000, windowStartMs - 1_000]) {
     const sessions = qfexSessionsAt(marketHours, t);
     if (sessions === null) return false;
     if (sessions.some(x => !QFEX_NON_FUNDING_SESSIONS.has(x))) return false;
