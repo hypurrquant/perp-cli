@@ -4,6 +4,31 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed
+
+- **Hyperliquid `market kline` beyond the 5000-candle window:** only the most recent 5000 candles of an interval exist (docs "Candle snapshot"), and a range starting earlier came back silently shortened (10 days of 1m = the last ~3.6 days) or as `ok, []` when wholly older. A `--start` before now − 5000 × interval is now `INVALID_PARAMS` before any request, naming the earliest allowed start (ms and ISO). An interval outside the documented list `1m 3m 5m 15m 30m 1h 2h 4h 8h 12h 1d 3d 1w 1M` is `INVALID_PARAMS` (was a retryable `EXCHANGE_ERROR` 502 from the venue's 422); any HL info answer HTTP 422 ("Failed to deserialize") is `INVALID_PARAMS`, not retryable. Documented: `1M` candles are 30-day buckets, `1w` candles open Thursday 00:00 UTC.
+- **Hyperliquid `market funding --limit N`** reads N hourly settlements over `fundingHistory`'s 500-row cap: pages continue from the last row's time, deduped by time, oldest first (`-l 600` = 600 rows in two requests). `--limit` must be 1..5000.
+- **Hyperliquid venue caps refused, not silently short:** `market trades` — `recentTrades` serves only the last 10 trades (no count, no paging): the default `--limit` is min(20, 10), an explicit `--limit` above 10 is `INVALID_PARAMS` naming the cap (it returned 10 rows for `--limit 20`). `market book -d` above 20 is `INVALID_PARAMS` (`l2Book` serves at most 20 levels per side); `-d` now cuts the JSON book too.
+- **Hyperliquid delisted markets** (meta `isDelisted`: native `MATIC`, every asset of `--dex km` / `flx` / `hyna` / `cash` / `vntl` / `abcd` on 2026-10-19) served zero-rate funding rows stamped every hour and trades from 2024 through `market trades|funding|book|kline`. Those reads now refuse with `SYMBOL_NOT_FOUND`, `details.reason: "delisted"`, like `market info`. Orders, positions, history and the market-order reference price are not gated (a reduce-only close of a delisted asset is still sent). `--dex km market info US500` (bare name) said "not found"; it now says `km:US500 is delisted` with the remediation `perp -e hyperliquid --dex km market list`.
+- **`market hip3`:** dexes whose every asset is delisted were shown as live with full asset counts, and `deployer` was always `""`. `assets` now lists live assets only, `delistedAssets` the rest, `delisted: true` marks a dex with no live asset (human table: "delisted"), and `deployer` is read from `perpDexs`.
+- **`market list --hip3` listed the native markets under every HIP-3 dex** (178 native rows per dex on 0.15.0): the per-dex adapters were prototype copies sharing the native adapter's markets cache, and `setDex()` cleared the shared asset maps (a later native `resolveSymbol("BTC")` gave `BTC`, not `BTC-PERP`). HIP-3 fan-outs (`market list --hip3`, `account positions|orders --hip3`) now use independent per-dex adapters (`forDex`).
+- **Hyperliquid `marginTiers`** was null for markets on a single-tier table; per docs "Margin tiers" ("For IDs less than 50, there is a single tier with max leverage equal to the ID") it is now `[{ lowerBound: 0, maxLeverage: <id> }]`.
+- **`arb scan --compare <alias>`** returned `available: false` for `kPEPE` (and `UBTC`, `XAU`, `CL`, …): the argument was upper-cased while rates are grouped by canonical key. It is now canonicalized for every venue (`kPEPE` → `1000PEPE`, `UBTC` → `BTC`, `XAU` → `GOLD`, `CL` → `CRUDE_OIL_WTI`; a `-PERP` suffix is dropped).
+- **`backtest grid --days N`** above ~208 days read fewer 1h candles than asked and labelled the result with the requested period. The start is clamped to Hyperliquid's 5000-candle window and reported (`dataFrom`, `truncated`, human warning with the covered days); the read goes through the adapter (symbol resolution, interval and window checks).
+
+### JSON contract changes
+
+- `market kline -e hyperliquid`: rows gain `closed` (boolean; false on the in-progress last candle) — additive. A `--start` before the 5000-candle window, an unsupported interval and any HL HTTP 422 are now `INVALID_PARAMS` (were `ok` with fewer / no rows, or a retryable `EXCHANGE_ERROR`).
+- `market trades -e hyperliquid`: explicit `--limit` > 10 is `INVALID_PARAMS` (was `ok` with 10 rows); the default returns 10 rows as before.
+- `market book --json -e hyperliquid`: `bids` / `asks` are cut to `-d` (default 10; were the venue's 20); `-d` > 20 is `INVALID_PARAMS`.
+- `market funding -e hyperliquid`: up to `-l` rows (max 5000; was at most 24); rows carry `intervalHours: 1`, `rateKind: "lastSettled"`; a non-positive or > 5000 `-l` is `INVALID_PARAMS`.
+- Hyperliquid `market trades|funding|book|kline` of a delisted market: `SYMBOL_NOT_FOUND` with `details.reason: "delisted"` (were `ok` with stale / zero rows). `market info` of a delisted market gains `details.reason: "delisted"`; its remediation reads "List live markets: perp -e hyperliquid [--dex <dex>] market list".
+- `market hip3`: `assets` now lists live (non-delisted) assets only (was every asset); rows gain `delistedAssets` (string[]) and `delisted` (boolean); `deployer` is the deployer address (was always `""`).
+- `market list --hip3`: `hip3.<dex>` holds that dex's markets (was the native list); dexes without a live market are absent.
+- Hyperliquid market rows: `marginTiers` is non-null for single-tier tables (`[{ lowerBound: 0, maxLeverage: <id> }]`, was null).
+- `arb scan --compare`: an alias argument (`kPEPE`, `UBTC`, `XAU`, …) returns the canonical symbol's comparison (`symbol: "1000PEPE"`) instead of `available: false`.
+- `backtest grid --json`: `data` gains `dataFrom` (ISO, the start actually used) and `truncated` (boolean) — additive.
+
 ## [0.15.0] — 2026-10-19
 
 ### NEW: Extended (formerly X10, Starknet) — read-only market data (`perp -e extended`, aliases `ext` / `x10`)
