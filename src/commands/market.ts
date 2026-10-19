@@ -9,8 +9,21 @@ import { isDexCapable, klinesNeedAuth } from "../exchanges/capabilities.js";
 import { getVenue, listVenuesWithRole, tryResolveVenueId, unofficialApiNote } from "../exchanges/venue.js";
 import "../exchanges/venues/index.js";
 
-/** Venues with an adapter (market-data-only venues have none — see `perp arb scan`). */
-const EXCHANGES = listVenuesWithRole("account").map(v => v.id);
+/**
+ * Venues of the multi-venue `market list|prices` (no -e): every venue with the marketData role
+ * and a (public) adapter — market-data-only venues (TxFlow, Variational, GRVT, Extended) included.
+ * They were left out in 0.15.0 because the list was the account-role venues.
+ */
+export const MARKET_DATA_VENUES = listVenuesWithRole("marketData").filter(v => v.create !== null).map(v => v.id);
+
+/** Multi-venue human output: the footnote of every listed venue read through an unofficial API. */
+function printUnofficialNotes(venues: string[]): void {
+  for (const ex of venues) {
+    const id = tryResolveVenueId(ex);
+    const note = id === null ? null : unofficialApiNote(getVenue(id));
+    if (note !== null) console.log(chalk.yellow(`  * ${note}`));
+  }
+}
 
 /** null = venue does not publish the value → "-" (never rendered as $0). */
 const usdOrDash = (v: string | null): string => (v === null ? chalk.gray("-") : `$${formatUsd(v)}`);
@@ -132,7 +145,7 @@ export function registerMarketCommands(
         const grouped: Record<string, { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null; volume24h: string | null; openInterest: string | null; maxLeverage: number | null }[]> = {};
         const errors: Record<string, string> = {};
 
-        await Promise.all(EXCHANGES.map(async (ex) => {
+        await Promise.all(MARKET_DATA_VENUES.map(async (ex) => {
           try {
             const adapter = await getAdapterForExchange(ex);
             grouped[ex] = await adapter.getMarkets();
@@ -166,6 +179,7 @@ export function registerMarketCommands(
         for (const [ex, msg] of Object.entries(errors)) {
           console.log(chalk.gray(`  ${ex}: ${msg}`));
         }
+        printUnofficialNotes(Object.keys(grouped));
         return;
       }
 
@@ -227,7 +241,7 @@ export function registerMarketCommands(
         const grouped: Record<string, { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null }[]> = {};
         const errors: Record<string, string> = {};
 
-        await Promise.all(EXCHANGES.map(async (ex) => {
+        await Promise.all(MARKET_DATA_VENUES.map(async (ex) => {
           try {
             const adapter = await getAdapterForExchange(ex);
             grouped[ex] = await adapter.getMarkets();
@@ -246,6 +260,7 @@ export function registerMarketCommands(
           console.log(makeTable(PRICE_HEADERS, markets.map(m => priceRow(m))));
         }
         for (const [ex, msg] of Object.entries(errors)) console.log(chalk.gray(`  ${ex}: ${msg}`));
+        printUnofficialNotes(Object.keys(grouped));
         return;
       }
 

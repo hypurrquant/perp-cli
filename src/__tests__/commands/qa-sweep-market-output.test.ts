@@ -175,3 +175,20 @@ describe("market prices: Pacifica returns the normalized market rows (QA 0.15.0)
     expect(j.data[0]).not.toHaveProperty("mid");
   });
 });
+
+describe("market list|prices without -e covers every market-data venue (QA 0.15.0)", () => {
+  it("txflow, variational, grvt and extended are fanned out, not only the account-role venues", async () => {
+    await import("../../exchanges/venues/index.js");
+    const { MARKET_DATA_VENUES } = await import("../../commands/market.js");
+    expect(MARKET_DATA_VENUES).toEqual(expect.arrayContaining(["txflow", "variational", "grvt", "extended", "hyperliquid", "pacifica", "lighter", "lighter-rh", "aster", "ondo", "arcus", "qfex", "risex"]));
+    const asked: string[] = [];
+    const program = new Command();
+    program.exitOverride();
+    program.option("-e, --exchange <exchange>", "", "hyperliquid");
+    registerMarketCommands(program, async () => { throw new Error("single-venue path"); }, () => true,
+      async (ex: string) => { asked.push(ex); return { name: ex, getMarkets: async () => [] } as unknown as ExchangeAdapter; });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    await program.parseAsync(["node", "perp", "market", "list"]);
+    expect(asked).toEqual(expect.arrayContaining(["txflow", "variational", "grvt", "extended"]));
+  });
+});
