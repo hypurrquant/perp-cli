@@ -134,3 +134,20 @@ describe("T1 tradable carried through the market row", () => {
     expect(text).not.toMatch(/BTC \(not tradable\)/);
   });
 });
+
+describe("history sort keeps adapter metadata (review)", () => {
+  it("sortByTime copies non-enumerable symbol metadata; market trades still reports skippedRows", async () => {
+    const { sortByTime, withTapeSkipped, tapeSkippedOf } = await import("../../exchanges/interface.js");
+    const CAP = Symbol.for("perp-cli.venueCap");
+    const rows = withTapeSkipped([{ time: 1 }, { time: 3 }, { time: 2 }], { count: 2, reason: "new event_type" });
+    Object.defineProperty(rows, CAP, { value: { cap: 10 }, enumerable: false });
+    const sorted = sortByTime(rows, "desc");
+    expect(sorted.map(r => r.time)).toEqual([3, 2, 1]);
+    expect(tapeSkippedOf(sorted)).toEqual({ count: 2, reason: "new event_type" });
+    expect((sorted as unknown as Record<symbol, unknown>)[CAP]).toEqual({ cap: 10 });
+    expect(Object.keys(sorted)).toEqual(["0", "1", "2"]); // still non-enumerable
+    const tr = (t: number) => ({ time: t, symbol: "BTC", side: "buy" as const, price: "1", size: "1", fee: null });
+    const { out } = await run({ getRecentTrades: async () => withTapeSkipped([tr(1), tr(2)], { count: 1, reason: "x" }) }, ["market", "trades", "BTC"]);
+    expect(JSON.parse(out).meta.skippedRows).toEqual({ count: 1, reason: "x" });
+  });
+});

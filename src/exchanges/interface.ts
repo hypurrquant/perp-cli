@@ -138,6 +138,21 @@ export function withTapeSkipped<T>(rows: T[], skipped: TapeSkipped | null): T[] 
   return rows;
 }
 
+/**
+ * Rows sorted by time (a copy), keeping every non-enumerable property the adapter attached to the
+ * array (TAPE_SKIPPED and any other symbol / non-enumerable metadata) — a plain `[...rows].sort()`
+ * drops them.
+ */
+export function sortByTime<T extends { time: number }>(rows: readonly T[], order: "asc" | "desc"): T[] {
+  const out = [...rows].sort((a, b) => (order === "asc" ? a.time - b.time : b.time - a.time));
+  for (const key of Reflect.ownKeys(rows)) {
+    if (key === "length" || (typeof key === "string" && /^\d+$/.test(key))) continue;
+    const d = Object.getOwnPropertyDescriptor(rows, key);
+    if (d !== undefined && !d.enumerable) Object.defineProperty(out, key, d);
+  }
+  return out;
+}
+
 export function tapeSkippedOf(rows: readonly unknown[]): TapeSkipped | null {
   const v = (rows as unknown as { [TAPE_SKIPPED]?: TapeSkipped })[TAPE_SKIPPED];
   return v === undefined ? null : v;

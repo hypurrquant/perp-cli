@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import type { ExchangeAdapter } from "../exchanges/index.js";
-import { tapeSkippedOf, type CurrentFundingTerms, type ExchangeMarketInfo, type RfqQuotes } from "../exchanges/interface.js";
+import { sortByTime, tapeSkippedOf, type CurrentFundingTerms, type ExchangeMarketInfo, type RfqQuotes } from "../exchanges/interface.js";
 import { makeTable, formatUsd, formatPercent, printJson, jsonOk, jsonError, withJsonErrors, normalizeSymbolArg } from "../utils.js";
 import chalk from "chalk";
 import { PerpError } from "../errors.js";
@@ -59,7 +59,7 @@ export function bareSymbolOf(arg: string): string {
  * copy — the adapter's array (and its non-enumerable tape metadata) is left as is.
  */
 export function newestFirst<T extends { time: number }>(rows: readonly T[]): T[] {
-  return [...rows].sort((a, b) => b.time - a.time);
+  return sortByTime(rows, "desc");
 }
 
 /** Symbol cell; a listed market that is not tradable right now (off-hours, reduce-only, halted) is marked. */
@@ -435,8 +435,8 @@ export function registerMarketCommands(
       const limit = parsePositiveIntArg(opts.limit, "--limit");
       const adapter = await getAdapter();
       const raw = await adapter.getRecentTrades(normalizeSymbolArg(symbol), limit);
-      const skipped = tapeSkippedOf(raw);
       const trades = newestFirst(raw);
+      const skipped = tapeSkippedOf(trades); // metadata survives the sort (sortByTime)
       if (isJson()) return printJson(jsonOk(trades, skipped !== null ? { skippedRows: skipped } : undefined));
       if (skipped !== null) console.log(chalk.yellow(`  ${skipped.count} tape row(s) skipped: ${skipped.reason}`));
       if (trades.length === 0) {
@@ -553,7 +553,7 @@ export function registerMarketCommands(
         }
 
         // Candles oldest first (ascending open time) on every venue.
-        const klines = [...await adapter.getKlines(normalizeSymbolArg(symbol), interval, startTime, endTime)].sort((a, b) => a.time - b.time);
+        const klines = sortByTime(await adapter.getKlines(normalizeSymbolArg(symbol), interval, startTime, endTime), "asc");
         if (isJson()) return printJson(jsonOk(klines));
         if (klines.length === 0) {
           console.log(chalk.gray("\n  No kline data.\n"));
