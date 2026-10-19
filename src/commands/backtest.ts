@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { printJson, jsonOk, jsonError, makeTable, formatUsd } from "../utils.js";
 import { getHistoricalRates } from "../funding-history.js";
+import { HyperliquidAdapter, hlEarliestCandleStart } from "../exchanges/hyperliquid.js";
 import chalk from "chalk";
 
 export function registerBacktestCommands(
@@ -214,33 +215,27 @@ export function registerBacktestCommands(
         process.exit(1);
       }
 
+      // Hyperliquid serves only the most recent 5000 candles per interval (docs "Candle snapshot");
+      // with 1h candles a --days above ~208 cannot be read. The start is clamped to the available
+      // window (one hour inside it) and the result says so — never presented as the full period.
+      const DAY_MS = 24 * 60 * 60 * 1000;
       const endTime = Date.now();
-      const startTime = endTime - days * 24 * 60 * 60 * 1000;
+      const requestedStart = endTime - days * DAY_MS;
+      const earliest = hlEarliestCandleStart("1h", endTime) + 60 * 60 * 1000;
+      const truncated = requestedStart < earliest;
+      const startTime = truncated ? earliest : requestedStart;
+      const dataFrom = startTime;
+      const coveredDays = (endTime - startTime) / DAY_MS;
 
-      // Fetch historical klines from Hyperliquid
+      // Fetch historical klines from Hyperliquid (adapter: symbol resolution, interval / window checks)
       if (!isJson()) {
         console.log(chalk.gray(`\n  Fetching ${days}d of 1h klines for ${sym}...`));
       }
 
       let klines: Array<{ t: number; o: string; h: string; l: string; c: string }>;
       try {
-        const resp = await fetch("https://api.hyperliquid.xyz/info", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "candleSnapshot",
-            req: {
-              coin: sym,
-              interval: "1h",
-              startTime,
-              endTime,
-            },
-          }),
-        });
-
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json() as Array<{ t: number; o: string; h: string; l: string; c: string; v: string; n: number }>;
-        klines = data.map(k => ({ t: k.t, o: k.o, h: k.h, l: k.l, c: k.c }));
+        const rows = await new HyperliquidAdapter(undefined, false).getKlines(sym, "1h", startTime, endTime);
+        klines = rows.map(k => ({ t: k.time, o: k.open, h: k.high, l: k.low, c: k.close }));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (isJson()) return printJson(jsonError("FETCH_ERROR", `Failed to fetch klines: ${msg}`));
@@ -330,6 +325,8 @@ export function registerBacktestCommands(
         symbol: sym,
         period: `${days} days`,
         klines: klines.length,
+        dataFrom: new Date(dataFrom).toISOString(),
+        truncated,
         priceRange,
         gridRange: `$${formatUsd(String(lowerPrice))} - $${formatUsd(String(upperPrice))}`,
         grids,
@@ -347,6 +344,7 @@ export function registerBacktestCommands(
 
       console.log(chalk.cyan.bold(`\n  Grid Backtest — ${sym}\n`));
       console.log(`  Period:         ${days} days (${klines.length} candles)`);
+      if (truncated) console.log(chalk.yellow(`  Truncated:      Hyperliquid serves only the most recent 5000 1h candles — start clamped to ${new Date(dataFrom).toISOString()} (${coveredDays.toFixed(1)} of ${days} days)`));
       console.log(`  Price range:    ${priceRange}`);
       console.log(`  Grid range:     $${formatUsd(String(lowerPrice))} - $${formatUsd(String(upperPrice))}`);
       console.log(`  Grid lines:     ${grids} (step: $${step.toFixed(2)})`);

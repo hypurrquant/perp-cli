@@ -141,7 +141,7 @@ describe("5. HIP-3 dex symbol display", () => {
     const getOrderbook = vi.fn(async () => ({ bids: [["99", "1"]] as [string, string][], asks: [["101", "1"]] as [string, string][] }));
     const { text } = await run({ getOrderbook }, ["market", "book", "xyz:XYZ100"]);
     expect(text).toContain("Orderbook: xyz:XYZ100 (hyperliquid)");
-    expect(getOrderbook).toHaveBeenCalledWith("xyz:XYZ100", 10);
+    expect(getOrderbook).toHaveBeenCalledWith("xyz:XYZ100", 10); // --depth (default 10) reaches the adapter
   });
 
   it("trade market --dry-run echoes xyz:XYZ100", async () => {

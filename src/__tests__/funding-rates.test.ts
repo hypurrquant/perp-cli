@@ -517,3 +517,36 @@ describe("3-DEX direction logic", () => {
     expect(eth!.longExchange).toBe("lighter");
   });
 });
+
+// ──────────────────────────────────────────────
+// arb scan --compare: the argument is looked up by its canonical key (0.15.1 F9)
+// ──────────────────────────────────────────────
+
+describe("fetchSymbolFundingRates canonicalizes the argument", () => {
+  // Hyperliquid side: metaAndAssetCtxs recorded live 2026-10-19 (kPEPE / BTC rows).
+  const recordedHl = async () => (await import("./fixtures/hyperliquid/read-path-2026-10-19.json")).default.metaAndAssetCtxs;
+
+  function setupRecordedHl(hlBody: unknown, pac: { symbol: string; funding: number; mark: number }[]) {
+    setupMockFetch({ pac });
+    const pacOnly = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url: string | URL) => (String(url).includes("hyperliquid.xyz") ? json(hlBody) : pacOnly(url)));
+  }
+
+  it.each(["kPEPE", "KPEPE", "1000PEPE", "kpepe-perp"])("--compare %s finds HL kPEPE ≡ Pacifica 1000PEPE", async (arg) => {
+    const hl = await recordedHl();
+    const pepeMark = Number((hl[1] as Array<{ markPx: string }>)[3].markPx);
+    setupRecordedHl(hl, [{ symbol: "1000PEPE", funding: 0.0001, mark: pepeMark }]);
+    const result = await fetchSymbolFundingRates(arg);
+    expect(result).toBeTruthy();
+    expect(result!.symbol).toBe("1000PEPE");
+    expect(result!.rates.map(r => r.exchange).sort()).toEqual(["hyperliquid", "pacifica"]);
+  });
+
+  it("--compare UBTC (HL spot wrapper alias) compares BTC", async () => {
+    const hl = await recordedHl();
+    const btcMark = Number((hl[1] as Array<{ markPx: string }>)[0].markPx);
+    setupRecordedHl(hl, [{ symbol: "BTC", funding: 0.0001, mark: btcMark }]);
+    const result = await fetchSymbolFundingRates("UBTC");
+    expect(result!.symbol).toBe("BTC");
+  });
+});

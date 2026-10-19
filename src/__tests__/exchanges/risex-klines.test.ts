@@ -52,8 +52,10 @@ describe("candle interval guard on the other venues whose rows state their inter
     // Live candleSnapshot row shape (2026-10-19).
     const row = { t: 1792396800000, T: 1792400399999, s: "BTC", i: "1h", o: "82701.0", c: "82805.0", h: "82944.0", l: "82555.0", v: "1150.99381", n: 10424 };
     (a as unknown as { _infoPost: unknown })._infoPost = vi.fn(async () => [row]);
-    expect(await a.getKlines("BTC", "1h", 0, 1)).toHaveLength(1);
-    await expect(a.getKlines("BTC", "4h", 0, 1)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
+    // A recent window: a start before HL's 5000-candle window is refused up front (INVALID_PARAMS).
+    const end = Date.now(), start = end - 3_600_000;
+    expect(await a.getKlines("BTC", "1h", start, end)).toHaveLength(1);
+    await expect(a.getKlines("BTC", "4h", start, end)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
   });
 
   it("pacifica: same guard on /kline `i`", async () => {

@@ -85,8 +85,9 @@ describe("native perps: raw coins on the wire, '-PERP' display names", () => {
       candleSnapshot: () => [{ t: 1, o: "1", h: "2", l: "0.5", c: "1.5", v: "10", n: 3 }],
     });
     await hl.init();
-    const k = await hl.getKlines("BTC-PERP", "1h", 0, 10);
-    expect(calls.find(c => c.type === "candleSnapshot")).toEqual({ type: "candleSnapshot", req: { coin: "BTC", interval: "1h", startTime: 0, endTime: 10 } });
+    const start = Date.now() - 3_600_000; // inside HL's 5000-candle window (an older start is refused up front)
+    const k = await hl.getKlines("BTC-PERP", "1h", start, start + 10);
+    expect(calls.find(c => c.type === "candleSnapshot")).toEqual({ type: "candleSnapshot", req: { coin: "BTC", interval: "1h", startTime: start, endTime: start + 10 } });
     expect(k[0]).toMatchObject({ time: 1, close: "1.5", trades: 3 });
   });
 });

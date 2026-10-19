@@ -64,9 +64,8 @@ export function registerAccountCommands(
     const dexes = await hlAdapter.listDeployedDexes();
     const results = await Promise.allSettled(
       dexes.map(async (d) => {
-        // Clone adapter with dex set
-        const dexAdapter = Object.create(hlAdapter) as ExchangeAdapter & import("../exchanges/capabilities.js").DexCapable;
-        dexAdapter.setDex(d.name);
+        // An independent per-dex adapter (a prototype copy + setDex emptied the native adapter's maps)
+        const dexAdapter = hlAdapter.forDex(d.name);
         const items = await fetcher(dexAdapter);
         return { dex: d.name, items };
       }),

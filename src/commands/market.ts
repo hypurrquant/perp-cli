@@ -244,9 +244,7 @@ export function registerMarketCommands(
             if (opts.hip3 && ex === "hyperliquid" && isDexCapable(adapter)) {
               const dexes = await adapter.listDeployedDexes();
               await Promise.allSettled(dexes.map(async (d) => {
-                const dexAdapter = Object.create(adapter) as ExchangeAdapter & import("../exchanges/capabilities.js").DexCapable;
-                dexAdapter.setDex(d.name);
-                const markets = await dexAdapter.getMarkets();
+                const markets = await adapter.forDex(d.name).getMarkets();
                 if (markets.length > 0) grouped[`hip3:${d.name}`] = markets;
               }));
             }
@@ -283,9 +281,7 @@ export function registerMarketCommands(
       if (opts.hip3 && isDexCapable(adapter)) {
         const dexes = await adapter.listDeployedDexes();
         await Promise.allSettled(dexes.map(async (d) => {
-          const dexAdapter = Object.create(adapter) as ExchangeAdapter & import("../exchanges/capabilities.js").DexCapable;
-          dexAdapter.setDex(d.name);
-          const m = await dexAdapter.getMarkets();
+          const m = await adapter.forDex(d.name).getMarkets();
           if (m.length > 0) hip3[d.name] = m;
         }));
       }
@@ -391,6 +387,8 @@ export function registerMarketCommands(
       if (!m) {
         // Printed (envelope / Error + Remediation) and exit 1 via withJsonErrors.
         return void await withJsonErrors(isJson(), async () => {
+          const delistedErr = (adapter as { delistedError?: (s: string) => PerpError | null }).delistedError?.(symbol) ?? null;
+          if (delistedErr !== null) throw delistedErr;
           const delisted = typeof (adapter as { delistedMessage?: unknown }).delistedMessage === "function"
             ? (adapter as unknown as { delistedMessage(s: string): string | null }).delistedMessage(symbol)
             : null;
@@ -642,7 +640,8 @@ export function registerMarketCommands(
         const rows = dexes.map(d => [
           chalk.white.bold(d.name),
           chalk.gray(d.deployer ? d.deployer.slice(0, 6) + "..." + d.deployer.slice(-4) : "-"),
-          String(d.assets.length),
+          // Live (non-delisted) assets; a dex whose every asset is delisted is marked as such.
+          (d as { delisted?: boolean }).delisted === true ? chalk.gray("delisted") : String(d.assets.length),
           d.assets.slice(0, 5).join(", ") + (d.assets.length > 5 ? ` +${d.assets.length - 5}` : ""),
         ]);
         console.log(makeTable(["DEX", "Deployer", "Assets", "Markets"], rows));
