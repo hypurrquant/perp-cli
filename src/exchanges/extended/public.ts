@@ -42,6 +42,9 @@
  *  - marketStats.nextFundingRate is (despite its name) the timestamp (ms) of the next application.
  *  - rates are published ROUNDED TO 6 DECIMALS (resolution 0.000001 / h ≈ 0.876 % APR): the
  *    0.0000125 baseline reads "0.000013", and a rate below 0.0000005 / h reads "0.000000".
+ *    There is no more precise public source (checked live 2026-10-19): /info/markets (407
+ *    markets), /info/markets/<m>/stats and the applied history /info/<m>/funding (`f`, 48 h of
+ *    ETH / SOL) all carry at most 6 decimals, so the adapter keeps this one read.
  *  - `_24_5` RWA equities print 0 while their underlying is closed (TSLA_24_5-USD: 34 of 43
  *    weekend prints were 0), so an hourly rate × 8760 overstates them — the venue is
  *    fundingVerified false (venues/extended.ts).

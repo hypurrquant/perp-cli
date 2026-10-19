@@ -107,6 +107,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **Units (docs only):** perp-ws `toApr()` returns a FRACTION (0.1095 = 10.95 %/yr), while the CLI's `annualizedPct` (`arb scan --rates`, MCP `get_funding_rates`) is a PERCENT — the `.d.ts` JSDoc of `toHourly` / `toApr` and `ws-library.md` now say so (multiply `toApr` by 100 to compare). No behaviour change.
 - **Ondo `rateKind` was null** in `arb scan --compare` / `--rates` and market rows (`fundingRateKind`): the kind was not established. Live 2026-10-19 the `/v1/perps/contracts` `fundingRate` equalled the latest `funding_rate_history` print on every market whose rate moves, so Ondo rows are now `lastSettled`.
 - **`nextFundingTime` was null on Hyperliquid, Lighter / Lighter RH and Pacifica** funding rows (`arb scan --rates|--compare`, MCP `get_funding_rates`). None of them publishes the time, but each documents hourly settlement (HL "paid every hour", Lighter "at each hour mark", Pacifica "at the end of each 1-hour interval") and its settled history is stamped on the hour, so the field is now the next UTC hour mark (`nextTopOfHourMs`). Other venues keep null unless they publish the time.
+- **Extended `fundingRate` precision (checked, no change):** the venue rounds to 6 decimals everywhere it publishes funding (`/info/markets`, `/info/markets/<m>/stats`, the applied history `/info/<m>/funding`; live 2026-10-19, 407 markets) — there is no more precise source to read. Documented in `src/exchanges/extended/public.ts` and the skill.
 
 ### JSON contract changes
 
