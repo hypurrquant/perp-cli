@@ -36,6 +36,9 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **perp-ws Hyperliquid `account.unrealizedPnl`** was always null; `clearinghouseState` has no account-level field but carries every position's `unrealizedPnl`, so it is now their exact sum (`"0"` with no position, null if any position lacks it). Pacifica and Lighter stay null on `account` (their account feeds publish none; Lighter has it per position) — documented per venue.
 - **ws-library docs:** Aster `volume24hNotional` stays null for minutes (`!ticker@arr` pushes changed tickers only) — note added and the `MIN_NOTIONAL` example now counts unknown-volume legs instead of silently dropping them; bundle size corrected (~170 KB ESM, ~41 KB gzip — it said ~100 KB).
 - **`tradable` on every market row (one policy):** `toLegacyMarketInfo` dropped `VenueMarket.tradable`, so markets that are listed but not tradable right now looked live in `market list|prices|info`. Policy for every venue: a delisted / disabled / inactive market is NOT listed (each venue's eligibility rule, e.g. `isAsterListedPerpetual`, `isArcusOnlineMarket`; per-symbol reads of it refuse), while a listed market that cannot trade right now (off-hours equity, reduce-only, halted, paused) stays listed with `tradable: false` and a "(not tradable)" marker in the human tables / a note in `market info`. Lists are not filtered by `tradable` — that would hide every equity perp outside its session.
+- **TxFlow asset class:** ~38 TradFi markets are listed WITHOUT the TradFi tag (`tagIds: []`: COPPER, NATGAS, MRNA, GS, PATH, TEAM, TLT, SOXS, …) and were classed crypto with a crypto canonical, so `arb` could pair GS or PATH with same-named crypto tokens. A row is now TradFi when tagged, when its perpMeta description / `fullName` reads like a share, ETF, commodity, FX or pre-IPO contract (Variational's looksTradFi idea), or when it is one of the untagged, description-less equities of the live listing; an unclassified TradFi row has canonical null (never matched). Its class comes from the text (commodity / fx / etf / preIpo / equity).
+- **`sizeDecimals` with a coarse lot step:** a step that is not a power of ten ≤ 1 (TxFlow `"10"` / `"100"`, from negative `szDecimals`) gave `sizeDecimals: 0` ("any integer"); it is now null and `stepSize` is the authoritative grid (all VenueMarket-based venues).
+- **TxFlow HTTP 5xx errors** quoted a raw Cloudflare HTML page; the markup is stripped.
 
 ### JSON contract changes
 
@@ -56,6 +59,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - `market funding -e aster|qfex`: rows newest first (were oldest first).
 - perp-ws: `WsError.code` / `WsError.remediation` added; the use-after-close rejection gains `details.closeReason`; Hyperliquid `account.unrealizedPnl` null → the summed value.
 - Market rows (`market list|prices|info`, venues built on VenueMarket: Ondo, QFEX, Arcus, RISEx, TxFlow, GRVT, Extended, Variational) gain `tradable` (boolean) — additive. Absent on hyperliquid / pacifica / lighter / lighter-rh / aster rows (their adapters list live markets only).
+- TxFlow market rows: `assetClass` / `canonical` change for the untagged TradFi markets (crypto + ticker canonical → TradFi class + null). VenueMarket-based rows: `sizeDecimals` null (was 0 / a wrong count) when the step is not a power of ten ≤ 1.
 - `fundingHours` on hyperliquid / pacifica / lighter / lighter-rh market rows: null → 1 / 1 / 8 / 8.
 
 ## [0.15.0] — 2026-10-19

@@ -89,14 +89,51 @@ export function percentToFraction(pct: string): string {
   return neg ? `-${out}` : out;
 }
 
-function assetClassOf(symbol: string, tagIds: number[]): AssetClass {
-  if (!tagIds.includes(TXFLOW_TRADFI_TAG)) return "crypto";
-  return TRADFI_CLASS[symbol] ?? "equity";
+/**
+ * TradFi markets listed WITHOUT the TradFi tag (live 2026-10-19: ~38 rows with `tagIds: []`, e.g.
+ * COPPER, NATGAS, MRNA, GS, PATH, TEAM, TLT, SOXS) were classed as crypto and got a crypto
+ * canonical, so arb could pair GS or PATH with same-named crypto tokens. A row is TradFi when it is
+ * tagged, its description reads like a share / ETF / commodity / FX / pre-IPO contract, its
+ * fullName reads like a company or fund (as Variational's looksTradFi), or it is one of the
+ * untagged equities whose perpMeta row has no description (UNTAGGED_TRADFI, from the live listing).
+ */
+const TRADFI_DESCRIPTION = /\b(common stock|ordinary shares|shares\b|ETF\b|Pre-IPO|exchange rate|price reference for|priced in US dollars, representing)/i;
+const TRADFI_FULLNAME = /\b(Inc|Corp|Corporation|Company|Holdings?|Ltd|Limited|plc|PBC|N\.V|Group|ETF|Shares|Currency FX|Co\.)\b\.?/i;
+const UNTAGGED_TRADFI: ReadonlySet<string> = new Set([
+  "CRDO", "APP", "ADBE", "COST", "BX", "DKNG", "BRKB", "KO", "IBM", "QNTX", "UNH", "TWST", "CVNA", "MCD", "NKE",
+  "AAOI", "ASTS", "VST", "SNPS", "BSP",
+]);
+
+/** Crypto tokens whose description reads like a commodity contract (Tether Gold is a token). */
+const CRYPTO_DESPITE_DESCRIPTION: ReadonlySet<string> = new Set(["XAUT"]);
+
+export function looksTxflowTradFi(symbol: string, tagIds: readonly number[], fullName: string | null, description: string | null): boolean {
+  if (tagIds.includes(TXFLOW_TRADFI_TAG)) return true;
+  if (CRYPTO_DESPITE_DESCRIPTION.has(symbol)) return false;
+  if (description !== null && TRADFI_DESCRIPTION.test(description)) return true;
+  if (fullName !== null && TRADFI_FULLNAME.test(fullName)) return true;
+  return UNTAGGED_TRADFI.has(symbol);
 }
 
-function canonicalOf(symbol: string, tagIds: number[], assetClass: AssetClass): string | null {
-  // An unclassified TradFi market is never matched across venues.
-  if (tagIds.includes(TXFLOW_TRADFI_TAG) && TRADFI_CLASS[symbol] === undefined) return null;
+/** Class of an unclassified TradFi row from its listing text (its canonical stays null either way). */
+function textClassOf(fullName: string | null, description: string | null): AssetClass {
+  const text = `${fullName ?? ""} ${description ?? ""}`;
+  if (/exchange rate|Currency FX/i.test(text)) return "fx";
+  if (/Pre-IPO|\bPBC\b|private artificial intelligence company/i.test(text)) return "preIpo";
+  if (/\bETF\b|\bShares\b/.test(text)) return "etf";
+  if (/priced in US dollars, representing/i.test(text)) return "commodity";
+  return "equity";
+}
+
+function assetClassOf(symbol: string, tradFi: boolean, fullName: string | null, description: string | null): AssetClass {
+  if (!tradFi) return "crypto";
+  const known = TRADFI_CLASS[symbol];
+  return known !== undefined ? known : textClassOf(fullName, description);
+}
+
+function canonicalOf(symbol: string, tradFi: boolean, assetClass: AssetClass): string | null {
+  // An unclassified TradFi market (tagged or not) is never matched across venues.
+  if (tradFi && TRADFI_CLASS[symbol] === undefined) return null;
   return canonicalFor("txflow", symbol, assetClass);
 }
 
@@ -115,7 +152,10 @@ export function toTxflowMarketMeta(raw: unknown): TxflowMarketMeta | null {
   if (r.delisted) return null;
   const symbol = r.baseCurrency.toUpperCase();
   const tagIds = r.tagIds as number[];
-  const assetClass = assetClassOf(symbol, tagIds);
+  const fullName = typeof r.fullName === "string" ? r.fullName : null;
+  const description = typeof r.description === "string" ? r.description : null;
+  const tradFi = looksTxflowTradFi(symbol, tagIds, fullName, description);
+  const assetClass = assetClassOf(symbol, tradFi, fullName, description);
   return {
     index: r.index,
     name: r.name,
@@ -127,7 +167,7 @@ export function toTxflowMarketMeta(raw: unknown): TxflowMarketMeta | null {
     halted: r.haltTrading,
     tagIds,
     assetClass,
-    canonical: canonicalOf(symbol, tagIds, assetClass),
+    canonical: canonicalOf(symbol, tradFi, assetClass),
   };
 }
 

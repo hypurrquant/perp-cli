@@ -93,10 +93,16 @@ export interface VenueMarket {
   tradable: boolean;
 }
 
-function decimalsOf(step: string): number {
-  const s = step.includes("e") || step.includes("E") ? Number(step).toFixed(20).replace(/0+$/, "") : step;
-  const dot = s.indexOf(".");
-  return dot === -1 ? 0 : s.length - dot - 1;
+/**
+ * Quantity decimals of a lot step, or null when the step is not a power of ten ≤ 1 ("0.001" → 3,
+ * "1" → 0; TxFlow "10" / "100" and a "0.5" step → null): a decimals count cannot express them, and
+ * 0 next to stepSize "10" read as "any integer". `stepSize` is the authoritative grid.
+ */
+function decimalsOf(step: string): number | null {
+  const s = step.includes("e") || step.includes("E") ? Number(step).toFixed(20) : step;
+  const t = s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s;
+  if (!/^(1|0\.0*1)$/.test(t)) return null;
+  return t === "1" ? 0 : t.length - 2;
 }
 
 /** Pure mapping used by new-venue adapters to serve the legacy getMarkets(). */

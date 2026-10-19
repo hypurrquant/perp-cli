@@ -378,3 +378,40 @@ describe("setup venue selection", () => {
     expect(() => resolveSetupVenue("nope", "mainnet")).toThrow(expect.objectContaining({ structured: expect.objectContaining({ code: "INVALID_PARAMS" }) }));
   });
 });
+
+describe("TxFlow asset class, size decimals, error text (audit 0.15.0)", () => {
+  const meta = (o: Record<string, unknown>) => ({ name: `${String(o.baseCurrency)}-USDC`, quoteCurrency: "USDC", szDecimals: 2, maxLeverage: 10, index: 500, priceTick: "0.01", haltTrading: false, delisted: false, tagIds: [], ...o });
+
+  it("untagged TradFi rows (live perpMeta text) are TradFi with a null canonical, never a crypto canonical", () => {
+    // Live rows with tagIds [] (2026-10-19).
+    const gs = toTxflowMarketMeta(meta({ baseCurrency: "GS", fullName: "The Goldman Sachs Group, Inc.", description: "" }))!;
+    const path = toTxflowMarketMeta(meta({ baseCurrency: "PATH", fullName: "UiPath, Inc.", description: "PATHUSDC Perpetual Contract tracks the US dollar price of UiPath, Inc. Class A common stock" }))!;
+    const copper = toTxflowMarketMeta(meta({ baseCurrency: "COPPER", fullName: "Copper", description: "COPPERUSDC Perpetual Contract is the trading symbol for copper priced in US dollars, representing 1 pound of copper." }))!;
+    const tlt = toTxflowMarketMeta(meta({ baseCurrency: "TLT", fullName: "iShares 20+ Year Treasury Bond ETF", description: "" }))!;
+    const ko = toTxflowMarketMeta(meta({ baseCurrency: "KO", fullName: "Coca-Cola", description: "" }))!;
+    expect([gs, path, copper, tlt, ko].map(m => [m.symbol, m.assetClass, m.canonical])).toEqual([
+      ["GS", "equity", null], ["PATH", "equity", null], ["COPPER", "commodity", null], ["TLT", "etf", null], ["KO", "equity", null],
+    ]);
+    // A crypto token keeps its class and canonical.
+    const g = toTxflowMarketMeta(meta({ baseCurrency: "G", fullName: "Gravity", description: "" }))!;
+    expect([g.assetClass, g.canonical]).toEqual(["crypto", "G"]);
+    const xaut = toTxflowMarketMeta(meta({ baseCurrency: "XAUT", fullName: "Tether Gold", description: "XAUTUSDC Perpetual Contract is the trading symbol for gold priced in US dollars, representing 1 troy ounce of Tether Gold(XAUt)." }))!;
+    expect(xaut.assetClass).toBe("crypto");
+  });
+
+  it("sizeDecimals is null when the lot step is not a power of ten ≤ 1 (stepSize \"10\" is authoritative)", async () => {
+    const { toLegacyMarketInfo } = await import("../../exchanges/venue-types.js");
+    const base = { venue: "txflow", venueSymbol: "10", symbol: "DOGE", canonical: "DOGE", assetClass: "crypto", settle: "USDC", quoteAsset: "USDC", markPrice: "0.2", indexPrice: null, fundingRate: null, fundingRateBasis: { kind: "perHours", hours: 1 }, settlementIntervalHours: 1, openInterest: null, volume24h: null, tickSize: "0.00001", minSize: null, minNotional: null, maxLeverage: 20, marginTiers: null, session: null, tradable: true };
+    expect(toLegacyMarketInfo({ ...base, stepSize: "10" } as never)).toMatchObject({ stepSize: "10", sizeDecimals: null });
+    expect(toLegacyMarketInfo({ ...base, stepSize: "0.001" } as never).sizeDecimals).toBe(3);
+    expect(toLegacyMarketInfo({ ...base, stepSize: "1" } as never).sizeDecimals).toBe(0);
+  });
+
+  it("a 5xx HTML error page is reported without its markup", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("<!DOCTYPE html><html><head><title>Internal error | api.txflow.com | Cloudflare</title><style>x{}</style></head><body><h1>Internal server error</h1></body></html>", { status: 500 }));
+    const c = new TxflowClient("https://api.txflow.com", getVenue("txflow").rateLimit);
+    const err = await c.info({ type: "candleSnapshot" }).catch(e => e) as { message: string };
+    expect(err.message).toMatch(/HTTP 500 Internal error \| api\.txflow\.com \| Cloudflare Internal server error/);
+    expect(err.message).not.toMatch(/</);
+  });
+});
