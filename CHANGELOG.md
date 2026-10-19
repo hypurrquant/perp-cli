@@ -4,6 +4,12 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed
+
+- **Ondo `market kline`:** candles opened at the request minute (`:01`, `:06`) instead of the interval boundary, and the last row was a zero-volume candle opening after the requested end. `GET /v1/perps/candles` buckets minute-based resolutions from the requested `from`; the adapter now floors `from` to the interval boundary (day / week / month are already venue-aligned) and drops candles opening after `--end`. The endpoint stays the authenticated `/v1/perps/candles` (string decimals); without a registered Ondo key `market kline` refuses with `NO_SIGNER_AVAILABLE`.
+
+### JSON contract changes
+
 ## [0.15.0] — 2026-10-19
 
 ### NEW: Extended (formerly X10, Starknet) — read-only market data (`perp -e extended`, aliases `ext` / `x10`)
