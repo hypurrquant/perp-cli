@@ -141,10 +141,17 @@ export interface ExchangeFundingPayment {
  */
 export interface FundingHistoryRow {
   time: number;
-  rate: string;
+  /** null = no funding for this window (`marketClosed` true: the market was outside its funding hours). */
+  rate: string | null;
   price: string | null;
   intervalHours: number | null;
   rateKind: "lastSettled" | null;
+  /**
+   * true = the window fell outside the market's funding hours (QFEX `market_hours`): no funding
+   * was exchanged and `rate` is null — not a 0 rate. Averages / APRs skip these rows.
+   * Absent = the venue funds around the clock (or does not say).
+   */
+  marketClosed?: boolean;
 }
 
 export interface ExchangeKline {

@@ -173,18 +173,16 @@ export function qfexTradable(i: Pick<QfexInstrument, "status" | "quoteAsset">): 
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
 /**
- * Whether `nowMs` falls inside a `session: "open"` window of the instrument's market_hours
- * (weekday + local time in its `tz`). null = the venue published no usable schedule.
- * This is the underlying's regular session only — it is NOT used to infer whether funding
- * accrues (the schedule and the documented funding hours do not map 1:1, Q9).
+ * Session names of the instrument's market_hours that contain `ms` (weekday + local time in its
+ * `tz`); [] = no window listed at that time. null = the venue published no usable schedule.
  */
-export function qfexUnderlyingOpen(marketHours: Record<string, unknown> | null, nowMs: number): boolean | null {
+function qfexSessionsAt(marketHours: Record<string, unknown> | null, ms: number): string[] | null {
   if (marketHours === null || typeof marketHours.tz !== "string") return null;
   let parts: Intl.DateTimeFormatPart[];
   try {
     parts = new Intl.DateTimeFormat("en-US", {
       timeZone: marketHours.tz, weekday: "long", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
-    }).formatToParts(new Date(nowMs));
+    }).formatToParts(new Date(ms));
   } catch {
     return null; // an unknown IANA zone name is "no usable schedule", not a closed market
   }
@@ -194,15 +192,56 @@ export function qfexUnderlyingOpen(marketHours: Record<string, unknown> | null, 
   if (weekday === undefined || !WEEKDAYS.includes(weekday) || h === undefined || m === undefined || s === undefined) return null;
   const now = `${h}:${m}:${s}`;
   const day = marketHours[weekday];
-  if (day === undefined) return false; // no window listed for this weekday
+  if (day === undefined) return []; // no window listed for this weekday
   if (!Array.isArray(day)) return null;
+  const out: string[] = [];
   for (const w of day) {
     if (w === null || typeof w !== "object") return null;
     const win = w as Partial<QfexSessionWindow>;
     if (typeof win.session !== "string" || typeof win.open !== "string" || typeof win.close !== "string") return null;
-    if (win.session === "open" && now >= win.open && now <= win.close) return true;
+    if (now >= win.open && now <= win.close) out.push(win.session);
   }
-  return false;
+  return out;
+}
+
+/**
+ * Whether `nowMs` falls inside a `session: "open"` window of the instrument's market_hours.
+ * null = the venue published no usable schedule. This is the underlying's regular session only;
+ * funding hours are qfexFundingWindowClosed's question.
+ */
+export function qfexUnderlyingOpen(marketHours: Record<string, unknown> | null, nowMs: number): boolean | null {
+  const sessions = qfexSessionsAt(marketHours, nowMs);
+  return sessions === null ? null : sessions.includes("open");
+}
+
+/** market_hours session names during which no funding accrues. */
+const QFEX_NON_FUNDING_SESSIONS: ReadonlySet<string> = new Set(["weekend", "close"]);
+
+/**
+ * Was the funding window labelled `windowStartMs` outside the market's funding hours? Docs
+ * (docs.qfex.com/qfex/funding): "Funding is only active during a symbol's configured
+ * market_hours"; outside them "funding rate is 0 and no funding payment is exchanged".
+ *
+ * The window labelled T covers the hour BEFORE T (live 2026-10-19, GET /funding, 9 symbols over
+ * 10 days: AAPL-USD prints its last non-zero rate at Sat 00:00Z = Fri 20:00 ET and its first at
+ * Mon 01:00Z = Sun 21:00 ET, i.e. funding Sun 20:00–Fri 20:00 ET as documented, only when each
+ * label is read as the end of its hour).
+ *
+ * market_hours alone does not say whether an unlisted gap funds (US equities fund overnight
+ * between post_market and pre_market; Korean equities do not fund outside "open"), so a window is
+ * closed when the venue printed exactly 0 AND no part of the hour was in a funding session
+ * (anything but "weekend" / "close"). A non-zero rate is never marked closed, and a 0 inside a
+ * session stays a real 0. No usable schedule → never closed.
+ */
+export function qfexFundingWindowClosed(marketHours: Record<string, unknown> | null, windowStartMs: number, rate: number): boolean {
+  if (rate !== 0) return false;
+  const from = windowStartMs - 3_600_000;
+  for (const t of [from, from + 900_000, from + 1_800_000, from + 2_700_000, windowStartMs - 1_000]) {
+    const sessions = qfexSessionsAt(marketHours, t);
+    if (sessions === null) return false;
+    if (sessions.some(x => !QFEX_NON_FUNDING_SESSIONS.has(x))) return false;
+  }
+  return true;
 }
 
 function sessionOf(i: QfexInstrument, nowMs: number): MarketSession | null {
@@ -260,7 +299,11 @@ export function buildQfexMarkets(
       fundingRateBasis: QFEX_FUNDING_BASIS,
       settlementIntervalHours: QFEX_SETTLEMENT_HOURS,
       openInterest: oi === undefined ? null : oi,
-      volume24h: vol === undefined ? null : vol,
+      // daily_volumes_notional is in the QUOTE currency (live 2026-10-19: SAMSUNG-KRW 9,827,530 =
+      // /md/contracts target_volume 9,763,491 KRW ≈ base_volume 45.16 × ~216,000 KRW, and the
+      // 24 hourly candles' usdVolume sum to 9,821,767). VenueMarket.volume24h is USD, and the venue
+      // publishes no USD-KRW / JPY / CNY / SEK / HKD rate → null for a non-USD quote.
+      volume24h: vol === undefined || i.quoteAsset !== "USD" ? null : vol,
       tickSize: i.tickSize,
       stepSize: i.lotSize,
       minSize: i.minQuantity,
@@ -274,14 +317,22 @@ export function buildQfexMarkets(
   return { markets, activeWithoutMark };
 }
 
-async function fetchMarkets(net: Network): Promise<VenueMarket[]> {
+/**
+ * Priced markets, the /refdata instruments they were built from (status / quote asset per row) and
+ * the 24h notional per venue symbol in its QUOTE currency (KRW for SAMSUNG-KRW).
+ */
+export async function fetchQfexMarketsWithInstruments(net: Network): Promise<{ markets: VenueMarket[]; instruments: QfexInstrument[]; volumeNotional: ReadonlyMap<string, string> }> {
   const instruments = await fetchQfexInstruments(qfexPublicClient(net));
   const snap = await fetchQfexMarketStats(QFEX_ENDPOINTS[net].mdsWs, "*", QFEX_MDS_TIMEOUT_MS);
   const { markets, activeWithoutMark } = buildQfexMarkets(instruments, snap, Date.now());
   if (activeWithoutMark.length > 0) {
     console.warn(`[qfex] excluded ${activeWithoutMark.length} active market(s) without a mark price: ${activeWithoutMark.join(", ")}`);
   }
-  return markets;
+  return { markets, instruments, volumeNotional: snap.volumeNotional };
+}
+
+async function fetchMarkets(net: Network): Promise<VenueMarket[]> {
+  return (await fetchQfexMarketsWithInstruments(net)).markets;
 }
 
 export function buildQfexFundingRates(

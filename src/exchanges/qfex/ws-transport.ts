@@ -829,7 +829,7 @@ export interface QfexMdsSnapshot {
   marks: Map<string, { price: string; time: number }>;
   /** Venue symbol → open interest (base units). */
   openInterest: Map<string, string>;
-  /** Venue symbol → 24h volume, quote notional. */
+  /** Venue symbol → 24h volume, notional in the market's QUOTE currency (KRW for SAMSUNG-KRW — not USD). */
   volumeNotional: Map<string, string>;
   frame: QfexFrame;
 }

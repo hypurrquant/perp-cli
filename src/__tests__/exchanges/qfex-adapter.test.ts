@@ -1007,8 +1007,8 @@ describe("account reads and funding", () => {
     ] });
     const h = await adapter({ readOnly: true, credentials: READ_ONLY_CREDENTIALS }).getFundingHistory("AAPL", 3);
     expect(h).toEqual([
-      { time: Date.parse("2026-10-02T00:00:00Z"), rate: "0.00000149", price: null, intervalHours: 1, rateKind: "lastSettled" },
-      { time: Date.parse("2026-10-02T01:00:00Z"), rate: "0.0000001", price: null, intervalHours: 1, rateKind: "lastSettled" },
+      { time: Date.parse("2026-10-02T00:00:00Z"), rate: "0.00000149", price: null, intervalHours: 1, rateKind: "lastSettled", marketClosed: false },
+      { time: Date.parse("2026-10-02T01:00:00Z"), rate: "0.0000001", price: null, intervalHours: 1, rateKind: "lastSettled", marketClosed: false },
     ]);
   });
 });

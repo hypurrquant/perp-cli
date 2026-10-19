@@ -251,7 +251,9 @@ export async function scoreFunding(
   const venueHours = hasPerSymbolFundingHours(adapter) ? null : getFundingHours(exchangeName);
   const fH = venueHours !== null ? venueHours : await marketFundingHours(adapter, exchangeName, symbol);
   if (fH === null) return null; // per-symbol basis unknown — the hourly rate would be a guess
-  const history = await adapter.getFundingHistory(symbol, periods);
+  // Closed-market windows (QFEX outside market_hours: rate null, marketClosed) carry no funding;
+  // averaging them in as 0 would dilute the rate and the APR.
+  const history = (await adapter.getFundingHistory(symbol, periods)).filter((h): h is typeof h & { rate: string } => h.rate !== null && h.marketClosed !== true);
   if (history.length < 2) return null;
   const rates = history.map(h => parseFloat(h.rate));
   if (rates.some(r => !Number.isFinite(r))) {

@@ -66,7 +66,8 @@ import { loadQfexCredentials, QFEX_IMPORT_REMEDIATION } from "./agent.js";
 import { QfexClient } from "./client.js";
 import { qfexStatusClass } from "./errors.js";
 import {
-  fetchQfexInstruments, qfexPlainSymbol, qfexPublicData, qfexTradable, qfexVenueSymbol, type QfexInstrument,
+  buildQfexFundingRates, buildQfexMarkets, fetchQfexInstruments, fetchQfexMarketsWithInstruments, qfexFundingWindowClosed, qfexPlainSymbol, qfexPublicData, qfexTradable, qfexVenueSymbol,
+  type QfexContractRow, type QfexInstrument,
 } from "./public.js";
 import {
   QFEX_AUTOMATION_VERIFIED, QFEX_MODIFY_KEEPS_CLIENT_ID, QFEX_REDUCE_ONLY_WIRE, QFEX_STOP_CLIENT_ID_ECHO, decimalsEqual, fromWireNumber, isZeroDecimal,
@@ -161,6 +162,13 @@ export function plainNumber(n: unknown, what: string): string {
   if (Number.isInteger(n)) return String(n);
   return Number(n.toPrecision(15)).toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
 }
+
+/**
+ * A QFEX `market list` / `market info` row: the legacy shape plus listing state and quote currency.
+ * Prices are in `quoteAsset`; `volume24h` is USD (null for a non-USD quote — no FX rate published),
+ * `volume24hQuote` the venue's 24h notional in `quoteAsset`.
+ */
+export type QfexMarketRow = ExchangeMarketInfo & { tradable: boolean; status: string; quoteAsset: string; volume24hQuote: string | null };
 
 function listOf<T>(v: unknown, what: string): T[] {
   if (v === null || v === undefined) return []; // the venue encodes an empty list as JSON null
@@ -354,6 +362,21 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
     const i = (await this.instrumentMap()).get(venueSymbol);
     if (i === undefined) {
       throw new PerpError("SYMBOL_NOT_FOUND", `QFEX has no market ${venueSymbol}`, { exchange: "qfex", remediation: "List markets: perp -e qfex market list" });
+    }
+    return i;
+  }
+
+  /**
+   * Instrument of a per-symbol read (book / funding / kline / info). Unknown → SYMBOL_NOT_FOUND; a
+   * listed market whose /refdata status is not ACTIVE (DELISTED, INACTIVE) → SYMBOL_NOT_FOUND with
+   * that status: it is not a live market. A non-USD ACTIVE market is readable (only orders refuse it).
+   */
+  private async readableInstrument(symbol: string): Promise<QfexInstrument> {
+    const i = await this.instrumentOf(symbol);
+    if (i.status !== "ACTIVE") {
+      throw new PerpError("SYMBOL_NOT_FOUND", `QFEX ${i.venueSymbol} is ${i.status.toLowerCase()} (status ${i.status}) — not a live market`, {
+        exchange: "qfex", status: i.status, remediation: "List tradable markets with: perp market list -e qfex",
+      });
     }
     return i;
   }
@@ -1157,14 +1180,49 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
 
   // ── Legacy ExchangeAdapter: market data ──
 
-  async getMarkets(): Promise<ExchangeMarketInfo[]> {
-    return (await this.getVenueMarkets()).map(toLegacyMarketInfo);
+  /**
+   * Legacy rows plus `tradable` (ACTIVE and USD-quoted, qfexTradable), the /refdata `status`
+   * (ACTIVE / INACTIVE / DELISTED) and `quoteAsset` (prices of KRW / JPY / CNY / SEK / HKD markets
+   * are in that currency, not USD).
+   */
+  async getMarkets(): Promise<QfexMarketRow[]> {
+    const { markets, instruments, volumeNotional } = await fetchQfexMarketsWithInstruments(this.network);
+    const bySymbol = new Map(instruments.map(i => [i.venueSymbol, i]));
+    return markets.map(m => this.marketRow(m, bySymbol.get(m.venueSymbol), volumeNotional));
+  }
+
+  private marketRow(m: VenueMarket, i: QfexInstrument | undefined, volumeNotional: ReadonlyMap<string, string>): QfexMarketRow {
+    if (i === undefined) throw new PerpError("EXCHANGE_ERROR", `QFEX ${m.venueSymbol} is missing from /refdata`, { exchange: "qfex" });
+    return {
+      ...toLegacyMarketInfo(m), tradable: m.tradable, status: i.status, quoteAsset: i.quoteAsset,
+      volume24hQuote: volumeNotional.get(i.venueSymbol) ?? null,
+    };
+  }
+
+  /**
+   * `market info` of one ACTIVE market. fundingRate is the CURRENT /md/contracts `funding_rate`
+   * (the rate `market funding` / `perp funding` show), labelled fundingVerified false: QFEX funding
+   * is unverified (Q4, display only). Market lists keep fundingRate null so no scan / bot reads it.
+   */
+  async getMarketInfo(symbol: string): Promise<QfexMarketRow & { fundingVerified: false; fundingNote: string }> {
+    const i = await this.readableInstrument(symbol);
+    const snap = await fetchQfexMarketStats(QFEX_ENDPOINTS[this.network].mdsWs, i.venueSymbol, QFEX_MDS_TIMEOUT_MS);
+    const { markets } = buildQfexMarkets([i], snap, Date.now());
+    if (markets.length === 0) throw new PerpError("PRICE_STALE", `QFEX ${i.venueSymbol}: no mark price in the market_stats snapshot`, { exchange: "qfex" });
+    const contracts = await this.client.publicGet<{ data?: unknown }>("/md/contracts", null);
+    const { rates } = buildQfexFundingRates([i], listOf<QfexContractRow>(contracts.data, "/md/contracts data").filter(c => c.ticker_id === i.venueSymbol), snap.marks, Date.now());
+    return {
+      ...this.marketRow(markets[0], i, snap.volumeNotional),
+      fundingRate: rates.length === 0 ? null : rates[0].rate,
+      fundingVerified: false,
+      fundingNote: "QFEX funding rate UNVERIFIED (not confirmed against settled payments) — display only, never a basis for trading",
+    };
   }
 
   async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
     // Resolved against refdata first: an unknown symbol is SYMBOL_NOT_FOUND, not the venue's
     // HTTP 404 surfacing as a retryable EXCHANGE_ERROR.
-    const venueSymbol = (await this.instrumentOf(symbol)).venueSymbol;
+    const venueSymbol = (await this.readableInstrument(symbol)).venueSymbol;
     const book = await this.client.publicGet<{ bids?: unknown; asks?: unknown }>(`/md/orderbook/${encodeURIComponent(venueSymbol)}`, null);
     // The venue lists empty price levels (quantity "0"); they are not part of the book.
     const side = (v: unknown, what: string): [string, string][] => listOf<string[]>(v, what)
@@ -1177,9 +1235,14 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
     throw unsupported("qfex", "recentTrades", "the documented public trade endpoint (GET /public/trades) answers 404", "Use the order book: perp market book <symbol> -e qfex");
   }
 
-  /** Hourly funding windows (GET /funding/{symbol}, intervalMinutes 60). `limit` = hours back (default 24). */
+  /**
+   * Hourly funding windows (GET /funding/{symbol}, intervalMinutes 60). `limit` = hours back (default 24).
+   * A window outside the market's funding hours (qfexFundingWindowClosed) is `rate: null,
+   * marketClosed: true` — the venue prints 0 there, which is "no funding", not a 0 rate.
+   */
   async getFundingHistory(symbol: string, limit?: number): Promise<FundingHistoryRow[]> {
-    const venueSymbol = (await this.instrumentOf(symbol)).venueSymbol;
+    const instrument = await this.readableInstrument(symbol);
+    const venueSymbol = instrument.venueSymbol;
     const hours = limit === undefined ? 24 : limit;
     if (!Number.isInteger(hours) || hours < 1) throw new PerpError("INVALID_PARAMS", `funding history limit must be a positive integer of hours (got ${hours})`);
     const to = Date.now();
@@ -1191,7 +1254,9 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
       if (r.rate === null) continue; // the venue computed no rate for that window
       const time = typeof r.windowStart === "string" ? Date.parse(r.windowStart) : NaN;
       if (!Number.isFinite(time)) throw new PerpError("EXCHANGE_ERROR", `QFEX funding history: invalid windowStart ${JSON.stringify(r.windowStart)}`);
-      out.push({ time, rate: plainNumber(r.rate, "funding rate"), price: null, intervalHours: 1, rateKind: "lastSettled" });
+      const rate = plainNumber(r.rate, "funding rate");
+      const marketClosed = qfexFundingWindowClosed(instrument.marketHours, time, Number(rate));
+      out.push({ time, rate: marketClosed ? null : rate, price: null, intervalHours: 1, rateKind: marketClosed ? null : "lastSettled", marketClosed });
     }
     return out.sort((a, b) => a.time - b.time);
   }
@@ -1201,14 +1266,18 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
     if (resolution === undefined) {
       throw new PerpError("INVALID_PARAMS", `Unsupported kline interval "${interval}" on QFEX`, { remediation: `Use one of: ${Object.keys(KLINE_RESOLUTION).join(", ")}` });
     }
-    const venueSymbol = (await this.instrumentOf(symbol)).venueSymbol;
+    const instrument = await this.readableInstrument(symbol);
+    const venueSymbol = instrument.venueSymbol;
     const body = await this.client.publicGet<{ candles?: unknown }>(`/candles/${encodeURIComponent(venueSymbol)}`, {
       resolution, fromISO: new Date(startTime).toISOString(), toISO: new Date(endTime).toISOString(),
     });
     return listOf<QfexCandle>(body.candles, "candles").map(c => {
       const time = Date.parse(c.startedAt);
       if (!Number.isFinite(time)) throw new PerpError("EXCHANGE_ERROR", `QFEX candles: invalid startedAt "${c.startedAt}"`);
-      return { time, open: c.open, high: c.high, low: c.low, close: c.close, ...qfexCandleVolumes(c), trades: null };
+      const v = qfexCandleVolumes(c);
+      // `usdVolume` is Σ price × qty in the QUOTE currency (live 2026-10-19: SAMSUNG-KRW 1m candles
+      // equal the KRW trade tape exactly); quoteVolume is USD → null for a non-USD quote.
+      return { time, open: c.open, high: c.high, low: c.low, close: c.close, ...v, quoteVolume: instrument.quoteAsset === "USD" ? v.quoteVolume : null, trades: null };
     }).sort((a, b) => a.time - b.time);
   }
 

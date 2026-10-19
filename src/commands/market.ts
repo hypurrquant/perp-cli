@@ -15,6 +15,24 @@ const EXCHANGES = listVenuesWithRole("account").map(v => v.id);
 /** null = venue does not publish the value → "-" (never rendered as $0). */
 const usdOrDash = (v: string | null): string => (v === null ? chalk.gray("-") : `$${formatUsd(v)}`);
 
+/** Non-USD quote currency of a row (QFEX "SAMSUNG-KRW": quoteAsset "KRW"); null = USD or not stated. */
+const nonUsdQuoteOf = (m: object): string | null => {
+  const q = (m as { quoteAsset?: unknown }).quoteAsset;
+  return typeof q === "string" && q !== "USD" ? q : null;
+};
+
+/** A price of row `m` in its quote currency: "$1.23" for USD, "213,500 KRW" otherwise; null → "-". */
+const priceOrDash = (v: string | null, m: object): string => {
+  const q = nonUsdQuoteOf(m);
+  return v === null ? chalk.gray("-") : q === null ? `$${formatUsd(v)}` : `${formatUsd(v)} ${q}`;
+};
+
+/** 24h volume: USD, or (no USD figure) the venue's quote-currency notional labelled with its currency. */
+const volumeCell = (m: { volume24h: string | null }): string => {
+  const local = (m as { volume24hQuote?: unknown }).volume24hQuote;
+  return m.volume24h === null && typeof local === "string" ? priceOrDash(local, m) : usdOrDash(m.volume24h);
+};
+
 /**
  * Funding cell. On a venue whose funding interval is per market (VenueDefinition.fundingRateBasis
  * "perMarket": Variational, Aster, GRVT) the raw rate is labelled with its interval ("+0.0079%/8h"), since
@@ -46,7 +64,7 @@ function formatOpenInterest(m: { symbol: string; markPrice: string; openInterest
   const base = `${Number.isFinite(oi) ? oi.toLocaleString("en-US", { maximumFractionDigits: 4 }) : m.openInterest} ${baseAssetOf(m.symbol)}`;
   const mark = Number(m.markPrice);
   if (!withUsd || !Number.isFinite(oi) || !(mark > 0)) return base;
-  return `${base} ${chalk.gray(`(≈ $${formatUsd(oi * mark)} at mark)`)}`;
+  return `${base} ${chalk.gray(`(≈ ${priceOrDash(String(oi * mark), m)} at mark)`)}`;
 }
 
 function printRfqQuotes(q: RfqQuotes, json: boolean): void {
@@ -119,10 +137,10 @@ export function registerMarketCommands(
       const HEADERS = ["Symbol", "Mark", "Index", "Funding", "24h Vol", "OI (base)", "Max Lev"];
       const marketRow = (m: { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null; fundingHours?: number | null; volume24h: string | null; openInterest: string | null; maxLeverage: number | null }, perMarket = false) => [
         chalk.white.bold(m.symbol),
-        `$${formatUsd(m.markPrice)}`,
-        usdOrDash(m.indexPrice),
+        priceOrDash(m.markPrice, m),
+        priceOrDash(m.indexPrice, m),
         fundingCell(m, perMarket),
-        usdOrDash(m.volume24h),
+        volumeCell(m),
         formatOpenInterest(m, false),
         m.maxLeverage === null ? chalk.gray("-") : String(m.maxLeverage) + "x",
       ];
@@ -218,8 +236,8 @@ export function registerMarketCommands(
       const PRICE_HEADERS = ["Symbol", "Mark", "Index", "Funding"];
       const priceRow = (m: { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null; fundingHours?: number | null }, perMarket = false) => [
         chalk.white.bold(m.symbol),
-        `$${formatUsd(m.markPrice)}`,
-        usdOrDash(m.indexPrice),
+        priceOrDash(m.markPrice, m),
+        priceOrDash(m.indexPrice, m),
         fundingCell(m, perMarket),
       ];
 
@@ -411,7 +429,7 @@ export function registerMarketCommands(
       const rows = history.map((h) => {
         const base = [
           new Date(h.time).toLocaleString(),
-          formatPercent(h.rate),
+          h.rate === null ? chalk.gray(h.marketClosed === true ? "market closed" : "N/A") : formatPercent(h.rate),
         ];
         if (hasOracle) base.push(h.price != null ? `$${formatUsd(h.price)}` : chalk.gray("n/a"));
         return base;
@@ -542,11 +560,14 @@ export function registerMarketCommands(
 
 function printMarketInfo(venue: string, m: ExchangeMarketInfo): void {
   console.log(chalk.cyan.bold(`\n  ${m.symbol} on ${venue}\n`));
-  console.log(`  Mark Price:     $${formatUsd(m.markPrice)}`);
-  console.log(`  Index Price:    ${usdOrDash(m.indexPrice)}`);
+  console.log(`  Mark Price:     ${priceOrDash(m.markPrice, m)}`);
+  console.log(`  Index Price:    ${priceOrDash(m.indexPrice, m)}`);
   // Per-market funding interval (GRVT 4h / 8h, Variational, Aster): the rate carries its interval.
   console.log(`  Funding Rate:   ${fundingCell(m, perMarketFunding(venue))}`);
-  console.log(`  24h Volume:     ${usdOrDash(m.volume24h)}`);
+  // A venue whose rate is unverified (QFEX) labels it on the row.
+  const fundingNote = (m as { fundingNote?: unknown }).fundingNote;
+  if (typeof fundingNote === "string") console.log(chalk.yellow(`                  ${fundingNote}`));
+  console.log(`  24h Volume:     ${volumeCell(m)}`);
   console.log(`  Open Interest:  ${formatOpenInterest(m, true)}`);
   console.log(`  Max Leverage:   ${m.maxLeverage === null ? chalk.gray("-") : `${m.maxLeverage}x`}`);
   console.log();
