@@ -76,8 +76,8 @@ describe("scoreFunding / strategy config (review)", () => {
     ];
     const venue = { name: "lighter", getFundingHistory: vi.fn(async () => rows) } as never;
     const s = await scoreFunding(venue, "BTC", "lighter", 3);
-    // lighter basis is 8 h: 0.000012 / h × 8 = 0.000096 per 8 h (was the raw hourly mean 0.000012).
-    expect(s?.avgRate).toBeCloseTo(0.000096, 10);
+    // lighter basis is 1 h (0.15.1): the hourly mean 0.000012.
+    expect(s?.avgRate).toBeCloseTo(0.000012, 12);
     expect(s?.payments).toBe(2);
   });
 

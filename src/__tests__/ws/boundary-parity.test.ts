@@ -85,7 +85,7 @@ describe("parity with the CLI", () => {
     expect(aster.url("mainnet")).toBe("wss://fstream.asterdex.com/stream"); // combined-stream path on the defined host
   });
 
-  it("funding intervals match the CLI basis (Lighter WS is the documented per-1h exception)", () => {
+  it("funding intervals match the CLI basis (Lighter too since 0.15.1: both read the settled hourly market_stats rate)", () => {
     for (const codec of CODECS) {
       const def = ALL_VENUES.find(d => d.id === codec.venue)!;
       const st = VENUE_STATIC[codec.venue as keyof typeof VENUE_STATIC]!;
@@ -96,12 +96,6 @@ describe("parity with the CLI", () => {
         continue;
       }
       expect(def.settlementIntervalHours, codec.venue).toBe(st.settlementIntervalHours);
-      if (codec.venue === "lighter" || codec.venue === "lighter-rh") {
-        // CLI basis = REST /api/v1/funding-rates (fraction per 8 h); WS values are percent per 1 h (Phase 0).
-        expect(def.fundingRateBasis).toEqual({ kind: "perHours", hours: 8 });
-        expect(st.rateIntervalHours).toBe(1);
-        continue;
-      }
       expect(def.fundingRateBasis, codec.venue).toEqual({ kind: "perHours", hours: st.rateIntervalHours });
     }
   });

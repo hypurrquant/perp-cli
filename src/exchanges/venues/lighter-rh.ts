@@ -27,7 +27,8 @@ export const lighterRhVenue: VenueDefinition = {
   secretStorage: { kind: "perp-keystore", dir: "lighter-rh-agents" },
   networks: LIGHTER_RH_NETWORKS,
   // "Lighter RH is the same API/engine as Lighter" → Lighter's basis/interval (live-data check pending).
-  fundingRateBasis: { kind: "perHours", hours: 8 },
+  // The market rows' fundingRate is the settled hourly rate (WS market_stats, lighter-public.ts).
+  fundingRateBasis: { kind: "perHours", hours: 1 },
   settlementIntervalHours: 1,
   fundingVerified: true,
   roles: ["marketData", "account", "trading"],

@@ -83,7 +83,7 @@ describe("market info fundingHours from the venue definition", () => {
     expect((await a.getMarkets())[0].fundingHours).toBe(1);
   });
 
-  it.each(["lighter", "lighter-rh"] as const)("%s: 1 (the settled market_stats rate is per 1 h; the venue's REST /funding-rates basis stays 8 h)", async (venue) => {
+  it.each(["lighter", "lighter-rh"] as const)("%s: 1 (the settled market_stats rate is per 1 h = the venue basis)", async (venue) => {
     const a = new LighterAdapter("0xabc", true, undefined, venue);
     const t = a as unknown as Record<string, unknown>;
     t.ensureMarketMap = async () => {};
@@ -91,7 +91,7 @@ describe("market info fundingHours from the venue definition", () => {
     t.fundingStats = vi.fn(async () => new Map([[1, { rate: "0.000012", predictedRate: "0.000011" }]]));
     const [m] = await a.getMarkets();
     expect(m).toMatchObject({ fundingRate: "0.000012", fundingHours: 1, fundingRateKind: "lastSettled", predictedFundingRate: "0.000011" });
-    expect(getVenue(venue).fundingRateBasis).toEqual({ kind: "perHours", hours: 8 });
+    expect(getVenue(venue).fundingRateBasis).toEqual({ kind: "perHours", hours: 1 }); // toHourlyRate(rate, venue) can never be 8× off
   });
 });
 

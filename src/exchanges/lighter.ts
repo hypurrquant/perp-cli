@@ -2473,8 +2473,9 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   /**
-   * Get funding rates for all markets.
-   * API: GET /api/v1/funding-rates
+   * GET /api/v1/funding-rates: the venue's PREDICTED rate × 8, a fraction per 8 h — not the venue
+   * basis (1 h; market rows carry the settled hourly rate, fundingStats). Not used for funding
+   * comparisons; normalize with 8 h if read.
    */
   async getFundingRates(): Promise<Map<string, { rate: string; markPrice: string | null }>> {
     const map = new Map<string, { rate: string; markPrice: string | null }>();
