@@ -802,15 +802,25 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
     return listOf(rows).map(r => ({ time: parseOndoTime(r.time, "funding"), rate: r.fundingRate, price: null }));
   }
 
-  /** GET /v1/perps/candles — authenticated (see klinesRequireAuth). */
+  /**
+   * GET /v1/perps/candles — authenticated (see klinesRequireAuth).
+   * Minute-based resolutions are bucketed from `from` (live 2026-10-19: from=10:01:07 → candles at
+   * :01), so `from` is floored to the interval boundary first; D / W / M are venue-aligned already.
+   * The venue also returns a zero-volume bucket that opens after `to`; candles opening after the
+   * requested end are not part of the range and are left out.
+   */
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
+    const resolution = toResolution(interval);
+    const minuteMs = /^\d+$/.test(resolution) ? Number(resolution) * 60_000 : null;
+    const from = minuteMs === null ? startTime : Math.floor(startTime / minuteMs) * minuteMs;
     const candles = await this.client.get<OndoCandle[] | null>("/v1/perps/candles", {
       market: ondoVenueSymbol(symbol),
-      resolution: toResolution(interval),
-      from: Math.floor(startTime / 1000),
+      resolution,
+      from: Math.floor(from / 1000),
       to: Math.floor(endTime / 1000),
     });
-    return nonEmptyOrListed(this, symbol, listOf(candles).map(c => ({
+    const inRange = listOf(candles).filter(c => parseOndoTime(c.startTime, "candle") <= endTime);
+    return nonEmptyOrListed(this, symbol, inRange.map(c => ({
       time: parseOndoTime(c.startTime, "candle"),
       open: c.open,
       high: c.high,
