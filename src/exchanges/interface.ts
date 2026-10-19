@@ -134,6 +134,19 @@ export interface ExchangeFundingPayment {
   payment: string;
 }
 
+/**
+ * One row of `market funding` (getFundingHistory). `rate` is a fraction per `intervalHours`
+ * (the hours one printed rate covers; null = unknown for that market), positive = longs pay.
+ * `rateKind` "lastSettled" = a rate the venue applied at `time`; null = the venue does not say.
+ */
+export interface FundingHistoryRow {
+  time: number;
+  rate: string;
+  price: string | null;
+  intervalHours: number | null;
+  rateKind: "lastSettled" | null;
+}
+
 export interface ExchangeKline {
   time: number;
   open: string;
@@ -217,7 +230,7 @@ export interface ExchangeAdapter {
   getMarkets(): Promise<ExchangeMarketInfo[]>;
   getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }>;
   getRecentTrades(symbol: string, limit?: number): Promise<ExchangePublicTrade[]>;
-  getFundingHistory(symbol: string, limit?: number): Promise<{ time: number; rate: string; price: string | null }[]>;
+  getFundingHistory(symbol: string, limit?: number): Promise<FundingHistoryRow[]>;
   getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]>;
   /** RFQ venue (no order book): the maker's indicative quotes. Absent = the venue has an order book. */
   getRfqQuotes?(symbol: string): Promise<RfqQuotes>;

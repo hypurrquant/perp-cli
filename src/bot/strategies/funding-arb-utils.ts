@@ -259,7 +259,10 @@ export async function scoreFunding(
   }
   const avgRate = rates.reduce((s, r) => s + r, 0) / rates.length;
   const consistency = rates.filter(r => r > 0).length / rates.length;
-  const annualized = annualizeHourlyRate(avgRate / fH);
+  // A row that states its own interval (Lighter /fundings prints are per 1 h while the venue's
+  // quoted rate is per 8 h) is normalized with it; intervalHours null → the market basis fH.
+  const avgHourly = history.reduce((s, h, i) => s + rates[i] / (typeof h.intervalHours === "number" ? h.intervalHours : fH), 0) / rates.length;
+  const annualized = annualizeHourlyRate(avgHourly);
   const score: FundingScore = { symbol, exchange: exchangeName, avgRate, consistency, annualized, payments: rates.length };
   cache?.set(key, { score, ts: Date.now() });
   return score;

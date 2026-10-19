@@ -25,6 +25,7 @@ import type { EvmSigner } from "../../signer/interface.js";
 import type {
   ExchangeAdapter, ExchangeBalance, ExchangeFundingPayment, ExchangeKline, ExchangeMarketInfo, ExchangeOrder,
   ExchangePosition, ExchangeTrade, ExchangePublicTrade,
+  FundingHistoryRow
 } from "../interface.js";
 import { alignProtectionPrice, exactUnits, mulDecimal, slippagePrice, subDecimal } from "../precision.js";
 import type { ResolvedSlippage } from "../slippage.js";
@@ -333,13 +334,13 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
     });
   }
 
-  async getFundingHistory(symbol: string, limit = 100): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(symbol: string, limit = 100): Promise<FundingHistoryRow[]> {
     const m = await this.market(symbol);
     const d = await this.client.get<{ records?: unknown }>(`/v1/markets/id/${m.market_id}/funding-rate-history`, { limit: Math.min(limit, 1000) });
     if (!Array.isArray(d.records)) throw new PerpError("EXCHANGE_ERROR", "RISEx funding-rate-history: no records", { exchange: "risex" });
     return d.records.map(r => {
       const x = r as { funding_rate?: unknown; end_time?: unknown; index_price?: unknown };
-      return { time: nsToMs(str(x.end_time, "funding end_time")), rate: decReq(x.funding_rate, "funding_rate"), price: positiveOrNull(x.index_price) };
+      return { time: nsToMs(str(x.end_time, "funding end_time")), rate: decReq(x.funding_rate, "funding_rate"), price: positiveOrNull(x.index_price), intervalHours: 1, rateKind: "lastSettled" as const };
     });
   }
 

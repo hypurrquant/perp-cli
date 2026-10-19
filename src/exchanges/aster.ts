@@ -31,6 +31,7 @@ import type {
   ExchangePublicTrade,
   ExchangeFundingPayment,
   ExchangeKline,
+  FundingHistoryRow
 } from "./interface.js";
 import type { ResolvedSlippage } from "./slippage.js";
 import type { EvmSigner } from "../signer/interface.js";
@@ -663,7 +664,7 @@ export class AsterAdapter implements ExchangeAdapter {
     }));
   }
 
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(symbol: string, limit = 10): Promise<FundingHistoryRow[]> {
     const data = await this._publicGet("/fapi/v3/fundingRate", {
       symbol: this._toApi(symbol),
       limit: String(limit),
@@ -671,6 +672,9 @@ export class AsterAdapter implements ExchangeAdapter {
     if (!Array.isArray(data)) {
       throw new PerpError("EXCHANGE_ERROR", `Aster fundingRate history is not a list (${JSON.stringify(data).slice(0, 120)})`, { exchange: "aster" });
     }
+    // Per-market interval (/fapi/v3/fundingInfo); null when the venue lists none for the symbol.
+    const hours = await this.getFundingHours(symbol);
+    const intervalHours = hours === undefined ? null : hours;
     // `200 []` for an unlisted symbol (live 2026-10-14): checked against the market directory.
     return nonEmptyOrListed(this, symbol, (data as Array<Record<string, unknown>>).map((d) => {
       const time = Number(d.fundingTime);
@@ -681,6 +685,8 @@ export class AsterAdapter implements ExchangeAdapter {
         time,
         rate: venueRateField(d.fundingRate, "fundingRate fundingRate", "aster"),
         price: d.markPrice ? String(d.markPrice) : null,
+        intervalHours,
+        rateKind: "lastSettled" as const,
       };
     }), this._fromApi(this._toApi(symbol)));
   }

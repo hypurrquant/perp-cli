@@ -1,5 +1,5 @@
 import { nonEmptyOrListed, symbolNotFound } from "./unknown-symbol.js";
-import { withTapeSkipped } from "./interface.js";
+import { withTapeSkipped, type FundingHistoryRow } from "./interface.js";
 import { Keypair } from "@solana/web3.js";
 import { PacificaClient, type Network } from "../pacifica/index.js";
 import { isPacificaRateLimited } from "../pacifica/rate-limit.js";
@@ -681,8 +681,8 @@ export class PacificaAdapter implements ExchangeAdapter {
         maxLeverage: m.max_leverage,
         sizeDecimals,
         stepSize: validLot ? m.lot_size : null,
-        // Pacifica publishes neither a per-market funding interval nor margin tiers.
-        fundingHours: null,
+        // Uniform hourly funding (venue fundingRateBasis perHours 1); no margin tiers published.
+        fundingHours: 1,
         marginTiers: null,
       };
     });
@@ -1517,7 +1517,7 @@ export class PacificaAdapter implements ExchangeAdapter {
     return withTapeSkipped(await nonEmptyOrListed(this, symbol, rows), skipped);
   }
 
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(symbol: string, limit = 10): Promise<FundingHistoryRow[]> {
     // The client unwraps the {success, data} envelope: the answer is the row list itself.
     const data = await this.client.getFundingHistory(symbol, { limit });
     if (!Array.isArray(data)) {
@@ -1531,6 +1531,8 @@ export class PacificaAdapter implements ExchangeAdapter {
         rate: venueRateField(h.funding_rate, "funding history funding_rate", "pacifica"),
         // absent → null (unknown), never "0"
         price: (typeof oracle === "string" && oracle !== "") || (typeof oracle === "number" && Number.isFinite(oracle)) ? String(oracle) : null,
+        intervalHours: 1, // hourly settlement (venue fundingRateBasis perHours 1)
+        rateKind: "lastSettled" as const,
       };
     }));
   }

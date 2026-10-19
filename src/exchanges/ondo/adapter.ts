@@ -42,6 +42,7 @@ import type { OndoAgentMeta } from "../../settings.js";
 import type {
   ExchangeAdapter, ExchangeBalance, ExchangeFundingPayment, ExchangeKline, ExchangeMarketInfo, ExchangeOrder,
   ExchangePosition, ExchangeTrade, ExchangePublicTrade,
+  FundingHistoryRow
 } from "../interface.js";
 import type { ResolvedSlippage } from "../slippage.js";
 import { alignProtectionPrice, floorSize, formatComputedPrice, requireOnTick, slippagePrice, subDecimal } from "../precision.js";
@@ -795,11 +796,11 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
     })), ondoPlainSymbol(ondoVenueSymbol(symbol)));
   }
 
-  async getFundingHistory(symbol: string, limit?: number): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(symbol: string, limit?: number): Promise<FundingHistoryRow[]> {
     const rows = await this.client.publicGet<OndoFundingRateValue[] | null>("/v1/perps/funding_rate_history", {
       market: ondoVenueSymbol(symbol), limit: limit === undefined ? null : limit,
     });
-    return listOf(rows).map(r => ({ time: parseOndoTime(r.time, "funding"), rate: r.fundingRate, price: null }));
+    return listOf(rows).map(r => ({ time: parseOndoTime(r.time, "funding"), rate: r.fundingRate, price: null, intervalHours: 1, rateKind: "lastSettled" as const }));
   }
 
   /**

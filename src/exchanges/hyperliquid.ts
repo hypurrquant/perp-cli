@@ -8,6 +8,7 @@ import type {
   ExchangePublicTrade,
   ExchangeFundingPayment,
   ExchangeKline,
+  FundingHistoryRow
 } from "./interface.js";
 import type { ResolvedSlippage } from "./slippage.js";
 import type { EvmSigner } from "../signer/index.js";
@@ -871,8 +872,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         sizeDecimals: szDec,
         // HL has no separate lot-size field; the step is implied by szDecimals.
         stepSize: null,
-        // HL funding is uniform (venue definition), not per-market.
-        fundingHours: null,
+        // HL funding is uniform: a fraction per 1 h (venue fundingRateBasis), core and HIP-3.
+        fundingHours: 1,
         marginTiers: tierMap.get(Number(asset.marginTableId)) ?? null,
       }];
     });
@@ -2090,14 +2091,18 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     return !/[:@#/]/.test(coin);
   }
 
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(symbol: string, limit = 10): Promise<FundingHistoryRow[]> {
     await this.getAssetIndex(symbol); // unlisted coin: SYMBOL_NOT_FOUND (fundingHistory answers HTTP 500)
     const now = Date.now();
-    const history = await this._infoPost({ type: "fundingHistory", coin: this._venueCoin(symbol), startTime: now - 24 * 60 * 60 * 1000 }) as Record<string, unknown>[];
+    // Hourly settlements (core and HIP-3 dexes): `limit` hours back plus one spare hour, so
+    // `-l` above 24 is honoured (the window was fixed at 24 h).
+    const history = await this._infoPost({ type: "fundingHistory", coin: this._venueCoin(symbol), startTime: now - (limit + 1) * 60 * 60 * 1000 }) as Record<string, unknown>[];
     return (history ?? []).slice(-limit).map((h) => ({
       time: Number(h.time ?? 0),
       rate: venueRateField(h.fundingRate, "fundingHistory fundingRate", "hyperliquid"),
       price: null,
+      intervalHours: 1,
+      rateKind: "lastSettled" as const,
     }));
   }
 

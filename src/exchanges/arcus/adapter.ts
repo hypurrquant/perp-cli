@@ -30,6 +30,7 @@ import { OwsSolanaSigner } from "../../signer/ows-solana.js";
 import type {
   ExchangeAdapter, ExchangeBalance, ExchangeFundingPayment, ExchangeKline, ExchangeMarketInfo,
   ExchangeOrder, ExchangePosition, ExchangeTrade, ExchangePublicTrade,
+  FundingHistoryRow
 } from "../interface.js";
 import type { ResolvedSlippage } from "../slippage.js";
 import { alignProtectionPrice, floorSize, mulDecimal, requirePositive, slippagePrice, subDecimal, toUnitsExact, unitsToString } from "../precision.js";
@@ -1034,11 +1035,11 @@ export class ArcusAdapter implements ExchangeAdapter, TradingV2 {
     return res.trades.map(t => ({ time: usToMs(t.timestamp), symbol: m.baseAsset, side: sideLower(t.side), price: t.price, size: t.size, fee: null }));
   }
 
-  async getFundingHistory(symbol: string, limit = 100): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(symbol: string, limit = 100): Promise<FundingHistoryRow[]> {
     const m = await this.market(symbol);
     const res = await this.client.get<{ fundingRates: Array<{ fundingRate: string; time: number }> }>(
       "/v1/fundingRates", "fundingRates", { market: m.marketDisplayName, limit });
-    return res.fundingRates.map(f => ({ time: usToMs(f.time), rate: f.fundingRate, price: null }));
+    return res.fundingRates.map(f => ({ time: usToMs(f.time), rate: f.fundingRate, price: null, intervalHours: 1, rateKind: "lastSettled" as const }));
   }
 
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
