@@ -93,6 +93,21 @@ check("tarball contents", need.every(f => list.includes(f)) && list.filter(f => 
   `${tgz}: ${list.filter(f => f.startsWith("package/dist/ws/")).join(", ")}; required present: ${need.filter(f => list.includes(f)).length}/${need.length}`);
 void pack;
 
+// Shipped text never promises a version that is already out (≤ this version): the packed type
+// declarations and the skill references, as consumers read them.
+{
+  const version = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).version;
+  const cmp = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
+  const PROMISE = /(planned for|arrives? in|ships? in|coming in|lands? in|until|not in this release|read-only in|known gap in|reserved for)\s*\(?\*{0,2}v?(\d+\.\d+\.\d+)/gi;
+  const shipped = list.filter(f => /^package\/(dist\/ws\/.*\.d\.ts|skills\/.*\.md|README\.md)$/.test(f));
+  const stale = [];
+  for (const f of shipped) {
+    const text = spawnSync("tar", ["-xOzf", TGZ, f], { encoding: "utf8", maxBuffer: 64 << 20 }).stdout;
+    for (const m of text.matchAll(PROMISE)) if (cmp(m[2], version) <= 0) stale.push(`${f}: "${m[0]}"`);
+  }
+  check(`no shipped text promises a version <= ${version}`, stale.length === 0, stale.length ? stale.join("\n") : `${shipped.length} file(s) clean`);
+}
+
 // 3. consumer install + imports + typecheck + skill code blocks
 const C = join(WORK, "consumer");
 mkdirSync(C, { recursive: true });

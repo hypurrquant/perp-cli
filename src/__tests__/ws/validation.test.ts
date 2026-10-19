@@ -95,11 +95,11 @@ describe("market channels", () => {
     expect(t.sockets).toHaveLength(0);
   });
 
-  it("book / trades keep CAPABILITY_UNSUPPORTED until 0.15.1", async () => {
+  it("book / trades are CAPABILITY_UNSUPPORTED (planned, no version promised)", async () => {
     const { s } = stream(pacifica, PACIFICA_ROUTES);
     const err = await s.subscribe({ kind: "market", symbol: "BTC", channels: ["trades"] }).ready.then(() => null, (e: unknown) => e as WsError);
     expect(err?.structured.code).toBe("CAPABILITY_UNSUPPORTED");
-    expect(err?.structured.remediation).toContain("0.15.1");
+    expect(err?.structured.remediation).toContain("planned, not yet available");
   });
 });
 

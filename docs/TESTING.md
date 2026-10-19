@@ -6,7 +6,7 @@
 > [`docs/QA_WORKFLOW.md`](QA_WORKFLOW.md) (agent QA guardrails).
 
 **Why this exists.** perp-cli has 13 perp venues + Derive options, a CLI, an MCP server and a WS
-library. Until 0.15.0 the tests were per-venue unit tests with hand-built mocks, and nothing made
+library. Through 0.15.0 the tests were per-venue unit tests with hand-built mocks, and nothing made
 every venue meet the same output contract. Live QA of the published 0.15.0 found bugs no test caught:
 Ondo klines off the interval grid and in the future; Lighter funding "history" of one row; Pacifica
 `market prices` printing raw venue rows; funding rows without `intervalHours` / `rateKind` on 9

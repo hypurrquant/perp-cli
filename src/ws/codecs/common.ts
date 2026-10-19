@@ -114,9 +114,9 @@ export function capabilities(
     channels: { allMarkets: true, market: true, bbo: true, book: false, trades: false, user: p.user },
     fields: p.fields,
     notes: {
-      book: "Not in this release (0.15.1)",
-      trades: "Not in this release (0.15.1)",
-      ...(p.user ? {} : { user: "Not in this release (0.15.1)" }),
+      book: "Planned, not yet available",
+      trades: "Planned, not yet available",
+      ...(p.user ? {} : { user: "Planned, not yet available" }),
       ...p.notes,
     },
   };

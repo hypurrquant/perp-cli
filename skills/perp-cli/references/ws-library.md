@@ -4,10 +4,10 @@
 custom live dashboard, funding comparison or price/account feed for **hyperliquid** (native + HIP-3),
 **pacifica**, **lighter**, **lighter-rh**, **aster** and **arcus**, in the browser or in Node.
 
-> **Stability:** ships in **0.15.0** and is **@experimental** through 0.15.x — breaking changes only in a
+> **Stability:** shipped since **0.15.0** and **@experimental** through 0.15.x — breaking changes only in a
 > minor bump (CHANGELOG callouts); every event carries `schema: 1`. **@stable from 0.16.0** after consumer
-> sign-off. Planned for **0.15.1**: Aster user channels, Ondo / QFEX, `book` / `trades`, `perp stream`.
-> The `VenueId` type already includes `"ondo"` and `"qfex"`, but there are no codecs for them until 0.15.1.
+> sign-off. Planned, not yet available: Aster user channels, Ondo / QFEX, `book` / `trades`, `perp stream`.
+> The `VenueId` type already includes `"ondo"` and `"qfex"`, but there are no codecs for them yet.
 > **GRVT** (CLI venue, market data only) has no codec: its public WS has per-instrument selectors only (no
 > all-markets stream) and a 150-stream cap below its 184 perpetuals, so `allMarkets` cannot be served.
 > **Extended** (CLI venue `extended`, market data only) has no codec: its public streams are one socket
@@ -76,7 +76,7 @@ page's job, like a bundler's resolver):
 
 Serve the page and `node_modules` from the same static server (any origin works: the venues do not check
 Origin and their REST CORS is `*`). Do the same with a CDN that serves npm files (e.g.
-`https://cdn.jsdelivr.net/npm/@hypurrquant/perp-ws@0.15.0/dist/index.js`). The `/node` entry is
+`https://cdn.jsdelivr.net/npm/@hypurrquant/perp-ws@<version>/dist/index.js`). The `/node` entry is
 Node-only (it loads `ws`); never map it in a browser.
 
 ## 2. Minimal examples
@@ -186,7 +186,7 @@ await Promise.all(streams.map((s) => s.close()));
     **`symbols`** are this venue's exact directory symbols. Pass **one or the other** — both together
     reject `INVALID_PARAMS`. Same wire subscription and budget either way (filtering is client-side);
   - `{ kind: "market", symbol, channels: ["market" | "bbo"] }`. `"book"` and `"trades"` are already in
-    the types but **reject with `CAPABILITY_UNSUPPORTED` until 0.15.1** — don't ship UI that needs them.
+    the types but **reject with `CAPABILITY_UNSUPPORTED`** (planned, not yet available) — don't ship UI that needs them.
     Any other channel name (e.g. `"ticker"`) or an empty `channels` rejects with `INVALID_PARAMS`;
   - `{ kind: "user", channels: ["account" | "positions" | "orders" | "fills"] }` (needs `credentials`).
 - **`symbols` / `symbol` mean the venue's directory symbols, case-sensitive** — not canonical names. `BTC` is `"BTC"` on
@@ -301,7 +301,7 @@ Options and defaults:
   quote `canonical: null`, as the CLI does. A custom `canonicalize` that
   returns a key for both brings back several legs per venue — pick one before ranking.
 - **`fundingVerified`** (per leg): the CLI's verdict that the venue's funding unit and which published
-  rate actually settles were confirmed against its funding payments. All six venues in 0.15.0 are
+  rate actually settles were confirmed against its funding payments. All six WS venues are
   `true`; a `false` leg (a future venue) is indicative only — the CLI keeps such venues out of funding
   comparison and refuses them as funding-arb legs, so do the same.
 - **Filter illiquid outliers before ranking spreads.** Tiny or newly listed markets often show extreme
@@ -413,14 +413,14 @@ sub.on((e) => {
 - **The library never holds keys.** `CredentialProvider` is async callbacks: `user()` (the account
   identity), `authToken({ purpose, maxTtlSec })` (Lighter `account_all_orders`; re-called at 80 % of the
   TTL with backoff retries; a read-only `ro:` token is recommended in browsers), `hmacSha256` /
-  `signTypedData` (reserved for 0.15.1 venues). Tokens handed in are redacted from every error, log and
+  `signTypedData` (reserved for planned venues). Tokens handed in are redacted from every error, log and
   raw excerpt.
 - `allowInPageSecrets: true` is required for venues whose auth needs a signing secret in the page
-  (Aster / Ondo / QFEX, 0.15.1). Without it they reject `CAPABILITY_UNSUPPORTED` in a browser.
+  (Aster / Ondo / QFEX — planned, not yet available). Without it they reject `CAPABILITY_UNSUPPORTED` in a browser.
 - `UserRef` per venue: hyperliquid `{ address }` (no auth), pacifica `{ account }` (Solana address, no
   auth), lighter / lighter-rh `{ accountIndex }`, arcus `{ address, subaccount }` (`null` = account 0, no auth).
-- **KNOWN GAP (0.15.0): Aster user channels are not implemented** — `kind: "user"` on aster rejects
-  `CAPABILITY_UNSUPPORTED` (no parity; 0.15.1).
+- **KNOWN GAP: Aster user channels are not implemented** — `kind: "user"` on aster rejects
+  `CAPABILITY_UNSUPPORTED` (no parity; planned, not yet available).
 
 Events:
 - `account` — `equity, available, marginUsed, unrealizedPnl` (+ `dex` on hyperliquid, one per perp dex);

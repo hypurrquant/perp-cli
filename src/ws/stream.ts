@@ -73,7 +73,7 @@ interface TokenState { token: string; expiresAt: number; refreshAt: number; time
 
 const USER_CHANNELS: ReadonlyArray<UserChannel> = ["account", "positions", "orders", "fills"];
 const MARKET_CHANNELS: ReadonlyArray<string> = ["market", "bbo", "book", "trades"];
-/** Channels whose decoders ship in 0.15.1 (CAPABILITY_UNSUPPORTED until then). */
+/** Channels with no decoder yet (planned, not yet available): CAPABILITY_UNSUPPORTED. */
 const LATER_CHANNELS: ReadonlyArray<string> = ["book", "trades"];
 const NETWORKS: ReadonlyArray<Network> = ["mainnet", "testnet"];
 /** Oversized-message closes within the window before the subscriptions fail (instead of reconnecting forever). */
@@ -891,7 +891,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     }
     if (target.kind === "market") {
       const channels: unknown = target.channels;
-      const valid = `Use channels ${MARKET_CHANNELS.map(c => `"${c}"`).join(" / ")} (book and trades arrive in 0.15.1)`;
+      const valid = `Use channels ${MARKET_CHANNELS.map(c => `"${c}"`).join(" / ")} (book and trades: planned, not yet available)`;
       if (!Array.isArray(channels) || channels.length === 0) {
         throw wsError("INVALID_PARAMS", "kind \"market\" needs at least one channel", valid);
       }
@@ -900,7 +900,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
       const later = target.channels.filter(c => LATER_CHANNELS.includes(c));
       if (later.length > 0) {
         throw wsError("CAPABILITY_UNSUPPORTED", `${venue} channel(s) ${later.join(", ")} are not available in this release`,
-          "Use channels \"market\" / \"bbo\" (book and trades arrive in 0.15.1)");
+          "Use channels \"market\" / \"bbo\" (book and trades: planned, not yet available)");
       }
       if (target.channels.includes("bbo") && !codec.capabilities.channels.bbo) {
         throw wsError("CAPABILITY_UNSUPPORTED", `${venue} has no bbo channel`, "Use channel \"market\"");

@@ -4,7 +4,7 @@
  */
 /**
  * Every perp-cli venue id. "ondo" and "qfex" are included for type stability but have no perp-cli/ws
- * codec until 0.15.1 (there is no `ondo` / `qfex` export to pass to createVenueStream yet).
+ * codec (planned, not yet available: there is no `ondo` / `qfex` export to pass to createVenueStream).
  */
 type VenueId = "pacifica" | "hyperliquid" | "lighter" | "aster" | "lighter-rh" | "ondo" | "arcus" | "qfex";
 declare const VENUE_IDS: readonly VenueId[];
@@ -393,7 +393,7 @@ type UserRef = {
     venue: "lighter" | "lighter-rh";
     accountIndex: number;
 }
-/** KNOWN GAP in 0.15.0: Aster user channels are not implemented (CAPABILITY_UNSUPPORTED); 0.15.1. */
+/** KNOWN GAP: Aster user channels are not implemented (CAPABILITY_UNSUPPORTED; planned, not yet available). */
  | {
     venue: "aster";
     user: `0x${string}`;
@@ -536,7 +536,7 @@ interface VenueStreamOptions {
     canonicalize?: Canonicalize;
     /** Needed for kind:"user". */
     credentials?: CredentialProvider;
-    /** Default false. Required for user channels whose auth needs a signing secret in the page (Aster/Ondo/QFEX, 0.15.1). */
+    /** Default false. Required for user channels whose auth needs a signing secret in the page (Aster / Ondo / QFEX — planned, not yet available). */
     allowInPageSecrets?: boolean;
     /** ≤ venue limits. */
     budget?: {
@@ -941,7 +941,7 @@ declare const lighter: VenueCodec;
 declare const lighterRh: VenueCodec;
 
 /**
- * Aster codec (§6.1, public only in 0.15.0). One combined-stream socket (`/stream`, frames
+ * Aster codec (§6.1, public channels only). One combined-stream socket (`/stream`, frames
  * {stream, data}) with `!markPrice@arr@1s` (every symbol, 1 s) + `!ticker@arr` (only changed symbols).
  * r = accruing current-period rate (Phase 0: == premiumIndex.lastFundingRate ≠ last settled).
  * The funding interval is per market from the LABELLED REST source `rest:/fapi/v3/fundingInfo`

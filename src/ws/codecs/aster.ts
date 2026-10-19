@@ -1,5 +1,5 @@
 /**
- * Aster codec (§6.1, public only in 0.15.0). One combined-stream socket (`/stream`, frames
+ * Aster codec (§6.1, public channels only). One combined-stream socket (`/stream`, frames
  * {stream, data}) with `!markPrice@arr@1s` (every symbol, 1 s) + `!ticker@arr` (only changed symbols).
  * r = accruing current-period rate (Phase 0: == premiumIndex.lastFundingRate ≠ last settled).
  * The funding interval is per market from the LABELLED REST source `rest:/fapi/v3/fundingInfo`
@@ -68,7 +68,7 @@ export const aster: VenueCodec = {
       openInterest: "Not on WS (REST only)",
       fundingInterval: `Labelled REST source ${FUNDING_INFO}, refreshed hourly; missing → null`,
       volume24hNotional: "!ticker@arr q (quote-asset volume)",
-      user: "KNOWN GAP in 0.15.0: no Aster user channels (signed USER_STREAM listenKey) — kind:\"user\" rejects CAPABILITY_UNSUPPORTED; arrives in 0.15.1",
+      user: "KNOWN GAP: no Aster user channels (signed USER_STREAM listenKey) — kind:\"user\" rejects CAPABILITY_UNSUPPORTED; planned, not yet available",
       bbo: "<symbol>@bookTicker; `u` orders frames (non-contiguous)",
     },
   }),

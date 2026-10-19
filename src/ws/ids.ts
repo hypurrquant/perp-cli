@@ -5,7 +5,7 @@
 
 /**
  * Every perp-cli venue id. "ondo" and "qfex" are included for type stability but have no perp-cli/ws
- * codec until 0.15.1 (there is no `ondo` / `qfex` export to pass to createVenueStream yet).
+ * codec (planned, not yet available: there is no `ondo` / `qfex` export to pass to createVenueStream).
  */
 export type VenueId =
   | "pacifica" | "hyperliquid" | "lighter" | "aster"
