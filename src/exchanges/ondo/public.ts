@@ -127,11 +127,30 @@ export function ondoPlainSymbol(venueSymbol: string): string {
   return venueSymbol.slice(0, -ONDO_PERP_SUFFIX.length);
 }
 
-/** CLI symbol ("tsla", "TSLA", "TSLA-USD.P") → venue symbol "TSLA-USD.P". */
+/**
+ * The one Ondo symbol normalizer, used by every command: "tsla", "TSLA", "TSLA-USD", "TSLA-USD.P",
+ * "TSLA-PERP" → venue symbol "TSLA-USD.P". 0.15.0 appended the suffix to whatever it was given
+ * ("AAPL-USD" → "AAPL-USD-USD.P", "AAPL-PERP" → "AAPL-PERP-USD.P").
+ */
 export function ondoVenueSymbol(symbol: string): string {
-  const up = symbol.trim().toUpperCase();
-  if (up.length === 0) throw new PerpError("INVALID_PARAMS", "symbol is empty");
-  return up.endsWith(ONDO_PERP_SUFFIX) ? up : `${up}${ONDO_PERP_SUFFIX}`;
+  const base = symbol.trim().toUpperCase().replace(/(-USD\.P|-PERP|-USD)$/, "");
+  if (base.length === 0) throw new PerpError("INVALID_PARAMS", "symbol is empty");
+  return `${base}${ONDO_PERP_SUFFIX}`;
+}
+
+/**
+ * Listing state of an Ondo perp. "disabled" = delisted / paused (`disabled: true` on the
+ * /v1/markets pair or the /v1/perps/contracts row; its price fields are zeroed or frozen and its
+ * fundingRate is stale); "closed" = `isClosed` (no new trading); "reduceOnly" = closes only.
+ * Only "active" is tradable.
+ */
+export type OndoMarketStatus = "active" | "disabled" | "closed" | "reduceOnly";
+
+export function ondoMarketStatus(pair: Pick<OndoTradingPair, "disabled">, contract: Pick<OndoContract, "disabled" | "isClosed" | "reduceOnly"> | null): OndoMarketStatus {
+  if (pair.disabled === true || contract?.disabled === true) return "disabled";
+  if (contract?.isClosed === true) return "closed";
+  if (contract?.reduceOnly === true) return "reduceOnly";
+  return "active";
 }
 
 /** Empty string / absent → null. Ondo omits or blanks fields it does not publish. */
@@ -230,7 +249,8 @@ function requireRow<T>(m: Map<string, T>, market: string, source: string): T {
   return row;
 }
 
-async function fetchMarkets(net: Network): Promise<VenueMarket[]> {
+/** Every priced Ondo perp with its listing state (getMarkets rows carry `status`; VenueMarket has no field for it). */
+export async function fetchOndoMarketsWithStatus(net: Network): Promise<Array<{ market: VenueMarket; status: OndoMarketStatus }>> {
   const client = ondoPublicClient(net);
   const pairs = await fetchOndoTradingPairs(client);
   const contracts = byMarket(await client.publicGet<OndoContract[]>("/v1/perps/contracts", null));
@@ -244,13 +264,14 @@ async function fetchMarkets(net: Network): Promise<VenueMarket[]> {
     console.warn(`[ondo] excluded ${noMark.length} market(s) without a mark price: ${noMark.join(", ")}`);
   }
 
-  return pairs.filter(p => marks[p.market] !== undefined).map((pair): VenueMarket => {
+  return pairs.filter(p => marks[p.market] !== undefined).map((pair): { market: VenueMarket; status: OndoMarketStatus } => {
     const contract = requireRow(contracts, pair.market, "/v1/perps/contracts");
     const mark = marks[pair.market];
     const symbol = ondoPlainSymbol(pair.market);
     const assetClass = ondoAssetClass(pair.market, pair.tags);
     const { maxLeverage, tiers } = marginTiersOf(pair);
-    return {
+    const status = ondoMarketStatus(pair, contract);
+    return { status, market: {
       venue: "ondo",
       venueSymbol: pair.market,
       symbol,
@@ -259,8 +280,11 @@ async function fetchMarkets(net: Network): Promise<VenueMarket[]> {
       settle: "USDC",
       quoteAsset: pair.pair.quote,
       markPrice: mark.markPrice,
-      indexPrice: priceOrNull(contract.indexPrice),
-      fundingRate: strOrNull(contract.fundingRate),
+      // /v1/perps/contracts `indexPrice` is frozen (live 2026-10-19: BTC 82702.30 unchanged for 17 min
+      // while the mark_prices oracle moved 0.5%); the oracle of /v1/perps/mark_prices is the live index.
+      indexPrice: priceOrNull(mark.oraclePrice),
+      // A disabled listing's rate is stale (fetchFundingRates skips it too): no current rate.
+      fundingRate: status === "disabled" ? null : strOrNull(contract.fundingRate),
       fundingRateBasis: ONDO_FUNDING_BASIS,
       settlementIntervalHours: ONDO_SETTLEMENT_HOURS,
       openInterest: strOrNull(contract.openInterest),
@@ -272,9 +296,13 @@ async function fetchMarkets(net: Network): Promise<VenueMarket[]> {
       maxLeverage,
       marginTiers: tiers,
       session: sessionOf(pair, mark),
-      tradable: pair.disabled !== true && !contract.disabled && contract.isClosed !== true && contract.reduceOnly !== true,
-    };
+      tradable: status === "active",
+    } };
   });
+}
+
+async function fetchMarkets(net: Network): Promise<VenueMarket[]> {
+  return (await fetchOndoMarketsWithStatus(net)).map(r => r.market);
 }
 
 async function fetchFundingRates(net: Network): Promise<VenueFundingRate[]> {

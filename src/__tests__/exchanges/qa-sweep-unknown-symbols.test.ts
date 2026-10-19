@@ -174,18 +174,21 @@ describe("Pacifica funding history is strict (review L2)", () => {
   });
 });
 
+/** /v1/markets body (read by the disabled-listing check of every Ondo per-symbol read). */
+const ONDO_PAIRS = (listed: string[]) => ({ perps: { tradingPairs: listed.map(s => ({ market: `${s}-USD.P` })) }, spot: { tradingPairs: [] } });
+
 describe("Ondo", () => {
   it("trades / candles: 200 [] for an unlisted market → SYMBOL_NOT_FOUND; a listed market keeps []", async () => {
-    const client = { publicGet: vi.fn(async () => []), get: vi.fn(async () => []) };
-    const a = stubAdapter(OndoAdapter.prototype, "ondo", { client }, ["AAPL"]);
+    const client = { publicGet: vi.fn(async (path: string) => path === "/v1/markets" ? ONDO_PAIRS(["AAPL"]) : []), get: vi.fn(async () => []) };
+    const a = stubAdapter(OndoAdapter.prototype, "ondo", { client, pairsCache: null }, ["AAPL"]);
     await expect(a.getRecentTrades("NOPE")).rejects.toMatchObject(NOT_FOUND("ondo"));
     await expect(a.getKlines("NOPE", "1h", 0, 3_600_000)).rejects.toMatchObject(NOT_FOUND("ondo"));
     await expect(a.getRecentTrades("AAPL")).resolves.toEqual([]);
   });
 
   it("a venue-form symbol (TSLA-USD.P) of a listed market with an empty window stays []", async () => {
-    const client = { publicGet: vi.fn(async () => []), get: vi.fn(async () => []) };
-    const a = stubAdapter(OndoAdapter.prototype, "ondo", { client }, ["TSLA"]);
+    const client = { publicGet: vi.fn(async (path: string) => path === "/v1/markets" ? ONDO_PAIRS(["TSLA"]) : []), get: vi.fn(async () => []) };
+    const a = stubAdapter(OndoAdapter.prototype, "ondo", { client, pairsCache: null }, ["TSLA"]);
     await expect(a.getRecentTrades("TSLA-USD.P")).resolves.toEqual([]);
     await expect(a.getKlines("tsla-usd.p", "1h", 0, 3_600_000)).resolves.toEqual([]);
   });
