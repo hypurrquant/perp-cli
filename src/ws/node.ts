@@ -76,10 +76,18 @@ export function createNodeTransport(opts: NodeTransportOptions = {}): WsFactory 
     const ws = new WebSocket(url, { maxPayload });
     // `ws` throws on an 'error' event without a listener (e.g. close() while CONNECTING): keep one.
     ws.on("error", () => undefined);
+    const whenClosed = new Promise<void>((resolve) => { ws.once("close", () => resolve()); });
     const like: WsLike = {
+      whenClosed,
       get readyState() { return ws.readyState; },
       send: (data) => ws.send(data),
-      close: (code, reason) => ws.close(code, reason),
+      // The close frame is sent, then the socket is destroyed at once: `ws` would otherwise keep a
+      // 30 s close-handshake timer (and the TCP socket) alive until the server answers, so the
+      // process was not idle after stream.close() (conformance ws:all:close-timers).
+      close: (code, reason) => {
+        ws.close(code, reason);
+        ws.terminate();
+      },
       onopen: null,
       onmessage: null,
       onclose: null,

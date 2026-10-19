@@ -96,6 +96,9 @@ function checkCodec(codec: unknown): asserts codec is VenueCodec {
   }
 }
 
+/** Longest `stream.close()` waits for its sockets to be fully closed. */
+const CLOSE_DRAIN_MS = 2000;
+
 /** "did you mean" canonicals: case-insensitive canonical, or a canonical with that base (e.g. "xyz:TSLA" for "TSLA"). */
 function suggestCanonicals(missing: string, entries: ReadonlyArray<{ canonical: string | null; base: string }>): string[] {
   const m = missing.toUpperCase();
@@ -1169,6 +1172,14 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
         sub.end();
       }
       stateListeners.clear();
+      // Resolve once the sockets are fully closed (Node: `ws` keeps a close-handshake timer and the
+      // TCP socket until then), bounded so a stuck socket never hangs close().
+      let bound: ReturnType<typeof setTimeout> | null = null;
+      await Promise.race([
+        Promise.all(shards.map(sh => sh.conn.drained())),
+        new Promise<void>((resolve) => { bound = setTimeout(resolve, CLOSE_DRAIN_MS); }),
+      ]);
+      if (bound !== null) clearTimeout(bound);
     },
   };
   return stream;

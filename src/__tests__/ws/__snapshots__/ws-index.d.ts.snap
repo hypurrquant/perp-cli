@@ -113,6 +113,11 @@ interface WsLike {
         wasClean?: boolean;
     }) => void) | null;
     onerror: ((ev: unknown) => void) | null;
+    /**
+     * Optional: settles once the underlying socket is fully closed (no timer or socket left). The
+     * Node transport sets it; `stream.close()` awaits it (bounded) so the process is idle afterwards.
+     */
+    readonly whenClosed?: Promise<void>;
 }
 type WsFactory = (url: string) => WsLike;
 type FetchLike = (input: string, init?: {
