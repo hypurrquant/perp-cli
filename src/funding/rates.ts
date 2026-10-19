@@ -95,6 +95,9 @@ export function isRankedComparison(c: SymbolFundingComparison): c is RankedFundi
 export interface FundingRateSnapshot {
   timestamp: string;
   symbols: SymbolFundingComparison[];
+  /** The minSpread applied (annualized %) and how many ranked pairs it hid (spread below it). */
+  minSpread: number;
+  belowMinSpread: number;
   exchangeStatus: Record<string, "ok" | "error">;
   /** Error message per venue whose status is "error". */
   exchangeErrors: Record<string, string>;
@@ -351,6 +354,7 @@ export async function fetchAllFundingRates(opts?: {
 
   const comparisons: SymbolFundingComparison[] = [];
   const minSpread = opts?.minSpread ?? 0;
+  let belowMinSpread = 0;
 
   for (const [symbol, rates] of rateMap) {
     // Need at least 2 exchanges to compare
@@ -386,7 +390,7 @@ export async function fetchAllFundingRates(opts?: {
     }
 
     const maxSpreadAnnual = annualizeHourlyRate(highest.hourlyRate - lowest.hourlyRate);
-    if (maxSpreadAnnual < minSpread) continue;
+    if (maxSpreadAnnual < minSpread) { belowMinSpread++; continue; }
 
     // Estimate hourly income for $1000 notional arb
     const notional = 1000;
@@ -413,6 +417,8 @@ export async function fetchAllFundingRates(opts?: {
   return {
     timestamp: new Date().toISOString(),
     symbols: comparisons,
+    minSpread,
+    belowMinSpread,
     exchangeStatus,
     exchangeErrors,
   };

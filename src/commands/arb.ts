@@ -372,10 +372,15 @@ export async function handleRates(isJson: () => boolean, opts: { symbol?: string
       const history = getHistoricalRates(s.symbol, bestEx, h24ago, now);
       return { ...s, rateHistory: history.map(h => ({ ts: h.ts, hourlyRate: h.hourlyRate })) };
     });
-    if (process.argv.includes("--ndjson") || process.argv.includes("--fields")) return printJson(jsonOk(enriched));
-    return printJson(jsonOk({ ...snapshot, symbols: enriched }));
+    // --min never hides rows silently: the threshold and the hidden count are in meta (and data).
+    const minMeta = { minSpread: snapshot.minSpread, belowMinSpread: snapshot.belowMinSpread };
+    if (process.argv.includes("--ndjson") || process.argv.includes("--fields")) return printJson(jsonOk(enriched, minMeta));
+    return printJson(jsonOk({ ...snapshot, symbols: enriched }, minMeta));
   }
   printSnapshotTable(snapshot); printFundingExchangeStatus(snapshot);
+  if (snapshot.belowMinSpread > 0) {
+    console.log(chalk.gray(`  ${snapshot.belowMinSpread} pair${snapshot.belowMinSpread === 1 ? "" : "s"} below --min ${snapshot.minSpread}% hidden (show them: --min 0)\n`));
+  }
 }
 
 /**

@@ -220,7 +220,7 @@ export interface ApiResponse<T = unknown> {
     remediation?: string;
     details?: Record<string, unknown>;
   };
-  meta?: { exchange?: string; timestamp: string; duration_ms?: number; skippedRows?: { count: number; reason: string }; /** Why a value is null / degraded (e.g. a venue's funding rate unavailable). */ warnings?: string[] };
+  meta?: { exchange?: string; timestamp: string; duration_ms?: number; skippedRows?: { count: number; reason: string }; /** Why a value is null / degraded (e.g. a venue's funding rate unavailable). */ warnings?: string[]; /** `arb scan --rates`: the --min threshold (annualized %) and how many pairs it hid. */ minSpread?: number; belowMinSpread?: number };
 }
 
 /** Wrap successful result in standard envelope */
