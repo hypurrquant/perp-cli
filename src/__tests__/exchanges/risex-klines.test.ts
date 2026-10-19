@@ -112,3 +112,13 @@ describe("RISEx book depth / trades cap (S5, S6)", () => {
     await expect(a.getRecentTrades("BTC", 1500)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "INVALID_PARAMS" }) });
   });
 });
+
+describe("RISEx OHLC pass-through (conformance U1)", () => {
+  it("a live bar whose open lies below its low is returned exactly as published (field-name mapping, no clamping)", async () => {
+    // Live 1m row, 2026-10-19: open 83305.4 < low 83317.3 — RISEx opens at the previous close.
+    const row = { market_id: "1", interval: "1m", time: "1791977520000000000", low: "83317.3", high: "83350.6", open: "83305.4", close: "83350.6", volume: "0.03077" };
+    const { a } = adapterReturning({ data: [row] });
+    const [k] = await a.getKlines("BTC", "1m", 0, 1);
+    expect(k).toEqual({ time: 1791977520000, open: "83305.4", high: "83350.6", low: "83317.3", close: "83350.6", volume: "0.03077", quoteVolume: null, trades: null });
+  });
+});

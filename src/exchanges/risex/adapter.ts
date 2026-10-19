@@ -385,6 +385,10 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
       const x = c as Record<string, unknown>;
       // The venue answers an interval it does not serve with 1m bars: a row of another interval
       // is never returned as the requested one.
+      // OHLC are mapped by field name, unscaled. RISEx opens a bar at the PREVIOUS bar's close
+      // while high / low are the bar's own trades, so `open` can lie outside [low, high] (live
+      // 2026-10-19: 2555 of 7187 1m bars, 5 of 121 1h bars; daily bars none). That is the venue's
+      // data, passed through as published — never clamped or "fixed" (documented in the CHANGELOG).
       // Required on every row here (the field is always sent; null/absent would skip the check).
       assertCandleInterval("risex", interval, x.interval === undefined ? null : x.interval, `Use one of: ${Object.keys(KLINE_INTERVAL_MS).join(", ")}`);
       return {
