@@ -143,9 +143,12 @@ async function fetchMarketsPublic(exchange: string) {
  * meta.warnings when a venue's rows carry fundingRate null for a known reason (Lighter: the
  * settled-rate snapshot could not be read) — the reason reaches the agent, not only stderr.
  */
-function fundingWarningMeta(exchange: string): { warnings?: string[] } {
+function fundingWarningMeta(exchange: string, rows: ReadonlyArray<{ fundingRate?: unknown }>): { warnings?: string[] } {
   const id = getVenue(exchange).id;
   if (id !== "lighter" && id !== "lighter-rh") return {};
+  // Tied to the rows served: only when they actually carry a null rate (cached rows that have
+  // rates never get a stale warning; null rows always say why when the reason is known).
+  if (!rows.some(r => r.fundingRate === null)) return {};
   const w = lighterFundingStatsWarning(id, MCP_NETWORK);
   return w === null ? {} : { warnings: [w] };
 }
@@ -312,13 +315,13 @@ server.tool(
       const adapter = await tryGetAdapter(exchange);
       if (adapter) {
         const markets = labelMarketRows(exchange, await adapter.getMarkets());
-        return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, ...apiMeta(exchange), ...fundingWarningMeta(exchange) }) }] };
+        return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, ...apiMeta(exchange), ...fundingWarningMeta(exchange, markets) }) }] };
       }
       // No credentials: the venue's public directory — price-only on GRVT (no 184-request
       // margin_rules fan-out per call) — in the CLI market-row shape (venueMarketRow), with the
       // same market set as `perp market list` (the venue's shared eligibility / listing rule).
       const markets = await fetchMarketRowsPublic(exchange);
-      return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, source: "public", ...apiMeta(exchange), ...fundingWarningMeta(exchange) }) }] };
+      return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, source: "public", ...apiMeta(exchange), ...fundingWarningMeta(exchange, markets) }) }] };
     } catch (e) {
       return { content: [{ type: "text", text: errOf(e, { exchange }) }], isError: true };
     }

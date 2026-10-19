@@ -6,7 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { sent, state } = vi.hoisted(() => ({ sent: [] as string[], state: { frames: [] as unknown[], sockets: 0, closeOnSubscribe: false } }));
+const { sent, state } = vi.hoisted(() => ({ sent: [] as string[], state: { frames: [] as unknown[], sockets: 0, closeOnSubscribe: false, silent: false } }));
 vi.mock("ws", async () => {
   const { EventEmitter } = await import("node:events");
   class FakeWs extends EventEmitter {
@@ -14,6 +14,7 @@ vi.mock("ws", async () => {
     send(d: string) {
       sent.push(d);
       if (state.closeOnSubscribe) { setTimeout(() => this.emit("close", 1006), 0); return; }
+      if (state.silent) return; // open, subscribed, never answers
       for (const f of state.frames) setTimeout(() => this.emit("message", JSON.stringify(f)), 0);
     }
     close() { /* closed */ }
@@ -24,7 +25,7 @@ vi.mock("ws", async () => {
 import "../../exchanges/venues/index.js";
 import { clearLighterFundingStatsCache, fetchLighterFundingStats, lighterFundingStatsWarning, lighterPublicData } from "../../exchanges/lighter-public.js";
 
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); sent.length = 0; state.sockets = 0; state.closeOnSubscribe = false; clearLighterFundingStatsCache(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); sent.length = 0; state.sockets = 0; state.closeOnSubscribe = false; state.silent = false; vi.useRealTimers(); clearLighterFundingStatsCache(); });
 const snap = (stats: Record<string, unknown>) => ({ type: "subscribed/market_stats", channel: "market_stats:all", market_stats: stats });
 
 const detail = (symbol: string, market_id: number) => ({
@@ -58,7 +59,7 @@ describe("Lighter settled funding (market_stats snapshot)", () => {
     await expect(fetchLighterFundingStats("lighter", "mainnet")).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_UNREACHABLE", message: expect.stringContaining("closed (code 1006)") }) });
     await expect(fetchLighterFundingStats("lighter", "mainnet")).rejects.toBeTruthy();
     expect(state.sockets).toBe(1);
-    expect(lighterFundingStatsWarning("lighter", "mainnet")).toMatch(/fundingRate null — settled funding rate unavailable \(.*closed/);
+    expect(lighterFundingStatsWarning("lighter", "mainnet")).toMatch(/fundingRate null — settled funding rate unavailable \(EXCHANGE_UNREACHABLE: .*closed/);
   });
 
   it("a malformed value is null with a warning (never 0)", async () => {
@@ -75,7 +76,7 @@ describe("Lighter settled funding (market_stats snapshot)", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ order_book_details: [detail("BTC", 1)] }), { status: 200 })));
     const [row] = await lighterPublicData("lighter-rh").fetchMarkets("testnet");
     expect(row.fundingRate).toBeNull();
-    expect(lighterFundingStatsWarning("lighter-rh", "testnet")).toMatch(/no WebSocket endpoint/);
+    expect(lighterFundingStatsWarning("lighter-rh", "testnet")).toMatch(/CAPABILITY_UNSUPPORTED: .*no WebSocket endpoint/);
   });
 
   it("funding: false (marks / precision only) opens no socket", async () => {
@@ -83,5 +84,19 @@ describe("Lighter settled funding (market_stats snapshot)", () => {
     const [row] = await lighterPublicData("lighter").fetchMarkets("mainnet", { funding: false });
     expect(row.markPrice).toBe("100");
     expect(state.sockets).toBe(0);
+  });
+
+  it("a socket that never answers times out after 4 s with EXCHANGE_UNREACHABLE", async () => {
+    vi.useFakeTimers();
+    state.silent = true;
+    const p = fetchLighterFundingStats("lighter", "mainnet");
+    const done = expect(p).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_UNREACHABLE", message: expect.stringContaining("no snapshot within 4 s") }) });
+    await vi.advanceTimersByTimeAsync(3_900);
+    let settled = false;
+    p.catch(() => {}).finally(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(200);
+    await done;
   });
 });

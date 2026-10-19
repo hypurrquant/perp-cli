@@ -70,6 +70,48 @@ describe("AsterAdapter.getMarkets", () => {
     await expect(a.getRecentTrades("NOPEU")).rejects.toMatchObject({ structured: expect.objectContaining({ code: "SYMBOL_NOT_FOUND" }) });
   });
 
+  it("the directory load: concurrent first uses share ONE exchangeInfo request; a failed load is retried, not cached", async () => {
+    let calls = 0;
+    let fail = true;
+    const a = await adapter((path) => {
+      if (path === "/fapi/v3/exchangeInfo") {
+        calls++;
+        if (fail) { fail = false; throw new Error("boom"); }
+        return { symbols: SYMBOLS };
+      }
+      if (path === "/fapi/v3/depth") return { bids: [], asks: [] };
+      throw new Error(`unexpected ${path}`);
+    }, { cold: true });
+    await expect(a.getOrderbook("BTC")).rejects.toThrow(/boom/);
+    await Promise.all([a.getOrderbook("BTC"), a.getOrderbook("ETH"), a.getOrderbook("BTCUSD1")]);
+    expect(calls).toBe(2); // the failed load + ONE shared retry
+  });
+
+  it("a bare base names its USDT market even when a non-USDT venue symbol has the same spelling", async () => {
+    const DIR = [
+      { symbol: "XUSDT", baseAsset: "X", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USDT", filters: [] },
+      { symbol: "X", baseAsset: "X", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "U", filters: [] },
+    ];
+    const sent: string[] = [];
+    const a = await adapter((path, p) => {
+      if (path === "/fapi/v3/exchangeInfo") return { symbols: DIR };
+      sent.push(String(p?.symbol));
+      return { bids: [], asks: [] };
+    }, { cold: true });
+    await a.getOrderbook("X");
+    await a.getOrderbook("XUSDT");
+    expect(sent).toEqual(["XUSDT", "XUSDT"]);
+  });
+
+  it("a non-2xx public read is a structured PerpError (never UNKNOWN)", async () => {
+    const { AsterAdapter } = await import("../../exchanges/aster.js");
+    const a = new AsterAdapter(undefined, false);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>bad gateway</html>", { status: 502 })));
+    try {
+      await expect(a.getOrderbook("BTC")).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_UNREACHABLE" }) });
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("an unreadable premiumIndex throws (never a last-trade / zero stand-in)", async () => {
     const a = await adapter(marketsRoute({ code: -1 }));
     await expect(a.getMarkets()).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });

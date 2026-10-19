@@ -6,7 +6,12 @@
 export function seedAsterDirectory(adapter: object, extra: readonly string[] = [], filters: Record<string, unknown> = {}): void {
   const listed = new Set(extra);
   class Directory extends Map<string, unknown> {
-    override has(k: string): boolean { return super.has(k) || k.endsWith("USDT") || listed.has(k); }
+    override has(k: string): boolean {
+      if (super.has(k) || listed.has(k)) return true;
+      // "<base>USDT" is listed for a plain base — not for "<listed venue symbol>USDT" / "…USDTUSDT".
+      const base = k.endsWith("USDT") ? k.slice(0, -4) : null;
+      return base !== null && base !== "" && !listed.has(base) && !base.endsWith("USDT");
+    }
     override get(k: string): unknown { return super.has(k) ? super.get(k) : null; }
   }
   const t = adapter as Record<string, unknown>;

@@ -257,6 +257,8 @@ export class AsterAdapter implements ExchangeAdapter {
   /** API symbol → price filters; null = listed but PRICE_FILTER / PERCENT_PRICE unreadable. */
   private _priceFilters = new Map<string, AsterPriceFilters | null>();
   private _priceFiltersLoadedAt = 0;
+  /** The in-flight exchangeInfo load shared by concurrent first uses (_ensureDirectory). */
+  private _directoryLoad: Promise<void> | null = null;
   private _accountCache: { data: unknown; time: number; epoch: number } | null = null;
   private _positionsCache: { data: unknown; time: number; epoch: number } | null = null;
   private _ordersCache: { data: unknown; time: number; epoch: number } | null = null;
@@ -416,8 +418,10 @@ export class AsterAdapter implements ExchangeAdapter {
    */
   private _toApi(symbol: string): string {
     const s = symbol.toUpperCase().replace(/-PERP$/, "");
-    if (this._priceFilters.has(s)) return s;
+    // A bare base names its USDT market first (X → XUSDT), even if a non-USDT venue symbol is
+    // spelled X too; an exact venue symbol otherwise (BTCUSD1, BTCU, XUSDT).
     if (this._priceFilters.has(`${s}USDT`)) return `${s}USDT`;
+    if (this._priceFilters.has(s)) return s;
     throw new PerpError("SYMBOL_NOT_FOUND", `Aster has no market ${s} (neither the venue symbol ${s} nor ${s}USDT is listed)`, {
       exchange: "aster", remediation: "List markets: perp -e aster market list",
     });
@@ -577,14 +581,22 @@ export class AsterAdapter implements ExchangeAdapter {
 
   /** PRICE_FILTER / PERCENT_PRICE of an API symbol (exchangeInfo, cached CACHE_TTL). */
   /** exchangeInfo symbols (the market directory) loaded / refreshed per CACHE_TTL. */
+  /**
+   * exchangeInfo symbols (the market directory), refreshed per CACHE_TTL. Concurrent first uses
+   * share ONE in-flight request; a failed load is not cached (the next call retries).
+   */
   private async _ensureDirectory(): Promise<void> {
-    if (!this._priceFiltersLoadedAt || Date.now() - this._priceFiltersLoadedAt >= AsterAdapter.CACHE_TTL) {
-      const info = await this._publicGet("/fapi/v3/exchangeInfo") as { symbols?: Array<Record<string, unknown>> };
-      if (!Array.isArray(info?.symbols)) {
-        throw new PerpError("EXCHANGE_ERROR", "Aster /fapi/v3/exchangeInfo returned no symbols", { exchange: "aster" });
-      }
-      this._ingestPriceFilters(info.symbols);
+    if (this._priceFiltersLoadedAt && Date.now() - this._priceFiltersLoadedAt < AsterAdapter.CACHE_TTL) return;
+    if (this._directoryLoad === null) {
+      this._directoryLoad = (async () => {
+        const info = await this._publicGet("/fapi/v3/exchangeInfo") as { symbols?: Array<Record<string, unknown>> };
+        if (!Array.isArray(info?.symbols)) {
+          throw new PerpError("EXCHANGE_ERROR", "Aster /fapi/v3/exchangeInfo returned no symbols", { exchange: "aster" });
+        }
+        this._ingestPriceFilters(info.symbols);
+      })().finally(() => { this._directoryLoad = null; });
     }
+    return this._directoryLoad;
   }
 
   /**
@@ -2019,7 +2031,17 @@ export class AsterAdapter implements ExchangeAdapter {
     const url = `${this._baseUrl}${path}${qs ? `?${qs}` : ""}`;
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetch(url);
-      const result = await this._handleResponse(res, "GET", path, attempt);
+      let result: unknown;
+      try {
+        result = await this._handleResponse(res, "GET", path, attempt);
+      } catch (e) {
+        if (e instanceof PerpError) throw e;
+        // A public read never surfaces as UNKNOWN: rate limit / server-side / other HTTP failure.
+        const msg = e instanceof Error ? e.message : String(e);
+        throw new PerpError(res.status === 429 ? "RATE_LIMITED" : res.status >= 500 ? "EXCHANGE_UNREACHABLE" : "EXCHANGE_ERROR", `Aster ${msg}`, {
+          exchange: "aster", status: res.status, remediation: res.status === 429 || res.status >= 500 ? "Retry later" : "Check the request (symbol / parameters)",
+        });
+      }
       // A parameter rejection arrives as HTTP 200 with an error body (live 2026-10-19,
       // fundingRate limit=1001: {"status":"ERROR","type":"VALID","code":"000002","errorData":{"limit":"…"}}).
       if (result !== null && typeof result === "object" && !Array.isArray(result) && (result as { status?: unknown }).status === "ERROR") {
@@ -2031,6 +2053,6 @@ export class AsterAdapter implements ExchangeAdapter {
       }
       if (result !== null) return result;
     }
-    throw new Error(`GET ${path} failed: max retries exceeded`);
+    throw new PerpError("RATE_LIMITED", `Aster GET ${path}: rate limited after 3 attempts`, { exchange: "aster", remediation: "Retry later" });
   }
 }

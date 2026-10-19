@@ -288,7 +288,11 @@ export function fetchLighterFundingStats(venue: LighterVenueId, net: Network): P
   const value = readFundingStats(venue, net);
   const entry = { at: Date.now(), value, failure: null as string | null };
   statsCache.set(key, entry);
-  value.catch((e: unknown) => { entry.failure = e instanceof Error ? e.message : String(e); entry.at = Date.now(); });
+  value.catch((e: unknown) => {
+    const code = e instanceof PerpError ? `${e.structured.code}: ` : "";
+    entry.failure = `${code}${e instanceof Error ? e.message : String(e)}`;
+    entry.at = Date.now();
+  });
   return value;
 }
 

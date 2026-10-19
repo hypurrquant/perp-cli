@@ -120,7 +120,9 @@ function printUnofficialNotes(venues: string[]): void {
  * meta.warnings for market rows whose fundingRate is null for a known reason (Lighter: the
  * settled-rate snapshot could not be read) — the reason reaches --json, not only stderr.
  */
-function fundingWarnings(adapters: ExchangeAdapter[]): { warnings: string[] } | undefined {
+function fundingWarnings(adapters: ExchangeAdapter[], rows: ReadonlyArray<{ fundingRate?: unknown }> | null = null): { warnings: string[] } | undefined {
+  // Tied to the rows served: no warning next to rows that all carry a rate (a cached listing).
+  if (rows !== null && !rows.some(r => r.fundingRate === null)) return undefined;
   const w = adapters.map(a => (a as { fundingWarning?: () => string | null }).fundingWarning?.() ?? null).filter((x): x is string => x !== null);
   return w.length > 0 ? { warnings: w } : undefined;
 }
@@ -283,7 +285,7 @@ export function registerMarketCommands(
         }));
 
         if (isJson()) {
-          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }, fundingWarnings(listed)));
+          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }, fundingWarnings(listed, Object.values(grouped).flat())));
         }
 
         // Per-exchange tables
@@ -319,7 +321,7 @@ export function registerMarketCommands(
         if (Object.keys(hip3).length > 0) {
           return printJson(jsonOk({ main: markets, hip3 }));
         }
-        return printJson(jsonOk(markets, fundingWarnings([adapter])));
+        return printJson(jsonOk(markets, fundingWarnings([adapter], markets)));
       }
 
       const perMarket = perMarketFunding(adapter.name);
@@ -369,7 +371,7 @@ export function registerMarketCommands(
         }));
 
         if (isJson()) {
-          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }, fundingWarnings(listed)));
+          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }, fundingWarnings(listed, Object.values(grouped).flat())));
         }
 
         for (const [ex, markets] of Object.entries(grouped)) {
@@ -385,7 +387,7 @@ export function registerMarketCommands(
       const adapter = await getAdapter();
       // One normalized shape on every venue (Pacifica included — it printed the raw /info/prices rows).
       const markets = await adapter.getMarkets();
-      if (isJson()) return printJson(jsonOk(markets, fundingWarnings([adapter])));
+      if (isJson()) return printJson(jsonOk(markets, fundingWarnings([adapter], markets)));
       console.log(makeTable(PRICE_HEADERS, markets.map(m => priceRow(m, perMarketFunding(adapter.name)))));
     });
 
@@ -429,7 +431,7 @@ export function registerMarketCommands(
           });
         });
       }
-      if (isJson()) return printJson(jsonOk(m, fundingWarnings([adapter])));
+      if (isJson()) return printJson(jsonOk(m, fundingWarnings([adapter], [m])));
       printMarketInfo(adapter.name, m);
     });
 

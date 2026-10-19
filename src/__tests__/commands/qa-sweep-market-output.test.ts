@@ -201,3 +201,11 @@ describe("meta.warnings: why a fundingRate is null reaches --json", () => {
     expect(env.meta.warnings).toEqual([warning]);
   });
 });
+
+describe("meta.warnings is tied to the rows served", () => {
+  it("no warning next to rows that all carry a rate (a cached listing)", async () => {
+    const { out } = await run({ getMarkets: async () => [{ ...BTC, fundingRate: "0.00001" }], fundingWarning: () => "lighter: fundingRate null — …" } as Partial<ExchangeAdapter>, ["-e", "lighter", "market", "list"], true);
+    const env = JSON.parse(out.at(-1)!) as { meta: { warnings?: string[] } };
+    expect(env.meta.warnings).toBeUndefined();
+  });
+});
