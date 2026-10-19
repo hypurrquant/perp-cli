@@ -303,7 +303,7 @@ describe("setup venue selection", () => {
   it("txflow / txf is a capability refusal (CAPABILITY_UNSUPPORTED), not an unknown venue", () => {
     for (const v of ["txflow", "txf"]) {
       expect(() => resolveSetupVenue(v, "mainnet")).toThrow(expect.objectContaining({
-        structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED", details: expect.objectContaining({ venue: "txflow", feature: "setup trading" }) }),
+        structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED", details: expect.objectContaining({ venue: "txflow", feature: "setup" }) }),
       }));
     }
     expect(() => parseVenueList("hyperliquid,txflow", "mainnet")).toThrow(expect.objectContaining({ structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED" }) }));
