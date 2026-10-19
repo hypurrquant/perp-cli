@@ -1263,7 +1263,8 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
     return out.sort((a, b) => a.time - b.time);
   }
 
-  async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
+  /** Rows carry `quoteAsset`: OHLC prices are in the market's quote currency (KRW for SAMSUNG-KRW). */
+  async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<Array<ExchangeKline & { quoteAsset: string }>> {
     const resolution = KLINE_RESOLUTION[interval.trim()];
     if (resolution === undefined) {
       throw new PerpError("INVALID_PARAMS", `Unsupported kline interval "${interval}" on QFEX`, { remediation: `Use one of: ${Object.keys(KLINE_RESOLUTION).join(", ")}` });
@@ -1279,7 +1280,7 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
       const v = qfexCandleVolumes(c);
       // `usdVolume` is Σ price × qty in the QUOTE currency (live 2026-10-19: SAMSUNG-KRW 1m candles
       // equal the KRW trade tape exactly); quoteVolume is USD → null for a non-USD quote.
-      return { time, open: c.open, high: c.high, low: c.low, close: c.close, ...v, quoteVolume: instrument.quoteAsset === "USD" ? v.quoteVolume : null, trades: null };
+      return { time, open: c.open, high: c.high, low: c.low, close: c.close, ...v, quoteVolume: instrument.quoteAsset === "USD" ? v.quoteVolume : null, trades: null, quoteAsset: instrument.quoteAsset };
     }).sort((a, b) => a.time - b.time);
   }
 

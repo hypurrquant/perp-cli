@@ -511,10 +511,11 @@ export function registerMarketCommands(
         // ISO (UTC) candle open times — one format for every venue, independent of the host locale.
         const rows = klines.slice(-20).map((k) => [
           new Date(k.time).toISOString(),
-          `$${formatUsd(k.open)}`,
-          `$${formatUsd(k.high)}`,
-          `$${formatUsd(k.low)}`,
-          `$${formatUsd(k.close)}`,
+          // A row with a non-USD quoteAsset (QFEX SAMSUNG-KRW) prints its currency, never a $.
+          priceOrDash(k.open, k),
+          priceOrDash(k.high, k),
+          priceOrDash(k.low, k),
+          priceOrDash(k.close, k),
           k.volume === null ? chalk.gray("-") : k.volume,
           k.trades === null ? chalk.gray("-") : String(k.trades),
         ]);
