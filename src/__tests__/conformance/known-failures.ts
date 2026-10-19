@@ -14,36 +14,8 @@
 import { expect } from "vitest";
 import { IS_LIVE } from "./harness.js";
 
-/**
- * Every remaining entry is a documented, by-design difference between two read paths (0.15.1
- * CHANGELOG), not an open bug: the contract decision — allowlist it in the check, or align the
- * paths — is pending. Re-triage at the next release.
- */
-const BY_DESIGN = "by design in 0.15.1 (documented), contract decision pending";
-
-export const KNOWN_FAILURES: Readonly<Record<string, string>> = {
-  // MCP keyless get_markets rows are the public directory's VenueMarket rows (venueSymbol,
-  // fundingRateBasis, no sizeDecimals / fundingHours), CLI rows ExchangeMarketInfo.
-  "parity:get_markets:fields": `${BY_DESIGN}: MCP keyless rows are VenueMarket, CLI rows ExchangeMarketInfo`,
-  // The public directory behind keyless MCP leaves out markets whose asset class is ambiguous, so a
-  // same-name ticker is never matched across venues (recorded 2026-10-19, cli-only: pacifica BP,
-  // CHIP; hyperliquid SPX; aster SPX; lighter QNT, BOT, WEN, SPX, BB; lighter-rh USELESS).
-  ...Object.fromEntries(["pacifica", "hyperliquid", "aster", "lighter-rh", "lighter"].flatMap(v => [
-    [`parity:get_markets:${v}:count`, `${BY_DESIGN}: MCP leaves out ambiguous-class markets the CLI lists`],
-    [`parity:get_markets:${v}:symbols`, `${BY_DESIGN}: MCP leaves out ambiguous-class markets the CLI lists`],
-  ])),
-  // ── WS library (perp-cli/ws, @hypurrquant/perp-ws) ──
-  // The CLI lists USDT-quoted Aster perps only (its symbol mapping cannot address USD1 / U); the WS
-  // directory keeps those with canonical null (WS-only BTCU, ETHU, GPRO, BNC, POLYMARKET, … — 10).
-  "ws:aster:directory-parity": `${BY_DESIGN}: WS keeps USD1 / U-quoted Aster perps the CLI does not list`,
-  "ws:aster:canonical-parity": `${BY_DESIGN}: the USD1 / U-quoted BTCU / ETHU carry canonical null on purpose`,
-  // CLI and WS read different funding fields: Pacifica CLI rows show next_funding_rate ("predicted"),
-  // the WS prices channel the settled rate; Lighter / Lighter RH REST rates are not verified against
-  // settled prints (null) while the WS market_stats rate is labelled lastSettled.
-  "ws:pacifica:ratekind-parity": `${BY_DESIGN}: CLI predicted (next_funding_rate) vs WS lastSettled — different fields, each labelled`,
-  "ws:lighter:ratekind-parity": `${BY_DESIGN}: CLI null (REST rate unverified) vs WS lastSettled`,
-  "ws:lighter-rh:ratekind-parity": `${BY_DESIGN}: CLI null (REST rate unverified) vs WS lastSettled`,
-};
+// Empty: every check passes (0.15.1). A new failure is fixed, or registered here with its reason.
+export const KNOWN_FAILURES: Readonly<Record<string, string>> = {};
 
 const seen = new Set<string>();
 

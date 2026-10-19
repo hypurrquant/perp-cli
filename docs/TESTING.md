@@ -132,9 +132,14 @@ For every exported codec, through the real `createVenueStream` with a fake `WsFa
   bbo `bid < ask`; state sequence `idle → connecting → live → closed`; `close()` leaves no timer;
   a rejected `ready` exposes `.code`.
 - **CLI ⇄ WS directory parity (hard invariant):** the canonical set of `stream.markets()` equals the
-  CLI `market list` set built from the same recorded responses; any difference must be in
-  `WS_DIRECTORY_ALLOWLIST` with a reason. Every WS entry has a canonical; CLI market rows carry the
-  same `rateKind` the WS stream reports.
+  CLI `market list` set built from the same recorded responses — compared by venue symbol when the
+  CLI rows carry `venueSymbol` (Aster: one row per venue market, any quote); any difference must be
+  in `WS_DIRECTORY_ALLOWLIST` with a reason. Every USD-quoted / dex WS entry has a canonical (a
+  non-USD quote, Aster "U", is canonical null by contract); CLI market rows carry the same
+  `rateKind` the WS stream reports.
+- **CLI ⇄ MCP parity:** keyless `get_markets` lists the same markets as `market list` (ambiguous
+  tickers included, `assetClass: "unclassified"`, canonical null) in the same row shape
+  (`venueMarketRow`).
 
 `scripts/ws-gate/release-gate.mjs` stays the release gate for the WS packages (bundle purity,
 tarball contents, consumer typecheck, Next build, live smoke).
@@ -172,7 +177,7 @@ percent number); computed analytics of `arb scan` are JSON numbers. **Unknown = 
 
 | Command | `data` | Fields (type, nullability) |
 |---|---|---|
-| `market list` / `prices` / `info` (`-e v`) | `MarketRow[]` / `MarketRow` | `symbol` string · `markPrice` dec > 0 · `indexPrice` dec > 0 \| null · `fundingRate` dec \| null (per `fundingHours`, else the venue basis) · `volume24h` dec (USD notional) \| null · `openInterest` dec (**base units**) \| null · `maxLeverage` number > 0 \| null · `sizeDecimals` int ≥ 0 \| null · `stepSize` dec > 0 \| null · `fundingHours` number > 0 \| null · `marginTiers` `{lowerBound, maxLeverage}[]` \| null |
+| `market list` / `prices` / `info` (`-e v`) | `MarketRow[]` / `MarketRow` | `symbol` string · `markPrice` dec > 0 · `indexPrice` dec > 0 \| null · `fundingRate` dec \| null (per `fundingHours`, else the venue basis) · `volume24h` dec (USD notional) \| null · `openInterest` dec (**base units**) \| null · `maxLeverage` number > 0 \| null · `sizeDecimals` int ≥ 0 \| null · `stepSize` dec > 0 \| null · `fundingHours` number > 0 \| null · `marginTiers` `{lowerBound, maxLeverage}[]` \| null · additive: `fundingRateKind`, `predictedFundingRate` (same unit as `fundingRate`), `tradable`, `status`, `quoteAsset` |
 | `market list` / `prices` (no `-e`) | `{ exchanges: Record<venue, MarketRow[]>, errors?: Record<venue, string> }` | every market-data venue is a key of `exchanges` or `errors` |
 | `market funding` (history) | `FundingRow[]`, newest first | `time` ms · `rate` dec (fraction per interval) \| null only with `marketClosed: true` · `price` dec > 0 \| null · `intervalHours` number > 0 · `rateKind` `"lastSettled" \| "accruing" \| "predicted"` (null only with `marketClosed: true`) · `marketClosed` boolean, optional (QFEX: the window fell outside market hours — no funding, not a 0 rate) |
 | `market funding` (no history API) | `CurrentFundingTerms` | `kind: "currentFunding"`, `venue`, `symbol`, `ticker`, `contractType`, `rateKind` (`"predicted"` \| null), `intervalRate` dec \| null, `intervalHours` \| null, `hourlyRate` \| null, `annualizedPct` \| null, `venueAnnualizedRate` dec \| null, `nextFundingTime` ms \| null, `swap`, `note` |
