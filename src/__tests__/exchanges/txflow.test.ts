@@ -54,6 +54,21 @@ function fakeWs(frames: unknown[] | null, opts: { error?: boolean } = {}): { fac
   return { factory, sent, closed: () => closed };
 }
 
+/** allMarketTickers rows in the live shape (2026-10-19): BTC traded, DOGE "" (no volume), a spot row ≥ 10000. */
+const TICKERS = [
+  { coin: "BTC", instrumentId: 1, lastPrice: "82089.2", markPx: "82106.5", oraclePx: "82140.2", openInterest: "182.0786", fundingRate: "0.00095808", nextFundingTime: 1792407600000, blockTime: 1792406000324, dayNtlVlm: "70157052.3703057", prevDayPx: "82107.2", change24h: "-18.0", change24hPct: "-0.02" },
+  { coin: "DOGE", instrumentId: 10, lastPrice: "", markPx: "", oraclePx: "", openInterest: "", fundingRate: "", nextFundingTime: 0, blockTime: 0, dayNtlVlm: "", prevDayPx: "", change24h: "", change24hPct: "" },
+  { coin: "BTC/USDC", instrumentId: 10000, lastPrice: "82149.72", markPx: "", oraclePx: "", openInterest: "", fundingRate: "", nextFundingTime: 0, blockTime: 0, dayNtlVlm: "514808.5476593", prevDayPx: "82144.14", change24h: "5.58", change24hPct: "0.01" },
+];
+
+/** /info answers by request type: perpMeta → META, allMarketTickers → TICKERS. */
+function routeInfo(tickers: unknown = TICKERS) {
+  return async (_url: string, init?: RequestInit) => {
+    const type = (JSON.parse(String(init?.body)) as { type: string }).type;
+    return jsonResponse(200, type === "allMarketTickers" ? tickers : META);
+  };
+}
+
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(typeof body === "string" ? body : JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
@@ -180,7 +195,7 @@ describe("markets and funding (fixture)", () => {
   const deps = () => ({ wsFactory: fakeWs([{ channel: "allAssetCtxs", data: { ctxs: CTXS } }]).factory, warn: vi.fn() });
 
   it("markets: DOGE step 10, halted XAU not tradable, missing snapshot rows dropped", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(200, META));
+    fetchMock.mockImplementation(routeInfo());
     const markets = await fetchTxflowMarkets("mainnet", deps());
     const by = Object.fromEntries(markets.map(m => [m.symbol, m]));
     expect(by.DOGE).toMatchObject({ stepSize: "10", venueSymbol: "10", fundingRate: "-0.0000310218" });
@@ -199,6 +214,7 @@ describe("markets and funding (fixture)", () => {
   it("a missing next / prev funding time leaves the interval unproven → funding null, no funding row", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, META));
     const ctxs = [{ coin: "1", ctx: ctx("0.00125000", "83263.0", { prevFundingTime: undefined }) }];
+    fetchMock.mockImplementation(routeInfo());
     const d = { wsFactory: fakeWs([{ channel: "allAssetCtxs", data: { ctxs } }]).factory, warn: vi.fn() };
     expect((await fetchTxflowMarkets("mainnet", d)).find(m => m.symbol === "BTC")?.fundingRate).toBeNull();
     fetchMock.mockResolvedValue(jsonResponse(200, META));
@@ -208,6 +224,57 @@ describe("markets and funding (fixture)", () => {
 
   it("testnet → NOT_IMPLEMENTED (no testnet)", async () => {
     await expect(fetchTxflowMarkets("testnet", deps())).rejects.toMatchObject({ structured: { code: "NOT_IMPLEMENTED" } });
+  });
+});
+
+describe("24 h volume from allMarketTickers (QA 0.15.0: volume24h was always null)", () => {
+  const deps = () => ({ wsFactory: fakeWs([{ channel: "allAssetCtxs", data: { ctxs: CTXS } }]).factory, warn: vi.fn() });
+
+  it("joined by instrumentId = perpMeta index; \"\" → null; spot ids ≥ 10000 ignored", async () => {
+    fetchMock.mockImplementation(routeInfo());
+    const by = Object.fromEntries((await fetchTxflowMarkets("mainnet", deps())).map(m => [m.symbol, m]));
+    expect(by.BTC.volume24h).toBe("70157052.3703057");
+    expect(by.DOGE.volume24h).toBeNull();
+    expect(by.XAU.volume24h).toBeNull(); // no ticker row
+  });
+
+  it("a non-list answer → EXCHANGE_ERROR (never all-null volumes)", async () => {
+    fetchMock.mockImplementation(routeInfo({ message: "nope" }));
+    await expect(fetchTxflowMarkets("mainnet", deps())).rejects.toMatchObject({ structured: { code: "EXCHANGE_ERROR" } });
+  });
+});
+
+describe("klines (QA 0.15.0, perp_app)", () => {
+  const candle = (t: number, i = "1h") => ({ t, o: "1", h: "2", l: "0.5", c: "1.5", v: "3", n: 4, s: "1", i, T: t + 3_599_999 });
+  const adapterWith = (info: (body: { req: { startTime: number; endTime: number; interval: string } }) => unknown) => {
+    const a = new TxflowPublicAdapter(getVenue("txflow"), "mainnet");
+    const spy = vi.fn(async (b: { req: { startTime: number; endTime: number; interval: string } }) => info(b));
+    Object.assign(a as object, { market: vi.fn(async () => ({ index: 1, symbol: "BTC" })), client: { info: spy } });
+    return { a, spy };
+  };
+
+  it("a range above the venue's silent ~3000-bar cap is read in windows of ≤ 2900 bars and merged", async () => {
+    const H = 3_600_000;
+    const end = 1792404000000;
+    const start = end - 200 * 24 * H; // 4800 bars: one request would answer [] (live)
+    const { a, spy } = adapterWith(({ req }) => {
+      if ((req.endTime - req.startTime) / H > 3000) return []; // venue behaviour
+      const out = [];
+      for (let t = Math.ceil(req.startTime / H) * H; t <= req.endTime; t += H) out.push(candle(t));
+      return out;
+    });
+    const k = await a.getKlines("BTC", "1h", start, end);
+    expect(spy.mock.calls.length).toBe(2);
+    expect(spy.mock.calls.every(([b]) => (b.req.endTime - b.req.startTime) / H <= 2900)).toBe(true);
+    expect(k.length).toBe(4801);
+    expect(new Set(k.map(c => c.time)).size).toBe(k.length);
+    expect(k.map(c => c.time)).toEqual([...k.map(c => c.time)].sort((x, y) => x - y));
+  });
+
+  it.each(["3d", "1w", "1M"])("%s (advertised, always [] live) → INVALID_PARAMS before any request", async (iv) => {
+    const { a, spy } = adapterWith(() => []);
+    await expect(a.getKlines("BTC", iv, 0, 1)).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 
@@ -224,7 +291,7 @@ describe("public-only adapter", () => {
   });
 
   it("market rows carry venueApi: unofficial and fundingVerified: false", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(200, META));
+    fetchMock.mockImplementation(routeInfo());
     const a = new TxflowPublicAdapter(getVenue("txflow"), "mainnet");
     vi.spyOn(a, "getVenueMarkets").mockResolvedValue(await fetchTxflowMarkets("mainnet", { wsFactory: fakeWs([{ channel: "allAssetCtxs", data: { ctxs: CTXS } }]).factory, warn: vi.fn() }));
     const rows = await a.getMarkets();

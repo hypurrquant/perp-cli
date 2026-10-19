@@ -6,6 +6,9 @@
  *                                         name "BTC-USDC", baseCurrency, szDecimals (can be
  *                                         NEGATIVE: lot 10, 100 …), priceTick, maxLeverage,
  *                                         haltTrading, delisted, tagIds
+ *   POST /info {type:"allMarketTickers"}  per instrument: dayNtlVlm (24 h USD notional), prevDayPx …;
+ *                                         `instrumentId` == perpMeta `index` (spot rows ≥ 10000),
+ *                                         empty fields are "" (→ null). `market list|prices` only.
  *   WS allAssetCtxs (one-shot snapshot)   per coin: markPx, oraclePx, funding, openInterest,
  *                                         nextFundingTime, prevFundingTime. `coin` == perpMeta
  *                                         `index` (as a string) — joined by id, never by position.
@@ -205,7 +208,27 @@ export function hourlyFundingOf(ctx: TxflowCtx): string | null {
 
 // ── Mapping ──
 
-export function toTxflowVenueMarket(m: TxflowMarketMeta, ctx: TxflowCtx): VenueMarket {
+/** First spot instrumentId in allMarketTickers (perp ids are the perpMeta index, below it). */
+export const TXFLOW_SPOT_ID_BASE = 10_000;
+
+/**
+ * 24 h USD notional volume per perp coin id from allMarketTickers. "" (no trades) → null, never
+ * "0"; a non-list answer or a row without a numeric instrumentId is EXCHANGE_ERROR.
+ */
+export async function fetchTxflowDayVolumes(client: TxflowClient): Promise<Map<number, string | null>> {
+  const res = await client.info<unknown>({ type: "allMarketTickers" });
+  if (!Array.isArray(res)) throw txflowShapeError("allMarketTickers is not an array");
+  const out = new Map<number, string | null>();
+  for (const r of res) {
+    const x = r as { instrumentId?: unknown; dayNtlVlm?: unknown };
+    if (typeof x.instrumentId !== "number" || !Number.isInteger(x.instrumentId)) throw txflowShapeError("allMarketTickers row without a numeric instrumentId");
+    if (x.instrumentId >= TXFLOW_SPOT_ID_BASE) continue;
+    out.set(x.instrumentId, decOrNull(x.dayNtlVlm));
+  }
+  return out;
+}
+
+export function toTxflowVenueMarket(m: TxflowMarketMeta, ctx: TxflowCtx, volume24h: string | null): VenueMarket {
   return {
     venue: "txflow",
     venueSymbol: String(m.index),
@@ -221,7 +244,7 @@ export function toTxflowVenueMarket(m: TxflowMarketMeta, ctx: TxflowCtx): VenueM
     settlementIntervalHours: 1,
     // Base units (as Hyperliquid publishes it) [inferred].
     openInterest: ctx.openInterest,
-    volume24h: null,
+    volume24h,
     tickSize: m.tickSize,
     stepSize: m.stepSize,
     minSize: null,
@@ -266,7 +289,10 @@ async function fetchJoined(net: Network, deps: TxflowPublicDeps): Promise<Array<
 }
 
 export async function fetchTxflowMarkets(net: Network, deps: TxflowPublicDeps = DEFAULT_DEPS): Promise<VenueMarket[]> {
-  return (await fetchJoined(net, deps)).map(({ meta, ctx }) => toTxflowVenueMarket(meta, ctx));
+  const { client } = clientFor(net); // testnet → NOT_IMPLEMENTED before any request
+  const [joined, volumes] = await Promise.all([fetchJoined(net, deps), fetchTxflowDayVolumes(client)]);
+  // A market absent from allMarketTickers has no published volume → null.
+  return joined.map(({ meta, ctx }) => toTxflowVenueMarket(meta, ctx, volumes.has(meta.index) ? volumes.get(meta.index) as string | null : null));
 }
 
 export async function fetchTxflowFundingRates(net: Network, deps: TxflowPublicDeps = DEFAULT_DEPS): Promise<VenueFundingRate[]> {
