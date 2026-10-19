@@ -19,7 +19,7 @@ import {
   EXTENDED_FUNDING_BASIS, extendedAssetClass, extendedCanonical, extendedSymbolOf, fetchExtendedFundingRates, fetchExtendedMarkets,
   extendedWireCandidates, parseExtendedMarkets, resolveExtendedMarket, resolveExtendedMarketRemote, toExtendedFundingRates,
 } from "../../exchanges/extended/public.js";
-import { ExtendedPublicAdapter } from "../../exchanges/extended/adapter.js";
+import { ExtendedPublicAdapter, EXTENDED_KLINE_INTERVALS } from "../../exchanges/extended/adapter.js";
 import { EXTENDED_READ_ONLY_REMEDIATION } from "../../exchanges/venues/extended.js";
 import { fetchVenuesRates } from "../../funding/rates.js";
 import { probeVenueHealth } from "../../venue-health.js";
@@ -349,7 +349,8 @@ describe("public adapter reads", () => {
   it("klines: ISO-8601 interval, ascending; unsupported interval → INVALID_PARAMS", async () => {
     routeFetch({ "/info/markets": MARKETS, "/info/candles/BTC-USD/trades": CANDLES });
     const a = new ExtendedPublicAdapter(getVenue("extended"), "mainnet");
-    const k = await a.getKlines("BTC", "1h", 0, Date.now());
+    const times = (CANDLES.data as Array<{ T: number }>).map(c => c.T);
+    const k = await a.getKlines("BTC", "1h", Math.min(...times), Math.max(...times));
     expect(k.length).toBe((CANDLES.data as unknown[]).length);
     expect(k[0].time).toBeLessThan(k[k.length - 1].time);
     expect(k[0]).toMatchObject({ quoteVolume: null, trades: null });
@@ -368,6 +369,61 @@ describe("public adapter reads", () => {
     ];
     for (const c of calls) await expect(c()).rejects.toMatchObject({ structured: { code: "CAPABILITY_UNSUPPORTED", remediation: EXTENDED_READ_ONLY_REMEDIATION } });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("server caps (live 2026-10-19): candles 2800 / funding 1000 rows per request, no pagination field", () => {
+  const MIN = 60_000;
+  const candle = (T: number) => ({ o: "1", h: "2", l: "0.5", c: "1.5", v: "3", T });
+  /** The venue: newest-first rows ending at endTime, capped like the live server. */
+  function capped(cap: number, step: number, first: number, row: (t: number) => unknown) {
+    return (url: URL) => {
+      const end = Number(url.searchParams.get("endTime"));
+      const start = url.searchParams.has("startTime") ? Number(url.searchParams.get("startTime")) : -Infinity;
+      const limit = Math.min(cap, Number(url.searchParams.get("limit")));
+      const out = [];
+      for (let t = Math.floor(end / step) * step; t >= Math.max(first, start) && out.length < limit; t -= step) out.push(row(t));
+      return { status: "OK", data: out };
+    };
+  }
+
+  it("a 3-day 1m range (4321 bars) pages backwards past the 2800 cap — every bar, ascending, deduped", async () => {
+    const end = 1792406160000;
+    const start = end - 3 * 24 * 60 * MIN;
+    const venue = capped(2800, MIN, 0, candle);
+    const calls: URL[] = [];
+    fetchMock.mockImplementation(async (u: string) => {
+      const url = new URL(u);
+      if (url.pathname.endsWith("/info/markets")) return new Response(JSON.stringify(MARKETS), { status: 200 });
+      calls.push(url);
+      return new Response(JSON.stringify(venue(url)), { status: 200 });
+    });
+    const a = new ExtendedPublicAdapter(getVenue("extended"), "mainnet");
+    const k = await a.getKlines("BTC", "1m", start, end);
+    expect(k.length).toBe(4321);
+    expect(k[0].time).toBe(start);
+    expect(k.at(-1)!.time).toBe(end);
+    expect(calls.length).toBe(2);
+    expect(calls.every(u => Number(u.searchParams.get("limit")) <= 2800)).toBe(true);
+  });
+
+  it("funding history -l 1500 pages past the 1000-row cap and honours the limit", async () => {
+    const H = 3_600_000;
+    const venue = capped(1000, H, 0, (T: number) => ({ m: "BTC-USD", T, f: "0.000009" }));
+    fetchMock.mockImplementation(async (u: string) => {
+      const url = new URL(u);
+      if (url.pathname.endsWith("/info/markets")) return new Response(JSON.stringify(MARKETS), { status: 200 });
+      return new Response(JSON.stringify(venue(url)), { status: 200 });
+    });
+    const a = new ExtendedPublicAdapter(getVenue("extended"), "mainnet");
+    const h = await a.getFundingHistory("BTC", 1500);
+    expect(h.length).toBe(1500);
+    expect(new Set(h.map(r => r.time)).size).toBe(1500);
+    expect(h[0].time).toBeGreaterThan(h[1499].time); // newest first
+  });
+
+  it("1M maps to P30D", () => {
+    expect(EXTENDED_KLINE_INTERVALS["1M"].wire).toBe("P30D");
   });
 });
 

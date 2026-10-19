@@ -36,10 +36,22 @@ export const EXTENDED_KLINE_INTERVALS: Readonly<Record<string, { wire: string; m
   "12h": { wire: "PT12H", ms: 43_200_000 },
   "1d": { wire: "PT24H", ms: 86_400_000 },
   "1w": { wire: "P7D", ms: 604_800_000 },
+  // P30D answers calendar-month candles (live 2026-10-19: opens on the 1st, 00:00 UTC); ms is
+  // the nominal 30 d used only to size requests.
+  "1M": { wire: "P30D", ms: 2_592_000_000 },
 };
 
-/** Documented per-request maximum of the candles and funding-history endpoints. */
+/** Documented per-request maximum of the candles and funding-history endpoints (accepted `limit`). */
 export const EXTENDED_MAX_RECORDS = 10_000;
+/**
+ * Real server caps, measured live 2026-10-19 (BTC-USD; no pagination field, no error): candles
+ * return at most 2800 rows (PT1M / PT5M; PT24H answered 816 = the whole history), funding
+ * history at most 1000 (the newest). Both page backwards with `endTime` = before the oldest row.
+ * A page with exactly the cap is never taken as the end.
+ */
+export const EXTENDED_CANDLES_PAGE_CAP = 2800;
+export const EXTENDED_FUNDING_PAGE_CAP = 1000;
+const EXTENDED_MAX_PAGES = 50;
 
 /** Legacy market row plus the Extended fields shown in JSON (asset class, precision, schedule). */
 export type ExtendedMarketInfo = ExchangeMarketInfo & {
@@ -144,7 +156,10 @@ export class ExtendedPublicAdapter implements ExchangeAdapter {
     return trades.sort((a, b) => b.time - a.time).slice(0, limit);
   }
 
-  /** Applied (settled) hourly rates, newest first — fraction per hour; no oracle price published. */
+  /**
+   * Applied (settled) hourly rates, newest first — fraction per hour; no oracle price published.
+   * Paged backwards in pages of EXTENDED_FUNDING_PAGE_CAP until `limit` rows or the window start.
+   */
   async getFundingHistory(symbol: string, limit = 10): Promise<ExtendedFundingPrint[]> {
     if (!Number.isInteger(limit) || limit < 1 || limit > EXTENDED_MAX_RECORDS) {
       throw new PerpError("INVALID_PARAMS", `Extended: funding history limit must be 1..${EXTENDED_MAX_RECORDS} (got ${limit})`);
@@ -153,20 +168,31 @@ export class ExtendedPublicAdapter implements ExchangeAdapter {
     const end = Date.now();
     // One record per hour; two spare hours cover the in-progress hour and clock skew.
     const start = end - (limit + 2) * 3_600_000;
-    const body = await this.client.get<unknown>(`/info/${encodeURIComponent(m.name)}/funding`, [
-      ["startTime", String(start)], ["endTime", String(end)], ["limit", String(limit)],
-    ]);
-    if (!Array.isArray(body.data)) throw extendedShapeError(`funding history of ${m.name} is not a list`);
-    return body.data
-      .map(r => {
+    const byTime = new Map<number, ExtendedFundingPrint>();
+    let cursor = end;
+    for (let page = 0; byTime.size < limit; page++) {
+      if (page >= EXTENDED_MAX_PAGES) throw new PerpError("EXCHANGE_ERROR", `Extended: funding history of ${m.name} did not end after ${EXTENDED_MAX_PAGES} pages`);
+      const want = Math.min(EXTENDED_FUNDING_PAGE_CAP, limit - byTime.size);
+      const body = await this.client.get<unknown>(`/info/${encodeURIComponent(m.name)}/funding`, [
+        ["startTime", String(start)], ["endTime", String(cursor)], ["limit", String(want)],
+      ]);
+      if (!Array.isArray(body.data)) throw extendedShapeError(`funding history of ${m.name} is not a list`);
+      const rows = body.data.map(r => {
         const x = r as { T?: unknown; f?: unknown };
         const rate = dec(x.f, "funding f");
         return { time: ms(x.T, "funding T"), rate, price: null, rateKind: "lastSettled" as const, intervalHours: 1 as const, annualizedPct: annualizeHourlyRate(Number(rate)) };
-      })
-      .sort((a, b) => b.time - a.time)
-      .slice(0, limit);
+      });
+      for (const r of rows) byTime.set(r.time, r);
+      // Fewer rows than asked (and below the cap) = the window is exhausted.
+      if (rows.length < want || rows.length === 0) break;
+      const oldest = Math.min(...rows.map(r => r.time));
+      if (oldest <= start) break;
+      cursor = oldest - 1;
+    }
+    return [...byTime.values()].sort((a, b) => b.time - a.time).slice(0, limit);
   }
 
+  /** Candles paged backwards from `endTime` in pages of EXTENDED_CANDLES_PAGE_CAP (newest first on the wire). */
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
     const iv = Object.prototype.hasOwnProperty.call(EXTENDED_KLINE_INTERVALS, interval) ? EXTENDED_KLINE_INTERVALS[interval] : undefined;
     if (iv === undefined) {
@@ -175,14 +201,23 @@ export class ExtendedPublicAdapter implements ExchangeAdapter {
       });
     }
     if (!(endTime > startTime)) throw new PerpError("INVALID_PARAMS", "Extended: candle end time must be after the start time");
+    const bars = Math.ceil((endTime - startTime) / iv.ms) + 1;
+    const pages = Math.ceil(bars / EXTENDED_CANDLES_PAGE_CAP);
+    if (pages > EXTENDED_MAX_PAGES) {
+      throw new PerpError("INVALID_PARAMS", `Extended: ${interval} candles over this range need ${pages} requests (max ${EXTENDED_MAX_PAGES})`, {
+        remediation: "Narrow --start / --end or use a longer interval",
+      });
+    }
     const m = await this.market(symbol);
-    const limit = Math.min(EXTENDED_MAX_RECORDS, Math.ceil((endTime - startTime) / iv.ms) + 1);
-    const body = await this.client.get<unknown>(`/info/candles/${encodeURIComponent(m.name)}/trades`, [
-      ["interval", iv.wire], ["limit", String(limit)], ["endTime", String(endTime)],
-    ]);
-    if (!Array.isArray(body.data)) throw extendedShapeError(`candles of ${m.name} is not a list`);
-    return body.data
-      .map(c => {
+    const byTime = new Map<number, ExchangeKline>();
+    let cursor = endTime;
+    for (let page = 0; page < EXTENDED_MAX_PAGES + 1; page++) {
+      const want = Math.min(EXTENDED_CANDLES_PAGE_CAP, Math.ceil((cursor - startTime) / iv.ms) + 1);
+      const body = await this.client.get<unknown>(`/info/candles/${encodeURIComponent(m.name)}/trades`, [
+        ["interval", iv.wire], ["limit", String(want)], ["endTime", String(cursor)],
+      ]);
+      if (!Array.isArray(body.data)) throw extendedShapeError(`candles of ${m.name} is not a list`);
+      const rows = body.data.map(c => {
         const x = c as Record<string, unknown>;
         return {
           time: ms(x.T, "candle T"),
@@ -191,9 +226,15 @@ export class ExtendedPublicAdapter implements ExchangeAdapter {
           quoteVolume: null,
           trades: null,
         };
-      })
-      .filter(k => k.time >= startTime && k.time <= endTime)
-      .sort((a, b) => a.time - b.time);
+      });
+      for (const k of rows) if (k.time >= startTime && k.time <= endTime) byTime.set(k.time, k);
+      // A short page means the venue has no older candles; a full page (= the cap) always pages on.
+      if (rows.length < want || rows.length === 0) break;
+      const oldest = Math.min(...rows.map(k => k.time));
+      if (oldest <= startTime) break;
+      cursor = oldest - 1;
+    }
+    return [...byTime.values()].sort((a, b) => a.time - b.time);
   }
 
   // ── Account / trading: refused (market data only in this version) ──
