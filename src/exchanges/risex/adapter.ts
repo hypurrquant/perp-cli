@@ -311,9 +311,13 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
     });
   }
 
-  async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
+  /** `depth` levels per side (API max 250, developer.rise.trade; was always 50). */
+  async getOrderbook(symbol: string, depth = 50): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
+    if (!Number.isInteger(depth) || depth < 1 || depth > RISEX_BOOK_MAX) {
+      throw new PerpError("INVALID_PARAMS", `RISEx: book depth must be 1..${RISEX_BOOK_MAX} (got ${depth})`);
+    }
     const m = await this.market(symbol);
-    const d = await this.client.get<{ bids?: unknown; asks?: unknown }>("/v1/orderbook", { market_id: m.market_id, limit: 50 });
+    const d = await this.client.get<{ bids?: unknown; asks?: unknown }>("/v1/orderbook", { market_id: m.market_id, limit: depth });
     const side = (rows: unknown, what: string): [string, string][] => {
       if (!Array.isArray(rows)) throw new PerpError("EXCHANGE_ERROR", `RISEx /v1/orderbook: no ${what}`, { exchange: "risex" });
       return rows.map(r => [decReq((r as { price?: unknown }).price, `${what} price`), decReq((r as { quantity?: unknown }).quantity, `${what} quantity`)]);
@@ -322,15 +326,19 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   async getRecentTrades(symbol: string, limit = 50): Promise<ExchangePublicTrade[]> {
+    // Venue cap (live 2026-10-19: "page_size cannot exceed 1000"); refused, never clamped.
+    if (!Number.isInteger(limit) || limit < 1 || limit > RISEX_TRADES_CAP) {
+      throw new PerpError("INVALID_PARAMS", `RISEx: trades limit must be 1..${RISEX_TRADES_CAP} (got ${limit})`, { remediation: `RISEx serves at most ${RISEX_TRADES_CAP} trades per request` });
+    }
     const m = await this.market(symbol);
-    const d = await this.client.get<{ trades?: unknown }>(`/v1/markets/id/${m.market_id}/trade-history`, { limit: Math.min(limit, 1000) });
+    const d = await this.client.get<{ trades?: unknown }>(`/v1/markets/id/${m.market_id}/trade-history`, { limit });
     if (!Array.isArray(d.trades)) throw new PerpError("EXCHANGE_ERROR", "RISEx trade-history: no trades array", { exchange: "risex" });
     const sym = risexSymbolOf(m);
     return d.trades.map(t => {
       const x = t as { maker_side?: unknown; price?: unknown; size?: unknown; time?: unknown };
       if (x.maker_side !== "BUY" && x.maker_side !== "SELL") throw new PerpError("EXCHANGE_ERROR", `RISEx trade maker_side ${String(x.maker_side)}`, { exchange: "risex" });
       // The tape side is the taker's: a SELL maker means a buy took it.
-      // Public tape carries no fee; "0" follows the legacy ExchangeTrade convention for public trades.
+      // Public tape: no fee applies to the viewer → null, never "0".
       return { time: nsToMs(str(x.time, "trade time")), symbol: sym, side: x.maker_side === "SELL" ? "buy" : "sell", price: decReq(x.price, "trade price"), size: decReq(x.size, "trade size"), fee: null };
     });
   }
@@ -868,6 +876,9 @@ function historyStatus(o: Pick<HistoryOrder, "status" | "filled_size">): OrderSt
  * interval. 3m / 30m / 2h / 8h / 12h / 3d are answered with 1m bars (no error), so they are not
  * listed — getKlines refuses them with INVALID_PARAMS instead of returning 1m candles.
  */
+const RISEX_BOOK_MAX = 250;
+const RISEX_TRADES_CAP = 1000;
+
 /** funding-rate-history: max rows per page (docs) and pages followed before giving up. */
 export const RISEX_FUNDING_PAGE_MAX = 1000;
 const RISEX_FUNDING_MAX_PAGES = 20;

@@ -1031,7 +1031,7 @@ export class ArcusAdapter implements ExchangeAdapter, TradingV2 {
     const m = await this.market(symbol);
     const res = await this.client.get<{ trades: Array<{ side: "BUY" | "SELL"; price: string; size: string; timestamp: number }> }>(
       "/v1/trades", "trades", { market: m.marketDisplayName, limit });
-    // Public tape carries no fee; "0" follows the legacy ExchangeTrade convention for public trades.
+    // Public tape: no fee applies to the viewer → null, never "0".
     return res.trades.map(t => ({ time: usToMs(t.timestamp), symbol: m.baseAsset, side: sideLower(t.side), price: t.price, size: t.size, fee: null }));
   }
 

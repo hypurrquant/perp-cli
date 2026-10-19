@@ -243,7 +243,8 @@ export interface ExchangeAdapter {
 
   // ── Market Data ──
   getMarkets(): Promise<ExchangeMarketInfo[]>;
-  getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }>;
+  /** `depth` (levels per side) sizes the request on venues that take it; callers cut the answer to it. */
+  getOrderbook(symbol: string, depth?: number): Promise<{ bids: [string, string][]; asks: [string, string][] }>;
   getRecentTrades(symbol: string, limit?: number): Promise<ExchangePublicTrade[]>;
   getFundingHistory(symbol: string, limit?: number): Promise<FundingHistoryRow[]>;
   getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]>;

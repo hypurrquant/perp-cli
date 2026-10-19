@@ -100,3 +100,15 @@ describe("RISEx funding history paging (live: any -l ≥ 169 returned 168 rows)"
     vi.restoreAllMocks();
   });
 });
+
+describe("RISEx book depth / trades cap (S5, S6)", () => {
+  it("book depth is sent (was always 50) and bounded by the API max 250; trades above 1000 are refused, not clamped", async () => {
+    const get = vi.fn(async (_p: string, _q: Record<string, unknown>) => ({ bids: [], asks: [], trades: [] }));
+    const a = Object.create(RisexAdapter.prototype) as RisexAdapter;
+    Object.assign(a as object, { market: vi.fn(async () => ({ market_id: 1 })), client: { get } });
+    await a.getOrderbook("BTC", 200);
+    expect(get.mock.calls[0][1]).toMatchObject({ limit: 200 });
+    await expect(a.getOrderbook("BTC", 251)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "INVALID_PARAMS" }) });
+    await expect(a.getRecentTrades("BTC", 1500)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "INVALID_PARAMS" }) });
+  });
+});

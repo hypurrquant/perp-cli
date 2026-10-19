@@ -52,6 +52,7 @@ export const EXTENDED_MAX_RECORDS = 10_000;
 export const EXTENDED_CANDLES_PAGE_CAP = 2800;
 export const EXTENDED_FUNDING_PAGE_CAP = 1000;
 const EXTENDED_MAX_PAGES = 50;
+export const EXTENDED_TRADES_CAP = 50;
 
 /** Legacy market row plus the Extended fields shown in JSON (asset class, precision, schedule). */
 export type ExtendedMarketInfo = ExchangeMarketInfo & {
@@ -143,6 +144,10 @@ export class ExtendedPublicAdapter implements ExchangeAdapter {
   }
 
   async getRecentTrades(symbol: string, limit = 50): Promise<ExchangePublicTrade[]> {
+    // The endpoint takes no limit and answers the last 50 trades (live 2026-10-19, `limit=500` → 50).
+    if (!Number.isInteger(limit) || limit < 1 || limit > EXTENDED_TRADES_CAP) {
+      throw new PerpError("INVALID_PARAMS", `Extended: trades limit must be 1..${EXTENDED_TRADES_CAP} (got ${limit})`, { remediation: `Extended publishes only the last ${EXTENDED_TRADES_CAP} trades` });
+    }
     const m = await this.market(symbol);
     const body = await this.client.get<unknown>(`/info/markets/${encodeURIComponent(m.name)}/trades`);
     if (!Array.isArray(body.data)) throw extendedShapeError(`trades of ${m.name} is not a list`);

@@ -16,6 +16,43 @@ import "../exchanges/venues/index.js";
  */
 export const MARKET_DATA_VENUES = listVenuesWithRole("marketData").filter(v => v.create !== null).map(v => v.id);
 
+/**
+ * `--limit` / `-l` / `--depth`: a positive integer, the same rule on every venue (parseInt took
+ * "abc" as NaN and "-5" as a negative slice). Anything else → INVALID_PARAMS before any request.
+ */
+export function parsePositiveIntArg(raw: string, flag: string): number {
+  const t = raw.trim();
+  if (!/^\d+$/.test(t) || Number(t) < 1 || !Number.isSafeInteger(Number(t))) {
+    throw new PerpError("INVALID_PARAMS", `${flag} must be a positive integer (got "${raw}")`, { remediation: `Pass e.g. ${flag} 10` });
+  }
+  return Number(t);
+}
+
+/**
+ * `--start` / `--end`: unix ms (digits) or an ISO-8601 date / time (`Date.parse`; "2026-10-18" is
+ * UTC midnight). parseInt("2026-10-18") read 2026 ms. Non-finite → INVALID_PARAMS.
+ */
+export function parseTimeArg(raw: string, flag: string): number {
+  const t = raw.trim();
+  const ms = /^\d+$/.test(t) ? Number(t) : /^\d{4}-\d{2}-\d{2}/.test(t) ? Date.parse(t) : NaN;
+  if (!Number.isFinite(ms)) {
+    throw new PerpError("INVALID_PARAMS", `${flag} must be unix milliseconds or an ISO date (got "${raw}")`, {
+      remediation: `Pass e.g. ${flag} 1792368000000 or ${flag} 2026-10-18T00:00:00Z`,
+    });
+  }
+  return ms;
+}
+
+/**
+ * Bare market symbol of a CLI argument as `market info` matches it against getMarkets() rows:
+ * "btc-perp" → "BTC", Extended "BTC-USD" / "TSLA_24_5-USD" → "BTC" / "TSLA", TxFlow "BTC-USDC" → "BTC"
+ * (book / funding resolve these through the venue; info read the raw argument and missed them).
+ * HIP-3 "xyz:XYZ100" keeps its prefix.
+ */
+export function bareSymbolOf(arg: string): string {
+  return normalizeSymbolArg(arg.trim()).replace(/-PERP$/, "").replace(/-(USD|USDC|USDT)$/, "").replace(/_24_5$/, "");
+}
+
 /** Multi-venue human output: the footnote of every listed venue read through an unofficial API. */
 function printUnofficialNotes(venues: string[]): void {
   for (const ex of venues) {
@@ -288,11 +325,13 @@ export function registerMarketCommands(
       }
       const markets = await adapter.getMarkets();
       const sym = symbol.toUpperCase();
+      const bare = bareSymbolOf(symbol).toUpperCase();
       const m = markets.find(
         (mk) => {
           const s = mk.symbol.toUpperCase();
-          return s === sym || s === `${sym}-PERP` || s.replace(/-PERP$/, "") === sym
-            || s.split(":").pop() === sym; // HIP-3: "km:US500" matches "US500"
+          const sBare = s.replace(/-PERP$/, "");
+          return s === sym || sBare === sym || sBare === bare
+            || s.split(":").pop() === sym || s.split(":").pop() === bare; // HIP-3: "km:US500" matches "US500"
         }
       );
       if (!m) {
@@ -316,14 +355,17 @@ export function registerMarketCommands(
     .description("Show orderbook for a symbol")
     .option("-d, --depth <n>", "Number of levels", "10")
     .action(async (symbol: string, opts: { depth: string }) => {
+      const depth = parsePositiveIntArg(opts.depth, "--depth");
       const adapter = await getAdapter();
       const sym = normalizeSymbolArg(symbol);
       // RFQ venue (Variational): no order book — the maker's indicative quotes, labelled as such.
       if (adapter.getRfqQuotes !== undefined) return printRfqQuotes(await adapter.getRfqQuotes(sym), isJson());
-      const book = await adapter.getOrderbook(sym);
+      // `depth` reaches venues that size the request by it (GRVT, RISEx); every answer is cut to
+      // `depth` levels per side — JSON included (it printed the venue's full book).
+      const full = await adapter.getOrderbook(sym, depth);
+      const book = { ...full, bids: full.bids.slice(0, depth), asks: full.asks.slice(0, depth) };
       if (isJson()) return printJson(jsonOk(book));
 
-      const depth = parseInt(opts.depth);
       const asks = book.asks.slice(0, depth).reverse();
       const bids = book.bids.slice(0, depth);
 
@@ -376,8 +418,9 @@ export function registerMarketCommands(
     .description("Recent trades for a symbol")
     .option("--limit <n>", "Number of recent trades to show", "20")
     .action(async (symbol: string, opts: { limit: string }) => {
+      const limit = parsePositiveIntArg(opts.limit, "--limit");
       const adapter = await getAdapter();
-      const trades = await adapter.getRecentTrades(normalizeSymbolArg(symbol), parseInt(opts.limit));
+      const trades = await adapter.getRecentTrades(normalizeSymbolArg(symbol), limit);
       const skipped = tapeSkippedOf(trades);
       if (isJson()) return printJson(jsonOk(trades, skipped !== null ? { skippedRows: skipped } : undefined));
       if (skipped !== null) console.log(chalk.yellow(`  ${skipped.count} tape row(s) skipped: ${skipped.reason}`));
@@ -399,27 +442,31 @@ export function registerMarketCommands(
     .description("Funding rate history")
     .option("-l, --limit <n>", "Number of records", "10")
     .action(async (symbol: string, opts: { limit: string }) => {
+      const limit = parsePositiveIntArg(opts.limit, "--limit");
       const adapter = await getAdapter();
       // A venue without a funding-history API (Variational): its current funding terms, labelled as such.
       if (adapter.getFundingTerms !== undefined) return printFundingTerms(await adapter.getFundingTerms(normalizeSymbolArg(symbol)), isJson());
-      const history = await adapter.getFundingHistory(normalizeSymbolArg(symbol), parseInt(opts.limit));
+      const history = await adapter.getFundingHistory(normalizeSymbolArg(symbol), limit);
       if (isJson()) return printJson(jsonOk(history));
       if (history.length === 0) {
         console.log(chalk.gray("\n  No funding history.\n"));
         return;
       }
-      const hasOracle = history.some((h) => h.price != null && h.price !== "0" && h.price !== "");
+      // `price` is the venue's reference price of the print — oracle (Pacifica), mark (GRVT, Aster)
+      // or index (RISEx) — so the column is "Price", not "Oracle"; each rate shows its interval.
+      const hasPrice = history.some((h) => h.price != null && h.price !== "0" && h.price !== "");
       const rows = history.map((h) => {
         const base = [
           new Date(h.time).toLocaleString(),
           formatPercent(h.rate),
+          h.intervalHours === null ? chalk.gray("-") : `${h.intervalHours}h`,
         ];
-        if (hasOracle) base.push(h.price != null ? `$${formatUsd(h.price)}` : chalk.gray("n/a"));
+        if (hasPrice) base.push(h.price != null ? `$${formatUsd(h.price)}` : chalk.gray("n/a"));
         return base;
       });
-      const headers = hasOracle ? ["Time", "Funding Rate", "Oracle"] : ["Time", "Funding Rate"];
+      const headers = hasPrice ? ["Time", "Funding Rate", "Interval", "Price"] : ["Time", "Funding Rate", "Interval"];
       console.log(makeTable(headers, rows));
-      if (!hasOracle) console.log(chalk.gray("  Note: Oracle price not available for this exchange.\n"));
+      if (!hasPrice) console.log(chalk.gray("  Note: no reference price published with this venue's funding prints.\n"));
     });
 
   market
@@ -470,8 +517,8 @@ export function registerMarketCommands(
   market
     .command("kline <symbol> <interval>")
     .description("Kline/candlestick data (intervals: 1m,5m,15m,1h,4h,1d,...)")
-    .option("--start <ts>", "Start time (unix ms)")
-    .option("--end <ts>", "End time (unix ms)")
+    .option("--start <ts>", "Start time (unix ms or ISO date, e.g. 2026-10-18T00:00:00Z)")
+    .option("--end <ts>", "End time (unix ms or ISO date)")
     .action(
       async (
         symbol: string,
@@ -482,8 +529,13 @@ export function registerMarketCommands(
         // A venue whose candles endpoint is authenticated (Ondo) is read with the registered key.
         const adapter = getAccountAdapter !== undefined && klinesNeedAuth(publicAdapter) ? await getAccountAdapter() : publicAdapter;
         const now = Date.now();
-        const startTime = opts.start ? parseInt(opts.start) : now - 24 * 60 * 60 * 1000;
-        const endTime = opts.end ? parseInt(opts.end) : now;
+        const startTime = opts.start !== undefined ? parseTimeArg(opts.start, "--start") : now - 24 * 60 * 60 * 1000;
+        const endTime = opts.end !== undefined ? parseTimeArg(opts.end, "--end") : now;
+        if (startTime > endTime) {
+          throw new PerpError("INVALID_PARAMS", `--start (${new Date(startTime).toISOString()}) is after --end (${new Date(endTime).toISOString()})`, {
+            remediation: "Pass --start before --end",
+          });
+        }
 
         const klines = await adapter.getKlines(normalizeSymbolArg(symbol), interval, startTime, endTime);
         if (isJson()) return printJson(jsonOk(klines));

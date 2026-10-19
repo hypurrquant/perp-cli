@@ -19,6 +19,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **GRVT `market kline` dropped older bars.** The `next` cursor runs dry after ~1000 bars (live: page 2 = 2 rows, `next` ""), so a 2-day 1m range returned 1002 of 2878 bars. Pages now walk `end_time` back to just before the oldest bar returned until `start` is covered (the cursor is not used); verified live: 40 days of BTC 1m = 57,583 bars in 58 pages back to the start (17 one-minute gaps — minutes GRVT publishes no bar for). Max 50 pages, refused up front with `INVALID_PARAMS`. An off-grid `--start` is floored to the interval (GRVT answered a truncated, off-grid first bar: 4h from 05:07 → a 06:00–08:00 bar); for calendar intervals (3d … 4w) a truncated leading bar is dropped.
 - **GRVT trades / funding limits:** trades are newest first like every other venue (the venue answers oldest first); `--limit` outside 1..1000 (the measured server cap, no cursor) is `INVALID_PARAMS` instead of being clamped (0 / -5 became 1). Funding history sends the requested limit (it was clamped to 1000; the venue serves up to 10,000 in one answer).
 - **RISEx `market funding` capped at 168 rows:** the API defaults `start_time` to now − 7 d, so any `-l` ≥ 169 returned 168 rows. The window (`limit` hours back) is now sent explicitly and pages are followed with `page` / `has_next_page` (1000 rows per page).
+- **`perp market` arguments, one rule on every venue:** `--start` / `--end` take unix ms or an ISO date (`parseInt("2026-10-18")` read 2026 ms), and `--start` after `--end` is `INVALID_PARAMS` (GRVT answered `ok, []`); `--limit` / `-l` / `--depth` must be positive integers (GRVT turned 0 / -5 into 1 and `abc` into `ok, []`; TxFlow `-5` returned 295 rows). `market info` accepts the symbol forms `book` / `funding` accept (`BTC-PERP`, Extended `BTC-USD` / `TSLA_24_5-USD`, TxFlow `BTC-USDC`). `market book --depth` reaches the adapter (RISEx requested 50 levels always; now `depth`, max 250) and cuts the JSON book too. Venue trade caps are refused instead of silently clamped: RISEx 1000, Extended 50 (the endpoint has no limit). The human funding table labels the reference price "Price" (it is mark on GRVT / Aster, index on RISEx, oracle on Pacifica — it said "Oracle") and shows each row's interval.
 
 ### JSON contract changes
 
@@ -28,6 +29,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - `market list|prices` (no `-e`): `data.exchanges` gains the keys `txflow`, `variational`, `grvt`, `extended` — additive.
 - TxFlow market rows: `volume24h` null → the venue's 24 h notional (string) where it trades.
 - GRVT `market trades`: row order newest first (was oldest first).
+- `market book --json`: `bids` / `asks` are cut to `--depth` (default 10) levels; they were the venue's full answer.
 - `fundingHours` on hyperliquid / pacifica / lighter / lighter-rh market rows: null → 1 / 1 / 8 / 8.
 
 ## [0.15.0] — 2026-10-19
