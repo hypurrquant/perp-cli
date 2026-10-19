@@ -6,6 +6,7 @@
  *  4. klines are paged in 1500-bar requests (was cut to the first 500 bars).
  */
 import { describe, it, expect, vi } from "vitest";
+import { seedAsterDirectory } from "./aster-directory.js";
 
 const SYMBOLS = [
   { symbol: "BTCUSDT", baseAsset: "BTC", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USDT", quantityPrecision: 3, filters: [{ filterType: "LOT_SIZE", stepSize: "0.001" }] },
@@ -14,9 +15,10 @@ const SYMBOLS = [
   { symbol: "ETHU", baseAsset: "ETH", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "U", quantityPrecision: 3, filters: [] },
 ];
 
-async function adapter(publicGet: (path: string, params?: Record<string, string>) => unknown) {
+async function adapter(publicGet: (path: string, params?: Record<string, string>) => unknown, opts: { cold?: boolean } = {}) {
   const { AsterAdapter } = await import("../../exchanges/aster.js");
   const a = new AsterAdapter(undefined, false);
+  if (opts.cold !== true) seedAsterDirectory(a);
   const t = a as unknown as Record<string, unknown>;
   t._publicGet = vi.fn(async (path: string, params?: Record<string, string>) => publicGet(path, params));
   t._loadFundingInfo = vi.fn(async () => undefined);
@@ -40,30 +42,32 @@ describe("AsterAdapter.getMarkets", () => {
     expect(m[2]).toMatchObject({ venueSymbol: "ETHU", quoteAsset: "U" });
   });
 
-  it("a cold adapter resolves a U-quoted symbol through the directory: BTCU → BTCU (never BTCUUSDT); ETH still ETHUSDT", async () => {
+  it("cold adapter: every symbol resolves through the directory — exact venue symbol, then <base>USDT, else SYMBOL_NOT_FOUND", async () => {
+    const DIR = [
+      ...SYMBOLS,
+      { symbol: "BTCU", baseAsset: "BTC", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "U", filters: [] },
+      { symbol: "USD1USDT", baseAsset: "USD1", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USDT", filters: [] },
+    ];
     const calls: Array<[string, Record<string, string> | undefined]> = [];
     const a = await adapter((path, p) => {
       calls.push([path, p]);
-      if (path === "/fapi/v3/exchangeInfo") return { symbols: [...SYMBOLS, { symbol: "BTCU", baseAsset: "BTC", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "U", quantityPrecision: 3, filters: [] }] };
+      if (path === "/fapi/v3/exchangeInfo") return { symbols: DIR };
       if (path === "/fapi/v3/depth") return { bids: [["1", "1"]], asks: [["2", "1"]] };
+      if (path === "/fapi/v3/fundingRate") return [{ symbol: p?.symbol, fundingRate: "0.0001", fundingTime: 1_792_000_000_000 }];
       throw new Error(`unexpected ${path}`);
-    });
-    await a.getOrderbook("BTCU");
-    expect(calls.map(c => c[0])).toEqual(["/fapi/v3/exchangeInfo", "/fapi/v3/depth"]);
-    expect(calls[1][1]?.symbol).toBe("BTCU");
-    await a.getOrderbook("ETH");
-    expect(calls.at(-1)?.[1]?.symbol).toBe("ETHUSDT");
-    await a.getOrderbook("BTCU");
-    expect(calls.filter(c => c[0] === "/fapi/v3/exchangeInfo")).toHaveLength(1); // cached; a base needs no directory
-  });
-
-  it("a non-USDT CLI symbol reaches the venue as is (BTCUSD1, and ETHU once exchangeInfo is read); a base gains USDT", async () => {
-    const a = await adapter(marketsRoute([{ symbol: "BTCUSDT", markPrice: "83010" }]));
-    const toApi = (s: string) => (a as unknown as { _toApi(s: string): string })._toApi(s);
-    expect(toApi("BTCUSD1")).toBe("BTCUSD1");
-    expect(toApi("ETH")).toBe("ETHUSDT");
-    await a.getMarkets();
-    expect(toApi("ETHU")).toBe("ETHU");
+    }, { cold: true });
+    const sent: string[] = [];
+    for (const sym of ["USD1", "BTCU", "ETHU", "BTCUSD1", "BTC"]) {
+      await a.getOrderbook(sym);
+      sent.push(String(calls.at(-1)?.[1]?.symbol));
+    }
+    expect(sent).toEqual(["USD1USDT", "BTCU", "ETHU", "BTCUSD1", "BTCUSDT"]);
+    expect(calls.filter(c => c[0] === "/fapi/v3/exchangeInfo")).toHaveLength(1); // loaded once, cached
+    // funding of a listed market reads it; of an unlisted one refuses (never ok with [])
+    expect((await a.getFundingHistory("USD1", 1))).toHaveLength(1);
+    expect(calls.at(-1)?.[1]?.symbol).toBe("USD1USDT");
+    await expect(a.getFundingHistory("NOPE", 1)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "SYMBOL_NOT_FOUND" }) });
+    await expect(a.getRecentTrades("NOPEU")).rejects.toMatchObject({ structured: expect.objectContaining({ code: "SYMBOL_NOT_FOUND" }) });
   });
 
   it("an unreadable premiumIndex throws (never a last-trade / zero stand-in)", async () => {

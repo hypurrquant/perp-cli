@@ -4,6 +4,7 @@
  * fetch is mocked globally. Agent/OWS/PK signers are stubbed.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { seedAsterDirectory } from "./aster-directory.js";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 
@@ -111,6 +112,7 @@ describe("AsterAdapter — three-tier signer routing", () => {
   it("Tier 1 (agent) selected when agent registered and not expired", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     const meta = makeAgentMeta();
@@ -131,6 +133,7 @@ describe("AsterAdapter — three-tier signer routing", () => {
   it("Tier 2 (master) throws NOT_IMPLEMENTED when no agent configured", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     const masterSigner = makeEvmSigner();
@@ -154,6 +157,7 @@ describe("AsterAdapter — three-tier signer routing", () => {
   it("Tier 3 (pk) throws NOT_IMPLEMENTED when no agent or master, only PK configured", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     const pkSigner = makePkSigner();
@@ -177,6 +181,7 @@ describe("AsterAdapter — three-tier signer routing", () => {
   it("--no-agent + master throws NOT_IMPLEMENTED (Aster requires agent)", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     const meta = makeAgentMeta();
@@ -205,6 +210,7 @@ describe("AsterAdapter — three-tier signer routing", () => {
   it("--no-agent without agent or master throws NOT_IMPLEMENTED", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
     ast.setNoAgent(true);
 
@@ -226,6 +232,7 @@ describe("AsterAdapter — three-tier signer routing", () => {
   it("throws NO_SIGNER_AVAILABLE with remediation when no tier configured", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     let err: unknown;
@@ -246,6 +253,7 @@ describe("AsterAdapter — three-tier signer routing", () => {
   it("throws AGENT_EXPIRED when agent expired and no master/pk available", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     const expiredMeta = makeAgentMeta({
@@ -271,6 +279,7 @@ describe("AsterAdapter — three-tier signer routing", () => {
   it("expired agent + master throws AGENT_EXPIRED (no fall-through to the master tier)", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     const expiredMeta = makeAgentMeta({
@@ -300,6 +309,7 @@ describe("AsterAdapter — three-tier signer routing", () => {
   it("isReadOnly returns true when no signer in any tier", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
     expect(ast.isReadOnly).toBe(true);
   });
@@ -307,6 +317,7 @@ describe("AsterAdapter — three-tier signer routing", () => {
   it("isReadOnly returns false when agent configured", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
     ast.setAgent(makeAgentMeta(), makeAgentStrategy());
     expect(ast.isReadOnly).toBe(false);
@@ -315,6 +326,7 @@ describe("AsterAdapter — three-tier signer routing", () => {
   it("isReadOnly returns false when master signer configured", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
     ast.setMasterSigner(makeEvmSigner());
     expect(ast.isReadOnly).toBe(false);
@@ -323,6 +335,7 @@ describe("AsterAdapter — three-tier signer routing", () => {
   it("isReadOnly returns false when PK signer configured", async () => {
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
     ast.setPkSigner(makePkSigner());
     expect(ast.isReadOnly).toBe(false);
@@ -347,6 +360,7 @@ describe("AsterAdapter — three-tier signer routing", () => {
 
     const AsterAdapter = await buildAdapter();
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();  // no signer configured
 
     // Should not throw for read-only operations
@@ -393,6 +407,7 @@ describe("AsterAdapter — AC-19 remediation fields", () => {
     makeInitFetch();
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     let err: unknown;
@@ -416,6 +431,7 @@ describe("AsterAdapter — AC-19 remediation fields", () => {
     makeInitFetch();
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     const meta = makeAgentMeta({ expiresAt: new Date(Date.now() - 1000).toISOString() });
@@ -476,6 +492,7 @@ describe("AsterAdapter — V3 user/signer field model in signed query string", (
   it("Tier 1 (agent): emits user=master and signer=agent as distinct fields", async () => {
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     const meta = makeAgentMeta({
@@ -497,6 +514,7 @@ describe("AsterAdapter — V3 user/signer field model in signed query string", (
   it("Tier 2 (master): _resolveSigner throws NOT_IMPLEMENTED (master self-signing rejected by venue)", async () => {
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     const masterAddr = "0xMasterAddr00000000000000000000000000000";
@@ -513,6 +531,7 @@ describe("AsterAdapter — V3 user/signer field model in signed query string", (
   it("Tier 3 (pk): _resolveSigner throws NOT_IMPLEMENTED (PK self-signing rejected by venue)", async () => {
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     const pkAddr = "0xPkAddr000000000000000000000000000000000";
@@ -529,6 +548,7 @@ describe("AsterAdapter — V3 user/signer field model in signed query string", (
   it("--no-agent + master throws NOT_IMPLEMENTED (Aster requires agent — no master-self-sign path)", async () => {
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     const masterAddr = "0xMasterAddr00000000000000000000000000000";
@@ -579,6 +599,7 @@ describe("AsterAdapter — venue JSON error envelope validation (Rule #2)", () =
 
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
 
     const meta = makeAgentMeta();
@@ -600,6 +621,7 @@ describe("AsterAdapter — venue JSON error envelope validation (Rule #2)", () =
 
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
     const meta = makeAgentMeta();
     ast.setAgent(meta, makeAgentStrategy(meta.agentEvmAddress));
@@ -618,6 +640,7 @@ describe("AsterAdapter — venue JSON error envelope validation (Rule #2)", () =
 
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
     const meta = makeAgentMeta();
     ast.setAgent(meta, makeAgentStrategy(meta.agentEvmAddress));
@@ -638,6 +661,7 @@ describe("AsterAdapter — venue JSON error envelope validation (Rule #2)", () =
 
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
     const meta = makeAgentMeta();
     ast.setAgent(meta, makeAgentStrategy(meta.agentEvmAddress));
@@ -650,6 +674,7 @@ describe("AsterAdapter — venue JSON error envelope validation (Rule #2)", () =
 
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
     const meta = makeAgentMeta();
     ast.setAgent(meta, makeAgentStrategy(meta.agentEvmAddress));
@@ -662,6 +687,7 @@ describe("AsterAdapter — venue JSON error envelope validation (Rule #2)", () =
 
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const ast = new AsterAdapter(undefined, false);
+    seedAsterDirectory(ast);
     await ast.init();
     const meta = makeAgentMeta();
     ast.setAgent(meta, makeAgentStrategy(meta.agentEvmAddress));

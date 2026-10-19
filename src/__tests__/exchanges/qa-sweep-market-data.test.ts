@@ -11,6 +11,7 @@
  *     a retryable EXCHANGE_ERROR); Lighter's unknown market carries the market-list remediation.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { seedAsterDirectory } from "./aster-directory.js";
 
 vi.mock("../../cache.js", async () => ({
   withCache: async <T>(_key: string, _ttl: number, fn: () => Promise<T>) => fn(),
@@ -69,6 +70,7 @@ describe("1. public trade tape: fee is null, not 0", () => {
   it("Aster /fapi/v3/trades", async () => {
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const a = new AsterAdapter(undefined, false);
+    seedAsterDirectory(a);
     (a as unknown as Record<string, unknown>)._publicGet = vi.fn(async () => [{ time: 1, symbol: "BTCUSDT", isBuyerMaker: false, price: "83000", qty: "0.1" }]);
     const [t] = await a.getRecentTrades("BTC");
     expect(t).toMatchObject({ side: "buy", fee: null });

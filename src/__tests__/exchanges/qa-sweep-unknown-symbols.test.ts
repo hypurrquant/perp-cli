@@ -15,6 +15,7 @@
  * open_short / close_long sell (was every row of both parties → "sell").
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { seedAsterDirectory } from "./aster-directory.js";
 
 vi.mock("../../cache.js", async () => ({
   withCache: async <T>(_key: string, _ttl: number, fn: () => Promise<T>) => fn(),
@@ -209,6 +210,7 @@ describe("funding history of an unknown symbol", () => {
   it("Aster: 200 [] → SYMBOL_NOT_FOUND", async () => {
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const a = new AsterAdapter(undefined, false);
+    seedAsterDirectory(a);
     (a as unknown as Record<string, unknown>)._publicGet = vi.fn(async () => []);
     (a as unknown as Record<string, unknown>).getMarkets = vi.fn(async () => [{ symbol: "BTC" }]);
     await expect(a.getFundingHistory("NOPE")).rejects.toMatchObject(NOT_FOUND("aster"));
@@ -217,6 +219,7 @@ describe("funding history of an unknown symbol", () => {
   it("Aster: a venue-form symbol (BTCUSDT) of a listed market with no rows stays []", async () => {
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const a = new AsterAdapter(undefined, false);
+    seedAsterDirectory(a);
     (a as unknown as Record<string, unknown>)._publicGet = vi.fn(async () => []);
     (a as unknown as Record<string, unknown>).getMarkets = vi.fn(async () => [{ symbol: "BTC" }]);
     await expect(a.getFundingHistory("BTCUSDT")).resolves.toEqual([]);

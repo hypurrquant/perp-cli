@@ -408,14 +408,18 @@ export class AsterAdapter implements ExchangeAdapter {
   // ── Symbol helpers ──
 
   /**
-   * CLI symbol → Aster API symbol (ETH → ETHUSDT). A non-USDT market's CLI symbol is its venue
-   * symbol (BTCUSD1, BTCU — asterCliSymbol): passed as is when exchangeInfo lists it (or by its
-   * USD1 suffix before exchangeInfo is read).
+   * CLI symbol → Aster API symbol through the LOADED market directory (exchangeInfo): the exact
+   * venue symbol first (BTCUSDT, BTCUSD1, BTCU — a non-USDT market's CLI symbol is its venue
+   * symbol, asterCliSymbol), then the USDT market of a base (ETH → ETHUSDT, USD1 → USD1USDT),
+   * else SYMBOL_NOT_FOUND — never a guessed suffix. Callers load the directory first (_apiSymbol).
    */
   private _toApi(symbol: string): string {
     const s = symbol.toUpperCase().replace(/-PERP$/, "");
-    if (s.endsWith("USDT") || s.endsWith("BUSD") || s.endsWith("USD1") || this._priceFilters.has(s)) return s;
-    return `${s}USDT`;
+    if (this._priceFilters.has(s)) return s;
+    if (this._priceFilters.has(`${s}USDT`)) return `${s}USDT`;
+    throw new PerpError("SYMBOL_NOT_FOUND", `Aster has no market ${s} (neither the venue symbol ${s} nor ${s}USDT is listed)`, {
+      exchange: "aster", remediation: "List markets: perp -e aster market list",
+    });
   }
 
   /** Aster API symbol → CLI symbol (ETHUSDT → ETH) */
@@ -581,16 +585,13 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   /**
-   * CLI symbol → Aster API symbol, resolved through the market directory: a venue symbol the
-   * directory lists (a U-quoted BTCU, read on a cold adapter) is passed as is — the directory is
-   * loaded on first use (cached CACHE_TTL), so the answer never depends on what was read before.
-   * Only a symbol that could be a U-quoted venue symbol (ends in "U", not …USDT) needs the
-   * directory; …USDT / …USD1 / a plain base (ETH → ETHUSDT) resolve without a request.
+   * CLI symbol → Aster API symbol, resolved through the market directory (_toApi), loaded on first
+   * use and cached CACHE_TTL — so the answer never depends on what was read before (a cold
+   * adapter resolves BTCU, USD1 → USD1USDT, an unknown symbol is SYMBOL_NOT_FOUND).
    */
   private async _apiSymbol(symbol: string): Promise<string> {
-    const s = symbol.toUpperCase().replace(/-PERP$/, "");
-    if (s.endsWith("U") && !this._priceFilters.has(s)) await this._ensureDirectory();
-    return this._toApi(s);
+    await this._ensureDirectory();
+    return this._toApi(symbol);
   }
 
   private async _symbolPriceFilters(apiSymbol: string): Promise<AsterPriceFilters> {
@@ -1371,7 +1372,7 @@ export class AsterAdapter implements ExchangeAdapter {
     const r = this._resolveSigner();
     if (!symbol) {
       const orders = await this.getOpenOrders();
-      if (orders.some(o => o.symbol.toUpperCase().endsWith("U"))) await this._ensureDirectory(); // U-quoted symbols resolve through the directory
+      await this._ensureDirectory();
       const apiSymbols = new Set(orders.map(o => this._toApi(o.symbol)));
       const results = [];
       for (const sym of apiSymbols) {

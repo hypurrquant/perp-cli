@@ -3,6 +3,7 @@
  * errors keep their code, Aster's empty-result guard under the exact-case listsSymbol.
  */
 import { readFileSync } from "node:fs";
+import { seedAsterDirectory } from "./exchanges/aster-directory.js";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getPriceEstimate } from "../bot/strategies/funding-arb-utils.js";
@@ -54,6 +55,7 @@ describe("Aster funding: a lower-case caller still passes the exact-case guard",
   it("\"btc\" with an empty answer and BTC listed → [] (not SYMBOL_NOT_FOUND)", async () => {
     const { AsterAdapter } = await import("../exchanges/aster.js");
     const a = new AsterAdapter(undefined, false);
+    seedAsterDirectory(a);
     (a as unknown as Record<string, unknown>)._publicGet = vi.fn(async () => []);
     (a as unknown as Record<string, unknown>).getMarkets = vi.fn(async () => [{ symbol: "BTC" }]);
     await expect(a.getFundingHistory("btc")).resolves.toEqual([]);
