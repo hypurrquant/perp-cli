@@ -27,7 +27,7 @@ import {
   LIGHTER_GTT_EXPIRY_MS, LIGHTER_CLIENT_ORDER_INDEX_MAX, LIGHTER_REFERENCE_PRICE_SOURCE,
 } from "./venues/lighter-family.js";
 import { acquireRate, rateLimitedError } from "./rate-limiter.js";
-import { LIGHTER_BOOK_ORDERS_LIMIT, lighterBook, lighterWafChallenge } from "./lighter-public.js";
+import { fetchLighterFundingStats, LIGHTER_BOOK_ORDERS_LIMIT, lighterBook, lighterWafChallenge, type LighterFundingStat } from "./lighter-public.js";
 import { fetchAndCache, invalidateCache, setCached, withCache, TTL_ACCOUNT } from "../cache.js";
 import type { LighterVenueId } from "./venues/lighter-family.js";
 
@@ -1367,6 +1367,11 @@ export class LighterAdapter implements ExchangeAdapter {
     return { baseAmount, priceTicks };
   }
 
+  /** Settled / predicted hourly funding per market_id (WS market_stats snapshot, shared with the public directory). */
+  protected fundingStats(): Promise<Map<number, LighterFundingStat>> {
+    return fetchLighterFundingStats(this.venueId, this.networkName);
+  }
+
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
     if (this._marketsCache && Date.now() - this._marketsCacheTime < LighterAdapter.CACHE_TTL) return this._marketsCache;
     const markets: ExchangeMarketInfo[] = [];
@@ -1392,7 +1397,12 @@ export class LighterAdapter implements ExchangeAdapter {
           is_frozen?: boolean;
         }>;
       }>,
-      this.getFundingRates(),
+      // Settled + predicted hourly rates (WS market_stats snapshot — the public directory and
+      // perp-ws read the same source). Unreadable → fundingRate null (unknown), reason printed.
+      this.fundingStats().catch((e: unknown) => {
+        console.error(`[${this.name}] settled funding rate unavailable (fundingRate null): ${e instanceof Error ? e.message : String(e)}`);
+        return new Map<number, LighterFundingStat>();
+      }),
     ]);
 
     // An absent list is a failed fetch, never "no markets" (SSOT Rule #2).
@@ -1407,7 +1417,7 @@ export class LighterAdapter implements ExchangeAdapter {
     for (const d of perps) {
       const imf = d.min_initial_margin_fraction ?? d.default_initial_margin_fraction ?? 500;
       const maxLev = imf > 0 ? Math.floor(10000 / imf) : 50;
-      const fr = fundingRates.get(d.symbol);
+      const fr = fundingRates.get(d.market_id);
       const dec = this._marketDecimals.get(d.symbol.toUpperCase());
       // markPrice = the venue's MARK price: orderBookDetails `mark_price` (the source the public
       // data path lighter-public.ts uses; /funding-rates carries no mark price). last_trade_price
@@ -1417,17 +1427,19 @@ export class LighterAdapter implements ExchangeAdapter {
         symbol: d.symbol,
         markPrice: d.mark_price,
         indexPrice: isPriceStr(d.index_price) ? d.index_price : null,
+        // Last settled hourly rate (market_stats funding_rate, = the newest /fundings print, = the
+        // perp-ws `rate`), a fraction per 1 h; the running hour's predicted rate is additive.
         fundingRate: fr?.rate ?? null,
-        // /funding-rates `rate` (per 8 h) is not the last settled print (/fundings), not verified → null.
-        fundingRateKind: null,
+        fundingRateKind: fr?.rate != null ? "lastSettled" as const : null,
+        predictedFundingRate: fr?.predictedRate ?? null,
         volume24h: d.daily_quote_token_volume != null ? String(d.daily_quote_token_volume) : null,
         // BASE units, one side (WS market_stats open_interest is the same quantity in USD).
         openInterest: d.open_interest != null ? String(d.open_interest) : null,
         maxLeverage: maxLev,
         sizeDecimals: dec ? dec.size : null,
         stepSize: null,
-        // `fundingRate` is the /funding-rates value: a fraction per 8 h (venue fundingRateBasis).
-        fundingHours: 8,
+        // `fundingRate` is per 1 h (hourly settlement).
+        fundingHours: 1,
         marginTiers: null,
       });
     }

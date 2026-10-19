@@ -129,6 +129,7 @@ export function requireTradingPrecision(m: VenueMarket): { tickSize: string; ste
  *  - hyperliquid: metaAndAssetCtxs `funding` (WS allDexsAssetCtxs) — accruing.
  *  - aster: premiumIndex lastFundingRate moves during the period (WS markPrice@arr `r`) — accruing.
  *  - pacifica: /info/prices `funding` = the last settled hourly rate (WS prices `funding`).
+ *  - lighter, lighter-rh: WS market_stats funding_rate = the newest /fundings print — lastSettled.
  *  - ondo, qfex: not verified against settled prints → null.
  */
 const VENUE_MARKET_RATE_KIND: Partial<Record<VenueMarket["venue"], FundingRateKind>> = {
@@ -138,6 +139,8 @@ const VENUE_MARKET_RATE_KIND: Partial<Record<VenueMarket["venue"], FundingRateKi
   hyperliquid: "accruing",
   aster: "accruing",
   pacifica: "lastSettled",
+  lighter: "lastSettled",
+  "lighter-rh": "lastSettled",
 };
 
 export function fundingRateKindOf(venue: VenueMarket["venue"], fundingRate: string | null): FundingRateKind | null {

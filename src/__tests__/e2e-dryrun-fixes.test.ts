@@ -92,8 +92,8 @@ function lighterWithDetails(details: Detail[] | undefined): LighterAdapter {
     if (path !== "/orderBookDetails") throw new Error(`unexpected ${path}`);
     return details === undefined ? {} : { order_book_details: details };
   };
-  // /funding-rates carries no mark price (live) — only the rate.
-  internals.getFundingRates = async () => new Map([["TSLA", { rate: "0.00003", markPrice: null }]]);
+  // WS market_stats snapshot: settled + predicted hourly rates by market_id (no mark price).
+  internals.fundingStats = async () => new Map([[10, { rate: "0.000012", predictedRate: "0.00001" }]]);
   return lt;
 }
 
@@ -109,7 +109,8 @@ describe("#2 LighterAdapter.getMarkets reads the mark from orderBookDetails", ()
     expect(markets.map(m => m.symbol)).toEqual(["TSLA", "ETH"]);
     expect(markets[0].markPrice).toBe("355.77");
     expect(markets[0].indexPrice).toBe("355.44");
-    expect(markets[0].fundingRate).toBe("0.00003");
+    expect(markets[0]).toMatchObject({ fundingRate: "0.000012", fundingRateKind: "lastSettled", predictedFundingRate: "0.00001", fundingHours: 1 });
+    expect(markets[1]).toMatchObject({ fundingRate: null, fundingRateKind: null }); // no stat → unknown, never 0
   });
 
   it("perps listed but none with a mark → EXCHANGE_ERROR, not an empty success", async () => {

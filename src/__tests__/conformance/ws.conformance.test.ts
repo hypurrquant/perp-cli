@@ -16,7 +16,19 @@
  *     canonical symbols and rateKind agree.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import WebSocket from "ws";
+
+// Sockets the CLI opens itself (Lighter `market list`: the market_stats funding snapshot) go
+// through the session (recorded / replayed); this file's own stream transport uses the real `ws`.
+vi.mock("ws", async (importOriginal) => {
+  const real = await importOriginal<typeof import("ws")>();
+  const { activeSession } = await import("./harness.js");
+  const Real = real.default as unknown as new (...a: unknown[]) => never;
+  const Wrapped = new Proxy(Real, {
+    construct: (_t, args: unknown[]) => new (activeSession().wrapWs(Real as never) as unknown as new (...a: unknown[]) => object)(...args),
+  });
+  return { ...real, default: Wrapped, WebSocket: Wrapped };
+});
+const { default: WebSocket } = await vi.importActual<typeof import("ws")>("ws");
 import "../../exchanges/venues/index.js";
 import { createVenueStream } from "../../ws/stream.js";
 import { USD_LIKE_QUOTES } from "../../ws/canonical.js";

@@ -55,6 +55,12 @@ export interface ExchangeMarketInfo {
    * not verified for this venue's REST field. Absent on rows built before 0.15.1 conventions.
    */
   fundingRateKind?: FundingRateKind | null;
+  /**
+   * The venue's predicted rate for the running / next period, same unit as `fundingRate`
+   * (Pacifica next_funding_rate; Lighter market_stats current_funding_rate) — the perp-ws
+   * `predictedRate`. Absent = the venue publishes none on this path.
+   */
+  predictedFundingRate?: string | null;
 }
 
 export type FundingRateKind = "accruing" | "predicted" | "lastSettled";
