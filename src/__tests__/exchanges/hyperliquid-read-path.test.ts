@@ -15,7 +15,6 @@ vi.mock("../../cache.js", async () => ({
 }));
 
 import { HyperliquidAdapter } from "../../exchanges/hyperliquid.js";
-import { venueCapOf } from "../../exchanges/venue-cap.js";
 import { PerpError } from "../../errors.js";
 import REC from "../fixtures/hyperliquid/read-path-2026-10-19.json";
 
@@ -65,32 +64,53 @@ async function caught(p: Promise<unknown>): Promise<PerpError> {
 beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(REC.recordedAt); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-describe("F1: klines beyond HL's most recent 5000 candles are never returned as complete", () => {
-  it("1m over 10 days: rows carry venueCap { truncated, availableFrom = first candle }", async () => {
+describe("F1: klines older than HL's most recent 5000 candles are refused up front", () => {
+  const EARLIEST_1M = REC.recordedAt - 5000 * 60_000;
+
+  it("1m over 10 days → INVALID_PARAMS naming the earliest allowed start, before any candle request", async () => {
     const c = REC.candles1m10d;
-    const { hl } = adapterWith({ ...recorded(), candleSnapshot: () => [...c.head, ...c.tail] });
-    const rows = await hl.getKlines("BTC", "1m", c.req.startTime, c.req.endTime);
-    const cap = venueCapOf(rows);
-    expect(cap).toMatchObject({ cappedAt: 5000, truncated: true, availableFrom: c.head[0].t });
-    expect(cap!.availableFrom!).toBeGreaterThan(c.req.startTime + 60_000);
+    const { hl, calls } = adapterWith({ ...recorded(), candleSnapshot: () => [...c.head, ...c.tail] });
+    const e = await caught(hl.getKlines("BTC", "1m", c.req.startTime, c.req.endTime));
+    expect(e.structured).toMatchObject({ code: "INVALID_PARAMS", retryable: false });
+    expect(e.message).toContain(`earliest allowed start is ${new Date(EARLIEST_1M).toISOString()} (${EARLIEST_1M})`);
+    expect(e.structured.remediation).toBe(`Use --start ${EARLIEST_1M} or later, or a longer interval`);
+    expect(calls.some(b => b.type === "candleSnapshot")).toBe(false);
   });
 
-  it("a range wholly older than the venue window (answered []) → INVALID_PARAMS naming the earliest time", async () => {
+  it("a range wholly older than the window (the venue answers []) is refused the same way", async () => {
     const c = REC.candles1mOld;
     expect(c.rows).toEqual([]);
     const { hl } = adapterWith({ ...recorded(), candleSnapshot: () => c.rows });
     const e = await caught(hl.getKlines("BTC", "1m", c.req.startTime, c.req.endTime));
-    expect(e.structured).toMatchObject({ code: "INVALID_PARAMS", retryable: false });
-    expect(e.message).toMatch(/most recent 5000 1m candles \(from about 2026-/);
+    expect(e.structured.code).toBe("INVALID_PARAMS");
   });
 
-  it("a range inside the window: no cap signal; only the in-progress last candle is closed:false", async () => {
+  it("a start exactly at the earliest allowed time is read", async () => {
+    const c = REC.candles1m10d;
+    const { hl, calls } = adapterWith({ ...recorded(), candleSnapshot: () => [...c.head, ...c.tail] });
+    const rows = await hl.getKlines("BTC", "1m", EARLIEST_1M, c.req.endTime);
+    expect(rows).toHaveLength(6);
+    expect(calls.filter(b => b.type === "candleSnapshot")).toHaveLength(1);
+  });
+
+  it("a quiet market whose first candle opens hours after the start is returned as served (no first-row heuristic)", async () => {
+    const c = REC.candles1h24h;
+    const { hl } = adapterWith({ ...recorded(), candleSnapshot: () => c.rows.slice(5) });
+    const rows = await hl.getKlines("BTC", "1h", c.req.startTime, c.req.endTime);
+    expect(rows.map(r => r.time)).toEqual(c.rows.slice(5).map(r => r.t));
+  });
+
+  it("only the in-progress last candle is closed:false; a row without T falls back to open + interval", async () => {
     const c = REC.candles1h24h;
     const { hl } = adapterWith({ ...recorded(), candleSnapshot: () => c.rows });
     const rows = await hl.getKlines("BTC", "1h", c.req.startTime, c.req.endTime);
-    expect(venueCapOf(rows)).toBeNull();
     expect(rows.at(-1)!.closed).toBe(false);
     expect(rows.slice(0, -1).every(r => r.closed)).toBe(true);
+
+    const noT = c.rows.map(({ T: _T, ...rest }) => rest);
+    const { hl: hl2 } = adapterWith({ ...recorded(), candleSnapshot: () => noT });
+    const rows2 = await hl2.getKlines("BTC", "1h", c.req.startTime, c.req.endTime);
+    expect(rows2.map(r => r.closed)).toEqual(rows.map(r => r.closed));
   });
 });
 
@@ -139,27 +159,56 @@ describe("F4: market funding --limit N reads N hourly rows, paging HL's 500-row 
   });
 });
 
-describe("F5: market trades reports HL's 10-trade tape cap", () => {
-  it("limit 20 → the 10 rows served + venueCap { cappedAt 10, requested 20 }", async () => {
-    const { hl } = adapterWith(recorded());
-    const rows = await hl.getRecentTrades("BTC", 20);
-    expect(rows).toHaveLength(10);
-    expect(venueCapOf(rows)).toMatchObject({ cappedAt: 10, requested: 20, returned: 10, truncated: true });
-    // the rows themselves are unchanged (non-enumerable signal)
-    expect(Object.keys(rows)).toHaveLength(10);
+describe("F5: market trades — HL's 10-trade tape cap is refused, never silently short", () => {
+  it("limit 20 → INVALID_PARAMS naming the cap of 10, before any trades request", async () => {
+    const { hl, calls } = adapterWith(recorded());
+    const e = await caught(hl.getRecentTrades("BTC", 20));
+    expect(e.structured).toMatchObject({ code: "INVALID_PARAMS", retryable: false });
+    expect(e.message).toContain("exceeds the venue cap of 10");
+    expect(calls.some(b => b.type === "recentTrades")).toBe(false);
   });
 
-  it("limit 5 → 5 rows, no cap signal", async () => {
+  it("limit undefined → the venue max (10 rows)", async () => {
     const { hl } = adapterWith(recorded());
-    const rows = await hl.getRecentTrades("BTC", 5);
-    expect(rows).toHaveLength(5);
-    expect(venueCapOf(rows)).toBeNull();
+    expect(await hl.getRecentTrades("BTC")).toHaveLength(10);
+    expect(hl.recentTradesCap).toBe(10);
+  });
+
+  it("limit 5 → 5 rows", async () => {
+    const { hl } = adapterWith(recorded());
+    expect(await hl.getRecentTrades("BTC", 5)).toHaveLength(5);
+  });
+});
+
+describe("book depth: l2Book serves at most 20 levels", () => {
+  it("depth 21 → INVALID_PARAMS naming the cap of 20, before any l2Book request", async () => {
+    const { hl, calls } = adapterWith(recorded());
+    const e = await caught(hl.getOrderbook("BTC", 21));
+    expect(e.structured).toMatchObject({ code: "INVALID_PARAMS", retryable: false });
+    expect(e.message).toContain("l2Book serves at most 20 levels per side");
+    expect(calls.some(b => b.type === "l2Book")).toBe(false);
+  });
+
+  it("depth 20 / undefined → the recorded 20-level book", async () => {
+    const { hl } = adapterWith(recorded());
+    expect((await hl.getOrderbook("BTC", 20)).bids).toHaveLength(20);
+    expect((await hl.getOrderbook("BTC")).asks).toHaveLength(20);
+  });
+});
+
+describe("B1-3: order paths are not gated on delisting", () => {
+  it("referencePrice of delisted MATIC reads l2Book (a reduce-only market close still gets its mid)", async () => {
+    const book = { levels: [[{ px: "0.37", sz: "10", n: 1 }], [{ px: "0.38", sz: "10", n: 1 }]] };
+    const { hl, calls } = adapterWith({ ...recorded(), l2Book: () => book });
+    await expect(hl.getOrderbook("MATIC")).rejects.toMatchObject({ structured: { code: "SYMBOL_NOT_FOUND", details: { reason: "delisted" } } });
+    await expect(hl.referencePrice("MATIC")).resolves.toBeCloseTo(0.375, 10);
+    expect(calls.filter(b => b.type === "l2Book")).toEqual([{ type: "l2Book", coin: "MATIC" }]);
   });
 });
 
 describe("F6: per-symbol reads refuse delisted markets (SYMBOL_NOT_FOUND, reason delisted)", () => {
   const reads: Array<[string, (hl: HyperliquidAdapter, s: string) => Promise<unknown>]> = [
-    ["trades", (hl, s) => hl.getRecentTrades(s, 20)],
+    ["trades", (hl, s) => hl.getRecentTrades(s, 10)],
     ["funding", (hl, s) => hl.getFundingHistory(s, 10)],
     ["book", (hl, s) => hl.getOrderbook(s)],
     ["kline", (hl, s) => hl.getKlines(s, "1h", REC.recordedAt - 86_400_000, REC.recordedAt)],
@@ -185,7 +234,6 @@ describe("F6: per-symbol reads refuse delisted markets (SYMBOL_NOT_FOUND, reason
     await expect(hl.getRecentTrades("BTC", 3)).resolves.toHaveLength(3);
     const book = await hl.getOrderbook("BTC");
     expect(book.bids).toHaveLength(20);
-    expect(venueCapOf(book)).toMatchObject({ cappedAt: 20, truncated: false });
   });
 
   it("orders / positions still resolve a delisted asset (getAssetIndex)", async () => {

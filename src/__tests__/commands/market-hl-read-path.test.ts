@@ -1,7 +1,7 @@
 /**
  * `perp market` over the real HyperliquidAdapter replaying responses recorded live on 2026-10-19
- * (fixtures/hyperliquid/read-path-2026-10-19.json): venue caps reach JSON as meta.venueCap and
- * human output as a warning; `book -d` applies to JSON; delisted HIP-3 names and dexes.
+ * (fixtures/hyperliquid/read-path-2026-10-19.json): venue caps that cannot be paged are
+ * INVALID_PARAMS naming the cap; `book -d` applies to JSON; delisted HIP-3 names and dexes.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 
@@ -62,48 +62,55 @@ async function run(adapter: HyperliquidAdapter, argv: string[], json = false) {
 beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(REC.recordedAt); });
 afterEach(() => { process.exitCode = undefined; vi.useRealTimers(); vi.restoreAllMocks(); });
 
-describe("market trades: HL's 10-trade tape cap", () => {
-  it("--json --limit 20 → 10 rows + meta.venueCap", async () => {
-    const r = await run(recordedAdapter(), ["market", "trades", "BTC", "--limit", "20"], true);
-    const env = r.last();
+describe("market trades: HL's 10-trade tape", () => {
+  it("default --limit (20) → min(20, cap) = the 10 rows served, no refusal", async () => {
+    const env = (await run(recordedAdapter(), ["market", "trades", "BTC"], true)).last();
+    expect(env.ok).toBe(true);
     expect(env.data).toHaveLength(10);
-    expect(env.meta.venueCap).toMatchObject({ cappedAt: 10, requested: 20, returned: 10, truncated: true });
+    expect(env.meta.venueCap).toBeUndefined();
   });
 
-  it("human output warns", async () => {
-    const r = await run(recordedAdapter(), ["market", "trades", "BTC", "--limit", "20"]);
-    expect(r.text).toContain("10 of 20 trades shown: Hyperliquid recentTrades serves only the last 10 trades");
+  it("explicit --limit 20 → INVALID_PARAMS naming the cap of 10", async () => {
+    const r = await run(recordedAdapter(), ["market", "trades", "BTC", "--limit", "20"], true).catch((e: unknown) => e);
+    expect(r).toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+    expect(String((r as Error).message)).toContain("exceeds the venue cap of 10");
+  });
+
+  it("explicit --limit 4 → 4 rows", async () => {
+    const env = (await run(recordedAdapter(), ["market", "trades", "BTC", "--limit", "4"], true)).last();
+    expect(env.data).toHaveLength(4);
   });
 });
 
 describe("market book -d N", () => {
-  it("--json -d 5 → 5 levels per side, no venueCap", async () => {
+  it("--json -d 5 → 5 levels per side", async () => {
     const env = (await run(recordedAdapter(), ["market", "book", "BTC", "-d", "5"], true)).last();
     expect(env.data.bids).toHaveLength(5);
     expect(env.data.asks).toHaveLength(5);
-    expect(env.meta.venueCap).toBeUndefined();
   });
 
-  it("--json -d 50 → the 20 levels served + meta.venueCap (cap 20)", async () => {
-    const env = (await run(recordedAdapter(), ["market", "book", "BTC", "-d", "50"], true)).last();
-    expect(env.data.bids).toHaveLength(20);
-    expect(env.meta.venueCap).toMatchObject({ cappedAt: 20, requested: 50, returned: 20, truncated: true });
+  it("-d 50 → INVALID_PARAMS naming the cap of 20", async () => {
+    const r = await run(recordedAdapter(), ["market", "book", "BTC", "-d", "50"], true).catch((e: unknown) => e);
+    expect(r).toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+    expect(String((r as Error).message)).toContain("at most 20 levels per side");
   });
 });
 
-describe("market kline: truncation reaches the output", () => {
+describe("market kline: a start before the 5000-candle window is refused", () => {
   const c = REC.candles1m10d;
-  const argv = ["market", "kline", "BTC", "1m", "--start", String(c.req.startTime), "--end", String(c.req.endTime)];
 
-  it("--json → meta.venueCap { truncated, availableFrom }", async () => {
-    const env = (await run(recordedAdapter("", [...c.head, ...c.tail]), argv, true)).last();
-    expect(env.meta.venueCap).toMatchObject({ cappedAt: 5000, truncated: true, availableFrom: c.head[0].t });
-    expect(env.data.at(-1).closed).toBe(false);
+  it("--start 10 days back at 1m → INVALID_PARAMS with the earliest allowed start", async () => {
+    const argv = ["market", "kline", "BTC", "1m", "--start", String(c.req.startTime), "--end", String(c.req.endTime)];
+    const r = await run(recordedAdapter("", [...c.head, ...c.tail]), argv, true).catch((e: unknown) => e);
+    expect(r).toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+    expect(String((r as Error).message)).toContain(`earliest allowed start is ${new Date(REC.recordedAt - 5000 * 60_000).toISOString()}`);
   });
 
-  it("human output warns", async () => {
-    const r = await run(recordedAdapter("", [...c.head, ...c.tail]), argv);
-    expect(r.text).toMatch(/Truncated: Hyperliquid serves only the most recent 5000 candles per interval; no 1m candles before 2026-10-15T20:56:00\.000Z/);
+  it("default range (24 h) → candles, the last one closed:false", async () => {
+    const env = (await run(recordedAdapter("", REC.candles1h24h.rows), ["market", "kline", "BTC", "1h"], true)).last();
+    expect(env.data).toHaveLength(REC.candles1h24h.rows.length);
+    expect(env.data.at(-1).closed).toBe(false);
+    expect(env.meta.venueCap).toBeUndefined();
   });
 });
 

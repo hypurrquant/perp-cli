@@ -220,7 +220,7 @@ export interface ApiResponse<T = unknown> {
     remediation?: string;
     details?: Record<string, unknown>;
   };
-  meta?: { exchange?: string; timestamp: string; duration_ms?: number; skippedRows?: { count: number; reason: string }; venueCap?: import("./exchanges/venue-cap.js").VenueCap };
+  meta?: { exchange?: string; timestamp: string; duration_ms?: number; skippedRows?: { count: number; reason: string } };
 }
 
 /** Wrap successful result in standard envelope */

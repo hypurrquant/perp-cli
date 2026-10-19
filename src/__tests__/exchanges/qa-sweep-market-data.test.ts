@@ -197,7 +197,7 @@ describe("6. unknown-symbol errors carry remediation", () => {
   it("Hyperliquid klines of an unlisted coin → SYMBOL_NOT_FOUND before the request (candleSnapshot answers HTTP 500)", async () => {
     const candleSnapshot = vi.fn(() => { throw new Error("Hyperliquid info candleSnapshot failed (500): null"); });
     const a = hl({ candleSnapshot });
-    await expect(a.getKlines("NOPE", "1h", 0, 1)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "SYMBOL_NOT_FOUND", retryable: false }) });
+    await expect(a.getKlines("NOPE", "1h", Date.now() - 3_600_000, Date.now())).rejects.toMatchObject({ structured: expect.objectContaining({ code: "SYMBOL_NOT_FOUND", retryable: false }) });
     expect(candleSnapshot).not.toHaveBeenCalled();
   });
 

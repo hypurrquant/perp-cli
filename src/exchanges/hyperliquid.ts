@@ -8,6 +8,7 @@ import type {
   ExchangePublicTrade,
   ExchangeFundingPayment,
   ExchangeKline,
+  FundingHistoryRow
 } from "./interface.js";
 import type { ResolvedSlippage } from "./slippage.js";
 import type { EvmSigner } from "../signer/index.js";
@@ -21,7 +22,6 @@ import { buildHlUserSignedAction, hlUserSignedNonceField, signHlL1Action, signHl
 import type { Network } from "./venue.js";
 import { HL_CLOID_RE } from "./venues/hyperliquid.js";
 import { rateLimitedError } from "./rate-limiter.js";
-import { withVenueCap } from "./venue-cap.js";
 import { fetchAndCache, withCache, TTL_ACCOUNT } from "../cache.js";
 import { approvalFromMax, builderGateOf, hlFeeTenthsBps, NO_BUILDER, requireFeeBps, type BuilderApproval, type BuilderDecision, type BuilderFeeGate, type BuilderTarget } from "./builder-fee.js";
 
@@ -408,6 +408,10 @@ export const HL_CANDLE_INTERVAL_MS: Readonly<Record<string, number>> = {
 };
 /** Docs "Candle snapshot": "Only the most recent 5000 candles are available". */
 export const HL_CANDLE_CAP = 5000;
+/** Earliest candleSnapshot start (unix ms) for `interval` at `now`: now − 5000 × interval. Unknown interval → NaN. */
+export function hlEarliestCandleStart(interval: string, now = Date.now()): number {
+  return now - HL_CANDLE_CAP * (HL_CANDLE_INTERVAL_MS[interval] ?? Number.NaN);
+}
 /** recentTrades returns the last 10 trades, with no count parameter (live 2026-10-19). */
 export const HL_RECENT_TRADES_CAP = 10;
 /** l2Book returns at most 20 levels per side (docs l2Book; live 2026-10-19). */
@@ -475,6 +479,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * configured. Set by createHyperliquid — the adapter never reads settings.
    */
   builderFee: BuilderFeeGate | null = null;
+  /** recentTrades' fixed tape size (no paging): `market trades` defaults to min(20, this). */
+  readonly recentTradesCap = HL_RECENT_TRADES_CAP;
 
   constructor(privateKey?: string, testnet = false) {
     // No SDK: /info reads go through _infoPost, /exchange actions are signed here (hl-signing.ts).
@@ -992,11 +998,23 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   /**
-   * l2Book: at most HL_BOOK_LEVELS_CAP (20) levels per side — no deeper book is served. Callers
-   * slice to their depth; `market book -d N` with N > 20 reports the cap (meta.venueCap).
+   * Public order-book read (`market book`, bots, MCP): l2Book serves at most HL_BOOK_LEVELS_CAP
+   * (20) levels per side and cannot be paged, so a `depth` above it is INVALID_PARAMS naming the
+   * cap. Refuses delisted markets (_listedMarket). Order paths use _l2Book (no delisted gate):
+   * a reduce-only close of a delisted asset must still get its reference price.
    */
-  async getOrderbook(symbol: string) {
+  async getOrderbook(symbol: string, depth?: number) {
+    if (depth !== undefined && !(Number.isInteger(depth) && depth > 0 && depth <= HL_BOOK_LEVELS_CAP)) {
+      throw new PerpError("INVALID_PARAMS", `Hyperliquid order book: depth must be an integer 1..${HL_BOOK_LEVELS_CAP} (got ${depth}) — l2Book serves at most ${HL_BOOK_LEVELS_CAP} levels per side`, {
+        exchange: "hyperliquid", remediation: `Use -d ${HL_BOOK_LEVELS_CAP} or less`,
+      });
+    }
     await this._listedMarket(symbol);
+    return this._l2Book(symbol);
+  }
+
+  /** l2Book of `symbol` (native or this adapter's dex), no listing gate. Unlisted coin → SYMBOL_NOT_FOUND. */
+  private async _l2Book(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
     let levels: Record<string, unknown>[][];
 
     // l2Book answers `null` for a coin the venue does not list (live 2026-10-14, coin "NOPE"):
@@ -1016,7 +1034,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       levels = book.levels ?? [[], []];
     }
 
-    const book = {
+    return {
       bids: (levels[0] ?? []).map((l: Record<string, unknown>) => [
         String(l.px ?? "0"),
         String(l.sz ?? "0"),
@@ -1026,11 +1044,6 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         String(l.sz ?? "0"),
       ] as [string, string]),
     };
-    // The venue's fixed depth (not a truncation by itself): callers asking deeper report it.
-    return withVenueCap(book, {
-      cappedAt: HL_BOOK_LEVELS_CAP, requested: null, returned: Math.max(book.bids.length, book.asks.length), availableFrom: null, truncated: false,
-      reason: `Hyperliquid l2Book serves at most ${HL_BOOK_LEVELS_CAP} levels per side`,
-    });
   }
 
   /**
@@ -1509,10 +1522,11 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   /**
    * The single declared reference price for market-type protection prices:
    * l2Book mid = (best bid + best ask) / 2. Works for native perps and HIP-3
-   * (getOrderbook passes the dex). Either side missing / non-positive → PRICE_STALE.
+   * (_l2Book passes the dex). Either side missing / non-positive → PRICE_STALE. Not gated on
+   * delisting: a reduce-only market close of a delisted asset is sent (the venue decides).
    */
   async referencePrice(symbol: string): Promise<number> {
-    const book = await this.getOrderbook(symbol);
+    const book = await this._l2Book(symbol);
     const bid = Number(book.bids[0]?.[0]);
     const ask = Number(book.asks[0]?.[0]);
     if (!(bid > 0) || !(ask > 0) || !Number.isFinite(bid) || !Number.isFinite(ask)) {
@@ -2018,22 +2032,28 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   /**
-   * recentTrades: the venue's last HL_RECENT_TRADES_CAP (10) trades, no count parameter. A
-   * `limit` above what was returned carries a venue-cap signal (meta.venueCap). Row `symbol` is
-   * the raw venue coin ("BTC", "km:US500"), as in the WS codec — not the "BTC-PERP" display name
-   * of `market list` / `info`.
+   * recentTrades: the venue's last HL_RECENT_TRADES_CAP (10) trades — no count parameter, no
+   * paging. `limit` undefined = the venue max (10); an explicit `limit` above 10 is INVALID_PARAMS
+   * naming the cap (never fewer rows than asked, silently). Row `symbol` is the raw venue coin
+   * ("BTC", "km:US500"), as in the WS codec — not the "BTC-PERP" display name of `market list`.
    */
-  async getRecentTrades(symbol: string, limit = 20): Promise<ExchangePublicTrade[]> {
-    if (!(Number.isInteger(limit) && limit > 0)) {
+  async getRecentTrades(symbol: string, limit?: number): Promise<ExchangePublicTrade[]> {
+    const n = limit ?? HL_RECENT_TRADES_CAP;
+    if (!(Number.isInteger(n) && n > 0)) {
       throw new PerpError("INVALID_PARAMS", `Hyperliquid trades: limit must be a positive integer (got ${limit})`, { exchange: "hyperliquid" });
+    }
+    if (n > HL_RECENT_TRADES_CAP) {
+      throw new PerpError("INVALID_PARAMS", `Hyperliquid trades: limit ${n} exceeds the venue cap of ${HL_RECENT_TRADES_CAP} (recentTrades serves only the last ${HL_RECENT_TRADES_CAP} trades, no paging)`, {
+        exchange: "hyperliquid", remediation: `Use --limit ${HL_RECENT_TRADES_CAP} or less`,
+      });
     }
     // recentTrades answers HTTP 500 "null" for an unlisted coin (live 2026-10-14), which would read
     // as a retryable venue error: resolve the coin against the asset map first (SYMBOL_NOT_FOUND).
     await this._listedMarket(symbol);
     const trades = await this._infoPost({ type: "recentTrades", coin: this._venueCoin(symbol) }) as Record<string, unknown>[] | null;
     if (trades === null) throw this._unknownSymbol(symbol);
-    const rows = trades
-      .slice(0, limit)
+    return trades
+      .slice(0, n)
       .map((t) => ({
         time: Number(t.time ?? 0),
         symbol: String(t.coin ?? symbol.toUpperCase()),
@@ -2042,19 +2062,15 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         size: String(t.sz ?? ""),
         fee: null, // the public tape carries no fee
       }));
-    return withVenueCap(rows, limit > rows.length ? {
-      cappedAt: HL_RECENT_TRADES_CAP, requested: limit, returned: rows.length, availableFrom: null, truncated: true,
-      reason: `Hyperliquid recentTrades serves only the last ${HL_RECENT_TRADES_CAP} trades`,
-    } : null);
   }
 
   /**
-   * candleSnapshot. Only the most recent HL_CANDLE_CAP (5000) candles of an interval exist (docs):
-   * a range that starts before the earliest candle returned carries a venue-cap signal
-   * (meta.venueCap: truncated, availableFrom = first candle's open), and a range wholly older than
-   * the venue's window (answered with no rows) is refused as INVALID_PARAMS — never returned as if
-   * complete. `closed` (additive) is false on a candle whose close time `T` is still in the future
-   * (the in-progress bar). "1M" = 30-day buckets; "1w" opens Thursday 00:00 UTC.
+   * candleSnapshot. Only the most recent HL_CANDLE_CAP (5000) candles of an interval exist (docs)
+   * and older ones cannot be paged to: a `startTime` before hlEarliestCandleStart() is refused
+   * up front (INVALID_PARAMS naming the earliest allowed start) — never a silently shortened
+   * range. `closed` (additive) is false on the in-progress candle (close time `T`, or open +
+   * interval when `T` is absent, still in the future). "1M" = 30-day buckets; "1w" opens
+   * Thursday 00:00 UTC.
    */
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<Array<ExchangeKline & { closed: boolean }>> {
     const ivMs = HL_CANDLE_INTERVAL_MS[interval];
@@ -2063,39 +2079,35 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         exchange: "hyperliquid", remediation: `Use one of: ${Object.keys(HL_CANDLE_INTERVAL_MS).join(", ")}`,
       });
     }
+    const now = Date.now();
+    const earliest = hlEarliestCandleStart(interval, now);
+    if (startTime < earliest) {
+      throw new PerpError("INVALID_PARAMS", `Hyperliquid serves only the most recent ${HL_CANDLE_CAP} ${interval} candles: the earliest allowed start is ${new Date(earliest).toISOString()} (${earliest}); requested ${new Date(startTime).toISOString()}`, {
+        exchange: "hyperliquid", remediation: `Use --start ${earliest} or later, or a longer interval`,
+      });
+    }
     await this._listedMarket(symbol); // unlisted coin: SYMBOL_NOT_FOUND (candleSnapshot answers HTTP 500 "null")
     const candles = await this._infoPost({
       type: "candleSnapshot",
       req: { coin: this._venueCoin(symbol), interval, startTime, endTime },
     }) as Record<string, unknown>[];
-    const now = Date.now();
-    const windowStart = now - HL_CANDLE_CAP * ivMs;
-    if ((candles ?? []).length === 0 && endTime < windowStart) {
-      throw new PerpError("INVALID_PARAMS", `Hyperliquid serves only the most recent ${HL_CANDLE_CAP} ${interval} candles (from about ${new Date(windowStart).toISOString()}); the requested range ends ${new Date(endTime).toISOString()}`, {
-        exchange: "hyperliquid", remediation: `Use a later --start / --end or a longer interval`,
-      });
-    }
-    const rows = (candles ?? []).map((c) => ({
-      time: Number(c.t ?? 0),
-      open: String(c.o ?? "0"),
-      high: String(c.h ?? "0"),
-      low: String(c.l ?? "0"),
-      close: String(c.c ?? "0"),
-      // absent / non-numeric → null (never "")
-      volume: typeof c.v === "string" && c.v.trim() !== "" && Number.isFinite(Number(c.v)) ? c.v
-        : typeof c.v === "number" && Number.isFinite(c.v) ? String(c.v) : null,
-      quoteVolume: null, // candleSnapshot carries base volume only
-      trades: Number(c.n ?? 0),
-      closed: Number(c.T) < now,
-    }));
-    // The first bucket may open before startTime (1w / 1M buckets containing it); a first candle
-    // more than one interval after startTime means the venue had nothing earlier to serve.
-    const first = rows[0]?.time;
-    const cut = first !== undefined && first > startTime + ivMs;
-    return withVenueCap(rows, cut ? {
-      cappedAt: HL_CANDLE_CAP, requested: null, returned: rows.length, availableFrom: first, truncated: true,
-      reason: `Hyperliquid serves only the most recent ${HL_CANDLE_CAP} candles per interval; no ${interval} candles before ${new Date(first).toISOString()} were returned`,
-    } : null);
+    return (candles ?? []).map((c) => {
+      const time = Number(c.t ?? 0);
+      const closeAt = Number.isFinite(Number(c.T)) && c.T !== undefined && c.T !== null ? Number(c.T) : time + ivMs;
+      return {
+        time,
+        open: String(c.o ?? "0"),
+        high: String(c.h ?? "0"),
+        low: String(c.l ?? "0"),
+        close: String(c.c ?? "0"),
+        // absent / non-numeric → null (never "")
+        volume: typeof c.v === "string" && c.v.trim() !== "" && Number.isFinite(Number(c.v)) ? c.v
+          : typeof c.v === "number" && Number.isFinite(c.v) ? String(c.v) : null,
+        quoteVolume: null, // candleSnapshot carries base volume only
+        trades: Number(c.n ?? 0),
+        closed: closeAt < now,
+      };
+    });
   }
 
   /**
@@ -2246,7 +2258,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * pages are read forward from the last row's time (docs: at most 500 elements per response;
    * "use the last returned timestamp as the next startTime") — deduped by time, oldest first.
    */
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(symbol: string, limit = 10): Promise<FundingHistoryRow[]> {
     if (!(Number.isInteger(limit) && limit > 0)) {
       throw new PerpError("INVALID_PARAMS", `Hyperliquid funding history: limit must be a positive integer (got ${limit})`, { exchange: "hyperliquid" });
     }
@@ -2259,6 +2271,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       time: Number(h.time ?? 0),
       rate: venueRateField(h.fundingRate, "fundingHistory fundingRate", "hyperliquid"),
       price: null,
+      intervalHours: 1,
+      rateKind: "lastSettled" as const,
     }));
   }
 

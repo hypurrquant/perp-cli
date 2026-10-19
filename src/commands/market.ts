@@ -7,7 +7,6 @@ import { PerpError } from "../errors.js";
 import { midDecimal } from "../exchanges/precision.js";
 import { hasPacificaSdk, isDexCapable, klinesNeedAuth } from "../exchanges/capabilities.js";
 import { getVenue, listVenuesWithRole, tryResolveVenueId, unofficialApiNote } from "../exchanges/venue.js";
-import { venueCapOf } from "../exchanges/venue-cap.js";
 import "../exchanges/venues/index.js";
 
 /** Venues with an adapter (market-data-only venues have none — see `perp arb scan`). */
@@ -318,13 +317,10 @@ export function registerMarketCommands(
       const sym = normalizeSymbolArg(symbol);
       // RFQ venue (Variational): no order book — the maker's indicative quotes, labelled as such.
       if (adapter.getRfqQuotes !== undefined) return printRfqQuotes(await adapter.getRfqQuotes(sym), isJson());
-      const book = await adapter.getOrderbook(sym);
       const depth = parseInt(opts.depth);
-      // `-d` applies to JSON too; a depth beyond what the venue served carries meta.venueCap.
-      const venueMax = venueCapOf(book);
-      const bookCap = venueMax !== null && depth > venueMax.cappedAt ? { ...venueMax, requested: depth, truncated: true } : null;
-      if (isJson()) return printJson(jsonOk({ ...book, bids: book.bids.slice(0, depth), asks: book.asks.slice(0, depth) }, bookCap !== null ? { venueCap: bookCap } : undefined));
-      if (bookCap !== null) console.log(chalk.yellow(`  ${bookCap.reason} (asked for ${depth})`));
+      // `depth` reaches the adapter (a venue cap it cannot page is INVALID_PARAMS there) and cuts JSON too.
+      const book = await adapter.getOrderbook(sym, depth);
+      if (isJson()) return printJson(jsonOk({ ...book, bids: book.bids.slice(0, depth), asks: book.asks.slice(0, depth) }));
 
       const asks = book.asks.slice(0, depth).reverse();
       const bids = book.bids.slice(0, depth);
@@ -377,14 +373,16 @@ export function registerMarketCommands(
     .command("trades <symbol>")
     .description("Recent trades for a symbol")
     .option("--limit <n>", "Number of recent trades to show", "20")
-    .action(async (symbol: string, opts: { limit: string }) => {
+    .action(async (symbol: string, opts: { limit: string }, cmd: Command) => {
       const adapter = await getAdapter();
-      const trades = await adapter.getRecentTrades(normalizeSymbolArg(symbol), parseInt(opts.limit));
+      // The default --limit is min(20, the venue's tape cap) — a venue whose cap is below 20
+      // (Hyperliquid: 10) does not refuse the default; an explicit --limit above the cap does.
+      const tapeCap = (adapter as { recentTradesCap?: number }).recentTradesCap;
+      const limit = cmd.getOptionValueSource("limit") === "default" && tapeCap !== undefined ? Math.min(parseInt(opts.limit), tapeCap) : parseInt(opts.limit);
+      const trades = await adapter.getRecentTrades(normalizeSymbolArg(symbol), limit);
       const skipped = tapeSkippedOf(trades);
-      const cap = venueCapOf(trades);
-      if (isJson()) return printJson(jsonOk(trades, skipped !== null || cap !== null ? { ...(skipped !== null ? { skippedRows: skipped } : {}), ...(cap !== null ? { venueCap: cap } : {}) } : undefined));
+      if (isJson()) return printJson(jsonOk(trades, skipped !== null ? { skippedRows: skipped } : undefined));
       if (skipped !== null) console.log(chalk.yellow(`  ${skipped.count} tape row(s) skipped: ${skipped.reason}`));
-      if (cap !== null) console.log(chalk.yellow(`  ${cap.returned} of ${cap.requested} trades shown: ${cap.reason}`));
       if (trades.length === 0) {
         console.log(chalk.gray("\n  No recent trades.\n"));
         return;
@@ -490,9 +488,7 @@ export function registerMarketCommands(
         const endTime = opts.end ? parseInt(opts.end) : now;
 
         const klines = await adapter.getKlines(normalizeSymbolArg(symbol), interval, startTime, endTime);
-        const kCap = venueCapOf(klines);
-        if (isJson()) return printJson(jsonOk(klines, kCap !== null ? { venueCap: kCap } : undefined));
-        if (kCap !== null) console.log(chalk.yellow(`  Truncated: ${kCap.reason}`));
+        if (isJson()) return printJson(jsonOk(klines));
         if (klines.length === 0) {
           console.log(chalk.gray("\n  No kline data.\n"));
           return;
