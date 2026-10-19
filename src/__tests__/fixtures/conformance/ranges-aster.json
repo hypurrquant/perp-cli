@@ -1,0 +1,2722 @@
+{
+ "schema": 1,
+ "name": "ranges-aster",
+ "capturedAt": 1792407341669,
+ "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
+ "keep": [
+  "BTC",
+  "ETH",
+  "SOL"
+ ],
+ "http": [
+  {
+   "cell": "warm",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407340034
+   },
+   "text": null
+  },
+  {
+   "cell": "warm",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/fundingInfo",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "symbol": "BTCUSD",
+     "interestRate": "0",
+     "time": 1792407299000,
+     "fundingIntervalHours": 2,
+     "fundingFeeCap": 0.02,
+     "fundingFeeFloor": -0.02
+    },
+    {
+     "symbol": "ETHUSD1",
+     "interestRate": "0.00010000",
+     "time": 1792407299000,
+     "fundingIntervalHours": 8,
+     "fundingFeeCap": 0.003,
+     "fundingFeeFloor": -0.003
+    },
+    {
+     "symbol": "ETHUSDT",
+     "interestRate": "0.00010000",
+     "time": 1792407299000,
+     "fundingIntervalHours": 8,
+     "fundingFeeCap": 0.003,
+     "fundingFeeFloor": -0.003
+    },
+    {
+     "symbol": "BTCUSD1",
+     "interestRate": "0.00010000",
+     "time": 1792407299000,
+     "fundingIntervalHours": 8,
+     "fundingFeeCap": 0.00375,
+     "fundingFeeFloor": -0.00375
+    },
+    {
+     "symbol": "BTCUSDT",
+     "interestRate": "0.00010000",
+     "time": 1792407299000,
+     "fundingIntervalHours": 8,
+     "fundingFeeCap": 0.003,
+     "fundingFeeFloor": -0.003
+    },
+    {
+     "symbol": "SOLUSD",
+     "interestRate": "0",
+     "time": 1792407299000,
+     "fundingIntervalHours": 8,
+     "fundingFeeCap": 0.02,
+     "fundingFeeFloor": -0.02
+    },
+    {
+     "symbol": "SOLUSDT",
+     "interestRate": "0.00010000",
+     "time": 1792407299000,
+     "fundingIntervalHours": 8,
+     "fundingFeeCap": 0.00375,
+     "fundingFeeFloor": -0.00375
+    },
+    {
+     "symbol": "SOLUSD1",
+     "interestRate": "0.00010000",
+     "time": 1792407299000,
+     "fundingIntervalHours": 8,
+     "fundingFeeCap": 0.00375,
+     "fundingFeeFloor": -0.00375
+    },
+    {
+     "symbol": "ETHUSD",
+     "interestRate": "0",
+     "time": 1792407299000,
+     "fundingIntervalHours": 2,
+     "fundingFeeCap": 0.02,
+     "fundingFeeFloor": -0.02
+    }
+   ],
+   "text": null
+  },
+  {
+   "cell": "warm",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/ticker/24hr",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "symbol": "SOLUSD1",
+     "priceChange": "0.8200",
+     "priceChangePercent": "0.788",
+     "weightedAvgPrice": "102.8802",
+     "lastPrice": "104.9400",
+     "lastQty": "0.19",
+     "openPrice": "104.1200",
+     "highPrice": "106.1300",
+     "lowPrice": "100.3700",
+     "volume": "46156.63",
+     "quoteVolume": "4748604.6000",
+     "openTime": 1792320120000,
+     "closeTime": 1792406358350,
+     "firstId": 3938016,
+     "lastId": 3939792,
+     "count": 1777
+    },
+    {
+     "symbol": "ETHUSDT",
+     "priceChange": "6.51",
+     "priceChangePercent": "0.269",
+     "weightedAvgPrice": "2393.57",
+     "lastPrice": "2426.33",
+     "lastQty": "3.632",
+     "openPrice": "2419.82",
+     "highPrice": "2445.47",
+     "lowPrice": "2326.98",
+     "volume": "107647.997",
+     "quoteVolume": "257662833.44",
+     "openTime": 1792320900000,
+     "closeTime": 1792407336600,
+     "firstId": 86887488,
+     "lastId": 86911982,
+     "count": 24493
+    },
+    {
+     "symbol": "SOLUSDT",
+     "priceChange": "0.9300",
+     "priceChangePercent": "0.894",
+     "weightedAvgPrice": "103.3666",
+     "lastPrice": "104.9200",
+     "lastQty": "0.09",
+     "openPrice": "103.9900",
+     "highPrice": "106.1500",
+     "lowPrice": "100.3600",
+     "volume": "579593.70",
+     "quoteVolume": "59910623.4600",
+     "openTime": 1792320900000,
+     "closeTime": 1792407334800,
+     "firstId": 44538414,
+     "lastId": 44555538,
+     "count": 17125
+    },
+    {
+     "symbol": "BTCUSDT",
+     "priceChange": "316.7",
+     "priceChangePercent": "0.386",
+     "weightedAvgPrice": "81877.8",
+     "lastPrice": "82409.0",
+     "lastQty": "0.670",
+     "openPrice": "82092.3",
+     "highPrice": "83133.3",
+     "lowPrice": "80646.4",
+     "volume": "4594.924",
+     "quoteVolume": "376222155.53",
+     "openTime": 1792320900000,
+     "closeTime": 1792407335000,
+     "firstId": 148925972,
+     "lastId": 148952971,
+     "count": 26999
+    },
+    {
+     "symbol": "BTCUSD1",
+     "priceChange": "383.00",
+     "priceChangePercent": "0.467",
+     "weightedAvgPrice": "82039.78",
+     "lastPrice": "82427.90",
+     "lastQty": "0.014",
+     "openPrice": "82044.90",
+     "highPrice": "83071.80",
+     "lowPrice": "80627.90",
+     "volume": "48.477",
+     "quoteVolume": "3977042.40",
+     "openTime": 1792321020000,
+     "closeTime": 1792407322000,
+     "firstId": 4946270,
+     "lastId": 4948595,
+     "count": 2326
+    },
+    {
+     "symbol": "ETHUSD1",
+     "priceChange": "8.69",
+     "priceChangePercent": "0.359",
+     "weightedAvgPrice": "2394.23",
+     "lastPrice": "2426.27",
+     "lastQty": "0.006",
+     "openPrice": "2417.58",
+     "highPrice": "2444.91",
+     "lowPrice": "2327.22",
+     "volume": "1245.687",
+     "quoteVolume": "2982460.82",
+     "openTime": 1792321080000,
+     "closeTime": 1792407338300,
+     "firstId": 5803237,
+     "lastId": 5806204,
+     "count": 2968
+    }
+   ],
+   "text": null
+  },
+  {
+   "cell": "warm",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "timezone": "UTC",
+    "serverTime": 1792393200362,
+    "futuresType": "U_MARGINED",
+    "rateLimits": [
+     {
+      "rateLimitType": "REQUEST_WEIGHT",
+      "interval": "MINUTE",
+      "intervalNum": 1,
+      "limit": 2400
+     },
+     {
+      "rateLimitType": "ORDERS",
+      "interval": "MINUTE",
+      "intervalNum": 1,
+      "limit": 1200
+     },
+     {
+      "rateLimitType": "ORDERS",
+      "interval": "SECOND",
+      "intervalNum": 10,
+      "limit": 300
+     }
+    ],
+    "exchangeFilters": [],
+    "assets": [
+     {
+      "asset": "BTC",
+      "marginAvailable": true,
+      "autoAssetExchange": "0",
+      "assetType": "crypto"
+     },
+     {
+      "asset": "ETH",
+      "marginAvailable": true,
+      "autoAssetExchange": "0",
+      "assetType": "crypto"
+     },
+     {
+      "asset": "SOL",
+      "marginAvailable": true,
+      "autoAssetExchange": "0",
+      "assetType": "crypto"
+     }
+    ],
+    "symbols": [
+     {
+      "symbol": "BTCUSDT",
+      "filters": [
+       {
+        "minPrice": "1",
+        "maxPrice": "1000000",
+        "filterType": "PRICE_FILTER",
+        "tickSize": "0.1"
+       },
+       {
+        "stepSize": "0.001",
+        "filterType": "LOT_SIZE",
+        "maxQty": "1000",
+        "minQty": "0.001"
+       },
+       {
+        "stepSize": "0.001",
+        "filterType": "MARKET_LOT_SIZE",
+        "maxQty": "120",
+        "minQty": "0.001"
+       },
+       {
+        "limit": 200,
+        "filterType": "MAX_NUM_ORDERS"
+       },
+       {
+        "limit": 10,
+        "filterType": "MAX_NUM_ALGO_ORDERS"
+       },
+       {
+        "notional": "5",
+        "filterType": "MIN_NOTIONAL"
+       },
+       {
+        "multiplierDown": "0.9800",
+        "multiplierUp": "1.0200",
+        "ltMultiplierDown": "0",
+        "multiplierDecimal": "4",
+        "filterType": "PERCENT_PRICE",
+        "ltMultiplierUp": "0"
+       }
+      ],
+      "orderTypes": [
+       "LIMIT",
+       "MARKET",
+       "STOP",
+       "STOP_MARKET",
+       "TAKE_PROFIT",
+       "TAKE_PROFIT_MARKET",
+       "TRAILING_STOP_MARKET"
+      ],
+      "timeInForce": [
+       "GTC",
+       "IOC",
+       "GTX",
+       "HIDDEN"
+      ],
+      "createTime": 1630045468108,
+      "pair": "BTCUSDT",
+      "contractType": "PERPETUAL",
+      "deliveryDate": 4133404800000,
+      "onboardDate": 1627628400000,
+      "status": "TRADING",
+      "maintMarginPercent": "2.5000",
+      "requiredMarginPercent": "5.0000",
+      "baseAsset": "BTC",
+      "quoteAsset": "USDT",
+      "marginAsset": "USDT",
+      "pricePrecision": 1,
+      "quantityPrecision": 3,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "underlyingType": "COIN",
+      "underlyingSubType": [
+       "Top"
+      ],
+      "symbolType": 0,
+      "tradingMode": 0,
+      "name": "",
+      "channel": "",
+      "sequenceNo": 10,
+      "twapMinNotional": "1000",
+      "imn": "16000.00",
+      "tags": [],
+      "settlePlan": 0,
+      "triggerProtect": "0.0200",
+      "liquidationFee": "0.025000",
+      "marketTakeBound": "0.02"
+     },
+     {
+      "symbol": "ETHUSDT",
+      "filters": [
+       {
+        "minPrice": "0.01",
+        "maxPrice": "1000000",
+        "filterType": "PRICE_FILTER",
+        "tickSize": "0.01"
+       },
+       {
+        "stepSize": "0.001",
+        "filterType": "LOT_SIZE",
+        "maxQty": "10000",
+        "minQty": "0.001"
+       },
+       {
+        "stepSize": "0.001",
+        "filterType": "MARKET_LOT_SIZE",
+        "maxQty": "2000",
+        "minQty": "0.001"
+       },
+       {
+        "limit": 200,
+        "filterType": "MAX_NUM_ORDERS"
+       },
+       {
+        "limit": 10,
+        "filterType": "MAX_NUM_ALGO_ORDERS"
+       },
+       {
+        "notional": "5",
+        "filterType": "MIN_NOTIONAL"
+       },
+       {
+        "multiplierDown": "0.9800",
+        "multiplierUp": "1.0200",
+        "ltMultiplierDown": "0",
+        "multiplierDecimal": "4",
+        "filterType": "PERCENT_PRICE",
+        "ltMultiplierUp": "0"
+       }
+      ],
+      "orderTypes": [
+       "LIMIT",
+       "MARKET",
+       "STOP",
+       "STOP_MARKET",
+       "TAKE_PROFIT",
+       "TAKE_PROFIT_MARKET",
+       "TRAILING_STOP_MARKET"
+      ],
+      "timeInForce": [
+       "GTC",
+       "IOC",
+       "GTX",
+       "HIDDEN"
+      ],
+      "createTime": 1630984677055,
+      "pair": "ETHUSDT",
+      "contractType": "PERPETUAL",
+      "deliveryDate": 4133404800000,
+      "onboardDate": 1630911600000,
+      "status": "TRADING",
+      "maintMarginPercent": "2.5000",
+      "requiredMarginPercent": "5.0000",
+      "baseAsset": "ETH",
+      "quoteAsset": "USDT",
+      "marginAsset": "USDT",
+      "pricePrecision": 2,
+      "quantityPrecision": 3,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "underlyingType": "COIN",
+      "underlyingSubType": [
+       "Top"
+      ],
+      "symbolType": 0,
+      "tradingMode": 0,
+      "name": "",
+      "channel": "",
+      "sequenceNo": 9,
+      "twapMinNotional": "1000",
+      "imn": "8000.00",
+      "tags": [],
+      "settlePlan": 0,
+      "triggerProtect": "0.0200",
+      "liquidationFee": "0.025000",
+      "marketTakeBound": "0.02"
+     },
+     {
+      "symbol": "SOLUSDT",
+      "filters": [
+       {
+        "minPrice": "0.4200",
+        "maxPrice": "100000",
+        "filterType": "PRICE_FILTER",
+        "tickSize": "0.0100"
+       },
+       {
+        "stepSize": "0.01",
+        "filterType": "LOT_SIZE",
+        "maxQty": "1000000",
+        "minQty": "0.01"
+       },
+       {
+        "stepSize": "0.01",
+        "filterType": "MARKET_LOT_SIZE",
+        "maxQty": "8000",
+        "minQty": "0.01"
+       },
+       {
+        "limit": 200,
+        "filterType": "MAX_NUM_ORDERS"
+       },
+       {
+        "limit": 10,
+        "filterType": "MAX_NUM_ALGO_ORDERS"
+       },
+       {
+        "notional": "5",
+        "filterType": "MIN_NOTIONAL"
+       },
+       {
+        "multiplierDown": "0.9700",
+        "multiplierUp": "1.0300",
+        "ltMultiplierDown": "0",
+        "multiplierDecimal": "4",
+        "filterType": "PERCENT_PRICE",
+        "ltMultiplierUp": "0"
+       }
+      ],
+      "orderTypes": [
+       "LIMIT",
+       "MARKET",
+       "STOP",
+       "STOP_MARKET",
+       "TAKE_PROFIT",
+       "TAKE_PROFIT_MARKET",
+       "TRAILING_STOP_MARKET"
+      ],
+      "timeInForce": [
+       "GTC",
+       "IOC",
+       "GTX",
+       "HIDDEN"
+      ],
+      "createTime": 1631157701992,
+      "pair": "SOLUSDT",
+      "contractType": "PERPETUAL",
+      "deliveryDate": 4133404800000,
+      "onboardDate": 1630998000000,
+      "status": "TRADING",
+      "maintMarginPercent": "2.5000",
+      "requiredMarginPercent": "5.0000",
+      "baseAsset": "SOL",
+      "quoteAsset": "USDT",
+      "marginAsset": "USDT",
+      "pricePrecision": 4,
+      "quantityPrecision": 2,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "underlyingType": "COIN",
+      "underlyingSubType": [
+       "Top"
+      ],
+      "symbolType": 0,
+      "tradingMode": 0,
+      "name": "",
+      "channel": "",
+      "sequenceNo": 7,
+      "twapMinNotional": "1000",
+      "imn": "4000.00",
+      "tags": [],
+      "settlePlan": 0,
+      "triggerProtect": "0.0300",
+      "liquidationFee": "0.025000",
+      "marketTakeBound": "0.03"
+     },
+     {
+      "symbol": "BTCUSD1",
+      "filters": [
+       {
+        "minPrice": "1",
+        "maxPrice": "1000000",
+        "filterType": "PRICE_FILTER",
+        "tickSize": "0.10"
+       },
+       {
+        "stepSize": "0.001",
+        "filterType": "LOT_SIZE",
+        "maxQty": "1000",
+        "minQty": "0.001"
+       },
+       {
+        "stepSize": "0.001",
+        "filterType": "MARKET_LOT_SIZE",
+        "maxQty": "120",
+        "minQty": "0.001"
+       },
+       {
+        "limit": 200,
+        "filterType": "MAX_NUM_ORDERS"
+       },
+       {
+        "limit": 10,
+        "filterType": "MAX_NUM_ALGO_ORDERS"
+       },
+       {
+        "notional": "5",
+        "filterType": "MIN_NOTIONAL"
+       },
+       {
+        "multiplierDown": "0.9800",
+        "multiplierUp": "1.0200",
+        "ltMultiplierDown": "0.9800",
+        "multiplierDecimal": "4",
+        "filterType": "PERCENT_PRICE",
+        "ltMultiplierUp": "1.0200"
+       }
+      ],
+      "orderTypes": [
+       "LIMIT",
+       "MARKET",
+       "STOP",
+       "STOP_MARKET",
+       "TAKE_PROFIT",
+       "TAKE_PROFIT_MARKET",
+       "TRAILING_STOP_MARKET"
+      ],
+      "timeInForce": [
+       "GTC",
+       "IOC",
+       "GTX",
+       "HIDDEN"
+      ],
+      "createTime": 1773759054842,
+      "pair": "BTCUSD1",
+      "contractType": "PERPETUAL",
+      "deliveryDate": 4133404800000,
+      "onboardDate": 1773795600000,
+      "status": "TRADING",
+      "maintMarginPercent": "10.0000",
+      "requiredMarginPercent": "20.0000",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD1",
+      "marginAsset": "USD1",
+      "pricePrecision": 2,
+      "quantityPrecision": 3,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "underlyingType": "COIN",
+      "underlyingSubType": [],
+      "symbolType": 0,
+      "tradingMode": 0,
+      "name": "",
+      "channel": "{}",
+      "sequenceNo": 0,
+      "twapMinNotional": "1000",
+      "imn": "16000.00",
+      "tags": [],
+      "settlePlan": 0,
+      "triggerProtect": "0.0200",
+      "liquidationFee": "0.025000",
+      "marketTakeBound": "0.02"
+     },
+     {
+      "symbol": "ETHUSD1",
+      "filters": [
+       {
+        "minPrice": "0.01",
+        "maxPrice": "1000000",
+        "filterType": "PRICE_FILTER",
+        "tickSize": "0.01"
+       },
+       {
+        "stepSize": "0.001",
+        "filterType": "LOT_SIZE",
+        "maxQty": "10000",
+        "minQty": "0.001"
+       },
+       {
+        "stepSize": "0.001",
+        "filterType": "MARKET_LOT_SIZE",
+        "maxQty": "2000",
+        "minQty": "0.001"
+       },
+       {
+        "limit": 200,
+        "filterType": "MAX_NUM_ORDERS"
+       },
+       {
+        "limit": 10,
+        "filterType": "MAX_NUM_ALGO_ORDERS"
+       },
+       {
+        "notional": "5",
+        "filterType": "MIN_NOTIONAL"
+       },
+       {
+        "multiplierDown": "0.9800",
+        "multiplierUp": "1.0200",
+        "ltMultiplierDown": "0.9800",
+        "multiplierDecimal": "4",
+        "filterType": "PERCENT_PRICE",
+        "ltMultiplierUp": "1.0200"
+       }
+      ],
+      "orderTypes": [
+       "LIMIT",
+       "MARKET",
+       "STOP",
+       "STOP_MARKET",
+       "TAKE_PROFIT",
+       "TAKE_PROFIT_MARKET",
+       "TRAILING_STOP_MARKET"
+      ],
+      "timeInForce": [
+       "GTC",
+       "IOC",
+       "GTX",
+       "HIDDEN"
+      ],
+      "createTime": 1773759508716,
+      "pair": "ETHUSD1",
+      "contractType": "PERPETUAL",
+      "deliveryDate": 4133404800000,
+      "onboardDate": 1773795600000,
+      "status": "TRADING",
+      "maintMarginPercent": "10.0000",
+      "requiredMarginPercent": "20.0000",
+      "baseAsset": "ETH",
+      "quoteAsset": "USD1",
+      "marginAsset": "USD1",
+      "pricePrecision": 2,
+      "quantityPrecision": 3,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "underlyingType": "COIN",
+      "underlyingSubType": [],
+      "symbolType": 0,
+      "tradingMode": 0,
+      "name": "",
+      "channel": "{}",
+      "sequenceNo": 0,
+      "twapMinNotional": "1000",
+      "imn": "16000.00",
+      "tags": [],
+      "settlePlan": 0,
+      "triggerProtect": "0.0200",
+      "liquidationFee": "0.025000",
+      "marketTakeBound": "0.02"
+     },
+     {
+      "symbol": "SOLUSD1",
+      "filters": [
+       {
+        "minPrice": "1",
+        "maxPrice": "1000000",
+        "filterType": "PRICE_FILTER",
+        "tickSize": "0.0100"
+       },
+       {
+        "stepSize": "0.01",
+        "filterType": "LOT_SIZE",
+        "maxQty": "1000000",
+        "minQty": "0.01"
+       },
+       {
+        "stepSize": "0.01",
+        "filterType": "MARKET_LOT_SIZE",
+        "maxQty": "10000",
+        "minQty": "0.01"
+       },
+       {
+        "limit": 200,
+        "filterType": "MAX_NUM_ORDERS"
+       },
+       {
+        "limit": 10,
+        "filterType": "MAX_NUM_ALGO_ORDERS"
+       },
+       {
+        "notional": "5",
+        "filterType": "MIN_NOTIONAL"
+       },
+       {
+        "multiplierDown": "0.9800",
+        "multiplierUp": "1.0200",
+        "ltMultiplierDown": "0.9800",
+        "multiplierDecimal": "4",
+        "filterType": "PERCENT_PRICE",
+        "ltMultiplierUp": "1.0200"
+       }
+      ],
+      "orderTypes": [
+       "LIMIT",
+       "MARKET",
+       "STOP",
+       "STOP_MARKET",
+       "TAKE_PROFIT",
+       "TAKE_PROFIT_MARKET",
+       "TRAILING_STOP_MARKET"
+      ],
+      "timeInForce": [
+       "GTC",
+       "IOC",
+       "GTX",
+       "HIDDEN"
+      ],
+      "createTime": 1773759704388,
+      "pair": "SOLUSD1",
+      "contractType": "PERPETUAL",
+      "deliveryDate": 4133404800000,
+      "onboardDate": 1773795600000,
+      "status": "TRADING",
+      "maintMarginPercent": "10.0000",
+      "requiredMarginPercent": "20.0000",
+      "baseAsset": "SOL",
+      "quoteAsset": "USD1",
+      "marginAsset": "USD1",
+      "pricePrecision": 4,
+      "quantityPrecision": 2,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "underlyingType": "COIN",
+      "underlyingSubType": [],
+      "symbolType": 0,
+      "tradingMode": 0,
+      "name": "",
+      "channel": "{}",
+      "sequenceNo": 0,
+      "twapMinNotional": "1000",
+      "imn": "16000.00",
+      "tags": [],
+      "settlePlan": 0,
+      "triggerProtect": "0.0200",
+      "liquidationFee": "0.025000",
+      "marketTakeBound": "0.02"
+     },
+     {
+      "symbol": "BTCU",
+      "filters": [
+       {
+        "minPrice": "1",
+        "maxPrice": "1000000",
+        "filterType": "PRICE_FILTER",
+        "tickSize": "0.10"
+       },
+       {
+        "stepSize": "0.001",
+        "filterType": "LOT_SIZE",
+        "maxQty": "1000",
+        "minQty": "0.001"
+       },
+       {
+        "stepSize": "0.001",
+        "filterType": "MARKET_LOT_SIZE",
+        "maxQty": "120",
+        "minQty": "0.001"
+       },
+       {
+        "limit": 200,
+        "filterType": "MAX_NUM_ORDERS"
+       },
+       {
+        "limit": 10,
+        "filterType": "MAX_NUM_ALGO_ORDERS"
+       },
+       {
+        "notional": "5",
+        "filterType": "MIN_NOTIONAL"
+       },
+       {
+        "multiplierDown": "0.9800",
+        "multiplierUp": "1.0200",
+        "ltMultiplierDown": "0.9800",
+        "multiplierDecimal": "4",
+        "filterType": "PERCENT_PRICE",
+        "ltMultiplierUp": "1.0200"
+       }
+      ],
+      "orderTypes": [
+       "LIMIT",
+       "MARKET",
+       "STOP",
+       "STOP_MARKET",
+       "TAKE_PROFIT",
+       "TAKE_PROFIT_MARKET",
+       "TRAILING_STOP_MARKET"
+      ],
+      "timeInForce": [
+       "GTC",
+       "IOC",
+       "GTX",
+       "HIDDEN"
+      ],
+      "createTime": 1779872930914,
+      "pair": "BTCU",
+      "contractType": "PERPETUAL",
+      "deliveryDate": 4133404800000,
+      "onboardDate": 1779876000000,
+      "status": "TRADING",
+      "maintMarginPercent": "16.6600",
+      "requiredMarginPercent": "33.3300",
+      "baseAsset": "BTC",
+      "quoteAsset": "U",
+      "marginAsset": "U",
+      "pricePrecision": 2,
+      "quantityPrecision": 3,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "underlyingType": "COIN",
+      "underlyingSubType": [
+       "AOS2"
+      ],
+      "symbolType": 0,
+      "tradingMode": 0,
+      "name": "",
+      "channel": "{}",
+      "sequenceNo": 0,
+      "twapMinNotional": "1000",
+      "imn": "4000.00",
+      "tags": [],
+      "settlePlan": 0,
+      "triggerProtect": "0.0200",
+      "liquidationFee": "0.025000",
+      "marketTakeBound": "0.02"
+     },
+     {
+      "symbol": "ETHU",
+      "filters": [
+       {
+        "minPrice": "0.01",
+        "maxPrice": "1000000",
+        "filterType": "PRICE_FILTER",
+        "tickSize": "0.01"
+       },
+       {
+        "stepSize": "0.001",
+        "filterType": "LOT_SIZE",
+        "maxQty": "10000",
+        "minQty": "0.001"
+       },
+       {
+        "stepSize": "0.001",
+        "filterType": "MARKET_LOT_SIZE",
+        "maxQty": "2000",
+        "minQty": "0.001"
+       },
+       {
+        "limit": 200,
+        "filterType": "MAX_NUM_ORDERS"
+       },
+       {
+        "limit": 10,
+        "filterType": "MAX_NUM_ALGO_ORDERS"
+       },
+       {
+        "notional": "5",
+        "filterType": "MIN_NOTIONAL"
+       },
+       {
+        "multiplierDown": "0.9800",
+        "multiplierUp": "1.0200",
+        "ltMultiplierDown": "0.9800",
+        "multiplierDecimal": "4",
+        "filterType": "PERCENT_PRICE",
+        "ltMultiplierUp": "1.0200"
+       }
+      ],
+      "orderTypes": [
+       "LIMIT",
+       "MARKET",
+       "STOP",
+       "STOP_MARKET",
+       "TAKE_PROFIT",
+       "TAKE_PROFIT_MARKET",
+       "TRAILING_STOP_MARKET"
+      ],
+      "timeInForce": [
+       "GTC",
+       "IOC",
+       "GTX",
+       "HIDDEN"
+      ],
+      "createTime": 1779873061654,
+      "pair": "ETHU",
+      "contractType": "PERPETUAL",
+      "deliveryDate": 4133404800000,
+      "onboardDate": 1779876000000,
+      "status": "TRADING",
+      "maintMarginPercent": "16.6600",
+      "requiredMarginPercent": "33.3300",
+      "baseAsset": "ETH",
+      "quoteAsset": "U",
+      "marginAsset": "U",
+      "pricePrecision": 2,
+      "quantityPrecision": 3,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "underlyingType": "COIN",
+      "underlyingSubType": [
+       "AOS2"
+      ],
+      "symbolType": 0,
+      "tradingMode": 0,
+      "name": "",
+      "channel": "{}",
+      "sequenceNo": 0,
+      "twapMinNotional": "1000",
+      "imn": "4000.00",
+      "tags": [],
+      "settlePlan": 0,
+      "triggerProtect": "0.0200",
+      "liquidationFee": "0.025000",
+      "marketTakeBound": "0.02"
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "warm",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/premiumIndex",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "symbol": "BTCUSD",
+     "markPrice": "82369.18916081",
+     "indexPrice": "82369.18916081",
+     "estimatedSettlePrice": "82452.05506132",
+     "lastFundingRate": "0",
+     "interestRate": "0",
+     "nextFundingTime": 1792411200000,
+     "time": 1792407340001
+    },
+    {
+     "symbol": "ETHUSD1",
+     "markPrice": "2426.27000000",
+     "indexPrice": "2427.36438316",
+     "estimatedSettlePrice": "2429.73182557",
+     "lastFundingRate": "0.00002461",
+     "interestRate": "0.00010000",
+     "nextFundingTime": 1792425600000,
+     "time": 1792407340001
+    },
+    {
+     "symbol": "ETHUSDT",
+     "markPrice": "2426.33000000",
+     "indexPrice": "2427.19790698",
+     "estimatedSettlePrice": "2429.62858230",
+     "lastFundingRate": "0.00010000",
+     "interestRate": "0.00010000",
+     "nextFundingTime": 1792425600000,
+     "time": 1792407340001
+    },
+    {
+     "symbol": "BTCUSD1",
+     "markPrice": "82427.90000000",
+     "indexPrice": "82462.53879618",
+     "estimatedSettlePrice": "82540.00959943",
+     "lastFundingRate": "0.00009810",
+     "interestRate": "0.00010000",
+     "nextFundingTime": 1792425600000,
+     "time": 1792407340001
+    },
+    {
+     "symbol": "BTCUSDT",
+     "markPrice": "82420.03520290",
+     "indexPrice": "82457.54173913",
+     "estimatedSettlePrice": "82536.10020906",
+     "lastFundingRate": "0.00008144",
+     "interestRate": "0.00010000",
+     "nextFundingTime": 1792425600000,
+     "time": 1792407340001
+    },
+    {
+     "symbol": "SOLUSD",
+     "markPrice": "104.94048598",
+     "indexPrice": "104.94048598",
+     "estimatedSettlePrice": "105.07132372",
+     "lastFundingRate": "0",
+     "interestRate": "0",
+     "nextFundingTime": 1792425600000,
+     "time": 1792407340001
+    },
+    {
+     "symbol": "SOLUSDT",
+     "markPrice": "104.92356029",
+     "indexPrice": "104.97410798",
+     "estimatedSettlePrice": "105.11947246",
+     "lastFundingRate": "0.00008006",
+     "interestRate": "0.00010000",
+     "nextFundingTime": 1792425600000,
+     "time": 1792407340001
+    },
+    {
+     "symbol": "SOLUSD1",
+     "markPrice": "104.98923098",
+     "indexPrice": "104.99965542",
+     "estimatedSettlePrice": "105.12715045",
+     "lastFundingRate": "0.00010000",
+     "interestRate": "0.00010000",
+     "nextFundingTime": 1792425600000,
+     "time": 1792407340001
+    },
+    {
+     "symbol": "ETHUSD",
+     "markPrice": "2426.16602571",
+     "indexPrice": "2426.16602571",
+     "estimatedSettlePrice": "2428.36936230",
+     "lastFundingRate": "0",
+     "interestRate": "0",
+     "nextFundingTime": 1792411200000,
+     "time": 1792407340001
+    }
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:1m",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407340207
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1m",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=1m&startTime=1792406980186&endTime=1792407340186&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1792407000000,
+     "82347.2",
+     "82400.0",
+     "82346.7",
+     "82392.5",
+     "1.485",
+     1792407059999,
+     "122329.0684",
+     17,
+     "0.015",
+     "1235.7657",
+     "0"
+    ],
+    [
+     1792407060000,
+     "82392.5",
+     "82400.0",
+     "82347.2",
+     "82347.2",
+     "2.477",
+     1792407119999,
+     "204048.6473",
+     27,
+     "0.946",
+     "77930.2383",
+     "0"
+    ],
+    [
+     1792407120000,
+     "82344.2",
+     "82355.7",
+     "82337.9",
+     "82355.7",
+     "1.438",
+     1792407179999,
+     "118411.8521",
+     13,
+     "0.751",
+     "61841.9909",
+     "0"
+    ],
+    [
+     1792407180000,
+     "82355.8",
+     "82435.4",
+     "82355.8",
+     "82435.4",
+     "19.839",
+     1792407239999,
+     "1635291.1147",
+     70,
+     "12.515",
+     "1031592.6396",
+     "0"
+    ],
+    [
+     1792407240000,
+     "82435.4",
+     "82444.9",
+     "82403.6",
+     "82436.2",
+     "13.773",
+     1792407299999,
+     "1135206.4217",
+     67,
+     "10.239",
+     "843911.5305",
+     "0"
+    ],
+    [
+     1792407300000,
+     "82423.2",
+     "82423.2",
+     "82409.0",
+     "82409.0",
+     "5.359",
+     1792407359999,
+     "441694.3085",
+     12,
+     "0.670",
+     "55214.0300",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:3m",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407340301
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:3m",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=3m&startTime=1792406260272&endTime=1792407340272&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1792406340000,
+     "82403.5",
+     "82419.1",
+     "82258.7",
+     "82258.7",
+     "25.966",
+     1792406519999,
+     "2138074.8026",
+     143,
+     "15.104",
+     "1243869.7263",
+     "0"
+    ],
+    [
+     1792406520000,
+     "82256.0",
+     "82430.1",
+     "82246.8",
+     "82355.8",
+     "47.277",
+     1792406699999,
+     "3894564.8167",
+     176,
+     "30.885",
+     "2544043.9913",
+     "0"
+    ],
+    [
+     1792406700000,
+     "82352.0",
+     "82352.0",
+     "82298.4",
+     "82352.0",
+     "8.773",
+     1792406879999,
+     "722192.4509",
+     71,
+     "5.263",
+     "433279.3425",
+     "0"
+    ],
+    [
+     1792406880000,
+     "82355.8",
+     "82400.0",
+     "82346.7",
+     "82392.5",
+     "11.212",
+     1792407059999,
+     "923576.9557",
+     73,
+     "7.245",
+     "596804.6262",
+     "0"
+    ],
+    [
+     1792407060000,
+     "82392.5",
+     "82435.4",
+     "82337.9",
+     "82435.4",
+     "23.754",
+     1792407239999,
+     "1957751.6141",
+     110,
+     "14.212",
+     "1171364.8688",
+     "0"
+    ],
+    [
+     1792407240000,
+     "82435.4",
+     "82444.9",
+     "82403.6",
+     "82409.0",
+     "19.132",
+     1792407419999,
+     "1576900.7302",
+     79,
+     "10.909",
+     "899125.5605",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:5m",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407340409
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:5m",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=5m&startTime=1792405540371&endTime=1792407340371&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1792405800000,
+     "82296.9",
+     "82296.9",
+     "82075.2",
+     "82116.8",
+     "106.427",
+     1792406099999,
+     "8744792.3945",
+     398,
+     "31.511",
+     "2588636.6342",
+     "0"
+    ],
+    [
+     1792406100000,
+     "82116.8",
+     "82421.5",
+     "82116.8",
+     "82355.7",
+     "53.997",
+     1792406399999,
+     "4441434.4469",
+     290,
+     "33.951",
+     "2792960.2546",
+     "0"
+    ],
+    [
+     1792406400000,
+     "82336.1",
+     "82430.1",
+     "82246.8",
+     "82355.8",
+     "58.473",
+     1792406699999,
+     "4815878.2693",
+     244,
+     "36.061",
+     "2969899.9041",
+     "0"
+    ],
+    [
+     1792406700000,
+     "82352.0",
+     "82399.9",
+     "82298.4",
+     "82352.0",
+     "18.500",
+     1792406999999,
+     "1523440.3382",
+     127,
+     "12.493",
+     "1028848.2030",
+     "0"
+    ],
+    [
+     1792407000000,
+     "82347.2",
+     "82444.9",
+     "82337.9",
+     "82436.2",
+     "39.012",
+     1792407299999,
+     "3215287.1042",
+     194,
+     "24.466",
+     "2016512.1650",
+     "0"
+    ],
+    [
+     1792407300000,
+     "82423.2",
+     "82423.2",
+     "82409.0",
+     "82409.0",
+     "5.359",
+     1792407599999,
+     "441694.3085",
+     12,
+     "0.670",
+     "55214.0300",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:15m",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407340496
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:15m",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=15m&startTime=1792401940476&endTime=1792407340476&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1792402200000,
+     "82943.9",
+     "83067.3",
+     "82929.2",
+     "82966.3",
+     "60.368",
+     1792403099999,
+     "5009582.6255",
+     360,
+     "32.599",
+     "2705234.6129",
+     "0"
+    ],
+    [
+     1792403100000,
+     "82971.1",
+     "82990.4",
+     "82726.6",
+     "82726.6",
+     "57.215",
+     1792403999999,
+     "4740684.9183",
+     269,
+     "21.686",
+     "1796464.3202",
+     "0"
+    ],
+    [
+     1792404000000,
+     "82728.1",
+     "82850.0",
+     "82647.5",
+     "82662.6",
+     "88.121",
+     1792404899999,
+     "7289746.7765",
+     296,
+     "35.448",
+     "2932436.9693",
+     "0"
+    ],
+    [
+     1792404900000,
+     "82650.0",
+     "82674.5",
+     "82233.3",
+     "82292.0",
+     "199.892",
+     1792405799999,
+     "16484345.3685",
+     730,
+     "78.722",
+     "6491043.1486",
+     "0"
+    ],
+    [
+     1792405800000,
+     "82296.9",
+     "82430.1",
+     "82075.2",
+     "82355.8",
+     "218.897",
+     1792406699999,
+     "18002105.1107",
+     932,
+     "101.523",
+     "8351496.7929",
+     "0"
+    ],
+    [
+     1792406700000,
+     "82352.0",
+     "82444.9",
+     "82298.4",
+     "82409.0",
+     "62.871",
+     1792407599999,
+     "5180421.7509",
+     333,
+     "37.629",
+     "3100574.3980",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:30m",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407340583
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:30m",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=30m&startTime=1792396540564&endTime=1792407340564&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1792396800000,
+     "82698.7",
+     "82907.2",
+     "82555.8",
+     "82748.5",
+     "114.796",
+     1792398599999,
+     "9492408.4808",
+     578,
+     "53.314",
+     "4409010.4029",
+     "0"
+    ],
+    [
+     1792398600000,
+     "82748.9",
+     "82922.9",
+     "82687.0",
+     "82779.3",
+     "65.285",
+     1792400399999,
+     "5406780.1613",
+     459,
+     "34.176",
+     "2830609.6359",
+     "0"
+    ],
+    [
+     1792400400000,
+     "82777.7",
+     "82948.3",
+     "82700.0",
+     "82943.9",
+     "42.717",
+     1792402199999,
+     "3537584.0365",
+     420,
+     "20.350",
+     "1685149.3358",
+     "0"
+    ],
+    [
+     1792402200000,
+     "82943.9",
+     "83067.3",
+     "82726.6",
+     "82726.6",
+     "117.583",
+     1792403999999,
+     "9750267.5438",
+     629,
+     "54.285",
+     "4501698.9331",
+     "0"
+    ],
+    [
+     1792404000000,
+     "82728.1",
+     "82850.0",
+     "82233.3",
+     "82292.0",
+     "288.013",
+     1792405799999,
+     "23774092.1450",
+     1026,
+     "114.170",
+     "9423480.1179",
+     "0"
+    ],
+    [
+     1792405800000,
+     "82296.9",
+     "82444.9",
+     "82075.2",
+     "82409.0",
+     "281.768",
+     1792407599999,
+     "23182526.8616",
+     1265,
+     "139.152",
+     "11452071.1909",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:1h",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407340688
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1h",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=1h&startTime=1792385740666&endTime=1792407340666&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1792386000000,
+     "82748.7",
+     "82755.7",
+     "82505.1",
+     "82710.7",
+     "65.393",
+     1792389599999,
+     "5403541.9586",
+     493,
+     "31.111",
+     "2570843.0733",
+     "0"
+    ],
+    [
+     1792389600000,
+     "82708.2",
+     "82873.7",
+     "82644.3",
+     "82813.3",
+     "102.702",
+     1792393199999,
+     "8500356.3132",
+     563,
+     "49.467",
+     "4094222.5164",
+     "0"
+    ],
+    [
+     1792393200000,
+     "82810.7",
+     "83133.3",
+     "82647.3",
+     "82698.7",
+     "190.926",
+     1792396799999,
+     "15825779.0071",
+     1137,
+     "109.044",
+     "9041381.7022",
+     "0"
+    ],
+    [
+     1792396800000,
+     "82698.7",
+     "82922.9",
+     "82555.8",
+     "82779.3",
+     "180.081",
+     1792400399999,
+     "14899188.6421",
+     1037,
+     "87.490",
+     "7239620.0388",
+     "0"
+    ],
+    [
+     1792400400000,
+     "82777.7",
+     "83067.3",
+     "82700.0",
+     "82726.6",
+     "160.300",
+     1792403999999,
+     "13287851.5803",
+     1049,
+     "74.635",
+     "6186848.2689",
+     "0"
+    ],
+    [
+     1792404000000,
+     "82728.1",
+     "82850.0",
+     "82075.2",
+     "82409.0",
+     "569.781",
+     1792407599999,
+     "46956619.0066",
+     2291,
+     "253.322",
+     "20875551.3088",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:2h",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407340775
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:2h",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=2h&startTime=1792364140756&endTime=1792407340756&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1792368000000,
+     "82070.4",
+     "82536.7",
+     "81978.4",
+     "82419.9",
+     "381.395",
+     1792375199999,
+     "31401066.5832",
+     2410,
+     "208.147",
+     "17138940.1724",
+     "0"
+    ],
+    [
+     1792375200000,
+     "82422.0",
+     "82770.9",
+     "82317.6",
+     "82485.7",
+     "253.025",
+     1792382399999,
+     "20887794.4583",
+     1397,
+     "124.214",
+     "10254785.3798",
+     "0"
+    ],
+    [
+     1792382400000,
+     "82485.7",
+     "82852.0",
+     "82438.8",
+     "82710.7",
+     "228.631",
+     1792389599999,
+     "18896662.9988",
+     1169,
+     "117.118",
+     "9680705.3621",
+     "0"
+    ],
+    [
+     1792389600000,
+     "82708.2",
+     "83133.3",
+     "82644.3",
+     "82698.7",
+     "293.628",
+     1792396799999,
+     "24326135.3203",
+     1700,
+     "158.511",
+     "13135604.2186",
+     "0"
+    ],
+    [
+     1792396800000,
+     "82698.7",
+     "83067.3",
+     "82555.8",
+     "82726.6",
+     "340.381",
+     1792403999999,
+     "28187040.2224",
+     2086,
+     "162.125",
+     "13426468.3077",
+     "0"
+    ],
+    [
+     1792404000000,
+     "82728.1",
+     "82850.0",
+     "82075.2",
+     "82409.0",
+     "569.781",
+     1792411199999,
+     "46956619.0066",
+     2291,
+     "253.322",
+     "20875551.3088",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:4h",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407340862
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:4h",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=4h&startTime=1792320940841&endTime=1792407340841&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1792324800000,
+     "82019.4",
+     "82080.4",
+     "80954.1",
+     "81145.5",
+     "1069.381",
+     1792339199999,
+     "86974059.3622",
+     5732,
+     "546.690",
+     "44436618.5877",
+     "0"
+    ],
+    [
+     1792339200000,
+     "81145.4",
+     "81244.1",
+     "80756.8",
+     "80838.3",
+     "482.797",
+     1792353599999,
+     "39111140.8288",
+     3753,
+     "236.155",
+     "19130987.3134",
+     "0"
+    ],
+    [
+     1792353600000,
+     "80849.9",
+     "82187.1",
+     "80646.4",
+     "82070.5",
+     "915.464",
+     1792367999999,
+     "74523969.2017",
+     5864,
+     "478.720",
+     "38979127.0296",
+     "0"
+    ],
+    [
+     1792368000000,
+     "82070.4",
+     "82770.9",
+     "81978.4",
+     "82485.7",
+     "634.420",
+     1792382399999,
+     "52288861.0415",
+     3807,
+     "332.361",
+     "27393725.5522",
+     "0"
+    ],
+    [
+     1792382400000,
+     "82485.7",
+     "83133.3",
+     "82438.8",
+     "82698.7",
+     "522.259",
+     1792396799999,
+     "43222798.3191",
+     2869,
+     "275.629",
+     "22816309.5807",
+     "0"
+    ],
+    [
+     1792396800000,
+     "82698.7",
+     "83067.3",
+     "82075.2",
+     "82409.0",
+     "910.162",
+     1792411199999,
+     "75143659.2290",
+     4377,
+     "415.447",
+     "34302019.6165",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:6h",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407340953
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:6h",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=6h&startTime=1792277740931&endTime=1792407340931&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1792281600000,
+     "81456.0",
+     "82045.4",
+     "81370.0",
+     "81707.9",
+     "533.315",
+     1792303199999,
+     "43589796.7452",
+     4010,
+     "299.959",
+     "24515580.7081",
+     "0"
+    ],
+    [
+     1792303200000,
+     "81696.8",
+     "82268.7",
+     "81588.0",
+     "82019.3",
+     "585.772",
+     1792324799999,
+     "48017041.6627",
+     3812,
+     "288.818",
+     "23676092.9036",
+     "0"
+    ],
+    [
+     1792324800000,
+     "82019.4",
+     "82080.4",
+     "80954.1",
+     "81147.7",
+     "1250.675",
+     1792346399999,
+     "101678635.8777",
+     7430,
+     "642.926",
+     "52241572.8783",
+     "0"
+    ],
+    [
+     1792346400000,
+     "81147.8",
+     "82187.1",
+     "80646.4",
+     "82070.5",
+     "1216.967",
+     1792367999999,
+     "98930533.5150",
+     7919,
+     "618.639",
+     "50305160.0524",
+     "0"
+    ],
+    [
+     1792368000000,
+     "82070.4",
+     "82852.0",
+     "81978.4",
+     "82710.7",
+     "863.051",
+     1792389599999,
+     "71185524.0403",
+     4976,
+     "449.479",
+     "37074430.9143",
+     "0"
+    ],
+    [
+     1792389600000,
+     "82708.2",
+     "83133.3",
+     "82075.2",
+     "82409.0",
+     "1203.790",
+     1792411199999,
+     "99469794.5493",
+     6077,
+     "573.958",
+     "47437623.8351",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:8h",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407341074
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:8h",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=8h&startTime=1792234541019&endTime=1792407341019&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1792252800000,
+     "81317.4",
+     "81670.2",
+     "80760.3",
+     "81455.9",
+     "1048.852",
+     1792281599999,
+     "85227729.0133",
+     7014,
+     "548.884",
+     "44607647.1586",
+     "0"
+    ],
+    [
+     1792281600000,
+     "81456.0",
+     "82045.4",
+     "81370.0",
+     "81640.9",
+     "646.036",
+     1792310399999,
+     "52796355.1109",
+     4919,
+     "352.356",
+     "28795038.4148",
+     "0"
+    ],
+    [
+     1792310400000,
+     "81639.3",
+     "82268.7",
+     "80954.1",
+     "81145.5",
+     "1542.432",
+     1792339199999,
+     "125784542.6592",
+     8635,
+     "783.111",
+     "63833253.7846",
+     "0"
+    ],
+    [
+     1792339200000,
+     "81145.4",
+     "82187.1",
+     "80646.4",
+     "82070.5",
+     "1398.261",
+     1792367999999,
+     "113635110.0305",
+     9617,
+     "714.875",
+     "58110114.3430",
+     "0"
+    ],
+    [
+     1792368000000,
+     "82070.4",
+     "83133.3",
+     "81978.4",
+     "82698.7",
+     "1156.679",
+     1792396799999,
+     "95511659.3606",
+     6676,
+     "607.990",
+     "50210035.1329",
+     "0"
+    ],
+    [
+     1792396800000,
+     "82698.7",
+     "83067.3",
+     "82075.2",
+     "82409.0",
+     "910.162",
+     1792425599999,
+     "75143659.2290",
+     4377,
+     "415.447",
+     "34302019.6165",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:12h",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407341159
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:12h",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=12h&startTime=1792148141137&endTime=1792407341137&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1792152000000,
+     "82598.8",
+     "82616.9",
+     "80772.7",
+     "81566.7",
+     "3338.059",
+     1792195199999,
+     "272354389.8714",
+     28283,
+     "1579.015",
+     "128840273.4028",
+     "0"
+    ],
+    [
+     1792195200000,
+     "81567.3",
+     "81732.1",
+     "81375.9",
+     "81537.1",
+     "398.997",
+     1792238399999,
+     "32553310.8943",
+     8842,
+     "206.313",
+     "16833091.9542",
+     "0"
+    ],
+    [
+     1792238400000,
+     "81537.1",
+     "81670.2",
+     "80760.3",
+     "81455.9",
+     "1246.637",
+     1792281599999,
+     "101338128.8092",
+     9170,
+     "640.205",
+     "52045385.7718",
+     "0"
+    ],
+    [
+     1792281600000,
+     "81456.0",
+     "82268.7",
+     "81370.0",
+     "82019.3",
+     "1119.087",
+     1792324799999,
+     "91606838.4079",
+     7822,
+     "588.777",
+     "48191673.6117",
+     "0"
+    ],
+    [
+     1792324800000,
+     "82019.4",
+     "82187.1",
+     "80646.4",
+     "82070.5",
+     "2467.642",
+     1792367999999,
+     "200609169.3927",
+     15349,
+     "1261.565",
+     "102546732.9307",
+     "0"
+    ],
+    [
+     1792368000000,
+     "82070.4",
+     "83133.3",
+     "81978.4",
+     "82409.0",
+     "2066.841",
+     1792411199999,
+     "170655318.5896",
+     11053,
+     "1023.437",
+     "84512054.7494",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:1d",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407341242
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1d",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=1d&startTime=1791888941223&endTime=1792407341223&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1791936000000,
+     "83138.5",
+     "84106.4",
+     "81407.2",
+     "81635.3",
+     "6829.153",
+     1792022399999,
+     "563714921.5464",
+     37075,
+     "3282.531",
+     "271077472.2803",
+     "0"
+    ],
+    [
+     1792022400000,
+     "81640.0",
+     "82596.5",
+     "79743.6",
+     "82195.1",
+     "9294.803",
+     1792108799999,
+     "756173796.0101",
+     50113,
+     "4699.119",
+     "382480661.9103",
+     "0"
+    ],
+    [
+     1792108800000,
+     "82198.7",
+     "82920.7",
+     "80772.7",
+     "81566.7",
+     "4927.482",
+     1792195199999,
+     "403109583.4701",
+     41029,
+     "2402.482",
+     "196595879.4095",
+     "0"
+    ],
+    [
+     1792195200000,
+     "81567.3",
+     "81732.1",
+     "80760.3",
+     "81455.9",
+     "1645.634",
+     1792281599999,
+     "133891439.7035",
+     18012,
+     "846.518",
+     "68878477.7260",
+     "0"
+    ],
+    [
+     1792281600000,
+     "81456.0",
+     "82268.7",
+     "80646.4",
+     "82070.5",
+     "3586.729",
+     1792367999999,
+     "292216007.8006",
+     23171,
+     "1850.342",
+     "150738406.5424",
+     "0"
+    ],
+    [
+     1792368000000,
+     "82070.4",
+     "83133.3",
+     "81978.4",
+     "82409.0",
+     "2066.841",
+     1792454399999,
+     "170655318.5896",
+     11053,
+     "1023.437",
+     "84512054.7494",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:3d",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407341327
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:3d",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=3d&startTime=1790852141308&endTime=1792407341308&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1790899200000,
+     "84832.3",
+     "87222.0",
+     "83838.7",
+     "86484.5",
+     "15179.287",
+     1791158399999,
+     "1300011765.1265",
+     99583,
+     "7415.498",
+     "634963767.6200",
+     "0"
+    ],
+    [
+     1791158400000,
+     "86465.8",
+     "86964.9",
+     "82727.0",
+     "83278.1",
+     "16451.898",
+     1791417599999,
+     "1399807945.9460",
+     103202,
+     "8062.674",
+     "686081811.5359",
+     "0"
+    ],
+    [
+     1791417600000,
+     "83269.8",
+     "83502.5",
+     "80352.5",
+     "82946.8",
+     "15660.947",
+     1791676799999,
+     "1286580056.5078",
+     97666,
+     "7793.038",
+     "640265574.7223",
+     "0"
+    ],
+    [
+     1791676800000,
+     "82946.8",
+     "84315.2",
+     "80995.2",
+     "83127.7",
+     "14004.586",
+     1791935999999,
+     "1163927254.1279",
+     105611,
+     "6886.841",
+     "572529173.8310",
+     "0"
+    ],
+    [
+     1791936000000,
+     "83138.5",
+     "84106.4",
+     "79743.6",
+     "81566.7",
+     "21051.438",
+     1792195199999,
+     "1722998301.0266",
+     128217,
+     "10384.132",
+     "850154013.6001",
+     "0"
+    ],
+    [
+     1792195200000,
+     "81567.3",
+     "83133.3",
+     "80646.4",
+     "82409.0",
+     "7299.204",
+     1792454399999,
+     "596762766.0937",
+     52236,
+     "3720.297",
+     "304128939.0178",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:1w",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407341409
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1w",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=1w&startTime=1788778541391&endTime=1792407341391&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1789344000000,
+     "76797.2",
+     "81917.9",
+     "74908.9",
+     "81146.9",
+     "83138.416",
+     1789948799999,
+     "6476444044.0628",
+     611565,
+     "40795.120",
+     "3178147893.9587",
+     "0"
+    ],
+    [
+     1789948800000,
+     "81147.0",
+     "87358.7",
+     "80830.5",
+     "84434.0",
+     "43698.728",
+     1790553599999,
+     "3696775260.0482",
+     349835,
+     "21776.088",
+     "1842794553.5193",
+     "0"
+    ],
+    [
+     1790553600000,
+     "84436.8",
+     "87222.0",
+     "82510.2",
+     "86484.5",
+     "38822.283",
+     1791158399999,
+     "3282091379.0683",
+     277209,
+     "19180.925",
+     "1621468007.7284",
+     "0"
+    ],
+    [
+     1791158400000,
+     "86465.8",
+     "86964.9",
+     "80352.5",
+     "83719.4",
+     "34425.245",
+     1791763199999,
+     "2879442232.7851",
+     219711,
+     "17034.197",
+     "1424752616.7697",
+     "0"
+    ],
+    [
+     1791763200000,
+     "83719.4",
+     "84315.2",
+     "79743.6",
+     "82070.5",
+     "37975.987",
+     1792367999999,
+     "3119978772.3273",
+     256168,
+     "18789.348",
+     "1543894841.1880",
+     "0"
+    ],
+    [
+     1792368000000,
+     "82070.4",
+     "83133.3",
+     "81978.4",
+     "82409.0",
+     "2066.841",
+     1792972799999,
+     "170655318.5896",
+     11053,
+     "1023.437",
+     "84512054.7494",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:1M",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407341498
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1M",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=1M&startTime=1776855341475&endTime=1792407341475&limit=1500",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    [
+     1777593600000,
+     "76305.5",
+     "82810.3",
+     "72499.3",
+     "73650.4",
+     "284867.995",
+     1780271999999,
+     "22262577374.4812",
+     2572513,
+     "141936.723",
+     "11092878782.5215",
+     "0"
+    ],
+    [
+     1780272000000,
+     "73650.5",
+     "74065.0",
+     "58078.8",
+     "58597.4",
+     "481014.199",
+     1782863999999,
+     "30425047460.1784",
+     3283122,
+     "240047.722",
+     "15184647854.2000",
+     "0"
+    ],
+    [
+     1782864000000,
+     "58597.4",
+     "66925.7",
+     "57774.1",
+     "62862.4",
+     "329451.213",
+     1785542399999,
+     "20936164489.8237",
+     3700733,
+     "166809.272",
+     "10602696186.3894",
+     "0"
+    ],
+    [
+     1785542400000,
+     "62860.1",
+     "81450.0",
+     "62226.3",
+     "78544.6",
+     "328752.733",
+     1788220799999,
+     "23219149709.8954",
+     2684856,
+     "165764.750",
+     "11705412098.6965",
+     "0"
+    ],
+    [
+     1788220800000,
+     "78544.7",
+     "87358.7",
+     "74908.9",
+     "83580.4",
+     "263213.163",
+     1790812799999,
+     "20965280730.2959",
+     2146278,
+     "129902.793",
+     "10349924549.0289",
+     "0"
+    ],
+    [
+     1790812800000,
+     "83580.4",
+     "87222.0",
+     "79743.6",
+     "82409.0",
+     "95637.433",
+     1793491199999,
+     "7973993362.0357",
+     626609,
+     "47240.151",
+     "3938657743.2538",
+     "0"
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline:unsupported",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1792407341583
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:unsupported",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=7m&startTime=1792320941606&endTime=1792407341606&limit=1500",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "code": -1120,
+    "msg": "Invalid interval."
+   },
+   "text": null
+  }
+ ],
+ "ws": []
+}

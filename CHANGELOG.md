@@ -114,6 +114,12 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - Per-symbol reads of an Ondo disabled / QFEX INACTIVE or DELISTED market: `SYMBOL_NOT_FOUND` with `details.status` (were stale data, `[]` or `EXCHANGE_ERROR` 404).
 - `backtest funding-arb` NO_DATA message text names `perp arb scan --rates --symbol <SYM>`.
 
+### Testing (no runtime change)
+
+- **Testing standard** `docs/TESTING.md`: test layers and when each is required, the universal `--json` output contracts of the read commands, invariants, SSOT rules as testable rules, definition of done for venues / features, forbidden patterns. PR template carries its checklist.
+- **Cross-venue conformance suite** `src/__tests__/conformance/` (part of `pnpm test`, offline): every registered venue × every read command through the real command tree on recorded, anonymized public responses (`src/__tests__/fixtures/conformance/`), validated against one shared contract; cross-venue price agreement; `arb scan` variants; CLI ⇄ MCP and CLI ⇄ WS parity; WS codec checks; row caps / intervals; registry-driven read-only refusal table. Current failures are listed in `KNOWN_FAILURES` and asserted to fail.
+- `pnpm test:conformance:live` (the same suite live, read-only), `pnpm conformance:record` (fixture recording), `pnpm release-qa --version <v>` (pre-release QA of the published npm packages), nightly workflow `conformance-nightly.yml`.
+
 ## [0.15.0] — 2026-10-19
 
 ### NEW: Extended (formerly X10, Starknet) — read-only market data (`perp -e extended`, aliases `ext` / `x10`)

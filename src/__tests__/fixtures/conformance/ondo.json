@@ -1,0 +1,1451 @@
+{
+ "schema": 1,
+ "name": "ondo",
+ "capturedAt": 1792405428694,
+ "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
+ "keep": [
+  "BTC",
+  "ETH",
+  "SOL"
+ ],
+ "http": [
+  {
+   "cell": "list",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "ca6b9471d424a3fa"
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/contracts",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": [
+     {
+      "market": "BTC-USD.P",
+      "displayName": "BTCUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "BTC",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "82364",
+      "baseVolume": "347.1338",
+      "quoteVolume": "28591328.3032",
+      "usdVolume": "28591328.3",
+      "bid": "82364",
+      "ask": "82366",
+      "high": "83046",
+      "low": "80527",
+      "openInterest": "63.7692",
+      "openInterestUsd": "5261076.69",
+      "indexPrice": "82702.29977925499930785",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "0.36679136760781350913322691103176828",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     },
+     {
+      "market": "ETH-USD.P",
+      "displayName": "ETHUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "ETH",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "2426.2",
+      "baseVolume": "2290.257",
+      "quoteVolume": "5556621.5334",
+      "usdVolume": "5556621.53",
+      "bid": "2425.3",
+      "ask": "2425.7",
+      "high": "2443.9",
+      "low": "2326.4",
+      "openInterest": "1344.11",
+      "openInterestUsd": "3265438.63",
+      "indexPrice": "2435.06055603000019545",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "0.2313475997686524002313475997686524",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     },
+     {
+      "market": "SOL-USD.P",
+      "displayName": "SOLUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "SOL",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "105.02",
+      "baseVolume": "15448.72",
+      "quoteVolume": "1622424.5744",
+      "usdVolume": "1622424.57",
+      "bid": "104.98",
+      "ask": "105.01",
+      "high": "106.03",
+      "low": "100.25",
+      "openInterest": "4204.52",
+      "openInterestUsd": "442320.49",
+      "indexPrice": "105.37383721000000395",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "1.07795957651588065447545717035611165",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/mark_prices",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": {
+     "BTC-USD.P": {
+      "market": "BTC-USD.P",
+      "markPrice": "82364",
+      "oraclePrice": "82399.35675170250071535",
+      "lastExternalPrice": "82399.35675170250071535",
+      "lastUpdatedTime": "2026-10-19T10:23:27.095732228Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "82364",
+      "pair": {
+       "base": "BTC",
+       "quote": "USD"
+      }
+     },
+     "ETH-USD.P": {
+      "market": "ETH-USD.P",
+      "markPrice": "2425.372964",
+      "oraclePrice": "2425.3729645612499584",
+      "lastExternalPrice": "2425.3729645612499584",
+      "lastUpdatedTime": "2026-10-19T10:23:27.095732228Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "2425.372964",
+      "pair": {
+       "base": "ETH",
+       "quote": "USD"
+      }
+     },
+     "SOL-USD.P": {
+      "market": "SOL-USD.P",
+      "markPrice": "104.985729",
+      "oraclePrice": "104.96302279249999765",
+      "lastExternalPrice": "104.96302279249999765",
+      "lastUpdatedTime": "2026-10-19T10:23:27.095732228Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "104.985729",
+      "pair": {
+       "base": "SOL",
+       "quote": "USD"
+      }
+     }
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "ca6b9471d424a3fa"
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/contracts",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": [
+     {
+      "market": "BTC-USD.P",
+      "displayName": "BTCUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "BTC",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "82379",
+      "baseVolume": "347.1557",
+      "quoteVolume": "28598339.4103",
+      "usdVolume": "28598339.41",
+      "bid": "82379",
+      "ask": "82381",
+      "high": "83046",
+      "low": "80527",
+      "openInterest": "63.7692",
+      "openInterestUsd": "5261076.69",
+      "indexPrice": "82702.29977925499930785",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "0.38507000718959823550199237171441454",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     },
+     {
+      "market": "ETH-USD.P",
+      "displayName": "ETHUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "ETH",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "2426.2",
+      "baseVolume": "2290.257",
+      "quoteVolume": "5556621.5334",
+      "usdVolume": "5556621.53",
+      "bid": "2425.9",
+      "ask": "2426.1",
+      "high": "2443.9",
+      "low": "2326.4",
+      "openInterest": "1344.11",
+      "openInterestUsd": "3265438.63",
+      "indexPrice": "2435.06055603000019545",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "0.2313475997686524002313475997686524",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     },
+     {
+      "market": "SOL-USD.P",
+      "displayName": "SOLUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "SOL",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "105.02",
+      "baseVolume": "15448.72",
+      "quoteVolume": "1622424.5744",
+      "usdVolume": "1622424.57",
+      "bid": "105.01",
+      "ask": "105.05",
+      "high": "106.03",
+      "low": "100.25",
+      "openInterest": "4204.52",
+      "openInterestUsd": "442320.49",
+      "indexPrice": "105.37383721000000395",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "1.07795957651588065447545717035611165",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/mark_prices",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": {
+     "BTC-USD.P": {
+      "market": "BTC-USD.P",
+      "markPrice": "82379",
+      "oraclePrice": "82400.5774692325019353",
+      "lastExternalPrice": "82400.5774692325019353",
+      "lastUpdatedTime": "2026-10-19T10:23:30.095753727Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "82379",
+      "pair": {
+       "base": "BTC",
+       "quote": "USD"
+      }
+     },
+     "ETH-USD.P": {
+      "market": "ETH-USD.P",
+      "markPrice": "2425.444717",
+      "oraclePrice": "2425.4447172087498172",
+      "lastExternalPrice": "2425.4447172087498172",
+      "lastUpdatedTime": "2026-10-19T10:23:30.095753727Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "2425.444717",
+      "pair": {
+       "base": "ETH",
+       "quote": "USD"
+      }
+     },
+     "SOL-USD.P": {
+      "market": "SOL-USD.P",
+      "markPrice": "104.991647",
+      "oraclePrice": "104.96851886000000065",
+      "lastExternalPrice": "104.96851886000000065",
+      "lastUpdatedTime": "2026-10-19T10:23:30.095753727Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "104.991647",
+      "pair": {
+       "base": "SOL",
+       "quote": "USD"
+      }
+     }
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "ca6b9471d424a3fa"
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/contracts",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": [
+     {
+      "market": "BTC-USD.P",
+      "displayName": "BTCUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "BTC",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "82386",
+      "baseVolume": "347.1593",
+      "quoteVolume": "28601066.0898",
+      "usdVolume": "28601066.09",
+      "bid": "82386",
+      "ask": "82391",
+      "high": "83046",
+      "low": "80527",
+      "openInterest": "63.7692",
+      "openInterestUsd": "5261076.69",
+      "indexPrice": "82702.29977925499930785",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "0.39360003899443110780741625336631612",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     },
+     {
+      "market": "ETH-USD.P",
+      "displayName": "ETHUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "ETH",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "2426.2",
+      "baseVolume": "2290.257",
+      "quoteVolume": "5556621.5334",
+      "usdVolume": "5556621.53",
+      "bid": "2425.9",
+      "ask": "2426.1",
+      "high": "2443.9",
+      "low": "2326.4",
+      "openInterest": "1344.11",
+      "openInterestUsd": "3265438.63",
+      "indexPrice": "2435.06055603000019545",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "0.2313475997686524002313475997686524",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     },
+     {
+      "market": "SOL-USD.P",
+      "displayName": "SOLUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "SOL",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "105.02",
+      "baseVolume": "15448.72",
+      "quoteVolume": "1622424.5744",
+      "usdVolume": "1622424.57",
+      "bid": "105.01",
+      "ask": "105.05",
+      "high": "106.03",
+      "low": "100.25",
+      "openInterest": "4204.52",
+      "openInterestUsd": "442320.49",
+      "indexPrice": "105.37383721000000395",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "1.07795957651588065447545717035611165",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/mark_prices",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": {
+     "BTC-USD.P": {
+      "market": "BTC-USD.P",
+      "markPrice": "82386",
+      "oraclePrice": "82418.0648245849997304",
+      "lastExternalPrice": "82418.0648245849997304",
+      "lastUpdatedTime": "2026-10-19T10:23:33.095775224Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "82386",
+      "pair": {
+       "base": "BTC",
+       "quote": "USD"
+      }
+     },
+     "ETH-USD.P": {
+      "market": "ETH-USD.P",
+      "markPrice": "2426.1",
+      "oraclePrice": "2426.11706337375002345",
+      "lastExternalPrice": "2426.11706337375002345",
+      "lastUpdatedTime": "2026-10-19T10:23:33.095775224Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "2426.1",
+      "pair": {
+       "base": "ETH",
+       "quote": "USD"
+      }
+     },
+     "SOL-USD.P": {
+      "market": "SOL-USD.P",
+      "markPrice": "105.02",
+      "oraclePrice": "104.998514951249996",
+      "lastExternalPrice": "104.998514951249996",
+      "lastUpdatedTime": "2026-10-19T10:23:33.095775224Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "105.02",
+      "pair": {
+       "base": "SOL",
+       "quote": "USD"
+      }
+     }
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/funding_rate_history?market=BTC-USD.P&limit=5",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": [
+     {
+      "market": "BTC-USD.P",
+      "time": "2026-10-19T10:00:00.01761548Z",
+      "fundingRate": "0.0000125"
+     },
+     {
+      "market": "BTC-USD.P",
+      "time": "2026-10-19T09:00:00.011625382Z",
+      "fundingRate": "0.0000125"
+     },
+     {
+      "market": "BTC-USD.P",
+      "time": "2026-10-19T08:00:00.029585473Z",
+      "fundingRate": "0.0000125"
+     },
+     {
+      "market": "BTC-USD.P",
+      "time": "2026-10-19T07:00:00.027661793Z",
+      "fundingRate": "0.0000125"
+     },
+     {
+      "market": "BTC-USD.P",
+      "time": "2026-10-19T06:00:00.013664514Z",
+      "fundingRate": "0.0000125"
+     }
+    ],
+    "pageInfo": {
+     "prevCursor": "",
+     "nextCursor": "PMRHA33TEI5DENRSGIWCEZDJOIRDUML5"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/depth?market=BTC-USD.P&depth=50",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": {
+     "market": "BTC-USD.P",
+     "time": "2026-10-19T10:23:36.139797063Z",
+     "asks": [
+      [
+       "82396",
+       "0.004"
+      ],
+      [
+       "82400",
+       "0.0121"
+      ],
+      [
+       "82403",
+       "0.0007"
+      ],
+      [
+       "82405",
+       "0.0121"
+      ],
+      [
+       "82407",
+       "0.1941"
+      ],
+      [
+       "82409",
+       "0.0121"
+      ],
+      [
+       "82843",
+       "0.0002"
+      ],
+      [
+       "82852",
+       "0.0725"
+      ],
+      [
+       "82915",
+       "0.005"
+      ],
+      [
+       "82941",
+       "0.0002"
+      ],
+      [
+       "83003",
+       "0.005"
+      ],
+      [
+       "83024",
+       "0.0002"
+      ]
+     ],
+     "bids": [
+      [
+       "82395",
+       "0.0168"
+      ],
+      [
+       "82394",
+       "0.0858"
+      ],
+      [
+       "82393",
+       "0.0019"
+      ],
+      [
+       "82387",
+       "0.0121"
+      ],
+      [
+       "82385",
+       "0.0121"
+      ],
+      [
+       "82383",
+       "0.0121"
+      ],
+      [
+       "82216",
+       "0.005"
+      ],
+      [
+       "82213",
+       "0.0009"
+      ],
+      [
+       "82180",
+       "0.0009"
+      ],
+      [
+       "82168",
+       "0.0003"
+      ],
+      [
+       "82147",
+       "0.0009"
+      ],
+      [
+       "82135",
+       "0.0362"
+      ]
+     ]
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/trades?market=BTC-USD.P&limit=5",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": [
+     {
+      "market": "BTC-USD.P",
+      "price": "82391",
+      "size": "0.0001",
+      "cost": "8.2391",
+      "aggressor_side": "buy",
+      "time": "2026-10-19T10:23:33.515778234Z",
+      "id": "ab4e3333495da768a30d39d0dd956127"
+     },
+     {
+      "market": "BTC-USD.P",
+      "price": "82386",
+      "size": "0.0036",
+      "cost": "296.5896",
+      "aggressor_side": "buy",
+      "time": "2026-10-19T10:23:32.699772387Z",
+      "id": "08b9c6d5608e708f1a2a6fead07dface"
+     },
+     {
+      "market": "BTC-USD.P",
+      "price": "82379",
+      "size": "0.0121",
+      "cost": "996.7859",
+      "aggressor_side": "buy",
+      "time": "2026-10-19T10:23:28.891745098Z",
+      "id": "1f511b53684482ee2948eb59725278a0"
+     },
+     {
+      "market": "BTC-USD.P",
+      "price": "82368",
+      "size": "0.0036",
+      "cost": "296.5248",
+      "aggressor_side": "buy",
+      "time": "2026-10-19T10:23:28.803744468Z",
+      "id": "557a60202fb73fb05d6c6181c0902bbf"
+     },
+     {
+      "market": "BTC-USD.P",
+      "price": "82368",
+      "size": "0.0036",
+      "cost": "296.5248",
+      "aggressor_side": "buy",
+      "time": "2026-10-19T10:23:28.803744468Z",
+      "id": "1b6298568b9b3268885014cb7a08d318"
+     }
+    ],
+    "pageInfo": {
+     "prevCursor": "",
+     "nextCursor": "PMRHA33TEI5DMNRTGQZTONZSGIWCEZDJOIRDUML5"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "ca6b9471d424a3fa"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/contracts",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": [
+     {
+      "market": "BTC-USD.P",
+      "displayName": "BTCUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "BTC",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "82379",
+      "baseVolume": "347.2077",
+      "quoteVolume": "28602623.1183",
+      "usdVolume": "28602623.12",
+      "bid": "82374",
+      "ask": "82391",
+      "high": "83046",
+      "low": "80527",
+      "openInterest": "63.7692",
+      "openInterestUsd": "5261076.69",
+      "indexPrice": "82702.29977925499930785",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "0.38507000718959823550199237171441454",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     },
+     {
+      "market": "ETH-USD.P",
+      "displayName": "ETHUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "ETH",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "2426.1",
+      "baseVolume": "2290.282",
+      "quoteVolume": "5556453.1602",
+      "usdVolume": "5556453.16",
+      "bid": "2425.9",
+      "ask": "2426.4",
+      "high": "2443.9",
+      "low": "2326.4",
+      "openInterest": "1344.11",
+      "openInterestUsd": "3265438.63",
+      "indexPrice": "2435.06055603000019545",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "0.22721639262992646451293067834421218",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     },
+     {
+      "market": "SOL-USD.P",
+      "displayName": "SOLUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "SOL",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "105.02",
+      "baseVolume": "15448.72",
+      "quoteVolume": "1622424.5744",
+      "usdVolume": "1622424.57",
+      "bid": "105.02",
+      "ask": "105.05",
+      "high": "106.03",
+      "low": "100.25",
+      "openInterest": "4204.52",
+      "openInterestUsd": "442320.49",
+      "indexPrice": "105.37383721000000395",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "1.07795957651588065447545717035611165",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/mark_prices",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": {
+     "BTC-USD.P": {
+      "market": "BTC-USD.P",
+      "markPrice": "82396.273403",
+      "oraclePrice": "82431.1878592325036196",
+      "lastExternalPrice": "82431.1878592325036196",
+      "lastUpdatedTime": "2026-10-19T10:23:40.095825462Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "82396.273403",
+      "pair": {
+       "base": "BTC",
+       "quote": "USD"
+      }
+     },
+     "ETH-USD.P": {
+      "market": "ETH-USD.P",
+      "markPrice": "2426.379479",
+      "oraclePrice": "2426.43743665500002585",
+      "lastExternalPrice": "2426.43743665500002585",
+      "lastUpdatedTime": "2026-10-19T10:23:40.095825462Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "2426.379479",
+      "pair": {
+       "base": "ETH",
+       "quote": "USD"
+      }
+     },
+     "SOL-USD.P": {
+      "market": "SOL-USD.P",
+      "markPrice": "105.04",
+      "oraclePrice": "105.01974518500000245",
+      "lastExternalPrice": "105.01974518500000245",
+      "lastUpdatedTime": "2026-10-19T10:23:40.095825462Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "105.04",
+      "pair": {
+       "base": "SOL",
+       "quote": "USD"
+      }
+     }
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:funding",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/funding_rate_history?market=NOPEXYZ-USD.P&limit=5",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "success": false,
+    "error": "Market NOPEXYZ-USD.P invalid in the perps exchange",
+    "error_code": "invalid_market"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:book",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/depth?market=NOPEXYZ-USD.P&depth=50",
+   "body": null,
+   "status": 404,
+   "contentType": "application/json",
+   "response": {
+    "success": false,
+    "error": "unsupported currency pair: NOPEXYZ/USD.P",
+    "error_code": "invalid_symbol"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:trades",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/trades?market=NOPEXYZ-USD.P&limit=5",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": [],
+    "pageInfo": {
+     "prevCursor": "",
+     "nextCursor": ""
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:trades",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "ca6b9471d424a3fa"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:trades",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/contracts",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": [
+     {
+      "market": "BTC-USD.P",
+      "displayName": "BTCUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "BTC",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "82379",
+      "baseVolume": "347.2077",
+      "quoteVolume": "28602623.1183",
+      "usdVolume": "28602623.12",
+      "bid": "82381",
+      "ask": "82382",
+      "high": "83046",
+      "low": "80527",
+      "openInterest": "63.7692",
+      "openInterestUsd": "5261076.69",
+      "indexPrice": "82702.29977925499930785",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "0.38507000718959823550199237171441454",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     },
+     {
+      "market": "ETH-USD.P",
+      "displayName": "ETHUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "ETH",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "2426.1",
+      "baseVolume": "2290.282",
+      "quoteVolume": "5556453.1602",
+      "usdVolume": "5556453.16",
+      "bid": "2425.4",
+      "ask": "2425.8",
+      "high": "2443.9",
+      "low": "2326.4",
+      "openInterest": "1344.11",
+      "openInterestUsd": "3265438.63",
+      "indexPrice": "2435.06055603000019545",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "0.22721639262992646451293067834421218",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     },
+     {
+      "market": "SOL-USD.P",
+      "displayName": "SOLUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "SOL",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "105.02",
+      "baseVolume": "15448.72",
+      "quoteVolume": "1622424.5744",
+      "usdVolume": "1622424.57",
+      "bid": "105.02",
+      "ask": "105.03",
+      "high": "106.03",
+      "low": "100.25",
+      "openInterest": "4204.52",
+      "openInterestUsd": "442320.49",
+      "indexPrice": "105.37383721000000395",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingRateTimestamp": "2026-10-19T11:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "1.07795957651588065447545717035611165",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+       "Crypto"
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:trades",
+   "method": "GET",
+   "url": "https://api.ondoperps.xyz/v1/perps/mark_prices",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "result": {
+     "BTC-USD.P": {
+      "market": "BTC-USD.P",
+      "markPrice": "82381",
+      "oraclePrice": "82415.28218262499610615",
+      "lastExternalPrice": "82415.28218262499610615",
+      "lastUpdatedTime": "2026-10-19T10:23:47.095875537Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "82381",
+      "pair": {
+       "base": "BTC",
+       "quote": "USD"
+      }
+     },
+     "ETH-USD.P": {
+      "market": "ETH-USD.P",
+      "markPrice": "2425.702944",
+      "oraclePrice": "2425.70294446249999965",
+      "lastExternalPrice": "2425.70294446249999965",
+      "lastUpdatedTime": "2026-10-19T10:23:47.095875537Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "2425.702944",
+      "pair": {
+       "base": "ETH",
+       "quote": "USD"
+      }
+     },
+     "SOL-USD.P": {
+      "market": "SOL-USD.P",
+      "markPrice": "105.02",
+      "oraclePrice": "104.9991613750000089",
+      "lastExternalPrice": "104.9991613750000089",
+      "lastUpdatedTime": "2026-10-19T10:23:47.095875537Z",
+      "discoveryLower": "0",
+      "discoveryUpper": "0",
+      "discoveryLowerTrigger": "0",
+      "discoveryUpperTrigger": "0",
+      "inPriceDiscovery": false,
+      "price": "105.02",
+      "pair": {
+       "base": "SOL",
+       "quote": "USD"
+      }
+     }
+    }
+   },
+   "text": null
+  }
+ ],
+ "ws": [],
+ "bodies": {
+  "ca6b9471d424a3fa": {
+   "success": true,
+   "result": {
+    "spot": {
+     "tradingPairs": [
+      {
+       "market": "SPYon-USDC",
+       "pair": {
+        "base": "SPYon",
+        "quote": "USDC"
+       },
+       "baseIncrement": "0.001",
+       "quoteIncrement": "0.001",
+       "makerFee": "0",
+       "takerFee": "0",
+       "disabled": true,
+       "tags": [
+        "ETF"
+       ]
+      },
+      {
+       "market": "QQQon-USDC",
+       "pair": {
+        "base": "QQQon",
+        "quote": "USDC"
+       },
+       "baseIncrement": "0.001",
+       "quoteIncrement": "0.001",
+       "makerFee": "0",
+       "takerFee": "0",
+       "disabled": true,
+       "tags": [
+        "ETF"
+       ]
+      },
+      {
+       "market": "SPY-USDC",
+       "pair": {
+        "base": "SPY",
+        "quote": "USDC"
+       },
+       "longName": "SPDR S&P 500 ETF",
+       "baseIncrement": "0.01",
+       "quoteIncrement": "0.01",
+       "makerFee": "0",
+       "takerFee": "0",
+       "tags": [
+        "ETF"
+       ]
+      }
+     ]
+    },
+    "perps": {
+     "tradingPairs": [
+      {
+       "market": "BTC-USD.P",
+       "underlyingMarket": "BTC-USD",
+       "displayName": "BTCUSD",
+       "longName": "Bitcoin",
+       "pair": {
+        "base": "BTC",
+        "quote": "USD"
+       },
+       "baseIncrement": "0.0001",
+       "quoteIncrement": "1",
+       "dailyInterestRate": "0.0003",
+       "fundingIntervalDivisions": 8,
+       "interestDampingRange": "0.0000625",
+       "fundingRateCap": "0.009",
+       "marginInfo": [
+        {
+         "positionBracketUsd": "1000000",
+         "maxLeverage": "40",
+         "maintenanceMarginRate": "0.0125",
+         "maintenanceAmount": "0"
+        }
+       ],
+       "defaultLeverage": "40",
+       "maxPositionBaseSize": "13",
+       "fundingRateMultiplier": "1",
+       "basisTradeMaxCollateralBaseSize": "1",
+       "makerFee": "0.0001",
+       "takerFee": "0.00025",
+       "impactPriceQuoteSize": "1000",
+       "tags": [
+        "Crypto"
+       ],
+       "logoUrl": "https://cache.enclave.market/tokens/BTC.svg",
+       "backgroundColour": "#E9983D"
+      },
+      {
+       "market": "ETH-USD.P",
+       "underlyingMarket": "ETH-USD",
+       "displayName": "ETHUSD",
+       "longName": "Ethereum",
+       "pair": {
+        "base": "ETH",
+        "quote": "USD"
+       },
+       "baseIncrement": "0.001",
+       "quoteIncrement": "0.1",
+       "dailyInterestRate": "0.0003",
+       "fundingIntervalDivisions": 8,
+       "interestDampingRange": "0.0000625",
+       "fundingRateCap": "0.01",
+       "marginInfo": [
+        {
+         "positionBracketUsd": "1000000",
+         "maxLeverage": "25",
+         "maintenanceMarginRate": "0.02",
+         "maintenanceAmount": "0"
+        }
+       ],
+       "defaultLeverage": "25",
+       "maxPositionBaseSize": "420",
+       "fundingRateMultiplier": "1",
+       "basisTradeMaxCollateralBaseSize": "37.5",
+       "makerFee": "0.0001",
+       "takerFee": "0.00025",
+       "impactPriceQuoteSize": "1000",
+       "tags": [
+        "Crypto"
+       ],
+       "logoUrl": "https://cache.enclave.market/tokens/ETH.svg",
+       "backgroundColour": "#715CCE"
+      },
+      {
+       "market": "SOL-USD.P",
+       "underlyingMarket": "SOL-USD",
+       "displayName": "SOLUSD",
+       "longName": "Solana",
+       "pair": {
+        "base": "SOL",
+        "quote": "USD"
+       },
+       "baseIncrement": "0.01",
+       "quoteIncrement": "0.01",
+       "dailyInterestRate": "0.0003",
+       "fundingIntervalDivisions": 8,
+       "interestDampingRange": "0.0000625",
+       "fundingRateCap": "0.01",
+       "marginInfo": [
+        {
+         "positionBracketUsd": "1000000",
+         "maxLeverage": "10",
+         "maintenanceMarginRate": "0.05",
+         "maintenanceAmount": "0"
+        }
+       ],
+       "defaultLeverage": "10",
+       "maxPositionBaseSize": "10000",
+       "fundingRateMultiplier": "1",
+       "basisTradeMaxCollateralBaseSize": "400",
+       "makerFee": "0.0001",
+       "takerFee": "0.00025",
+       "impactPriceQuoteSize": "1000",
+       "tags": [
+        "Crypto"
+       ],
+       "logoUrl": "https://cache.enclave.market/tokens/SOL.svg",
+       "backgroundColour": "#C24AEF"
+      }
+     ]
+    },
+    "tokenConfig": [
+     {
+      "currentSettleFee": "0",
+      "ledgerUnit": "tokens",
+      "collateralEligible": true,
+      "id": "USDC",
+      "name": "USD Coin",
+      "decimals": 6,
+      "ucid": 3408,
+      "coinGeckoId": "usd-coin",
+      "coinGeckoCurrency": "usd",
+      "bridgeInfoUrl": "",
+      "description": "",
+      "networks": {
+       "arbitrum": {
+        "contractAddress": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        "contractDecimals": 6
+       },
+       "ethereum": {
+        "contractAddress": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "contractDecimals": 6
+       }
+      }
+     },
+     {
+      "currentSettleFee": "0",
+      "ledgerUnit": "shares",
+      "custodiedAs": "SPYon",
+      "sharesMultiplier": "1.009473072784042724",
+      "collateralEligible": true,
+      "id": "SPY",
+      "name": "Ondo Tokenized SPDR S&P 500 ETF Trust",
+      "decimals": 18,
+      "ucid": 0,
+      "coinGeckoId": "",
+      "coinGeckoCurrency": "",
+      "bridgeInfoUrl": "",
+      "description": "",
+      "networks": {
+       "ethereum": {
+        "contractAddress": "0xfedc5f4a6c38211c1338aa411018dfaf26612c08",
+        "contractDecimals": 18
+       }
+      }
+     },
+     {
+      "currentSettleFee": "0",
+      "ledgerUnit": "shares",
+      "custodiedAs": "QQQon",
+      "sharesMultiplier": "1.004082430180208355",
+      "collateralEligible": true,
+      "id": "QQQ",
+      "name": "Ondo Tokenized Invesco QQQ Trust",
+      "decimals": 18,
+      "ucid": 0,
+      "coinGeckoId": "",
+      "coinGeckoCurrency": "",
+      "bridgeInfoUrl": "",
+      "description": "",
+      "networks": {
+       "ethereum": {
+        "contractAddress": "0x0e397938c1aa0680954093495b70a9f5e2249aba",
+        "contractDecimals": 18
+       }
+      }
+     }
+    ]
+   }
+  }
+ }
+}

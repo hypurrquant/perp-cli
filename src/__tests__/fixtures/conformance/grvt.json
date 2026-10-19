@@ -1,0 +1,1000 @@
+{
+ "schema": 1,
+ "name": "grvt",
+ "capturedAt": 1792406082561,
+ "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
+ "keep": [
+  "BTC",
+  "ETH",
+  "SOL"
+ ],
+ "http": [
+  {
+   "cell": "list",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/instruments",
+   "body": "{\"kind\":[\"PERPETUAL\"],\"is_active\":true,\"limit\":100000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "instrument": "BTC_USDT_Perp",
+      "instrument_hash": "0x030501",
+      "base": "BTC",
+      "quote": "USDT",
+      "kind": "PERPETUAL",
+      "venues": [
+       "ORDERBOOK",
+       "RFQ"
+      ],
+      "settlement_period": "PERPETUAL",
+      "base_decimals": 9,
+      "quote_decimals": 6,
+      "tick_size": "0.1",
+      "min_size": "0.001",
+      "create_time": "1790754389133825661",
+      "max_position_size": "1000.0",
+      "funding_interval_hours": 8,
+      "adjusted_funding_rate_cap": "0.3",
+      "adjusted_funding_rate_floor": "-0.3",
+      "min_notional": "100.0",
+      "asset_class": "CRYPTO",
+      "status": "ACTIVE"
+     },
+     {
+      "instrument": "ETH_USDT_Perp",
+      "instrument_hash": "0x030401",
+      "base": "ETH",
+      "quote": "USDT",
+      "kind": "PERPETUAL",
+      "venues": [
+       "ORDERBOOK",
+       "RFQ"
+      ],
+      "settlement_period": "PERPETUAL",
+      "base_decimals": 9,
+      "quote_decimals": 6,
+      "tick_size": "0.01",
+      "min_size": "0.001",
+      "create_time": "1790754389133837741",
+      "max_position_size": "30000.0",
+      "funding_interval_hours": 8,
+      "adjusted_funding_rate_cap": "0.3",
+      "adjusted_funding_rate_floor": "-0.3",
+      "min_notional": "20.0",
+      "asset_class": "CRYPTO",
+      "status": "ACTIVE"
+     },
+     {
+      "instrument": "SOL_USDT_Perp",
+      "instrument_hash": "0x030601",
+      "base": "SOL",
+      "quote": "USDT",
+      "kind": "PERPETUAL",
+      "venues": [
+       "ORDERBOOK",
+       "RFQ"
+      ],
+      "settlement_period": "PERPETUAL",
+      "base_decimals": 9,
+      "quote_decimals": 6,
+      "tick_size": "0.01",
+      "min_size": "0.01",
+      "create_time": "1790754389133890233",
+      "max_position_size": "300000.0",
+      "funding_interval_hours": 8,
+      "adjusted_funding_rate_cap": "0.375",
+      "adjusted_funding_rate_floor": "-0.375",
+      "min_notional": "5.0",
+      "asset_class": "CRYPTO",
+      "status": "ACTIVE"
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/ticker",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": {
+     "event_time": "1792406048163266634",
+     "instrument": "BTC_USDT_Perp",
+     "mark_price": "82183.500045248",
+     "index_price": "82210.413958302",
+     "last_price": "82196.2",
+     "last_size": "1.689",
+     "mid_price": "82153.25",
+     "best_bid_price": "82153.2",
+     "best_bid_size": "1.657",
+     "best_ask_price": "82153.3",
+     "best_ask_size": "3.927",
+     "funding_rate_8h_curr": "0.01",
+     "funding_rate_8h_avg": "0.01",
+     "interest_rate": "0.0",
+     "forward_price": "0.0",
+     "buy_volume_24h_b": "914.468",
+     "sell_volume_24h_b": "897.273",
+     "buy_volume_24h_q": "74851835.4435",
+     "sell_volume_24h_q": "73433568.5136",
+     "high_price": "83140.2",
+     "low_price": "80659.7",
+     "open_price": "82202.2",
+     "open_interest": "2519.16032092",
+     "long_short_ratio": "2.512500",
+     "funding_rate": "0.01",
+     "next_funding_time": "1792425600000000000",
+     "status": "ACTIVE",
+     "session": "REGULAR"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/ticker",
+   "body": "{\"instrument\":\"ETH_USDT_Perp\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": {
+     "event_time": "1792406048658447720",
+     "instrument": "ETH_USDT_Perp",
+     "mark_price": "2419.167757775",
+     "index_price": "2420.105117611",
+     "last_price": "2419.72",
+     "last_size": "26.503",
+     "mid_price": "2417.985",
+     "best_bid_price": "2417.98",
+     "best_bid_size": "2.782",
+     "best_ask_price": "2417.99",
+     "best_ask_size": "4.134",
+     "funding_rate_8h_curr": "0.0084",
+     "funding_rate_8h_avg": "0.0084",
+     "interest_rate": "0.0",
+     "forward_price": "0.0",
+     "buy_volume_24h_b": "13573.055",
+     "sell_volume_24h_b": "13639.094",
+     "buy_volume_24h_q": "32499162.58427",
+     "sell_volume_24h_q": "32655748.65104",
+     "high_price": "2445.44",
+     "low_price": "2328.49",
+     "open_price": "2423.49",
+     "open_interest": "58177.046232518",
+     "long_short_ratio": "3.977528",
+     "funding_rate": "0.0084",
+     "next_funding_time": "1792425600000000000",
+     "status": "ACTIVE",
+     "session": "REGULAR"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/ticker",
+   "body": "{\"instrument\":\"SOL_USDT_Perp\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": {
+     "event_time": "1792406050162174023",
+     "instrument": "SOL_USDT_Perp",
+     "mark_price": "104.52812513",
+     "index_price": "104.601340435",
+     "last_price": "104.48",
+     "last_size": "590.61",
+     "mid_price": "104.485",
+     "best_bid_price": "104.48",
+     "best_bid_size": "1241.35",
+     "best_ask_price": "104.49",
+     "best_ask_size": "47.85",
+     "funding_rate_8h_curr": "0.01",
+     "funding_rate_8h_avg": "0.01",
+     "interest_rate": "0.0",
+     "forward_price": "0.0",
+     "buy_volume_24h_b": "151201.8",
+     "sell_volume_24h_b": "151418.42",
+     "buy_volume_24h_q": "15624739.6305",
+     "sell_volume_24h_q": "15646811.1036",
+     "high_price": "106.18",
+     "low_price": "100.47",
+     "open_price": "104.25",
+     "open_interest": "409948.47",
+     "long_short_ratio": "3.224138",
+     "funding_rate": "0.01",
+     "next_funding_time": "1792425600000000000",
+     "status": "ACTIVE",
+     "session": "REGULAR"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/margin_rules",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "37f0e55e6ca0b3fe"
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/margin_rules",
+   "body": "{\"instrument\":\"ETH_USDT_Perp\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "14c7f465ef5402f2"
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/margin_rules",
+   "body": "{\"instrument\":\"SOL_USDT_Perp\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "93be38189fecdaf1"
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/margin_rules",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "37f0e55e6ca0b3fe"
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/margin_rules",
+   "body": "{\"instrument\":\"ETH_USDT_Perp\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "14c7f465ef5402f2"
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/margin_rules",
+   "body": "{\"instrument\":\"SOL_USDT_Perp\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "93be38189fecdaf1"
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/margin_rules",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "37f0e55e6ca0b3fe"
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/funding",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"limit\":5}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "instrument": "BTC_USDT_Perp",
+      "funding_rate": "0.01",
+      "funding_time": "1792396800000000000",
+      "mark_price": "82702.409560085",
+      "funding_rate_8_h_avg": "0.01",
+      "funding_interval_hours": 8
+     },
+     {
+      "instrument": "BTC_USDT_Perp",
+      "funding_rate": "0.01",
+      "funding_time": "1792368000000000000",
+      "mark_price": "82084.100041092",
+      "funding_rate_8_h_avg": "0.01",
+      "funding_interval_hours": 8
+     },
+     {
+      "instrument": "BTC_USDT_Perp",
+      "funding_rate": "0.01",
+      "funding_time": "1792339200000000000",
+      "mark_price": "81140.410874762",
+      "funding_rate_8_h_avg": "0.01",
+      "funding_interval_hours": 8
+     },
+     {
+      "instrument": "BTC_USDT_Perp",
+      "funding_rate": "0.0075",
+      "funding_time": "1792310400000000000",
+      "mark_price": "81649.878423106",
+      "funding_rate_8_h_avg": "0.0075",
+      "funding_interval_hours": 8
+     },
+     {
+      "instrument": "BTC_USDT_Perp",
+      "funding_rate": "0.01",
+      "funding_time": "1792281600000000000",
+      "mark_price": "81457.600008156",
+      "funding_rate_8_h_avg": "0.01",
+      "funding_interval_hours": 8
+     }
+    ],
+    "next": "eyJmdW5kaW5nVGltZSI6MTc5MjI4MTYwMDAwMDAwMDAwMH0"
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/book",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"depth\":50}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": {
+     "event_time": "1792406081700000000",
+     "instrument": "BTC_USDT_Perp",
+     "bids": [
+      {
+       "price": "82158.2",
+       "size": "1.49",
+       "num_orders": 2
+      },
+      {
+       "price": "82157.2",
+       "size": "2.434",
+       "num_orders": 1
+      },
+      {
+       "price": "82156.2",
+       "size": "0.012",
+       "num_orders": 1
+      },
+      {
+       "price": "82154.2",
+       "size": "0.204",
+       "num_orders": 2
+      },
+      {
+       "price": "82152.2",
+       "size": "0.018",
+       "num_orders": 1
+      },
+      {
+       "price": "82151.8",
+       "size": "0.013",
+       "num_orders": 1
+      },
+      {
+       "price": "82076.2",
+       "size": "0.073",
+       "num_orders": 1
+      },
+      {
+       "price": "82060.5",
+       "size": "0.073",
+       "num_orders": 1
+      },
+      {
+       "price": "82059.2",
+       "size": "0.121",
+       "num_orders": 1
+      },
+      {
+       "price": "82057.2",
+       "size": "1.198",
+       "num_orders": 1
+      },
+      {
+       "price": "82050.0",
+       "size": "0.121",
+       "num_orders": 1
+      },
+      {
+       "price": "82049.5",
+       "size": "0.073",
+       "num_orders": 1
+      }
+     ],
+     "asks": [
+      {
+       "price": "82158.3",
+       "size": "3.964",
+       "num_orders": 6
+      },
+      {
+       "price": "82160.1",
+       "size": "0.032",
+       "num_orders": 2
+      },
+      {
+       "price": "82160.4",
+       "size": "2.434",
+       "num_orders": 1
+      },
+      {
+       "price": "82161.4",
+       "size": "0.036",
+       "num_orders": 1
+      },
+      {
+       "price": "82161.8",
+       "size": "0.736",
+       "num_orders": 2
+      },
+      {
+       "price": "82162.7",
+       "size": "0.142",
+       "num_orders": 1
+      },
+      {
+       "price": "83171.0",
+       "size": "0.004",
+       "num_orders": 2
+      },
+      {
+       "price": "83200.0",
+       "size": "0.012",
+       "num_orders": 1
+      },
+      {
+       "price": "83204.5",
+       "size": "0.013",
+       "num_orders": 1
+      },
+      {
+       "price": "83281.3",
+       "size": "0.002",
+       "num_orders": 1
+      },
+      {
+       "price": "83302.9",
+       "size": "0.002",
+       "num_orders": 1
+      },
+      {
+       "price": "83379.0",
+       "size": "0.002",
+       "num_orders": 1
+      }
+     ]
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/trade",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"limit\":5}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "event_time": "1792406006551034564",
+      "instrument": "BTC_USDT_Perp",
+      "is_taker_buyer": true,
+      "size": "1.29",
+      "price": "82167.5",
+      "mark_price": "82159.300028786",
+      "index_price": "82192.916550538",
+      "interest_rate": "0.0",
+      "forward_price": "0.0",
+      "trade_id": "208376523-1",
+      "venue": "ORDERBOOK",
+      "is_rpi": false
+     },
+     {
+      "event_time": "1792406018135948118",
+      "instrument": "BTC_USDT_Perp",
+      "is_taker_buyer": true,
+      "size": "3.601",
+      "price": "82217.3",
+      "mark_price": "82184.218164295",
+      "index_price": "82213.694376634",
+      "interest_rate": "0.0",
+      "forward_price": "0.0",
+      "trade_id": "208376580-1",
+      "venue": "ORDERBOOK",
+      "is_rpi": false
+     },
+     {
+      "event_time": "1792406039697485584",
+      "instrument": "BTC_USDT_Perp",
+      "is_taker_buyer": false,
+      "size": "1.689",
+      "price": "82196.2",
+      "mark_price": "82196.267168877",
+      "index_price": "82223.525500628",
+      "interest_rate": "0.0",
+      "forward_price": "0.0",
+      "trade_id": "208376730-1",
+      "venue": "ORDERBOOK",
+      "is_rpi": false
+     },
+     {
+      "event_time": "1792406051789769104",
+      "instrument": "BTC_USDT_Perp",
+      "is_taker_buyer": false,
+      "size": "3.193",
+      "price": "82172.5",
+      "mark_price": "82158.829364836",
+      "index_price": "82186.78436017",
+      "interest_rate": "0.0",
+      "forward_price": "0.0",
+      "trade_id": "208376806-1",
+      "venue": "ORDERBOOK",
+      "is_rpi": false
+     },
+     {
+      "event_time": "1792406077863102867",
+      "instrument": "BTC_USDT_Perp",
+      "is_taker_buyer": false,
+      "size": "0.005",
+      "price": "82187.8",
+      "mark_price": "82153.200008224",
+      "index_price": "82177.049790835",
+      "interest_rate": "0.0",
+      "forward_price": "0.0",
+      "trade_id": "208376966-1",
+      "venue": "ORDERBOOK",
+      "is_rpi": false
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_1_H\",\"type\":\"TRADE\",\"start_time\":\"1792319682315000000\",\"end_time\":\"1792406082315000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792404000000000000",
+      "close_time": "1792405980000000000",
+      "open": "82766.3",
+      "close": "82212.0",
+      "high": "82850.3",
+      "low": "82100.0",
+      "volume_b": "80.167",
+      "volume_q": "6623540.9016",
+      "trades": 87,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792400400000000000",
+      "close_time": "1792404000000000000",
+      "open": "82813.8",
+      "close": "82766.3",
+      "high": "83069.8",
+      "low": "82712.9",
+      "volume_b": "70.642",
+      "volume_q": "5849442.692",
+      "trades": 63,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792396800000000000",
+      "close_time": "1792400400000000000",
+      "open": "82706.5",
+      "close": "82813.8",
+      "high": "82920.6",
+      "low": "82574.1",
+      "volume_b": "63.237",
+      "volume_q": "5231151.8621",
+      "trades": 92,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792393200000000000",
+      "close_time": "1792396800000000000",
+      "open": "82830.1",
+      "close": "82706.5",
+      "high": "83140.2",
+      "low": "82698.8",
+      "volume_b": "156.812",
+      "volume_q": "12994195.5579",
+      "trades": 202,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792389600000000000",
+      "close_time": "1792393200000000000",
+      "open": "82698.1",
+      "close": "82830.1",
+      "high": "82887.3",
+      "low": "82691.1",
+      "volume_b": "73.552",
+      "volume_q": "6088112.3344",
+      "trades": 88,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792386000000000000",
+      "close_time": "1792389600000000000",
+      "open": "82757.5",
+      "close": "82698.1",
+      "high": "82757.5",
+      "low": "82518.9",
+      "volume_b": "49.043",
+      "volume_q": "4051133.2137",
+      "trades": 97,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792339200000000000",
+      "close_time": "1792342800000000000",
+      "open": "81095.0",
+      "close": "81038.1",
+      "high": "81200.0",
+      "low": "81014.2",
+      "volume_b": "39.591",
+      "volume_q": "3210576.9725",
+      "trades": 33,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792335600000000000",
+      "close_time": "1792339200000000000",
+      "open": "81075.7",
+      "close": "81095.0",
+      "high": "81198.3",
+      "low": "81000.0",
+      "volume_b": "89.589",
+      "volume_q": "7266341.4578",
+      "trades": 61,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792332000000000000",
+      "close_time": "1792335600000000000",
+      "open": "81504.8",
+      "close": "81075.7",
+      "high": "81520.2",
+      "low": "81021.1",
+      "volume_b": "237.871",
+      "volume_q": "19322225.2807",
+      "trades": 156,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792328400000000000",
+      "close_time": "1792332000000000000",
+      "open": "81958.6",
+      "close": "81504.8",
+      "high": "81958.6",
+      "low": "81293.5",
+      "volume_b": "171.498",
+      "volume_q": "13981511.4756",
+      "trades": 148,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792324800000000000",
+      "close_time": "1792328400000000000",
+      "open": "82010.4",
+      "close": "81958.6",
+      "high": "82064.3",
+      "low": "81912.3",
+      "volume_b": "50.955",
+      "volume_q": "4176167.7044",
+      "trades": 36,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792321200000000000",
+      "close_time": "1792324800000000000",
+      "open": "82101.1",
+      "close": "82010.4",
+      "high": "82102.7",
+      "low": "81978.2",
+      "volume_b": "33.019",
+      "volume_q": "2709557.7745",
+      "trades": 32,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  }
+ ],
+ "ws": [],
+ "bodies": {
+  "37f0e55e6ca0b3fe": {
+   "instrument": "BTC_USDT_Perp",
+   "max_position_size": "1000.0",
+   "risk_brackets": [
+    {
+     "tier": 1,
+     "notional_floor": "0.0",
+     "notional_cap": "600000.0",
+     "maintenance_margin_rate": "0.01",
+     "initial_margin_rate": "0.02",
+     "max_leverage": 50,
+     "cumulative_maintenance_amount": "0.0"
+    },
+    {
+     "tier": 2,
+     "notional_floor": "600000.0",
+     "notional_cap": "1600000.0",
+     "maintenance_margin_rate": "0.02",
+     "initial_margin_rate": "0.04",
+     "max_leverage": 25,
+     "cumulative_maintenance_amount": "6000.0"
+    },
+    {
+     "tier": 3,
+     "notional_floor": "1600000.0",
+     "notional_cap": "4000000.0",
+     "maintenance_margin_rate": "0.025",
+     "initial_margin_rate": "0.05",
+     "max_leverage": 20,
+     "cumulative_maintenance_amount": "14000.0"
+    },
+    {
+     "tier": 4,
+     "notional_floor": "4000000.0",
+     "notional_cap": "10000000.0",
+     "maintenance_margin_rate": "0.05",
+     "initial_margin_rate": "0.1",
+     "max_leverage": 10,
+     "cumulative_maintenance_amount": "114000.0"
+    },
+    {
+     "tier": 5,
+     "notional_floor": "10000000.0",
+     "notional_cap": "20000000.0",
+     "maintenance_margin_rate": "0.1",
+     "initial_margin_rate": "0.2",
+     "max_leverage": 5,
+     "cumulative_maintenance_amount": "614000.0"
+    },
+    {
+     "tier": 6,
+     "notional_floor": "20000000.0",
+     "notional_cap": "50000000.0",
+     "maintenance_margin_rate": "0.125",
+     "initial_margin_rate": "0.25",
+     "max_leverage": 4,
+     "cumulative_maintenance_amount": "1114000.0"
+    },
+    {
+     "tier": 7,
+     "notional_floor": "50000000.0",
+     "notional_cap": "80000000.0",
+     "maintenance_margin_rate": "0.16665",
+     "initial_margin_rate": "0.3333",
+     "max_leverage": 3,
+     "cumulative_maintenance_amount": "3196500.0"
+    },
+    {
+     "tier": 8,
+     "notional_floor": "80000000.0",
+     "notional_cap": "101000000.0",
+     "maintenance_margin_rate": "0.25",
+     "initial_margin_rate": "0.5",
+     "max_leverage": 2,
+     "cumulative_maintenance_amount": "9864500.0"
+    },
+    {
+     "tier": 9,
+     "notional_floor": "101000000.0",
+     "maintenance_margin_rate": "0.5",
+     "initial_margin_rate": "1.0",
+     "max_leverage": 1,
+     "cumulative_maintenance_amount": "35114500.0"
+    }
+   ]
+  },
+  "14c7f465ef5402f2": {
+   "instrument": "ETH_USDT_Perp",
+   "max_position_size": "30000.0",
+   "risk_brackets": [
+    {
+     "tier": 1,
+     "notional_floor": "0.0",
+     "notional_cap": "600000.0",
+     "maintenance_margin_rate": "0.01",
+     "initial_margin_rate": "0.02",
+     "max_leverage": 50,
+     "cumulative_maintenance_amount": "0.0"
+    },
+    {
+     "tier": 2,
+     "notional_floor": "600000.0",
+     "notional_cap": "1600000.0",
+     "maintenance_margin_rate": "0.02",
+     "initial_margin_rate": "0.04",
+     "max_leverage": 25,
+     "cumulative_maintenance_amount": "6000.0"
+    },
+    {
+     "tier": 3,
+     "notional_floor": "1600000.0",
+     "notional_cap": "4000000.0",
+     "maintenance_margin_rate": "0.025",
+     "initial_margin_rate": "0.05",
+     "max_leverage": 20,
+     "cumulative_maintenance_amount": "14000.0"
+    },
+    {
+     "tier": 4,
+     "notional_floor": "4000000.0",
+     "notional_cap": "10000000.0",
+     "maintenance_margin_rate": "0.05",
+     "initial_margin_rate": "0.1",
+     "max_leverage": 10,
+     "cumulative_maintenance_amount": "114000.0"
+    },
+    {
+     "tier": 5,
+     "notional_floor": "10000000.0",
+     "notional_cap": "20000000.0",
+     "maintenance_margin_rate": "0.1",
+     "initial_margin_rate": "0.2",
+     "max_leverage": 5,
+     "cumulative_maintenance_amount": "614000.0"
+    },
+    {
+     "tier": 6,
+     "notional_floor": "20000000.0",
+     "notional_cap": "50000000.0",
+     "maintenance_margin_rate": "0.125",
+     "initial_margin_rate": "0.25",
+     "max_leverage": 4,
+     "cumulative_maintenance_amount": "1114000.0"
+    },
+    {
+     "tier": 7,
+     "notional_floor": "50000000.0",
+     "notional_cap": "80000000.0",
+     "maintenance_margin_rate": "0.16665",
+     "initial_margin_rate": "0.3333",
+     "max_leverage": 3,
+     "cumulative_maintenance_amount": "3196500.0"
+    },
+    {
+     "tier": 8,
+     "notional_floor": "80000000.0",
+     "notional_cap": "101000000.0",
+     "maintenance_margin_rate": "0.25",
+     "initial_margin_rate": "0.5",
+     "max_leverage": 2,
+     "cumulative_maintenance_amount": "9864500.0"
+    },
+    {
+     "tier": 9,
+     "notional_floor": "101000000.0",
+     "maintenance_margin_rate": "0.5",
+     "initial_margin_rate": "1.0",
+     "max_leverage": 1,
+     "cumulative_maintenance_amount": "35114500.0"
+    }
+   ]
+  },
+  "93be38189fecdaf1": {
+   "instrument": "SOL_USDT_Perp",
+   "max_position_size": "300000.0",
+   "risk_brackets": [
+    {
+     "tier": 1,
+     "notional_floor": "0.0",
+     "notional_cap": "240000.0",
+     "maintenance_margin_rate": "0.01",
+     "initial_margin_rate": "0.05",
+     "max_leverage": 20,
+     "cumulative_maintenance_amount": "0.0"
+    },
+    {
+     "tier": 2,
+     "notional_floor": "240000.0",
+     "notional_cap": "640000.0",
+     "maintenance_margin_rate": "0.02",
+     "initial_margin_rate": "0.05",
+     "max_leverage": 20,
+     "cumulative_maintenance_amount": "2400.0"
+    },
+    {
+     "tier": 3,
+     "notional_floor": "640000.0",
+     "notional_cap": "1600000.0",
+     "maintenance_margin_rate": "0.025",
+     "initial_margin_rate": "0.05",
+     "max_leverage": 20,
+     "cumulative_maintenance_amount": "5600.0"
+    },
+    {
+     "tier": 4,
+     "notional_floor": "1600000.0",
+     "notional_cap": "4000000.0",
+     "maintenance_margin_rate": "0.05",
+     "initial_margin_rate": "0.1",
+     "max_leverage": 10,
+     "cumulative_maintenance_amount": "45600.0"
+    },
+    {
+     "tier": 5,
+     "notional_floor": "4000000.0",
+     "notional_cap": "8000000.0",
+     "maintenance_margin_rate": "0.1",
+     "initial_margin_rate": "0.2",
+     "max_leverage": 5,
+     "cumulative_maintenance_amount": "245600.0"
+    },
+    {
+     "tier": 6,
+     "notional_floor": "8000000.0",
+     "notional_cap": "20000000.0",
+     "maintenance_margin_rate": "0.125",
+     "initial_margin_rate": "0.25",
+     "max_leverage": 4,
+     "cumulative_maintenance_amount": "445600.0"
+    },
+    {
+     "tier": 7,
+     "notional_floor": "20000000.0",
+     "notional_cap": "32000000.0",
+     "maintenance_margin_rate": "0.2",
+     "initial_margin_rate": "0.3333",
+     "max_leverage": 3,
+     "cumulative_maintenance_amount": "1945600.0"
+    },
+    {
+     "tier": 8,
+     "notional_floor": "32000000.0",
+     "notional_cap": "41000000.0",
+     "maintenance_margin_rate": "0.25",
+     "initial_margin_rate": "0.5",
+     "max_leverage": 2,
+     "cumulative_maintenance_amount": "3545600.0"
+    },
+    {
+     "tier": 9,
+     "notional_floor": "41000000.0",
+     "maintenance_margin_rate": "0.5",
+     "initial_margin_rate": "1.0",
+     "max_leverage": 1,
+     "cumulative_maintenance_amount": "13795600.0"
+    }
+   ]
+  }
+ }
+}
