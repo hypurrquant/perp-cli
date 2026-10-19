@@ -237,7 +237,7 @@ function connect() {
 function fmt(v, d=2) { const n=Number(v)||0; return n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}); }
 function usdOrDash(v, d=2) { return v==null ? '-' : '$'+fmt(v,d); }
 // Market row cells: prices in the row's quote currency (QFEX SAMSUNG-KRW: "220,150.00 KRW", never $); OI is BASE units (never $); funding null = "-" (not 0%).
-function marketCells(m) { const q=(typeof m.quoteAsset==='string'&&m.quoteAsset!=='USD')?m.quoteAsset:null; const px=(v,d=2)=>v==null?'-':(q===null?'$'+fmt(v,d):fmt(v,d)+' '+q); const vol=m.volume24h==null&&typeof m.volume24hQuote==='string'?px(m.volume24hQuote,0):usdOrDash(m.volume24h,0); const base=String(m.symbol).split(':').pop().replace(/-PERP$/i,''); return { mark: px(m.markPrice), index: px(m.indexPrice), funding: m.fundingRate==null?'-':(Number(m.fundingRate)*100).toFixed(4)+'%', volume: vol, oi: m.openInterest==null?'-':Number(m.openInterest).toLocaleString('en-US',{maximumFractionDigits:4})+' '+base }; }
+function marketCells(m) { const q=(typeof m.quoteAsset==='string'&&m.quoteAsset!=='USD')?escHtml(m.quoteAsset):null; const px=(v,d=2)=>v==null?'-':(q===null?'$'+fmt(v,d):fmt(v,d)+' '+q); const vol=m.volume24h==null&&typeof m.volume24hQuote==='string'?px(m.volume24hQuote,0):usdOrDash(m.volume24h,0); const base=escHtml(String(m.symbol).split(':').pop().replace(/-PERP$/i,'')); return { mark: px(m.markPrice), index: px(m.indexPrice), funding: m.fundingRate==null?'-':(Number(m.fundingRate)*100).toFixed(4)+'%', volume: vol, oi: m.openInterest==null?'-':Number(m.openInterest).toLocaleString('en-US',{maximumFractionDigits:4})+' '+base }; }
 function pnlClass(v) { return Number(v)>=0?'pnl-pos':'pnl-neg'; }
 function pnlSign(v) { const n=Number(v)||0; return n>=0?'+$'+fmt(Math.abs(n)):'-$'+fmt(Math.abs(n)); }
 function rateClass(v) { const n=Number(v)||0; return n>0?'rate-positive':n<0?'rate-negative':'rate-neutral'; }
@@ -246,7 +246,8 @@ function spreadClass(v) { return v>=50?'spread-high':v>=20?'spread-mid':'spread-
 const NA = '<span style="color:var(--yellow,#e5c07b)">unavailable</span>';
 function usdOrNA(v, d=2) { return v==null ? NA : '$'+fmt(v,d); }
 function pnlOrNA(v) { return v==null ? NA : pnlSign(v); }
-function escHtml(v) { return String(v).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]); }
+// Every venue-supplied string (symbol, quoteAsset, dex, exchange, order fields) goes through this before innerHTML.
+function escHtml(v) { return String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
 
 // ── Portfolio Rendering ──
 function renderTotals(t) {
@@ -328,16 +329,16 @@ function renderPanels(exchanges) {
         const notional = p.markPrice == null ? null : Math.abs(Number(p.size)) * Number(p.markPrice);
         const margin = notional == null ? null : p.leverage > 0 ? notional / p.leverage : notional;
         const roe = margin != null && margin > 0 && p.unrealizedPnl != null ? (Number(p.unrealizedPnl) / margin * 100) : null;
-        return \`<tr>\${isHL?\`<td style="color:var(--purple);font-size:11px">\${dex}</td>\`:''}<td>\${sym}</td><td class="side-\${p.side}">\${p.side.toUpperCase()}</td><td>\${p.size}</td><td>\${usdOrNA(p.entryPrice)}</td><td>\${usdOrNA(p.markPrice)}</td><td>\${(p.liquidationPrice==null||p.liquidationPrice==='N/A')?'-':'$'+fmt(p.liquidationPrice)}</td><td style="color:var(--muted)">\${usdOrNA(notional)}</td><td class="\${pnlClass(p.unrealizedPnl)}">\${pnlOrNA(p.unrealizedPnl)}</td><td class="\${pnlClass(p.unrealizedPnl)}">\${roe==null?NA:(roe>=0?'+':'')+fmt(roe,1)+'%'}</td><td>\${p.leverage}x</td></tr>\`;
+        return \`<tr>\${isHL?\`<td style="color:var(--purple);font-size:11px">\${escHtml(dex)}</td>\`:''}<td>\${escHtml(sym)}</td><td class="side-\${escHtml(p.side)}">\${escHtml(String(p.side).toUpperCase())}</td><td>\${escHtml(p.size)}</td><td>\${usdOrNA(p.entryPrice)}</td><td>\${usdOrNA(p.markPrice)}</td><td>\${(p.liquidationPrice==null||p.liquidationPrice==='N/A')?'-':'$'+fmt(p.liquidationPrice)}</td><td style="color:var(--muted)">\${usdOrNA(notional)}</td><td class="\${pnlClass(p.unrealizedPnl)}">\${pnlOrNA(p.unrealizedPnl)}</td><td class="\${pnlClass(p.unrealizedPnl)}">\${roe==null?NA:(roe>=0?'+':'')+fmt(roe,1)+'%'}</td><td>\${p.leverage}x</td></tr>\`;
       }).join('')}</tbody></table>\`:(posKnown?'<div class="empty-msg">No open positions</div>':'<div class="empty-msg">Positions '+NA+'</div>')}
       <div class="section-title">Open Orders (\${ordKnown ? filteredOrders.length : '?'})</div>
       \${filteredOrders.length?\`<table><thead><tr>\${isHL?'<th>DEX</th>':''}<th>Symbol</th><th>Side</th><th>Type</th><th>Price</th><th>Size</th><th>Filled</th><th>Status</th></tr></thead><tbody>\${filteredOrders.map(o=>{
         const dex = getDex(o.symbol);
         const sym = o.symbol.includes(':') ? o.symbol.split(':').slice(1).join(':') : o.symbol;
-        return \`<tr>\${isHL?\`<td style="color:var(--purple);font-size:11px">\${dex}</td>\`:''}<td>\${sym}</td><td class="side-\${o.side}">\${o.side.toUpperCase()}</td><td>\${o.type}</td><td>$\${fmt(o.price)}</td><td>\${o.size}</td><td>\${o.filled}</td><td>\${o.status}</td></tr>\`;
+        return \`<tr>\${isHL?\`<td style="color:var(--purple);font-size:11px">\${escHtml(dex)}</td>\`:''}<td>\${escHtml(sym)}</td><td class="side-\${escHtml(o.side)}">\${escHtml(String(o.side).toUpperCase())}</td><td>\${escHtml(o.type)}</td><td>$\${fmt(o.price)}</td><td>\${escHtml(o.size)}</td><td>\${escHtml(o.filled)}</td><td>\${escHtml(o.status)}</td></tr>\`;
       }).join('')}</tbody></table>\`:(ordKnown?'<div class="empty-msg">No open orders</div>':'<div class="empty-msg">Open orders '+NA+'</div>')}
       <div class="section-title">Markets (Top 10)</div>
-      \${ex.topMarkets.length?\`<table><thead><tr><th>Symbol</th><th>Mark</th><th>Index</th><th>Funding</th><th>24h Vol</th><th>OI</th><th>Max Lev</th></tr></thead><tbody>\${ex.topMarkets.map(m=>{const fr=Number(m.fundingRate);const c=marketCells(m);return\`<tr><td>\${m.symbol}</td><td>\${c.mark}</td><td>\${c.index}</td><td class="\${rateClass(fr)}">\${c.funding}</td><td>\${c.volume}</td><td>\${c.oi}</td><td>\${m.maxLeverage==null?'-':m.maxLeverage+'x'}</td></tr>\`;}).join('')}</tbody></table>\`:'<div class="empty-msg">No market data</div>'}
+      \${ex.topMarkets.length?\`<table><thead><tr><th>Symbol</th><th>Mark</th><th>Index</th><th>Funding</th><th>24h Vol</th><th>OI</th><th>Max Lev</th></tr></thead><tbody>\${ex.topMarkets.map(m=>{const fr=Number(m.fundingRate);const c=marketCells(m);return\`<tr><td>\${escHtml(m.symbol)}</td><td>\${c.mark}</td><td>\${c.index}</td><td class="\${rateClass(fr)}">\${c.funding}</td><td>\${c.volume}</td><td>\${c.oi}</td><td>\${m.maxLeverage==null?'-':m.maxLeverage+'x'}</td></tr>\`;}).join('')}</tbody></table>\`:'<div class="empty-msg">No market data</div>'}
     </div>\`;
   }).join('');
 
@@ -422,7 +423,7 @@ function renderArb() {
       const barColor = o.spreadAnnual>=50?'var(--green)':o.spreadAnnual>=20?'var(--yellow)':'var(--muted)';
       const bestMark = o.rates.reduce((best,r) => r.markPrice>0?r.markPrice:best, 0);
       return \`<tr>
-        <td style="font-weight:600">\${o.symbol}</td>
+        <td style="font-weight:600">\${escHtml(o.symbol)}</td>
         <td>
           <div class="\${spreadClass(o.spreadAnnual)}">\${fmt(o.spreadAnnual,1)}%</div>
           <div class="spread-bar"><div class="spread-bar-fill" style="width:\${barW}%;background:\${barColor}"></div></div>
@@ -517,7 +518,7 @@ function renderEvents() {
   if (!events.length) { el.innerHTML='<div class="empty-msg">Waiting for events...</div>'; return; }
   el.innerHTML = events.map(e => {
     const cls = e.isCrit?'crit':e.isWarn?'warn':'';
-    return \`<div class="event"><span class="event-time">\${e.time}</span> <span class="event-type \${cls}">[\${e.type}]</span> <span>\${e.exchange}</span> <span style="color:var(--muted)">\${JSON.stringify(e.data).slice(0,120)}</span></div>\`;
+    return \`<div class="event"><span class="event-time">\${e.time}</span> <span class="event-type \${cls}">[\${e.type}]</span> <span>\${escHtml(e.exchange)}</span> <span style="color:var(--muted)">\${escHtml(JSON.stringify(e.data).slice(0,120))}</span></div>\`;
   }).join('');
 }
 
