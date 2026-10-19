@@ -83,7 +83,11 @@ describe("Aster getFundingHistory — no fabricated rows (reported from the Hypu
     await expect((await adapter(() => null)).getFundingHistory("BTC", 5)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
     await expect((await adapter(() => [{ fundingRate: "0.0001" }])).getFundingHistory("BTC", 5)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
     expect(await (await adapter(() => [{ fundingTime: 1700000000000, fundingRate: "0.0001", markPrice: "83000" }])).getFundingHistory("BTC", 5))
-      .toEqual([{ time: 1700000000000, rate: "0.0001", price: "83000" }]);
+      .toEqual([{ time: 1700000000000, rate: "0.0001", price: "83000", intervalHours: null, rateKind: "lastSettled" }]);
+    // The market's interval from /fapi/v3/fundingInfo labels each row.
+    const a = await adapter(() => [{ fundingTime: 1700000000000, fundingRate: "0.0001", markPrice: "83000" }]);
+    (a as unknown as { _fundingHoursCache: Map<string, number> })._fundingHoursCache.set("BTC", 4);
+    expect((await a.getFundingHistory("BTC", 5))[0]).toMatchObject({ intervalHours: 4, rateKind: "lastSettled" });
   });
 });
 

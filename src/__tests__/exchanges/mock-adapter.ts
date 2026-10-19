@@ -8,6 +8,7 @@ import type {
   ExchangeFundingPayment,
   ExchangeKline,
   ExchangePublicTrade,
+  FundingHistoryRow,
 } from "../../exchanges/interface.js";
 
 /**
@@ -106,7 +107,7 @@ export class MockAdapter implements ExchangeAdapter {
     return [];
   }
 
-  async getFundingHistory(symbol: string, limit?: number): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(symbol: string, limit?: number): Promise<FundingHistoryRow[]> {
     this.record("getFundingHistory", [symbol, limit]);
     return [];
   }

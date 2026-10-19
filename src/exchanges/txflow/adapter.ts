@@ -10,6 +10,7 @@ import { PerpError } from "../../errors.js";
 import type {
   ExchangeAdapter, ExchangeBalance, ExchangeFundingPayment, ExchangeKline, ExchangeMarketInfo, ExchangeOrder,
   ExchangePosition, ExchangeTrade, ExchangePublicTrade,
+  FundingHistoryRow
 } from "../interface.js";
 import { unsupported } from "../trading-v2.js";
 import { roleUnsupported, networkConfig, type VenueDefinition } from "../venue.js";
@@ -83,7 +84,7 @@ export class TxflowPublicAdapter implements ExchangeAdapter {
     });
   }
 
-  async getFundingHistory(): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(): Promise<FundingHistoryRow[]> {
     throw unsupported("txflow", "fundingHistory", "TxFlow's unofficial API refuses funding-history reads (HTTP 403)",
       "Current TxFlow funding (unverified, per hour): perp -e txflow market info <symbol>, or perp arb scan --rates --include-unverified");
   }
