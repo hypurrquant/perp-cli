@@ -83,7 +83,8 @@ export function isTriggerOrderCapable(adapter: ExchangeAdapter): adapter is Exch
 
 export function isDexCapable(adapter: ExchangeAdapter): adapter is ExchangeAdapter & DexCapable {
   return typeof (adapter as unknown as Record<string, unknown>).setDex === "function"
-    && typeof (adapter as unknown as Record<string, unknown>).listDeployedDexes === "function";
+    && typeof (adapter as unknown as Record<string, unknown>).listDeployedDexes === "function"
+    && typeof (adapter as unknown as Record<string, unknown>).forDex === "function";
 }
 
 export function isSubAccountCapable(adapter: ExchangeAdapter): adapter is ExchangeAdapter & SubAccountCapable {
