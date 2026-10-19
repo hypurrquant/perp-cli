@@ -106,7 +106,7 @@ describe("market channels", () => {
 describe("unknown symbol hints", () => {
   it.each([
     ["arcus", arcus, ARCUS_ROUTES, "BTC", ["BTC-USD"]],
-    ["aster", aster, ASTER_ROUTES, "BTC", ["BTCUSDT", "BTCUSD1"]],
+    ["aster", aster, ASTER_ROUTES, "BTC", ["BTCUSDT"]], // BTCUSD1 is canonical null (not a second BTC): no base hint
     ["aster (case)", aster, ASTER_ROUTES, "btcusdt", ["BTCUSDT"]],
     ["pacifica (case)", pacifica, PACIFICA_ROUTES, "btc", ["BTC"]],
   ] as const)("%s → a did-you-mean hint from the directory", async (_n, codec, routes, symbol, want) => {

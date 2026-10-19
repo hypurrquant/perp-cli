@@ -19,9 +19,9 @@
  *   pacifica: crypto-centric; PACIFICA_NON_CRYPTO lists every non-crypto perp
  *     listed on 2026-09-30.
  *   aster: exchangeInfo `underlyingSubType` (STOCK / ETF / Commodities / pre-launch).
- *   AMBIGUOUS tickers are excluded with a warning so they cannot produce a false
- *   cross-venue match (SPX = the SPX6900 token, whose ticker equals the S&P 500
- *   canonical key).
+ *   Ambiguous tickers (UNCLASSIFIED_TICKERS, src/ws/unclassified.ts — SPX = the SPX6900
+ *   token, whose ticker equals the S&P 500 canonical key) are listed as "unclassified"
+ *   (canonical null) so they cannot produce a false cross-venue match.
  *
  * Fields a venue does not publish on this path are null (HL has no fixed tick
  * size; Aster leverage brackets need a signed call; Aster OI is per-symbol only).
@@ -30,6 +30,7 @@
 import { HL_MIN_ORDER_VALUE_USD } from "../constants.js";
 import { isPacificaPerpetual } from "../ws/pacifica-instrument.js";
 import { asterCliSymbol, asterMatchable, isAsterListedPerpetual } from "../ws/aster-market.js";
+import { isUnclassifiedTicker } from "../ws/unclassified.js";
 import { PerpError } from "../errors.js";
 import { venueRateString } from "../utils/numeric.js";
 import { assertOk } from "../api/public/_http.js";
@@ -48,9 +49,8 @@ interface Row {
 
 // ── Classification ──
 
-const AMBIGUOUS: ReadonlySet<string> = new Set(["SPX"]);
 
-/** Pacifica non-crypto perps (live /info 2026-09-30). BP / CHIP: ticker collides with a listed equity/ETF. */
+/** Pacifica non-crypto perps (live /info 2026-09-30). Ambiguous BP / CHIP / SPX: UNCLASSIFIED_TICKERS. */
 const PACIFICA_NON_CRYPTO: Readonly<Record<string, AssetClass>> = {
   NVDA: "equity", TSLA: "equity", GOOGL: "equity", PLTR: "equity", HOOD: "equity", CRCL: "equity",
   SPCX: "equity", SKHYNIX: "equity", SAMSUNG: "equity", MSTR: "equity", MU: "equity", SNDK: "equity",
@@ -61,22 +61,21 @@ const PACIFICA_NON_CRYPTO: Readonly<Record<string, AssetClass>> = {
   USDJPY: "fx", EURUSD: "fx",
   SP500: "index",
 };
-const PACIFICA_AMBIGUOUS: ReadonlySet<string> = new Set(["BP", "CHIP"]);
 
 // Ambiguous tickers are listed as "unclassified" (canonical null: never matched across venues),
 // so every listing path (CLI, MCP, public directory) shows the same market set.
 function classifyPacifica(symbol: string): AssetClass {
   const up = symbol.toUpperCase();
-  if (AMBIGUOUS.has(up) || PACIFICA_AMBIGUOUS.has(up)) return "unclassified";
+  if (isUnclassifiedTicker("pacifica", up)) return "unclassified";
   return PACIFICA_NON_CRYPTO[up] ?? "crypto"; // crypto-centric venue: non-crypto is listed explicitly
 }
 
 function classifyHyperliquid(symbol: string): AssetClass {
-  return AMBIGUOUS.has(symbol.toUpperCase()) ? "unclassified" : "crypto";
+  return isUnclassifiedTicker("hyperliquid", symbol) ? "unclassified" : "crypto";
 }
 
 function classifyAster(symbol: string, subTypes: readonly string[]): AssetClass {
-  if (AMBIGUOUS.has(symbol.toUpperCase())) return "unclassified";
+  if (isUnclassifiedTicker("aster", symbol)) return "unclassified";
   if (subTypes.includes("pre-launch")) return "preIpo";
   if (subTypes.includes("ETF")) return "etf";
   if (subTypes.includes("STOCK")) return "equity";

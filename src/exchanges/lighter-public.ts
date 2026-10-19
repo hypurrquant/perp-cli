@@ -17,12 +17,12 @@
  * `strategy_index` groups markets on Lighter main but is 0 for every RH market),
  * so classification is an explicit per-venue table built from live listings on
  * 2026-09-30:
- *   - lighter-rh: every listed perp is in RH_CLASS. An unlisted symbol is
+ *   - lighter-rh: every listed perp is in LIGHTER_RH_CLASS (src/ws/unclassified.ts). An unlisted symbol is
  *     "unclassified" (listed, canonical null) until it is classified (RH lists
  *     mostly equities, so no class can be assumed).
  *   - lighter: crypto-centric venue. LIGHTER_NON_CRYPTO lists every non-crypto
  *     perp; any other symbol is crypto by this venue's definition.
- *     LIGHTER_AMBIGUOUS tickers are "unclassified" (listed, canonical null) so
+ *     UNCLASSIFIED_TICKERS.lighter (src/ws/unclassified.ts) are "unclassified" (listed, canonical null) so
  *     they cannot produce a false cross-venue match.
  *
  * OPEN INTEREST: `open_interest` in base units (same value legacy getMarkets reports).
@@ -32,6 +32,7 @@ import { PerpError } from "../errors.js";
 import { acquireRate, rateLimitedError } from "./rate-limiter.js";
 import { canonicalFor } from "./canonical-symbols.js";
 import { isLighterMarketLive } from "../ws/lighter-market.js";
+import { isUnclassifiedTicker, LIGHTER_RH_CLASS } from "../ws/unclassified.js";
 import { addDecimal, mulDecimal } from "./precision.js";
 import type { AssetClass, FundingRateBasis, Network, VenueFundingRate, VenueMarket } from "./venue-types.js";
 import type { VenuePublicData } from "./venue.js";
@@ -44,24 +45,7 @@ const SETTLEMENT_INTERVAL_HOURS = 1;
 
 // ── Classification tables (live listings 2026-09-30) ──
 
-const RH_CLASS: Readonly<Record<string, AssetClass>> = {
-  // crypto
-  BTC: "crypto", ETH: "crypto", SOL: "crypto", HYPE: "crypto", ZEC: "crypto", LIT: "crypto",
-  VVV: "crypto", SUI: "crypto", NEAR: "crypto", XRP: "crypto", CASHCAT: "crypto", PONS: "crypto",
-  // commodity (canonical via EXPLICIT_CANONICAL: XAU → GOLD, XAG → SILVER)
-  XAU: "commodity", XAG: "commodity",
-  // etf
-  SPY: "etf", QQQ: "etf", SOXL: "etf", SLV: "etf", USO: "etf", SGOV: "etf",
-  // equity
-  AAPL: "equity", AMZN: "equity", GOOGL: "equity", META: "equity", MSFT: "equity", NVDA: "equity",
-  TSLA: "equity", AMD: "equity", INTC: "equity", MU: "equity", TSM: "equity", ORCL: "equity",
-  PLTR: "equity", COIN: "equity", CRCL: "equity", CRWV: "equity", BABA: "equity", SNDK: "equity",
-  SMCI: "equity", SOFI: "equity", AMC: "equity", RGTI: "equity", QBTS: "equity", CLSK: "equity",
-  IREN: "equity", WULF: "equity", LUNR: "equity", ASTS: "equity", BE: "equity", USAR: "equity",
-  SPCX: "equity", SKHY: "equity",
-  // pre-IPO / private (explicit-only canonical → null unless mapped)
-  OPENAI: "preIpo", ANTHROPIC: "preIpo", SHEIN: "preIpo", ANSEM: "preIpo", AI: "preIpo",
-};
+// RH_CLASS (Lighter RH listing classification) lives in src/ws/unclassified.ts, shared with the WS directory.
 
 const LIGHTER_NON_CRYPTO: Readonly<Record<string, AssetClass>> = {
   // commodity
@@ -95,12 +79,7 @@ const LIGHTER_NON_CRYPTO: Readonly<Record<string, AssetClass>> = {
   STABLECOINX: "preIpo", OURA: "preIpo", PRL: "preIpo", ADI: "preIpo",
 };
 
-/**
- * Excluded from cross-venue data until mapped explicitly:
- * - BB, BOT, WEN, QNT: Lighter groups them with US equities, but each is also a live crypto ticker elsewhere.
- * - SPX: the SPX6900 token on Lighter; its ticker equals the canonical key of the S&P 500 index ("SPX").
- */
-const LIGHTER_AMBIGUOUS: ReadonlySet<string> = new Set(["BB", "BOT", "WEN", "QNT", "SPX"]);
+// Ambiguous Lighter tickers (BB, BOT, WEN, QNT, SPX): UNCLASSIFIED_TICKERS in src/ws/unclassified.ts.
 
 /**
  * Asset class for a venue symbol; "unclassified" (canonical null — listed, never matched across
@@ -110,9 +89,9 @@ function classify(venue: LighterVenueId, symbol: string): AssetClass {
   const up = symbol.toUpperCase();
   switch (venue) {
     case "lighter-rh":
-      return RH_CLASS[up] ?? "unclassified";
+      return LIGHTER_RH_CLASS[up] ?? "unclassified";
     case "lighter":
-      if (LIGHTER_AMBIGUOUS.has(up)) return "unclassified";
+      if (isUnclassifiedTicker("lighter", up)) return "unclassified";
       return LIGHTER_NON_CRYPTO[up] ?? "crypto"; // crypto-centric venue: non-crypto is listed explicitly
   }
 }

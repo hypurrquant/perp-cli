@@ -30,8 +30,11 @@ vi.mock("ws", async (importOriginal) => {
 });
 const { default: WebSocket } = await vi.importActual<typeof import("ws")>("ws");
 import "../../exchanges/venues/index.js";
+import { getVenue } from "../../exchanges/venue.js";
 import { createVenueStream } from "../../ws/stream.js";
 import { USD_LIKE_QUOTES } from "../../ws/canonical.js";
+import { isUnclassifiedTicker } from "../../ws/unclassified.js";
+import { asterMatchable } from "../../ws/aster-market.js";
 import { hyperliquid } from "../../ws/codecs/hyperliquid.js";
 import { pacifica } from "../../ws/codecs/pacifica.js";
 import { lighter, lighterRh } from "../../ws/codecs/lighter.js";
@@ -282,6 +285,8 @@ for (const c of CASES.filter(x => VENUE_FILTER === null || VENUE_FILTER.has(x.ve
     const streamed: MarketUpdate[] = [];
     let list: CliRun;
     let nonTradable: string[] = [];
+    let publicRows: Array<{ venueSymbol: string; symbol: string; canonical: string | null }> = [];
+    let publicError: string | null = null;
 
     beforeAll(async () => {
       const session = new Session(name, [], { trim: false });
@@ -300,6 +305,13 @@ for (const c of CASES.filter(x => VENUE_FILTER === null || VENUE_FILTER.has(x.ve
         await live.close();
         session.begin("cli:list");
         list = await runCli(["-e", c.venue, "market", "list"]);
+        // The CLI's cross-venue keys: the public directory (arb / MCP / funding comparison).
+        session.begin("public:markets");
+        try {
+          publicRows = (await getVenue(c.venue).publicData.fetchMarkets("mainnet", { funding: false })).map(m => ({ venueSymbol: m.venueSymbol, symbol: m.symbol, canonical: m.canonical }));
+        } catch (e) {
+          publicError = e instanceof Error ? e.message : String(e);
+        }
         session.finalize();
       } finally {
         session.stop();
@@ -346,10 +358,41 @@ for (const c of CASES.filter(x => VENUE_FILTER === null || VENUE_FILTER.has(x.ve
         : `cli ${a.size} vs ws ${b.size}; cli-only [${onlyCli.slice(0, 6).join(",")}${onlyCli.length > 6 ? ` +${onlyCli.length - 6}` : ""}]; ws-only [${onlyWs.slice(0, 6).join(",")}${onlyWs.length > 6 ? ` +${onlyWs.length - 6}` : ""}]`);
     });
 
+    /**
+     * Canonical VALUES: a market the CLI never matches across venues — an ambiguous ticker
+     * (isUnclassifiedTicker) or a second Aster listing of a base (asterMatchable) — is canonical
+     * null in the WS directory too (it must never group), compared against the CLI public directory
+     * (the key arb / MCP / the funding comparison use). The WS default key namespace (ticker + USD
+     * quote) otherwise differs from the CLI's class-aware one (kPEPE vs 1000PEPE, XAU vs GOLD):
+     * documented, not compared here.
+     */
+    /** A market the CLI never matches across venues: an ambiguous ticker, or a second Aster listing of a base. */
+    const neverMatched = (m: MarketDirectoryEntry): boolean => m.dex === null && (isUnclassifiedTicker(c.venue, m.base)
+      || (c.venue === "aster" && !asterMatchable({ baseAsset: m.base, quoteAsset: m.quote }, dir.map(x => ({ baseAsset: x.base, quoteAsset: x.quote })))));
+
+    it("canonical values: every market the CLI never matches is canonical null in the WS directory", () => {
+      expect(publicError, `public directory read failed: ${publicError}`).toBeNull();
+      const pub = new Map<string, string | null>();
+      for (const r of publicRows) { pub.set(keyOf(r.venueSymbol), r.canonical); if (!pub.has(keyOf(r.symbol))) pub.set(keyOf(r.symbol), r.canonical); }
+      const bad: string[] = [];
+      let compared = 0;
+      for (const m of dir) {
+        if (m.dex !== null) continue; // HIP-3 dexes are not in the public (native) directory
+        const k = pub.has(keyOf(m.venueSymbol)) ? keyOf(m.venueSymbol) : keyOf(m.symbol);
+        if (!pub.has(k)) continue;
+        if (!neverMatched(m)) continue;
+        compared++;
+        if (pub.get(k) !== null) bad.push(`${m.symbol}: the CLI matches it (${String(pub.get(k))})`);
+        if (m.canonical !== null) bad.push(`${m.symbol}: ws ${m.canonical}, cli null`);
+      }
+      expectCheck(id("canonical-values"), bad.length === 0 ? null : `${bad.length} of ${compared} never-matched markets differ: ${bad.slice(0, 6).join("; ")}`);
+    });
+
     it("canonical symbols agree (every USD-quoted / dex WS entry has a canonical; CLI symbols are canonical keys)", () => {
       // A market quoted in a non-USD currency (Aster "U") is not comparable by default: canonical
       // null by contract (defaultCanonicalize), like a canonical-null CLI / public row.
-      const missing = dir.filter(m => m.canonical === null && (m.dex !== null || m.quote === null || USD_LIKE_QUOTES.has(m.quote.toUpperCase()))).map(m => m.symbol);
+      // Null by contract: a never-matched market (above) or a non-USD quote (Aster "U").
+      const missing = dir.filter(m => m.canonical === null && !neverMatched(m) && (m.dex !== null || m.quote === null || USD_LIKE_QUOTES.has(m.quote.toUpperCase()))).map(m => m.symbol);
       expectCheck(id("canonical-parity"), missing.length === 0 ? null : `${missing.length} WS entries without canonical: ${missing.slice(0, 5).join(",")}`);
     });
 

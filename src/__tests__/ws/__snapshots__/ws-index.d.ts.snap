@@ -816,8 +816,8 @@ declare function createVenueStream(codec: VenueCodec, opts?: VenueStreamOptions)
  */
 declare const USD_LIKE_QUOTES: ReadonlySet<string>;
 /**
- * HIP-3 (dex set) → "<dex>:<BASE>". A USD-like quote → "<BASE>". Any other quote, or an unknown
- * quote (null), → null (not comparable by default).
+ * HIP-3 (dex set) → "<dex>:<BASE>". An ambiguous ticker (isUnclassifiedTicker) → null. A USD-like
+ * quote → "<BASE>". Any other quote, or an unknown quote (null), → null (not comparable by default).
  */
 declare const defaultCanonicalize: Canonicalize;
 

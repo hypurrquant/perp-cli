@@ -201,7 +201,7 @@ describe("aster codec", () => {
       predictedRate: null, nextFundingTime: 1791907200000,
     });
     expect(typeof btc.asOf.fundingInterval).toBe("number");
-    expect(r.last("BTCUSD1")).toMatchObject({ quote: "USD1", canonical: "BTC" });
+    expect(r.last("BTCUSD1")).toMatchObject({ quote: "USD1", canonical: null }); // second BTC listing: never matched (asterMatchable)
     const eth = r.last("ETHUSDT")!;
     expect(eth.funding).toMatchObject({ rateIntervalHours: null, intervalSource: null });
     // PYTHUSDT is unlisted (premiumIndex only) → skipped by rule, not an error

@@ -13,7 +13,7 @@
  */
 
 import { badShape, fetchJson } from "../directory.js";
-import { isAsterListedPerpetual } from "../aster-market.js";
+import { asterMatchable, isAsterListedPerpetual } from "../aster-market.js";
 import { VENUE_STATIC } from "../venue-static.js";
 import type { CodecContext, DecodedEvent, MarketDirectoryEntry, MarketPatch, VenueCodec, WireSub } from "../types.js";
 import {
@@ -105,6 +105,9 @@ export const aster: VenueCodec = {
     const intervals = fi.intervals;
     const entries: MarketDirectoryEntry[] = [];
     const listed = new Set<string>();
+    // One matchable listing per base (asterMatchable — the CLI rule): a second listing (BTCUSD1
+    // beside BTCUSDT) is never a second BTC leg.
+    const listedRows = info.symbols.filter((x): x is Obj & { baseAsset: string } => isObj(x) && typeof x.baseAsset === "string" && isAsterListedPerpetual(x));
     for (const s of info.symbols) {
       if (!isObj(s) || typeof s.symbol !== "string" || typeof s.baseAsset !== "string") {
         throw badShape("aster", "exchangeInfo symbol without symbol/baseAsset");
@@ -117,7 +120,7 @@ export const aster: VenueCodec = {
       const hours = intervals.get(s.symbol);
       entries.push({
         venue: "aster", dex: null, symbol: s.symbol, venueSymbol: s.symbol, base: s.baseAsset, quote,
-        canonical: ctx.canonicalize("aster", { venueSymbol: s.symbol, dex: null, base: s.baseAsset, quote }),
+        canonical: asterMatchable({ baseAsset: s.baseAsset, quoteAsset: s.quoteAsset }, listedRows) ? ctx.canonicalize("aster", { venueSymbol: s.symbol, dex: null, base: s.baseAsset, quote }) : null,
         rateIntervalHours: hours === undefined ? null : hours,
         settlementIntervalHours: hours === undefined ? null : hours,
         source: "rest:/fapi/v3/exchangeInfo",
