@@ -169,3 +169,21 @@ describe("stream.close() leaves the process idle (conformance ws:all:close-timer
     expect(timers).toBeLessThanOrEqual(before);
   });
 });
+
+describe("close() sends a clean close frame (review)", () => {
+  it("the server sees close 1000, not 1006, and no timer is left", async () => {
+    const s = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+    server = s;
+    const code = new Promise<number>((r) => s.on("connection", (sock) => sock.on("close", (c) => r(c))));
+    await new Promise<void>((r) => s.once("listening", () => r()));
+    const url = `ws://127.0.0.1:${(s.address() as AddressInfo).port}`;
+    const before = process.getActiveResourcesInfo().filter(h => h === "Timeout").length;
+    const stream = createVenueStream({ ...pacifica, url: () => url }, { transport: createNodeTransport(), fetch: fakeFetch(PACIFICA_ROUTES), visibility: null });
+    stream.subscribe({ kind: "allMarkets" }).on(() => {});
+    await new Promise<void>((r) => { const off = stream.onState(st => { if (st.status === "live" || st.status === "connecting") { off(); r(); } }); });
+    await new Promise((r) => setTimeout(r, 50));
+    await stream.close();
+    expect(await code).toBe(1000);
+    expect(process.getActiveResourcesInfo().filter(h => h === "Timeout").length).toBeLessThanOrEqual(before);
+  });
+});
