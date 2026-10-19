@@ -10,6 +10,7 @@ import type {
   ExchangeKline,
   FundingHistoryRow
 } from "./interface.js";
+import { assertCandleInterval } from "./interface.js";
 import type { ResolvedSlippage } from "./slippage.js";
 import type { EvmSigner } from "../signer/index.js";
 import { LocalEvmSigner } from "../signer/index.js";
@@ -1935,7 +1936,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       type: "candleSnapshot",
       req: { coin: this._venueCoin(symbol), interval, startTime, endTime },
     }) as Record<string, unknown>[];
-    return (candles ?? []).map((c) => ({
+    return (candles ?? []).map((c) => (assertCandleInterval(this.name, interval, c.i), {
       time: Number(c.t ?? 0),
       open: String(c.o ?? "0"),
       high: String(c.h ?? "0"),

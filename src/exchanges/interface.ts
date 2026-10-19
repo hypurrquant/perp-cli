@@ -1,3 +1,4 @@
+import { PerpError } from "../errors.js";
 import type { ResolvedSlippage } from "./slippage.js";
 
 /**
@@ -159,6 +160,20 @@ export interface ExchangeKline {
   quoteVolume: string | null;
   /** null = venue does not publish a trade count for the candle */
   trades: number | null;
+}
+
+/**
+ * Guard for a candle row that states its own interval (HL / TxFlow / Pacifica `i`, RISEx
+ * `interval`): a row of another interval than requested is never returned as the requested one
+ * (RISEx answers unsupported intervals with 1m bars). `rowInterval` undefined = the row carries
+ * no interval field (nothing to check).
+ */
+export function assertCandleInterval(venue: string, requested: string, rowInterval: unknown, remediation?: string): void {
+  if (rowInterval === undefined || rowInterval === requested) return;
+  throw new PerpError("EXCHANGE_ERROR", `${venue} candles: requested ${requested} candles, got a row labelled ${JSON.stringify(rowInterval)}`, {
+    exchange: venue,
+    remediation: remediation ?? `Use an interval ${venue} serves (see perp -e ${venue} market kline --help)`,
+  });
 }
 
 /** One indicative quote of an RFQ venue's maker at a fixed size. */

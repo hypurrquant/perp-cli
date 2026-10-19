@@ -1,0 +1,76 @@
+/**
+ * RISEx klines (perp_app report, 0.15.0): /trading-view-data answers an interval it does not
+ * serve (3m, 30m, 2h, 8h, 12h, 3d) with 1m bars and no error, and the adapter listed "30m" and
+ * never checked the rows' `interval`. Verified live 2026-10-19: 1m 5m 15m 1h 4h 1d 1w return
+ * rows of their own interval. Fixtures: live answers for 30m (rows labelled "1m") and 1h.
+ */
+import { describe, it, expect, vi } from "vitest";
+import "../../exchanges/venues/index.js";
+import { RisexAdapter, KLINE_INTERVAL_MS } from "../../exchanges/risex/adapter.js";
+import LIVE_30M from "../fixtures/risex/trading-view-30m-returns-1m.json";
+import LIVE_1H from "../fixtures/risex/trading-view-1h.json";
+
+function adapterReturning(body: unknown) {
+  const get = vi.fn(async () => body);
+  const a = Object.create(RisexAdapter.prototype) as RisexAdapter;
+  Object.assign(a as object, { market: vi.fn(async () => ({ market_id: 1 })), client: { get } });
+  return { a, get };
+}
+
+describe("RISEx getKlines", () => {
+  it("the table holds only the live-verified intervals (30m dropped, 1w added)", () => {
+    expect(Object.keys(KLINE_INTERVAL_MS)).toEqual(["1m", "5m", "15m", "1h", "4h", "1d", "1w"]);
+  });
+
+  it.each(["30m", "3m", "2h", "8h", "12h", "3d", "1M"])("%s → INVALID_PARAMS listing the supported intervals, before any request", async (iv) => {
+    const { a, get } = adapterReturning(LIVE_30M.data);
+    await expect(a.getKlines("BTC", iv, 0, 1)).rejects.toMatchObject({
+      structured: expect.objectContaining({ code: "INVALID_PARAMS", remediation: "Use one of: 1m, 5m, 15m, 1h, 4h, 1d, 1w" }),
+    });
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("rows of another interval than requested → EXCHANGE_ERROR (live 30m answer, relabelled request 1h)", async () => {
+    const { a } = adapterReturning(LIVE_30M.data);
+    await expect(a.getKlines("BTC", "1h", 0, 1)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
+  });
+
+  it("matching rows are returned", async () => {
+    const { a, get } = adapterReturning(LIVE_1H.data);
+    const k = await a.getKlines("BTC", "1h", 0, 1);
+    expect(k.length).toBe(LIVE_1H.data.data.length);
+    expect(k.every(c => c.time % 3_600_000 === 0)).toBe(true);
+    expect((get.mock.calls[0] as unknown[])[1]).toMatchObject({ interval: "3600000000000" });
+  });
+});
+
+describe("candle interval guard on the other venues whose rows state their interval", () => {
+  it("hyperliquid: a row whose `i` differs from the request → EXCHANGE_ERROR; matching rows pass", async () => {
+    const { HyperliquidAdapter } = await import("../../exchanges/hyperliquid.js");
+    const a = new HyperliquidAdapter(undefined, false);
+    (a as unknown as { _assetMap: Map<string, number> })._assetMap.set("BTC", 0);
+    // Live candleSnapshot row shape (2026-10-19).
+    const row = { t: 1792396800000, T: 1792400399999, s: "BTC", i: "1h", o: "82701.0", c: "82805.0", h: "82944.0", l: "82555.0", v: "1150.99381", n: 10424 };
+    (a as unknown as { _infoPost: unknown })._infoPost = vi.fn(async () => [row]);
+    expect(await a.getKlines("BTC", "1h", 0, 1)).toHaveLength(1);
+    await expect(a.getKlines("BTC", "4h", 0, 1)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
+  });
+
+  it("pacifica: same guard on /kline `i`", async () => {
+    const { PacificaAdapter } = await import("../../exchanges/pacifica.js");
+    const row = { t: 1792400400000, T: 1792404000000, s: "BTC", i: "1h", o: "82794", c: "82758", h: "83065", l: "82723", v: "188.75248", n: 855 };
+    const a = Object.create(PacificaAdapter.prototype) as InstanceType<typeof PacificaAdapter>;
+    Object.assign(a as object, { client: { getKline: vi.fn(async () => [row]) } });
+    expect(await a.getKlines("BTC", "1h", 0, 1)).toHaveLength(1);
+    await expect(a.getKlines("BTC", "15m", 0, 1)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
+  });
+
+  it("txflow: same guard on candleSnapshot `i`", async () => {
+    const { TxflowPublicAdapter } = await import("../../exchanges/txflow/adapter.js") as unknown as { TxflowPublicAdapter: new (...a: unknown[]) => object };
+    const row = { t: 1792400400000, o: "82707.4", h: "82988", l: "82621.7", c: "82650", v: "25.2125", n: 883, s: "1", i: "1h", T: 1792403999999 };
+    const a = Object.create(TxflowPublicAdapter.prototype) as { getKlines: (s: string, i: string, a: number, b: number) => Promise<unknown[]> };
+    Object.assign(a, { market: vi.fn(async () => ({ index: 1 })), client: { info: vi.fn(async () => [row]) } });
+    expect(await a.getKlines("BTC", "1h", 0, 1)).toHaveLength(1);
+    await expect(a.getKlines("BTC", "4h", 0, 1)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
+  });
+});

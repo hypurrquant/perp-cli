@@ -12,6 +12,7 @@ import type {
   ExchangePosition, ExchangeTrade, ExchangePublicTrade,
   FundingHistoryRow
 } from "../interface.js";
+import { assertCandleInterval } from "../interface.js";
 import { unsupported } from "../trading-v2.js";
 import { roleUnsupported, networkConfig, type VenueDefinition } from "../venue.js";
 import { toLegacyMarketInfo, type Network, type VenueMarket } from "../venue-types.js";
@@ -101,6 +102,7 @@ export class TxflowPublicAdapter implements ExchangeAdapter {
     return res.map(c => {
       const x = c as Record<string, unknown>;
       if (typeof x.t !== "number") throw txflowShapeError("candle without t");
+      assertCandleInterval("txflow", interval, x.i);
       return {
         time: x.t,
         open: dec(x.o, "candle o"), high: dec(x.h, "candle h"), low: dec(x.l, "candle l"), close: dec(x.c, "candle c"),

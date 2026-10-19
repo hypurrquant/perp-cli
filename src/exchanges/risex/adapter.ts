@@ -27,6 +27,7 @@ import type {
   ExchangePosition, ExchangeTrade, ExchangePublicTrade,
   FundingHistoryRow
 } from "../interface.js";
+import { assertCandleInterval } from "../interface.js";
 import { alignProtectionPrice, exactUnits, mulDecimal, slippagePrice, subDecimal } from "../precision.js";
 import type { ResolvedSlippage } from "../slippage.js";
 import {
@@ -358,6 +359,10 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
     if (!Array.isArray(d)) throw new PerpError("EXCHANGE_ERROR", "RISEx trading-view-data: not an array", { exchange: "risex" });
     return d.map(c => {
       const x = c as Record<string, unknown>;
+      // The venue answers an interval it does not serve with 1m bars: a row of another interval
+      // is never returned as the requested one.
+      // Required on every row here (the field is always sent; null/absent would skip the check).
+      assertCandleInterval("risex", interval, x.interval === undefined ? null : x.interval, `Use one of: ${Object.keys(KLINE_INTERVAL_MS).join(", ")}`);
       return {
         time: nsToMs(str(x.time, "candle time")),
         open: decReq(x.open, "open"), high: decReq(x.high, "high"), low: decReq(x.low, "low"), close: decReq(x.close, "close"),
@@ -842,8 +847,13 @@ function historyStatus(o: Pick<HistoryOrder, "status" | "filled_size">): OrderSt
 }
 
 /** Candle intervals → ms (the venue takes the interval in ns). */
+/**
+ * Candle intervals verified live (2026-10-19, market 1): each returns rows labelled with that
+ * interval. 3m / 30m / 2h / 8h / 12h / 3d are answered with 1m bars (no error), so they are not
+ * listed — getKlines refuses them with INVALID_PARAMS instead of returning 1m candles.
+ */
 export const KLINE_INTERVAL_MS: Readonly<Record<string, number>> = {
-  "1m": 60_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000, "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000,
+  "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000, "1w": 604_800_000,
 };
 
 

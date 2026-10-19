@@ -1,5 +1,5 @@
 import { nonEmptyOrListed, symbolNotFound } from "./unknown-symbol.js";
-import { withTapeSkipped, type FundingHistoryRow } from "./interface.js";
+import { assertCandleInterval, withTapeSkipped, type FundingHistoryRow } from "./interface.js";
 import { Keypair } from "@solana/web3.js";
 import { PacificaClient, type Network } from "../pacifica/index.js";
 import { isPacificaRateLimited } from "../pacifica/rate-limit.js";
@@ -1545,7 +1545,7 @@ export class PacificaAdapter implements ExchangeAdapter {
       endTime
     );
     // `200 []` for an unlisted symbol (live): checked against the market directory.
-    return nonEmptyOrListed(this, symbol, klines.map((k) => ({
+    return nonEmptyOrListed(this, symbol, klines.map((k) => (assertCandleInterval("pacifica", interval, (k as { i?: unknown }).i), {
       time: k.t,
       open: k.o,
       high: k.h,
