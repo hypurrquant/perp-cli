@@ -916,10 +916,11 @@ declare const pacifica: VenueCodec;
  *
  * Units (Phase 0, the key correction): WS `funding_rate` (last settled) and `current_funding_rate`
  * (predicted) are PERCENT per 1 h → converted to a fraction by an exact 2-place decimal shift,
- * rateIntervalHours = settlementIntervalHours = 1. `open_interest` is USD notional (not base), one
- * side: WS open_interest / mark = REST orderBookDetails `open_interest` (base); the venue's
- * exchangeMetrics open_interest (both sides) is ≈ 2× (live 2026-10-19, BTC: WS 174.88 M USD / mark
- * 82,387 = 2,122.7 BTC = REST; exchangeMetrics 336.6 M USD).
+ * rateIntervalHours = settlementIntervalHours = 1. `open_interest` is USD notional (not base) and
+ * one side — INFERRED, not documented by the venue: WS open_interest / mark = REST orderBookDetails
+ * `open_interest` (base) (2026-10-19, BTC: 174.88 M USD / 82,387 = 2,122.7 BTC), and the venue's
+ * exchangeMetrics open_interest — a DAILY snapshot, two days old when compared — was ≈ 2× the
+ * current one-side figure (336.6 M USD).
  * Errors arrive as {error:{code,message}} with no channel field (matched by the channel name in
  * the message). Spot markets (market_type "spot" in /api/v1/orderBooks) are not perps and skipped.
  *

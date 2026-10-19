@@ -243,7 +243,7 @@ Funding:
 |---|---|---|---|---|---|
 | hyperliquid | accruing | null | 1 h | base, one side | bid/ask/last null → `bbo` channel |
 | pacifica | lastSettled | next_funding | 1 h | base, `sides` null | bid/ask/last/nextFundingTime null |
-| lighter / lighter-rh | lastSettled | current_funding_rate | 1 h | **usd**, one side | wire values are percent/h, emitted as fractions/h; REST `market info` OI is the same side in base units — convert before comparing; inactive / frozen markets are not streamed (same set as `market list`) |
+| lighter / lighter-rh | lastSettled | current_funding_rate | 1 h | **usd**, one side (inferred, not documented by the venue) | wire values are percent/h, emitted as fractions/h; REST `market info` OI is the same side in base units — convert before comparing; inactive / frozen markets are not streamed (same set as `market list`) |
 | aster | accruing | null | per market (`rest:/fapi/v3/fundingInfo`, null if missing) | null | all quotes (USDT, USD1, …) with `quote` set |
 | arcus | lastSettled | nextFundingRate | 1 h | base, one side | bid/ask null → `bbo` channel |
 

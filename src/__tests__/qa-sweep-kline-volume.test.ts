@@ -19,7 +19,7 @@ afterEach(() => vi.restoreAllMocks());
 describe("adapters: missing candle volume → null", () => {
   it("Lighter: no v / V → volume null, quoteVolume null", async () => {
     const a = new LighterAdapter("0xabc", false);
-    (a as unknown as { getCandles: () => Promise<unknown> }).getCandles = async () => ({ code: 200, r: "1h", c: [{ t: 1, o: 1, h: 2, l: 0.5, c: 1.5 }] });
+    (a as unknown as { getCandles: () => Promise<unknown> }).getCandles = async () => ({ code: 200, r: "1h", c: [{ t: 0, o: 1, h: 2, l: 0.5, c: 1.5 }] });
     const [k] = await a.getKlines("BTC", "1h", 0, 1);
     expect(k.volume).toBeNull();
     expect(k.quoteVolume).toBeNull();

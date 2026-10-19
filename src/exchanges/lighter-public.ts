@@ -298,6 +298,8 @@ export function lighterPublicData(venue: LighterVenueId): VenuePublicData {
       const out: VenueMarket[] = [];
       const unclassified: string[] = [];
       for (const d of details) {
+        // Live markets only (the rule of market list / the WS directory); inactive ones are not listed.
+        if (!isLighterMarketLive(d)) continue;
         const cls = classify(venue, d.symbol);
         if (cls === null) { unclassified.push(d.symbol); continue; }
         out.push(toMarket(venue, net, d, cls, funding.get(d.market_id)));

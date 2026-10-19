@@ -441,30 +441,32 @@ export class LighterSpotAdapter implements SpotAdapter {
     const resolved = this.resolveSymbol(symbol);
     const marketId = this._spotMarketMap.get(resolved);
     if (marketId === undefined) {
-      throw new Error(`Unknown Lighter spot market: ${symbol}`);
+      throw new PerpError("SYMBOL_NOT_FOUND", `Unknown Lighter spot market: ${symbol}`, {
+        exchange: this.name, remediation: `Check the symbol: perp -e ${this.name} market spot-list`,
+      });
     }
 
     // Validate min order size
     const minSize = this._spotMinSize.get(resolved);
     const sizeNum = parseFloat(size);
     if (minSize && sizeNum < minSize.base) {
-      throw new Error(`Size ${size} below min_base_amount ${minSize.base} for ${resolved}`);
+      throw new PerpError("SIZE_TOO_SMALL", `Size ${size} below min_base_amount ${minSize.base} for ${resolved}`, { exchange: this.name });
     }
 
     // Protection price = best opposite quote ± the resolved slippage bound
     const ob = await this.getSpotOrderbook(resolved);
     let refPrice: number;
     if (side === "buy") {
-      if (ob.asks.length === 0) throw new Error(`No asks in ${resolved} spot orderbook`);
+      if (ob.asks.length === 0) throw new PerpError("PRICE_STALE", `No asks in ${resolved} spot orderbook — no reference price`, { exchange: this.name });
       refPrice = Number(ob.asks[0][0]);
     } else {
-      if (ob.bids.length === 0) throw new Error(`No bids in ${resolved} spot orderbook`);
+      if (ob.bids.length === 0) throw new PerpError("PRICE_STALE", `No bids in ${resolved} spot orderbook — no reference price`, { exchange: this.name });
       refPrice = Number(ob.bids[0][0]);
     }
 
     // Validate min quote amount (size × price ≥ min_quote)
     if (minSize && sizeNum * refPrice < minSize.quote) {
-      throw new Error(`Order value $${(sizeNum * refPrice).toFixed(2)} below min_quote_amount $${minSize.quote} for ${resolved}`);
+      throw new PerpError("SIZE_TOO_SMALL", `Order value $${(sizeNum * refPrice).toFixed(2)} below min_quote_amount $${minSize.quote} for ${resolved}`, { exchange: this.name });
     }
 
     const dec = this._getDecimals(resolved);

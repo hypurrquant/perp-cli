@@ -5,10 +5,11 @@
  *
  * Units (Phase 0, the key correction): WS `funding_rate` (last settled) and `current_funding_rate`
  * (predicted) are PERCENT per 1 h → converted to a fraction by an exact 2-place decimal shift,
- * rateIntervalHours = settlementIntervalHours = 1. `open_interest` is USD notional (not base), one
- * side: WS open_interest / mark = REST orderBookDetails `open_interest` (base); the venue's
- * exchangeMetrics open_interest (both sides) is ≈ 2× (live 2026-10-19, BTC: WS 174.88 M USD / mark
- * 82,387 = 2,122.7 BTC = REST; exchangeMetrics 336.6 M USD).
+ * rateIntervalHours = settlementIntervalHours = 1. `open_interest` is USD notional (not base) and
+ * one side — INFERRED, not documented by the venue: WS open_interest / mark = REST orderBookDetails
+ * `open_interest` (base) (2026-10-19, BTC: 174.88 M USD / 82,387 = 2,122.7 BTC), and the venue's
+ * exchangeMetrics open_interest — a DAILY snapshot, two days old when compared — was ≈ 2× the
+ * current one-side figure (336.6 M USD).
  * Errors arrive as {error:{code,message}} with no channel field (matched by the channel name in
  * the message). Spot markets (market_type "spot" in /api/v1/orderBooks) are not perps and skipped.
  *
@@ -77,7 +78,7 @@ function makeLighter(venue: "lighter" | "lighter-rh", quote: string): VenueCodec
       notes: {
         rate: "WS funding is PERCENT per 1 h on the wire; emitted as a fraction per 1 h",
         nextFundingTime: "Hourly settlement rule (venue-definition)",
-        openInterest: "USD notional, ONE side (= REST orderBookDetails open_interest, base, × mark; the venue's own exchangeMetrics kind=open_interest is ≈ 2× — both sides). Not stated in the API docs; live-verified 2026-10-19",
+        openInterest: "USD notional, one side — inferred, not documented by the venue (= REST orderBookDetails open_interest, base, × mark; the venue's exchangeMetrics kind=open_interest, a daily snapshot, read ≈ 2× when compared with the current value)",
         user: "By accountIndex. user_stats / account_all_positions / account_all_trades need no auth; account_all_orders needs CredentialProvider.authToken (re-called at 80 % TTL). account_all_trades does not replay → gap refetch-required for fills after a reconnect",
         clientId: "orders: client_order_id; fills: ask_/bid_client_id_str of our side; 0 = no client id → null",
         liquidationPrice: "liquidation_price; \"0\" (no liquidation price, e.g. well-covered cross margin) → null, as in the CLI REST path",

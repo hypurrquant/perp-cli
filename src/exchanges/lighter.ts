@@ -548,6 +548,8 @@ export class LighterAdapter implements ExchangeAdapter {
   private _address: string;
   private _marketMap = new Map<string, number>(); // symbol → marketIndex
   private _marketDecimals = new Map<string, { size: number; price: number }>(); // symbol → decimals
+  /** symbol → live (isLighterMarketLive). Inactive markets stay in _marketMap for reads and closes. */
+  private _marketLive = new Map<string, boolean>();
   private _evmKey: string;
   private _apiKey: string;
   private _accountIndexInit: number;
@@ -956,14 +958,15 @@ export class LighterAdapter implements ExchangeAdapter {
    * the 60 / minute budget.
    */
   private async _refreshMarketMap(): Promise<void> {
-    const perps = await withCache(`mkt:${this.venueId}:${this.networkName}:orderBooks`, LIGHTER_MARKET_LIST_TTL_MS, async () => {
+    // v2: rows carry `live` (entries cached before it lack the field).
+    const perps = await withCache(`mkt:${this.venueId}:${this.networkName}:orderBooks:v2`, LIGHTER_MARKET_LIST_TTL_MS, async () => {
       const res = await this.restGet("/orderBooks", {}) as { order_books?: unknown };
       if (!Array.isArray(res.order_books) || res.order_books.length === 0) {
         throw new PerpError("EXCHANGE_ERROR", `${this.name} orderBooks returned no order_books list — the market list is unknown`, {
           exchange: this.name, remediation: `Retry; check the venue status: perp -e ${this.name} market list`,
         });
       }
-      const rows: Array<{ symbol: string; marketId: number; size: number; price: number }> = [];
+      const rows: Array<{ symbol: string; marketId: number; size: number; price: number; live: boolean }> = [];
       for (const d of res.order_books as Array<Record<string, unknown>>) {
         // Perps only, by the venue's own market_type (spot markets are handled by
         // lighter-spot.ts). Market ids are not a type: testnet perps are 4095–4097 and
@@ -972,14 +975,28 @@ export class LighterAdapter implements ExchangeAdapter {
         if (typeof d.symbol !== "string" || !Number.isInteger(d.market_id) || !Number.isInteger(d.supported_size_decimals) || !Number.isInteger(d.supported_price_decimals)) {
           throw new PerpError("EXCHANGE_ERROR", `${this.name} orderBooks: perp market row without symbol / market_id / decimals: ${JSON.stringify(d).slice(0, 160)}`, { exchange: this.name });
         }
-        rows.push({ symbol: d.symbol.toUpperCase(), marketId: d.market_id as number, size: d.supported_size_decimals as number, price: d.supported_price_decimals as number });
+        rows.push({ symbol: d.symbol.toUpperCase(), marketId: d.market_id as number, size: d.supported_size_decimals as number, price: d.supported_price_decimals as number, live: isLighterMarketLive(d) });
       }
       return rows;
     });
     for (const m of perps) {
       this._marketMap.set(m.symbol, m.marketId);
       this._marketDecimals.set(m.symbol, { size: m.size, price: m.price });
+      (this._marketLive ??= new Map()).set(m.symbol, m.live);
     }
+  }
+
+  /**
+   * An order that can open or add exposure (not reduce-only) on a market that is not live
+   * (`status` inactive / `is_frozen`) is refused before signing. Reduce-only orders and closes are
+   * still sent, so a position on a market that went inactive can be closed.
+   */
+  private assertOpenable(symbol: string, reduceOnly: boolean): void {
+    if (reduceOnly || this._marketLive?.get(symbol.toUpperCase()) !== false) return;
+    throw new PerpError("ORDER_REJECTED", `${this.name} market ${symbol.toUpperCase()} is inactive (status not "active" or frozen) — only reduce-only orders and closes are sent; nothing was signed`, {
+      exchange: this.name, marketInactive: true,
+      remediation: `Close or reduce with --reduce-only; list live markets: perp -e ${this.name} market list`,
+    });
   }
 
   getMarketIndex(symbol: string): number {
@@ -1612,8 +1629,9 @@ export class LighterAdapter implements ExchangeAdapter {
       this.ensureSigner();
       await this.ensureMarketMap();
 
-      const nonce = await this.getNextNonce();
       const marketIndex = this.getMarketIndex(symbol);
+      this.assertOpenable(symbol, opts.reduceOnly);
+      const nonce = await this.getNextNonce();
       ({ baseAmount } = this.toTicks(symbol, size, "0"));
       const reference = await this.getReferencePrice(symbol);
       const p = this.protectionFor(symbol, side, reference, opts.slippage, LIGHTER_REFERENCE_PRICE_SOURCE);
@@ -1672,8 +1690,9 @@ export class LighterAdapter implements ExchangeAdapter {
       else throw unsupported(this.name, tif === "FOK" ? "fok" : "timeInForce", `time-in-force ${opts?.tif} is not offered`, "Use --tif GTC or IOC");
       this.ensureSigner();
       await this.ensureMarketMap();
-      const nonce = await this.getNextNonce();
       const marketIndex = this.getMarketIndex(symbol);
+      this.assertOpenable(symbol, opts?.reduceOnly === true);
+      const nonce = await this.getNextNonce();
       const ticks = this.toTicks(symbol, size, price);
       sentBase = ticks.baseAmount;
       isIoc = timeInForce === LIGHTER_TIF.IOC;
@@ -1834,6 +1853,7 @@ export class LighterAdapter implements ExchangeAdapter {
       // The order must be an open order of this market, and not a trigger order: a modify is
       // signed with triggerPrice 0, which would turn a stop / take-profit into a plain limit.
       existing = await this.activeOrderRow(symbol, marketIndex, orderId, "modified");
+      this.assertOpenable(symbol, existing.reduce_only === true || existing.reduce_only === 1);
       const type = String(existing.type ?? "").toLowerCase();
       if (/stop|take|trigger/.test(type) || Number(existing.trigger_price ?? 0) > 0) {
         throw unsupported(this.name, "amend", "trigger orders cannot be modified", "cancel and re-place");
@@ -1999,8 +2019,9 @@ export class LighterAdapter implements ExchangeAdapter {
       }
       this.ensureSigner();
       await this.ensureMarketMap();
-      const nonce = await this.getNextNonce();
       const marketIndex = this.getMarketIndex(symbol);
+      this.assertOpenable(symbol, opts?.reduceOnly === true);
+      const nonce = await this.getNextNonce();
       const { baseAmount } = this.toTicks(symbol, size, "0");
       const { priceTicks: triggerTicks } = this.toTicks(symbol, "0", triggerPrice);
 
@@ -2202,16 +2223,28 @@ export class LighterAdapter implements ExchangeAdapter {
     if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || startTime > endTime) {
       throw new PerpError("INVALID_PARAMS", `${this.name} kline window must be start ≤ end (unix ms; got ${startTime}..${endTime})`, { exchange: this.name });
     }
-    const bars = Math.floor((endTime - startTime) / ivMs) + 1;
+    // Bar opens in [start, end] (bars open on multiples of the interval since the epoch).
+    const barsIn = (from: number, to: number) => Math.floor(to / ivMs) - Math.ceil(from / ivMs) + 1;
+    const bars = barsIn(startTime, endTime);
     if (bars > LIGHTER_CANDLES_PER_CALL * LIGHTER_KLINE_MAX_PAGES) {
       throw new PerpError("INVALID_PARAMS", `${this.name} kline window spans ${bars} ${interval} bars; at most ${LIGHTER_CANDLES_PER_CALL * LIGHTER_KLINE_MAX_PAGES} are read (${LIGHTER_KLINE_MAX_PAGES} requests of ${LIGHTER_CANDLES_PER_CALL})`, {
         exchange: this.name, remediation: "Narrow --start / --end or use a longer interval",
       });
     }
+    if (bars <= 0) {
+      // No bar opens in the window: nothing to ask for (count_back 0 is never sent); the symbol is still checked.
+      await this.ensureMarketMap();
+      this.getMarketIndex(symbol);
+      return [];
+    }
     const byTime = new Map<number, Record<string, unknown>>();
     let cursorEnd = endTime;
+    let prevEarliest = Infinity;
+    let covered = false;
     for (let page = 0; page < LIGHTER_KLINE_MAX_PAGES; page++) {
-      const want = Math.min(LIGHTER_CANDLES_PER_CALL, Math.floor((cursorEnd - startTime) / ivMs) + 1);
+      const left = barsIn(startTime, cursorEnd);
+      if (left <= 0) { covered = true; break; } // every bar open in the window is read
+      const want = Math.min(LIGHTER_CANDLES_PER_CALL, left);
       const res = await this.getCandles(symbol, interval, startTime, cursorEnd + 1000, want) as Record<string, unknown>;
       if (res.r !== interval) {
         throw new PerpError("EXCHANGE_ERROR", `${this.name} /candles: requested ${interval} candles, the answer is labelled ${JSON.stringify(res.r)}`, { exchange: this.name });
@@ -2229,8 +2262,16 @@ export class LighterAdapter implements ExchangeAdapter {
         if (t >= startTime && t <= endTime) byTime.set(t, c);
       }
       // Done: the window start is covered, or the venue has no older bars (a short answer).
-      if (rows.length === 0 || earliest <= startTime || rows.length < want) break;
+      if (rows.length === 0 || earliest <= startTime || rows.length < want) { covered = true; break; }
+      if (earliest >= prevEarliest) {
+        throw new PerpError("EXCHANGE_ERROR", `${this.name} /candles: paging made no progress (oldest bar ${earliest} not before the previous page's ${prevEarliest})`, { exchange: this.name });
+      }
+      prevEarliest = earliest;
       cursorEnd = earliest - 1000; // sent as `earliest`: the bars strictly before the oldest one read
+    }
+    if (!covered) {
+      // Every page was full and the window start is still not reached: never a silently short window.
+      throw new PerpError("EXCHANGE_ERROR", `${this.name} /candles: ${LIGHTER_KLINE_MAX_PAGES} full pages did not reach the window start ${startTime} (oldest ${prevEarliest})`, { exchange: this.name });
     }
     const candles = [...byTime.values()].sort((a, b) => Number(a.t) - Number(b.t));
     return candles.map((c) => ({
