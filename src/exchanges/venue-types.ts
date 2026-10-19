@@ -123,6 +123,7 @@ export function toLegacyMarketInfo(m: VenueMarket): ExchangeMarketInfo {
     stepSize: p.stepSize,
     fundingHours: hours,
     marginTiers: m.marginTiers,
+    tradable: m.tradable,
   };
 }
 

@@ -36,6 +36,12 @@ export interface ExchangeMarketInfo {
    * publish tiers (then `maxLeverage` applies at every size).
    */
   marginTiers: Array<{ lowerBound: number; maxLeverage: number }> | null;
+  /**
+   * Listed but not tradable right now (VenueMarket.tradable: off-hours, reduce-only, halted, paused)
+   * → false. Delisted / disabled / inactive markets are not listed at all (each venue's eligibility
+   * rule). Absent = the venue publishes no tradability flag (its adapter lists live markets only).
+   */
+  tradable?: boolean;
 }
 
 /**

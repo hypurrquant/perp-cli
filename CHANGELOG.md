@@ -35,6 +35,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **perp-ws errors:** `WsError` gains `code` and `remediation` getters mirroring `structured` (kept), so `err.code` works on `ready` rejections as `e.code` does on error events (API snapshot: additive). `subscribe` after `close()` rejects `INVALID_PARAMS` "stream is closed" as before — `CLIENT_CLOSE` is a close reason, not an error code — now with `details.closeReason: "CLIENT_CLOSE"`; the docs said "rejects with the close reason" and now describe this case.
 - **perp-ws Hyperliquid `account.unrealizedPnl`** was always null; `clearinghouseState` has no account-level field but carries every position's `unrealizedPnl`, so it is now their exact sum (`"0"` with no position, null if any position lacks it). Pacifica and Lighter stay null on `account` (their account feeds publish none; Lighter has it per position) — documented per venue.
 - **ws-library docs:** Aster `volume24hNotional` stays null for minutes (`!ticker@arr` pushes changed tickers only) — note added and the `MIN_NOTIONAL` example now counts unknown-volume legs instead of silently dropping them; bundle size corrected (~170 KB ESM, ~41 KB gzip — it said ~100 KB).
+- **`tradable` on every market row (one policy):** `toLegacyMarketInfo` dropped `VenueMarket.tradable`, so markets that are listed but not tradable right now looked live in `market list|prices|info`. Policy for every venue: a delisted / disabled / inactive market is NOT listed (each venue's eligibility rule, e.g. `isAsterListedPerpetual`, `isArcusOnlineMarket`; per-symbol reads of it refuse), while a listed market that cannot trade right now (off-hours equity, reduce-only, halted, paused) stays listed with `tradable: false` and a "(not tradable)" marker in the human tables / a note in `market info`. Lists are not filtered by `tradable` — that would hide every equity perp outside its session.
 
 ### JSON contract changes
 
@@ -54,6 +55,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - `market trades -e aster`: `symbol` is the normalized symbol (was the raw argument).
 - `market funding -e aster|qfex`: rows newest first (were oldest first).
 - perp-ws: `WsError.code` / `WsError.remediation` added; the use-after-close rejection gains `details.closeReason`; Hyperliquid `account.unrealizedPnl` null → the summed value.
+- Market rows (`market list|prices|info`, venues built on VenueMarket: Ondo, QFEX, Arcus, RISEx, TxFlow, GRVT, Extended, Variational) gain `tradable` (boolean) — additive. Absent on hyperliquid / pacifica / lighter / lighter-rh / aster rows (their adapters list live markets only).
 - `fundingHours` on hyperliquid / pacifica / lighter / lighter-rh market rows: null → 1 / 1 / 8 / 8.
 
 ## [0.15.0] — 2026-10-19

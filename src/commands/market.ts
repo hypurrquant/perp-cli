@@ -62,6 +62,11 @@ export function newestFirst<T extends { time: number }>(rows: readonly T[]): T[]
   return [...rows].sort((a, b) => b.time - a.time);
 }
 
+/** Symbol cell; a listed market that is not tradable right now (off-hours, reduce-only, halted) is marked. */
+function symbolCell(m: { symbol: string; tradable?: boolean }): string {
+  return m.tradable === false ? `${chalk.white.bold(m.symbol)} ${chalk.yellow("(not tradable)")}` : chalk.white.bold(m.symbol);
+}
+
 /** Multi-venue human output: the footnote of every listed venue read through an unofficial API. */
 function printUnofficialNotes(venues: string[]): void {
   for (const ex of venues) {
@@ -176,8 +181,8 @@ export function registerMarketCommands(
       const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
 
       const HEADERS = ["Symbol", "Mark", "Index", "Funding", "24h Vol", "OI (base)", "Max Lev"];
-      const marketRow = (m: { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null; fundingHours?: number | null; volume24h: string | null; openInterest: string | null; maxLeverage: number | null }, perMarket = false) => [
-        chalk.white.bold(m.symbol),
+      const marketRow = (m: { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null; fundingHours?: number | null; volume24h: string | null; openInterest: string | null; maxLeverage: number | null; tradable?: boolean }, perMarket = false) => [
+        symbolCell(m),
         `$${formatUsd(m.markPrice)}`,
         usdOrDash(m.indexPrice),
         fundingCell(m, perMarket),
@@ -276,8 +281,8 @@ export function registerMarketCommands(
     .action(async () => {
       const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
       const PRICE_HEADERS = ["Symbol", "Mark", "Index", "Funding"];
-      const priceRow = (m: { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null; fundingHours?: number | null }, perMarket = false) => [
-        chalk.white.bold(m.symbol),
+      const priceRow = (m: { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null; fundingHours?: number | null; tradable?: boolean }, perMarket = false) => [
+        symbolCell(m),
         `$${formatUsd(m.markPrice)}`,
         usdOrDash(m.indexPrice),
         fundingCell(m, perMarket),
@@ -606,6 +611,7 @@ export function registerMarketCommands(
 
 function printMarketInfo(venue: string, m: ExchangeMarketInfo): void {
   console.log(chalk.cyan.bold(`\n  ${m.symbol} on ${venue}\n`));
+  if (m.tradable === false) console.log(chalk.yellow("  Not tradable right now (off-hours, reduce-only or halted on the venue)."));
   console.log(`  Mark Price:     $${formatUsd(m.markPrice)}`);
   console.log(`  Index Price:    ${usdOrDash(m.indexPrice)}`);
   // Per-market funding interval (GRVT 4h / 8h, Variational, Aster): the rate carries its interval.

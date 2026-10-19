@@ -110,3 +110,27 @@ describe("T3 one history order on every venue", () => {
     expect(JSON.parse(kl.out).data.map((r: { time: number }) => r.time)).toEqual([1, 2, 3]);
   });
 });
+
+describe("T1 tradable carried through the market row", () => {
+  it("toLegacyMarketInfo keeps VenueMarket.tradable; human list marks a non-tradable row", async () => {
+    const { toLegacyMarketInfo } = await import("../../exchanges/venue-types.js");
+    const vm = {
+      venue: "ondo", venueSymbol: "OPENAI-USD.P", symbol: "OPENAI", canonical: null, assetClass: "preIpo", settle: "USDC", quoteAsset: "USD",
+      markPrice: "1", indexPrice: null, fundingRate: null, fundingRateBasis: { kind: "perHours", hours: 1 }, settlementIntervalHours: 1,
+      openInterest: null, volume24h: null, tickSize: "0.01", stepSize: "1", minSize: null, minNotional: null, maxLeverage: 5, marginTiers: null,
+      session: null, tradable: false,
+    };
+    expect(toLegacyMarketInfo(vm as never).tradable).toBe(false);
+    const program = new Command();
+    program.exitOverride();
+    program.option("-e, --exchange <exchange>", "", "ondo");
+    registerMarketCommands(program, async () => ({ name: "ondo", getMarkets: async () => [{ ...BTC, tradable: true }, { ...BTC, symbol: "OPENAI", tradable: false }] } as unknown as ExchangeAdapter), () => false);
+    const out: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { out.push(a.map(String).join(" ")); });
+    await program.parseAsync(["node", "perp", "-e", "ondo", "market", "list"]);
+    // eslint-disable-next-line no-control-regex
+    const text = out.join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+    expect(text).toMatch(/OPENAI \(not tradable\)/);
+    expect(text).not.toMatch(/BTC \(not tradable\)/);
+  });
+});
