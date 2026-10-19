@@ -1383,6 +1383,8 @@ export class LighterAdapter implements ExchangeAdapter {
         markPrice: d.mark_price,
         indexPrice: isPriceStr(d.index_price) ? d.index_price : null,
         fundingRate: fr?.rate ?? null,
+        // /funding-rates `rate` (per 8 h) is not the last settled print (/fundings), not verified → null.
+        fundingRateKind: null,
         volume24h: d.daily_quote_token_volume != null ? String(d.daily_quote_token_volume) : null,
         openInterest: d.open_interest != null ? String(d.open_interest) : null,
         maxLeverage: maxLev,

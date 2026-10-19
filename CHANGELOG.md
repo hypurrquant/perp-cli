@@ -44,6 +44,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **Aster `market kline`** sent any interval to the venue; an interval outside the live-verified set (1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M) is now `INVALID_PARAMS` before any request.
 - **RISEx kline OHLC (documented, not changed):** the conformance suite saw bars with `high` below `open` / `close`. perp-cli's mapping is by field name and unscaled; the venue opens each bar at the previous bar's close while `high` / `low` come from the bar's own trades, so `open` can lie outside `[low, high]` (live: 2555 of 7187 1m bars, 5 of 121 1h bars, no daily bars). The data is passed through as published — never clamped — and a consumer checking `low ≤ open, close ≤ high` must exempt RISEx `open`.
 - **perp-ws `close()` left a timer and a socket alive** (conformance `ws:all:close-timers`, every venue): `ws` keeps a 30 s close-handshake timer and the TCP socket until the server answers the close frame, and `stream.close()` resolved before that. The Node transport now destroys the socket right after sending the close frame, exposes `WsLike.whenClosed` (optional, additive), and `stream.close()` resolves once every socket is fully closed (bounded at 2 s) — the process is idle afterwards.
+- **`fundingRateKind` on market rows** (conformance: CLI rows could not be compared with WS `rateKind`): hyperliquid `accruing`, aster `accruing`, pacifica `predicted` (`next_funding_rate`) or `lastSettled` (`funding_rate`), arcus / risex `lastSettled`, txflow `accruing`, grvt `predicted`, extended `accruing`, variational `predicted`; lighter / lighter-rh / ondo / qfex `null` (the REST field is not verified against settled prints). Same vocabulary as WS `funding.rateKind`; where CLI and WS read the same field the kinds match.
 
 ### JSON contract changes
 
@@ -66,6 +67,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - Market rows (`market list|prices|info`, venues built on VenueMarket: Ondo, QFEX, Arcus, RISEx, TxFlow, GRVT, Extended, Variational) gain `tradable` (boolean) — additive. Absent on hyperliquid / pacifica / lighter / lighter-rh / aster rows (their adapters list live markets only).
 - TxFlow market rows: `assetClass` / `canonical` change for the untagged TradFi markets (crypto + ticker canonical → TradFi class + null). VenueMarket-based rows: `sizeDecimals` null (was 0 / a wrong count) when the step is not a power of ten ≤ 1.
 - `outcome view`: sides gain `label`, `wideSpread`; template outcomes gain `underlying`, `class`, `expiryMs` (were null / absent).
+- Market rows (`market list|prices|info`) gain `fundingRateKind` (`"accruing"` | `"predicted"` | `"lastSettled"` | null) — additive.
 - `fundingHours` on hyperliquid / pacifica / lighter / lighter-rh market rows: null → 1 / 1 / 8 / 8.
 
 ## [0.15.0] — 2026-10-19

@@ -5,7 +5,7 @@
  * silently substituted default.
  */
 
-import type { ExchangeMarketInfo } from "./interface.js";
+import type { ExchangeMarketInfo, FundingRateKind } from "./interface.js";
 import type { ResolvedSlippage, SlippageSource } from "./slippage.js";
 import type { AppliedBuilderFee } from "./builder-fee.js";
 
@@ -114,6 +114,27 @@ export function requireTradingPrecision(m: VenueMarket): { tickSize: string; ste
   return { tickSize: m.tickSize, stepSize: m.stepSize, maxLeverage: m.maxLeverage };
 }
 
+/**
+ * What a VenueMarket.fundingRate is per venue (REST source), consistent with the WS `rateKind` where
+ * both read the same field. null = not verified. Venues with per-row kinds (GRVT, Extended,
+ * Variational) set their own on top.
+ *  - arcus: /v1/markets fundingRate = the last hourly settlement (WS markets channel: lastSettled).
+ *  - risex: current_funding_rate equals the last settled print (venues/risex.ts, verified 2026-10-14).
+ *  - txflow: allAssetCtxs `funding` moves every tick — the running period's accruing estimate.
+ *  - ondo, qfex, lighter, lighter-rh: not verified against settled prints → null.
+ */
+const VENUE_MARKET_RATE_KIND: Partial<Record<VenueMarket["venue"], FundingRateKind>> = {
+  arcus: "lastSettled",
+  risex: "lastSettled",
+  txflow: "accruing",
+};
+
+export function fundingRateKindOf(venue: VenueMarket["venue"], fundingRate: string | null): FundingRateKind | null {
+  if (fundingRate === null) return null;
+  const k = VENUE_MARKET_RATE_KIND[venue];
+  return k === undefined ? null : k;
+}
+
 export function toLegacyMarketInfo(m: VenueMarket): ExchangeMarketInfo {
   const p = requireTradingPrecision(m);
   const hours = m.fundingRateBasis.kind === "perHours" ? m.fundingRateBasis.hours : null;
@@ -130,6 +151,7 @@ export function toLegacyMarketInfo(m: VenueMarket): ExchangeMarketInfo {
     fundingHours: hours,
     marginTiers: m.marginTiers,
     tradable: m.tradable,
+    fundingRateKind: fundingRateKindOf(m.venue, m.fundingRate),
   };
 }
 

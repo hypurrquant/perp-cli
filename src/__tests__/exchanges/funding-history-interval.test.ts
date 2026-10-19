@@ -90,3 +90,28 @@ describe("market info fundingHours from the venue definition", () => {
     expect(getVenue(venue).fundingRateBasis).toEqual({ kind: "perHours", hours: 8 });
   });
 });
+
+describe("market rows carry fundingRateKind (conformance U3)", () => {
+  it("hyperliquid accruing (WS allDexsAssetCtxs: accruing); VenueMarket venues per the shared table", async () => {
+    const a = new HyperliquidAdapter(undefined, false);
+    (a as unknown as { _infoPost: unknown })._infoPost = vi.fn(async (body: { type: string }) => {
+      if (body.type === "metaAndAssetCtxs") return [{ universe: [{ name: "BTC", szDecimals: 5, maxLeverage: 40, marginTableId: 0 }], marginTables: [] }, [{ markPx: "82695.0", oraclePx: "82730.0", funding: "0.0000043461", dayNtlVlm: "1", openInterest: "1" }]];
+      if (body.type === "allMids") return { BTC: "82695" };
+      return [];
+    });
+    expect((await a.getMarkets())[0].fundingRateKind).toBe("accruing");
+    const { fundingRateKindOf } = await import("../../exchanges/venue-types.js");
+    expect(fundingRateKindOf("arcus", "0.0000125")).toBe("lastSettled");
+    expect(fundingRateKindOf("risex", "0.0000125")).toBe("lastSettled");
+    expect(fundingRateKindOf("ondo", "0.0000125")).toBeNull(); // not verified
+    expect(fundingRateKindOf("arcus", null)).toBeNull(); // no rate → no kind
+  });
+
+  it("pacifica: predicted when next_funding_rate is the value shown, lastSettled when funding_rate is", async () => {
+    const mk = (row: Record<string, unknown>) => bare(PacificaAdapter.prototype, {
+      client: { getInfo: vi.fn(async () => [{ symbol: "BTC", instrument_type: "perpetual", lot_size: "0.00001", max_leverage: 50, ...row }]) },
+      _getPrices: vi.fn(async () => [{ symbol: "BTC", mark: "82761", oracle: "82760", volume_24h: "1", open_interest: "1" }]),
+    });
+    expect((await mk({ funding_rate: "0.0000125", next_funding_rate: "0.00001" }).getMarkets())[0].fundingRateKind).toBe("predicted");
+  });
+});

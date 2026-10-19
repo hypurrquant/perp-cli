@@ -867,6 +867,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         markPrice: String(ctx.markPx ?? mids[sym] ?? "0"),
         indexPrice: ctx.oraclePx != null ? String(ctx.oraclePx) : null,
         fundingRate: ctx.funding != null ? String(ctx.funding) : null,
+        // metaAndAssetCtxs `funding` = the running hour's rate (WS allDexsAssetCtxs: accruing).
+        fundingRateKind: ctx.funding != null ? "accruing" as const : null,
         volume24h: ctx.dayNtlVlm != null ? String(ctx.dayNtlVlm) : null,
         openInterest: ctx.openInterest != null ? String(ctx.openInterest) : null,
         maxLeverage: Number(asset.maxLeverage ?? 50),

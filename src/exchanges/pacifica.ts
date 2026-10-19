@@ -676,6 +676,8 @@ export class PacificaAdapter implements ExchangeAdapter {
         markPrice: p?.mark ?? "-",
         indexPrice: p?.oracle ?? null,
         fundingRate: m.next_funding_rate ?? m.funding_rate,
+        // /info next_funding_rate = the rate expected at the next settlement; funding_rate = the last.
+        fundingRateKind: m.next_funding_rate != null ? "predicted" as const : m.funding_rate != null ? "lastSettled" as const : null,
         volume24h: p?.volume_24h ?? null,
         openInterest: p?.open_interest ?? null,
         maxLeverage: m.max_leverage,

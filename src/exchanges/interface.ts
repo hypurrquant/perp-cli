@@ -42,7 +42,15 @@ export interface ExchangeMarketInfo {
    * rule). Absent = the venue publishes no tradability flag (its adapter lists live markets only).
    */
   tradable?: boolean;
+  /**
+   * What `fundingRate` is, in the WS `rateKind` vocabulary: "accruing" (the current period so far),
+   * "predicted" (the rate expected at the next payment), "lastSettled" (the last payment). null =
+   * not verified for this venue's REST field. Absent on rows built before 0.15.1 conventions.
+   */
+  fundingRateKind?: FundingRateKind | null;
 }
+
+export type FundingRateKind = "accruing" | "predicted" | "lastSettled";
 
 /**
  * Effective max leverage for an order of `notional` USD.

@@ -520,6 +520,8 @@ export class AsterAdapter implements ExchangeAdapter {
         markPrice: String(premium.markPrice),
         indexPrice: premium?.indexPrice != null ? String(premium.indexPrice) : null,
         fundingRate: premium?.lastFundingRate != null ? String(premium.lastFundingRate) : null,
+        // premiumIndex lastFundingRate moves during the period (same value as WS markPrice@arr `r`: accruing).
+        fundingRateKind: premium?.lastFundingRate != null ? "accruing" as const : null,
         volume24h: ticker?.quoteVolume != null ? String(ticker.quoteVolume) : null,
         // /fapi/v3/exchangeInfo and ticker/24hr carry no open interest.
         openInterest: null,
