@@ -486,10 +486,39 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   /** Set the HIP-3 deployed perp dex to query/trade on. */
   setDex(dex: string): void {
     this._dex = dex;
-    // Rebuild asset map for the new dex
-    this._assetMap.clear();
-    this._assetMapReverse.clear();
+    // Fresh market state for the new dex — NEW objects, never .clear(): a map shared with another
+    // adapter (prototype copy) must not be emptied under it. Rebuilt lazily (_loadAssetMap).
+    this._assetMap = new Map();
+    this._assetMapReverse = new Map();
+    this._szDecimalsMap = new Map();
+    this._marginModeMap = new Map();
+    this._assetMapError = null;
+    this._marketsCache = null;
+    this._marketsCacheTime = 0;
+    this._delisted = new Set();
     this._delistedAssets = new Set();
+    this._chsInFlight = null;
+    this._collateralTokenIdx = null;
+  }
+
+  /**
+   * An independent adapter for HIP-3 dex `dex` ("" = native perps) with this adapter's account
+   * configuration (key / signers / address / network / builder gate) and its OWN market state
+   * (asset maps, markets cache, delisted sets, in-flight reads). Fan-outs over dexes use this:
+   * Object.create(adapter) + setDex() shared the prototype's maps, so setDex cleared the native
+   * adapter's asset map and the dex copies served the native markets cache.
+   */
+  forDex(dex: string): HyperliquidAdapter {
+    const a = new HyperliquidAdapter(this._privateKey || undefined, this._testnet);
+    a._address = this._address;
+    a._evmSigner = this._evmSigner;
+    a._agentSigner = this._agentSigner;
+    a._agentMeta = this._agentMeta;
+    a._useNoAgent = this._useNoAgent;
+    a.isUnifiedAccount = this.isUnifiedAccount;
+    a.builderFee = this.builderFee;
+    a.setDex(dex);
+    return a;
   }
 
   get dex(): string {

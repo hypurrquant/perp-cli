@@ -141,9 +141,7 @@ export function registerMarketCommands(
             if (opts.hip3 && ex === "hyperliquid" && isDexCapable(adapter)) {
               const dexes = await adapter.listDeployedDexes();
               await Promise.allSettled(dexes.map(async (d) => {
-                const dexAdapter = Object.create(adapter) as ExchangeAdapter & import("../exchanges/capabilities.js").DexCapable;
-                dexAdapter.setDex(d.name);
-                const markets = await dexAdapter.getMarkets();
+                const markets = await adapter.forDex(d.name).getMarkets();
                 if (markets.length > 0) grouped[`hip3:${d.name}`] = markets;
               }));
             }
@@ -179,9 +177,7 @@ export function registerMarketCommands(
       if (opts.hip3 && isDexCapable(adapter)) {
         const dexes = await adapter.listDeployedDexes();
         await Promise.allSettled(dexes.map(async (d) => {
-          const dexAdapter = Object.create(adapter) as ExchangeAdapter & import("../exchanges/capabilities.js").DexCapable;
-          dexAdapter.setDex(d.name);
-          const m = await dexAdapter.getMarkets();
+          const m = await adapter.forDex(d.name).getMarkets();
           if (m.length > 0) hip3[d.name] = m;
         }));
       }

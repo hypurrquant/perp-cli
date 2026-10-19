@@ -27,6 +27,8 @@ export interface TriggerOrderCapable {
 export interface DexCapable {
   readonly dex: string;
   setDex(dex: string): void;
+  /** An independent adapter for `dex` with this account configuration and its own market state (never mutates this one). */
+  forDex(dex: string): ExchangeAdapter & DexCapable;
   listDeployedDexes(): Promise<{ name: string; deployer: string; assets: string[] }[]>;
 }
 
