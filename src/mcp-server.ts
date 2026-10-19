@@ -377,6 +377,9 @@ server.tool(
           return;
         }
         for (const m of r.value) {
+          // An ambiguous ticker (SPX6900 vs the S&P 500) names different instruments per venue:
+          // never grouped by symbol across venues.
+          if (m.assetClass === "unclassified") continue;
           const sym = m.symbol.toUpperCase();
           if (filter && !filter.has(sym)) continue;
           if (!priceMap.has(sym)) priceMap.set(sym, {});

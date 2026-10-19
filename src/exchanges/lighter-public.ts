@@ -103,14 +103,17 @@ const LIGHTER_NON_CRYPTO: Readonly<Record<string, AssetClass>> = {
  */
 const LIGHTER_AMBIGUOUS: ReadonlySet<string> = new Set(["BB", "BOT", "WEN", "QNT", "SPX"]);
 
-/** Asset class for a venue symbol, or null when it must be excluded (unclassified / ambiguous). */
-function classify(venue: LighterVenueId, symbol: string): AssetClass | null {
+/**
+ * Asset class for a venue symbol; "unclassified" (canonical null — listed, never matched across
+ * venues) when it is ambiguous or not mapped.
+ */
+function classify(venue: LighterVenueId, symbol: string): AssetClass {
   const up = symbol.toUpperCase();
   switch (venue) {
     case "lighter-rh":
-      return RH_CLASS[up] ?? null;
+      return RH_CLASS[up] ?? "unclassified";
     case "lighter":
-      if (LIGHTER_AMBIGUOUS.has(up)) return null;
+      if (LIGHTER_AMBIGUOUS.has(up)) return "unclassified";
       return LIGHTER_NON_CRYPTO[up] ?? "crypto"; // crypto-centric venue: non-crypto is listed explicitly
   }
 }
@@ -316,25 +319,20 @@ export function lighterPublicData(venue: LighterVenueId): VenuePublicData {
     async fetchMarkets(net) {
       const [details, funding] = await Promise.all([fetchPerpDetails(venue, net), fetchOwnFunding(venue, net)]);
       const out: VenueMarket[] = [];
-      const unclassified: string[] = [];
       for (const d of details) {
         // Live markets only (the rule of market list / the WS directory); inactive ones are not listed.
         if (!isLighterMarketLive(d)) continue;
         const cls = classify(venue, d.symbol);
-        if (cls === null) { unclassified.push(d.symbol); continue; }
         out.push(toMarket(venue, net, d, cls, funding.get(d.market_id)));
       }
-      warnExcluded(venue, "unclassified/ambiguous market(s)", unclassified);
       return out;
     },
 
     async fetchFundingRates(net) {
       const funding = await fetchOwnFunding(venue, net);
       const out: VenueFundingRate[] = [];
-      const unclassified: string[] = [];
       for (const r of funding.values()) {
         const cls = classify(venue, r.symbol);
-        if (cls === null) { unclassified.push(r.symbol); continue; }
         out.push({
           venue,
           venueSymbol: String(r.market_id),
@@ -346,7 +344,6 @@ export function lighterPublicData(venue: LighterVenueId): VenuePublicData {
           nextFundingTime: null, // not published
         });
       }
-      warnExcluded(venue, "unclassified/ambiguous market(s)", unclassified);
       return out;
     },
   };

@@ -123,6 +123,8 @@ export function canonicalFor(venueKey: VenueId | `hl:${string}`, symbol: string,
     case "fx":
     case "preIpo":
       return EXPLICIT_CANONICAL[`${venueKey}|${up}`] ?? null;
+    case "unclassified":
+      return null; // ambiguous ticker: listed, never matched across venues
   }
 }
 

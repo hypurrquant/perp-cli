@@ -45,7 +45,12 @@ export function rateToHourly(rate: number, basis: FundingRateBasis): number {
 
 // ── Markets ──
 
-export type AssetClass = "crypto" | "equity" | "index" | "etf" | "commodity" | "fx" | "preIpo";
+/**
+ * "unclassified": listed, but its class is ambiguous (a ticker that names different instruments
+ * on different venues: SPX6900 vs the S&P 500, Pacifica BP / CHIP, Lighter BB / BOT / WEN / QNT,
+ * Lighter RH USELESS). Its canonical is always null, so it is never matched across venues.
+ */
+export type AssetClass = "crypto" | "equity" | "index" | "etf" | "commodity" | "fx" | "preIpo" | "unclassified";
 
 export interface MarketSession {
   /** Whether the underlying (e.g. US equity) market is open right now. */

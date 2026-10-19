@@ -63,18 +63,20 @@ const PACIFICA_NON_CRYPTO: Readonly<Record<string, AssetClass>> = {
 };
 const PACIFICA_AMBIGUOUS: ReadonlySet<string> = new Set(["BP", "CHIP"]);
 
-function classifyPacifica(symbol: string): AssetClass | null {
+// Ambiguous tickers are listed as "unclassified" (canonical null: never matched across venues),
+// so every listing path (CLI, MCP, public directory) shows the same market set.
+function classifyPacifica(symbol: string): AssetClass {
   const up = symbol.toUpperCase();
-  if (AMBIGUOUS.has(up) || PACIFICA_AMBIGUOUS.has(up)) return null;
+  if (AMBIGUOUS.has(up) || PACIFICA_AMBIGUOUS.has(up)) return "unclassified";
   return PACIFICA_NON_CRYPTO[up] ?? "crypto"; // crypto-centric venue: non-crypto is listed explicitly
 }
 
-function classifyHyperliquid(symbol: string): AssetClass | null {
-  return AMBIGUOUS.has(symbol.toUpperCase()) ? null : "crypto";
+function classifyHyperliquid(symbol: string): AssetClass {
+  return AMBIGUOUS.has(symbol.toUpperCase()) ? "unclassified" : "crypto";
 }
 
-function classifyAster(symbol: string, subTypes: readonly string[]): AssetClass | null {
-  if (AMBIGUOUS.has(symbol.toUpperCase())) return null;
+function classifyAster(symbol: string, subTypes: readonly string[]): AssetClass {
+  if (AMBIGUOUS.has(symbol.toUpperCase())) return "unclassified";
   if (subTypes.includes("pre-launch")) return "preIpo";
   if (subTypes.includes("ETF")) return "etf";
   if (subTypes.includes("STOCK")) return "equity";
@@ -142,7 +144,6 @@ async function pacificaRows(net: Network): Promise<Row[]> {
   const settlement = settlementIntervalOf("pacifica");
 
   const out: Row[] = [];
-  const unclassified: string[] = [];
   const unpriced: string[] = [];
   for (const m of info) {
     // /info lists spot markets too (e.g. SOL-USDC): perps only. A row without the field cannot be classified.
@@ -152,7 +153,6 @@ async function pacificaRows(net: Network): Promise<Row[]> {
     if (!isPacificaPerpetual(m)) continue;
     const symbol = String(m.symbol ?? "");
     const assetClass = classifyPacifica(symbol);
-    if (assetClass === null) { unclassified.push(symbol); continue; }
     const p = priceBySymbol.get(symbol);
     const mark = p ? positiveNumStr(p.mark) : null;
     if (!p || mark === null) { unpriced.push(symbol); continue; }
@@ -185,7 +185,6 @@ async function pacificaRows(net: Network): Promise<Row[]> {
       nextFundingTime: null, // Pacifica publishes no next-funding timestamp
     });
   }
-  warnExcluded("pacifica", "unclassified/ambiguous market(s)", unclassified);
   warnExcluded("pacifica", "market(s) without a mark price", unpriced);
   return out;
 }
@@ -211,7 +210,6 @@ async function hyperliquidRows(net: Network): Promise<Row[]> {
   const settlement = settlementIntervalOf("hyperliquid");
 
   const out: Row[] = [];
-  const unclassified: string[] = [];
   const unpriced: string[] = [];
   universe.forEach((a, i) => {
     // Delisted assets stay in meta (isDelisted: true) with zeroed funding / volume / OI
@@ -220,7 +218,6 @@ async function hyperliquidRows(net: Network): Promise<Row[]> {
     const ctx = ctxs[i];
     const symbol = String(a.name ?? "");
     const assetClass = classifyHyperliquid(symbol);
-    if (assetClass === null) { unclassified.push(symbol); return; }
     const mark = positiveNumStr(ctx.markPx);
     if (mark === null) { unpriced.push(symbol); return; }
     const szDecimals = Number(a.szDecimals);
@@ -253,7 +250,6 @@ async function hyperliquidRows(net: Network): Promise<Row[]> {
       nextFundingTime: null, // not published in metaAndAssetCtxs
     });
   });
-  warnExcluded("hyperliquid", "unclassified/ambiguous market(s)", unclassified);
   warnExcluded("hyperliquid", "market(s) without a mark price", unpriced);
   return out;
 }
@@ -284,7 +280,6 @@ async function asterRows(net: Network): Promise<Row[]> {
   }
 
   const out: Row[] = [];
-  const unclassified: string[] = [];
   const unpriced: string[] = [];
   const noInterval: string[] = [];
   for (const s of symbols) {
@@ -294,7 +289,6 @@ async function asterRows(net: Network): Promise<Row[]> {
     const symbol = String(s.baseAsset);
     const subTypes = Array.isArray(s.underlyingSubType) ? (s.underlyingSubType as unknown[]).map(String) : [];
     const assetClass = classifyAster(symbol, subTypes);
-    if (assetClass === null) { unclassified.push(venueSymbol); continue; }
     const p = premiumBySymbol.get(venueSymbol);
     const mark = p ? positiveNumStr(p.markPrice) : null;
     if (!p || mark === null) { unpriced.push(venueSymbol); continue; }
@@ -333,7 +327,6 @@ async function asterRows(net: Network): Promise<Row[]> {
       nextFundingTime: Number.isFinite(next) && next > 0 ? next : null,
     });
   }
-  warnExcluded("aster", "unclassified/ambiguous market(s)", unclassified);
   warnExcluded("aster", "market(s) without a mark price", unpriced);
   warnExcluded("aster", "market(s) missing from fundingInfo", noInterval);
   return out;
