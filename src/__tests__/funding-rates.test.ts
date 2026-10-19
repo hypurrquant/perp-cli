@@ -405,8 +405,10 @@ describe("Pacifica nextFundingTime guard", () => {
     // The API's next_funding (a rate) MUST NOT leak into nextFundingTime. Contract (venue-types,
     // SSOT Rule #2): an unpublished value is null, never undefined / a guessed timestamp.
     expect(pacEntry!.nextFundingTime).toBeNull();
-    // next_funding is the quoted funding rate itself (legacy-public.ts pacificaRows).
-    expect(pacEntry!.fundingRate).toBeCloseTo(-0.00014299);
+    // The compared rate is the last settled `funding` (legacy-public.ts pacificaRows), not the
+    // predicted next_funding; the row says so.
+    expect(pacEntry!.fundingRate).toBe(0.0001);
+    expect(pacEntry!.rateKind).toBe("lastSettled");
   });
 });
 

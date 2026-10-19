@@ -326,6 +326,10 @@ perp --json arb scan                                        # default --mode all
 perp --json arb scan --mode perp-perp --min 10              # perp-only with min annual %
 perp --json arb scan --mode spot-perp --min 10              # spot+perp only
 perp --json arb scan --rates                                # funding rates across exchanges
+# Which rate is compared: each venue's market-row `fundingRate` (the CURRENT rate it publishes), labelled
+# per row by `rateKind` — Pacifica / Lighter / Lighter RH / Arcus / RISEx "lastSettled", Hyperliquid /
+# Aster / TxFlow "accruing", null = not verified. It is NOT the WS comparator's kind:"next" (predicted
+# next-period rate, where a venue publishes one: Pacifica `predictedFundingRate`).
 perp --json arb scan --basis [SYMBOL]                       # cross-exchange basis
 perp --json arb scan --gaps                                 # cross-exchange price gaps
 perp --json arb scan --hip3                                 # HIP-3 cross-dex spreads

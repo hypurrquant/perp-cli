@@ -15,7 +15,8 @@ import { annualizeHourlyRate, estimateHourlyFundingFromHourly } from "./normaliz
 import { getHistoricalAverages, type HistoricalAverages } from "./history.js";
 import { SPOT_PERP_TOKEN_MAP, MAX_PRICE_DEVIATION_PCT } from "../exchanges/index.js";
 import { getVenue, listVenuesWithRole, READ_ONLY_CREDENTIALS, type VenueDefinition } from "../exchanges/venue.js";
-import { rateToHourly, type FundingRateBasis, type Network, type VenueFundingRate, type VenueId } from "../exchanges/venue-types.js";
+import type { FundingRateKind } from "../exchanges/interface.js";
+import { fundingRateKindOf, rateToHourly, type FundingRateBasis, type Network, type VenueFundingRate, type VenueId } from "../exchanges/venue-types.js";
 import { ensureVenuesRegistered } from "../exchanges/venues/index.js";
 import { sharedApiNetwork } from "../api/public/urls.js";
 import { PerpError } from "../errors.js";
@@ -40,6 +41,12 @@ export interface ExchangeFundingRate {
   fundingVerified: boolean;
   /** How the row was read: "unofficial" = an undocumented venue API (VenueDefinition.apiStatus) — may change without notice. */
   apiStatus: "official" | "unofficial";
+  /**
+   * Which rate `fundingRate` is (the venue market row's rate — arb compares those, never a
+   * predicted next-period rate unless the venue only publishes that): "lastSettled" | "accruing" |
+   * "predicted", null = not verified (fundingRateKindOf).
+   */
+  rateKind: FundingRateKind | null;
 }
 
 export interface SymbolFundingComparison {
@@ -148,6 +155,7 @@ function toExchangeRate(r: VenueFundingRate & { rate: string }, canonical: strin
     historicalAvg: null,
     fundingVerified,
     apiStatus,
+    rateKind: fundingRateKindOf(r.venue, r.rate),
   };
 }
 

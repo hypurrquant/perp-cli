@@ -111,11 +111,11 @@ describe("market rows carry fundingRateKind (conformance U3)", () => {
     expect(fundingRateKindOf("arcus", null)).toBeNull(); // no rate → no kind
   });
 
-  it("pacifica: predicted when next_funding_rate is the value shown, lastSettled when funding_rate is", async () => {
+  it("pacifica: fundingRate is the last settled funding_rate (lastSettled, = WS funding); next_funding_rate is predictedFundingRate", async () => {
     const mk = (row: Record<string, unknown>) => bare(PacificaAdapter.prototype, {
       client: { getInfo: vi.fn(async () => [{ symbol: "BTC", instrument_type: "perpetual", lot_size: "0.00001", max_leverage: 50, ...row }]) },
       _getPrices: vi.fn(async () => [{ symbol: "BTC", mark: "82761", oracle: "82760", volume_24h: "1", open_interest: "1" }]),
     });
-    expect((await mk({ funding_rate: "0.0000125", next_funding_rate: "0.00001" }).getMarkets())[0].fundingRateKind).toBe("predicted");
+    expect((await mk({ funding_rate: "0.0000125", next_funding_rate: "0.00001" }).getMarkets())[0]).toMatchObject({ fundingRate: "0.0000125", fundingRateKind: "lastSettled", predictedFundingRate: "0.00001" });
   });
 });

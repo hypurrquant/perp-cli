@@ -168,7 +168,9 @@ async function pacificaRows(net: Network): Promise<Row[]> {
         quoteAsset: null,
         markPrice: mark,
         indexPrice: positiveNumStr(p.oracle),
-        fundingRate: rateStr(p.next_funding),
+        // Last settled hourly rate (WS prices `funding`, the CLI row's fundingRate); next_funding
+        // is the predicted one.
+        fundingRate: rateStr(p.funding),
         fundingRateBasis: basis,
         settlementIntervalHours: settlement,
         openInterest: numStr(p.open_interest),
