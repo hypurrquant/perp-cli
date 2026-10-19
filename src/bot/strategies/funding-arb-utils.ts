@@ -275,8 +275,9 @@ export async function scoreFunding(
   const fH = venueHours !== null ? venueHours : await marketFundingHours(adapter, exchangeName, symbol);
   if (fH === null) return null; // per-symbol basis unknown — the hourly rate would be a guess
   const history = await adapter.getFundingHistory(symbol, periods);
-  // A print without a rate (market closed) is unknown, not 0: left out of the average.
-  const known = history.filter((h): h is typeof h & { rate: string } => h.rate !== null);
+  // A print without a rate is unknown, not 0, and a closed-market window (QFEX outside
+  // market_hours: rate null, marketClosed) carries no funding: both left out of the average.
+  const known = history.filter((h): h is typeof h & { rate: string } => h.rate !== null && h.marketClosed !== true);
   if (known.length < 2) return null;
   const rates = known.map(h => parseFloat(h.rate));
   if (rates.some(r => !Number.isFinite(r))) {

@@ -50,9 +50,12 @@ export function registerBacktestCommands(
       const ratesB = getHistoricalRates(sym, exchB, startTime, endTime);
 
       if (ratesA.length === 0 && ratesB.length === 0) {
-        if (isJson()) return printJson(jsonError("NO_DATA", `No historical funding data for ${sym}. Run 'perp funding snapshot' first to collect data.`));
+        // The funding history is written by `arb scan --rates` (saveFundingSnapshot; verified venues
+        // only). There is no `perp funding snapshot` command (0.15.0 named one).
+        const collect = `perp arb scan --rates --symbol ${sym}`;
+        if (isJson()) return printJson(jsonError("NO_DATA", `No historical funding data for ${sym}. Run '${collect}' periodically to collect data first.`));
         console.log(chalk.yellow(`\n  No historical funding data for ${sym} on ${exchA}/${exchB}.`));
-        console.log(chalk.yellow(`  Run 'perp funding snapshot' periodically to collect data first.\n`));
+        console.log(chalk.yellow(`  Run '${collect}' periodically to collect data first.\n`));
         return;
       }
 

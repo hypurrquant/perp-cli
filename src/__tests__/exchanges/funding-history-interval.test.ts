@@ -38,7 +38,11 @@ describe("funding history rows carry intervalHours + rateKind", () => {
   });
 
   it("ondo: hourly", async () => {
-    const a = bare(OndoAdapter.prototype, { client: { publicGet: vi.fn(async () => [{ market: "BTC-USD.P", time: "2026-10-19T10:00:00.017Z", fundingRate: "0.0000125" }]) } });
+    const a = bare(OndoAdapter.prototype, { pairsCache: null, contractsCache: null, client: { publicGet: vi.fn(async (path: string) => path === "/v1/markets"
+      ? { perps: { tradingPairs: [{ market: "BTC-USD.P" }] }, spot: { tradingPairs: [] } }
+      : path === "/v1/perps/contracts"
+        ? [{ market: "BTC-USD.P", disabled: false }]
+        : [{ market: "BTC-USD.P", time: "2026-10-19T10:00:00.017Z", fundingRate: "0.0000125" }]) } });
     expect((await a.getFundingHistory("BTC", 1))[0]).toMatchObject({ rate: "0.0000125", ...SETTLED_1H });
   });
 

@@ -20,7 +20,13 @@ const LIVE_ALIGNED = [
 function adapterReturning(rows: unknown[]) {
   const get = vi.fn().mockResolvedValue(rows);
   const a = Object.create(OndoAdapter.prototype) as OndoAdapter;
-  (a as unknown as { client: unknown }).client = { get };
+  // /v1/markets + /v1/perps/contracts (the disabled-listing check of every per-symbol read): BTC is live.
+  const publicGet = vi.fn(async (path: string) => path === "/v1/perps/contracts"
+    ? [{ market: "BTC-USD.P", disabled: false }]
+    : { perps: { tradingPairs: [{ market: "BTC-USD.P" }] }, spot: { tradingPairs: [] } });
+  (a as unknown as { client: unknown; pairsCache: unknown }).client = { get, publicGet };
+  (a as unknown as { pairsCache: unknown; contractsCache: unknown }).pairsCache = null;
+  (a as unknown as { contractsCache: unknown }).contractsCache = null;
   return { a, get };
 }
 

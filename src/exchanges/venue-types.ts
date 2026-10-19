@@ -160,10 +160,16 @@ export interface VenueFundingRate {
   venueSymbol: string;
   symbol: string;
   canonical: string | null;
-  rate: string;
+  /** null = no funding right now (`marketClosed` true: outside the market's funding hours). */
+  rate: string | null;
   basis: FundingRateBasis;
   markPrice: string | null;
   nextFundingTime: number | null;
+  /**
+   * true = the current funding window is outside the market's funding hours (QFEX market_hours):
+   * `rate` is null — the venue's 0 is "no funding", not a 0 rate. Absent = funds around the clock.
+   */
+  marketClosed?: boolean;
 }
 
 // ── Orders ──
