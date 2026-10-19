@@ -499,7 +499,7 @@ async function runHealth(exchangeList: string[], network: Network): Promise<Heal
 // ── Arb top-5 ──────────────────────────────────────────────────────────────
 
 async function fetchArbTop(): Promise<ArbOpportunityOut[]> {
-  const { fetchAllFundingRates, TOP_SYMBOLS } = await import("../funding-rates.js");
+  const { fetchAllFundingRates, isRankedComparison, TOP_SYMBOLS } = await import("../funding-rates.js");
   const { saveFundingSnapshot, getHistoricalAverages } = await import("../funding-history.js");
 
   let snapshot: Awaited<ReturnType<typeof fetchAllFundingRates>> | null;
@@ -517,6 +517,7 @@ async function fetchArbTop(): Promise<ArbOpportunityOut[]> {
   } catch { /* ignore */ }
 
   const top = snapshot.symbols
+    .filter(isRankedComparison)
     .filter(s => s.maxSpreadAnnual >= 5)
     .sort((a, b) => b.maxSpreadAnnual - a.maxSpreadAnnual)
     .slice(0, 5);

@@ -7,6 +7,7 @@ import {
   fetchCanonicalPriceGroups,
   dropPriceOutliers,
   fetchSymbolFundingRates,
+  isRankedComparison,
   TOP_SYMBOLS,
   type FundingRateSnapshot,
   type SymbolFundingComparison,
@@ -273,7 +274,8 @@ function printSnapshotTable(snapshot: FundingRateSnapshot): void {
 
   const rows = snapshot.symbols.map(s => {
     const rateOf = (id: string) => s.rates.find(r => r.exchange === id);
-    const spreadColor = s.maxSpreadAnnual >= 30 ? chalk.green : s.maxSpreadAnnual >= 10 ? chalk.yellow : chalk.white;
+    const spread = s.maxSpreadAnnual;
+    const spreadColor = spread === null ? chalk.gray : spread >= 30 ? chalk.green : spread >= 10 ? chalk.yellow : chalk.white;
     // Historical-average source preference: HL, PAC, LT, AST, then whichever venue quoted.
     const bestRate = rateOf("hyperliquid") ?? rateOf("pacifica") ?? rateOf("lighter") ?? rateOf("aster") ?? s.rates[0];
     const trend = trendMap.get(s.symbol) ?? chalk.gray("-");
@@ -283,8 +285,10 @@ function printSnapshotTable(snapshot: FundingRateSnapshot): void {
         const r = rateOf(v.id);
         return r ? formatPercent(r.fundingRate) : chalk.gray("-");
       }),
-      spreadColor(`${s.maxSpreadAnnual.toFixed(1)}%`), trend,
-      s.maxSpreadAnnual >= 5 ? `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}${s.executable ? "" : chalk.gray(s.readOnlyLegs.length > 0 ? " (read-only)" : " (unverified)")}` : chalk.gray("-"),
+      // No ranked pair (< 2 verified rows): unverified rates are shown, never ranked.
+      spread === null ? chalk.gray("n/a") : spreadColor(`${spread.toFixed(1)}%`), trend,
+      spread === null || s.longExchange === null || s.shortExchange === null ? chalk.gray("unranked (unverified)")
+        : spread >= 5 ? `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}${s.executable ? "" : chalk.gray(s.readOnlyLegs.length > 0 ? " (read-only)" : " (unverified)")}` : chalk.gray("-"),
       formatAvgRate(bestRate?.historicalAvg?.avg8h), formatAvgRate(bestRate?.historicalAvg?.avg24h), formatAvgRate(bestRate?.historicalAvg?.avg7d),
     ];
   });
@@ -311,6 +315,10 @@ function printDetailedComparison(comparison: SymbolFundingComparison): void {
     const compoundedReturn = getCompoundedAnnualReturn(r.hourlyRate, compHours);
     const color = r.fundingRate > 0 ? chalk.red : r.fundingRate < 0 ? chalk.green : chalk.white;
     console.log(`  ${chalk.white.bold(exAbbr(r.exchange).padEnd(4))} Raw: ${color(formatPercent(r.fundingRate).padEnd(14))} Hourly: ${(r.hourlyRate * 100).toFixed(6)}%  Annual: ${r.annualizedPct.toFixed(2)}%  APY: ${(compoundedReturn * 100).toFixed(2)}%`);
+  }
+  if (!isRankedComparison(comparison)) {
+    console.log(chalk.yellow(`\n  No ranked pair: fewer than two venues with verified funding (${comparison.unverifiedLegs.join(", ")} unverified — display only, never a long / short leg).\n`));
+    return;
   }
   const spreadColor = comparison.maxSpreadAnnual >= 30 ? chalk.green.bold : comparison.maxSpreadAnnual >= 10 ? chalk.yellow : chalk.white;
   console.log(`\n  Max Spread:     ${spreadColor(`${comparison.maxSpreadAnnual.toFixed(1)}%`)} annual`);

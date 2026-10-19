@@ -40,7 +40,7 @@ import { PerpError, classifyError, extractErrorMessage, isDefiniteOrderFailure, 
 import { invalidateCache } from "./cache.js";
 import { probeVenueHealth } from "./venue-health.js";
 import { getOptionsVenue, listOptionsVenueIds } from "./exchanges/options-venues.js";
-import { fetchAllFundingRates } from "./funding-rates.js";
+import { fetchAllFundingRates, isRankedComparison } from "./funding-rates.js";
 import { loadArbState } from "./arb/state.js";
 import { validateTrade } from "./trade-validator.js";
 import { orderResultJson, symbolMatch } from "./utils.js";
@@ -1489,7 +1489,7 @@ server.tool(
         minSpread: minSpread ?? 5,
       });
 
-      const opportunities = snapshot.symbols.map(s => ({
+      const opportunities = snapshot.symbols.filter(isRankedComparison).map(s => ({
         symbol: s.symbol,
         maxSpreadAnnual: `${s.maxSpreadAnnual.toFixed(2)}%`,
         strategy: `Long ${s.longExchange} / Short ${s.shortExchange}`,

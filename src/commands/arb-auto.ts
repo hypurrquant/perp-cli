@@ -569,7 +569,9 @@ export async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
   // listings have no canonical and never pair), each with its basis and rateKind. A venue that
   // fails is reported, never silently treated as "no spread".
   const venues = ["pacifica", "hyperliquid", "lighter", "aster"].map(id => getVenue(id));
-  const { rates, exchangeErrors } = await fetchVenuesRates(venues, sharedApiNetwork(), false);
+  const { rates: fetched, exchangeErrors } = await fetchVenuesRates(venues, sharedApiNetwork(), false);
+  // Never a leg on an unverified rate (row label; the venue filter above already drops them).
+  const rates = fetched.filter(r => r.fundingVerified);
   for (const [ex, msg] of Object.entries(exchangeErrors)) process.stderr.write(`[arb-auto] ${ex}: funding rates unavailable — ${msg}\n`);
 
   const pacRates = new Map<string, number>(), pacPrices = new Map<string, number>();

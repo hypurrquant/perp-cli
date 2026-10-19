@@ -68,7 +68,9 @@ async function fetchAllRates(): Promise<FundingRate[]> {
   // symbol (unclassified / ambiguous tickers have no canonical and never pair). Each venue is
   // independent; a failed one is reported on stderr (explicit, never silent).
   const venues = ["pacifica", "hyperliquid", "lighter"].map(id => getVenue(id));
-  const { rates, exchangeErrors } = await fetchVenuesRates(venues, sharedApiNetwork(), false);
+  const { rates: fetched, exchangeErrors } = await fetchVenuesRates(venues, sharedApiNetwork(), false);
+  // Never a leg on an unverified rate (row label; the venue filter already drops them).
+  const rates = fetched.filter(r => r.fundingVerified);
   for (const [ex, msg] of Object.entries(exchangeErrors)) process.stderr.write(`[funding-arb] ${ex}: funding rates unavailable — ${msg}\n`);
   // computeAnnualSpread / toHourlyRate normalize with the venue's basis: keep each rate in it.
   return rates.map(r => ({ exchange: r.exchange, symbol: r.canonical, venueSymbol: r.symbol, fundingRate: r.hourlyRate * getFundingHours(r.exchange), markPrice: r.markPrice }));

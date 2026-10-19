@@ -23,8 +23,10 @@ vi.mock("../funding/rates.js", async (orig) => ({
     const spread = h.cycle === 1 ? 0.0005 : 0;
     if (h.cycle >= 2) setTimeout(() => process.emit("SIGINT"), 0);
     return {
-      rates: [row("lighter", "1000PEPE", "1000PEPE", 0.00001), row("hyperliquid", "kPEPE", "1000PEPE", 0.00001 + spread)],
-      exchangeStatus: { lighter: "ok", hyperliquid: "ok" }, exchangeErrors: {},
+      rates: [row("lighter", "1000PEPE", "1000PEPE", 0.00001), row("hyperliquid", "kPEPE", "1000PEPE", 0.00001 + spread),
+        // Labelled unverified, the lowest rate: ranking it would long pacifica. Never a leg.
+        { ...row("pacifica", "1000PEPE", "1000PEPE", -0.01), fundingVerified: false }],
+      exchangeStatus: { lighter: "ok", hyperliquid: "ok", pacifica: "ok" }, exchangeErrors: {},
     };
   }),
 }));
@@ -63,9 +65,9 @@ function adapter(name: string, sym: string): ExchangeAdapter {
 }
 
 describe("venue symbols of an aliased pair (HL kPEPE ↔ Lighter 1000PEPE)", () => {
-  it("strategy funding-arb: open, position read and close use each venue's own symbol; --symbols kPEPE matches", async () => {
+  it("strategy funding-arb: open, position read and close use each venue's own symbol; --symbols kPEPE matches; an unverified row is never a leg", async () => {
     const logs: string[] = [];
-    const adapters = new Map([["lighter", adapter("lighter", "1000PEPE")], ["hyperliquid", adapter("hyperliquid", "kPEPE")]]);
+    const adapters = new Map([["lighter", adapter("lighter", "1000PEPE")], ["hyperliquid", adapter("hyperliquid", "kPEPE")], ["pacifica", adapter("pacifica", "1000PEPE")]]);
     await runFundingArb(adapters, { minSpread: 1, closeSpread: 5, size: "1000", intervalSec: 0, autoExecute: true, symbols: ["kPEPE"] }, undefined, (m) => logs.push(m));
     expect(h.open).toHaveLength(1);
     expect(h.open[0]).toMatchObject({ longExch: "lighter", longSym: "1000PEPE", shortExch: "hyperliquid", shortSym: "kPEPE" });

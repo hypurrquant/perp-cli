@@ -175,9 +175,10 @@ export const RateRow = z.looseObject({
 export const RateSymbol = z.looseObject({
   symbol: z.string(),
   rates: z.array(RateRow),
-  maxSpreadAnnual: z.number(),
-  longExchange: z.string(),
-  shortExchange: z.string(),
+  // null = no ranked pair (fewer than two verified rows; --include-unverified display rows).
+  maxSpreadAnnual: z.number().nullable(),
+  longExchange: z.string().nullable(),
+  shortExchange: z.string().nullable(),
   executable: z.boolean(),
   readOnlyLegs: z.array(z.string()),
 });

@@ -236,7 +236,9 @@ async function fetchFundingRatesMap(): Promise<Map<string, { exchange: string; r
   // ambiguous tickers have no row), each with its own basis (fundingHours) and rateKind. A failed
   // venue is reported on stderr (explicit, never silent).
   const venues = ["pacifica", "hyperliquid", "lighter", "aster"].map(id => getVenue(id));
-  const { rates, exchangeErrors } = await fetchVenuesRates(venues, sharedApiNetwork(), false);
+  const { rates: fetched, exchangeErrors } = await fetchVenuesRates(venues, sharedApiNetwork(), false);
+  // Never a leg on an unverified rate (row label; the venue filter already drops them).
+  const rates = fetched.filter(r => r.fundingVerified);
   for (const [ex, msg] of Object.entries(exchangeErrors)) process.stderr.write(`[arb] ${ex}: funding rates unavailable — ${msg}\n`);
   const rateMap = new Map<string, { exchange: string; rate: number; markPrice: number; fundingHours: number | null }[]>();
   for (const r of rates) {

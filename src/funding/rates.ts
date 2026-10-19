@@ -53,11 +53,17 @@ export interface SymbolFundingComparison {
   /** Canonical symbol shared by every row. */
   symbol: string;
   rates: ExchangeFundingRate[];
-  maxSpreadAnnual: number;      // annualized spread between extremes
-  longExchange: string;         // go long where funding is lowest (you get paid)
-  shortExchange: string;        // go short where funding is highest (you get paid)
-  bestMarkPrice: number;        // mark price of the most liquid venue present (MARK_PRICE_PREFERENCE)
-  estHourlyIncomeUsd: number;   // estimated hourly income for $1000 notional
+  /**
+   * Ranking is over VERIFIED rows only (VenueDefinition.fundingVerified): an unverified row
+   * (`--include-unverified`) is shown in `rates` but is never the long or short leg nor part of
+   * the spread. Fewer than two verified rows → no ranked pair: longExchange / shortExchange /
+   * maxSpreadAnnual / estHourlyIncomeUsd are null (a display-only row).
+   */
+  maxSpreadAnnual: number | null;      // annualized spread between the verified extremes
+  longExchange: string | null;         // go long where verified funding is lowest (you get paid)
+  shortExchange: string | null;        // go short where verified funding is highest (you get paid)
+  bestMarkPrice: number;               // mark price of the most liquid venue present (MARK_PRICE_PREFERENCE)
+  estHourlyIncomeUsd: number | null;   // estimated hourly income for $1000 notional
   /**
    * false = a leg of the long/short pair sits on a venue without the trading role (RISEx while its
    * trading is gated in this release): the spread is data only — `arb exec` refuses it.
@@ -76,6 +82,14 @@ export interface SymbolFundingComparison {
    * executable. [] when both legs are verified.
    */
   unverifiedLegs: string[];
+}
+
+/** A comparison with a ranked pair (≥ 2 verified rows): long / short / spread / income are set. */
+export type RankedFundingComparison = SymbolFundingComparison & { maxSpreadAnnual: number; longExchange: string; shortExchange: string; estHourlyIncomeUsd: number };
+
+export function isRankedComparison(c: SymbolFundingComparison): c is RankedFundingComparison {
+  // estHourlyIncomeUsd is set together with the pair (null exactly when the pair is).
+  return c.longExchange !== null && c.shortExchange !== null && c.maxSpreadAnnual !== null;
 }
 
 export interface FundingRateSnapshot {
@@ -344,8 +358,21 @@ export async function fetchAllFundingRates(opts?: {
 
     // Sort by hourly rate (ascending)
     rates.sort((a, b) => a.hourlyRate - b.hourlyRate);
-    const lowest = rates[0];
-    const highest = rates[rates.length - 1];
+    // The long / short legs and the spread come from verified rows only: an unverified rate is
+    // display data (--include-unverified), never ranked. < 2 verified rows → a display-only row.
+    const ranked = rates.filter(r => r.fundingVerified);
+    if (ranked.length < 2) {
+      const unverifiedLegs = [...new Set(rates.filter(r => !r.fundingVerified).map(r => r.exchange))];
+      comparisons.push({
+        symbol, rates, maxSpreadAnnual: null, longExchange: null, shortExchange: null,
+        bestMarkPrice: bestMarkPrice(rates), estHourlyIncomeUsd: null,
+        executable: false, readOnlyLegs: [], unverifiedLegs,
+        mixedKinds: new Set(rates.map(r => r.rateKind)).size > 1,
+      });
+      continue;
+    }
+    const lowest = ranked[0];
+    const highest = ranked[ranked.length - 1];
     // The median filter alone lets a 2-venue group through at up to 2 × MAX_PRICE_DEVIATION_PCT
     // apart (each side deviates half the gap): the CHOSEN pair must itself agree on price.
     const pairGapPct = Math.abs(lowest.markPrice - highest.markPrice) / ((lowest.markPrice + highest.markPrice) / 2) * 100;
@@ -380,8 +407,8 @@ export async function fetchAllFundingRates(opts?: {
     });
   }
 
-  // Sort by spread descending
-  comparisons.sort((a, b) => b.maxSpreadAnnual - a.maxSpreadAnnual);
+  // Sort by spread descending; display-only rows (no ranked pair) last
+  comparisons.sort((a, b) => (b.maxSpreadAnnual ?? -Infinity) - (a.maxSpreadAnnual ?? -Infinity));
 
   return {
     timestamp: new Date().toISOString(),

@@ -334,8 +334,8 @@ describe("fetchAllFundingRates", () => {
 
     const snapshot = await fetchAllFundingRates();
     if (snapshot.symbols.length >= 2) {
-      expect(snapshot.symbols[0].maxSpreadAnnual).toBeGreaterThanOrEqual(
-        snapshot.symbols[1].maxSpreadAnnual,
+      expect(snapshot.symbols[0].maxSpreadAnnual!).toBeGreaterThanOrEqual(
+        snapshot.symbols[1].maxSpreadAnnual!,
       );
     }
   });

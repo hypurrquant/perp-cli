@@ -17,7 +17,9 @@ vi.mock("../funding/rates.js", async (orig) => ({
   fetchVenuesRates: vi.fn(async () => ({
     rates: [row("lighter", "BTC", 0.000012, "lastSettled"), row("hyperliquid", "BTC", 0.00005, "accruing"), row("aster", "BTC", 0.0000125, "accruing", 8),
       // An aliased asset: Hyperliquid kPEPE and Lighter 1000PEPE share the canonical 1000PEPE.
-      { ...row("hyperliquid", "1000PEPE", 0.0004, "accruing"), symbol: "kPEPE" }, row("lighter", "1000PEPE", 0.00001, "lastSettled")],
+      { ...row("hyperliquid", "1000PEPE", 0.0004, "accruing"), symbol: "kPEPE" }, row("lighter", "1000PEPE", 0.00001, "lastSettled"),
+      // A row labelled unverified (would be the short leg of ETH at 0.01/h): never a leg.
+      row("lighter", "ETH", 0.00001, "lastSettled"), row("hyperliquid", "ETH", 0.00002, "accruing"), { ...row("pacifica", "ETH", 0.01, "lastSettled"), fundingVerified: false }],
     exchangeStatus: { lighter: "ok", hyperliquid: "ok", aster: "ok", pacifica: "ok" }, exchangeErrors: {},
   })),
 }));
@@ -36,6 +38,12 @@ describe("arb auto funding source", () => {
     expect(s.astHours).toBe(8);
     expect(s.rateKinds).toEqual({ lighter: "lastSettled", hyperliquid: "accruing", aster: "accruing" });
     expect([s.longExch, s.shortExch]).toEqual(["lighter", "hyperliquid"]);
+  });
+
+  it("a row labelled fundingVerified false is never a leg (ETH pairs lighter / hyperliquid, not pacifica)", async () => {
+    const s = (await fetchFundingSpreads()).find(x => x.symbol === "ETH")!;
+    expect([s.longExch, s.shortExch]).toEqual(["lighter", "hyperliquid"]);
+    expect(s.rateKinds?.pacifica).toBeUndefined(); // no pacifica leg data at all
   });
 
   it("an aliased row carries each venue's own symbol: the HL leg trades kPEPE, the Lighter leg 1000PEPE", async () => {

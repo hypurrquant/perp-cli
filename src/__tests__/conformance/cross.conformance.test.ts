@@ -162,7 +162,8 @@ describe(`cross-venue + CLI ⇄ MCP parity (${MODE})`, () => {
     schema("cross:arb-basis:schema", "arb-basis", ArbBasis);
 
     /** A leg on a venue without trading, or with unverified funding, can never be executed. */
-    const notExecutableVenue = (id: string): boolean => {
+    const notExecutableVenue = (id: string | null): boolean => {
+      if (id === null) return true; // no ranked pair
       const def = getVenue(id);
       return !def.roles.includes("trading") || !def.fundingVerified;
     };
@@ -175,6 +176,18 @@ describe(`cross-venue + CLI ⇄ MCP parity (${MODE})`, () => {
         const bad = rateRows(cell).filter(r => r && r.executable && [r.longExchange, r.shortExchange].some(notExecutableVenue))
           .map(r => `${r.symbol} ${r.longExchange}/${r.shortExchange}`);
         expectCheck(`cross:${cell}:never-executable`, bad.length === 0 ? null : `executable: ${bad.slice(0, 5).join(", ")}`);
+      });
+    }
+    for (const cell of ["arb-rates", "arb-rates-unverified", "arb-compare", "arb-compare-unverified"]) {
+      it(`${cell}: an unverified-funding venue is never the long / short leg; no pair → no spread`, () => {
+        const bad = rateRows(cell).filter(Boolean).flatMap(r => {
+          const out: string[] = [];
+          for (const leg of [r.longExchange, r.shortExchange]) if (leg !== null && !getVenue(leg).fundingVerified) out.push(`${r.symbol} ranked ${leg}`);
+          if ((r.longExchange === null) !== (r.maxSpreadAnnual === null)) out.push(`${r.symbol}: pair ${r.longExchange}/${r.shortExchange} with spread ${r.maxSpreadAnnual}`);
+          if (r.longExchange === null && r.rates.filter(x => x.fundingVerified).length >= 2) out.push(`${r.symbol}: unranked with ≥ 2 verified rows`);
+          return out;
+        });
+        expectCheck(`cross:${cell}:ranked-verified`, bad.length === 0 ? null : bad.slice(0, 5).join(", "));
       });
     }
     for (const cell of ["arb-rates", "arb-compare"]) {
