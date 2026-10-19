@@ -28,9 +28,32 @@ export const GRVT_KLINE_INTERVALS: Readonly<Record<string, string>> = {
   "1d": "CI_1_D", "3d": "CI_3_D", "5d": "CI_5_D", "1w": "CI_1_W", "2w": "CI_2_W", "3w": "CI_3_W", "4w": "CI_4_W",
 };
 
-/** Bars per kline page (the documented max) and pages read before stopping with a warning. */
+/** Fixed-length intervals (ms): `start_time` is floored to their boundary (epoch-aligned, UTC). */
+const GRVT_KLINE_FIXED_MS: Readonly<Record<string, number>> = {
+  "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000, "1h": 3_600_000, "2h": 7_200_000,
+  "4h": 14_400_000, "6h": 21_600_000, "8h": 28_800_000, "12h": 43_200_000, "1d": 86_400_000,
+};
+const GRVT_KLINE_NOMINAL_MS: Readonly<Record<string, number>> = {
+  ...GRVT_KLINE_FIXED_MS, "3d": 259_200_000, "5d": 432_000_000, "1w": 604_800_000, "2w": 1_209_600_000, "3w": 1_814_400_000, "4w": 2_419_200_000,
+};
+
+/**
+ * Bars per kline page (the documented max) and the most pages one read may take. The `next`
+ * cursor runs dry after ~1000 bars (live 2026-10-19: page 2 had 2 rows and `next` ""), so pages
+ * walk `end_time` back to just before the oldest bar returned instead.
+ */
 export const GRVT_KLINE_PAGE = 1000;
-export const GRVT_KLINE_MAX_PAGES = 10;
+/**
+ * Pages actually read before giving up. Real pages hold fewer than 1000 bars (minutes without a
+ * bar: 40 d of 1m took 58 pages for 57,583 bars), so the read budget is 25 % above the nominal
+ * GRVT_KLINE_MAX_PAGES. 75 requests stay well inside GRVT's 500 market-data requests / minute.
+ */
+export const GRVT_KLINE_READ_PAGES = 75;
+/** Measured live 2026-10-19: /trade answers at most 1000 rows (limit 1500 → 1000, no cursor). */
+export const GRVT_TRADES_CAP = 1000;
+/** Measured live 2026-10-19: /funding honours limit 10,000 in one answer (BTC). */
+export const GRVT_FUNDING_CAP = 10_000;
+export const GRVT_KLINE_MAX_PAGES = 60;
 
 const WARN = (msg: string) => { process.stderr.write(`${msg}\n`); };
 
@@ -134,8 +157,11 @@ export class GrvtPublicAdapter implements ExchangeAdapter {
 
   async getOrderbook(symbol: string, depth = 50): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
     const m = await this.market(symbol);
-    // The smallest served depth that covers the request; above 500 levels, the deepest one (500).
-    const d = GRVT_BOOK_DEPTHS.find(x => x >= depth) ?? 500;
+    // The smallest served depth that covers the request; above 500 → INVALID_PARAMS (never clamped).
+    const d = GRVT_BOOK_DEPTHS.find(x => x >= depth);
+    if (d === undefined || !Number.isInteger(depth) || depth < 1) {
+      throw new PerpError("INVALID_PARAMS", `GRVT: book depth must be 1..500 (got ${depth})`, { exchange: "grvt", remediation: "Pass --depth 1..500" });
+    }
     const res = await this.client.result<{ bids?: unknown; asks?: unknown }>("book", { instrument: m.instrument, depth: d });
     if (res === null || typeof res !== "object" || !Array.isArray(res.bids) || !Array.isArray(res.asks)) {
       throw grvtShapeError("book has no bids / asks arrays");
@@ -149,21 +175,27 @@ export class GrvtPublicAdapter implements ExchangeAdapter {
   }
 
   async getRecentTrades(symbol: string, limit = 50): Promise<ExchangePublicTrade[]> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > GRVT_TRADES_CAP) {
+      throw new PerpError("INVALID_PARAMS", `GRVT: trades limit must be 1..${GRVT_TRADES_CAP} (got ${limit})`, {
+        remediation: `GRVT serves at most ${GRVT_TRADES_CAP} recent trades per request and no cursor for older ones`,
+      });
+    }
     const m = await this.market(symbol);
-    const res = await this.client.result<unknown>("trade", { instrument: m.instrument, limit: Math.min(Math.max(1, limit), 1000) });
+    const res = await this.client.result<unknown>("trade", { instrument: m.instrument, limit });
     if (!Array.isArray(res)) throw grvtShapeError("trade result is not an array");
+    // The venue answers oldest first; every venue's tape is newest first.
     return res.map(t => {
       const x = t as { is_taker_buyer?: unknown; price?: unknown; size?: unknown; event_time?: unknown };
       if (typeof x.is_taker_buyer !== "boolean") throw grvtShapeError("trade without is_taker_buyer");
       return {
         time: nsToMs(x.event_time, "trade event_time"),
         symbol: m.symbol,
-        side: x.is_taker_buyer ? "buy" : "sell",
+        side: x.is_taker_buyer ? "buy" as const : "sell" as const,
         price: dec(x.price, "trade price"),
         size: dec(x.size, "trade size"),
         fee: null,
       };
-    });
+    }).sort((a, b) => b.time - a.time);
   }
 
   /**
@@ -171,8 +203,12 @@ export class GrvtPublicAdapter implements ExchangeAdapter {
    * fraction per the record's `intervalHours` (published in percentage points, converted exactly).
    */
   async getFundingHistory(symbol: string, limit = 100): Promise<GrvtFundingHistoryRow[]> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > GRVT_FUNDING_CAP) {
+      throw new PerpError("INVALID_PARAMS", `GRVT: funding history limit must be 1..${GRVT_FUNDING_CAP} (got ${limit})`);
+    }
     const m = await this.market(symbol);
-    const res = await this.client.result<unknown>("funding", { instrument: m.instrument, limit: Math.min(Math.max(1, limit), 1000) });
+    // Sent as asked (it was silently clamped to 1000; the venue serves 10,000 in one answer).
+    const res = await this.client.result<unknown>("funding", { instrument: m.instrument, limit });
     if (!Array.isArray(res)) throw grvtShapeError("funding result is not an array");
     return res.map(r => {
       const x = r as { funding_rate?: unknown; funding_time?: unknown; mark_price?: unknown; funding_interval_hours?: unknown };
@@ -196,26 +232,53 @@ export class GrvtPublicAdapter implements ExchangeAdapter {
         remediation: `Use one of: ${Object.keys(GRVT_KLINE_INTERVALS).join(", ")}`,
       });
     }
+    if (!(endTime > startTime)) throw new PerpError("INVALID_PARAMS", "GRVT: candle end time must be after the start time");
+    const fixed = GRVT_KLINE_FIXED_MS[interval];
+    // An off-grid start_time makes GRVT answer a truncated first bar labelled off the grid
+    // (live: 4h from 05:07 → a 06:00–08:00 bar), so the start is floored to the boundary.
+    const start = fixed === undefined ? startTime : Math.floor(startTime / fixed) * fixed;
+    const pagesNeeded = Math.ceil((endTime - start) / GRVT_KLINE_NOMINAL_MS[interval] / GRVT_KLINE_PAGE);
+    if (pagesNeeded > GRVT_KLINE_MAX_PAGES) {
+      throw new PerpError("INVALID_PARAMS", `GRVT: ${interval} candles over this range need ${pagesNeeded} requests (max ${GRVT_KLINE_MAX_PAGES})`, {
+        remediation: "Narrow --start / --end or use a longer interval",
+      });
+    }
     const m = await this.market(symbol);
-    // Reverse-chronological pages of up to 1000 bars, followed by `next` until start_time is reached.
-    const rows: unknown[] = [];
-    let cursor = "";
-    for (let page = 0; ; page++) {
+    // Reverse-chronological pages of up to 1000 bars; the next page ends just before the oldest
+    // bar returned. Done when a page is empty or reaches `start` — never on the cursor alone.
+    const byOpen = new Map<string, Record<string, unknown>>();
+    let end = endTime;
+    let oldestSeen = Infinity;
+    let exhausted = false;
+    for (let page = 0; page < GRVT_KLINE_READ_PAGES; page++) {
       const res = await this.client.post<{ result?: unknown; next?: unknown }>("kline", {
-        instrument: m.instrument, interval: ci, type: "TRADE", start_time: msToNs(startTime), end_time: msToNs(endTime), limit: GRVT_KLINE_PAGE,
-        ...(cursor !== "" ? { cursor } : {}),
+        instrument: m.instrument, interval: ci, type: "TRADE", start_time: msToNs(start), end_time: msToNs(end), limit: GRVT_KLINE_PAGE,
       });
       if (res === null || typeof res !== "object" || !Array.isArray(res.result)) throw grvtShapeError("kline result is not an array");
-      rows.push(...res.result);
-      const next = typeof res.next === "string" ? res.next : "";
-      if (res.result.length < GRVT_KLINE_PAGE || next === "") break;
-      if (page + 1 >= GRVT_KLINE_MAX_PAGES) {
-        WARN(`[grvt] kline ${m.instrument} ${interval}: stopped after ${GRVT_KLINE_MAX_PAGES * GRVT_KLINE_PAGE} bars — older bars in the window are not shown (narrow the range)`);
-        break;
+      if (res.result.length === 0) { exhausted = true; break; } // no older bars: history starts here
+      let oldest = Infinity;
+      for (const c of res.result as Record<string, unknown>[]) {
+        const t = nsToMs(c.open_time, "kline open_time");
+        byOpen.set(String(c.open_time), c);
+        if (t < oldest) oldest = t;
       }
-      cursor = next;
+      if (oldest >= oldestSeen) {
+        throw new PerpError("EXCHANGE_ERROR", `GRVT: kline page did not move back past ${new Date(oldestSeen).toISOString()} (venue answered bars outside end_time)`, { exchange: "grvt" });
+      }
+      oldestSeen = oldest;
+      if (oldest <= start) break;
+      end = oldest - 1;
     }
-    return rows.map(c => {
+    // Ran out of the read budget before reaching `start`: the oldest bars would be missing — never
+    // returned as the whole range.
+    if (!exhausted && oldestSeen > start) {
+      throw new PerpError("EXCHANGE_ERROR", `GRVT: ${interval} candles reached only ${new Date(oldestSeen).toISOString()} after ${GRVT_KLINE_READ_PAGES} pages (requested from ${new Date(start).toISOString()})`, {
+        exchange: "grvt", reachedMs: oldestSeen, requestedFromMs: start,
+        remediation: `Narrow --start / --end (or use a longer interval); fetch older bars with --end ${oldestSeen - 1}`,
+      });
+    }
+    const rows = [...byOpen.values()];
+    const bars = rows.map(c => {
       const x = c as Record<string, unknown>;
       return {
         time: nsToMs(x.open_time, "kline open_time"),
@@ -223,8 +286,15 @@ export class GrvtPublicAdapter implements ExchangeAdapter {
         volume: dec(x.volume_b, "kline volume_b"),
         quoteVolume: typeof x.volume_q === "string" && DEC.test(x.volume_q) ? x.volume_q : null,
         trades: typeof x.trades === "number" ? x.trades : null,
+        closeMs: nsToMs(x.close_time, "kline close_time"),
       };
     }).sort((a, b) => a.time - b.time);
+    // Calendar intervals (3d … 4w) are not floored: a first bar shorter than the interval is a
+    // truncated bar (live: the first 1w bar covered 4 days) and is left out. The newest bar may be
+    // in progress and is kept.
+    const nominal = GRVT_KLINE_NOMINAL_MS[interval];
+    const full = fixed === undefined && bars.length > 1 && bars[0].closeMs - bars[0].time + 1 < nominal * 0.99 ? bars.slice(1) : bars;
+    return full.map(({ closeMs: _c, ...k }) => k);
   }
 
   // ── Account / trading: refused (read-only in this version) ──

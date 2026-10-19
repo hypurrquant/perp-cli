@@ -74,6 +74,10 @@ declare class WsError extends Error {
         remediation?: string;
         details?: Record<string, unknown>;
     });
+    /** `structured.code` — the same place as `code` on error events (`e.code`). */
+    get code(): WsErrorCode;
+    /** `structured.remediation` — the same place as `remediation` on error events; null when none. */
+    get remediation(): string | null;
 }
 /** Structural check: a PerpError (CLI) or a WsError — anything carrying `structured.{code,message}`. */
 declare function isPerpError(e: unknown): e is {
@@ -109,6 +113,11 @@ interface WsLike {
         wasClean?: boolean;
     }) => void) | null;
     onerror: ((ev: unknown) => void) | null;
+    /**
+     * Optional: settles once the underlying socket is fully closed (no timer or socket left). The
+     * Node transport sets it; `stream.close()` awaits it (bounded) so the process is idle afterwards.
+     */
+    readonly whenClosed?: Promise<void>;
 }
 type WsFactory = (url: string) => WsLike;
 type FetchLike = (input: string, init?: {

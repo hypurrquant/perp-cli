@@ -83,7 +83,11 @@ describe("Aster getFundingHistory — no fabricated rows (reported from the Hypu
     await expect((await adapter(() => null)).getFundingHistory("BTC", 5)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
     await expect((await adapter(() => [{ fundingRate: "0.0001" }])).getFundingHistory("BTC", 5)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
     expect(await (await adapter(() => [{ fundingTime: 1700000000000, fundingRate: "0.0001", markPrice: "83000" }])).getFundingHistory("BTC", 5))
-      .toEqual([{ time: 1700000000000, rate: "0.0001", price: "83000" }]);
+      .toEqual([{ time: 1700000000000, rate: "0.0001", price: "83000", intervalHours: null, rateKind: "lastSettled" }]);
+    // The market's interval from /fapi/v3/fundingInfo labels each row.
+    const a = await adapter(() => [{ fundingTime: 1700000000000, fundingRate: "0.0001", markPrice: "83000" }]);
+    (a as unknown as { _fundingHoursCache: Map<string, number> })._fundingHoursCache.set("BTC", 4);
+    expect((await a.getFundingHistory("BTC", 5))[0]).toMatchObject({ intervalHours: 4, rateKind: "lastSettled" });
   });
 });
 
@@ -158,5 +162,32 @@ describe("maxLeverageForNotional — tiers without a headline", () => {
     const m = { maxLeverage: null, marginTiers: [{ lowerBound: 0, maxLeverage: 20 }, { lowerBound: 1e6, maxLeverage: 10 }] } as never;
     expect(maxLeverageForNotional(m, 100)).toBe(20);
     expect(maxLeverageForNotional(m, 2e6)).toBe(10);
+  });
+});
+
+describe("Aster T5 (audit 0.15.0)", () => {
+  it("a validation error inside HTTP 200 (fundingRate limit=1001, live body) → INVALID_PARAMS, not 'not a list'", async () => {
+    const { AsterAdapter } = await import("../../exchanges/aster.js");
+    const a = new AsterAdapter(undefined, false);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "ERROR", type: "VALID", code: "000002", errorData: { limit: "limit can not greater than 1000" } }), { status: 200 })));
+    try {
+      await expect(a.getFundingHistory("BTC", 1001)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "INVALID_PARAMS", message: expect.stringContaining("limit can not greater than 1000") }) });
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("trades echo the normalized symbol (BTC-PERP → BTC); the live tape row has no symbol", async () => {
+    const a = await adapter(() => [{ id: 148953155, price: "82301.7", qty: "0.641", quoteQty: "52755.3", time: 1792407851150, isBuyerMaker: false }]);
+    expect((await a.getRecentTrades("BTC-PERP", 1))[0]).toEqual({ time: 1792407851150, symbol: "BTC", side: "buy", price: "82301.7", size: "0.641", fee: null });
+  });
+});
+
+describe("Aster kline intervals (conformance U4)", () => {
+  it("an interval outside the live-verified set is INVALID_PARAMS before any request", async () => {
+    const get = vi.fn(() => []);
+    const a = await adapter(get);
+    await expect(a.getKlines("BTC", "7m", 0, 60_000)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "INVALID_PARAMS", remediation: expect.stringContaining("1m, 3m, 5m") }) });
+    expect(get).not.toHaveBeenCalled();
+    await a.getKlines("BTC", "1M", 0, 60_000);
+    expect(get).toHaveBeenCalled();
   });
 });

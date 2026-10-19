@@ -19,7 +19,7 @@ import {
   type RateEntry, type RateMap, type FundingScore,
   buildAdapterMap,
   getPerpSymbol, findRate, cappedLeverage, matchSymbol, fetchRates,
-  scoreFunding, isPositionGone, botSpotPerpMatches, assertFundingArbLegs, cancelBotSymbols, collectFundingSince } from "./funding-arb-utils.js";
+  scoreFunding, assertFundingHistoryPeriods, isPositionGone, botSpotPerpMatches, assertFundingArbLegs, cancelBotSymbols, collectFundingSince } from "./funding-arb-utils.js";
 import type { SpotMarketInfo } from "../../exchanges/spot-interface.js";
 import type { VenueMarket } from "../../exchanges/venue-types.js";
 import { SpotPerpExecutor } from "./spot-perp-executor.js";
@@ -110,6 +110,8 @@ export class SpotPerpArbStrategy implements Strategy {
     try { pruneExecutionLog(30); } catch { /* non-critical */ }
     this._config = ctx.config;
     const p = this.params;
+    // Config-time check: a history_periods above a leg venue's cap would fail every tick.
+    assertFundingHistoryPeriods(p.history_periods, p.exchanges);
     ctx.state.set("arbRunning", true);
     ctx.state.set("spaPositions", [] as SpotPerpPosition[]);
     ctx.state.set("arbPositions", 0);

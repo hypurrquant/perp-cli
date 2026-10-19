@@ -55,3 +55,25 @@ export function mulDecimalInt(s: string, n: number, shift: number): string | und
   const abs = (neg ? -product : product).toString();
   return shiftDecimal(`${neg ? "-" : ""}${abs}`, shift - frac.length);
 }
+
+/**
+ * Exact sum of decimal strings (BigInt, no float). Undefined when any input is not a plain decimal
+ * (no exponent). [] → "0".
+ */
+export function sumDecimals(values: readonly string[]): string | undefined {
+  let scale = 0;
+  const parts: Array<{ int: bigint; scale: number }> = [];
+  for (const v of values) {
+    const m = DECIMAL_RE.exec(v);
+    if (m === null || m[4] !== undefined || (m[2] === "" && (m[3] === undefined || m[3] === ""))) return undefined;
+    const frac = m[3] === undefined ? "" : m[3];
+    const digits = `${m[2]}${frac}`.replace(/^0+(?=\d)/, "");
+    parts.push({ int: BigInt(digits === "" ? "0" : digits) * (m[1] === "-" ? -1n : 1n), scale: frac.length });
+    if (frac.length > scale) scale = frac.length;
+  }
+  let total = 0n;
+  for (const p of parts) total += p.int * 10n ** BigInt(scale - p.scale);
+  const neg = total < 0n;
+  const abs = (neg ? -total : total).toString();
+  return shiftDecimal(`${neg ? "-" : ""}${abs}`, -scale);
+}

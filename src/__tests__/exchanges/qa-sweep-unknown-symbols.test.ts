@@ -162,7 +162,7 @@ describe("Pacifica funding history is strict (review L2)", () => {
 
   it("maps the live row shape", async () => {
     const r = await pac([{ oracle_price: "83703.548788", funding_rate: "0.0000125", next_funding_rate: "0.0000125", created_at: 1791950402115 }]).getFundingHistory("BTC");
-    expect(r).toEqual([{ time: 1791950402115, rate: "0.0000125", price: "83703.548788" }]);
+    expect(r).toEqual([{ time: 1791950402115, rate: "0.0000125", price: "83703.548788", intervalHours: 1, rateKind: "lastSettled" }]);
   });
   it("a non-list answer is EXCHANGE_ERROR, not []", async () => {
     await expect(pac({ unexpected: true }).getFundingHistory("BTC")).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });

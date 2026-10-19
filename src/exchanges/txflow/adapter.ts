@@ -10,15 +10,31 @@ import { PerpError } from "../../errors.js";
 import type {
   ExchangeAdapter, ExchangeBalance, ExchangeFundingPayment, ExchangeKline, ExchangeMarketInfo, ExchangeOrder,
   ExchangePosition, ExchangeTrade, ExchangePublicTrade,
+  FundingHistoryRow
 } from "../interface.js";
+import { assertCandleInterval } from "../interface.js";
 import { unsupported } from "../trading-v2.js";
 import { roleUnsupported, networkConfig, type VenueDefinition } from "../venue.js";
 import { toLegacyMarketInfo, type Network, type VenueMarket } from "../venue-types.js";
 import { txflowShapeError, TxflowClient } from "./client.js";
 import { fetchTxflowDirectory, fetchTxflowMarkets, resolveTxflowMarket, type TxflowMarketMeta } from "./public.js";
 
-/** Candle intervals the TxFlow app requests (HL-style). */
-export const TXFLOW_KLINE_INTERVALS: ReadonlySet<string> = new Set(["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d", "3d", "1w", "1M"]);
+/**
+ * Candle intervals that return bars (verified live 2026-10-19, coin 1). 3d / 1w / 1M are
+ * accepted by the API but answer [] for every window, so they are not offered.
+ */
+export const TXFLOW_KLINE_MS: Readonly<Record<string, number>> = {
+  "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000, "1h": 3_600_000,
+  "2h": 7_200_000, "4h": 14_400_000, "8h": 28_800_000, "12h": 43_200_000, "1d": 86_400_000,
+};
+export const TXFLOW_KLINE_INTERVALS: ReadonlySet<string> = new Set(Object.keys(TXFLOW_KLINE_MS));
+/**
+ * candleSnapshot answers `200 []` (no error) when the window spans more than ~3000 bars
+ * (measured 2026-10-19: 3000 bars OK, 3050 → [] at 1h; same at 1m / 5m / 1d), so ranges are
+ * read in windows of at most 2900 bars and merged.
+ */
+export const TXFLOW_KLINE_WINDOW_BARS = 2900;
+export const TXFLOW_KLINE_MAX_WINDOWS = 50;
 
 /** Legacy market row plus the labels every TxFlow row carries in JSON output. */
 export type TxflowMarketInfo = ExchangeMarketInfo & { venueApi: "unofficial"; fundingVerified: false };
@@ -78,37 +94,54 @@ export class TxflowPublicAdapter implements ExchangeAdapter {
       const x = t as { side?: unknown; px?: unknown; sz?: unknown; time?: unknown };
       if (x.side !== "B" && x.side !== "A") throw txflowShapeError(`trade side ${String(x.side)}`);
       if (typeof x.time !== "number") throw txflowShapeError("trade without time");
-      // Public tape carries no fee; "0" follows the legacy ExchangeTrade convention for public trades.
+      // Public tape: no fee applies to the viewer → null (ExchangePublicTrade), never "0".
       return { time: x.time, symbol: m.symbol, side: x.side === "B" ? "buy" : "sell", price: dec(x.px, "trade px"), size: dec(x.sz, "trade sz"), fee: null };
     });
   }
 
-  async getFundingHistory(): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(): Promise<FundingHistoryRow[]> {
     throw unsupported("txflow", "fundingHistory", "TxFlow's unofficial API refuses funding-history reads (HTTP 403)",
       "Current TxFlow funding (unverified, per hour): perp -e txflow market info <symbol>, or perp arb scan --rates --include-unverified");
   }
 
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
-    if (!TXFLOW_KLINE_INTERVALS.has(interval)) {
+    const ms = TXFLOW_KLINE_MS[interval];
+    if (ms === undefined) {
       throw new PerpError("INVALID_PARAMS", `TxFlow: unsupported candle interval "${interval}"`, {
         remediation: `Use one of: ${[...TXFLOW_KLINE_INTERVALS].join(", ")}`,
       });
     }
+    const span = TXFLOW_KLINE_WINDOW_BARS * ms;
+    const windows = Math.max(1, Math.ceil((endTime - startTime) / span));
+    if (windows > TXFLOW_KLINE_MAX_WINDOWS) {
+      throw new PerpError("INVALID_PARAMS", `TxFlow: ${interval} candles over this range need ${windows} requests (max ${TXFLOW_KLINE_MAX_WINDOWS})`, {
+        remediation: "Narrow --start / --end or use a longer interval",
+      });
+    }
     const m = await this.market(symbol);
-    const res = await this.client.info<unknown>({ type: "candleSnapshot", req: { coin: String(m.index), interval, startTime, endTime } });
-    if (!Array.isArray(res)) throw txflowShapeError("candleSnapshot is not an array");
-    return res.map(c => {
-      const x = c as Record<string, unknown>;
-      if (typeof x.t !== "number") throw txflowShapeError("candle without t");
-      return {
-        time: x.t,
-        open: dec(x.o, "candle o"), high: dec(x.h, "candle h"), low: dec(x.l, "candle l"), close: dec(x.c, "candle c"),
-        volume: dec(x.v, "candle v"),
-        quoteVolume: null,
-        trades: typeof x.n === "number" ? x.n : null,
-      };
-    });
+    const byTime = new Map<number, ExchangeKline>();
+    // Disjoint windows [from, to), each within the venue's silent ~3000-bar cap; merged by open time.
+    for (let from = startTime; ; from += span) {
+      const to = Math.min(from + span, endTime);
+      const res = await this.client.info<unknown>({ type: "candleSnapshot", req: { coin: String(m.index), interval, startTime: from, endTime: to } });
+      if (!Array.isArray(res)) throw txflowShapeError("candleSnapshot is not an array");
+      for (const c of res) {
+        const x = c as Record<string, unknown>;
+        if (typeof x.t !== "number") throw txflowShapeError("candle without t");
+        assertCandleInterval("txflow", interval, x.i);
+        byTime.set(x.t, {
+          time: x.t,
+          open: dec(x.o, "candle o"), high: dec(x.h, "candle h"), low: dec(x.l, "candle l"), close: dec(x.c, "candle c"),
+          volume: dec(x.v, "candle v"),
+          quoteVolume: null,
+          trades: typeof x.n === "number" ? x.n : null,
+        });
+      }
+      if (to >= endTime) break;
+    }
+    return [...byTime.values()].sort((a, b) => a.time - b.time);
   }
+
 
   // ── Account / trading: refused (market-data-only venue, unofficial API) ──
 

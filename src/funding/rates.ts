@@ -57,6 +57,12 @@ export interface SymbolFundingComparison {
   executable: boolean;
   /** Venues of the long/short pair that perp-cli cannot trade (read-only); [] when executable. */
   readOnlyLegs: string[];
+  /**
+   * Venues of the long/short pair whose funding is unverified (VenueDefinition.fundingVerified
+   * false, e.g. QFEX — shown only with --include-unverified, display only); such a pair is never
+   * executable. [] when both legs are verified.
+   */
+  unverifiedLegs: string[];
 }
 
 export interface FundingRateSnapshot {
@@ -179,7 +185,7 @@ const _warnedPriceMismatch = new Set<string>();
  * venue whose mark price deviates more than MAX_PRICE_DEVIATION_PCT from the
  * group median, with a one-time stderr warning per (symbol, venue).
  */
-function dropPriceOutliers<T extends { exchange: VenueId; markPrice: number }>(canonical: string, list: T[], tag = "funding"): T[] {
+export function dropPriceOutliers<T extends { exchange: VenueId; markPrice: number }>(canonical: string, list: T[], tag = "funding"): T[] {
   if (list.length < 2) return list;
   const sorted = list.map(r => r.markPrice).sort((x, y) => x - y);
   const mid = sorted.length % 2 === 1
@@ -264,10 +270,15 @@ export async function fetchCanonicalPriceGroups(venues: VenueDefinition[], opts?
   return { groups: groupByCanonical(prices, opts?.symbols, opts?.tag ?? "prices"), exchangeStatus, exchangeErrors };
 }
 
-/** Whether perp-cli can trade both legs of a long/short pair (the trading role), and which it cannot. */
-export function pairExecutability(longExchange: string, shortExchange: string): { executable: boolean; readOnlyLegs: string[] } {
-  const readOnlyLegs = [...new Set([longExchange, shortExchange])].filter(v => !getVenue(v).roles.includes("trading"));
-  return { executable: readOnlyLegs.length === 0, readOnlyLegs };
+/**
+ * Whether a long/short pair can be traded as a funding arb: both legs need the trading role AND
+ * verified funding (an unverified-funding venue is display only — never ranked for trading).
+ */
+export function pairExecutability(longExchange: string, shortExchange: string): { executable: boolean; readOnlyLegs: string[]; unverifiedLegs: string[] } {
+  const legs = [...new Set([longExchange, shortExchange])];
+  const readOnlyLegs = legs.filter(v => !getVenue(v).roles.includes("trading"));
+  const unverifiedLegs = legs.filter(v => !getVenue(v).fundingVerified);
+  return { executable: readOnlyLegs.length === 0 && unverifiedLegs.length === 0, readOnlyLegs, unverifiedLegs };
 }
 
 function bestMarkPrice(rates: ExchangeFundingRate[]): number {

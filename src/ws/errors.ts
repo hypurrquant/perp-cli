@@ -45,6 +45,16 @@ export class WsError extends Error {
       ...(opts?.details !== undefined ? { details: opts.details } : {}),
     };
   }
+
+  /** `structured.code` — the same place as `code` on error events (`e.code`). */
+  get code(): WsErrorCode {
+    return this.structured.code;
+  }
+
+  /** `structured.remediation` — the same place as `remediation` on error events; null when none. */
+  get remediation(): string | null {
+    return this.structured.remediation === undefined ? null : this.structured.remediation;
+  }
 }
 
 /** Structural check: a PerpError (CLI) or a WsError — anything carrying `structured.{code,message}`. */

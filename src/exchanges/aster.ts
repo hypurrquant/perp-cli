@@ -20,6 +20,7 @@
  */
 
 import { nonEmptyOrListed } from "./unknown-symbol.js";
+import { isAsterListedPerpetual } from "../ws/aster-market.js";
 import { accountCacheEpoch } from "../cache.js";
 import type {
   ExchangeAdapter,
@@ -31,6 +32,7 @@ import type {
   ExchangePublicTrade,
   ExchangeFundingPayment,
   ExchangeKline,
+  FundingHistoryRow
 } from "./interface.js";
 import type { ResolvedSlippage } from "./slippage.js";
 import type { EvmSigner } from "../signer/interface.js";
@@ -221,6 +223,12 @@ export const ASTER_INCOME_MAX_PAGES = 60;
 const ASTER_KLINE_PAGE = 1500;
 /** Page cap for one range (150 000 bars). */
 const ASTER_KLINE_MAX_PAGES = 100;
+
+/**
+ * Kline intervals verified live 2026-10-19 (/fapi/v3/klines BTCUSDT: each answers bars of that
+ * length; "7m" / "2d" → -1120 "Invalid interval."). Anything else is refused before a request.
+ */
+export const ASTER_KLINE_INTERVALS: ReadonlySet<string> = new Set(["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"]);
 
 export class AsterAdapter implements ExchangeAdapter {
   readonly name = "aster";
@@ -491,7 +499,7 @@ export class AsterAdapter implements ExchangeAdapter {
     // USDT-quoted perps only: the CLI symbol mapping (ETH ↔ ETHUSDT) cannot address the USD1 / U
     // quoted markets (live 2026-10-13: 22 USD1 + 2 U), so listing them would offer untradeable rows.
     const tradingSymbols = info.symbols
-      .filter((s) => String(s.contractType) === "PERPETUAL" && String(s.status) === "TRADING" && String(s.quoteAsset) === "USDT");
+      .filter((s) => isAsterListedPerpetual(s) && String(s.quoteAsset) === "USDT");
 
     const result = tradingSymbols.flatMap((s) => {
       const sym = String(s.symbol);
@@ -512,6 +520,8 @@ export class AsterAdapter implements ExchangeAdapter {
         markPrice: String(premium.markPrice),
         indexPrice: premium?.indexPrice != null ? String(premium.indexPrice) : null,
         fundingRate: premium?.lastFundingRate != null ? String(premium.lastFundingRate) : null,
+        // premiumIndex lastFundingRate moves during the period (same value as WS markPrice@arr `r`: accruing).
+        fundingRateKind: premium?.lastFundingRate != null ? "accruing" as const : null,
         volume24h: ticker?.quoteVolume != null ? String(ticker.quoteVolume) : null,
         // /fapi/v3/exchangeInfo and ticker/24hr carry no open interest.
         openInterest: null,
@@ -653,17 +663,18 @@ export class AsterAdapter implements ExchangeAdapter {
       limit: String(limit),
     }) as Array<Record<string, unknown>>;
 
-    return (trades ?? []).map((t) => ({
-      time: Number(t.time ?? 0),
-      symbol: this._fromApi(String(t.symbol ?? symbol)),
-      side: t.isBuyerMaker ? "sell" as const : "buy" as const,
-      price: String(t.price ?? "0"),
-      size: String(t.qty ?? "0"),
-      fee: null, // the public tape carries no fee
-    }));
+    if (!Array.isArray(trades)) throw new PerpError("EXCHANGE_ERROR", `Aster trades is not a list (${JSON.stringify(trades).slice(0, 120)})`, { exchange: "aster" });
+    // The tape rows carry no symbol: the normalized venue symbol (was the raw argument, "BTC-PERP").
+    const sym = this._fromApi(this._toApi(symbol));
+    return trades.map((t) => {
+      if (typeof t.time !== "number" || typeof t.price !== "string" || typeof t.qty !== "string" || typeof t.isBuyerMaker !== "boolean") {
+        throw new PerpError("EXCHANGE_ERROR", `Aster trade row without time / price / qty / isBuyerMaker: ${JSON.stringify(t).slice(0, 160)}`, { exchange: "aster" });
+      }
+      return { time: t.time, symbol: sym, side: t.isBuyerMaker ? "sell" as const : "buy" as const, price: t.price, size: t.qty, fee: null }; // the public tape carries no fee
+    });
   }
 
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(symbol: string, limit = 10): Promise<FundingHistoryRow[]> {
     const data = await this._publicGet("/fapi/v3/fundingRate", {
       symbol: this._toApi(symbol),
       limit: String(limit),
@@ -671,6 +682,9 @@ export class AsterAdapter implements ExchangeAdapter {
     if (!Array.isArray(data)) {
       throw new PerpError("EXCHANGE_ERROR", `Aster fundingRate history is not a list (${JSON.stringify(data).slice(0, 120)})`, { exchange: "aster" });
     }
+    // Per-market interval (/fapi/v3/fundingInfo); null when the venue lists none for the symbol.
+    const hours = await this.getFundingHours(symbol);
+    const intervalHours = hours === undefined ? null : hours;
     // `200 []` for an unlisted symbol (live 2026-10-14): checked against the market directory.
     return nonEmptyOrListed(this, symbol, (data as Array<Record<string, unknown>>).map((d) => {
       const time = Number(d.fundingTime);
@@ -681,6 +695,8 @@ export class AsterAdapter implements ExchangeAdapter {
         time,
         rate: venueRateField(d.fundingRate, "fundingRate fundingRate", "aster"),
         price: d.markPrice ? String(d.markPrice) : null,
+        intervalHours,
+        rateKind: "lastSettled" as const,
       };
     }), this._fromApi(this._toApi(symbol)));
   }
@@ -691,6 +707,11 @@ export class AsterAdapter implements ExchangeAdapter {
    * range is never cut to the first page. More than ASTER_KLINE_MAX_PAGES pages → INVALID_PARAMS.
    */
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
+    if (!ASTER_KLINE_INTERVALS.has(interval)) {
+      throw new PerpError("INVALID_PARAMS", `Aster: unsupported candle interval "${interval}"`, {
+        remediation: `Use one of: ${[...ASTER_KLINE_INTERVALS].join(", ")}`,
+      });
+    }
     if (!(startTime <= endTime)) {
       throw new PerpError("INVALID_PARAMS", `Aster klines: start ${startTime} is after end ${endTime}`, {
         remediation: "Pass a --start that is before --end",
@@ -1970,6 +1991,15 @@ export class AsterAdapter implements ExchangeAdapter {
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetch(url);
       const result = await this._handleResponse(res, "GET", path, attempt);
+      // A parameter rejection arrives as HTTP 200 with an error body (live 2026-10-19,
+      // fundingRate limit=1001: {"status":"ERROR","type":"VALID","code":"000002","errorData":{"limit":"…"}}).
+      if (result !== null && typeof result === "object" && !Array.isArray(result) && (result as { status?: unknown }).status === "ERROR") {
+        const r = result as { type?: unknown; code?: unknown; errorData?: unknown };
+        const detail = JSON.stringify(r.errorData ?? r).slice(0, 200);
+        throw new PerpError(r.type === "VALID" ? "INVALID_PARAMS" : "EXCHANGE_ERROR", `Aster ${path} rejected the request: ${detail}`, {
+          exchange: "aster", venueCode: r.code, remediation: "Check the request parameters (e.g. --limit 1..1000)",
+        });
+      }
       if (result !== null) return result;
     }
     throw new Error(`GET ${path} failed: max retries exceeded`);

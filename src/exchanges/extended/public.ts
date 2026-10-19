@@ -429,7 +429,11 @@ export async function resolveExtendedMarketRemote(client: ExtendedClient, input:
     const symbols = [...new Set(first.map(rawSymbolOf).filter((x): x is string => x !== null))];
     names = symbols.flatMap(extendedWireCandidates);
   } else {
-    names = extendedWireCandidates(up);
+    // Wire names are case-sensitive (`kNOT-USD`): a mixed-case input's own casing first, then the
+    // upper-cased guess, then the venue's lower-case "k" (×1000) prefix — before the ~1 MB listing.
+    const kPrefixed = /^K[A-Z0-9]/.test(up) ? extendedWireCandidates(up).map(n => `k${n.slice(1)}`) : [];
+    const mixedCase = raw !== up && raw !== raw.toLowerCase();
+    names = [...new Set([...(mixedCase ? [`${raw}-USD`, `${raw}_24_5-USD`] : []), ...extendedWireCandidates(up), ...kPrefixed])];
   }
   for (const name of names) await read(name);
   if (rows.size === 0) return resolveExtendedMarket((await fetchExtendedMarketRows(client, deps)).map(r => r.meta), input);

@@ -8,6 +8,7 @@ import type {
   ExchangePublicTrade,
   ExchangeFundingPayment,
   ExchangeKline,
+  FundingHistoryRow,
 } from "./interface.js";
 import type { ResolvedSlippage } from "./slippage.js";
 import { alignProtectionPrice, floorSize, formatComputedPrice, mulDecimal, slippagePrice, toUnitsExact, unitsToString } from "./precision.js";
@@ -70,6 +71,30 @@ export function classifyTriggerOrderType(
 
 /** Lighter order time-in-force enum (lighter-go / SDK `TimeInForce`): 0 IOC, 1 GTT, 2 post-only. */
 export const LIGHTER_TIF = { IOC: 0, GTT: 1, POST_ONLY: 2 } as const;
+
+/**
+ * One GET /api/v1/fundings row → a funding history row (fraction per 1 h, signed).
+ * `rate` is percent per hour, unsigned; `direction` "long" = longs pay (positive), "short" = shorts pay.
+ */
+export function lighterFundingRow(venue: string, f: unknown): FundingHistoryRow {
+  const x = f as { timestamp?: unknown; rate?: unknown; direction?: unknown };
+  if (typeof x.timestamp !== "number" || !Number.isFinite(x.timestamp) || x.timestamp <= 0) {
+    throw new PerpError("EXCHANGE_ERROR", `${venue} /fundings: row without a numeric timestamp: ${JSON.stringify(f).slice(0, 160)}`, { exchange: venue });
+  }
+  if (typeof x.rate !== "string" || !/^\d+(\.\d+)?$/.test(x.rate)) {
+    throw new PerpError("EXCHANGE_ERROR", `${venue} /fundings: row without an unsigned decimal rate: ${JSON.stringify(f).slice(0, 160)}`, { exchange: venue });
+  }
+  if (x.direction !== "long" && x.direction !== "short") {
+    throw new PerpError("EXCHANGE_ERROR", `${venue} /fundings: unknown direction ${JSON.stringify(x.direction)}`, { exchange: venue });
+  }
+  return {
+    time: x.timestamp * 1000,
+    rate: mulDecimal(x.rate, x.direction === "long" ? "0.01" : "-0.01"),
+    price: null,
+    intervalHours: 1,
+    rateKind: "lastSettled",
+  };
+}
 
 /** Decimal step for `decimals` digits ("1" for 0, "0.01" for 2). */
 function lighterStep(decimals: number): string {
@@ -1358,12 +1383,15 @@ export class LighterAdapter implements ExchangeAdapter {
         markPrice: d.mark_price,
         indexPrice: isPriceStr(d.index_price) ? d.index_price : null,
         fundingRate: fr?.rate ?? null,
+        // /funding-rates `rate` (per 8 h) is not the last settled print (/fundings), not verified → null.
+        fundingRateKind: null,
         volume24h: d.daily_quote_token_volume != null ? String(d.daily_quote_token_volume) : null,
         openInterest: d.open_interest != null ? String(d.open_interest) : null,
         maxLeverage: maxLev,
         sizeDecimals: dec ? dec.size : null,
         stepSize: null,
-        fundingHours: null,
+        // `fundingRate` is the /funding-rates value: a fraction per 8 h (venue fundingRateBasis).
+        fundingHours: 8,
         marginTiers: null,
       });
     }
@@ -2151,14 +2179,32 @@ export class LighterAdapter implements ExchangeAdapter {
     }));
   }
 
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
+  /**
+   * Settled funding prints: GET /api/v1/fundings (apidocs.lighter.xyz/reference/fundings;
+   * `count_back` rows from `start_timestamp`, max 750). Each row is one hourly settlement:
+   * `rate` is PERCENT per 1 h, unsigned, with `direction` "long" (longs pay → positive) or
+   * "short" (shorts pay → negative). Live 2026-10-19 BTC: rate "0.0012", value "0.99315" =
+   * mark 82,763 × 0.000012, i.e. value / mark = rate / 100. NOT the /funding-rates unit (8 h).
+   */
+  async getFundingHistory(symbol: string, limit = 10): Promise<FundingHistoryRow[]> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 750) {
+      throw new PerpError("INVALID_PARAMS", `${this.name} funding history limit must be 1..750 (got ${limit})`, { exchange: this.name });
+    }
     await this.ensureMarketMap();
-    this.getMarketIndex(symbol); // unlisted market: SYMBOL_NOT_FOUND, not an empty history
-    const rates = await this.getFundingRates();
-    const r = rates.get(symbol.toUpperCase());
-    if (!r) return [];
-    // Lighter funding-rates is current only, not historical
-    return [{ time: Date.now(), rate: r.rate, price: r.markPrice }];
+    const marketId = this.getMarketIndex(symbol); // unlisted market: SYMBOL_NOT_FOUND, not an empty history
+    const end = Math.floor(Date.now() / 1000);
+    const res = await this.restGet("/fundings", {
+      market_id: String(marketId),
+      resolution: "1h",
+      // One spare hour covers the settlement in progress.
+      start_timestamp: String(end - (limit + 1) * 3600),
+      end_timestamp: String(end),
+      count_back: String(limit),
+    }) as { fundings?: unknown };
+    if (!Array.isArray(res.fundings)) {
+      throw new PerpError("EXCHANGE_ERROR", `${this.name} /fundings: missing fundings array (${JSON.stringify(res).slice(0, 120)})`, { exchange: this.name });
+    }
+    return res.fundings.map((f) => lighterFundingRow(this.name, f)).sort((a, b) => a.time - b.time).slice(-limit);
   }
 
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {

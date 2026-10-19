@@ -25,7 +25,9 @@ import type { EvmSigner } from "../../signer/interface.js";
 import type {
   ExchangeAdapter, ExchangeBalance, ExchangeFundingPayment, ExchangeKline, ExchangeMarketInfo, ExchangeOrder,
   ExchangePosition, ExchangeTrade, ExchangePublicTrade,
+  FundingHistoryRow
 } from "../interface.js";
+import { assertCandleInterval } from "../interface.js";
 import { alignProtectionPrice, exactUnits, mulDecimal, slippagePrice, subDecimal } from "../precision.js";
 import type { ResolvedSlippage } from "../slippage.js";
 import {
@@ -309,9 +311,13 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
     });
   }
 
-  async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
+  /** `depth` levels per side (API max 250, developer.rise.trade; was always 50). */
+  async getOrderbook(symbol: string, depth = 50): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
+    if (!Number.isInteger(depth) || depth < 1 || depth > RISEX_BOOK_MAX) {
+      throw new PerpError("INVALID_PARAMS", `RISEx: book depth must be 1..${RISEX_BOOK_MAX} (got ${depth})`);
+    }
     const m = await this.market(symbol);
-    const d = await this.client.get<{ bids?: unknown; asks?: unknown }>("/v1/orderbook", { market_id: m.market_id, limit: 50 });
+    const d = await this.client.get<{ bids?: unknown; asks?: unknown }>("/v1/orderbook", { market_id: m.market_id, limit: depth });
     const side = (rows: unknown, what: string): [string, string][] => {
       if (!Array.isArray(rows)) throw new PerpError("EXCHANGE_ERROR", `RISEx /v1/orderbook: no ${what}`, { exchange: "risex" });
       return rows.map(r => [decReq((r as { price?: unknown }).price, `${what} price`), decReq((r as { quantity?: unknown }).quantity, `${what} quantity`)]);
@@ -320,27 +326,47 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   async getRecentTrades(symbol: string, limit = 50): Promise<ExchangePublicTrade[]> {
+    // Venue cap (live 2026-10-19: "page_size cannot exceed 1000"); refused, never clamped.
+    if (!Number.isInteger(limit) || limit < 1 || limit > RISEX_TRADES_CAP) {
+      throw new PerpError("INVALID_PARAMS", `RISEx: trades limit must be 1..${RISEX_TRADES_CAP} (got ${limit})`, { remediation: `RISEx serves at most ${RISEX_TRADES_CAP} trades per request` });
+    }
     const m = await this.market(symbol);
-    const d = await this.client.get<{ trades?: unknown }>(`/v1/markets/id/${m.market_id}/trade-history`, { limit: Math.min(limit, 1000) });
+    const d = await this.client.get<{ trades?: unknown }>(`/v1/markets/id/${m.market_id}/trade-history`, { limit });
     if (!Array.isArray(d.trades)) throw new PerpError("EXCHANGE_ERROR", "RISEx trade-history: no trades array", { exchange: "risex" });
     const sym = risexSymbolOf(m);
     return d.trades.map(t => {
       const x = t as { maker_side?: unknown; price?: unknown; size?: unknown; time?: unknown };
       if (x.maker_side !== "BUY" && x.maker_side !== "SELL") throw new PerpError("EXCHANGE_ERROR", `RISEx trade maker_side ${String(x.maker_side)}`, { exchange: "risex" });
       // The tape side is the taker's: a SELL maker means a buy took it.
-      // Public tape carries no fee; "0" follows the legacy ExchangeTrade convention for public trades.
+      // Public tape: no fee applies to the viewer → null, never "0".
       return { time: nsToMs(str(x.time, "trade time")), symbol: sym, side: x.maker_side === "SELL" ? "buy" : "sell", price: decReq(x.price, "trade price"), size: decReq(x.size, "trade size"), fee: null };
     });
   }
 
-  async getFundingHistory(symbol: string, limit = 100): Promise<{ time: number; rate: string; price: string | null }[]> {
+  /**
+   * Settled hourly prints, newest first. The API defaults `start_time` to now − 7 d (168 rows, any
+   * `limit`), so the window is sent explicitly (`limit` hours back, one spare) and pages are
+   * followed with `page` / `has_next_page` (max 1000 rows per page; developer.rise.trade
+   * getfundingratehistory; verified live 2026-10-19).
+   */
+  async getFundingHistory(symbol: string, limit = 100): Promise<FundingHistoryRow[]> {
+    if (!Number.isInteger(limit) || limit < 1) throw new PerpError("INVALID_PARAMS", `RISEx: funding history limit must be a positive integer (got ${limit})`);
     const m = await this.market(symbol);
-    const d = await this.client.get<{ records?: unknown }>(`/v1/markets/id/${m.market_id}/funding-rate-history`, { limit: Math.min(limit, 1000) });
-    if (!Array.isArray(d.records)) throw new PerpError("EXCHANGE_ERROR", "RISEx funding-rate-history: no records", { exchange: "risex" });
-    return d.records.map(r => {
-      const x = r as { funding_rate?: unknown; end_time?: unknown; index_price?: unknown };
-      return { time: nsToMs(str(x.end_time, "funding end_time")), rate: decReq(x.funding_rate, "funding_rate"), price: positiveOrNull(x.index_price) };
-    });
+    const startNs = (BigInt(Date.now() - (limit + 1) * 3_600_000) * 1_000_000n).toString();
+    const perPage = Math.min(limit, RISEX_FUNDING_PAGE_MAX);
+    const out: FundingHistoryRow[] = [];
+    for (let page = 1; out.length < limit; page++) {
+      if (page > RISEX_FUNDING_MAX_PAGES) throw new PerpError("EXCHANGE_ERROR", `RISEx funding-rate-history: still paging after ${RISEX_FUNDING_MAX_PAGES} pages`, { exchange: "risex" });
+      const d = await this.client.get<{ records?: unknown; has_next_page?: unknown }>(`/v1/markets/id/${m.market_id}/funding-rate-history`, { limit: perPage, page, start_time: startNs });
+      if (!Array.isArray(d.records)) throw new PerpError("EXCHANGE_ERROR", "RISEx funding-rate-history: no records", { exchange: "risex" });
+      for (const r of d.records) {
+        const x = r as { funding_rate?: unknown; end_time?: unknown; index_price?: unknown };
+        out.push({ time: nsToMs(str(x.end_time, "funding end_time")), rate: decReq(x.funding_rate, "funding_rate"), price: positiveOrNull(x.index_price), intervalHours: 1, rateKind: "lastSettled" as const });
+      }
+      if (d.has_next_page !== true || d.records.length === 0) break;
+    }
+    const seen = new Set<number>();
+    return out.filter(r => (seen.has(r.time) ? false : (seen.add(r.time), true))).sort((a, b) => b.time - a.time).slice(0, limit);
   }
 
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
@@ -357,6 +383,14 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
     if (!Array.isArray(d)) throw new PerpError("EXCHANGE_ERROR", "RISEx trading-view-data: not an array", { exchange: "risex" });
     return d.map(c => {
       const x = c as Record<string, unknown>;
+      // The venue answers an interval it does not serve with 1m bars: a row of another interval
+      // is never returned as the requested one.
+      // OHLC are mapped by field name, unscaled. RISEx opens a bar at the PREVIOUS bar's close
+      // while high / low are the bar's own trades, so `open` can lie outside [low, high] (live
+      // 2026-10-19: 2555 of 7187 1m bars, 5 of 121 1h bars; daily bars none). That is the venue's
+      // data, passed through as published — never clamped or "fixed" (documented in the CHANGELOG).
+      // Required on every row here (the field is always sent; null/absent would skip the check).
+      assertCandleInterval("risex", interval, x.interval === undefined ? null : x.interval, `Use one of: ${Object.keys(KLINE_INTERVAL_MS).join(", ")}`);
       return {
         time: nsToMs(str(x.time, "candle time")),
         open: decReq(x.open, "open"), high: decReq(x.high, "high"), low: decReq(x.low, "low"), close: decReq(x.close, "close"),
@@ -841,8 +875,20 @@ function historyStatus(o: Pick<HistoryOrder, "status" | "filled_size">): OrderSt
 }
 
 /** Candle intervals → ms (the venue takes the interval in ns). */
+/**
+ * Candle intervals verified live (2026-10-19, market 1): each returns rows labelled with that
+ * interval. 3m / 30m / 2h / 8h / 12h / 3d are answered with 1m bars (no error), so they are not
+ * listed — getKlines refuses them with INVALID_PARAMS instead of returning 1m candles.
+ */
+const RISEX_BOOK_MAX = 250;
+const RISEX_TRADES_CAP = 1000;
+
+/** funding-rate-history: max rows per page (docs) and pages followed before giving up. */
+export const RISEX_FUNDING_PAGE_MAX = 1000;
+const RISEX_FUNDING_MAX_PAGES = 20;
+
 export const KLINE_INTERVAL_MS: Readonly<Record<string, number>> = {
-  "1m": 60_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000, "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000,
+  "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000, "1w": 604_800_000,
 };
 
 

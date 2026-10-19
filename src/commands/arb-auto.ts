@@ -1848,8 +1848,10 @@ export function registerArbAutoCommands(
             const netSpread = computeNetSpread(s.annualSpreadPct, holdDays, rtCost, effectiveBridgeCost, sizeUsd);
             return {
               mode: "spot-perp" as const, symbol: s.symbol, perpExchange: s.perpExchange,
-              spotExchanges: s.spotExchanges, grossSpreadPct: s.annualSpreadPct,
-              netSpreadPct: netSpread, estFeesPct: rtCost,
+              // grossSpread / netSpread: the names every other arb scan row uses (same % values);
+              // the *Pct names stay for existing consumers.
+              spotExchanges: s.spotExchanges, grossSpreadPct: s.annualSpreadPct, grossSpread: s.annualSpreadPct,
+              netSpreadPct: netSpread, netSpread, estFeesPct: rtCost,
               perpFundingRate: s.perpFundingRate, direction: s.direction,
               markPrice: s.bestMarkPrice, estHourlyIncomeUsd: s.estHourlyIncomeUsd,
               breakEvenDays: rtCost > 0 ? Math.ceil(rtCost / (s.annualSpreadPct / 365)) : 0,
@@ -1912,7 +1914,7 @@ export function registerArbAutoCommands(
           const shortPrice = pFor(s.shortExch);
           const mid = (longPrice + shortPrice) / 2;
           const priceGapPct = mid > 0 ? Math.abs(longPrice - shortPrice) / mid * 100 : 0;
-          return { mode: "perp-perp" as const, symbol: s.symbol, longExch: s.longExch, shortExch: s.shortExch, markPrice: s.markPrice, grossSpread, netSpread: net, estFeesPct: rtCost, priceGapPct: Math.round(priceGapPct * 10000) / 10000 };
+          return { mode: "perp-perp" as const, symbol: s.symbol, longExch: s.longExch, shortExch: s.shortExch, markPrice: s.markPrice, grossSpread, grossSpreadPct: grossSpread, netSpread: net, netSpreadPct: net, estFeesPct: rtCost, priceGapPct: Math.round(priceGapPct * 10000) / 10000 };
         });
         // Merge spot-perp results if "all" mode
         const spotPerp: Record<string, unknown>[] = (opts.mode === "all" && spotSpreads) ? spotSpreads.map(s => {
@@ -1922,8 +1924,8 @@ export function registerArbAutoCommands(
           const net = computeNetSpread(s.annualSpreadPct, holdDays, rtCost, effectiveBridgeCost, sizeUsd);
           return {
             mode: "spot-perp" as const, symbol: s.symbol, perpExchange: s.perpExchange,
-            spotExchanges: s.spotExchanges, grossSpread: s.annualSpreadPct,
-            netSpread: net, estFeesPct: rtCost,
+            spotExchanges: s.spotExchanges, grossSpread: s.annualSpreadPct, grossSpreadPct: s.annualSpreadPct,
+            netSpread: net, netSpreadPct: net, estFeesPct: rtCost,
             perpFundingRate: s.perpFundingRate, direction: s.direction,
             markPrice: s.bestMarkPrice, breakEvenDays: rtCost > 0 ? Math.ceil(rtCost / (s.annualSpreadPct / 365)) : 0,
           };

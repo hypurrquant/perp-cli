@@ -29,6 +29,7 @@
 
 import { HL_MIN_ORDER_VALUE_USD } from "../constants.js";
 import { isPacificaPerpetual } from "../ws/pacifica-instrument.js";
+import { isAsterListedPerpetual } from "../ws/aster-market.js";
 import { PerpError } from "../errors.js";
 import { venueRateString } from "../utils/numeric.js";
 import { assertOk } from "../api/public/_http.js";
@@ -287,7 +288,8 @@ async function asterRows(net: Network): Promise<Row[]> {
   const unpriced: string[] = [];
   const noInterval: string[] = [];
   for (const s of symbols) {
-    if (s.contractType !== "PERPETUAL" || s.quoteAsset !== "USDT") continue;
+    // Shared eligibility (SETTLING / PENDING_TRADING rows were listed with tradable false).
+    if (!isAsterListedPerpetual(s) || s.quoteAsset !== "USDT") continue;
     const venueSymbol = String(s.symbol);
     const symbol = String(s.baseAsset);
     const subTypes = Array.isArray(s.underlyingSubType) ? (s.underlyingSubType as unknown[]).map(String) : [];

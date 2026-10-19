@@ -5,6 +5,7 @@ import { annualizeRate, computeAnnualSpread, toHourlyRate, estimateHourlyFunding
 import {
   fetchAllFundingRates,
   fetchCanonicalPriceGroups,
+  dropPriceOutliers,
   fetchSymbolFundingRates,
   TOP_SYMBOLS,
   type FundingRateSnapshot,
@@ -89,22 +90,33 @@ export async function fetchAllPrices(): Promise<PriceSnapshot[]> {
     }
   }
 
+  return buildGapSnapshots(pacPrices, hlPrices, ltPrices);
+}
+
+/**
+ * Cross-venue price gaps by venue symbol. The same ticker on two venues is not proof of the same
+ * instrument (Pacifica SAMSUNG 165.8 USD vs Lighter SAMSUNG 220,597 — a KRW-quoted listing): each
+ * symbol's prices go through the funding scan's median price-outlier guard (dropPriceOutliers,
+ * MAX_PRICE_DEVIATION_PCT, one warning per symbol / venue) before a gap is computed, so a gap is
+ * only reported between prices that agree within the guard.
+ */
+export function buildGapSnapshots(pacPrices: Map<string, number>, hlPrices: Map<string, number>, ltPrices: Map<string, number>): PriceSnapshot[] {
   const allSymbols = new Set([...pacPrices.keys(), ...hlPrices.keys(), ...ltPrices.keys()]);
   const snapshots: PriceSnapshot[] = [];
+  const LABEL: Record<"pacifica" | "hyperliquid" | "lighter", string> = { pacifica: "PAC", hyperliquid: "HL", lighter: "LT" };
 
   for (const sym of allSymbols) {
-    const pac = pacPrices.get(sym) ?? null;
-    const hl = hlPrices.get(sym) ?? null;
-    const lt = ltPrices.get(sym) ?? null;
-
-    // Need at least 2 exchanges
-    const available: { ex: string; price: number }[] = [];
-    if (pac !== null) available.push({ ex: "PAC", price: pac });
-    if (hl !== null) available.push({ ex: "HL", price: hl });
-    if (lt !== null) available.push({ ex: "LT", price: lt });
-    if (available.length < 2) continue;
-
-    available.sort((a, b) => a.price - b.price);
+    const listed: { exchange: "pacifica" | "hyperliquid" | "lighter"; markPrice: number }[] = [];
+    for (const [exchange, map] of [["pacifica", pacPrices], ["hyperliquid", hlPrices], ["lighter", ltPrices]] as const) {
+      const p = map.get(sym);
+      if (p !== undefined) listed.push({ exchange, markPrice: p });
+    }
+    if (listed.length < 2) continue;
+    const kept = dropPriceOutliers(sym, listed, "gaps");
+    // Need at least 2 exchanges whose prices agree
+    if (kept.length < 2) continue;
+    const priceOf = (ex: "pacifica" | "hyperliquid" | "lighter") => kept.find(k => k.exchange === ex)?.markPrice ?? null;
+    const available = kept.map(k => ({ ex: LABEL[k.exchange], price: k.markPrice })).sort((a, b) => a.price - b.price);
     const cheapest = available[0];
     const expensive = available[available.length - 1];
     const maxGap = expensive.price - cheapest.price;
@@ -113,9 +125,9 @@ export async function fetchAllPrices(): Promise<PriceSnapshot[]> {
 
     snapshots.push({
       symbol: sym,
-      pacPrice: pac,
-      hlPrice: hl,
-      ltPrice: lt,
+      pacPrice: priceOf("pacifica"),
+      hlPrice: priceOf("hyperliquid"),
+      ltPrice: priceOf("lighter"),
       maxGap,
       maxGapPct,
       cheapest: cheapest.ex,
@@ -272,7 +284,7 @@ function printSnapshotTable(snapshot: FundingRateSnapshot): void {
         return r ? formatPercent(r.fundingRate) : chalk.gray("-");
       }),
       spreadColor(`${s.maxSpreadAnnual.toFixed(1)}%`), trend,
-      s.maxSpreadAnnual >= 5 ? `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}${s.executable ? "" : chalk.gray(" (read-only)")}` : chalk.gray("-"),
+      s.maxSpreadAnnual >= 5 ? `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}${s.executable ? "" : chalk.gray(s.readOnlyLegs.length > 0 ? " (read-only)" : " (unverified)")}` : chalk.gray("-"),
       formatAvgRate(bestRate?.historicalAvg?.avg8h), formatAvgRate(bestRate?.historicalAvg?.avg24h), formatAvgRate(bestRate?.historicalAvg?.avg7d),
     ];
   });
@@ -302,7 +314,10 @@ function printDetailedComparison(comparison: SymbolFundingComparison): void {
   }
   const spreadColor = comparison.maxSpreadAnnual >= 30 ? chalk.green.bold : comparison.maxSpreadAnnual >= 10 ? chalk.yellow : chalk.white;
   console.log(`\n  Max Spread:     ${spreadColor(`${comparison.maxSpreadAnnual.toFixed(1)}%`)} annual`);
-  console.log(`  Direction:      Long ${exAbbr(comparison.longExchange)} / Short ${exAbbr(comparison.shortExchange)}${comparison.executable ? "" : chalk.yellow(`  — not executable: ${comparison.readOnlyLegs.join(", ")} is read-only in perp-cli`)}`);
+  console.log(`  Direction:      Long ${exAbbr(comparison.longExchange)} / Short ${exAbbr(comparison.shortExchange)}${comparison.executable ? "" : chalk.yellow(`  — not executable: ${[
+    ...comparison.readOnlyLegs.map(v => `${v} is read-only in perp-cli`),
+    ...comparison.unverifiedLegs.map(v => `${v} funding is unverified (display only)`),
+  ].join("; ")}`)}`);
   console.log(`  Est. Income:    $${comparison.estHourlyIncomeUsd.toFixed(4)}/hr per $1K notional\n`);
 }
 

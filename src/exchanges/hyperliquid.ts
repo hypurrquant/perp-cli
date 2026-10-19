@@ -8,7 +8,9 @@ import type {
   ExchangePublicTrade,
   ExchangeFundingPayment,
   ExchangeKline,
+  FundingHistoryRow
 } from "./interface.js";
+import { assertCandleInterval } from "./interface.js";
 import type { ResolvedSlippage } from "./slippage.js";
 import type { EvmSigner } from "../signer/index.js";
 import { LocalEvmSigner } from "../signer/index.js";
@@ -865,14 +867,16 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         markPrice: String(ctx.markPx ?? mids[sym] ?? "0"),
         indexPrice: ctx.oraclePx != null ? String(ctx.oraclePx) : null,
         fundingRate: ctx.funding != null ? String(ctx.funding) : null,
+        // metaAndAssetCtxs `funding` = the running hour's rate (WS allDexsAssetCtxs: accruing).
+        fundingRateKind: ctx.funding != null ? "accruing" as const : null,
         volume24h: ctx.dayNtlVlm != null ? String(ctx.dayNtlVlm) : null,
         openInterest: ctx.openInterest != null ? String(ctx.openInterest) : null,
         maxLeverage: Number(asset.maxLeverage ?? 50),
         sizeDecimals: szDec,
         // HL has no separate lot-size field; the step is implied by szDecimals.
         stepSize: null,
-        // HL funding is uniform (venue definition), not per-market.
-        fundingHours: null,
+        // HL funding is uniform: a fraction per 1 h (venue fundingRateBasis), core and HIP-3.
+        fundingHours: 1,
         marginTiers: tierMap.get(Number(asset.marginTableId)) ?? null,
       }];
     });
@@ -1934,7 +1938,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       type: "candleSnapshot",
       req: { coin: this._venueCoin(symbol), interval, startTime, endTime },
     }) as Record<string, unknown>[];
-    return (candles ?? []).map((c) => ({
+    return (candles ?? []).map((c) => (assertCandleInterval(this.name, interval, c.i), {
       time: Number(c.t ?? 0),
       open: String(c.o ?? "0"),
       high: String(c.h ?? "0"),
@@ -2090,14 +2094,18 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     return !/[:@#/]/.test(coin);
   }
 
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(symbol: string, limit = 10): Promise<FundingHistoryRow[]> {
     await this.getAssetIndex(symbol); // unlisted coin: SYMBOL_NOT_FOUND (fundingHistory answers HTTP 500)
     const now = Date.now();
-    const history = await this._infoPost({ type: "fundingHistory", coin: this._venueCoin(symbol), startTime: now - 24 * 60 * 60 * 1000 }) as Record<string, unknown>[];
+    // Hourly settlements (core and HIP-3 dexes): `limit` hours back plus one spare hour, so
+    // `-l` above 24 is honoured (the window was fixed at 24 h).
+    const history = await this._infoPost({ type: "fundingHistory", coin: this._venueCoin(symbol), startTime: now - (limit + 1) * 60 * 60 * 1000 }) as Record<string, unknown>[];
     return (history ?? []).slice(-limit).map((h) => ({
       time: Number(h.time ?? 0),
       rate: venueRateField(h.fundingRate, "fundingHistory fundingRate", "hyperliquid"),
       price: null,
+      intervalHours: 1,
+      rateKind: "lastSettled" as const,
     }));
   }
 

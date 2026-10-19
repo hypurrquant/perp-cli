@@ -5,7 +5,7 @@
  * silently substituted default.
  */
 
-import type { ExchangeMarketInfo } from "./interface.js";
+import type { ExchangeMarketInfo, FundingRateKind } from "./interface.js";
 import type { ResolvedSlippage, SlippageSource } from "./slippage.js";
 import type { AppliedBuilderFee } from "./builder-fee.js";
 
@@ -93,10 +93,16 @@ export interface VenueMarket {
   tradable: boolean;
 }
 
-function decimalsOf(step: string): number {
-  const s = step.includes("e") || step.includes("E") ? Number(step).toFixed(20).replace(/0+$/, "") : step;
-  const dot = s.indexOf(".");
-  return dot === -1 ? 0 : s.length - dot - 1;
+/**
+ * Quantity decimals of a lot step, or null when the step is not a power of ten ≤ 1 ("0.001" → 3,
+ * "1" → 0; TxFlow "10" / "100" and a "0.5" step → null): a decimals count cannot express them, and
+ * 0 next to stepSize "10" read as "any integer". `stepSize` is the authoritative grid.
+ */
+function decimalsOf(step: string): number | null {
+  const s = step.includes("e") || step.includes("E") ? Number(step).toFixed(20) : step;
+  const t = s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s;
+  if (!/^(1|0\.0*1)$/.test(t)) return null;
+  return t === "1" ? 0 : t.length - 2;
 }
 
 /** Pure mapping used by new-venue adapters to serve the legacy getMarkets(). */
@@ -106,6 +112,27 @@ export function requireTradingPrecision(m: VenueMarket): { tickSize: string; ste
     throw new Error(`${m.venue} ${m.symbol}: tick size / step size / max leverage not published — market is not tradable via API`);
   }
   return { tickSize: m.tickSize, stepSize: m.stepSize, maxLeverage: m.maxLeverage };
+}
+
+/**
+ * What a VenueMarket.fundingRate is per venue (REST source), consistent with the WS `rateKind` where
+ * both read the same field. null = not verified. Venues with per-row kinds (GRVT, Extended,
+ * Variational) set their own on top.
+ *  - arcus: /v1/markets fundingRate = the last hourly settlement (WS markets channel: lastSettled).
+ *  - risex: current_funding_rate equals the last settled print (venues/risex.ts, verified 2026-10-14).
+ *  - txflow: allAssetCtxs `funding` moves every tick — the running period's accruing estimate.
+ *  - ondo, qfex, lighter, lighter-rh: not verified against settled prints → null.
+ */
+const VENUE_MARKET_RATE_KIND: Partial<Record<VenueMarket["venue"], FundingRateKind>> = {
+  arcus: "lastSettled",
+  risex: "lastSettled",
+  txflow: "accruing",
+};
+
+export function fundingRateKindOf(venue: VenueMarket["venue"], fundingRate: string | null): FundingRateKind | null {
+  if (fundingRate === null) return null;
+  const k = VENUE_MARKET_RATE_KIND[venue];
+  return k === undefined ? null : k;
 }
 
 export function toLegacyMarketInfo(m: VenueMarket): ExchangeMarketInfo {
@@ -123,6 +150,8 @@ export function toLegacyMarketInfo(m: VenueMarket): ExchangeMarketInfo {
     stepSize: p.stepSize,
     fundingHours: hours,
     marginTiers: m.marginTiers,
+    tradable: m.tradable,
+    fundingRateKind: fundingRateKindOf(m.venue, m.fundingRate),
   };
 }
 

@@ -291,6 +291,10 @@ server.tool(
         const markets = labelMarketRows(exchange, await adapter.getMarkets());
         return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, ...apiMeta(exchange) }) }] };
       }
+      // No credentials: the venue's public directory (VenueMarket rows) — price-only on GRVT
+      // (no 184-request margin_rules fan-out per call). Its eligibility filter is the venue's
+      // shared market-eligibility helper, the one the CLI adapter uses, so row sets match where
+      // both read the same source (row SHAPE differs: VenueMarket vs the CLI's market row).
       const markets = await fetchMarketsPublic(exchange);
       return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, source: "public", ...apiMeta(exchange) }) }] };
     } catch (e) {
@@ -624,6 +628,9 @@ server.tool(
       }),
     );
 
+    // Totals are null (unknown) when no account balance was read — no configured credentials, or
+    // every venue failed — never 0 (QA 0.15.0: totalEquity 0 without credentials).
+    const read = snapshots.filter(s => s.balance !== null);
     let totalEquity = 0;
     let totalAvailable = 0;
     let totalMarginUsed = 0;
@@ -664,16 +671,21 @@ server.tool(
       }))
       .sort((a, b) => b.pct - a.pct);
 
+    const known = read.length > 0;
     const summary = {
-      totalEquity,
-      totalAvailable,
-      totalMarginUsed,
-      totalUnrealizedPnl,
+      /** "noAccount" = no venue has credentials; "unread" = credentials exist but no balance was read. */
+      accountState: EXCHANGES.length === 0 ? "noAccount" : known ? "ok" : "unread",
+      /** Venues whose balances the totals cover. */
+      totalsCover: read.map(s => s.exchange),
+      totalEquity: known ? totalEquity : null,
+      totalAvailable: known ? totalAvailable : null,
+      totalMarginUsed: known ? totalMarginUsed : null,
+      totalUnrealizedPnl: known ? totalUnrealizedPnl : null,
       totalPositions,
       totalOpenOrders,
       exchanges: snapshots,
       positions: allPositions,
-      riskMetrics: { marginUtilization, largestPosition, exchangeConcentration },
+      riskMetrics: { marginUtilization: known ? marginUtilization : null, largestPosition, exchangeConcentration },
     };
 
     return { content: [{ type: "text", text: ok(summary) }] };
@@ -1456,6 +1468,7 @@ server.tool(
         // false = a leg is on a read-only venue (RISEx in this release): data only, not tradable here.
         executable: s.executable,
         readOnlyLegs: s.readOnlyLegs,
+        unverifiedLegs: s.unverifiedLegs,
         estHourlyIncomePerK: `$${s.estHourlyIncomeUsd.toFixed(4)}`,
         rates: s.rates.map(r => ({
           exchange: r.exchange,
@@ -1492,6 +1505,9 @@ server.tool(
       result.covered = health.probes.map(p => p.venue);
       // A venue without an environment on the server's network (TxFlow has no testnet) is not probed.
       result.skipped = health.skipped;
+      // Same two verdicts as `perp health --json`: healthy = every OFFICIAL-API venue is up (an
+      // unofficial API being down does not make perp-cli unhealthy); allHealthy includes them.
+      result.healthy = health.probes.filter(p => p.apiStatus === "official").every(p => p.ok);
       result.allHealthy = health.allHealthy;
 
       return { content: [{ type: "text", text: ok(result) }] };

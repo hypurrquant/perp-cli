@@ -25,6 +25,11 @@ export interface WsLike {
   onmessage: ((ev: { data: unknown }) => void) | null;
   onclose: ((ev: { code: number; reason: string; wasClean?: boolean }) => void) | null;
   onerror: ((ev: unknown) => void) | null;
+  /**
+   * Optional: settles once the underlying socket is fully closed (no timer or socket left). The
+   * Node transport sets it; `stream.close()` awaits it (bounded) so the process is idle afterwards.
+   */
+  readonly whenClosed?: Promise<void>;
 }
 export type WsFactory = (url: string) => WsLike;
 export type FetchLike = (

@@ -47,6 +47,7 @@ import { builderGateOf, NO_BUILDER, type BuilderDecision, type BuilderFeeGate } 
 import type {
   ExchangeAdapter, ExchangeBalance, ExchangeFundingPayment, ExchangeKline, ExchangeMarketInfo, ExchangeOrder,
   ExchangePosition, ExchangeTrade, ExchangePublicTrade,
+  FundingHistoryRow
 } from "../interface.js";
 import type { IocOutcome } from "../ioc-outcome.js";
 import { alignProtectionPrice, floorSize, requireOnTick, slippagePrice, subDecimal } from "../precision.js";
@@ -1177,7 +1178,7 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   /** Hourly funding windows (GET /funding/{symbol}, intervalMinutes 60). `limit` = hours back (default 24). */
-  async getFundingHistory(symbol: string, limit?: number): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(symbol: string, limit?: number): Promise<FundingHistoryRow[]> {
     const venueSymbol = (await this.instrumentOf(symbol)).venueSymbol;
     const hours = limit === undefined ? 24 : limit;
     if (!Number.isInteger(hours) || hours < 1) throw new PerpError("INVALID_PARAMS", `funding history limit must be a positive integer of hours (got ${hours})`);
@@ -1185,12 +1186,12 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
     const body = await this.client.publicGet<{ data?: unknown }>(`/funding/${encodeURIComponent(venueSymbol)}`, {
       intervalMinutes: 60, fromISO: new Date(to - hours * 3_600_000).toISOString(), toISO: new Date(to).toISOString(),
     });
-    const out: { time: number; rate: string; price: string | null }[] = [];
+    const out: FundingHistoryRow[] = [];
     for (const r of listOf<{ windowStart?: unknown; rate?: unknown }>(body.data, "funding data")) {
       if (r.rate === null) continue; // the venue computed no rate for that window
       const time = typeof r.windowStart === "string" ? Date.parse(r.windowStart) : NaN;
       if (!Number.isFinite(time)) throw new PerpError("EXCHANGE_ERROR", `QFEX funding history: invalid windowStart ${JSON.stringify(r.windowStart)}`);
-      out.push({ time, rate: plainNumber(r.rate, "funding rate"), price: null });
+      out.push({ time, rate: plainNumber(r.rate, "funding rate"), price: null, intervalHours: 1, rateKind: "lastSettled" });
     }
     return out.sort((a, b) => a.time - b.time);
   }
