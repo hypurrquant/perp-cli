@@ -343,7 +343,7 @@ export function registerWalletBuilderCommands(
     .action(async (venueArg: string | undefined, _opts: unknown, cmd: Command) => {
       await withJsonErrors(isJson(), async () => {
         const network = networkOf(cmd);
-        const venues: VenueId[] = venueArg !== undefined ? [getVenue(venueArg).id] : [...builderFeeVenues(), ...(["lighter", "lighter-rh", "arcus", "risex", "txflow"] as VenueId[])];
+        const venues: VenueId[] = venueArg !== undefined ? [getVenue(venueArg).id] : [...builderFeeVenues(), ...(["lighter", "lighter-rh", "arcus", "risex", "txflow", "variational"] as VenueId[])];
         const rows: BuilderVenueStatus[] = [];
         for (const v of venues) {
           const configured = builderTargetOf(loadSettings().builder, v) !== null;

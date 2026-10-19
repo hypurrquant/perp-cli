@@ -51,6 +51,7 @@
 import { PerpError, classifyError, isDefiniteOrderFailure, isTransportFailure, isUnknownOutcomeServerError } from "../errors.js";
 import type { Network, VenueId } from "./venue-types.js";
 import { isVenueId } from "./venue-types.js";
+import { VARIATIONAL_READ_ONLY_REMEDIATION } from "./venues/variational.js";
 
 // ── Capability (declared per venue in VenueDefinition.builderFee) ──
 
@@ -107,6 +108,7 @@ export const BUILDER_FEE_CAPABILITIES: { readonly [K in VenueId]: BuilderFeeCapa
   arcus: null,
   risex: null,
   txflow: null,
+  variational: null,
 };
 
 /** Why a venue has no builder-fee support (shown in CAPABILITY_UNSUPPORTED). */
@@ -115,6 +117,7 @@ export const BUILDER_FEE_UNSUPPORTED: { readonly [K in VenueId]?: string } = {
   "lighter-rh": "not yet implemented in perp-cli — Lighter RH uses the same official lighter-go signer; partner-attribution fields are sent as 0 (https://apidocs.rh.lighter.xyz/docs/partner-attribution.md)",
   risex: "not implemented yet in perp-cli (RISEx builder codes are planned; note the venue's \"bps\" field is parts-per-million)",
   txflow: "TxFlow is integrated through an unofficial read-only API (market data only)",
+  variational: VARIATIONAL_READ_ONLY_REMEDIATION,
   arcus: "Arcus has no perps builder fee; its integrator fee applies to the spot router only and needs a partner key from Arcus (https://docs.arcus.xyz/concepts/spot-router)",
 };
 

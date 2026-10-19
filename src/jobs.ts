@@ -243,6 +243,10 @@ export function startJob(opts: StartJobOpts): JobEntry {
       if (id === "txflow" || id === "txf") {
         throw startRefusal(what, "TxFlow has no trading in perp-cli", unsupported("txflow", "trading", "TxFlow is integrated through an unofficial read-only API (market data only)", "Trade on the TxFlow website"));
       }
+      // Variational: read-only (market data) in perp-cli; no public trading API yet.
+      if (id === "variational" || id === "var" || id === "omni") {
+        throw startRefusal(what, "Variational has no trading in perp-cli", roleUnsupported(getVenue("variational"), "trading"));
+      }
     }
   }
   if (!hasTmux()) {

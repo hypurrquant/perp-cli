@@ -13,6 +13,7 @@ import { cliCredentialOptsFrom, requireMasterWallet } from "../config.js";
 import type { VenueId } from "../exchanges/venue-types.js";
 import { getVenue, requireCapabilities, roleUnsupported, READ_ONLY_CREDENTIALS, type Network as VenueNetwork, type VenueDefinition } from "../exchanges/venue.js";
 import { RISEX_APP_URL, RISEX_FUNDS_APP_ONLY } from "../exchanges/venues/risex.js";
+import { VARIATIONAL_READ_ONLY_REMEDIATION } from "../exchanges/venues/variational.js";
 import { unsupported } from "../exchanges/trading-v2.js";
 import { registerOnchainFundsCommands } from "./funds-onchain.js";
 import { QFEX_BANKER_NETWORK, QFEX_WITHDRAW_DISABLED, QFEX_WITHDRAW_ENABLED, QFEX_WITHDRAW_NETWORK } from "../exchanges/venues/qfex.js";
@@ -1163,6 +1164,13 @@ export function registerFundsCommands(
     .action(async () => {
       throw roleUnsupported(getVenue("txflow"), "withdraw");
     });
+  // Variational: read-only (market data) in perp-cli; no public trading API yet.
+  supportsDryRun(withdraw.command("variational [amount]"))
+    .description("Not available: Variational is read-only (market data) in perp-cli — refused")
+    .option("--to <address>", "Ignored")
+    .action(async () => {
+      throw roleUnsupported(getVenue("variational"), "withdraw");
+    });
 
   for (const venueId of ["arcus"] as const) {
     const def = getVenue(venueId);
@@ -1317,6 +1325,11 @@ export function registerFundsCommands(
     .action(async () => {
       throw roleUnsupported(getVenue("txflow"), "deposit");
     });
+  supportsDryRun(deposit.command("variational [amount]"))
+    .description("Not available: Variational is read-only (market data) in perp-cli — refused")
+    .action(async () => {
+      throw roleUnsupported(getVenue("variational"), "deposit");
+    });
 
   supportsDryRun(deposit.command("qfex"))
     .description("Show the QFEX deposit address for USDC on Arbitrum One (perp-cli sends nothing — transfer from your own wallet; supports --dry-run)")
@@ -1469,6 +1482,7 @@ export function registerFundsCommands(
             ondo: { chain: "Arbitrum (default) / Ethereum", token: "USDC", min: null, gas: "ETH", method: "USDC transfer to the account's funding address (mainnet only)", command: "perp funds deposit ondo <amount> [--chain arbitrum|ethereum] [--probe <amount>]" },
             risex: { supported: false, note: `${RISEX_FUNDS_APP_ONLY.reason} — ${RISEX_FUNDS_APP_ONLY.remediation}`, testnet: getVenue("risex").roles.includes("trading") ? "perp -n testnet funds faucet risex (1000 test USDC, once)" : null },
             txflow: { supported: false, note: "TxFlow is market data only in perp-cli (unofficial read-only API)" },
+            variational: { supported: false, note: VARIATIONAL_READ_ONLY_REMEDIATION },
           },
           withdraw: {
             pacifica: { chain: "Solana", token: "USDC", speed: "~10s", fee: "none" },
@@ -1482,6 +1496,7 @@ export function registerFundsCommands(
             arcus: { chain: "Robinhood Chain", token: "USDG", command: "perp funds withdraw arcus <amount>" },
             risex: { supported: false, note: `${RISEX_FUNDS_APP_ONLY.reason} — ${RISEX_FUNDS_APP_ONLY.remediation}` },
             txflow: { supported: false, note: "TxFlow is market data only in perp-cli (unofficial read-only API)" },
+            variational: { supported: false, note: VARIATIONAL_READ_ONLY_REMEDIATION },
             aster: { chain: "BNB Chain (default) / Arbitrum", token: "USDT (default) / USDC", command: "perp funds withdraw aster <amount> [--chain bsc|arbitrum] [--asset USDT|USDC]", fee: "POST /fapi/v3/aster/user-withdraw-info (taken from the amount)", requires: "mainnet; API wallet approved with --can-withdraw --ip-whitelist; destination = the account's own address" },
           },
         }));

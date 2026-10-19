@@ -143,6 +143,7 @@ printf '%s' "$KEY" | OWS_PASSPHRASE=<pp> perp --json wallet set hl
 | `qfex` \| `qf` | custodial (USDC on Arbitrum One) | website key, imported by the user only (`wallet agent import qfex`) |
 | `risex` \| `rise` | RISE chain (USDC; deposit / withdraw in the RISEx app only) | none for market data; master address only for account reads. READ-ONLY in this release: trading is planned for a later release — every trade / agent / bot write → `CAPABILITY_UNSUPPORTED` |
 | `txflow` \| `txf` | — | none: MARKET DATA ONLY through an UNOFFICIAL API (every write → `CAPABILITY_UNSUPPORTED`) |
+| `variational` \| `var` \| `omni` | — | none: MARKET DATA ONLY through the official read-only API; no public trading API yet (every write → `CAPABILITY_UNSUPPORTED`) |
 
 Default `-e` = `settings.defaultExchange`, else `pacifica` — always pass `-e`.
 

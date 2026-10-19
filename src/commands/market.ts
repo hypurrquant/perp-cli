@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import type { ExchangeAdapter } from "../exchanges/index.js";
-import { tapeSkippedOf } from "../exchanges/interface.js";
+import { tapeSkippedOf, type CurrentFundingTerms, type RfqQuotes } from "../exchanges/interface.js";
 import { makeTable, formatUsd, formatPercent, printJson, jsonOk, jsonError, withJsonErrors, normalizeSymbolArg } from "../utils.js";
 import chalk from "chalk";
 import { PerpError } from "../errors.js";
@@ -14,6 +14,23 @@ const EXCHANGES = listVenuesWithRole("account").map(v => v.id);
 
 /** null = venue does not publish the value → "-" (never rendered as $0). */
 const usdOrDash = (v: string | null): string => (v === null ? chalk.gray("-") : `$${formatUsd(v)}`);
+
+/**
+ * Funding cell. On a venue whose funding interval is per market (VenueDefinition.fundingRateBasis
+ * "perMarket": Variational, Aster) the raw rate is labelled with its interval ("+0.0079%/8h"), since
+ * the rows of one table cover different periods.
+ */
+function fundingCell(m: { fundingRate: string | null; fundingHours?: number | null }, perMarket: boolean): string {
+  if (m.fundingRate == null) return chalk.gray("N/A");
+  const hours = perMarket ? m.fundingHours ?? null : null;
+  return hours === null ? formatPercent(m.fundingRate) : `${formatPercent(m.fundingRate)}${chalk.gray(`/${hours}h`)}`;
+}
+
+/** True when `venueName` is a registered venue whose funding interval is per market. */
+function perMarketFunding(venueName: string): boolean {
+  const id = tryResolveVenueId(venueName);
+  return id !== null && getVenue(id).fundingRateBasis === "perMarket";
+}
 
 /** Base asset of a market symbol: "BTC-PERP" → "BTC", "xyz:XYZ100" → "XYZ100". */
 const baseAssetOf = (symbol: string): string => (symbol.split(":").pop() as string).replace(/-PERP$/i, "");
@@ -30,6 +47,47 @@ function formatOpenInterest(m: { symbol: string; markPrice: string; openInterest
   const mark = Number(m.markPrice);
   if (!withUsd || !Number.isFinite(oi) || !(mark > 0)) return base;
   return `${base} ${chalk.gray(`(≈ $${formatUsd(oi * mark)} at mark)`)}`;
+}
+
+function printRfqQuotes(q: RfqQuotes, json: boolean): void {
+  if (json) return printJson(jsonOk(q));
+  console.log(chalk.cyan.bold(`\n  RFQ quotes: ${q.ticker} (${q.venue}) — not an order book\n`));
+  console.log(`  Mark: $${formatUsd(q.markPrice)}   Base spread: ${q.baseSpreadBps === null ? chalk.gray("-") : `${Number(q.baseSpreadBps).toFixed(2)} bps`}   Quoted at: ${q.updatedAt ?? chalk.gray("-")}`);
+  if (q.quotes.length === 0) {
+    console.log(chalk.gray("\n  No quotes published right now (the market may be closed).\n"));
+  } else {
+    console.log(makeTable(["Size", "Bid", "Ask", "Spread"], q.quotes.map(t => {
+      const bid = Number(t.bid);
+      const ask = Number(t.ask);
+      const mid = (bid + ask) / 2;
+      return [
+        t.notionalUsd === null ? "min order" : `$${formatUsd(t.notionalUsd)}`,
+        chalk.green(`$${formatUsd(t.bid)}`),
+        chalk.red(`$${formatUsd(t.ask)}`),
+        mid > 0 ? `${((ask - bid) / mid * 10_000).toFixed(2)} bps` : chalk.gray("-"),
+      ];
+    })));
+  }
+  console.log(chalk.gray(`  ${q.note}\n`));
+}
+
+function printFundingTerms(t: CurrentFundingTerms, json: boolean): void {
+  if (json) return printJson(jsonOk(t));
+  console.log(chalk.cyan.bold(`\n  Funding: ${t.ticker} (${t.venue}) — current terms, no history published\n`));
+  if (t.swap !== null) {
+    const row = (label: string, r: NonNullable<typeof t.swap>["last"]) => r === null
+      ? [label, chalk.gray("-"), chalk.gray("-"), chalk.gray("-"), chalk.gray("-")]
+      : [label, formatPercent(r.intervalLong), formatPercent(r.intervalShort), formatPercent(r.annualizedLong), formatPercent(r.annualizedShort)];
+    console.log(makeTable(["Payment", "Long / day", "Short / day", "Long APR", "Short APR"], [row("last applied", t.swap.last), row("next", t.swap.next)]));
+  } else {
+    console.log(`  Rate kind:      ${t.rateKind ?? chalk.gray("-")}`);
+    console.log(`  Interval:       ${t.intervalHours === null ? chalk.gray("-") : `${t.intervalHours}h`}`);
+    console.log(`  Per interval:   ${t.intervalRate === null ? chalk.gray("N/A") : formatPercent(t.intervalRate)}`);
+    console.log(`  Hourly:         ${t.hourlyRate === null ? chalk.gray("N/A") : formatPercent(t.hourlyRate)}`);
+    console.log(`  APR:            ${t.annualizedPct === null ? chalk.gray("N/A") : `${t.annualizedPct.toFixed(2)}%`}`);
+  }
+  console.log(`  Next funding:   ${t.nextFundingTime === null ? chalk.gray("-") : new Date(t.nextFundingTime).toLocaleString()}`);
+  console.log(chalk.gray(`  ${t.note}\n`));
 }
 
 export function registerMarketCommands(
@@ -59,11 +117,11 @@ export function registerMarketCommands(
       const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
 
       const HEADERS = ["Symbol", "Mark", "Index", "Funding", "24h Vol", "OI (base)", "Max Lev"];
-      const marketRow = (m: { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null; volume24h: string | null; openInterest: string | null; maxLeverage: number | null }) => [
+      const marketRow = (m: { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null; fundingHours?: number | null; volume24h: string | null; openInterest: string | null; maxLeverage: number | null }, perMarket = false) => [
         chalk.white.bold(m.symbol),
         `$${formatUsd(m.markPrice)}`,
         usdOrDash(m.indexPrice),
-        m.fundingRate != null ? formatPercent(m.fundingRate) : chalk.gray("N/A"),
+        fundingCell(m, perMarket),
         usdOrDash(m.volume24h),
         formatOpenInterest(m, false),
         m.maxLeverage === null ? chalk.gray("-") : String(m.maxLeverage) + "x",
@@ -103,7 +161,7 @@ export function registerMarketCommands(
           const isHip3 = ex.startsWith("hip3:");
           const label = isHip3 ? chalk.magenta.bold(`  HIP-3: ${ex.slice(5)}`) : chalk.cyan.bold(`  ${ex.toUpperCase()}`);
           console.log(`\n${label} ${chalk.gray(`(${markets.length} markets)`)}`);
-          console.log(makeTable(HEADERS, markets.map(marketRow)));
+          console.log(makeTable(HEADERS, markets.map(m => marketRow(m))));
         }
         for (const [ex, msg] of Object.entries(errors)) {
           console.log(chalk.gray(`  ${ex}: ${msg}`));
@@ -134,11 +192,12 @@ export function registerMarketCommands(
         return printJson(jsonOk(markets));
       }
 
-      console.log(makeTable(HEADERS, markets.map(marketRow)));
+      const perMarket = perMarketFunding(adapter.name);
+      console.log(makeTable(HEADERS, markets.map(m => marketRow(m, perMarket))));
 
       for (const [dex, m] of Object.entries(hip3)) {
         console.log(chalk.magenta.bold(`\n  HIP-3: ${dex}`) + chalk.gray(` (${m.length} markets)`));
-        console.log(makeTable(HEADERS, m.map(marketRow)));
+        console.log(makeTable(HEADERS, m.map(x => marketRow(x))));
       }
     });
 
@@ -148,11 +207,11 @@ export function registerMarketCommands(
     .action(async () => {
       const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
       const PRICE_HEADERS = ["Symbol", "Mark", "Index", "Funding"];
-      const priceRow = (m: { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null }) => [
+      const priceRow = (m: { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null; fundingHours?: number | null }, perMarket = false) => [
         chalk.white.bold(m.symbol),
         `$${formatUsd(m.markPrice)}`,
         usdOrDash(m.indexPrice),
-        m.fundingRate != null ? formatPercent(m.fundingRate) : chalk.gray("N/A"),
+        fundingCell(m, perMarket),
       ];
 
       if (!explicitExchange && getAdapterForExchange) {
@@ -175,7 +234,7 @@ export function registerMarketCommands(
         for (const [ex, markets] of Object.entries(grouped)) {
           if (markets.length === 0) continue;
           console.log(chalk.cyan.bold(`\n  ${ex.toUpperCase()}`) + chalk.gray(` (${markets.length} markets)`));
-          console.log(makeTable(PRICE_HEADERS, markets.map(priceRow)));
+          console.log(makeTable(PRICE_HEADERS, markets.map(m => priceRow(m))));
         }
         for (const [ex, msg] of Object.entries(errors)) console.log(chalk.gray(`  ${ex}: ${msg}`));
         return;
@@ -198,7 +257,7 @@ export function registerMarketCommands(
       } else {
         const markets = await adapter.getMarkets();
         if (isJson()) return printJson(jsonOk(markets));
-        console.log(makeTable(PRICE_HEADERS, markets.map(priceRow)));
+        console.log(makeTable(PRICE_HEADERS, markets.map(m => priceRow(m, perMarketFunding(adapter.name)))));
       }
     });
 
@@ -247,6 +306,8 @@ export function registerMarketCommands(
     .action(async (symbol: string, opts: { depth: string }) => {
       const adapter = await getAdapter();
       const sym = normalizeSymbolArg(symbol);
+      // RFQ venue (Variational): no order book — the maker's indicative quotes, labelled as such.
+      if (adapter.getRfqQuotes !== undefined) return printRfqQuotes(await adapter.getRfqQuotes(sym), isJson());
       const book = await adapter.getOrderbook(sym);
       if (isJson()) return printJson(jsonOk(book));
 
@@ -327,6 +388,8 @@ export function registerMarketCommands(
     .option("-l, --limit <n>", "Number of records", "10")
     .action(async (symbol: string, opts: { limit: string }) => {
       const adapter = await getAdapter();
+      // A venue without a funding-history API (Variational): its current funding terms, labelled as such.
+      if (adapter.getFundingTerms !== undefined) return printFundingTerms(await adapter.getFundingTerms(normalizeSymbolArg(symbol)), isJson());
       const history = await adapter.getFundingHistory(normalizeSymbolArg(symbol), parseInt(opts.limit));
       if (isJson()) return printJson(jsonOk(history));
       if (history.length === 0) {
