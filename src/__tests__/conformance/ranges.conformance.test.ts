@@ -29,7 +29,7 @@ import type { VenueId } from "../../exchanges/venue-types.js";
 import { VENUE_CONFORMANCE } from "./capabilities.js";
 import { hasFixture, IS_LIVE, MODE, runCli, Session, VENUE_FILTER, type CliRun } from "./harness.js";
 import { expectCheck, staleKnownFailures } from "./known-failures.js";
-import { intervalMs, KLINE_INTERVALS, SERVER_CAPS, UNSUPPORTED_INTERVAL, UNMEASURED_CAPS, type ServerCap } from "./server-caps.js";
+import { CAP_TABLE_AGREEMENT, intervalMs, KLINE_INTERVALS, REFUSED_CAPS, SERVER_CAPS, UNSUPPORTED_INTERVAL, UNMEASURED_CAPS, type ServerCap } from "./server-caps.js";
 
 const ALL = listVenues().map(v => v.id);
 const VENUES = ALL.filter(v => (VENUE_FILTER === null || VENUE_FILTER.has(v)));
@@ -45,6 +45,13 @@ describe("caps + interval tables cover the registry", () => {
       if (KLINE_INTERVALS[v].length > 0 && !measured) expect(UNMEASURED_CAPS[v], `measure ${v}'s caps or list them in UNMEASURED_CAPS`).toBeDefined();
     });
   }
+  it("refused caps (cannot be paged) are positive integers of registered venues; the CLI tables agree with the adapter constants", () => {
+    for (const c of REFUSED_CAPS) {
+      expect(ALL, `${c.venue} (${c.command}) is not a registered venue`).toContain(c.venue);
+      expect(Number.isInteger(c.max) && c.max > 0, `${c.venue} ${c.command} max ${c.max}`).toBe(true);
+    }
+    for (const a of CAP_TABLE_AGREEMENT) expect(a.table, a.what).toBe(a.adapter);
+  });
   it("every measured cap records a date and the measurement", () => {
     for (const c of SERVER_CAPS) {
       expect(c.measuredOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);

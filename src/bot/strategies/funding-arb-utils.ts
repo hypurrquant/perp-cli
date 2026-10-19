@@ -244,7 +244,8 @@ async function marketFundingHours(adapter: ExchangeAdapter, exchangeName: string
  * Venues without an entry page without a limit. Measured / documented in docs/VENUE_READ_CAPS.md.
  */
 export const FUNDING_HISTORY_CAP: Readonly<Record<string, number>> = {
-  lighter: 750, "lighter-rh": 750, arcus: 1000, aster: 1000, grvt: 10_000, extended: 10_000,
+  // hyperliquid: fundingHistory pages forward, but `-l` above 5000 is refused (HL_FUNDING_HISTORY_MAX_LIMIT).
+  hyperliquid: 5000, lighter: 750, "lighter-rh": 750, arcus: 1000, aster: 1000, grvt: 10_000, extended: 10_000,
 };
 
 /** Throws INVALID_PARAMS when `periods` is not a positive integer or exceeds a leg venue's cap. */

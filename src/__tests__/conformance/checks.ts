@@ -34,6 +34,9 @@ function zeroStandIn(rs: Array<Record<string, unknown>>, fields: string[]): stri
   return bad.length === 0 ? null : `every row has ${bad.join(", ")} = 0 (unknown must be null, never 0)`;
 }
 
+/** Newest first: every time ≤ the one before it (equal times allowed — a trade tape can repeat one). */
+const newestFirst = (ts: number[]): boolean => ts.every((t, i) => i === 0 || t <= ts[i - 1]);
+
 function monotonic(ts: number[]): "asc" | "desc" | null {
   if (ts.every((t, i) => i === 0 || t >= ts[i - 1])) return "asc";
   if (ts.every((t, i) => i === 0 || t <= ts[i - 1])) return "desc";
@@ -56,7 +59,8 @@ function fundingChecks(r: CliRun): Check[] {
       const bad = rows(r).map(x => issues(FundingRowFields, x)).filter(Boolean);
       return bad.length === 0 ? null : `${bad.length}/${rows(r).length} rows: ${bad[0]}`;
     } },
-    { name: "sorted", run: () => (monotonic(ts()) !== null ? null : "rows are not sorted by time") },
+    // One history order on every venue (0.15.1): funding newest first.
+    { name: "sorted", run: () => (newestFirst(ts()) ? null : "funding rows must be newest first") },
     { name: "distinct", run: () => (new Set(ts()).size === ts().length ? null : "duplicate timestamps") },
     { name: "limit", run: () => (rows(r).length <= FUNDING_LIMIT ? null : `${rows(r).length} rows > --limit ${FUNDING_LIMIT}`) },
     { name: "history", run: () => (rows(r).length >= 2 ? null : `${rows(r).length} row(s) for --limit ${FUNDING_LIMIT}: a history of a listed market has ≥ 2 prints`) },
@@ -86,11 +90,19 @@ function tradesChecks(r: CliRun, now: number): Check[] {
     schemaCheck(r, Trades),
     { name: "limit", run: () => (rows(r).length <= TRADES_LIMIT ? null : `${rows(r).length} rows > --limit ${TRADES_LIMIT}`) },
     { name: "not-future", run: () => (rows(r).every(x => Number(x.time) <= now + 5_000) ? null : "a trade is in the future") },
-    { name: "sorted", run: () => (monotonic(rows(r).map(x => Number(x.time))) !== null ? null : "rows are not sorted by time") },
+    // One history order on every venue (0.15.1): trades newest first.
+    { name: "sorted", run: () => (newestFirst(rows(r).map(x => Number(x.time))) ? null : "trades must be newest first") },
   ];
 }
 
-function klineChecks(r: CliRun, now: number): Check[] {
+/**
+ * Venues whose bar `open` is not one of the bar's own trades (documented in CHANGELOG 0.15.1, data
+ * passed through as published, never clamped): RISEx opens each bar at the previous bar's close
+ * while high / low come from the bar's trades, so only `low ≤ close ≤ high` holds there.
+ */
+const OPEN_OUTSIDE_RANGE: ReadonlySet<string> = new Set(["risex"]);
+
+function klineChecks(r: CliRun, now: number, venue?: string): Check[] {
   const ts = () => rows(r).map(x => Number(x.time));
   return [
     schemaCheck(r, Klines),
@@ -111,6 +123,7 @@ function klineChecks(r: CliRun, now: number): Check[] {
     { name: "ohlc", run: () => {
       const bad = rows(r).filter(k => {
         const [o, h, l, c] = ["open", "high", "low", "close"].map(f => Number(k[f]));
+        if (venue !== undefined && OPEN_OUTSIDE_RANGE.has(venue)) return !(l <= c && c <= h);
         return !(l <= Math.min(o, c) && h >= Math.max(o, c));
       });
       return bad.length === 0 ? null : `${bad.length} candle(s) with low > min(open, close) or high < max(open, close)`;
@@ -131,7 +144,7 @@ export function baseOf(symbol: string): string {
 }
 
 /** The checks of one supported / alternate / unsupported read cell. */
-export function cellChecks(cmd: ReadCommand, exp: Expect, r: CliRun, ctx: { symbol: string; now: number }): Check[] {
+export function cellChecks(cmd: ReadCommand, exp: Expect, r: CliRun, ctx: { symbol: string; now: number; venue?: string }): Check[] {
   const env = envelopeChecks(r);
   if (exp.kind === "unsupported") {
     return [...env, { name: "unsupported", run: () => {
@@ -165,7 +178,7 @@ export function cellChecks(cmd: ReadCommand, exp: Expect, r: CliRun, ctx: { symb
     case "funding": return [...base, ...fundingChecks(r)];
     case "book": return [...base, ...bookChecks(r)];
     case "trades": return [...base, ...tradesChecks(r, ctx.now)];
-    case "kline": return [...base, ...klineChecks(r, ctx.now)];
+    case "kline": return [...base, ...klineChecks(r, ctx.now, ctx.venue)];
   }
 }
 

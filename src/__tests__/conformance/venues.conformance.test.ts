@@ -105,7 +105,7 @@ for (const def of VENUES.filter(runnable)) {
         for (const name of checkNames(cmd, def.id)) {
           it(name, () => {
             const r = runs.get(cmd)!;
-            const check = cellChecks(cmd, exp, r, { symbol: conf.symbol, now }).find(c => c.name === name)!;
+            const check = cellChecks(cmd, exp, r, { symbol: conf.symbol, now, venue: def.id }).find(c => c.name === name)!;
             expectCheck(`${def.id}:${cmd}:${name}`, check.run());
           });
         }

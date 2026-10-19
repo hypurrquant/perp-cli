@@ -358,6 +358,20 @@ describe("public-only adapter", () => {
     expect(calls).toBe(75);
   });
 
+  it("klines: a 30m bar labelled at its first trade (live: 09:31 for the 09:30 bucket) is the bucket's bar — no EXCHANGE_ERROR, open on the grid", async () => {
+    const M30 = 1_800_000;
+    const t0 = 1_792_402_200_000; // 2026-10-19T09:30:00Z
+    const bar = (open: number, close: number) => ({ open_time: `${open}000000`, close_time: `${close}000000`, open: "1", close: "1", high: "1", low: "1", volume_b: "1", volume_q: "1", trades: 1, instrument: "BTC_USDT_Perp" });
+    const live = [bar(t0 + 2 * M30, t0 + 3 * M30), bar(t0 + M30, t0 + 2 * M30), bar(t0 + 60_000, t0 + M30)];
+    // The venue answers the 09:31-labelled bar even for a page ending before 09:31 (live, recorded).
+    fetchMock.mockImplementation(routeFixtures({ kline: b => ({ result: Number(BigInt(String(b.end_time)) / 1_000_000n) < t0 + 60_000 ? [live[2]] : live, next: "" }) }));
+    const k = await adapter().getKlines("BTC", "30m", t0 + 60_000, t0 + 3 * M30);
+    expect(k.map(c => c.time)).toEqual([t0, t0 + M30, t0 + 2 * M30]);
+    // A later window whose oldest label is off the grid: the next page repeats it → done, not an error.
+    const k2 = await adapter().getKlines("BTC", "30m", t0 - M30, t0 + 3 * M30);
+    expect(k2.map(c => c.time)).toEqual([t0, t0 + M30, t0 + 2 * M30]);
+  });
+
   it("klines: a truncated leading calendar bar (1w covering 4 days, live) is dropped", async () => {
     const D = 86_400_000;
     const wk = (open: number, close: number) => ({ open_time: `${open}000000`, close_time: `${close}000000`, open: "1", close: "1", high: "1", low: "1", volume_b: "1", volume_q: "1", trades: 1, instrument: "BTC_USDT_Perp" });

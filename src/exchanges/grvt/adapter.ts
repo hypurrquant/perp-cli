@@ -255,15 +255,18 @@ export class GrvtPublicAdapter implements ExchangeAdapter {
         instrument: m.instrument, interval: ci, type: "TRADE", start_time: msToNs(start), end_time: msToNs(end), limit: GRVT_KLINE_PAGE,
       });
       if (res === null || typeof res !== "object" || !Array.isArray(res.result)) throw grvtShapeError("kline result is not an array");
-      if (res.result.length === 0) { exhausted = true; break; } // no older bars: history starts here
+      // A fixed-interval bar whose first minute had no trade is labelled at its first trade (live
+      // 2026-10-19: the 09:30–10:00 30m bar opened "09:31"); its open is the bucket boundary, and a
+      // page asked to end before that label answers the same bar again — it is not an older bar.
+      const inPage = (res.result as Record<string, unknown>[])
+        .map(c => ({ c, t: fixed === undefined ? nsToMs(c.open_time, "kline open_time") : Math.floor(nsToMs(c.open_time, "kline open_time") / fixed) * fixed }))
+        .filter(x => page === 0 || x.t < oldestSeen);
+      // No bar older than the last page (an empty page, or only bars already read): history starts here.
+      if (inPage.length === 0) { exhausted = true; break; }
       let oldest = Infinity;
-      for (const c of res.result as Record<string, unknown>[]) {
-        const t = nsToMs(c.open_time, "kline open_time");
-        byOpen.set(String(c.open_time), c);
+      for (const { c, t } of inPage) {
+        byOpen.set(String(t), { ...c, open_time: `${t}000000` });
         if (t < oldest) oldest = t;
-      }
-      if (oldest >= oldestSeen) {
-        throw new PerpError("EXCHANGE_ERROR", `GRVT: kline page did not move back past ${new Date(oldestSeen).toISOString()} (venue answered bars outside end_time)`, { exchange: "grvt" });
       }
       oldestSeen = oldest;
       if (oldest <= start) break;

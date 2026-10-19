@@ -174,13 +174,13 @@ percent number); computed analytics of `arb scan` are JSON numbers. **Unknown = 
 |---|---|---|
 | `market list` / `prices` / `info` (`-e v`) | `MarketRow[]` / `MarketRow` | `symbol` string · `markPrice` dec > 0 · `indexPrice` dec > 0 \| null · `fundingRate` dec \| null (per `fundingHours`, else the venue basis) · `volume24h` dec (USD notional) \| null · `openInterest` dec (**base units**) \| null · `maxLeverage` number > 0 \| null · `sizeDecimals` int ≥ 0 \| null · `stepSize` dec > 0 \| null · `fundingHours` number > 0 \| null · `marginTiers` `{lowerBound, maxLeverage}[]` \| null |
 | `market list` / `prices` (no `-e`) | `{ exchanges: Record<venue, MarketRow[]>, errors?: Record<venue, string> }` | every market-data venue is a key of `exchanges` or `errors` |
-| `market funding` (history) | `FundingRow[]` | `time` ms · `rate` dec (fraction per interval) · `price` dec > 0 \| null · `intervalHours` number > 0 · `rateKind` `"lastSettled" \| "accruing" \| "predicted"` |
+| `market funding` (history) | `FundingRow[]`, newest first | `time` ms · `rate` dec (fraction per interval) \| null only with `marketClosed: true` · `price` dec > 0 \| null · `intervalHours` number > 0 · `rateKind` `"lastSettled" \| "accruing" \| "predicted"` (null only with `marketClosed: true`) · `marketClosed` boolean, optional (QFEX: the window fell outside market hours — no funding, not a 0 rate) |
 | `market funding` (no history API) | `CurrentFundingTerms` | `kind: "currentFunding"`, `venue`, `symbol`, `ticker`, `contractType`, `rateKind` (`"predicted"` \| null), `intervalRate` dec \| null, `intervalHours` \| null, `hourlyRate` \| null, `annualizedPct` \| null, `venueAnnualizedRate` dec \| null, `nextFundingTime` ms \| null, `swap`, `note` |
 | `market book` | `{ bids, asks }` | `[price dec > 0, size dec > 0][]`; bids strictly descending, asks strictly ascending (aggregated levels), best bid < best ask |
 | `market book` (RFQ venue) | `RfqQuotes` | `kind: "rfqQuotes"`, `markPrice`, `updatedAt` \| null, `baseSpreadBps` \| null, `quotes[{tier, notionalUsd \| null, bid, ask}]`, `note` |
-| `market trades` | `PublicTrade[]` | `time` ms · `symbol` · `side` `"buy" \| "sell"` · `price` dec > 0 · `size` dec > 0 · `fee` **null** (the public tape has no fee) |
+| `market trades` | `PublicTrade[]`, newest first | `time` ms · `symbol` · `side` `"buy" \| "sell"` · `price` dec > 0 · `size` dec > 0 · `fee` **null** (the public tape has no fee) |
 | `market kline` | `Kline[]` | `time` ms (candle open) · `open/high/low/close` dec > 0 · `volume` dec (base) \| null · `quoteVolume` dec \| null · `trades` int \| null; ascending |
-| `health` | `{ allHealthy, network, exchanges[], unofficial[], skipped[] }` | probe: `exchange`, `status` `"ok" \| "error"`, `latency_ms` \| null, `error` \| null, `probe`, `apiStatus` |
+| `health` | `{ allHealthy, network, exchanges[], unofficial[], skipped[] }` | probe: `exchange`, `status` `"ok" \| "down"`, `latency_ms` \| null, `error` \| null, `probe`, `apiStatus` |
 | `arb scan` | opportunity[] | `mode: "perp-perp"`: `symbol, longExch, shortExch, markPrice, grossSpread, netSpread, estFeesPct, priceGapPct \| null`; `mode: "spot-perp"`: `perpExchange, spotExchanges[], perpFundingRate, direction, breakEvenDays \| null` + the common fields |
 | `arb scan --rates` / `--compare <s>` | `{ symbols: RateSymbol[], exchangeStatus }` / `RateSymbol` | RateSymbol: `symbol, rates[], maxSpreadAnnual, longExchange, shortExchange, executable, readOnlyLegs[]`; rate: `exchange, symbol, canonical \| null, fundingRate, basis, hourlyRate, annualizedPct, markPrice \| null, nextFundingTime \| null, fundingVerified, apiStatus` |
 | `arb scan --gaps` / `--basis` | rows | gaps: `symbol, maxGap, maxGapPct, cheapest, expensive`; basis: `symbol, prices: Record<venue, number>, priceDiff, pctDiff, buyOn, sellOn` |
@@ -199,11 +199,12 @@ Errors: unknown symbol → `SYMBOL_NOT_FOUND` + remediation; unsupported feature
    and ETH market-list marks agree within 2 % (`agreement:<s>:mark`); `--gaps` / `--basis` never
    exceed 50 % (`same-quote`: KRW vs USD); MCP and CLI agree (§3.5).
 3. **Klines** — opens aligned to the interval (`alignment`), never in the future (`not-future`),
-   ascending + distinct (`sorted`), within the requested window (`window`), `low ≤ open, close ≤ high`.
-4. **Funding history** — sorted by time (one direction), distinct timestamps, honours `--limit`,
+   ascending + distinct (`sorted`), within the requested window (`window`), `low ≤ open, close ≤ high`
+   (`ohlc`; RISEx: `low ≤ close ≤ high` only — the venue opens a bar at the previous close, passed through).
+4. **Funding history** — newest first (`sorted`), distinct timestamps, honours `--limit`,
    ≥ 2 prints for a listed market (`history`), every row `intervalHours` + `rateKind` (`fields`).
-   *Open contract decision: the direction is per venue today (ascending on some, descending on
-   others); unify it in a contract change.*
+   One history order on every venue since 0.15.1 (enforced in `perp market` after the adapter
+   call): `trades` and `funding` newest first, `kline` oldest first.
 5. **Limits, ranges, caps, intervals** (`ranges.conformance.test.ts`):
    1. **limit honoured** — a `--limit` / range the venue holds data for returns exactly `limit` rows /
       the full range; a response at a server cap must trigger paging; silent truncation fails

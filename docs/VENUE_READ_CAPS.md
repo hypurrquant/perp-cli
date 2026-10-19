@@ -7,14 +7,17 @@ earlier, without an error or a pagination field. Rule for every adapter: a page 
 venue cannot page, a `--limit` above the cap is refused with `INVALID_PARAMS` naming the cap — never
 clamped silently.
 
-Measured 2026-10-19 unless noted. HL / Pacifica / Lighter kline and trade caps are owned by the
-venue-specific fix branches and are not listed here.
+Measured 2026-10-19 unless noted. The conformance suite reads these tables from the code
+(`src/__tests__/conformance/server-caps.ts`: `REFUSED_CAPS`, `CAP_TABLE_AGREEMENT`).
 
 | Venue | Path | Real cap | Documented | perp-cli |
 |---|---|---|---|---|
 | Ondo | `GET /v1/perps/candles` | n/a — buckets from the requested `from`, adds a zero-volume bucket after `to` | — | `from` floored to the interval; candles after `--end` dropped |
 | Lighter / Lighter RH | `GET /api/v1/fundings` | 750 per call (docs); `count_back` not honoured as documented | 750 | window = `-l` hours, newest `-l` rows; `-l` 1..750 |
-| Hyperliquid | `fundingHistory` | 500 per answer (docs) | 500 | window = `-l` hours (was fixed 24 h) |
+| Hyperliquid | `fundingHistory` | 500 per answer (docs) | 500 | window = `-l` hours (was fixed 24 h), paged forward from the last row's time; `-l` 1..5000 (`HL_FUNDING_HISTORY_MAX_LIMIT`) |
+| Hyperliquid | `candleSnapshot` | only the most recent 5000 candles of an interval exist (docs) | 5000 | a `--start` before now − 5000 × interval → `INVALID_PARAMS` naming the earliest start (`HL_CANDLE_CAP`) |
+| Hyperliquid | `recentTrades` | last 10 trades, no count / paging (docs) | — | default 10; `--limit` > 10 → `INVALID_PARAMS` (`HL_RECENT_TRADES_CAP`) |
+| Hyperliquid | `l2Book` | 20 levels per side (docs) | 20 | `--depth` > 20 → `INVALID_PARAMS` (`HL_BOOK_LEVELS_CAP` = `BOOK_DEPTH_MAX.hyperliquid`) |
 | RISEx | `/trading-view-data` | intervals other than 1m 5m 15m 1h 4h 1d 1w answer **1m bars** | — | table = verified set; rows of another interval → `EXCHANGE_ERROR` |
 | RISEx | `/funding-rate-history` | `start_time` defaults to now − 7 d (168 rows); 1000 / page, `page` + `has_next_page` | 1000 | `start_time` = now − `-l` h, pages followed |
 | RISEx | `/trade-history` | 1000 ("page_size cannot exceed 1000") | 1000 | `--limit` > 1000 → `INVALID_PARAMS` |

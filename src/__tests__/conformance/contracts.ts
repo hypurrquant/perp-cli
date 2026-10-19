@@ -45,16 +45,23 @@ export const MarketListAll = z.looseObject({
 
 // ── funding ──
 
-/** One settled / published funding print. intervalHours + rateKind are checked separately (fields check). */
+/**
+ * One settled / published funding print. intervalHours + rateKind are checked separately (fields check).
+ * `rate` is null only on a window the market was closed for (`marketClosed: true`, QFEX outside
+ * market_hours: no funding exchanged) — never "0" as a stand-in.
+ */
 export const FundingRowBase = z.looseObject({
   time: Ms,
-  rate: Dec,
+  rate: DecOrNull,
   price: PosDec.nullable(),
-});
+  marketClosed: z.boolean().optional(),
+}).refine(r => r.rate !== null || r.marketClosed === true, { message: "rate is null on a print that is not marketClosed", path: ["rate"] });
+/** A closed-market window has no settled rate: `rateKind` null there, a RateKind everywhere else. */
 export const FundingRowFields = z.looseObject({
   intervalHours: z.number().positive(),
-  rateKind: RateKind,
-});
+  rateKind: RateKind.nullable(),
+  marketClosed: z.boolean().optional(),
+}).refine(r => r.rateKind !== null || r.marketClosed === true, { message: "rateKind is null on a print that is not marketClosed", path: ["rateKind"] });
 export const FundingHistory = z.array(FundingRowBase);
 
 /** A venue without a funding-history API (Variational): its current terms, labelled. */
@@ -119,7 +126,8 @@ export const Klines = z.array(Kline);
 
 export const HealthProbe = z.looseObject({
   exchange: z.string(),
-  status: z.enum(["ok", "error"]),
+  // `perp health` has printed "down" for a failed probe since 0.15.0 (src/commands/risk.ts).
+  status: z.enum(["ok", "down"]),
   latency_ms: z.number().nonnegative().nullable(),
   error: z.string().nullable(),
   probe: z.string(),

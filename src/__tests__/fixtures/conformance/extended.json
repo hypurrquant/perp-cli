@@ -1,13 +1,14 @@
 {
  "schema": 1,
  "name": "extended",
- "capturedAt": 1792406084728,
+ "capturedAt": 1792414401690,
  "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
  "keep": [
   "BTC",
   "ETH",
   "SOL"
  ],
+ "full": [],
  "http": [
   {
    "cell": "list",
@@ -17,7 +18,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "81926650fbc1c3dd"
+    "$body": "07c2d5ee69a9fd1d"
    },
    "text": null
   },
@@ -29,7 +30,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "81926650fbc1c3dd"
+    "$body": "07c2d5ee69a9fd1d"
    },
    "text": null
   },
@@ -41,7 +42,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "81926650fbc1c3dd"
+    "$body": "07c2d5ee69a9fd1d"
    },
    "text": null
   },
@@ -53,7 +54,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "300be60eb487f322"
+    "$body": "ab9f0cf5a3ef4b1e"
    },
    "text": null
   },
@@ -76,13 +77,23 @@
   {
    "cell": "funding",
    "method": "GET",
-   "url": "https://api.starknet.extended.exchange/api/v1/info/BTC-USD/funding?startTime=1792380883490&endTime=1792406083490&limit=5",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/BTC-USD/funding?startTime=1792389200353&endTime=1792414400353&limit=5",
    "body": null,
    "status": 200,
    "contentType": "application/json",
    "response": {
     "status": "OK",
     "data": [
+     {
+      "m": "BTC-USD",
+      "f": "0.000009",
+      "T": 1792411200849
+     },
+     {
+      "m": "BTC-USD",
+      "f": "0.000006",
+      "T": 1792407601199
+     },
      {
       "m": "BTC-USD",
       "f": "0.000009",
@@ -107,16 +118,6 @@
       "m": "BTC-USD",
       "f": "0.000013",
       "T": 1792389600849
-     },
-     {
-      "m": "BTC-USD",
-      "f": "0.000013",
-      "T": 1792386000849
-     },
-     {
-      "m": "BTC-USD",
-      "f": "0.000013",
-      "T": 1792382400849
      }
     ]
    },
@@ -130,7 +131,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "300be60eb487f322"
+    "$body": "ab9f0cf5a3ef4b1e"
    },
    "text": null
   },
@@ -163,28 +164,28 @@
      "market": "BTC-USD",
      "bid": [
       {
-       "qty": "9.36950",
-       "price": "82057"
+       "qty": "9.96534",
+       "price": "82372"
       },
       {
-       "qty": "0.71640",
-       "price": "82056"
+       "qty": "2.19823",
+       "price": "82371"
       },
       {
-       "qty": "0.67695",
-       "price": "82055"
+       "qty": "2.09643",
+       "price": "82370"
       },
       {
-       "qty": "0.66120",
-       "price": "82054"
+       "qty": "0.79585",
+       "price": "82369"
       },
       {
-       "qty": "0.80200",
-       "price": "82053"
+       "qty": "0.83174",
+       "price": "82368"
       },
       {
-       "qty": "0.64859",
-       "price": "82052"
+       "qty": "0.00680",
+       "price": "82367"
       },
       {
        "qty": "0.00490",
@@ -213,28 +214,28 @@
      ],
      "ask": [
       {
-       "qty": "0.70055",
-       "price": "82058"
+       "qty": "0.74977",
+       "price": "82373"
       },
       {
-       "qty": "0.00254",
-       "price": "82059"
+       "qty": "0.00011",
+       "price": "82374"
       },
       {
-       "qty": "0.00021",
-       "price": "82060"
+       "qty": "0.1393",
+       "price": "82381"
       },
       {
-       "qty": "0.60936",
-       "price": "82062"
+       "qty": "0.73918",
+       "price": "82382"
       },
       {
-       "qty": "0.60925",
-       "price": "82064"
+       "qty": "0.1393",
+       "price": "82383"
       },
       {
-       "qty": "2.09408",
-       "price": "82067"
+       "qty": "0.08307",
+       "price": "82385"
       },
       {
        "qty": "0.00047",
@@ -273,7 +274,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "300be60eb487f322"
+    "$body": "ab9f0cf5a3ef4b1e"
    },
    "text": null
   },
@@ -304,31 +305,31 @@
     "status": "OK",
     "data": [
      {
-      "i": 2112129953263784000,
+      "i": 2112164808081019000,
       "m": "BTC-USD",
       "S": "SELL",
       "tT": "TRADE",
-      "T": 1792405996992,
-      "p": "82109",
-      "q": "0.00824"
+      "T": 1792414307028,
+      "p": "82385",
+      "q": "0.00035"
      },
      {
-      "i": 2112129953267978200,
+      "i": 2112164808081019000,
       "m": "BTC-USD",
       "S": "SELL",
       "tT": "TRADE",
-      "T": 1792405996993,
-      "p": "82109",
-      "q": "0.00640"
+      "T": 1792414307028,
+      "p": "82385",
+      "q": "0.00011"
      },
      {
-      "i": 2112129954249445400,
+      "i": 2112164808085213200,
       "m": "BTC-USD",
       "S": "SELL",
       "tT": "TRADE",
-      "T": 1792405997227,
-      "p": "82100",
-      "q": "0.00020"
+      "T": 1792414307029,
+      "p": "82384",
+      "q": "0.00030"
      }
     ]
    },
@@ -342,7 +343,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "300be60eb487f322"
+    "$body": "ab9f0cf5a3ef4b1e"
    },
    "text": null
   },
@@ -365,7 +366,7 @@
   {
    "cell": "kline",
    "method": "GET",
-   "url": "https://api.starknet.extended.exchange/api/v1/info/candles/BTC-USD/trades?interval=PT1H&limit=25&endTime=1792406083775",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/candles/BTC-USD/trades?interval=PT1H&limit=26&endTime=1792414400642",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -373,11 +374,27 @@
     "status": "OK",
     "data": [
      {
+      "o": "82228.5",
+      "l": "82210.5",
+      "h": "82556.5",
+      "c": "82454.5",
+      "v": "45.39988",
+      "T": 1792411200000
+     },
+     {
+      "o": "82289.5",
+      "l": "82018",
+      "h": "82289.5",
+      "c": "82228.5",
+      "v": "50.38022",
+      "T": 1792407600000
+     },
+     {
       "o": "82651.5",
       "l": "81992",
       "h": "82758.5",
-      "c": "82063.5",
-      "v": "70.80182",
+      "c": "82289.5",
+      "v": "135.14312",
       "T": 1792404000000
      },
      {
@@ -405,20 +422,12 @@
       "T": 1792393200000
      },
      {
-      "o": "82619.5",
-      "l": "82565",
-      "h": "82777",
-      "c": "82723.5",
-      "v": "31.73464",
-      "T": 1792389600000
-     },
-     {
-      "o": "82656.5",
-      "l": "82429.5",
-      "h": "82656.5",
-      "c": "82619.5",
-      "v": "17.86412",
-      "T": 1792386000000
+      "o": "81045.5",
+      "l": "80919",
+      "h": "81119.5",
+      "c": "80956.5",
+      "v": "38.9859",
+      "T": 1792339200000
      },
      {
       "o": "80974",
@@ -459,14 +468,6 @@
       "c": "81908.5",
       "v": "47.07402",
       "T": 1792321200000
-     },
-     {
-      "o": "82026.5",
-      "l": "81958",
-      "h": "82122",
-      "c": "81958.5",
-      "v": "78.84596",
-      "T": 1792317600000
      }
     ]
    },
@@ -480,7 +481,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "0f0e29e5ce4d4946"
+    "$body": "07c2d5ee69a9fd1d"
    },
    "text": null
   },
@@ -524,7 +525,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "0f0e29e5ce4d4946"
+    "$body": "07c2d5ee69a9fd1d"
    },
    "text": null
   },
@@ -568,7 +569,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "0f0e29e5ce4d4946"
+    "$body": "07c2d5ee69a9fd1d"
    },
    "text": null
   },
@@ -612,7 +613,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "0f0e29e5ce4d4946"
+    "$body": "07c2d5ee69a9fd1d"
    },
    "text": null
   },
@@ -656,14 +657,14 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "0f0e29e5ce4d4946"
+    "$body": "07c2d5ee69a9fd1d"
    },
    "text": null
   }
  ],
  "ws": [],
  "bodies": {
-  "81926650fbc1c3dd": {
+  "07c2d5ee69a9fd1d": {
    "status": "OK",
    "data": [
     {
@@ -683,56 +684,56 @@
      "status": "ACTIVE",
      "tradingHours": "CONTINUOUS",
      "marketStats": {
-      "dailyVolume": "108223495.348920",
-      "dailyVolumeBase": "1322.42980",
-      "dailyPriceChange": "-35",
-      "dailyPriceChangePercentage": "-0.0004",
+      "dailyVolume": "109039296.180520",
+      "dailyVolumeBase": "1331.80180",
+      "dailyPriceChange": "625",
+      "dailyPriceChangePercentage": "0.0076",
       "dailyLow": "80568",
       "dailyHigh": "83037",
-      "lastPrice": "82062",
-      "askPrice": "82064",
-      "bidPrice": "82063",
-      "markPrice": "82057.598957500013",
-      "indexPrice": "82095.347299124987",
-      "fundingRate": "0.000009",
-      "nextFundingRate": 1792407600000,
-      "openInterest": "46677003.985437",
-      "openInterestBase": "569.04140",
+      "lastPrice": "82450",
+      "askPrice": "82455.0",
+      "bidPrice": "82454",
+      "markPrice": "82444.248327749999",
+      "indexPrice": "82480.620591937506",
+      "fundingRate": "0.000013",
+      "nextFundingRate": 1792414800000,
+      "openInterest": "47555596.346349",
+      "openInterestBase": "578.12806",
       "deleverageLevels": {
        "shortPositions": [
         {
          "level": 1,
-         "rankingLowerBound": "-229.2929"
+         "rankingLowerBound": "-235.6689"
         },
         {
          "level": 2,
-         "rankingLowerBound": "-1.4628"
+         "rankingLowerBound": "-1.5894"
         },
         {
          "level": 3,
-         "rankingLowerBound": "-0.0043"
+         "rankingLowerBound": "-0.0097"
         },
         {
          "level": 4,
-         "rankingLowerBound": "0.0003"
+         "rankingLowerBound": "0.0001"
         }
        ],
        "longPositions": [
         {
          "level": 1,
-         "rankingLowerBound": "-31268.3680"
+         "rankingLowerBound": "-30556.6410"
         },
         {
          "level": 2,
-         "rankingLowerBound": "-0.1270"
+         "rankingLowerBound": "-0.0451"
         },
         {
          "level": 3,
-         "rankingLowerBound": "0.0000"
+         "rankingLowerBound": "0.0001"
         },
         {
          "level": 4,
-         "rankingLowerBound": "0.0039"
+         "rankingLowerBound": "0.0042"
         }
        ]
       }
@@ -843,56 +844,56 @@
      "status": "ACTIVE",
      "tradingHours": "CONTINUOUS",
      "marketStats": {
-      "dailyVolume": "5030544.730000",
-      "dailyVolumeBase": "48590.96",
-      "dailyPriceChange": "0.23",
-      "dailyPriceChangePercentage": "0.0022",
+      "dailyVolume": "5093030.150400",
+      "dailyVolumeBase": "49175.18",
+      "dailyPriceChange": "1.19",
+      "dailyPriceChangePercentage": "0.0115",
       "dailyLow": "100.25",
       "dailyHigh": "106.02",
-      "lastPrice": "104.33",
-      "askPrice": "104.33",
-      "bidPrice": "104.32",
-      "markPrice": "104.322596137499",
-      "indexPrice": "104.390275",
-      "fundingRate": "-0.000002",
-      "nextFundingRate": 1792407600000,
-      "openInterest": "7288139.209745",
-      "openInterestBase": "69688.06",
+      "lastPrice": "105.00",
+      "askPrice": "105.070000",
+      "bidPrice": "105.06",
+      "markPrice": "105.0637761",
+      "indexPrice": "105.118715324999",
+      "fundingRate": "0.000005",
+      "nextFundingRate": 1792414800000,
+      "openInterest": "7352989.417868",
+      "openInterestBase": "69804.32",
       "deleverageLevels": {
        "shortPositions": [
         {
          "level": 1,
-         "rankingLowerBound": "-4535.4973"
+         "rankingLowerBound": "-4726.5682"
         },
         {
          "level": 2,
-         "rankingLowerBound": "-0.3686"
+         "rankingLowerBound": "-0.5608"
         },
         {
          "level": 3,
-         "rankingLowerBound": "0"
+         "rankingLowerBound": "-0.0048"
         },
         {
          "level": 4,
-         "rankingLowerBound": "0.0008"
+         "rankingLowerBound": "0.0001"
         }
        ],
        "longPositions": [
         {
          "level": 1,
-         "rankingLowerBound": "-59810.1428"
+         "rankingLowerBound": "-15502.5326"
         },
         {
          "level": 2,
-         "rankingLowerBound": "-3.8483"
+         "rankingLowerBound": "-1.9637"
         },
         {
          "level": 3,
-         "rankingLowerBound": "-0.0004"
+         "rankingLowerBound": "0.0000"
         },
         {
          "level": 4,
-         "rankingLowerBound": "0.0011"
+         "rankingLowerBound": "0.0022"
         }
        ]
       }
@@ -1003,680 +1004,48 @@
      "status": "ACTIVE",
      "tradingHours": "CONTINUOUS",
      "marketStats": {
-      "dailyVolume": "19762623.909200",
-      "dailyVolumeBase": "8274.800",
-      "dailyPriceChange": "-7.1",
-      "dailyPriceChangePercentage": "-0.0029",
+      "dailyVolume": "21053387.887400",
+      "dailyVolumeBase": "8808.158",
+      "dailyPriceChange": "7.4",
+      "dailyPriceChangePercentage": "0.0031",
       "dailyLow": "2325.6",
       "dailyHigh": "2442.4",
-      "lastPrice": "2414.3",
-      "askPrice": "2414.3",
-      "bidPrice": "2414.2",
-      "markPrice": "2413.79784825",
-      "indexPrice": "2415.020799375",
-      "fundingRate": "0.000011",
-      "nextFundingRate": 1792407600000,
-      "openInterest": "27172660.386407",
-      "openInterestBase": "11260.788",
-      "deleverageLevels": {
-       "shortPositions": [
-        {
-         "level": 1,
-         "rankingLowerBound": "-4987.4540"
-        },
-        {
-         "level": 2,
-         "rankingLowerBound": "-0.9982"
-        },
-        {
-         "level": 3,
-         "rankingLowerBound": "0.0000"
-        },
-        {
-         "level": 4,
-         "rankingLowerBound": "0.0019"
-        }
-       ],
-       "longPositions": [
-        {
-         "level": 1,
-         "rankingLowerBound": "-1796.0543"
-        },
-        {
-         "level": 2,
-         "rankingLowerBound": "-2.4494"
-        },
-        {
-         "level": 3,
-         "rankingLowerBound": "-0.0014"
-        },
-        {
-         "level": 4,
-         "rankingLowerBound": "0.0008"
-        }
-       ]
-      }
-     },
-     "tradingConfig": {
-      "minOrderSize": "0.01",
-      "minOrderSizeChange": "0.001",
-      "minPriceChange": "0.1",
-      "maxMarketOrderValue": "3000000",
-      "maxLimitOrderValue": "15000000",
-      "maxPositionValue": "60000000",
-      "maxLeverage": "50.00",
-      "hourlyFundingRateCap": "0.25",
-      "openInterestLimit": "0",
-      "maxNumOrders": "200",
-      "limitPriceCap": "0.05",
-      "limitPriceFloor": "0.05",
-      "riskFactorConfig": [
-       {
-        "upperBound": "4000000",
-        "riskFactor": "0.02",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "8000000",
-        "riskFactor": "0.04",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "12000000",
-        "riskFactor": "0.06",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "16000000",
-        "riskFactor": "0.08",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "20000000",
-        "riskFactor": "0.1",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "24000000",
-        "riskFactor": "0.12",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "184000000",
-        "riskFactor": "0.92",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "188000000",
-        "riskFactor": "0.94",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "192000000",
-        "riskFactor": "0.96",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "196000000",
-        "riskFactor": "0.98",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "200000000",
-        "riskFactor": "1",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "1000000000",
-        "riskFactor": "1",
-        "isAvailableForUsers": false
-       }
-      ],
-      "uPnlWithdrawable": true,
-      "postWithdrawalMarginFactor": "0.1"
-     },
-     "l2Config": {
-      "type": "STARKX",
-      "collateralId": "0x1",
-      "syntheticId": "0x4554482d3400000000000000000000",
-      "syntheticResolution": 10000,
-      "collateralResolution": 1000000
-     },
-     "visibleOnUi": true,
-     "referenceMarket": "null",
-     "createdAt": 1752829532673
-    }
-   ]
-  },
-  "300be60eb487f322": {
-   "status": "OK",
-   "data": [
-    {
-     "name": "BTC-USD",
-     "type": "PERPETUAL",
-     "uiName": "BTC-USD",
-     "category": "Crypto",
-     "subCategory": "L1",
-     "assetName": "BTC",
-     "assetPrecision": 5,
-     "collateralAssetName": "USD",
-     "collateralAssetPrecision": 6,
-     "description": "Bitcoin",
-     "active": true,
-     "isRfq": false,
-     "isOffHours": false,
-     "status": "ACTIVE",
-     "tradingHours": "CONTINUOUS",
-     "marketStats": {
-      "dailyVolume": "108223495.348920",
-      "dailyVolumeBase": "1322.42980",
-      "dailyPriceChange": "-35",
-      "dailyPriceChangePercentage": "-0.0004",
-      "dailyLow": "80568",
-      "dailyHigh": "83037",
-      "lastPrice": "82062",
-      "askPrice": "82064",
-      "bidPrice": "82063",
-      "markPrice": "82057.598957500013",
-      "indexPrice": "82095.347299124987",
-      "fundingRate": "0.000009",
-      "nextFundingRate": 1792407600000,
-      "openInterest": "46677003.985437",
-      "openInterestBase": "569.04140",
-      "deleverageLevels": {
-       "shortPositions": [
-        {
-         "level": 1,
-         "rankingLowerBound": "-229.2929"
-        },
-        {
-         "level": 2,
-         "rankingLowerBound": "-1.4628"
-        },
-        {
-         "level": 3,
-         "rankingLowerBound": "-0.0043"
-        },
-        {
-         "level": 4,
-         "rankingLowerBound": "0.0003"
-        }
-       ],
-       "longPositions": [
-        {
-         "level": 1,
-         "rankingLowerBound": "-31268.3680"
-        },
-        {
-         "level": 2,
-         "rankingLowerBound": "-0.1270"
-        },
-        {
-         "level": 3,
-         "rankingLowerBound": "0.0000"
-        },
-        {
-         "level": 4,
-         "rankingLowerBound": "0.0039"
-        }
-       ]
-      }
-     },
-     "tradingConfig": {
-      "minOrderSize": "0.0001",
-      "minOrderSizeChange": "0.00001",
-      "minPriceChange": "1",
-      "maxMarketOrderValue": "3000000",
-      "maxLimitOrderValue": "15000000",
-      "maxPositionValue": "60000000",
-      "maxLeverage": "50.00",
-      "hourlyFundingRateCap": "0.25",
-      "openInterestLimit": "0",
-      "maxNumOrders": "200",
-      "limitPriceCap": "0.05",
-      "limitPriceFloor": "0.05",
-      "riskFactorConfig": [
-       {
-        "upperBound": "4000000",
-        "riskFactor": "0.02",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "8000000",
-        "riskFactor": "0.04",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "12000000",
-        "riskFactor": "0.06",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "16000000",
-        "riskFactor": "0.08",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "20000000",
-        "riskFactor": "0.1",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "24000000",
-        "riskFactor": "0.12",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "184000000",
-        "riskFactor": "0.92",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "188000000",
-        "riskFactor": "0.94",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "192000000",
-        "riskFactor": "0.96",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "196000000",
-        "riskFactor": "0.98",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "200000000",
-        "riskFactor": "1",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "1000000000",
-        "riskFactor": "1",
-        "isAvailableForUsers": false
-       }
-      ],
-      "uPnlWithdrawable": true,
-      "postWithdrawalMarginFactor": "0.1"
-     },
-     "l2Config": {
-      "type": "STARKX",
-      "collateralId": "0x1",
-      "syntheticId": "0x4254432d3600000000000000000000",
-      "syntheticResolution": 1000000,
-      "collateralResolution": 1000000
-     },
-     "visibleOnUi": true,
-     "referenceMarket": "null",
-     "createdAt": 1752829532673
-    }
-   ]
-  },
-  "0f0e29e5ce4d4946": {
-   "status": "OK",
-   "data": [
-    {
-     "name": "BTC-USD",
-     "type": "PERPETUAL",
-     "uiName": "BTC-USD",
-     "category": "Crypto",
-     "subCategory": "L1",
-     "assetName": "BTC",
-     "assetPrecision": 5,
-     "collateralAssetName": "USD",
-     "collateralAssetPrecision": 6,
-     "description": "Bitcoin",
-     "active": true,
-     "isRfq": false,
-     "isOffHours": false,
-     "status": "ACTIVE",
-     "tradingHours": "CONTINUOUS",
-     "marketStats": {
-      "dailyVolume": "108223495.348920",
-      "dailyVolumeBase": "1322.42980",
-      "dailyPriceChange": "-35",
-      "dailyPriceChangePercentage": "-0.0004",
-      "dailyLow": "80568",
-      "dailyHigh": "83037",
-      "lastPrice": "82062",
-      "askPrice": "82064",
-      "bidPrice": "82063",
-      "markPrice": "82057.598957500013",
-      "indexPrice": "82095.347299124987",
-      "fundingRate": "0.000009",
-      "nextFundingRate": 1792407600000,
-      "openInterest": "46677003.985437",
-      "openInterestBase": "569.04140",
-      "deleverageLevels": {
-       "shortPositions": [
-        {
-         "level": 1,
-         "rankingLowerBound": "-229.2929"
-        },
-        {
-         "level": 2,
-         "rankingLowerBound": "-1.4628"
-        },
-        {
-         "level": 3,
-         "rankingLowerBound": "-0.0043"
-        },
-        {
-         "level": 4,
-         "rankingLowerBound": "0.0003"
-        }
-       ],
-       "longPositions": [
-        {
-         "level": 1,
-         "rankingLowerBound": "-31268.3680"
-        },
-        {
-         "level": 2,
-         "rankingLowerBound": "-0.1270"
-        },
-        {
-         "level": 3,
-         "rankingLowerBound": "0.0000"
-        },
-        {
-         "level": 4,
-         "rankingLowerBound": "0.0039"
-        }
-       ]
-      }
-     },
-     "tradingConfig": {
-      "minOrderSize": "0.0001",
-      "minOrderSizeChange": "0.00001",
-      "minPriceChange": "1",
-      "maxMarketOrderValue": "3000000",
-      "maxLimitOrderValue": "15000000",
-      "maxPositionValue": "60000000",
-      "maxLeverage": "50.00",
-      "hourlyFundingRateCap": "0.25",
-      "openInterestLimit": "0",
-      "maxNumOrders": "200",
-      "limitPriceCap": "0.05",
-      "limitPriceFloor": "0.05",
-      "riskFactorConfig": [
-       {
-        "upperBound": "4000000",
-        "riskFactor": "0.02",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "8000000",
-        "riskFactor": "0.04",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "12000000",
-        "riskFactor": "0.06",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "16000000",
-        "riskFactor": "0.08",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "20000000",
-        "riskFactor": "0.1",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "24000000",
-        "riskFactor": "0.12",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "184000000",
-        "riskFactor": "0.92",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "188000000",
-        "riskFactor": "0.94",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "192000000",
-        "riskFactor": "0.96",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "196000000",
-        "riskFactor": "0.98",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "200000000",
-        "riskFactor": "1",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "1000000000",
-        "riskFactor": "1",
-        "isAvailableForUsers": false
-       }
-      ],
-      "uPnlWithdrawable": true,
-      "postWithdrawalMarginFactor": "0.1"
-     },
-     "l2Config": {
-      "type": "STARKX",
-      "collateralId": "0x1",
-      "syntheticId": "0x4254432d3600000000000000000000",
-      "syntheticResolution": 1000000,
-      "collateralResolution": 1000000
-     },
-     "visibleOnUi": true,
-     "referenceMarket": "null",
-     "createdAt": 1752829532673
-    },
-    {
-     "name": "SOL-USD",
-     "type": "PERPETUAL",
-     "uiName": "SOL-USD",
-     "category": "Crypto",
-     "subCategory": "L1",
-     "assetName": "SOL",
-     "assetPrecision": 2,
-     "collateralAssetName": "USD",
-     "collateralAssetPrecision": 6,
-     "description": "Solana",
-     "active": true,
-     "isRfq": false,
-     "isOffHours": false,
-     "status": "ACTIVE",
-     "tradingHours": "CONTINUOUS",
-     "marketStats": {
-      "dailyVolume": "5030544.730000",
-      "dailyVolumeBase": "48590.96",
-      "dailyPriceChange": "0.23",
-      "dailyPriceChangePercentage": "0.0022",
-      "dailyLow": "100.25",
-      "dailyHigh": "106.02",
-      "lastPrice": "104.33",
-      "askPrice": "104.33",
-      "bidPrice": "104.32",
-      "markPrice": "104.322596137499",
-      "indexPrice": "104.390275",
-      "fundingRate": "-0.000002",
-      "nextFundingRate": 1792407600000,
-      "openInterest": "7288139.209745",
-      "openInterestBase": "69688.06",
-      "deleverageLevels": {
-       "shortPositions": [
-        {
-         "level": 1,
-         "rankingLowerBound": "-4535.4973"
-        },
-        {
-         "level": 2,
-         "rankingLowerBound": "-0.3686"
-        },
-        {
-         "level": 3,
-         "rankingLowerBound": "0"
-        },
-        {
-         "level": 4,
-         "rankingLowerBound": "0.0008"
-        }
-       ],
-       "longPositions": [
-        {
-         "level": 1,
-         "rankingLowerBound": "-59810.1428"
-        },
-        {
-         "level": 2,
-         "rankingLowerBound": "-3.8483"
-        },
-        {
-         "level": 3,
-         "rankingLowerBound": "-0.0004"
-        },
-        {
-         "level": 4,
-         "rankingLowerBound": "0.0011"
-        }
-       ]
-      }
-     },
-     "tradingConfig": {
-      "minOrderSize": "0.1",
-      "minOrderSizeChange": "0.01",
-      "minPriceChange": "0.01",
-      "maxMarketOrderValue": "1500000",
-      "maxLimitOrderValue": "7500000",
-      "maxPositionValue": "15000000",
-      "maxLeverage": "50.00",
-      "hourlyFundingRateCap": "0.25",
-      "openInterestLimit": "0",
-      "maxNumOrders": "200",
-      "limitPriceCap": "0.05",
-      "limitPriceFloor": "0.05",
-      "riskFactorConfig": [
-       {
-        "upperBound": "1000000",
-        "riskFactor": "0.02",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "2000000",
-        "riskFactor": "0.04",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "3000000",
-        "riskFactor": "0.06",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "4000000",
-        "riskFactor": "0.08",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "5000000",
-        "riskFactor": "0.1",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "6000000",
-        "riskFactor": "0.12",
-        "isAvailableForUsers": true
-       },
-       {
-        "upperBound": "46000000",
-        "riskFactor": "0.92",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "47000000",
-        "riskFactor": "0.94",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "48000000",
-        "riskFactor": "0.96",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "49000000",
-        "riskFactor": "0.98",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "50000000",
-        "riskFactor": "1",
-        "isAvailableForUsers": false
-       },
-       {
-        "upperBound": "1000000000",
-        "riskFactor": "1",
-        "isAvailableForUsers": false
-       }
-      ],
-      "uPnlWithdrawable": false,
-      "postWithdrawalMarginFactor": "0"
-     },
-     "l2Config": {
-      "type": "STARKX",
-      "collateralId": "0x1",
-      "syntheticId": "0x534f4c2d3300000000000000000000",
-      "syntheticResolution": 1000,
-      "collateralResolution": 1000000
-     },
-     "visibleOnUi": true,
-     "referenceMarket": "null",
-     "createdAt": 1752829532673
-    },
-    {
-     "name": "ETH-USD",
-     "type": "PERPETUAL",
-     "uiName": "ETH-USD",
-     "category": "Crypto",
-     "subCategory": "L1",
-     "assetName": "ETH",
-     "assetPrecision": 3,
-     "collateralAssetName": "USD",
-     "collateralAssetPrecision": 6,
-     "description": "Ethereum",
-     "active": true,
-     "isRfq": false,
-     "isOffHours": false,
-     "status": "ACTIVE",
-     "tradingHours": "CONTINUOUS",
-     "marketStats": {
-      "dailyVolume": "19762623.909200",
-      "dailyVolumeBase": "8274.800",
-      "dailyPriceChange": "-7.1",
-      "dailyPriceChangePercentage": "-0.0029",
-      "dailyLow": "2325.6",
-      "dailyHigh": "2442.4",
-      "lastPrice": "2414.3",
-      "askPrice": "2414.3",
-      "bidPrice": "2414.2",
-      "markPrice": "2413.79784825",
-      "indexPrice": "2415.020799375",
+      "lastPrice": "2419.8",
+      "askPrice": "2420.5",
+      "bidPrice": "2420.4",
+      "markPrice": "2420.472419249999",
+      "indexPrice": "2421.5811927",
       "fundingRate": "0.000012",
-      "nextFundingRate": 1792407600000,
-      "openInterest": "27172660.386407",
-      "openInterestBase": "11260.788",
+      "nextFundingRate": 1792414800000,
+      "openInterest": "27232935.699656",
+      "openInterestBase": "11227.244",
       "deleverageLevels": {
        "shortPositions": [
         {
          "level": 1,
-         "rankingLowerBound": "-4987.4540"
+         "rankingLowerBound": "-5446.8182"
         },
         {
          "level": 2,
-         "rankingLowerBound": "-0.9982"
+         "rankingLowerBound": "-1.8009"
+        },
+        {
+         "level": 3,
+         "rankingLowerBound": "-0.0030"
+        },
+        {
+         "level": 4,
+         "rankingLowerBound": "0.0013"
+        }
+       ],
+       "longPositions": [
+        {
+         "level": 1,
+         "rankingLowerBound": "-444.2004"
+        },
+        {
+         "level": 2,
+         "rankingLowerBound": "-1.7416"
         },
         {
          "level": 3,
@@ -1684,25 +1053,7 @@
         },
         {
          "level": 4,
-         "rankingLowerBound": "0.0019"
-        }
-       ],
-       "longPositions": [
-        {
-         "level": 1,
-         "rankingLowerBound": "-1796.0543"
-        },
-        {
-         "level": 2,
-         "rankingLowerBound": "-2.4494"
-        },
-        {
-         "level": 3,
-         "rankingLowerBound": "-0.0014"
-        },
-        {
-         "level": 4,
-         "rankingLowerBound": "0.0008"
+         "rankingLowerBound": "0.0010"
         }
        ]
       }
@@ -1790,6 +1141,171 @@
       "collateralId": "0x1",
       "syntheticId": "0x4554482d3400000000000000000000",
       "syntheticResolution": 10000,
+      "collateralResolution": 1000000
+     },
+     "visibleOnUi": true,
+     "referenceMarket": "null",
+     "createdAt": 1752829532673
+    }
+   ]
+  },
+  "ab9f0cf5a3ef4b1e": {
+   "status": "OK",
+   "data": [
+    {
+     "name": "BTC-USD",
+     "type": "PERPETUAL",
+     "uiName": "BTC-USD",
+     "category": "Crypto",
+     "subCategory": "L1",
+     "assetName": "BTC",
+     "assetPrecision": 5,
+     "collateralAssetName": "USD",
+     "collateralAssetPrecision": 6,
+     "description": "Bitcoin",
+     "active": true,
+     "isRfq": false,
+     "isOffHours": false,
+     "status": "ACTIVE",
+     "tradingHours": "CONTINUOUS",
+     "marketStats": {
+      "dailyVolume": "109039296.180520",
+      "dailyVolumeBase": "1331.80180",
+      "dailyPriceChange": "625",
+      "dailyPriceChangePercentage": "0.0076",
+      "dailyLow": "80568",
+      "dailyHigh": "83037",
+      "lastPrice": "82450",
+      "askPrice": "82455.0",
+      "bidPrice": "82454",
+      "markPrice": "82444.248327749999",
+      "indexPrice": "82480.620591937506",
+      "fundingRate": "0.000013",
+      "nextFundingRate": 1792414800000,
+      "openInterest": "47555596.346349",
+      "openInterestBase": "578.12806",
+      "deleverageLevels": {
+       "shortPositions": [
+        {
+         "level": 1,
+         "rankingLowerBound": "-235.6689"
+        },
+        {
+         "level": 2,
+         "rankingLowerBound": "-1.5894"
+        },
+        {
+         "level": 3,
+         "rankingLowerBound": "-0.0097"
+        },
+        {
+         "level": 4,
+         "rankingLowerBound": "0.0001"
+        }
+       ],
+       "longPositions": [
+        {
+         "level": 1,
+         "rankingLowerBound": "-30556.6410"
+        },
+        {
+         "level": 2,
+         "rankingLowerBound": "-0.0451"
+        },
+        {
+         "level": 3,
+         "rankingLowerBound": "0.0001"
+        },
+        {
+         "level": 4,
+         "rankingLowerBound": "0.0042"
+        }
+       ]
+      }
+     },
+     "tradingConfig": {
+      "minOrderSize": "0.0001",
+      "minOrderSizeChange": "0.00001",
+      "minPriceChange": "1",
+      "maxMarketOrderValue": "3000000",
+      "maxLimitOrderValue": "15000000",
+      "maxPositionValue": "60000000",
+      "maxLeverage": "50.00",
+      "hourlyFundingRateCap": "0.25",
+      "openInterestLimit": "0",
+      "maxNumOrders": "200",
+      "limitPriceCap": "0.05",
+      "limitPriceFloor": "0.05",
+      "riskFactorConfig": [
+       {
+        "upperBound": "4000000",
+        "riskFactor": "0.02",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "8000000",
+        "riskFactor": "0.04",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "12000000",
+        "riskFactor": "0.06",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "16000000",
+        "riskFactor": "0.08",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "20000000",
+        "riskFactor": "0.1",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "24000000",
+        "riskFactor": "0.12",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "184000000",
+        "riskFactor": "0.92",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "188000000",
+        "riskFactor": "0.94",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "192000000",
+        "riskFactor": "0.96",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "196000000",
+        "riskFactor": "0.98",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "200000000",
+        "riskFactor": "1",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "1000000000",
+        "riskFactor": "1",
+        "isAvailableForUsers": false
+       }
+      ],
+      "uPnlWithdrawable": true,
+      "postWithdrawalMarginFactor": "0.1"
+     },
+     "l2Config": {
+      "type": "STARKX",
+      "collateralId": "0x1",
+      "syntheticId": "0x4254432d3600000000000000000000",
+      "syntheticResolution": 1000000,
       "collateralResolution": 1000000
      },
      "visibleOnUi": true,

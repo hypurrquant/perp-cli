@@ -880,8 +880,8 @@ function historyStatus(o: Pick<HistoryOrder, "status" | "filled_size">): OrderSt
  * interval. 3m / 30m / 2h / 8h / 12h / 3d are answered with 1m bars (no error), so they are not
  * listed — getKlines refuses them with INVALID_PARAMS instead of returning 1m candles.
  */
-const RISEX_BOOK_MAX = 250;
-const RISEX_TRADES_CAP = 1000;
+export const RISEX_BOOK_MAX = 250;
+export const RISEX_TRADES_CAP = 1000;
 
 /** funding-rate-history: max rows per page (docs) and pages followed before giving up. */
 export const RISEX_FUNDING_PAGE_MAX = 1000;
