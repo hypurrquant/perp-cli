@@ -63,7 +63,8 @@ describe("MCP get_markets labels Extended's unverified funding (keyless path; Ex
     try {
       const r = JSON.parse((await tools.get("get_markets")!({ exchange: "ext" })).content[0].text) as { ok: boolean; data: Array<Record<string, unknown>>; meta: Record<string, unknown> };
       expect(r.ok).toBe(true);
-      expect(r.data).toEqual([{ ...market, fundingVerified: false }]);
+      // The VenueMarket row in the CLI market-row shape (no field removed or renamed) + the label.
+      expect(r.data).toEqual([{ ...market, sizeDecimals: 5, fundingHours: 1, fundingRateKind: null, status: null, fundingVerified: false }]);
       expect(r.meta).toMatchObject({ source: "public", apiStatus: "official", fundingVerified: false, fundingNote: expect.stringContaining("Extended: funding rate UNVERIFIED") });
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {

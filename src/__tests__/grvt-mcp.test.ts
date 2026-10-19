@@ -10,7 +10,7 @@ import { dirname, resolve } from "node:path";
 import "../exchanges/venues/index.js";
 import { getVenue, listVenues } from "../exchanges/venue.js";
 import { clearGrvtCaches } from "../exchanges/grvt/public.js";
-import type { VenueMarket } from "../exchanges/venue-types.js";
+import { venueMarketRow, type VenueMarket } from "../exchanges/venue-types.js";
 
 type ToolHandler = (args: Record<string, unknown>) => Promise<{ content: { text: string }[]; isError?: boolean }>;
 const tools = new Map<string, ToolHandler>();
@@ -47,6 +47,9 @@ const row = (venue: string, symbol: string): VenueMarket => ({
   openInterest: null, volume24h: null, tickSize: null, stepSize: null, minSize: null, minNotional: null, maxLeverage: null, marginTiers: null,
   session: null, tradable: true,
 });
+
+/** A public row as keyless get_markets returns it: VenueMarket fields + the CLI market-row shape. */
+const shaped = (m: VenueMarket) => ({ ...m, ...venueMarketRow(m) });
 
 beforeEach(async () => {
   clearGrvtCaches();
@@ -96,17 +99,29 @@ describe("MCP get_markets labels unverified funding", () => {
   it("qfex only gains the label; txflow is unchanged; a verified venue is untouched", async () => {
     expect(getVenue("qfex").fundingVerified).toBe(false);
     const q = await call("get_markets", { exchange: "qfex" });
-    expect((q.data as Array<Record<string, unknown>>)[0]).toEqual({ ...row("qfex", "BTC"), fundingVerified: false });
+    expect((q.data as Array<Record<string, unknown>>)[0]).toEqual({ ...shaped(row("qfex", "BTC")), fundingVerified: false });
     expect(q.meta).toMatchObject({ apiStatus: "official", fundingVerified: false });
 
     const t = await call("get_markets", { exchange: "txflow" });
-    expect((t.data as Array<Record<string, unknown>>)[0]).toEqual({ ...row("txflow", "BTC"), venueApi: "unofficial", fundingVerified: false });
+    expect((t.data as Array<Record<string, unknown>>)[0]).toEqual({ ...shaped(row("txflow", "BTC")), venueApi: "unofficial", fundingVerified: false });
     expect(t.meta).toMatchObject({ apiStatus: "unofficial", fundingVerified: false, apiNote: expect.stringContaining("UNOFFICIAL API") });
     expect(t.meta.fundingNote).toBeUndefined();
 
     const r = await call("get_markets", { exchange: "risex" });
-    expect((r.data as Array<Record<string, unknown>>)[0]).toEqual(row("risex", "BTC"));
+    expect((r.data as Array<Record<string, unknown>>)[0]).toEqual(shaped(row("risex", "BTC")));
     expect(r.meta.fundingVerified).toBeUndefined();
+  });
+});
+
+describe("MCP get_markets keyless rows: the CLI market-row shape (one mapper, venueMarketRow)", () => {
+  it("every CLI market-row field is present (public row without tick / lot / leverage → null), no VenueMarket field dropped", async () => {
+    const r = await call("get_markets", { exchange: "risex" });
+    const first = (r.data as Array<Record<string, unknown>>)[0];
+    for (const f of ["symbol", "markPrice", "indexPrice", "fundingRate", "volume24h", "openInterest", "maxLeverage", "sizeDecimals", "stepSize", "fundingHours", "marginTiers", "tradable", "status", "quoteAsset", "fundingRateKind"]) {
+      expect(first, f).toHaveProperty(f);
+    }
+    for (const f of Object.keys(row("risex", "BTC"))) expect(first, f).toHaveProperty(f);
+    expect(first).toMatchObject({ sizeDecimals: null, stepSize: null, maxLeverage: null, fundingHours: 1, fundingRateKind: "lastSettled" });
   });
 });
 

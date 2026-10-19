@@ -149,9 +149,15 @@ export function fundingRateKindOf(venue: VenueMarket["venue"], fundingRate: stri
   return k === undefined ? null : k;
 }
 
-export function toLegacyMarketInfo(m: VenueMarket): ExchangeMarketInfo {
-  const p = requireTradingPrecision(m);
+/**
+ * THE market-row shape (`perp market list` / `info` / `prices`, ExchangeMarketInfo) of a
+ * VenueMarket — the one mapper for the CLI adapters of VenueMarket venues and the keyless MCP
+ * `get_markets` public directory rows. It does not require trading precision: a public row
+ * without a published tick / lot / leverage maps those to null.
+ */
+export function venueMarketRow(m: VenueMarket): ExchangeMarketInfo & { tradable: boolean; quoteAsset: string | null; status: string | null } {
   const hours = m.fundingRateBasis.kind === "perHours" ? m.fundingRateBasis.hours : null;
+  const status = (m as { status?: unknown }).status;
   return {
     symbol: m.symbol,
     markPrice: m.markPrice,
@@ -159,14 +165,22 @@ export function toLegacyMarketInfo(m: VenueMarket): ExchangeMarketInfo {
     fundingRate: m.fundingRate,
     volume24h: m.volume24h,
     openInterest: m.openInterest,
-    maxLeverage: p.maxLeverage,
-    sizeDecimals: decimalsOf(p.stepSize),
-    stepSize: p.stepSize,
+    maxLeverage: m.maxLeverage,
+    sizeDecimals: m.stepSize === null ? null : decimalsOf(m.stepSize),
+    stepSize: m.stepSize,
     fundingHours: hours,
     marginTiers: m.marginTiers,
     tradable: m.tradable,
     fundingRateKind: fundingRateKindOf(m.venue, m.fundingRate),
+    quoteAsset: m.quoteAsset,
+    status: typeof status === "string" ? status : null,
   };
+}
+
+/** venueMarketRow for an adapter that trades the market: tick / lot / leverage must be published. */
+export function toLegacyMarketInfo(m: VenueMarket): ExchangeMarketInfo {
+  requireTradingPrecision(m);
+  return venueMarketRow(m);
 }
 
 export interface VenueFundingRate {

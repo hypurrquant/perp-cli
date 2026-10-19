@@ -29,6 +29,7 @@ import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
 import { getVenue, listVenues, listVenuesWithRole, networkConfig, READ_ONLY_CREDENTIALS, requireCapabilities, roleUnsupported, type VenueDefinition } from "./exchanges/venue.js";
 import "./exchanges/venues/index.js";
 import type { OrderRequest, VenueId } from "./exchanges/venue-types.js";
+import { venueMarketRow } from "./exchanges/venue-types.js";
 import { newVenueClientOrderId, placeAndConfirm, validateLegacyTif, validateOrderRequest, type PlacedOrder } from "./exchanges/trading-v2.js";
 import { closePerpVerified, isOutcomeUnknown } from "./bot/perp-order.js";
 import { quarantineSymbol } from "./bot/quarantine.js";
@@ -135,6 +136,16 @@ async function tryGetAdapter(exchange: string): Promise<ExchangeAdapter | null> 
  */
 async function fetchMarketsPublic(exchange: string) {
   return labelMarketRows(exchange, await getVenue(exchange).publicData.fetchMarkets(MCP_NETWORK));
+}
+
+/**
+ * Keyless get_markets rows: the public directory's VenueMarket rows in the CLI market-row shape
+ * (venueMarketRow — the mapper the VenueMarket CLI adapters use), the VenueMarket fields kept
+ * (venueSymbol, canonical, assetClass, fundingRateBasis, tickSize, …) and the MCP labels added.
+ */
+async function fetchMarketRowsPublic(exchange: string) {
+  const markets = await getVenue(exchange).publicData.fetchMarkets(MCP_NETWORK);
+  return labelMarketRows(exchange, markets.map(m => ({ ...m, ...venueMarketRow(m) })));
 }
 
 /**
@@ -291,11 +302,10 @@ server.tool(
         const markets = labelMarketRows(exchange, await adapter.getMarkets());
         return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, ...apiMeta(exchange) }) }] };
       }
-      // No credentials: the venue's public directory (VenueMarket rows) — price-only on GRVT
-      // (no 184-request margin_rules fan-out per call). Its eligibility filter is the venue's
-      // shared market-eligibility helper, the one the CLI adapter uses, so row sets match where
-      // both read the same source (row SHAPE differs: VenueMarket vs the CLI's market row).
-      const markets = await fetchMarketsPublic(exchange);
+      // No credentials: the venue's public directory — price-only on GRVT (no 184-request
+      // margin_rules fan-out per call) — in the CLI market-row shape (venueMarketRow), with the
+      // same market set as `perp market list` (the venue's shared eligibility / listing rule).
+      const markets = await fetchMarketRowsPublic(exchange);
       return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, source: "public", ...apiMeta(exchange) }) }] };
     } catch (e) {
       return { content: [{ type: "text", text: errOf(e, { exchange }) }], isError: true };
