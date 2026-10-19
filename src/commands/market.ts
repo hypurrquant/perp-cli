@@ -5,7 +5,7 @@ import { makeTable, formatUsd, formatPercent, printJson, jsonOk, jsonError, with
 import chalk from "chalk";
 import { PerpError } from "../errors.js";
 import { midDecimal } from "../exchanges/precision.js";
-import { hasPacificaSdk, isDexCapable, klinesNeedAuth } from "../exchanges/capabilities.js";
+import { isDexCapable, klinesNeedAuth } from "../exchanges/capabilities.js";
 import { getVenue, listVenuesWithRole, tryResolveVenueId, unofficialApiNote } from "../exchanges/venue.js";
 import "../exchanges/venues/index.js";
 
@@ -250,24 +250,10 @@ export function registerMarketCommands(
       }
 
       const adapter = await getAdapter();
-
-      if (hasPacificaSdk(adapter)) {
-        const sdk = adapter.sdk as Record<string, (...args: any[]) => any>;
-        const prices = await sdk.getPrices();
-        if (isJson()) return printJson(jsonOk(prices));
-        const rows = (prices as { symbol: string; mark: string; mid: string; oracle: string; funding: string }[]).map((p) => [
-          chalk.white.bold(p.symbol),
-          `$${formatUsd(p.mark)}`,
-          `$${formatUsd(p.mid)}`,
-          `$${formatUsd(p.oracle)}`,
-          formatPercent(p.funding),
-        ]);
-        console.log(makeTable(["Symbol", "Mark", "Mid", "Oracle", "Funding"], rows));
-      } else {
-        const markets = await adapter.getMarkets();
-        if (isJson()) return printJson(jsonOk(markets));
-        console.log(makeTable(PRICE_HEADERS, markets.map(m => priceRow(m, perMarketFunding(adapter.name)))));
-      }
+      // One normalized shape on every venue (Pacifica included — it printed the raw /info/prices rows).
+      const markets = await adapter.getMarkets();
+      if (isJson()) return printJson(jsonOk(markets));
+      console.log(makeTable(PRICE_HEADERS, markets.map(m => priceRow(m, perMarketFunding(adapter.name)))));
     });
 
   market

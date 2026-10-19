@@ -10,11 +10,13 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **Lighter / Lighter RH `market funding`:** returned one row stamped "now" (the current `/funding-rates` value, a fraction per 8 h) whatever `-l` was. It now reads the settled history, `GET /api/v1/fundings` (apidocs.lighter.xyz/reference/fundings): the last `-l` hourly settlements (1..750), converted from the venue's unsigned percent-per-hour + `direction` to a signed fraction per 1 h (`intervalHours: 1`, `rateKind: "lastSettled"`). Funding bots (`scoreFunding`) normalize each history row by its own `intervalHours`.
 - **`market funding` rows** on hyperliquid (incl. HIP-3), pacifica, lighter, lighter-rh, aster, ondo, arcus, qfex and risex now carry `intervalHours` and `rateKind: "lastSettled"`, like grvt / extended (Aster: the market's interval from `/fapi/v3/fundingInfo`, null when the venue lists none). Hyperliquid's window was fixed at 24 h, so `-l` above 24 returned 24 rows; it now spans `-l` hours.
 - **`market info|list|prices` `fundingHours`** is set where the venue definition fixes it: hyperliquid 1, pacifica 1, lighter 8, lighter-rh 8 (was null).
+- **Pacifica `market prices`** printed the raw `/info/prices` rows (`funding`, `mark`, `mid`, `oracle`, `next_funding`, …). It now prints the same normalized market rows as every other venue (`symbol`, `markPrice`, `indexPrice`, `fundingRate`, `volume24h`, `openInterest`, …, from `getMarkets`); the human table uses the common Mark / Index / Funding columns.
 
 ### JSON contract changes
 
 - `market funding` (all venues with a history): rows gain `intervalHours` (number | null) and `rateKind` (`"lastSettled"` | null) — additive.
 - `market funding -e lighter|lighter-rh`: `rate` is now a settled fraction **per 1 h** (`intervalHours: 1`) and `time` is the settlement time; it was a single current rate per 8 h at the request time. `price` is null (the endpoint carries no mark/oracle price; it was the mark price before). Plainly wrong before, so changed.
+- `market prices -e pacifica`: rows are the normalized market shape (`markPrice`, `indexPrice` = oracle, `fundingRate`, `volume24h`, `openInterest`, `maxLeverage`, `sizeDecimals`, `stepSize`, `fundingHours`, `marginTiers`) instead of the raw venue fields `funding` / `mark` / `mid` / `oracle` / `next_funding` / `open_interest` / `volume_24h` / `yesterday_price` / `timestamp`. Plainly wrong before (one venue with a different shape); `mid` is no longer emitted here (`perp -e pacifica market mid <sym>` gives it).
 - `fundingHours` on hyperliquid / pacifica / lighter / lighter-rh market rows: null → 1 / 1 / 8 / 8.
 
 ## [0.15.0] — 2026-10-19

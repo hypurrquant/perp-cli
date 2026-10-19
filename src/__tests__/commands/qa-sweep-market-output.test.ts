@@ -156,3 +156,22 @@ describe("5. HIP-3 dex symbol display", () => {
     expect(env.data.symbol).toBe("xyz:XYZ100");
   });
 });
+
+describe("market prices: Pacifica returns the normalized market rows (QA 0.15.0)", () => {
+  it("JSON is getMarkets(), never the raw /info/prices fields (funding / mark / mid / oracle / next_funding)", async () => {
+    // Raw row as the 0.15.0 output printed it (QA prices_pacifica.json).
+    const raw = { funding: "0.0000125", mark: "152.32", mid: "152.265", next_funding: "0.00001077", open_interest: "1269.17", oracle: "152.401133", symbol: "AAVE", timestamp: 1792404059021, volume_24h: "62980.0938", yesterday_price: "154.11" };
+    const AAVE: ExchangeMarketInfo = { ...BTC, symbol: "AAVE", markPrice: "152.32", indexPrice: "152.401133", fundingRate: "0.00001077", volume24h: "62980.0938", openInterest: "1269.17", fundingHours: 1 };
+    const out: string[] = [];
+    const program = new Command();
+    program.exitOverride();
+    program.option("-e, --exchange <exchange>", "", "pacifica");
+    registerMarketCommands(program, async () => ({ name: "pacifica", publicKey: "PacPubKey1111", sdk: { getPrices: async () => [raw] }, getMarkets: async () => [AAVE] } as unknown as ExchangeAdapter), () => true);
+    vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { out.push(a.map(String).join(" ")); });
+    await program.parseAsync(["node", "perp", "-e", "pacifica", "market", "prices"]);
+    const j = JSON.parse(out.join("\n"));
+    expect(j.data).toEqual([AAVE]);
+    expect(Object.keys(j.data[0])).toEqual(expect.arrayContaining(["markPrice", "indexPrice", "fundingRate"]));
+    expect(j.data[0]).not.toHaveProperty("mid");
+  });
+});
