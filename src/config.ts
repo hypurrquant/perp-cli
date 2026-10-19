@@ -138,9 +138,10 @@ async function agentOf(venue: VenueId): Promise<VenueCredentials["agent"]> {
     case "arcus": return store.getVenueAgent("arcus");
     case "qfex": return store.getVenueAgent("qfex");
     case "risex": return store.getVenueAgent("risex");
-    // Market-data-only venue: no agent.
+    // Market-data-only venues: no agent.
     case "txflow": return null;
     case "variational": return null;
+    case "grvt": return null;
     case "pacifica":
     case "hyperliquid":
     case "lighter":
@@ -164,6 +165,7 @@ async function agentForNetwork(venue: VenueId, network: Network): Promise<VenueC
     case "risex": return store.getVenueAgentForNetwork("risex", network);
     case "txflow": return null;
     case "variational": return null;
+    case "grvt": return null;
     case "pacifica":
     case "hyperliquid":
     case "lighter":

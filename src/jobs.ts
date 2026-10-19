@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import type { Command } from "commander";
 import { parse as parseDotenv } from "dotenv";
 import type { Network } from "./exchanges/venue-types.js";
-import { getVenue, roleUnsupported } from "./exchanges/venue.js";
+import { getVenue, roleUnsupported, tryResolveVenueId } from "./exchanges/venue.js";
 import "./exchanges/venues/index.js";
 import { PerpError } from "./errors.js";
 import { QFEX_AUTOMATION_VERIFIED, QFEX_REDUCE_ONLY_WIRE, qfexAutomationGate, qfexReduceOnlyGate } from "./exchanges/qfex/signing.js";
@@ -243,9 +243,11 @@ export function startJob(opts: StartJobOpts): JobEntry {
       if (id === "txflow" || id === "txf") {
         throw startRefusal(what, "TxFlow has no trading in perp-cli", unsupported("txflow", "trading", "TxFlow is integrated through an unofficial read-only API (market data only)", "Trade on the TxFlow website"));
       }
-      // Variational: read-only (market data) in perp-cli; no public trading API yet.
-      if (id === "variational" || id === "var" || id === "omni") {
-        throw startRefusal(what, "Variational has no trading in perp-cli", roleUnsupported(getVenue("variational"), "trading"));
+      // Any other registered venue without the trading role (Variational, GRVT: read-only in this version).
+      const venueId = id === undefined ? null : tryResolveVenueId(id);
+      if (venueId !== null && !getVenue(venueId).roles.includes("trading")) {
+        const def = getVenue(venueId);
+        throw startRefusal(what, `${def.displayName} has no trading in perp-cli`, roleUnsupported(def, "trading"));
       }
     }
   }

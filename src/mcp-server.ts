@@ -129,19 +129,36 @@ async function tryGetAdapter(exchange: string): Promise<ExchangeAdapter | null> 
   }
 }
 
-/** Fetch markets using the venue's public data path (no key needed). Unofficial-API rows carry venueApi. */
+/**
+ * Fetch markets using the venue's public data path (no key needed). Unofficial-API rows carry
+ * venueApi; rows of a venue whose funding is unverified (QFEX, GRVT, TxFlow) carry fundingVerified false.
+ */
 async function fetchMarketsPublic(exchange: string) {
-  const def = getVenue(exchange);
-  const rows = await def.publicData.fetchMarkets(MCP_NETWORK);
-  return def.apiStatus.kind === "unofficial" ? rows.map(r => ({ ...r, venueApi: "unofficial" as const, fundingVerified: def.fundingVerified })) : rows;
+  return labelMarketRows(exchange, await getVenue(exchange).publicData.fetchMarkets(MCP_NETWORK));
 }
 
-/** meta fields every market-data tool adds for its venue: apiStatus, and the note for an unofficial API. */
+/**
+ * The one row label for market rows of any source (public data path or a credentialed adapter):
+ * unofficial-API rows carry venueApi + fundingVerified; unverified-funding rows carry fundingVerified false.
+ */
+function labelMarketRows<T extends object>(exchange: string, rows: T[]) {
+  const def = getVenue(exchange);
+  if (def.apiStatus.kind === "unofficial") return rows.map(r => ({ ...r, venueApi: "unofficial" as const, fundingVerified: def.fundingVerified }));
+  return def.fundingVerified ? rows : rows.map(r => ({ ...r, fundingVerified: false as const }));
+}
+
+/**
+ * meta fields every market-data tool adds for its venue: apiStatus, the note for an unofficial API,
+ * and fundingVerified false (with a note) when the venue's funding rate is unverified.
+ */
 function apiMeta(exchange: string): Record<string, unknown> {
   const def = getVenue(exchange);
-  return def.apiStatus.kind === "unofficial"
-    ? { apiStatus: "unofficial", apiNote: `${def.displayName}: UNOFFICIAL API — ${def.apiStatus.note}`, fundingVerified: def.fundingVerified }
-    : { apiStatus: "official" };
+  if (def.apiStatus.kind === "unofficial") {
+    return { apiStatus: "unofficial", apiNote: `${def.displayName}: UNOFFICIAL API — ${def.apiStatus.note}`, fundingVerified: def.fundingVerified };
+  }
+  return def.fundingVerified
+    ? { apiStatus: "official" }
+    : { apiStatus: "official", fundingVerified: false, fundingNote: `${def.displayName}: funding rate UNVERIFIED (not confirmed against settled payments) — display only, never a basis for trading` };
 }
 
 type BookLevels = { bids: [string, string][]; asks: [string, string][] };
@@ -271,7 +288,7 @@ server.tool(
       // Try adapter first (richer data), fall back to public API (no key needed)
       const adapter = await tryGetAdapter(exchange);
       if (adapter) {
-        const markets = await adapter.getMarkets();
+        const markets = labelMarketRows(exchange, await adapter.getMarkets());
         return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, ...apiMeta(exchange) }) }] };
       }
       const markets = await fetchMarketsPublic(exchange);
@@ -307,7 +324,7 @@ server.tool(
 
 server.tool(
   "get_funding_rates",
-  "Compare funding rates across every market-data venue whose funding rate is verified. Returns rates per symbol with spread analysis. includeUnverified also returns venues whose rate is unverified (QFEX; TxFlow — unofficial API; Variational — a predicted rate not checked against settled payments), each row tagged fundingVerified / apiStatus — display only, never a basis for trading (mirrors the CLI `arb scan --include-unverified`).",
+  "Compare funding rates across every market-data venue whose funding rate is verified. Returns rates per symbol with spread analysis. includeUnverified also returns venues whose rate is unverified (QFEX; TxFlow — unofficial API; Variational — a predicted rate not checked against settled payments; GRVT — indicative rate), each row tagged fundingVerified / apiStatus — display only, never a basis for trading (mirrors the CLI `arb scan --include-unverified`).",
   {
     symbols: z
       .array(z.string())

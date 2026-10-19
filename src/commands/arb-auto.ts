@@ -1633,7 +1633,7 @@ export function registerArbAutoCommands(
     .option("--duration <minutes>", "Track duration in minutes (with --track)", "10")
     .option("--beep", "Beep on large gaps (with --gaps)")
     .option("--check-liquidity", "Check orderbook depth in live mode (slower)")
-    .option("--include-unverified", "With --rates / --compare: also show venues whose funding rate is unverified (qfex; txflow — unofficial API; variational) — display only, never ranked for trading")
+    .option("--include-unverified", "With --rates / --compare: also show venues whose funding rate is unverified (qfex; txflow — unofficial API; variational; grvt — indicative rate) — display only, never ranked for trading")
     .action(async (opts: {
       includeUnverified?: boolean;
       mode: string; min: string; top?: string; holdDays: string; bridgeCost: string; size: string;

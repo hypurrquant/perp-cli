@@ -1171,6 +1171,13 @@ export function registerFundsCommands(
     .action(async () => {
       throw roleUnsupported(getVenue("variational"), "withdraw");
     });
+  // GRVT: read-only (market data) in this version.
+  supportsDryRun(withdraw.command("grvt [amount]"))
+    .description("Not available: GRVT is read-only (market data) in this version — refused, also with --dry-run")
+    .option("--to <address>", "Ignored")
+    .action(async () => {
+      throw roleUnsupported(getVenue("grvt"), "withdraw");
+    });
 
   for (const venueId of ["arcus"] as const) {
     const def = getVenue(venueId);
@@ -1330,6 +1337,11 @@ export function registerFundsCommands(
     .action(async () => {
       throw roleUnsupported(getVenue("variational"), "deposit");
     });
+  supportsDryRun(deposit.command("grvt [amount]"))
+    .description("Not available: GRVT is read-only (market data) in this version — refused, also with --dry-run")
+    .action(async () => {
+      throw roleUnsupported(getVenue("grvt"), "deposit");
+    });
 
   supportsDryRun(deposit.command("qfex"))
     .description("Show the QFEX deposit address for USDC on Arbitrum One (perp-cli sends nothing — transfer from your own wallet; supports --dry-run)")
@@ -1483,6 +1495,7 @@ export function registerFundsCommands(
             risex: { supported: false, note: `${RISEX_FUNDS_APP_ONLY.reason} — ${RISEX_FUNDS_APP_ONLY.remediation}`, testnet: getVenue("risex").roles.includes("trading") ? "perp -n testnet funds faucet risex (1000 test USDC, once)" : null },
             txflow: { supported: false, note: "TxFlow is market data only in perp-cli (unofficial read-only API)" },
             variational: { supported: false, note: VARIATIONAL_READ_ONLY_REMEDIATION },
+            grvt: { supported: false, note: "GRVT is read-only (market data) in this version; trading is planned for a later release" },
           },
           withdraw: {
             pacifica: { chain: "Solana", token: "USDC", speed: "~10s", fee: "none" },
@@ -1497,6 +1510,7 @@ export function registerFundsCommands(
             risex: { supported: false, note: `${RISEX_FUNDS_APP_ONLY.reason} — ${RISEX_FUNDS_APP_ONLY.remediation}` },
             txflow: { supported: false, note: "TxFlow is market data only in perp-cli (unofficial read-only API)" },
             variational: { supported: false, note: VARIATIONAL_READ_ONLY_REMEDIATION },
+            grvt: { supported: false, note: "GRVT is read-only (market data) in this version; trading is planned for a later release" },
             aster: { chain: "BNB Chain (default) / Arbitrum", token: "USDT (default) / USDC", command: "perp funds withdraw aster <amount> [--chain bsc|arbitrum] [--asset USDT|USDC]", fee: "POST /fapi/v3/aster/user-withdraw-info (taken from the amount)", requires: "mainnet; API wallet approved with --can-withdraw --ip-whitelist; destination = the account's own address" },
           },
         }));

@@ -35,7 +35,7 @@ import type { ResolvedSlippage } from "./slippage.js";
 import { unsupported } from "./trading-v2.js";
 import { asterIocOutcome, type AsterAdapter } from "./aster.js";
 import { PerpError, isTransportFailure, orderNotSent, orderOutcomeUnknown, sendFailure, unknownActionRemediation } from "../errors.js";
-import { alignProtectionPrice, exactUnits, floorSize, requireOnTick, requirePositive, slippagePrice, subDecimal } from "./precision.js";
+import { addDecimal, alignProtectionPrice, exactUnits, floorSize, requireOnTick, requirePositive, slippagePrice, subDecimal } from "./precision.js";
 
 /** Default quote for a bare base symbol (= venue spot quoteAssets[0]). */
 const DEFAULT_QUOTE = "USDT";
@@ -89,10 +89,6 @@ function cmp(a: string, b: string): number {
   const d = subDecimal(a, b);
   if (d.startsWith("-")) return -1;
   return d === "0" ? 0 : 1;
-}
-
-function addDecimal(a: string, b: string): string {
-  return subDecimal(a, b.startsWith("-") ? b.slice(1) : `-${b}`);
 }
 
 function isZero(v: string): boolean {

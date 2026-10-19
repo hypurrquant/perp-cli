@@ -56,6 +56,8 @@ export const EXPLICIT_CANONICAL: Readonly<Record<string, string>> = {
   "txflow|XAG": "SILVER",
   "variational|XAU": "GOLD",
   "variational|XAG": "SILVER",
+  "grvt|XAU": "GOLD",
+  "grvt|XAG": "SILVER",
   // Crude oil (WTI)
   "ondo|WTI": "CRUDE_OIL_WTI",
   "hl:xyz|CL": "CRUDE_OIL_WTI",
@@ -69,6 +71,8 @@ export const EXPLICIT_CANONICAL: Readonly<Record<string, string>> = {
   "txflow|CL": "CRUDE_OIL_WTI",
   "variational|BZ": "CRUDE_OIL_BRENT",
   "variational|CL": "CRUDE_OIL_WTI",
+  "grvt|BZ": "CRUDE_OIL_BRENT",
+  "grvt|CL": "CRUDE_OIL_WTI",
   // US equity indices
   "ondo|US500": "SPX",
   "ondo|US100": "NDX",

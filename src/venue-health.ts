@@ -2,7 +2,7 @@
  * Venue connectivity probe — the one implementation behind `perp health`,
  * `perp portfolio --health` and the MCP `health_check` tool.
  *
- * Pacifica / Hyperliquid / Lighter / Aster / QFEX: a REST ping (status = HTTP status, 0 = no
+ * Pacifica / Hyperliquid / Lighter / Aster / QFEX / GRVT: a REST ping (status = HTTP status, 0 = no
  * response). Every other venue — including read-only (market-data-only) venues such as TxFlow —
  * is probed with its public market-data read (status null). A venue with no environment on the
  * selected network (TxFlow has no testnet) is not probed and is listed in `skipped`.
@@ -68,6 +68,13 @@ function pingFor(id: VenueId, network: Network): (() => Promise<Result>) | null 
     case "aster": return () => restPing(`${networkConfig(getVenue("aster"), network).restUrl}/fapi/v1/time`);
     // QFEX: public GET /refdata for one instrument.
     case "qfex": return () => restPing(`${networkConfig(getVenue("qfex"), network).restUrl}/refdata?ticker=AAPL-USD`);
+    // GRVT: one public instrument read (the market-data probe would fan out over every ticker).
+    case "grvt": return () => timed("ping", async () => {
+      const res = await fetch(`${networkConfig(getVenue("grvt"), network).restUrl}/full/v1/instrument`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ instrument: "BTC_USDT_Perp" }),
+      });
+      return { ok: res.ok, status: res.status };
+    });
     default: return null;
   }
 }

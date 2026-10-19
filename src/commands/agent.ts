@@ -654,6 +654,7 @@ export function defaultAgentName(venue: VenueId, network: Network): string {
     case "risex": return `perp-cli-risex${suffix}`;
     case "txflow": return `perp-cli-txflow${suffix}`;
     case "variational": return `perp-cli-variational${suffix}`;
+    case "grvt": return `perp-cli-grvt${suffix}`;
   }
 }
 

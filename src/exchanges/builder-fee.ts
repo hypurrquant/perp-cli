@@ -109,6 +109,7 @@ export const BUILDER_FEE_CAPABILITIES: { readonly [K in VenueId]: BuilderFeeCapa
   risex: null,
   txflow: null,
   variational: null,
+  grvt: null,
 };
 
 /** Why a venue has no builder-fee support (shown in CAPABILITY_UNSUPPORTED). */
@@ -118,6 +119,7 @@ export const BUILDER_FEE_UNSUPPORTED: { readonly [K in VenueId]?: string } = {
   risex: "not implemented yet in perp-cli (RISEx builder codes are planned; note the venue's \"bps\" field is parts-per-million)",
   txflow: "TxFlow is integrated through an unofficial read-only API (market data only)",
   variational: VARIATIONAL_READ_ONLY_REMEDIATION,
+  grvt: "GRVT is read-only (market data) in this version; trading is planned for a later release",
   arcus: "Arcus has no perps builder fee; its integrator fee applies to the spot router only and needs a partner key from Arcus (https://docs.arcus.xyz/concepts/spot-router)",
 };
 
