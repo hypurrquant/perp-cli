@@ -569,7 +569,8 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   /** PRICE_FILTER / PERCENT_PRICE of an API symbol (exchangeInfo, cached CACHE_TTL). */
-  private async _symbolPriceFilters(apiSymbol: string): Promise<AsterPriceFilters> {
+  /** exchangeInfo symbols (the market directory) loaded / refreshed per CACHE_TTL. */
+  private async _ensureDirectory(): Promise<void> {
     if (!this._priceFiltersLoadedAt || Date.now() - this._priceFiltersLoadedAt >= AsterAdapter.CACHE_TTL) {
       const info = await this._publicGet("/fapi/v3/exchangeInfo") as { symbols?: Array<Record<string, unknown>> };
       if (!Array.isArray(info?.symbols)) {
@@ -577,6 +578,23 @@ export class AsterAdapter implements ExchangeAdapter {
       }
       this._ingestPriceFilters(info.symbols);
     }
+  }
+
+  /**
+   * CLI symbol → Aster API symbol, resolved through the market directory: a venue symbol the
+   * directory lists (a U-quoted BTCU, read on a cold adapter) is passed as is — the directory is
+   * loaded on first use (cached CACHE_TTL), so the answer never depends on what was read before.
+   * Only a symbol that could be a U-quoted venue symbol (ends in "U", not …USDT) needs the
+   * directory; …USDT / …USD1 / a plain base (ETH → ETHUSDT) resolve without a request.
+   */
+  private async _apiSymbol(symbol: string): Promise<string> {
+    const s = symbol.toUpperCase().replace(/-PERP$/, "");
+    if (s.endsWith("U") && !this._priceFilters.has(s)) await this._ensureDirectory();
+    return this._toApi(s);
+  }
+
+  private async _symbolPriceFilters(apiSymbol: string): Promise<AsterPriceFilters> {
+    await this._ensureDirectory();
     if (!this._priceFilters.has(apiSymbol)) {
       throw new PerpError("SYMBOL_NOT_FOUND", `Aster market ${apiSymbol} not found in exchangeInfo`, { exchange: "aster", remediation: "List markets: perp -e aster market list" });
     }
@@ -593,7 +611,7 @@ export class AsterAdapter implements ExchangeAdapter {
    * No runtime substitute (no mid / last fallback): unavailable → PRICE_STALE.
    */
   async referencePrice(symbol: string): Promise<string> {
-    const apiSymbol = this._toApi(symbol);
+    const apiSymbol = await this._apiSymbol(symbol);
     let mark: unknown;
     try {
       const res = await this._publicGet("/fapi/v3/premiumIndex", { symbol: apiSymbol }) as { markPrice?: unknown };
@@ -638,7 +656,7 @@ export class AsterAdapter implements ExchangeAdapter {
    * against PRICE_FILTER / PERCENT_PRICE. appliedBps = the bound after tick alignment.
    */
   async computeProtectionPrice(symbol: string, side: "buy" | "sell", slippage: ResolvedSlippage): Promise<{ referencePrice: string; protectionPrice: string; appliedBps: number }> {
-    const apiSymbol = this._toApi(symbol);
+    const apiSymbol = await this._apiSymbol(symbol);
     const f = await this._symbolPriceFilters(apiSymbol);
     const ref = await this.referencePrice(symbol);
     const protectionPrice = alignProtectionPrice(slippagePrice(ref, side, slippage.bps), f.tickSize, side);
@@ -653,7 +671,7 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
-    const res = await this._publicGet("/fapi/v3/depth", { symbol: this._toApi(symbol), limit: "50" }) as {
+    const res = await this._publicGet("/fapi/v3/depth", { symbol: await this._apiSymbol(symbol), limit: "50" }) as {
       bids?: [string, string][];
       asks?: [string, string][];
     };
@@ -665,13 +683,13 @@ export class AsterAdapter implements ExchangeAdapter {
 
   async getRecentTrades(symbol: string, limit = 20): Promise<ExchangePublicTrade[]> {
     const trades = await this._publicGet("/fapi/v3/trades", {
-      symbol: this._toApi(symbol),
+      symbol: await this._apiSymbol(symbol),
       limit: String(limit),
     }) as Array<Record<string, unknown>>;
 
     if (!Array.isArray(trades)) throw new PerpError("EXCHANGE_ERROR", `Aster trades is not a list (${JSON.stringify(trades).slice(0, 120)})`, { exchange: "aster" });
     // The tape rows carry no symbol: the normalized venue symbol (was the raw argument, "BTC-PERP").
-    const sym = this._fromApi(this._toApi(symbol));
+    const sym = this._fromApi(await this._apiSymbol(symbol));
     return trades.map((t) => {
       if (typeof t.time !== "number" || typeof t.price !== "string" || typeof t.qty !== "string" || typeof t.isBuyerMaker !== "boolean") {
         throw new PerpError("EXCHANGE_ERROR", `Aster trade row without time / price / qty / isBuyerMaker: ${JSON.stringify(t).slice(0, 160)}`, { exchange: "aster" });
@@ -682,7 +700,7 @@ export class AsterAdapter implements ExchangeAdapter {
 
   async getFundingHistory(symbol: string, limit = 10): Promise<FundingHistoryRow[]> {
     const data = await this._publicGet("/fapi/v3/fundingRate", {
-      symbol: this._toApi(symbol),
+      symbol: await this._apiSymbol(symbol),
       limit: String(limit),
     });
     if (!Array.isArray(data)) {
@@ -704,7 +722,7 @@ export class AsterAdapter implements ExchangeAdapter {
         intervalHours,
         rateKind: "lastSettled" as const,
       };
-    }), this._fromApi(this._toApi(symbol)));
+    }), this._fromApi(await this._apiSymbol(symbol)));
   }
 
   /**
@@ -732,7 +750,7 @@ export class AsterAdapter implements ExchangeAdapter {
         });
       }
       const data = await this._publicGet("/fapi/v3/klines", {
-        symbol: this._toApi(symbol), interval,
+        symbol: await this._apiSymbol(symbol), interval,
         startTime: String(from), endTime: String(endTime), limit: String(ASTER_KLINE_PAGE),
       });
       if (!Array.isArray(data)) {
@@ -1133,7 +1151,7 @@ export class AsterAdapter implements ExchangeAdapter {
     // PRICE_FILTER / PERCENT_PRICE). newOrderRespType=RESULT makes the response carry the
     // final IOC status (FILLED / EXPIRED) and executedQty.
     const r = this._resolveSigner();
-    const apiSymbol = this._toApi(symbol);
+    const apiSymbol = await this._apiSymbol(symbol);
     const clientOrderId = opts.clientOrderId === undefined ? null : requireAsterClientOrderId(opts.clientOrderId);
     let protectionPrice: string;
     let protection: { referencePrice: string; protectionPrice: string; appliedBps: number };
@@ -1223,7 +1241,7 @@ export class AsterAdapter implements ExchangeAdapter {
     opts?: { reduceOnly?: boolean; tif?: string; clientOrderId?: string },
   ): Promise<unknown> {
     const r = this._resolveSigner();
-    const apiSymbol = this._toApi(symbol);
+    const apiSymbol = await this._apiSymbol(symbol);
     const clientOrderId = opts?.clientOrderId === undefined ? null : requireAsterClientOrderId(opts.clientOrderId);
     let params: Record<string, string | number | boolean>;
     try {
@@ -1263,7 +1281,7 @@ export class AsterAdapter implements ExchangeAdapter {
    */
   async editOrder(symbol: string, orderId: string, price: string, size: string): Promise<unknown> {
     const r = this._resolveSigner();
-    const apiSymbol = this._toApi(symbol);
+    const apiSymbol = await this._apiSymbol(symbol);
     const rawOrders = await this._signedGetEip712("/fapi/v3/openOrders", {}, r) as Array<Record<string, unknown>>;
     const existing = (rawOrders ?? []).find(o => String(o.orderId ?? "") === orderId);
     if (!existing) {
@@ -1313,7 +1331,7 @@ export class AsterAdapter implements ExchangeAdapter {
     const label = ref.kind === "orderId" ? ref.value : `c:${ref.value}`;
     let row: unknown;
     try {
-      row = await this._signedGetEip712("/fapi/v3/order", { symbol: this._toApi(symbol), ...key }, this._resolveSigner());
+      row = await this._signedGetEip712("/fapi/v3/order", { symbol: await this._apiSymbol(symbol), ...key }, this._resolveSigner());
     } catch (e) {
       if (e instanceof PerpError && e.structured.details?.venueCode === -2013) {
         throw new PerpError("ORDER_NOT_FOUND", `Aster has no order ${label} on ${symbol.toUpperCase()} (-2013 NO_SUCH_ORDER)`, {
@@ -1332,7 +1350,7 @@ export class AsterAdapter implements ExchangeAdapter {
     const r = this._resolveSigner();
     try {
       return await this._signedDeleteEip712("/fapi/v3/order", {
-        symbol: this._toApi(symbol),
+        symbol: await this._apiSymbol(symbol),
         ...key,
       }, r);
     } catch (e) {
@@ -1353,6 +1371,7 @@ export class AsterAdapter implements ExchangeAdapter {
     const r = this._resolveSigner();
     if (!symbol) {
       const orders = await this.getOpenOrders();
+      if (orders.some(o => o.symbol.toUpperCase().endsWith("U"))) await this._ensureDirectory(); // U-quoted symbols resolve through the directory
       const apiSymbols = new Set(orders.map(o => this._toApi(o.symbol)));
       const results = [];
       for (const sym of apiSymbols) {
@@ -1360,7 +1379,7 @@ export class AsterAdapter implements ExchangeAdapter {
       }
       return results;
     }
-    return this._signedDeleteEip712("/fapi/v3/allOpenOrders", { symbol: this._toApi(symbol) }, r);
+    return this._signedDeleteEip712("/fapi/v3/allOpenOrders", { symbol: await this._apiSymbol(symbol) }, r);
   }
 
   // ── Risk ──
@@ -1370,7 +1389,7 @@ export class AsterAdapter implements ExchangeAdapter {
     if (marginMode) {
       try {
         await this._signedPostEip712("/fapi/v3/marginType", {
-          symbol: this._toApi(symbol),
+          symbol: await this._apiSymbol(symbol),
           marginType: marginMode === "cross" ? "CROSSED" : "ISOLATED",
         }, r);
       } catch (e) {
@@ -1406,7 +1425,7 @@ export class AsterAdapter implements ExchangeAdapter {
       }
     }
     return this._signedPostEip712("/fapi/v3/leverage", {
-      symbol: this._toApi(symbol),
+      symbol: await this._apiSymbol(symbol),
       leverage: String(leverage),
     }, r);
   }
@@ -1432,7 +1451,7 @@ export class AsterAdapter implements ExchangeAdapter {
     opts?: { limitPrice?: string; reduceOnly?: boolean; triggerType?: "mark" | "last" | "mid"; kind?: "tp" | "sl" },
   ): Promise<unknown> {
     const r = this._resolveSigner();
-    const apiSymbol = this._toApi(symbol);
+    const apiSymbol = await this._apiSymbol(symbol);
     const what = `stop ${side} ${size} ${symbol} @ ${triggerPrice}`;
     let params: Record<string, string | number | boolean>;
     try {

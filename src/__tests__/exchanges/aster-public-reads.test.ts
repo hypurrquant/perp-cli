@@ -40,6 +40,23 @@ describe("AsterAdapter.getMarkets", () => {
     expect(m[2]).toMatchObject({ venueSymbol: "ETHU", quoteAsset: "U" });
   });
 
+  it("a cold adapter resolves a U-quoted symbol through the directory: BTCU → BTCU (never BTCUUSDT); ETH still ETHUSDT", async () => {
+    const calls: Array<[string, Record<string, string> | undefined]> = [];
+    const a = await adapter((path, p) => {
+      calls.push([path, p]);
+      if (path === "/fapi/v3/exchangeInfo") return { symbols: [...SYMBOLS, { symbol: "BTCU", baseAsset: "BTC", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "U", quantityPrecision: 3, filters: [] }] };
+      if (path === "/fapi/v3/depth") return { bids: [["1", "1"]], asks: [["2", "1"]] };
+      throw new Error(`unexpected ${path}`);
+    });
+    await a.getOrderbook("BTCU");
+    expect(calls.map(c => c[0])).toEqual(["/fapi/v3/exchangeInfo", "/fapi/v3/depth"]);
+    expect(calls[1][1]?.symbol).toBe("BTCU");
+    await a.getOrderbook("ETH");
+    expect(calls.at(-1)?.[1]?.symbol).toBe("ETHUSDT");
+    await a.getOrderbook("BTCU");
+    expect(calls.filter(c => c[0] === "/fapi/v3/exchangeInfo")).toHaveLength(1); // cached; a base needs no directory
+  });
+
   it("a non-USDT CLI symbol reaches the venue as is (BTCUSD1, and ETHU once exchangeInfo is read); a base gains USDT", async () => {
     const a = await adapter(marketsRoute([{ symbol: "BTCUSDT", markPrice: "83010" }]));
     const toApi = (s: string) => (a as unknown as { _toApi(s: string): string })._toApi(s);
