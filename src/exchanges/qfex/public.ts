@@ -6,11 +6,20 @@
  *                                quote / margin asset, allowed order types + TIFs, market hours
  *   MDS market_stats snapshot    mark price (each entry with its own `time`), open interest,
  *                                24h notional volume
- *   GET /md/contracts            funding_rate / next_funding_rate_timestamp (funding reads only)
+ *   GET /md/contracts            funding_rate / next_funding_rate_timestamp (funding reads);
+ *                                index_price (market rows, best effort)
  *
  * Coupling: order-entry precision comes from /refdata ALONE (fetchQfexInstruments).
- * Markets need /refdata + the MDS snapshot. Only funding reads need /md/contracts — its failure
- * fails fetchFundingRates, never market listing or order entry.
+ * Markets need /refdata + the MDS snapshot; /md/contracts only adds indexPrice — its failure
+ * leaves indexPrice null (unknown) with a warning, never fails market listing or order entry.
+ * Funding reads need /md/contracts.
+ *
+ * indexPrice = /md/contracts `index_price` (docs contract-specifications: the Index Price is "the
+ * reference spot price for the asset"; the OpenAPI field has no description). Live 2026-10-19 it
+ * tracked the MDS `underlier` channel (AAPL 342.47 = 342.47, GOLD 4170.22 vs 4170.05, SAMSUNG-KRW
+ * 220092 vs 220082 KRW), moved on 122 of 222 markets within 45 s, and sat a median 0.015 % from
+ * the mark (max 5 %, CVNA pre-market). It is in the quote currency (`index_currency`), like the mark.
+ * /md/contracts lists ACTIVE markets only; a non-positive / missing value is null.
  *
  * Funding is UNVERIFIED (venue flag fundingVerified: false, Q4): the rate's unit is not
  * confirmed against settled payments and `funding_rate` vs `next_funding_rate` is undecided.
@@ -68,6 +77,8 @@ export interface QfexContractRow {
   funding_rate: string;
   next_funding_rate: string;
   next_funding_rate_timestamp: number;
+  /** Index (reference spot) price in the quote currency — see the module header. */
+  index_price?: string;
 }
 
 /** One instrument, as order entry needs it — from /refdata only. */
@@ -270,10 +281,21 @@ function canonicalOf(i: QfexInstrument): string | null {
   return canonicalFor("qfex", i.symbol, i.assetClass);
 }
 
+/** venue symbol → /md/contracts `index_price` (positive finite only). */
+export function qfexIndexPrices(contracts: readonly Partial<QfexContractRow>[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const c of contracts) {
+    const v = c.index_price;
+    if (typeof c.ticker_id === "string" && typeof v === "string" && Number.isFinite(Number(v)) && Number(v) > 0) out.set(c.ticker_id, v);
+  }
+  return out;
+}
+
 export function buildQfexMarkets(
   instruments: readonly QfexInstrument[],
   snap: { marks: ReadonlyMap<string, { price: string; time: number }>; openInterest: ReadonlyMap<string, string>; volumeNotional: ReadonlyMap<string, string> },
   nowMs: number,
+  indexPrices: ReadonlyMap<string, string> = new Map(),
 ): { markets: VenueMarket[]; activeWithoutMark: string[] } {
   const markets: VenueMarket[] = [];
   const activeWithoutMark: string[] = [];
@@ -294,7 +316,7 @@ export function buildQfexMarkets(
       settle: i.marginAsset,
       quoteAsset: i.quoteAsset,
       markPrice: mark.price,
-      indexPrice: null,
+      indexPrice: indexPrices.get(i.venueSymbol) ?? null,
       fundingRate: null, // unverified (Q4) — see module header
       fundingRateBasis: QFEX_FUNDING_BASIS,
       settlementIntervalHours: QFEX_SETTLEMENT_HOURS,
@@ -322,9 +344,18 @@ export function buildQfexMarkets(
  * the 24h notional per venue symbol in its QUOTE currency (KRW for SAMSUNG-KRW).
  */
 export async function fetchQfexMarketsWithInstruments(net: Network): Promise<{ markets: VenueMarket[]; instruments: QfexInstrument[]; volumeNotional: ReadonlyMap<string, string> }> {
-  const instruments = await fetchQfexInstruments(qfexPublicClient(net));
+  const client = qfexPublicClient(net);
+  const instruments = await fetchQfexInstruments(client);
   const snap = await fetchQfexMarketStats(QFEX_ENDPOINTS[net].mdsWs, "*", QFEX_MDS_TIMEOUT_MS);
-  const { markets, activeWithoutMark } = buildQfexMarkets(instruments, snap, Date.now());
+  let indexPrices = new Map<string, string>();
+  try {
+    const body = await client.publicGet<{ data?: unknown }>("/md/contracts", null);
+    if (!Array.isArray(body.data)) throw new Error("response has no data list");
+    indexPrices = qfexIndexPrices(body.data as Partial<QfexContractRow>[]);
+  } catch (e) {
+    console.warn(`[qfex] index prices unavailable (/md/contracts: ${e instanceof Error ? e.message : String(e)}); indexPrice left null`);
+  }
+  const { markets, activeWithoutMark } = buildQfexMarkets(instruments, snap, Date.now(), indexPrices);
   if (activeWithoutMark.length > 0) {
     console.warn(`[qfex] excluded ${activeWithoutMark.length} active market(s) without a mark price: ${activeWithoutMark.join(", ")}`);
   }

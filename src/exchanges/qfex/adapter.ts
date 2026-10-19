@@ -66,7 +66,7 @@ import { loadQfexCredentials, QFEX_IMPORT_REMEDIATION } from "./agent.js";
 import { QfexClient } from "./client.js";
 import { qfexStatusClass } from "./errors.js";
 import {
-  buildQfexFundingRates, buildQfexMarkets, fetchQfexInstruments, fetchQfexMarketsWithInstruments, qfexFundingWindowClosed, qfexPlainSymbol, qfexPublicData, qfexTradable, qfexVenueSymbol,
+  buildQfexFundingRates, buildQfexMarkets, fetchQfexInstruments, fetchQfexMarketsWithInstruments, qfexFundingWindowClosed, qfexIndexPrices, qfexPlainSymbol, qfexPublicData, qfexTradable, qfexVenueSymbol,
   type QfexContractRow, type QfexInstrument,
 } from "./public.js";
 import {
@@ -1207,9 +1207,9 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
   async getMarketInfo(symbol: string): Promise<QfexMarketRow & { fundingVerified: false; fundingNote: string; marketClosed: boolean | null }> {
     const i = await this.readableInstrument(symbol);
     const snap = await fetchQfexMarketStats(QFEX_ENDPOINTS[this.network].mdsWs, i.venueSymbol, QFEX_MDS_TIMEOUT_MS);
-    const { markets } = buildQfexMarkets([i], snap, Date.now());
-    if (markets.length === 0) throw new PerpError("PRICE_STALE", `QFEX ${i.venueSymbol}: no mark price in the market_stats snapshot`, { exchange: "qfex" });
     const contracts = await this.client.publicGet<{ data?: unknown }>("/md/contracts", null);
+    const { markets } = buildQfexMarkets([i], snap, Date.now(), qfexIndexPrices(listOf<QfexContractRow>(contracts.data, "/md/contracts data")));
+    if (markets.length === 0) throw new PerpError("PRICE_STALE", `QFEX ${i.venueSymbol}: no mark price in the market_stats snapshot`, { exchange: "qfex" });
     const { rates } = buildQfexFundingRates([i], listOf<QfexContractRow>(contracts.data, "/md/contracts data").filter(c => c.ticker_id === i.venueSymbol), snap.marks, Date.now());
     return {
       ...this.marketRow(markets[0], i, snap.volumeNotional),
