@@ -74,3 +74,29 @@ describe("candle interval guard on the other venues whose rows state their inter
     await expect(a.getKlines("BTC", "4h", 0, 1)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
   });
 });
+
+describe("RISEx funding history paging (live: any -l ≥ 169 returned 168 rows)", () => {
+  it("sends start_time = now − limit·1h and follows page / has_next_page", async () => {
+    const H = 3_600_000;
+    const now = 1792404000000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const rec = (t: number) => ({ funding_rate: "-0.000007566719954101", end_time: `${t}000000`, index_price: "82711.36" });
+    const get = vi.fn(async (_p: string, q: { limit: number; page: number; start_time: string }) => {
+      // The venue: hourly prints since start_time, newest first, `limit` per page.
+      const startMs = Number(BigInt(q.start_time) / 1_000_000n);
+      const all: number[] = [];
+      for (let t = now; t >= startMs; t -= H) all.push(t);
+      const rows = all.slice((q.page - 1) * q.limit, q.page * q.limit);
+      return { records: rows.map(rec), page: q.page, has_next_page: q.page * q.limit < all.length };
+    });
+    const a = Object.create(RisexAdapter.prototype) as RisexAdapter;
+    Object.assign(a as object, { market: vi.fn(async () => ({ market_id: 1 })), client: { get } });
+    const rows = await a.getFundingHistory("BTC", 1500);
+    expect(rows).toHaveLength(1500);
+    expect(rows[0].time).toBe(now);
+    expect(get.mock.calls.length).toBe(2);
+    expect(get.mock.calls[0][1]).toMatchObject({ limit: 1000, page: 1 });
+    expect(Number(BigInt(get.mock.calls[0][1].start_time) / 1_000_000n)).toBe(now - 1501 * H);
+    vi.restoreAllMocks();
+  });
+});
