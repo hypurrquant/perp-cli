@@ -23,7 +23,7 @@
  * Live 2026-10-19: absent config fields are omitted (→ null here), and `user_share` was null for a
  * vault's own manager (it counts LP shares; the manager's are `manager_shares`).
  */
-import { PerpError } from "../errors.js";
+import { PerpError, classifyError } from "../errors.js";
 import type { PacificaClient } from "../pacifica/client.js";
 import { mulDecimal, subDecimal } from "./precision.js";
 import { cmpDecimal, divDecimal, isPlainDecimal, trimDecimal } from "./pacifica-decimal.js";
@@ -189,6 +189,19 @@ export async function fetchDepositWhitelist(client: Reader, vault: string): Prom
   const a = data !== null && typeof data === "object" ? (data as Record<string, unknown>).addresses : undefined;
   if (!Array.isArray(a) || !a.every((s) => typeof s === "string")) throw bad("/lake/get_deposit_whitelist without an addresses list", data);
   return a as string[];
+}
+
+/**
+ * The advisory whitelist read for display: `addresses` null = unreadable, with the error CODE that
+ * made it so (never a bare null that looks like "no whitelist data"). The venue's refusal of a
+ * deposit stays final either way.
+ */
+export async function readDepositWhitelist(client: Reader, vault: string): Promise<{ addresses: string[] | null; error: string | null }> {
+  try {
+    return { addresses: await fetchDepositWhitelist(client, vault), error: null };
+  } catch (e) {
+    return { addresses: null, error: classifyError(e, "pacifica").code };
+  }
 }
 
 // ── Rules ───────────────────────────────────────────────────────────────

@@ -62,7 +62,8 @@ describe("candle interval guard on the other venues whose rows state their inter
     const { PacificaAdapter } = await import("../../exchanges/pacifica.js");
     const row = { t: 1792400400000, T: 1792404000000, s: "BTC", i: "1h", o: "82794", c: "82758", h: "83065", l: "82723", v: "188.75248", n: 855 };
     const a = Object.create(PacificaAdapter.prototype) as InstanceType<typeof PacificaAdapter>;
-    Object.assign(a as object, { client: { getKline: vi.fn(async () => [row]) } });
+    // /info (wireSymbol resolves the venue spelling, perp-only reads).
+    Object.assign(a as object, { client: { getKline: vi.fn(async () => [row]), getInfo: vi.fn(async () => [{ symbol: "BTC", instrument_type: "perpetual" }]) } });
     expect(await a.getKlines("BTC", "1h", 0, 1)).toHaveLength(1);
     await expect(a.getKlines("BTC", "15m", 0, 1)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
   });

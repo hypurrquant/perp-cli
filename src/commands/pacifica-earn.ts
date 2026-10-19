@@ -35,7 +35,7 @@ import {
   type PrintDirection, type PrintPosition, type PrintQuote,
 } from "../exchanges/pacifica-print.js";
 import {
-  buildVaultDepositRequest, buildVaultWithdrawRequest, DEPOSIT_WHITELIST_API_STATUS, fetchDepositWhitelist, fetchVaults, findVault, heldShares,
+  buildVaultDepositRequest, buildVaultWithdrawRequest, DEPOSIT_WHITELIST_API_STATUS, readDepositWhitelist, fetchVaults, findVault, heldShares,
   planVaultDeposit, planVaultWithdraw, withdrawWindowAt, type PacificaVault,
 } from "../exchanges/pacifica-vaults.js";
 
@@ -304,11 +304,11 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
       assertPacifica();
       const c = publicClient();
       const v = findVault(await fetchVaults(c, null), ref);
-      const [acct, positions, whitelist] = await Promise.all([c.getAccount(v.address), c.getPositions(v.address), whitelistOrNull(c, v.address)]);
+      const [acct, positions, whitelist] = await Promise.all([c.getAccount(v.address), c.getPositions(v.address), readDepositWhitelist(c, v.address)]);
       const out = {
         ...v,
         live: { accountEquity: acct.account_equity ?? null, availableToWithdraw: acct.available_to_withdraw ?? null, positions: positions.map((p) => ({ symbol: p.symbol, side: p.side, amount: p.amount, entryPrice: p.entry_price })) },
-        depositWhitelist: { apiStatus: DEPOSIT_WHITELIST_API_STATUS, addresses: whitelist },
+        depositWhitelist: { apiStatus: DEPOSIT_WHITELIST_API_STATUS, addresses: whitelist.addresses, error: whitelist.error },
         withdrawWindow: withdrawWindowAt(v.config, Date.now()),
       };
       if (isJson()) return printJson(jsonOk(out));
@@ -319,7 +319,7 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
         "vault free balance": out.live.availableToWithdraw ?? "—", "performance fee": v.config.managerProfitShare ?? "none", "deposit cap": v.config.depositCap ?? "none",
         "lock-up after deposit": v.config.depositMinDurationMs === null ? "none" : `${(v.config.depositMinDurationMs / 3_600_000).toFixed(2)} h (reset by every deposit)`,
         "withdrawal window": `${windowLabel(v)}${out.withdrawWindow.restricted ? ` — now ${out.withdrawWindow.open ? "OPEN until" : "closed, opens"} ${ts(out.withdrawWindow.nextChangeAt)}` : ""}`,
-        "deposit whitelist": `${whitelist === null ? "unknown" : whitelist.length === 0 ? "none (anyone)" : `${whitelist.length} address(es)`} (unofficial endpoint; the venue decides)`, APY: "not published",
+        "deposit whitelist": `${whitelist.addresses === null ? `unknown (${whitelist.error})` : whitelist.addresses.length === 0 ? "none (anyone)" : `${whitelist.addresses.length} address(es)`} (unofficial endpoint; the venue decides)`, APY: "not published",
       })) console.log(`  ${k.padEnd(22)} ${val}`);
       if (out.live.positions.length > 0) console.log("\n" + makeTable(["symbol", "side", "amount", "entry"], out.live.positions.map((p) => [p.symbol, p.side, p.amount, p.entryPrice])));
       console.log("");
@@ -350,8 +350,8 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
       const c = publicClient();
       const s = await masterSigning(o.account, dryRun);
       const v = findVault(await fetchVaults(c, s.identity.account), ref);
-      const [info, whitelist] = await Promise.all([c.getAccount(s.identity.account), whitelistOrNull(c, v.address)]);
-      const plan = planVaultDeposit(v, s.identity.account, amount, { availableToWithdraw: availableOf(info, s.identity.account), whitelist });
+      const [info, whitelist] = await Promise.all([c.getAccount(s.identity.account), readDepositWhitelist(c, v.address)]);
+      const plan = planVaultDeposit(v, s.identity.account, amount, { availableToWithdraw: availableOf(info, s.identity.account), whitelist: whitelist.addresses });
       const sharesBefore = heldShares(v, s.identity.account).shares ?? "0";
       const req = buildVaultDepositRequest(v.address, plan.amount, s.identity, { timestamp: Date.now(), idempotencyKey });
       if (!isJson()) printWarnings(`Depositing ${plan.amount} USDC into vault ${v.address} "${v.nickname ?? ""}" (manager ${v.manager ?? "none"}) — ≈ ${plan.estimatedShares ?? "?"} shares; signer: master`, plan.warnings);
@@ -399,11 +399,6 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────
-
-/** Unofficial whitelist read: null when unreadable (advisory only — the venue's refusal is final). */
-async function whitelistOrNull(c: PacificaClient, vault: string): Promise<string[] | null> {
-  try { return await fetchDepositWhitelist(c, vault); } catch { return null; }
-}
 
 function requireAddress(s: string): string {
   const a = s.trim();

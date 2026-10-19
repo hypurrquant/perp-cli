@@ -17,7 +17,9 @@ export interface ExchangeMarketInfo {
   /**
    * Open interest in BASE-asset units (contracts of the underlying, e.g. BTC) — every venue
    * publishes it that way, so it is never a USD figure. null = venue does not publish it
-   * (never "0" as a stand-in).
+   * (never "0" as a stand-in). One side where known (Lighter / Lighter RH: one side — inferred,
+   * not documented by the venue). The perp-ws `openInterest` is a different field with its own `unit` (Lighter:
+   * USD) — never compare the two without converting.
    */
   openInterest: string | null;
   /** null = the venue does not publish it (Aster: the public exchangeInfo carries no leverage) */

@@ -81,7 +81,7 @@ describe("2. Lighter candles: no trade count → null; V → quoteVolume", () =>
     (a as unknown as { getCandles: () => Promise<unknown> }).getCandles = async () => ({
       code: 200, r: "1h", c: [{ t: 1791939600000, o: 83379, h: 83419.2, l: 83123.3, c: 83286.9, v: 407.19, V: 33903932.72, i: 34504959654 }],
     });
-    const [k] = await a.getKlines("BTC", "1h", 0, 0);
+    const [k] = await a.getKlines("BTC", "1h", 1791939600000, 1791939600000);
     expect(k.trades).toBeNull();
     expect(k.volume).toBe("407.19");
     expect(k.quoteVolume).toBe("33903932.72");

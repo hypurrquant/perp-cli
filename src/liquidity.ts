@@ -1,4 +1,5 @@
 import type { ExchangeAdapter, SpotAdapter } from "./exchanges/index.js";
+import { classifyError } from "./errors.js";
 
 export interface LiquidityCheck {
   /** Max executable size (base) within slippage tolerance */
@@ -203,8 +204,9 @@ export async function checkSpotPerpLiquidity(
       spotSlippage: spotCheck.slippagePct,
       perpSlippage: perpCheck.slippagePct,
     };
-  } catch {
-    log?.(`[LIQ] spot-perp ${spotSymbol}: orderbook fetch failed`);
+  } catch (e) {
+    const c = classifyError(e);
+    log?.(`[LIQ] spot-perp ${spotSymbol}: orderbook fetch failed (${c.code}: ${c.message})`);
     return { viable: false, adjustedSizeUsd: 0, spotSlippage: 0, perpSlippage: 0 };
   }
 }

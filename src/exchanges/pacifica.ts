@@ -371,6 +371,25 @@ interface PacificaFillReport {
   filledAmount: string;
 }
 
+/** GET /trades answers the last 20 fills (40 taker + maker rows); no limit or cursor. */
+export const PACIFICA_TRADES_CAP = 20;
+/** GET /funding_rate/history `limit` maximum per request (docs; live 4001 → 4000). */
+export const PACIFICA_FUNDING_PAGE = 4000;
+/** GET /kline: "Max range: 4000 candles" per request (HTTP 400 beyond, live 2026-10-19). */
+export const PACIFICA_KLINE_MAX_BARS = 4000;
+/** Requests one funding / kline read may send (the venue meters reads by credits). */
+export const PACIFICA_MAX_PAGES = 10;
+/**
+ * GET /kline intervals (venue error text, live 2026-10-19: "Must be one of 1m, 3m, 5m, 15m, 30m,
+ * 1h, 2h, 4h, 8h, 12h, 1d, 1w, 1M"; each answered 200 with rows labelled `i` = the interval).
+ * The ms length sizes the 4000-bar request windows (1M: 31 days, the longest month).
+ */
+export const PACIFICA_KLINE_INTERVALS: Readonly<Record<string, number>> = {
+  "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
+  "1h": 3_600_000, "2h": 7_200_000, "4h": 14_400_000, "8h": 28_800_000, "12h": 43_200_000,
+  "1d": 86_400_000, "1w": 604_800_000, "1M": 2_678_400_000,
+};
+
 /** /info rows must carry instrument_type — a row without it cannot be classified perp vs spot. */
 function requireInstrumentType(rows: MarketInfo[]): MarketInfo[] {
   for (const m of rows) {
@@ -448,6 +467,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   private signMessage: (msg: Uint8Array) => Promise<Uint8Array>;
   private _marketsCache: ExchangeMarketInfo[] | null = null;
   private _marketsCacheTime = 0;
+  private _infoCache: { rows: MarketInfo[]; at: number } | null = null;
   private static readonly CACHE_TTL = 30_000;
   /** Venue network — part of every account cache key (the same key exists on mainnet and testnet). */
   private _network: Network;
@@ -657,10 +677,18 @@ export class PacificaAdapter implements ExchangeAdapter {
     return this.signMessage;
   }
 
+  /** GET /info rows (every instrument type), one CACHE_TTL cache for symbol resolution and getMarkets. */
+  private async infoRows(): Promise<MarketInfo[]> {
+    if (!this._infoCache || Date.now() - this._infoCache.at >= PacificaAdapter.CACHE_TTL) {
+      this._infoCache = { rows: requireInstrumentType(await this.client.getInfo()), at: Date.now() };
+    }
+    return this._infoCache.rows;
+  }
+
   async getMarkets(): Promise<ExchangeMarketInfo[]> {
     if (this._marketsCache && Date.now() - this._marketsCacheTime < PacificaAdapter.CACHE_TTL) return this._marketsCache;
     const [markets, prices] = await Promise.all([
-      this.client.getInfo(),
+      this.infoRows(),
       this._getPrices(),
     ]);
     const priceMap = new Map(prices.map((p) => [p.symbol, p]));
@@ -691,7 +719,63 @@ export class PacificaAdapter implements ExchangeAdapter {
     this._marketsCache = result; this._marketsCacheTime = Date.now(); return result;
   }
 
+  /**
+   * The venue's own spelling of a perp market typed by the user. Pacifica's API is
+   * case-sensitive (kBONK / kPEPE / kSHIB: `KPEPE` answers `200 []` on /trades, /kline and
+   * /funding_rate/history and 400 "Book not found" on /book — live 2026-10-19), and the CLI
+   * upper-cases the argument. Matched against /info exactly first, then case-insensitively
+   * (a "-PERP" display suffix ignored), as `market info` does. A listed non-perp (spot SOL-USDC)
+   * is refused before any request: this adapter serves perps only (isPacificaPerpetual).
+   */
+  async wireSymbol(symbol: string): Promise<string> {
+    const rows = await this.infoRows();
+    const want = symbol.replace(/-PERP$/i, "");
+    const exact = rows.filter((m) => m.symbol === want);
+    const matches = exact.length > 0 ? exact : rows.filter((m) => m.symbol.toUpperCase() === want.toUpperCase());
+    if (matches.length === 0) throw symbolNotFound("pacifica", symbol);
+    if (matches.length > 1) {
+      throw new PerpError("INVALID_PARAMS", `Pacifica lists several markets matching ${symbol} (${matches.map((m) => m.symbol).join(", ")}); type the exact symbol`, { exchange: "pacifica" });
+    }
+    const m = matches[0];
+    if (!isPacificaPerpetual(m)) {
+      throw symbolNotFound("pacifica", symbol, `Pacifica ${m.symbol} is a ${m.instrument_type} market, not a perp — the perp market data reads serve perpetuals only`);
+    }
+    return m.symbol;
+  }
+
+  /**
+   * wireSymbol for an order entry point (market / limit / stop / edit): a resolution failure is
+   * a definite "not sent" (orderNotSent re-types a read error), never a retryable code.
+   */
+  private async orderSymbol(symbol: string, what: string): Promise<string> {
+    try {
+      return await this.wireSymbol(symbol);
+    } catch (e) {
+      throw orderNotSent("pacifica", `${what} ${symbol}`, e);
+    }
+  }
+
+  /**
+   * The venue's spelling for a cancel / TP-SL on an existing order or position: resolved as in
+   * wireSymbol when /info lists it (any instrument type, case-insensitive); otherwise — not listed
+   * (a delisted market) or /info unreadable — sent as typed: a cancel must still reach the venue,
+   * whose own answer is final.
+   */
+  private async listedSymbol(symbol: string): Promise<string> {
+    let rows: MarketInfo[];
+    try {
+      rows = await this.infoRows();
+    } catch {
+      return symbol;
+    }
+    const want = symbol.replace(/-PERP$/i, "");
+    const exact = rows.filter((m) => m.symbol === want);
+    const hits = exact.length > 0 ? exact : rows.filter((m) => m.symbol.toUpperCase() === want.toUpperCase());
+    return hits.length === 1 ? hits[0].symbol : symbol;
+  }
+
   async getOrderbook(symbol: string) {
+    symbol = await this.wireSymbol(symbol);
     const book = await this.client.getBook(symbol).catch((e: unknown) => {
       // GET /book for an unlisted symbol: HTTP 400 {"error":"Book not found: NOPE"} (live 2026-10-14).
       if (e instanceof Error && /^GET \/book failed \(400\):.*Book not found/.test(e.message)) throw symbolNotFound("pacifica", symbol);
@@ -878,6 +962,7 @@ export class PacificaAdapter implements ExchangeAdapter {
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { reduceOnly: boolean; slippage: ResolvedSlippage; clientOrderId?: string }) {
     this.ensureSigner();
+    symbol = await this.orderSymbol(symbol, `market ${side} ${size}`);
     // A caller's client order id is sent as client_order_id (validated UUID); none → none sent.
     const cloid = opts.clientOrderId === undefined ? null : requirePacificaClientOrderId(opts.clientOrderId, null);
     const created = await this.client.createMarketOrder(
@@ -1024,6 +1109,7 @@ export class PacificaAdapter implements ExchangeAdapter {
     // client_order_id records the TIF for a later TIF-preserving amend. Either way the id sent
     // rides on the result (`clientOrderId`).
     const cloid = opts?.clientOrderId !== undefined ? requirePacificaClientOrderId(opts.clientOrderId, tif) : pacificaClientOrderId(tif);
+    symbol = await this.orderSymbol(symbol, `limit ${tif} ${side} ${size}`);
     const raw = await this.client.createLimitOrder(
       { symbol, price, amount: size, side: side === "buy" ? "bid" : "ask", reduce_only: opts?.reduceOnly ?? false, tif, client_order_id: cloid },
       this.account,
@@ -1038,6 +1124,7 @@ export class PacificaAdapter implements ExchangeAdapter {
 
   async cancelOrder(symbol: string, orderId: string) {
     this.ensureSigner();
+    symbol = await this.listedSymbol(symbol);
     return this.client.cancelOrder(
       { symbol, order_id: Number(orderId) },
       this.account,
@@ -1168,6 +1255,7 @@ export class PacificaAdapter implements ExchangeAdapter {
    */
   async editOrder(symbol: string, orderId: string, price: string, size: string) {
     this.ensureSigner();
+    symbol = await this.orderSymbol(symbol, `edit ${orderId}`);
     return this.client.editOrder(
       { symbol, order_id: Number(orderId), price, amount: size },
       this.account,
@@ -1199,6 +1287,8 @@ export class PacificaAdapter implements ExchangeAdapter {
     if (String(original.symbol).toUpperCase() !== sym) {
       throw new PerpError("INVALID_PARAMS", `Order ${orderId} is on ${original.symbol}, not ${sym}`);
     }
+    // The venue's own spelling (kPEPE), for the cancel and the replacement.
+    const venueSym = String(original.symbol);
     if (original.order_type !== "limit") {
       throw unsupported("Pacifica", "amend", `only open limit orders can be amended (order is ${original.order_type})`,
         `Cancel it (perp trade cancel ${sym} ${orderId} -e pacifica) and place a new order`);
@@ -1217,7 +1307,7 @@ export class PacificaAdapter implements ExchangeAdapter {
     const tifNote = tif !== null ? `TIF ${keep} (from --tif)` : `TIF ${keep} kept (from the order's client id)`;
 
     if (keep === "ALO") {
-      const raw = await this.editOrder(sym, orderId, price, size);
+      const raw = await this.editOrder(venueSym, orderId, price, size);
       const err = pacificaBodyError(raw);
       if (err !== null) throw new PerpError("ORDER_REJECTED", `Pacifica edit of ${orderId} refused: ${err}`, { exchange: "pacifica" });
       const data = (raw !== null && typeof raw === "object" ? ((raw as Record<string, unknown>).data ?? raw) : null) as Record<string, unknown> | null;
@@ -1262,7 +1352,7 @@ export class PacificaAdapter implements ExchangeAdapter {
     const cancelWhat = `amend: cancel of ${orderId}`;
     let cancelRaw: unknown;
     try {
-      cancelRaw = await this.client.cancelOrder({ symbol: sym, order_id: Number(orderId) }, this.account, this.signMessage);
+      cancelRaw = await this.client.cancelOrder({ symbol: venueSym, order_id: Number(orderId) }, this.account, this.signMessage);
     } catch (e) {
       if (pacificaRefused(e)) {
         throw new PerpError("ORDER_REJECTED", `Pacifica ${cancelWhat} refused (${extractErrorMessage(e)}); the original order is untouched, nothing replaced`, { exchange: "pacifica" });
@@ -1322,7 +1412,7 @@ export class PacificaAdapter implements ExchangeAdapter {
     let placed: unknown;
     try {
       placed = await this.client.createLimitOrder(
-        { symbol: sym, price, amount: replaceSize, side: original.side, reduce_only: original.reduce_only === true, tif: keep, client_order_id: cloid },
+        { symbol: venueSym, price, amount: replaceSize, side: original.side, reduce_only: original.reduce_only === true, tif: keep, client_order_id: cloid },
         this.account, this.signMessage, await this.builderCode(),
       );
     } catch (e) {
@@ -1358,7 +1448,8 @@ export class PacificaAdapter implements ExchangeAdapter {
   async cancelStopOrder(symbol: string, orderId: string): Promise<unknown> {
     this.ensureSigner();
     if (!/^\d+$/.test(orderId)) throw new PerpError("INVALID_PARAMS", `Pacifica stop order id must be numeric (got "${orderId}")`);
-    const raw = await this.client.cancelStopOrder({ symbol: symbol.toUpperCase(), order_id: Number(orderId) }, this.account, this.signMessage);
+    const venueSym = await this.listedSymbol(symbol);
+    const raw = await this.client.cancelStopOrder({ symbol: venueSym, order_id: Number(orderId) }, this.account, this.signMessage);
     const err = pacificaBodyError(raw);
     if (err !== null) throw new PerpError("ORDER_REJECTED", `Pacifica cancel of stop order ${orderId} refused: ${err}`, { exchange: "pacifica" });
     return raw;
@@ -1383,7 +1474,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   async setPositionTpSl(symbol: string, positionSide: "long" | "short", tpsl: { tp: string | null; tpLimit: string | null; sl: string | null }): Promise<unknown> {
     this.ensureSigner();
     const params: { symbol: string; side: "bid" | "ask"; take_profit?: { stop_price: string; limit_price?: string }; stop_loss?: { stop_price: string } } = {
-      symbol: symbol.toUpperCase(),
+      symbol: await this.listedSymbol(symbol),
       side: positionSide === "long" ? "ask" : "bid",
     };
     if (tpsl.tp !== null) params.take_profit = tpsl.tpLimit !== null ? { stop_price: tpsl.tp, limit_price: tpsl.tpLimit } : { stop_price: tpsl.tp };
@@ -1396,6 +1487,7 @@ export class PacificaAdapter implements ExchangeAdapter {
 
   async setLeverage(symbol: string, leverage: number, marginMode: "cross" | "isolated" = "cross") {
     this.ensureSigner();
+    symbol = await this.orderSymbol(symbol, `leverage ${leverage}x`);
     await this.client.updateLeverage(
       { symbol, leverage },
       this.account,
@@ -1421,6 +1513,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   async stopOrder(symbol: string, side: "buy" | "sell", size: string, triggerPrice: string, opts?: { limitPrice?: string; reduceOnly?: boolean; triggerType?: "mark" | "last" | "mid" }) {
     this.ensureSigner();
     const triggerPriceType = opts?.triggerType ? PacificaAdapter.TRIGGER_TYPE[opts.triggerType] : undefined;
+    symbol = await this.orderSymbol(symbol, `stop ${side} ${size}`);
     const raw = await this.client.createStopOrder(
       {
         symbol,
@@ -1487,7 +1580,16 @@ export class PacificaAdapter implements ExchangeAdapter {
    * of both parties mapped through `side === "bid"` → all "sell". No de-duplication: two taker
    * rows with equal time / price / amount are two fills (one order filling two makers).
    */
-  async getRecentTrades(symbol: string, _limit = 20): Promise<ExchangePublicTrade[]> {
+  async getRecentTrades(symbol: string, limit = 20): Promise<ExchangePublicTrade[]> {
+    // GET /trades has no limit / cursor: it answers the last 40 tape rows = 20 fills (taker +
+    // maker row each; live 2026-10-19 on BTC, ETH, SOL, kPEPE, XRP). A larger limit is refused,
+    // never silently answered with 20.
+    if (!Number.isInteger(limit) || limit < 1 || limit > PACIFICA_TRADES_CAP) {
+      throw new PerpError("INVALID_PARAMS", `Pacifica trades limit must be 1..${PACIFICA_TRADES_CAP} (got ${limit})`, {
+        exchange: "pacifica", remediation: `Pacifica publishes only the last ${PACIFICA_TRADES_CAP} trades (GET /trades has no limit or cursor)`,
+      });
+    }
+    symbol = await this.wireSymbol(symbol);
     const trades = await this.client.getTrades(symbol) as unknown as Array<Record<string, unknown>>;
     if (!Array.isArray(trades)) {
       throw new PerpError("EXCHANGE_ERROR", `Pacifica /trades returned no trade list (${JSON.stringify(trades).slice(0, 120)})`, { exchange: "pacifica" });
@@ -1504,7 +1606,7 @@ export class PacificaAdapter implements ExchangeAdapter {
       if (ev !== "fulfill_taker") { skippedWhy.push(`undocumented event_type "${ev}"`); continue; }
       const side = pacificaField(t, "side", "/trades");
       if (!PACIFICA_FILL_BUY_SIDES.has(side) && !PACIFICA_FILL_SELL_SIDES.has(side)) { skippedWhy.push(`undocumented side "${side}"`); continue; }
-      if (rows.length >= _limit) continue;
+      if (rows.length >= limit) continue;
       rows.push({
         time: pacificaTime(t, "/trades"),
         symbol,
@@ -1520,13 +1622,33 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async getFundingHistory(symbol: string, limit = 10): Promise<FundingHistoryRow[]> {
-    // The client unwraps the {success, data} envelope: the answer is the row list itself.
-    const data = await this.client.getFundingHistory(symbol, { limit });
-    if (!Array.isArray(data)) {
-      throw new PerpError("EXCHANGE_ERROR", `Pacifica /funding_rate/history returned no row list (${JSON.stringify(data).slice(0, 120)})`, { exchange: "pacifica" });
+    // `limit` is at most 4000 per request (docs; live: limit 4001 / 5000 → 4000 rows, has_more
+    // true): deeper history is paged with `cursor` / `next_cursor`, newest first.
+    if (!Number.isInteger(limit) || limit < 1 || limit > PACIFICA_FUNDING_PAGE * PACIFICA_MAX_PAGES) {
+      throw new PerpError("INVALID_PARAMS", `Pacifica funding history limit must be 1..${PACIFICA_FUNDING_PAGE * PACIFICA_MAX_PAGES} (got ${limit})`, { exchange: "pacifica" });
+    }
+    symbol = await this.wireSymbol(symbol);
+    const data: unknown[] = [];
+    let cursor: string | null = null;
+    let hasMore = false;
+    for (let page = 0; data.length < limit && page < PACIFICA_MAX_PAGES; page++) {
+      const params: Record<string, string> = { symbol, limit: String(Math.min(PACIFICA_FUNDING_PAGE, limit - data.length)) };
+      if (cursor !== null) params.cursor = cursor;
+      const env = await this.client.getEnvelope("/funding_rate/history", params);
+      if (env.success !== true || !Array.isArray(env.data)) {
+        throw new PerpError("EXCHANGE_ERROR", `Pacifica /funding_rate/history returned no row list (${JSON.stringify(env).slice(0, 120)})`, { exchange: "pacifica" });
+      }
+      data.push(...env.data);
+      hasMore = env.has_more === true;
+      if (!hasMore || typeof env.next_cursor !== "string" || env.next_cursor === "" || env.data.length === 0) break;
+      cursor = env.next_cursor;
+    }
+    // Short of `limit` while the venue says there is more (no cursor / empty page / page budget): never a silent short history.
+    if (data.length < limit && hasMore) {
+      throw new PerpError("EXCHANGE_ERROR", `Pacifica /funding_rate/history: ${data.length} of ${limit} rows read and the venue reports more (has_more) without a usable next page`, { exchange: "pacifica" });
     }
     // `200 []` for an unlisted symbol (live): checked against the market directory.
-    return nonEmptyOrListed(this, symbol, (data as Array<Record<string, unknown>>).map((h) => {
+    return nonEmptyOrListed(this, symbol, (data.slice(0, limit) as Array<Record<string, unknown>>).map((h) => {
       const oracle = h.oracle_price;
       return {
         time: pacificaTime(h, "/funding_rate/history"),
@@ -1539,15 +1661,44 @@ export class PacificaAdapter implements ExchangeAdapter {
     }));
   }
 
+  /**
+   * GET /kline over [startTime, endTime]. The venue refuses a range over 4000 candles (HTTP 400
+   * "Time range too large … Max range: 4000 candles"), so a longer window is read in consecutive
+   * 4000-bar windows (at most PACIFICA_MAX_PAGES), merged by open time. Intervals outside
+   * PACIFICA_KLINE_INTERVALS are refused locally with INVALID_PARAMS (the venue: HTTP 400).
+   */
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
-    const klines = await this.client.getKline(
-      symbol,
-      interval as Parameters<typeof this.client.getKline>[1],
-      startTime,
-      endTime
-    );
+    const ivMs = PACIFICA_KLINE_INTERVALS[interval];
+    if (ivMs === undefined) {
+      throw new PerpError("INVALID_PARAMS", `Pacifica kline interval ${JSON.stringify(interval)} is not served (supported: ${Object.keys(PACIFICA_KLINE_INTERVALS).join(", ")})`, {
+        exchange: "pacifica", remediation: `Use one of: ${Object.keys(PACIFICA_KLINE_INTERVALS).join(", ")}`,
+      });
+    }
+    if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || startTime > endTime) {
+      throw new PerpError("INVALID_PARAMS", `Pacifica kline window must be start ≤ end (unix ms; got ${startTime}..${endTime})`, { exchange: "pacifica" });
+    }
+    const span = PACIFICA_KLINE_MAX_BARS * ivMs;
+    const pages = Math.ceil((endTime - startTime + 1) / span);
+    if (pages > PACIFICA_MAX_PAGES) {
+      throw new PerpError("INVALID_PARAMS", `Pacifica kline window spans more than ${PACIFICA_KLINE_MAX_BARS * PACIFICA_MAX_PAGES} ${interval} bars (${PACIFICA_MAX_PAGES} requests of ${PACIFICA_KLINE_MAX_BARS})`, {
+        exchange: "pacifica", remediation: "Narrow --start / --end or use a longer interval",
+      });
+    }
+    symbol = await this.wireSymbol(symbol);
+    type Kline = Awaited<ReturnType<PacificaClient["getKline"]>>[number];
+    const byTime = new Map<number, Kline>();
+    for (let from = startTime; from <= endTime; from += span) {
+      const to = Math.min(endTime, from + span - 1);
+      const raw = await this.client.getKline(symbol, interval as Parameters<typeof this.client.getKline>[1], from, to);
+      if (!Array.isArray(raw)) {
+        throw new PerpError("EXCHANGE_ERROR", `Pacifica /kline returned no candle list (${JSON.stringify(raw).slice(0, 120)})`, { exchange: "pacifica" });
+      }
+      // A row of another interval → EXCHANGE_ERROR (assertCandleInterval), never returned.
+      for (const k of raw) byTime.set(k.t, (assertCandleInterval("pacifica", interval, (k as { i?: unknown }).i), k));
+    }
+    const klines = [...byTime.values()].sort((a, b) => a.t - b.t);
     // `200 []` for an unlisted symbol (live): checked against the market directory.
-    return nonEmptyOrListed(this, symbol, klines.map((k) => (assertCandleInterval("pacifica", interval, (k as { i?: unknown }).i), {
+    return nonEmptyOrListed(this, symbol, klines.map((k) => ({
       time: k.t,
       open: k.o,
       high: k.h,

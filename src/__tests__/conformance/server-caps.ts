@@ -12,6 +12,9 @@ import { ARCUS_HISTORY_CAP } from "../../exchanges/arcus/adapter.js";
 import { ASTER_KLINE_INTERVALS } from "../../exchanges/aster.js";
 import { EXTENDED_CANDLES_PAGE_CAP, EXTENDED_FUNDING_PAGE_CAP, EXTENDED_KLINE_INTERVALS, EXTENDED_MAX_RECORDS, EXTENDED_TRADES_CAP } from "../../exchanges/extended/adapter.js";
 import { GRVT_FUNDING_CAP, GRVT_KLINE_INTERVALS, GRVT_TRADES_CAP } from "../../exchanges/grvt/adapter.js";
+import { LIGHTER_CANDLE_INTERVALS, LIGHTER_CANDLES_PER_CALL, LIGHTER_KLINE_MAX_PAGES, LIGHTER_RECENT_TRADES_MAX } from "../../exchanges/lighter.js";
+import { LIGHTER_BOOK_ORDERS_LIMIT } from "../../exchanges/lighter-public.js";
+import { PACIFICA_FUNDING_PAGE, PACIFICA_KLINE_INTERVALS, PACIFICA_KLINE_MAX_BARS, PACIFICA_MAX_PAGES, PACIFICA_TRADES_CAP } from "../../exchanges/pacifica.js";
 import { HL_BOOK_LEVELS_CAP, HL_CANDLE_CAP, HL_CANDLE_INTERVAL_MS, HL_FUNDING_HISTORY_MAX_LIMIT, HL_RECENT_TRADES_CAP } from "../../exchanges/hyperliquid.js";
 import { RISEX_BOOK_MAX, KLINE_INTERVAL_MS as RISEX_KLINE_INTERVAL_MS, RISEX_TRADES_CAP } from "../../exchanges/risex/adapter.js";
 import { TXFLOW_KLINE_INTERVALS } from "../../exchanges/txflow/adapter.js";
@@ -91,9 +94,9 @@ export const SERVER_CAPS: readonly ServerCap[] = [
  */
 export const UNMEASURED_CAPS: Readonly<Partial<Record<VenueId, string>>> = {
   hyperliquid: `fundingHistory (docs: 500 per response — paged forward from the last row's time, -l ≤ ${HL_FUNDING_HISTORY_MAX_LIMIT}); candleSnapshot serves only the most recent ${HL_CANDLE_CAP} candles (an earlier --start is refused)`,
-  pacifica: "GET /kline, GET /funding_rate/history",
-  lighter: "GET /candles (count_back), GET /fundings (docs: 750 per call — refused above, FUNDING_HISTORY_CAP)",
-  "lighter-rh": "GET /candles (count_back), GET /fundings (docs: 750 per call — refused above, FUNDING_HISTORY_CAP)",
+  pacifica: `GET /kline (${PACIFICA_KLINE_MAX_BARS} bars per call — windowed, ${PACIFICA_KLINE_MAX_BARS * PACIFICA_MAX_PAGES} per command), GET /funding_rate/history (${PACIFICA_FUNDING_PAGE} per page — cursor-paged, ${PACIFICA_FUNDING_PAGE * PACIFICA_MAX_PAGES} per command)`,
+  lighter: `GET /candles (${LIGHTER_CANDLES_PER_CALL} per call — paged, ${LIGHTER_CANDLES_PER_CALL * LIGHTER_KLINE_MAX_PAGES} per command), GET /fundings (docs: 750 per call — refused above, FUNDING_HISTORY_CAP), GET /orderBookOrders (${LIGHTER_BOOK_ORDERS_LIMIT} orders)`,
+  "lighter-rh": `GET /candles (${LIGHTER_CANDLES_PER_CALL} per call — paged, ${LIGHTER_CANDLES_PER_CALL * LIGHTER_KLINE_MAX_PAGES} per command), GET /fundings (docs: 750 per call — refused above, FUNDING_HISTORY_CAP), GET /orderBookOrders (${LIGHTER_BOOK_ORDERS_LIMIT} orders)`,
   aster: "GET /fapi/v3/klines (docs: limit ≤ 1500 — the adapter pages, ASTER_KLINE_MAX_PAGES), GET /fapi/v3/fundingRate (measured 1000 — refused above)",
   arcus: "candles, funding history (docs: 1000 — refused above)",
   qfex: "GET /candles, GET /funding",
@@ -111,6 +114,9 @@ export const REFUSED_CAPS: ReadonlyArray<{ venue: VenueId; command: "book" | "tr
   ...Object.entries(BOOK_DEPTH_MAX).map(([venue, max]) => ({ venue: venue as VenueId, command: "book" as const, max })),
   ...Object.entries(FUNDING_HISTORY_CAP).map(([venue, max]) => ({ venue: venue as VenueId, command: "funding" as const, max })),
   { venue: "hyperliquid", command: "trades", max: HL_RECENT_TRADES_CAP },
+  { venue: "pacifica", command: "trades", max: PACIFICA_TRADES_CAP },
+  { venue: "lighter", command: "trades", max: LIGHTER_RECENT_TRADES_MAX },
+  { venue: "lighter-rh", command: "trades", max: LIGHTER_RECENT_TRADES_MAX },
   { venue: "risex", command: "trades", max: RISEX_TRADES_CAP },
   { venue: "extended", command: "trades", max: EXTENDED_TRADES_CAP },
   { venue: "grvt", command: "trades", max: GRVT_TRADES_CAP },
@@ -122,6 +128,7 @@ export const CAP_TABLE_AGREEMENT: ReadonlyArray<{ what: string; table: number | 
   { what: "BOOK_DEPTH_MAX.hyperliquid = HL_BOOK_LEVELS_CAP", table: BOOK_DEPTH_MAX.hyperliquid, adapter: HL_BOOK_LEVELS_CAP },
   { what: "BOOK_DEPTH_MAX.risex = RISEX_BOOK_MAX", table: BOOK_DEPTH_MAX.risex, adapter: RISEX_BOOK_MAX },
   { what: "FUNDING_HISTORY_CAP.hyperliquid = HL_FUNDING_HISTORY_MAX_LIMIT", table: FUNDING_HISTORY_CAP.hyperliquid, adapter: HL_FUNDING_HISTORY_MAX_LIMIT },
+  { what: "FUNDING_HISTORY_CAP.pacifica = PACIFICA_FUNDING_PAGE × PACIFICA_MAX_PAGES", table: FUNDING_HISTORY_CAP.pacifica, adapter: PACIFICA_FUNDING_PAGE * PACIFICA_MAX_PAGES },
   { what: "FUNDING_HISTORY_CAP.arcus = ARCUS_HISTORY_CAP", table: FUNDING_HISTORY_CAP.arcus, adapter: ARCUS_HISTORY_CAP },
   { what: "FUNDING_HISTORY_CAP.grvt = GRVT_FUNDING_CAP", table: FUNDING_HISTORY_CAP.grvt, adapter: GRVT_FUNDING_CAP },
   { what: "FUNDING_HISTORY_CAP.extended = EXTENDED_MAX_RECORDS", table: FUNDING_HISTORY_CAP.extended, adapter: EXTENDED_MAX_RECORDS },
@@ -135,10 +142,10 @@ const keys = (o: object | ReadonlySet<string>): string[] => (o instanceof Set ? 
  */
 export const KLINE_INTERVALS: Readonly<Record<VenueId, readonly string[]>> = {
   hyperliquid: keys(HL_CANDLE_INTERVAL_MS),
-  pacifica: ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d"],
+  pacifica: keys(PACIFICA_KLINE_INTERVALS),
   // Measured 2026-10-19: resolution=1w → HTTP 400 "invalid param" (not offered).
-  lighter: ["1m", "5m", "15m", "30m", "1h", "4h", "12h", "1d"],
-  "lighter-rh": ["1m", "5m", "15m", "30m", "1h", "4h", "12h", "1d"],
+  lighter: keys(LIGHTER_CANDLE_INTERVALS),
+  "lighter-rh": keys(LIGHTER_CANDLE_INTERVALS),
   aster: keys(ASTER_KLINE_INTERVALS),
   // src/exchanges/arcus/adapter.ts CANDLE_TIMEFRAMES (not exported).
   arcus: ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d", "3d", "1w"],

@@ -87,7 +87,7 @@ describe("market info fundingHours from the venue definition", () => {
     const a = new LighterAdapter("0xabc", true, undefined, venue);
     const t = a as unknown as Record<string, unknown>;
     t.ensureMarketMap = async () => {};
-    t.restGet = vi.fn(async () => ({ order_book_details: [{ symbol: "BTC", market_id: 1, market_type: "perp", mark_price: "82700", index_price: "82710", open_interest: 1, daily_quote_token_volume: 1, min_initial_margin_fraction: 200 }] }));
+    t.restGet = vi.fn(async () => ({ order_book_details: [{ symbol: "BTC", market_id: 1, market_type: "perp", status: "active", mark_price: "82700", index_price: "82710", open_interest: 1, daily_quote_token_volume: 1, min_initial_margin_fraction: 200 }] }));
     t.getFundingRates = vi.fn(async () => new Map([["BTC", { rate: "0.000088", markPrice: null }]]));
     const [m] = await a.getMarkets();
     expect(m).toMatchObject({ fundingRate: "0.000088", fundingHours: 8 });

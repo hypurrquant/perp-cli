@@ -70,6 +70,7 @@ function pacAdapter(history: () => Promise<unknown>) {
     createLimitOrder: vi.fn().mockResolvedValue(PAC_ACK),
     createStopOrder: vi.fn().mockResolvedValue({ success: true, data: { order_id: 77 } }),
     getOrderHistoryById: vi.fn(history),
+    getInfo: async () => ["BTC", "ETH", "SOL"].map((symbol) => ({ symbol, instrument_type: "perpetual" })),
   };
   a.client = client;
   a.account = "acct";

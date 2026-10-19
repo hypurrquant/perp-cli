@@ -18,6 +18,12 @@ Measured 2026-10-19 unless noted. The conformance suite reads these tables from 
 | Hyperliquid | `candleSnapshot` | only the most recent 5000 candles of an interval exist (docs) | 5000 | a `--start` before now − 5000 × interval → `INVALID_PARAMS` naming the earliest start (`HL_CANDLE_CAP`) |
 | Hyperliquid | `recentTrades` | last 10 trades, no count / paging (docs) | — | default 10; `--limit` > 10 → `INVALID_PARAMS` (`HL_RECENT_TRADES_CAP`) |
 | Hyperliquid | `l2Book` | 20 levels per side (docs) | 20 | `--depth` > 20 → `INVALID_PARAMS` (`HL_BOOK_LEVELS_CAP` = `BOOK_DEPTH_MAX.hyperliquid`) |
+| Lighter / Lighter RH | `GET /api/v1/candles` | 500 bars per call (`count_back` honoured only as a minimum) | — | paged back from `--end` to `--start`, 5000 bars per command (10 calls), else `INVALID_PARAMS`; intervals `1m 5m 15m 30m 1h 4h 12h 1d` |
+| Lighter / Lighter RH | `GET /api/v1/recentTrades` | 100 | 100 | `--limit` > 100 → `INVALID_PARAMS` |
+| Lighter / Lighter RH | `GET /api/v1/orderBookOrders` | 250 orders per side (individual orders, not levels; live 213–243 levels per full BTC page) | 250 | `limit=250` sent, aggregated to price levels; a full 250-order page with fewer levels than `--depth` → `INVALID_PARAMS` naming the 250-order cap |
+| Pacifica | `GET /kline` | 4000 candles per call (HTTP 400 "Max range: 4000 candles") | 4000 | 4000-bar windows, 40,000 per command (10 calls), else `INVALID_PARAMS` |
+| Pacifica | `GET /funding_rate/history` | 4000 per page (limit 4001 / 5000 → 4000, `has_more` true) | 4000 | `cursor` / `next_cursor` paging, `-l` 1..40,000 (`FUNDING_HISTORY_CAP.pacifica`) |
+| Pacifica | `GET /trades` | the last 20 fills, no `limit` / cursor | — | `--limit` > 20 → `INVALID_PARAMS` |
 | RISEx | `/trading-view-data` | intervals other than 1m 5m 15m 1h 4h 1d 1w answer **1m bars** | — | table = verified set; rows of another interval → `EXCHANGE_ERROR` |
 | RISEx | `/funding-rate-history` | `start_time` defaults to now − 7 d (168 rows); 1000 / page, `page` + `has_next_page` | 1000 | `start_time` = now − `-l` h, pages followed |
 | RISEx | `/trade-history` | 1000 ("page_size cannot exceed 1000") | 1000 | `--limit` > 1000 → `INVALID_PARAMS` |
@@ -35,7 +41,7 @@ Measured 2026-10-19 unless noted. The conformance suite reads these tables from 
 | Aster | `/fapi/v3/klines` intervals | 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M (others: -1120) | same | refused before any request |
 
 Order book `--depth` max (levels per side, measured): hyperliquid 20, pacifica 10, lighter / lighter-rh /
-aster / arcus / ondo 50, qfex / txflow 20, risex 250, grvt 500, extended full book. Above it →
+aster / arcus / ondo 50 (Lighter: the static max a full 250-order page is held to; the adapter refuses deeper when a page aggregates to fewer levels), qfex / txflow 20, risex 250, grvt 500, extended full book. Above it →
 `INVALID_PARAMS` naming the max (`BOOK_DEPTH_MAX`, src/commands/market.ts).
 
 History order (every venue, enforced in `perp market` after the adapter call): `trades` and

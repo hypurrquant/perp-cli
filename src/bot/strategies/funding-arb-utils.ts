@@ -165,19 +165,21 @@ export function matchSymbol(s: string, target: string): boolean {
   return u === t || u === t + "-PERP" || u.replace(/-PERP$/, "") === t;
 }
 
-/** Get a price estimate for a symbol from the perp adapter. */
-export async function getPriceEstimate(perpAdapter: ExchangeAdapter, perpSymbol: string, fallbackSymbol: string): Promise<number> {
-  try {
-    const markets = await perpAdapter.getMarkets();
-    const market = markets.find(m =>
-      m.symbol.toUpperCase() === perpSymbol.toUpperCase() ||
-      m.symbol.toUpperCase() === fallbackSymbol.toUpperCase() ||
-      m.symbol.toUpperCase() === `${fallbackSymbol.toUpperCase()}-PERP`,
-    );
-    return market ? parseFloat(market.markPrice) : 0;
-  } catch {
-    return 0;
-  }
+/**
+ * The perp venue's mark price for a symbol. null = the market is not listed or its mark is not a
+ * positive finite number (Pacifica rows carry markPrice "-" when /info/prices has none). A failed
+ * market read throws (never a 0 that callers would size against).
+ */
+export async function getPriceEstimate(perpAdapter: ExchangeAdapter, perpSymbol: string, fallbackSymbol: string): Promise<number | null> {
+  const markets = await perpAdapter.getMarkets();
+  const market = markets.find(m =>
+    m.symbol.toUpperCase() === perpSymbol.toUpperCase() ||
+    m.symbol.toUpperCase() === fallbackSymbol.toUpperCase() ||
+    m.symbol.toUpperCase() === `${fallbackSymbol.toUpperCase()}-PERP`,
+  );
+  if (market === undefined) return null;
+  const px = Number(market.markPrice);
+  return Number.isFinite(px) && px > 0 ? px : null;
 }
 
 // ── Shared scoring types & helpers ──
@@ -245,7 +247,8 @@ async function marketFundingHours(adapter: ExchangeAdapter, exchangeName: string
  */
 export const FUNDING_HISTORY_CAP: Readonly<Record<string, number>> = {
   // hyperliquid: fundingHistory pages forward, but `-l` above 5000 is refused (HL_FUNDING_HISTORY_MAX_LIMIT).
-  hyperliquid: 5000, lighter: 750, "lighter-rh": 750, arcus: 1000, aster: 1000, grvt: 10_000, extended: 10_000,
+  // pacifica: cursor paging, 4000 per page × 10 pages (PACIFICA_FUNDING_PAGE × PACIFICA_MAX_PAGES).
+  hyperliquid: 5000, pacifica: 40_000, lighter: 750, "lighter-rh": 750, arcus: 1000, aster: 1000, grvt: 10_000, extended: 10_000,
 };
 
 /** Throws INVALID_PARAMS when `periods` is not a positive integer or exceeds a leg venue's cap. */
