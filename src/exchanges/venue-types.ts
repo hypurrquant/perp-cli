@@ -152,6 +152,10 @@ const VENUE_MARKET_RATE_KIND: Partial<Record<VenueMarket["venue"], FundingRateKi
   grvt: "predicted",
   extended: "accruing",
   variational: "predicted",
+  // Ondo /v1/perps/contracts `fundingRate` is the last settled print: live 2026-10-19 21:17 UTC it
+  // equalled the 21:00 funding_rate_history row on every market whose rate moves (CXMT 0.0001139,
+  // BB 0.00003, PURR 0.0000182, WTI 0.0000038, USDJPY 0.000001 — each different from the 20:00 print).
+  ondo: "lastSettled",
 };
 
 export function fundingRateKindOf(venue: VenueMarket["venue"], fundingRate: string | null): FundingRateKind | null {
@@ -370,4 +374,15 @@ export function orderRefOf(r: Pick<OrderResult, "orderId" | "clientOrderId">): O
 export function parseOrderRef(s: string): OrderRef {
   if (s.startsWith("c:")) return { kind: "clientOrderId", value: s.slice(2) };
   return { kind: "orderId", value: s };
+}
+
+/**
+ * Next funding settlement of a venue that documents hourly settlement on the hour (UTC): the next
+ * top of the hour after `now`. Used only where the venue's docs say so — Hyperliquid ("paid every
+ * hour"), Lighter ("at each hour mark"), Pacifica ("at the end of each 1-hour interval") — and
+ * their settled history is stamped on the hour (live 2026-10-19: HL 18:00:00.139 … 21:00:00.032,
+ * Pacifica 18:00:02.674 … 21:00:02.574). Other venues keep null unless they publish the time.
+ */
+export function nextTopOfHourMs(now: number = Date.now()): number {
+  return (Math.floor(now / 3_600_000) + 1) * 3_600_000;
 }

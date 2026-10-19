@@ -52,6 +52,18 @@ describe("Lighter settled funding (market_stats snapshot)", () => {
     expect(rows.find(r => r.symbol === "BB")).toMatchObject({ assetClass: "unclassified", canonical: null });
     const rates = await lighterPublicData("lighter-rh").fetchFundingRates("mainnet");
     expect(rates.find(r => r.symbol === "BTC")).toMatchObject({ rate: "0.000012", basis: { kind: "perHours", hours: 1 }, markPrice: "100" });
+    // Docs: "Funding payments occur at each hour mark" — the next top of the hour (not published).
+    const next = rates.find(r => r.symbol === "BTC")!.nextFundingTime!;
+    expect(next % 3_600_000).toBe(0);
+    expect(next - Date.now()).toBeGreaterThan(0);
+    expect(next - Date.now()).toBeLessThanOrEqual(3_600_000);
+  });
+
+  it("nextTopOfHourMs: the next UTC hour mark, strictly after now", async () => {
+    const { nextTopOfHourMs } = await import("../../exchanges/venue-types.js");
+    expect(nextTopOfHourMs(Date.UTC(2026, 9, 19, 21, 17))).toBe(Date.UTC(2026, 9, 19, 22));
+    expect(nextTopOfHourMs(Date.UTC(2026, 9, 19, 21))).toBe(Date.UTC(2026, 9, 19, 22));
+    expect(nextTopOfHourMs(Date.UTC(2026, 9, 19, 23, 59, 59, 999))).toBe(Date.UTC(2026, 9, 20, 0));
   });
 
   it("a socket closed before the snapshot fails fast; the failure is remembered (no new socket) and named by the warning", async () => {

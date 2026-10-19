@@ -107,7 +107,7 @@ describe("market rows carry fundingRateKind (conformance U3)", () => {
     const { fundingRateKindOf } = await import("../../exchanges/venue-types.js");
     expect(fundingRateKindOf("arcus", "0.0000125")).toBe("lastSettled");
     expect(fundingRateKindOf("risex", "0.0000125")).toBe("lastSettled");
-    expect(fundingRateKindOf("ondo", "0.0000125")).toBeNull(); // not verified
+    expect(fundingRateKindOf("ondo", "0.0000125")).toBe("lastSettled"); // = the latest funding_rate_history print (live 2026-10-19)
     expect(fundingRateKindOf("arcus", null)).toBeNull(); // no rate → no kind
   });
 

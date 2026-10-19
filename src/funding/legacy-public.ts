@@ -39,6 +39,7 @@ import { canonicalFor } from "../exchanges/canonical-symbols.js";
 import { fundingBasisOf, settlementIntervalOf } from "../exchanges/venue.js";
 import type { VenuePublicData } from "../exchanges/venue.js";
 import type { AssetClass, Network, VenueFundingRate, VenueMarket } from "../exchanges/venue-types.js";
+import { nextTopOfHourMs } from "../exchanges/venue-types.js";
 
 export type LegacyPublicVenue = "pacifica" | "hyperliquid" | "aster";
 
@@ -183,7 +184,7 @@ async function pacificaRows(net: Network): Promise<Row[]> {
         session: null,
         tradable: true,
       },
-      nextFundingTime: null, // Pacifica publishes no next-funding timestamp
+      nextFundingTime: nextTopOfHourMs(), // not published; docs: settled at the end of each 1 h interval (on the hour)
     });
   }
   warnExcluded("pacifica", "market(s) without a mark price", unpriced);
@@ -248,7 +249,7 @@ async function hyperliquidRows(net: Network): Promise<Row[]> {
         session: null,
         tradable: true, // delisted assets are skipped above
       },
-      nextFundingTime: null, // not published in metaAndAssetCtxs
+      nextFundingTime: nextTopOfHourMs(), // not in metaAndAssetCtxs; docs: paid every hour (on the hour)
     });
   });
   warnExcluded("hyperliquid", "market(s) without a mark price", unpriced);

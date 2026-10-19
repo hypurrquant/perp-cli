@@ -404,7 +404,7 @@ describe("fetchSymbolFundingRates", () => {
 // ──────────────────────────────────────────────
 
 describe("Pacifica nextFundingTime guard", () => {
-  it("does not populate nextFundingTime even when API returns next_funding", async () => {
+  it("nextFundingTime is the next top of the hour (docs: hourly settlement), never the API's next_funding rate", async () => {
     // Pacifica's API exposes next_funding as a small decimal (rate). Mock it
     // here as a value that would clearly be invalid as a unix-ms timestamp
     // (negative + sub-millisecond).
@@ -418,9 +418,14 @@ describe("Pacifica nextFundingTime guard", () => {
     expect(btc).toBeTruthy();
     const pacEntry = btc!.rates.find(r => r.exchange === "pacifica");
     expect(pacEntry).toBeTruthy();
-    // The API's next_funding (a rate) MUST NOT leak into nextFundingTime. Contract (venue-types,
-    // SSOT Rule #2): an unpublished value is null, never undefined / a guessed timestamp.
-    expect(pacEntry!.nextFundingTime).toBeNull();
+    // The API's next_funding (a rate) MUST NOT leak into nextFundingTime. The time is not published;
+    // Pacifica documents settlement at the end of each 1 h interval (on the hour) — the next one.
+    const hour = 3_600_000;
+    expect(pacEntry!.nextFundingTime! % hour).toBe(0);
+    expect(pacEntry!.nextFundingTime! - Date.now()).toBeGreaterThan(0);
+    expect(pacEntry!.nextFundingTime! - Date.now()).toBeLessThanOrEqual(hour);
+    const hlEntry = btc!.rates.find(r => r.exchange === "hyperliquid")!;
+    expect(hlEntry.nextFundingTime).toBe(pacEntry!.nextFundingTime);
     // The compared rate is the last settled `funding` (legacy-public.ts pacificaRows), not the
     // predicted next_funding; the row says so.
     expect(pacEntry!.fundingRate).toBe(0.0001);

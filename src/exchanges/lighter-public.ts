@@ -35,6 +35,7 @@ import { isLighterMarketLive } from "../ws/lighter-market.js";
 import { isUnclassifiedTicker, LIGHTER_RH_CLASS } from "../ws/unclassified.js";
 import { addDecimal, mulDecimal } from "./precision.js";
 import type { AssetClass, FundingRateBasis, Network, VenueFundingRate, VenueMarket } from "./venue-types.js";
+import { nextTopOfHourMs } from "./venue-types.js";
 import type { VenuePublicData } from "./venue.js";
 import { lighterFamilyNetworks, lighterFamilyRateLimit } from "./venues/lighter-family.js";
 import type { LighterVenueId } from "./venues/lighter-family.js";
@@ -418,7 +419,7 @@ export function lighterPublicData(venue: LighterVenueId): VenuePublicData {
           rate,
           basis: BASIS_1H,
           markPrice: d.mark_price,
-          nextFundingTime: null, // not published
+          nextFundingTime: nextTopOfHourMs(), // not published; docs: "Funding payments occur at each hour mark"
         });
       }
       return out;
