@@ -249,6 +249,13 @@ const QFEX_NON_FUNDING_SESSIONS: ReadonlySet<string> = new Set(["weekend", "clos
  * closed when the venue printed exactly 0 AND no part of the hour was in a funding session
  * (anything but "weekend" / "close"). A non-zero rate is never marked closed, and a 0 inside a
  * session stays a real 0. No usable schedule → never closed.
+ *
+ * Known limits (review B2-4 / B2-5):
+ *  - market holidays are not in market_hours: a holiday inside a configured weekday session
+ *    (SAMSUNG-KRW on Hangul Day) prints the venue's 0 as a real-looking "0", marketClosed false;
+ *  - US equities fund in the weekday overnight gap (post_market → pre_market, docs "Sunday 20:00 –
+ *    Friday 20:00 ET"), so a gap is never closed by schedule alone — only an exact 0 there is, and
+ *    a genuine 0 rate in such a gap is (rarely) reported as closed.
  */
 export function qfexFundingWindowClosed(marketHours: Record<string, unknown> | null, windowStartMs: number, rate: number): boolean {
   if (rate !== 0) return false;

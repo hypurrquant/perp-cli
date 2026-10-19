@@ -329,6 +329,12 @@ perp --json arb scan --top 10 --hold-days 7 --bridge-cost 0 --size 100  # cost-a
 perp --json -e extended market list                          # Extended (read-only): rows carry assetClass, venueSymbol (TSLA_24_5-USD), tickSize, minSize, tradable, fundingRateKind "accruing"
 perp --json -e extended market funding BTC -l 24            # applied hourly prints: rateKind "lastSettled", intervalHours 1, annualizedPct
 perp --json arb scan --rates --include-unverified           # also show QFEX, TxFlow, Variational, GRVT and Extended (unverified funding; TxFlow rows apiStatus "unofficial"; display only, never ranked)
+perp --json -e qfex market funding AAPL -l 72               # hourly windows; outside the market's funding hours: rate null + marketClosed true (not a 0 rate)
+# QFEX marketClosed limits: (1) a market holiday INSIDE a configured session (e.g. SAMSUNG-KRW on
+# Hangul Day, a weekday) is not in market_hours, so its 0 prints as a real-looking rate "0" with
+# marketClosed false; (2) US equities DO fund in the weekday overnight gap (post_market → pre_market),
+# so only an exact 0 with no part of the hour in any funding session counts as closed — a real 0
+# in a gap would also read as closed. Averages / APRs skip marketClosed rows only.
 # netSpread / grossSpread = annualized % (netSpread = gross minus round-trip costs amortized over --hold-days)
 # spot-perp rows: netSpreadPct / grossSpreadPct, spotExchanges[], perpExchange, direction
 
