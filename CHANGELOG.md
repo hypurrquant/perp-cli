@@ -20,6 +20,9 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **GRVT trades / funding limits:** trades are newest first like every other venue (the venue answers oldest first); `--limit` outside 1..1000 (the measured server cap, no cursor) is `INVALID_PARAMS` instead of being clamped (0 / -5 became 1). Funding history sends the requested limit (it was clamped to 1000; the venue serves up to 10,000 in one answer).
 - **RISEx `market funding` capped at 168 rows:** the API defaults `start_time` to now − 7 d, so any `-l` ≥ 169 returned 168 rows. The window (`limit` hours back) is now sent explicitly and pages are followed with `page` / `has_next_page` (1000 rows per page).
 - **`perp market` arguments, one rule on every venue:** `--start` / `--end` take unix ms or an ISO date (`parseInt("2026-10-18")` read 2026 ms), and `--start` after `--end` is `INVALID_PARAMS` (GRVT answered `ok, []`); `--limit` / `-l` / `--depth` must be positive integers (GRVT turned 0 / -5 into 1 and `abc` into `ok, []`; TxFlow `-5` returned 295 rows). `market info` accepts the symbol forms `book` / `funding` accept (`BTC-PERP`, Extended `BTC-USD` / `TSLA_24_5-USD`, TxFlow `BTC-USDC`). `market book --depth` reaches the adapter (RISEx requested 50 levels always; now `depth`, max 250) and cuts the JSON book too. Venue trade caps are refused instead of silently clamped: RISEx 1000, Extended 50 (the endpoint has no limit). The human funding table labels the reference price "Price" (it is mark on GRVT / Aster, index on RISEx, oracle on Pacifica — it said "Oracle") and shows each row's interval.
+- **`arb scan --rates --include-unverified`:** a pair with an unverified-funding leg (QFEX, Variational, GRVT, Extended, TxFlow) showed `executable: true` although such venues are display only. `executable` is now false whenever a leg is read-only OR unverified, and rows (and MCP `get_funding_opportunities`) carry `unverifiedLegs`. `arb exec` / `arb auto` already refuse such legs (`assertFundingArbVenue`).
+- **`arb scan --gaps`** matched same-ticker listings that are different instruments (SAMSUNG / SKHYNIX: Pacifica ~166 USD vs Lighter 220,597, KRW-quoted → a 199.7 % "gap"). Each symbol's prices now pass the funding scan's median price-outlier guard (`MAX_PRICE_DEVIATION_PCT`, one stderr warning per symbol / venue) before a gap is computed; a symbol left with fewer than two agreeing venues is not shown.
+- **`arb scan` spread names:** spot-perp rows used `grossSpreadPct` / `netSpreadPct`, perp-perp / all rows `grossSpread` / `netSpread`. Every row now carries both names (same values).
 
 ### JSON contract changes
 
@@ -30,6 +33,9 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - TxFlow market rows: `volume24h` null → the venue's 24 h notional (string) where it trades.
 - GRVT `market trades`: row order newest first (was oldest first).
 - `market book --json`: `bids` / `asks` are cut to `--depth` (default 10) levels; they were the venue's full answer.
+- `arb scan --rates` / `--compare` rows and MCP opportunities gain `unverifiedLegs` (additive); `executable` is now false for pairs with an unverified-funding leg (it was true — plainly wrong per the documented "display only").
+- `arb scan` rows: spot-perp rows gain `grossSpread` / `netSpread`, perp-perp / all rows gain `grossSpreadPct` / `netSpreadPct` — additive.
+- `arb scan --gaps`: symbols whose venue prices disagree beyond the outlier guard are no longer listed.
 - `fundingHours` on hyperliquid / pacifica / lighter / lighter-rh market rows: null → 1 / 1 / 8 / 8.
 
 ## [0.15.0] — 2026-10-19

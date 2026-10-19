@@ -1456,6 +1456,7 @@ server.tool(
         // false = a leg is on a read-only venue (RISEx in this release): data only, not tradable here.
         executable: s.executable,
         readOnlyLegs: s.readOnlyLegs,
+        unverifiedLegs: s.unverifiedLegs,
         estHourlyIncomePerK: `$${s.estHourlyIncomeUsd.toFixed(4)}`,
         rates: s.rates.map(r => ({
           exchange: r.exchange,
