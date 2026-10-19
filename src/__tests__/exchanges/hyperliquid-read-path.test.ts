@@ -284,8 +284,8 @@ describe("marginTiers: single-tier tables (id < 50) emit the implicit tier", () 
     const { hl } = adapterWith(recorded());
     const m = await hl.getMarkets();
     const by = Object.fromEntries(m.map(x => [x.symbol, x]));
-    expect(by["kPEPE-PERP"].marginTiers?.length).toBeGreaterThan(0);
-    expect(by["BTC-PERP"].marginTiers?.[0]).toMatchObject({ lowerBound: 0, maxLeverage: 40 });
+    expect(by["kPEPE"].marginTiers?.length).toBeGreaterThan(0);
+    expect(by["BTC"].marginTiers?.[0]).toMatchObject({ lowerBound: 0, maxLeverage: 40 });
   });
 
   it("an id below 50 is a single tier with max leverage = id (docs \"Margin tiers\")", async () => {

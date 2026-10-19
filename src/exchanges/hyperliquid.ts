@@ -937,7 +937,10 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       const sym = String(asset.name);
       const szDec = this._szDecimalsMap.get(sym) ?? (asset.szDecimals !== undefined ? Number(asset.szDecimals) : null);
       return [{
-        symbol: sym,
+        // One symbol shape on every venue: the plain asset ("BTC"; HIP-3 "km:US500"), the
+        // venue's wire coin in venueSymbol. The internal "<COIN>-PERP" key is not shown.
+        symbol: sym.replace(/-PERP$/, ""),
+        venueSymbol: this._venueCoin(sym),
         markPrice: String(ctx.markPx ?? mids[sym] ?? "0"),
         indexPrice: ctx.oraclePx != null ? String(ctx.oraclePx) : null,
         fundingRate: ctx.funding != null ? String(ctx.funding) : null,
@@ -947,8 +950,9 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         openInterest: ctx.openInterest != null ? String(ctx.openInterest) : null,
         maxLeverage: Number(asset.maxLeverage ?? 50),
         sizeDecimals: szDec,
-        // HL has no separate lot-size field; the step is implied by szDecimals.
-        stepSize: null,
+        // HL has no separate lot-size field; the step is implied by szDecimals (10^-szDecimals,
+        // the same value the keyless MCP get_markets path states).
+        stepSize: szDec !== null && Number.isInteger(szDec) && szDec >= 0 ? (szDec === 0 ? "1" : `0.${"0".repeat(szDec - 1)}1`) : null,
         // HL funding is uniform: a fraction per 1 h (venue fundingRateBasis), core and HIP-3.
         fundingHours: 1,
         marginTiers: hlMarginTiersOf(asset.marginTableId, tierMap),

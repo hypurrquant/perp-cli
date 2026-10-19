@@ -125,7 +125,7 @@ describe("5. Hyperliquid delisted assets and unlisted coins", () => {
   it("getMarkets omits isDelisted assets (their zeroed funding / volume / OI are not market data)", async () => {
     const a = hl({ metaAndAssetCtxs: () => META, allMids: () => ({ BTC: "83000", MATIC: "0.37621" }) });
     const m = await a.getMarkets();
-    expect(m.map((x) => x.symbol)).toEqual(["BTC-PERP"]);
+    expect(m.map((x) => x.symbol)).toEqual(["BTC"]);
     expect(m[0]).toMatchObject({ openInterest: "100", fundingRate: "0.0000125" });
   });
 

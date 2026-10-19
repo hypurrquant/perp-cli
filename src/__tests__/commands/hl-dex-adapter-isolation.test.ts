@@ -64,7 +64,7 @@ describe("market list --hip3 leaves the native adapter intact", () => {
 
     // the xyz group is xyz's markets, not the native list served from a shared cache
     expect(env.data.hip3.xyz.map((m: { symbol: string }) => m.symbol)).toEqual(["xyz:XYZ100", "xyz:TSLA", "xyz:GOLD"]);
-    expect(env.data.main.map((m: { symbol: string }) => m.symbol)).toContain("BTC-PERP");
+    expect(env.data.main.map((m: { symbol: string }) => m.symbol)).toContain("BTC");
 
     // the native adapter is unchanged — checked first with the reads that do NOT reload an
     // empty asset map (sync symbol resolution / szDecimals, as order sizing uses them)
@@ -73,7 +73,7 @@ describe("market list --hip3 leaves the native adapter intact", () => {
     expect(hl.getSzDecimals("BTC")).toBe(5);
     expect(await hl.getAssetIndex("BTC")).toBe(0);
     await expect(hl.getAssetIndex("XYZ100")).rejects.toMatchObject({ structured: { code: "SYMBOL_NOT_FOUND" } });
-    expect((await hl.getMarkets()).map(m => m.symbol)).toContain("BTC-PERP");
+    expect((await hl.getMarkets()).map(m => m.symbol)).toContain("BTC");
   });
 });
 

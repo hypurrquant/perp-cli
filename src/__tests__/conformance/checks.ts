@@ -174,7 +174,12 @@ export function cellChecks(cmd: ReadCommand, exp: Expect, r: CliRun, ctx: { symb
   switch (cmd) {
     case "list":
     case "prices": return [...base, ...marketListChecks(r, ctx.symbol)];
-    case "info": return [...base, schemaCheck(r, MarketRow), { name: "symbol", run: () => (baseOf(String((r.envelope.data as { symbol?: unknown })?.symbol)) === ctx.symbol ? null : `info returned ${(r.envelope.data as { symbol?: unknown })?.symbol}`) }];
+    // One symbol shape on every venue: `market info BTC` answers `"symbol":"BTC"` — the plain
+    // asset, not a venue form ("BTC-PERP", "BTC-USD", "BTCUSDT"; those belong in venueSymbol).
+    case "info": return [...base, schemaCheck(r, MarketRow), { name: "symbol", run: () => {
+      const sym = (r.envelope.data as { symbol?: unknown })?.symbol;
+      return sym === ctx.symbol ? null : `info ${ctx.symbol} returned symbol ${JSON.stringify(sym)} (want the plain asset ${JSON.stringify(ctx.symbol)})`;
+    } }];
     case "funding": return [...base, ...fundingChecks(r)];
     case "book": return [...base, ...bookChecks(r)];
     case "trades": return [...base, ...tradesChecks(r, ctx.now)];

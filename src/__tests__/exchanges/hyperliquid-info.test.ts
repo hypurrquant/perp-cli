@@ -51,14 +51,16 @@ describe("native perps: raw coins on the wire, '-PERP' display names", () => {
     expect(book).toEqual({ bids: [["100", "1"]], asks: [["101", "2"]] });
   });
 
-  it("getMarkets keeps '<COIN>-PERP' symbols from raw metaAndAssetCtxs", async () => {
+  it("getMarkets lists plain coins (venueSymbol = the wire coin) from raw metaAndAssetCtxs", async () => {
     const { hl } = adapterWith({
       meta: () => META,
       metaAndAssetCtxs: () => [{ universe: META.universe, marginTables: [] }, [{ markPx: "50000", funding: "0.0000125" }, { markPx: "3000" }]],
       allMids: () => ({ BTC: "50001", ETH: "3001" }),
     });
     const m = await hl.getMarkets();
-    expect(m.map(x => x.symbol)).toEqual(["BTC-PERP", "ETH-PERP"]);
+    expect(m.map(x => x.symbol)).toEqual(["BTC", "ETH"]);
+    expect(m.map(x => (x as { venueSymbol?: string }).venueSymbol)).toEqual(["BTC", "ETH"]);
+    expect(m.map(x => x.stepSize)).toEqual(["0.00001", "0.0001"]); // 10^-szDecimals
     expect(m[0].markPrice).toBe("50000");
     expect(m[0].fundingRate).toBe("0.0000125");
   });
