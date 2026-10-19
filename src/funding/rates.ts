@@ -108,10 +108,13 @@ async function fetchVenueRates(def: VenueDefinition, net: Network): Promise<Exch
   const unpriced: string[] = [];
   for (const r of rows) {
     if (r.canonical === null) continue; // not matchable across venues
+    // Outside its funding hours (QFEX market_hours) a market has no rate: never ranked, snapshotted
+    // (saveFundingSnapshot) or averaged as a 0.
+    if (r.rate === null || r.marketClosed === true) continue;
     const markRaw = r.markPrice !== null ? r.markPrice : markBySymbol?.get(r.venueSymbol);
     const markPrice = markRaw === undefined ? NaN : Number(markRaw);
     if (!Number.isFinite(markPrice) || markPrice <= 0) { unpriced.push(r.symbol); continue; }
-    out.push(toExchangeRate(r, r.canonical, markPrice, def.fundingVerified, def.apiStatus.kind));
+    out.push(toExchangeRate({ ...r, rate: r.rate }, r.canonical, markPrice, def.fundingVerified, def.apiStatus.kind));
   }
   if (unpriced.length > 0) {
     console.warn(`[${def.id}] excluded ${unpriced.length} funding row(s) without a mark price: ${unpriced.join(", ")}`);
@@ -119,7 +122,7 @@ async function fetchVenueRates(def: VenueDefinition, net: Network): Promise<Exch
   return out;
 }
 
-function toExchangeRate(r: VenueFundingRate, canonical: string, markPrice: number, fundingVerified: boolean, apiStatus: "official" | "unofficial"): ExchangeFundingRate {
+function toExchangeRate(r: VenueFundingRate & { rate: string }, canonical: string, markPrice: number, fundingVerified: boolean, apiStatus: "official" | "unofficial"): ExchangeFundingRate {
   const fundingRate = Number(r.rate);
   if (!Number.isFinite(fundingRate)) {
     throw new PerpError("EXCHANGE_ERROR", `${r.venue} ${r.symbol}: non-numeric funding rate "${r.rate}"`);

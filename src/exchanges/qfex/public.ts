@@ -353,12 +353,16 @@ export function buildQfexFundingRates(
     }
     const mark = marks.get(c.ticker_id);
     const nextMs = typeof c.next_funding_rate_timestamp === "number" ? c.next_funding_rate_timestamp * 1000 : null;
+    // `funding_rate` is the implied rate of the window in progress, labelled by its END (the next
+    // top of the hour, = next_funding_rate_timestamp live) — the same window rule as history.
+    const marketClosed = qfexFundingWindowClosed(i.marketHours, Math.floor(nowMs / 3_600_000) * 3_600_000 + 3_600_000, Number(c.funding_rate));
     rates.push({
       venue: "qfex",
       venueSymbol: c.ticker_id,
       symbol: i.symbol,
       canonical: canonicalOf(i),
-      rate: c.funding_rate,
+      rate: marketClosed ? null : c.funding_rate,
+      marketClosed,
       basis: QFEX_FUNDING_BASIS,
       markPrice: mark === undefined ? null : mark.price,
       // A timestamp in the past is not a "next" funding time (seen on closed markets).

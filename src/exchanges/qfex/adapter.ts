@@ -1204,7 +1204,7 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
    * (the rate `market funding` / `perp funding` show), labelled fundingVerified false: QFEX funding
    * is unverified (Q4, display only). Market lists keep fundingRate null so no scan / bot reads it.
    */
-  async getMarketInfo(symbol: string): Promise<QfexMarketRow & { fundingVerified: false; fundingNote: string }> {
+  async getMarketInfo(symbol: string): Promise<QfexMarketRow & { fundingVerified: false; fundingNote: string; marketClosed: boolean | null }> {
     const i = await this.readableInstrument(symbol);
     const snap = await fetchQfexMarketStats(QFEX_ENDPOINTS[this.network].mdsWs, i.venueSymbol, QFEX_MDS_TIMEOUT_MS);
     const { markets } = buildQfexMarkets([i], snap, Date.now());
@@ -1214,6 +1214,8 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
     return {
       ...this.marketRow(markets[0], i, snap.volumeNotional),
       fundingRate: rates.length === 0 ? null : rates[0].rate,
+      // true = the window in progress is outside the market's funding hours (fundingRate null).
+      marketClosed: rates.length === 0 ? null : rates[0].marketClosed === true,
       fundingVerified: false,
       fundingNote: "QFEX funding rate UNVERIFIED (not confirmed against settled payments) — display only, never a basis for trading",
     };

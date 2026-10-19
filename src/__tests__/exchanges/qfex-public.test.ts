@@ -165,7 +165,8 @@ describe("funding rows (explicit, flagged reads only)", () => {
     const { rates, unlisted } = buildQfexFundingRates(instruments, contracts.data, snap.marks, NOW);
     expect(unlisted).toEqual([]);
     const aapl = rates.find(r => r.venueSymbol === "AAPL-USD")!;
-    expect(aapl).toMatchObject({ venue: "qfex", symbol: "AAPL", canonical: "AAPL", rate: "0", basis: { kind: "perHours", hours: 1 } });
+    // Captured Sun 2026-10-04 10:50 ET (weekend session): the venue's "0" is no funding → null + marketClosed.
+    expect(aapl).toMatchObject({ venue: "qfex", symbol: "AAPL", canonical: "AAPL", rate: null, marketClosed: true, basis: { kind: "perHours", hours: 1 } });
     expect(aapl.markPrice).toBe(snap.marks.get("AAPL-USD")!.price);
     expect(aapl.nextFundingTime).toBe(1791126000 * 1000);
     const cl = rates.find(r => r.venueSymbol === "CL-USD")!;
