@@ -309,6 +309,9 @@ export function buildQfexMarkets(
   const markets: VenueMarket[] = [];
   const activeWithoutMark: string[] = [];
   for (const i of instruments) {
+    // Listing policy: a DELISTED / INACTIVE market is not listed (per-symbol reads refuse it); only
+    // ACTIVE markets are, with tradable false when perp-cli cannot trade them (non-USD quote).
+    if (i.status !== "ACTIVE") continue;
     const mark = snap.marks.get(i.venueSymbol);
     if (mark === undefined) {
       if (i.status === "ACTIVE") activeWithoutMark.push(i.venueSymbol);

@@ -60,7 +60,7 @@ import { loadOndoCredentials, ONDO_APPROVE_REMEDIATION } from "./agent.js";
 import { OndoClient, type OndoCredentials } from "./client.js";
 import {
   fetchOndoMarketsWithStatus, fetchOndoTradingPairs, ondoMarketStatus, ondoPlainSymbol, ondoPublicData, ondoVenueSymbol, parseOndoTime, strOrNull,
-  type OndoMarketStatus, type OndoMarkPrice, type OndoTradingPair,
+  type OndoListedStatus, type OndoMarkPrice, type OndoTradingPair,
 } from "./public.js";
 
 // ── Raw shapes (OpenAPI rest-spec.json) ──
@@ -775,8 +775,8 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
 
   // ── Legacy ExchangeAdapter: market data ──
 
-  /** Legacy rows plus the listing state: `tradable` (status "active") and `status` (see OndoMarketStatus). */
-  async getMarkets(): Promise<Array<ExchangeMarketInfo & { tradable: boolean; status: OndoMarketStatus }>> {
+  /** Legacy rows of LISTED markets plus `tradable` (status "active") and `status` (active / closed / reduceOnly). */
+  async getMarkets(): Promise<Array<ExchangeMarketInfo & { tradable: boolean; status: OndoListedStatus }>> {
     return (await fetchOndoMarketsWithStatus(this.network)).map(r => ({ ...toLegacyMarketInfo(r.market), tradable: r.market.tradable, status: r.status }));
   }
 
@@ -784,7 +784,7 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
    * `market info` for one market, resolved with the Ondo normalizer (ondoVenueSymbol: "AAPL",
    * "AAPL-USD", "AAPL-USD.P", "AAPL-PERP"). A disabled market is refused like every per-symbol read.
    */
-  async getMarketInfo(symbol: string): Promise<ExchangeMarketInfo & { tradable: boolean; status: OndoMarketStatus }> {
+  async getMarketInfo(symbol: string): Promise<ExchangeMarketInfo & { tradable: boolean; status: OndoListedStatus }> {
     const market = (await this.pairOf(symbol)).market; // unlisted → SYMBOL_NOT_FOUND
     await this.readableMarket(market);
     const row = (await this.getMarkets()).find(m => m.symbol === ondoPlainSymbol(market));

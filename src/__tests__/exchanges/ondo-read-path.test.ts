@@ -70,10 +70,11 @@ describe("Ondo indexPrice", () => {
 });
 
 describe("Ondo listing state", () => {
-  it("disabled → tradable false, status disabled, fundingRate null; isClosed → status closed; live → active", async () => {
+  it("listing policy: disabled (OPENAI) is not listed; isClosed → listed, tradable false, status closed; live → active", async () => {
     const rows = await adapter().getMarkets();
     const by = (s: string) => rows.find(m => m.symbol === s);
-    expect(by("OPENAI")).toMatchObject({ tradable: false, status: "disabled", fundingRate: null, indexPrice: null });
+    expect(by("OPENAI")).toBeUndefined();
+    expect(rows.map(m => m.symbol).sort()).toEqual(["AAPL", "BTC", "CXMT"]);
     expect(by("CXMT")).toMatchObject({ tradable: false, status: "closed" });
     expect(by("BTC")).toMatchObject({ tradable: true, status: "active", fundingRate: "0.0000125" });
   });

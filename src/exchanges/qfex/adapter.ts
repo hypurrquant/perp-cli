@@ -168,7 +168,18 @@ export function plainNumber(n: unknown, what: string): string {
  * Prices are in `quoteAsset`; `volume24h` is USD (null for a non-USD quote — no FX rate published),
  * `volume24hQuote` the venue's 24h notional in `quoteAsset`.
  */
-export type QfexMarketRow = ExchangeMarketInfo & { tradable: boolean; status: string; quoteAsset: string; volume24hQuote: string | null };
+export type QfexMarketRow = ExchangeMarketInfo & { tradable: boolean; status: QfexListedStatus; quoteAsset: string; volume24hQuote: string | null };
+
+/**
+ * Why a LISTED (ACTIVE) market is or is not tradable through perp-cli: "active" = tradable;
+ * "nonUsdQuote" = quoted in KRW / JPY / CNY / SEK / HKD — readable, never ordered (USD sizing).
+ */
+export type QfexListedStatus = "active" | "nonUsdQuote";
+
+function qfexListedStatus(i: QfexInstrument): QfexListedStatus {
+  if (i.status !== "ACTIVE") throw new PerpError("EXCHANGE_ERROR", `QFEX ${i.venueSymbol} is ${i.status}; it is not listed`, { exchange: "qfex" });
+  return qfexTradable(i) ? "active" : "nonUsdQuote";
+}
 
 function listOf<T>(v: unknown, what: string): T[] {
   if (v === null || v === undefined) return []; // the venue encodes an empty list as JSON null
@@ -1194,7 +1205,7 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
   private marketRow(m: VenueMarket, i: QfexInstrument | undefined, volumeNotional: ReadonlyMap<string, string>): QfexMarketRow {
     if (i === undefined) throw new PerpError("EXCHANGE_ERROR", `QFEX ${m.venueSymbol} is missing from /refdata`, { exchange: "qfex" });
     return {
-      ...toLegacyMarketInfo(m), tradable: m.tradable, status: i.status, quoteAsset: i.quoteAsset,
+      ...toLegacyMarketInfo(m), tradable: m.tradable, status: qfexListedStatus(i), quoteAsset: i.quoteAsset,
       volume24hQuote: volumeNotional.get(i.venueSymbol) ?? null,
     };
   }

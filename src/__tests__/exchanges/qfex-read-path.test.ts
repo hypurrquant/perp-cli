@@ -115,13 +115,12 @@ describe("QFEX funding history: closed market hours", () => {
 });
 
 describe("QFEX listing state", () => {
-  it("DELISTED / INACTIVE markets are tradable false with their /refdata status; fundingRate null", async () => {
+  it("listing policy: DELISTED / INACTIVE markets are not listed; a non-USD ACTIVE market is listed, tradable false, status nonUsdQuote", async () => {
     const rows = await adapter().getMarkets();
     const by = (s: string) => rows.find(m => m.symbol === s);
-    expect(by("EUR")).toMatchObject({ tradable: false, status: "DELISTED", fundingRate: null });
-    expect(by("USD-JPY")).toMatchObject({ tradable: false, status: "INACTIVE", fundingRate: null });
-    expect(by("ZHIPU-HKD")).toMatchObject({ tradable: false, status: "INACTIVE" });
-    expect(by("AAPL")).toMatchObject({ tradable: true, status: "ACTIVE", quoteAsset: "USD" });
+    expect(rows.map(m => m.symbol).sort()).toEqual(["AAPL", "SAMSUNG-KRW"]); // EUR-USD, USD-JPY, ZHIPU-HKD left out
+    expect(by("SAMSUNG-KRW")).toMatchObject({ tradable: false, status: "nonUsdQuote", quoteAsset: "KRW", fundingRate: null });
+    expect(by("AAPL")).toMatchObject({ tradable: true, status: "active", quoteAsset: "USD" });
   });
 
   it("every per-symbol read of a non-ACTIVE market refuses with one error, before any market-data request", async () => {
@@ -154,7 +153,7 @@ describe("QFEX non-USD markets", () => {
 describe("QFEX market info funding", () => {
   it("shows the current /md/contracts rate, labelled unverified (market list stays null)", async () => {
     const info = await adapter().getMarketInfo("AAPL");
-    expect(info).toMatchObject({ symbol: "AAPL", fundingRate: "0.00000048", fundingVerified: false, status: "ACTIVE", tradable: true });
+    expect(info).toMatchObject({ symbol: "AAPL", fundingRate: "0.00000048", fundingVerified: false, status: "active", tradable: true });
     expect(info.fundingNote).toMatch(/UNVERIFIED/);
   });
 });
@@ -213,5 +212,16 @@ describe("QFEX non-USD candles", () => {
     const k = await adapter().getKlines("SAMSUNG-KRW", "1m", Date.parse("2026-10-19T11:00:00Z"), Date.parse("2026-10-19T11:02:00Z"));
     expect(k).toHaveLength(2);
     expect(k.every(r => r.quoteVolume === null)).toBe(true);
+  });
+});
+
+describe("listing policy: not-tradable reason (B2-3)", () => {
+  it("a non-USD QFEX market says why it is read-only, never the generic off-hours note", async () => {
+    const { notTradableNote } = await import("../../commands/market.js");
+    const krw = (await adapter().getMarkets()).find(m => m.symbol === "SAMSUNG-KRW")!;
+    expect(notTradableNote(krw)).toBe("Read-only in perp-cli: quoted in KRW (orders, sizing and risk limits are USD-only).");
+    expect(notTradableNote({ tradable: false, status: "closed" })).toMatch(/closed this market/);
+    expect(notTradableNote({ tradable: false })).toMatch(/off-hours/);
+    expect(notTradableNote({ tradable: true, status: "active" })).toBeNull();
   });
 });

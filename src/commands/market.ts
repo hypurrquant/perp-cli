@@ -562,8 +562,24 @@ export function registerMarketCommands(
     });
 }
 
+/**
+ * Why a listed market is not tradable, from the row's `status` when the venue states it (QFEX
+ * "nonUsdQuote", Ondo "closed" / "reduceOnly"); the generic off-hours text only when it does not.
+ * null = tradable or no tradability flag.
+ */
+export function notTradableNote(m: object): string | null {
+  const r = m as { tradable?: unknown; status?: unknown; quoteAsset?: unknown };
+  if (r.tradable !== false) return null;
+  if (r.status === "nonUsdQuote") return `Read-only in perp-cli: quoted in ${typeof r.quoteAsset === "string" ? r.quoteAsset : "a non-USD currency"} (orders, sizing and risk limits are USD-only).`;
+  if (r.status === "closed") return "Not tradable: the venue has closed this market to new trading.";
+  if (r.status === "reduceOnly") return "Reduce-only on the venue: positions can be closed, not opened.";
+  return "Not tradable right now (off-hours, reduce-only or halted on the venue).";
+}
+
 function printMarketInfo(venue: string, m: ExchangeMarketInfo): void {
   console.log(chalk.cyan.bold(`\n  ${m.symbol} on ${venue}\n`));
+  const note = notTradableNote(m);
+  if (note !== null) console.log(chalk.yellow(`  ${note}`));
   console.log(`  Mark Price:     ${priceOrDash(m.markPrice, m)}`);
   console.log(`  Index Price:    ${priceOrDash(m.indexPrice, m)}`);
   // Per-market funding interval (GRVT 4h / 8h, Variational, Aster): the rate carries its interval.

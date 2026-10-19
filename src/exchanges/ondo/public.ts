@@ -145,6 +145,8 @@ export function ondoVenueSymbol(symbol: string): string {
  * Only "active" is tradable.
  */
 export type OndoMarketStatus = "active" | "disabled" | "closed" | "reduceOnly";
+/** State of a LISTED market: a disabled one is not listed (listing policy: delisted / disabled / inactive → not listed). */
+export type OndoListedStatus = Exclude<OndoMarketStatus, "disabled">;
 
 export function ondoMarketStatus(pair: Pick<OndoTradingPair, "disabled">, contract: Pick<OndoContract, "disabled" | "isClosed" | "reduceOnly"> | null): OndoMarketStatus {
   if (pair.disabled === true || contract?.disabled === true) return "disabled";
@@ -249,8 +251,12 @@ function requireRow<T>(m: Map<string, T>, market: string, source: string): T {
   return row;
 }
 
-/** Every priced Ondo perp with its listing state (getMarkets rows carry `status`; VenueMarket has no field for it). */
-export async function fetchOndoMarketsWithStatus(net: Network): Promise<Array<{ market: VenueMarket; status: OndoMarketStatus }>> {
+/**
+ * Every listed Ondo perp with its state (getMarkets rows carry `status`; VenueMarket has no field
+ * for it). Disabled (delisted / paused) listings are NOT listed — per-symbol reads refuse them —
+ * while closed / reduce-only markets stay listed with tradable false.
+ */
+export async function fetchOndoMarketsWithStatus(net: Network): Promise<Array<{ market: VenueMarket; status: OndoListedStatus }>> {
   const client = ondoPublicClient(net);
   const pairs = await fetchOndoTradingPairs(client);
   const contracts = byMarket(await client.publicGet<OndoContract[]>("/v1/perps/contracts", null));
@@ -264,14 +270,16 @@ export async function fetchOndoMarketsWithStatus(net: Network): Promise<Array<{ 
     console.warn(`[ondo] excluded ${noMark.length} market(s) without a mark price: ${noMark.join(", ")}`);
   }
 
-  return pairs.filter(p => marks[p.market] !== undefined).map((pair): { market: VenueMarket; status: OndoMarketStatus } => {
+  const out: Array<{ market: VenueMarket; status: OndoListedStatus }> = [];
+  for (const pair of pairs.filter(p => marks[p.market] !== undefined)) {
     const contract = requireRow(contracts, pair.market, "/v1/perps/contracts");
     const mark = marks[pair.market];
     const symbol = ondoPlainSymbol(pair.market);
     const assetClass = ondoAssetClass(pair.market, pair.tags);
     const { maxLeverage, tiers } = marginTiersOf(pair);
     const status = ondoMarketStatus(pair, contract);
-    return { status, market: {
+    if (status === "disabled") continue;
+    out.push({ status, market: {
       venue: "ondo",
       venueSymbol: pair.market,
       symbol,
@@ -282,10 +290,8 @@ export async function fetchOndoMarketsWithStatus(net: Network): Promise<Array<{ 
       markPrice: mark.markPrice,
       // /v1/perps/contracts `indexPrice` is frozen (live 2026-10-19: BTC 82702.30 unchanged for 17 min
       // while the mark_prices oracle moved 0.5%); the oracle of /v1/perps/mark_prices is the live index.
-      // A disabled listing's oracle is frozen too (OPENAI-USD.P 1600) → no index.
-      indexPrice: status === "disabled" ? null : priceOrNull(mark.oraclePrice),
-      // A disabled listing's rate is stale (fetchFundingRates skips it too): no current rate.
-      fundingRate: status === "disabled" ? null : strOrNull(contract.fundingRate),
+      indexPrice: priceOrNull(mark.oraclePrice),
+      fundingRate: strOrNull(contract.fundingRate),
       fundingRateBasis: ONDO_FUNDING_BASIS,
       settlementIntervalHours: ONDO_SETTLEMENT_HOURS,
       openInterest: strOrNull(contract.openInterest),
@@ -298,8 +304,9 @@ export async function fetchOndoMarketsWithStatus(net: Network): Promise<Array<{ 
       marginTiers: tiers,
       session: sessionOf(pair, mark),
       tradable: status === "active",
-    } };
-  });
+    } });
+  }
+  return out;
 }
 
 async function fetchMarkets(net: Network): Promise<VenueMarket[]> {
