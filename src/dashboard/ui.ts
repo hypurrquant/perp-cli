@@ -236,6 +236,8 @@ function connect() {
 // ── Helpers ──
 function fmt(v, d=2) { const n=Number(v)||0; return n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}); }
 function usdOrDash(v, d=2) { return v==null ? '-' : '$'+fmt(v,d); }
+// Market row cells: prices in the row's quote currency (QFEX SAMSUNG-KRW: "220,150.00 KRW", never $); OI is BASE units (never $); funding null = "-" (not 0%).
+function marketCells(m) { const q=(typeof m.quoteAsset==='string'&&m.quoteAsset!=='USD')?m.quoteAsset:null; const px=(v,d=2)=>v==null?'-':(q===null?'$'+fmt(v,d):fmt(v,d)+' '+q); const vol=m.volume24h==null&&typeof m.volume24hQuote==='string'?px(m.volume24hQuote,0):usdOrDash(m.volume24h,0); const base=String(m.symbol).split(':').pop().replace(/-PERP$/i,''); return { mark: px(m.markPrice), index: px(m.indexPrice), funding: m.fundingRate==null?'-':(Number(m.fundingRate)*100).toFixed(4)+'%', volume: vol, oi: m.openInterest==null?'-':Number(m.openInterest).toLocaleString('en-US',{maximumFractionDigits:4})+' '+base }; }
 function pnlClass(v) { return Number(v)>=0?'pnl-pos':'pnl-neg'; }
 function pnlSign(v) { const n=Number(v)||0; return n>=0?'+$'+fmt(Math.abs(n)):'-$'+fmt(Math.abs(n)); }
 function rateClass(v) { const n=Number(v)||0; return n>0?'rate-positive':n<0?'rate-negative':'rate-neutral'; }
@@ -335,7 +337,7 @@ function renderPanels(exchanges) {
         return \`<tr>\${isHL?\`<td style="color:var(--purple);font-size:11px">\${dex}</td>\`:''}<td>\${sym}</td><td class="side-\${o.side}">\${o.side.toUpperCase()}</td><td>\${o.type}</td><td>$\${fmt(o.price)}</td><td>\${o.size}</td><td>\${o.filled}</td><td>\${o.status}</td></tr>\`;
       }).join('')}</tbody></table>\`:(ordKnown?'<div class="empty-msg">No open orders</div>':'<div class="empty-msg">Open orders '+NA+'</div>')}
       <div class="section-title">Markets (Top 10)</div>
-      \${ex.topMarkets.length?\`<table><thead><tr><th>Symbol</th><th>Mark</th><th>Index</th><th>Funding</th><th>24h Vol</th><th>OI</th><th>Max Lev</th></tr></thead><tbody>\${ex.topMarkets.map(m=>{const fr=Number(m.fundingRate);return\`<tr><td>\${m.symbol}</td><td>$\${fmt(m.markPrice)}</td><td>\${usdOrDash(m.indexPrice)}</td><td class="\${rateClass(fr)}">\${(fr*100).toFixed(4)}%</td><td>\${usdOrDash(m.volume24h,0)}</td><td>\${usdOrDash(m.openInterest,0)}</td><td>\${m.maxLeverage==null?'-':m.maxLeverage+'x'}</td></tr>\`;}).join('')}</tbody></table>\`:'<div class="empty-msg">No market data</div>'}
+      \${ex.topMarkets.length?\`<table><thead><tr><th>Symbol</th><th>Mark</th><th>Index</th><th>Funding</th><th>24h Vol</th><th>OI</th><th>Max Lev</th></tr></thead><tbody>\${ex.topMarkets.map(m=>{const fr=Number(m.fundingRate);const c=marketCells(m);return\`<tr><td>\${m.symbol}</td><td>\${c.mark}</td><td>\${c.index}</td><td class="\${rateClass(fr)}">\${c.funding}</td><td>\${c.volume}</td><td>\${c.oi}</td><td>\${m.maxLeverage==null?'-':m.maxLeverage+'x'}</td></tr>\`;}).join('')}</tbody></table>\`:'<div class="empty-msg">No market data</div>'}
     </div>\`;
   }).join('');
 

@@ -79,6 +79,12 @@ export interface QfexContractRow {
   next_funding_rate_timestamp: number;
   /** Index (reference spot) price in the quote currency — see the module header. */
   index_price?: string;
+  /**
+   * NOT USD on a non-USD market despite the name: live 2026-10-19 SAMSUNG-KRW 1,234,418 =
+   * open_interest 5.58 × index 221,118 → KRW (as is target_volume). Nothing reads it; never wire it
+   * up as a USD figure. OI is reported in base units (VenueMarket.openInterest, MDS open_interests).
+   */
+  open_interest_usd?: string;
 }
 
 /** One instrument, as order entry needs it — from /refdata only. */
