@@ -32,8 +32,7 @@ import { PerpError } from "../errors.js";
 import { acquireRate, rateLimitedError } from "./rate-limiter.js";
 import { canonicalFor } from "./canonical-symbols.js";
 import { isLighterMarketLive } from "../ws/lighter-market.js";
-import { addDecimal } from "./precision.js";
-import { shiftDecimal } from "../ws/dec.js";
+import { addDecimal, mulDecimal } from "./precision.js";
 import type { AssetClass, FundingRateBasis, Network, VenueFundingRate, VenueMarket } from "./venue-types.js";
 import type { VenuePublicData } from "./venue.js";
 import { lighterFamilyNetworks, lighterFamilyRateLimit } from "./venues/lighter-family.js";
@@ -264,12 +263,11 @@ export interface LighterFundingStat {
   predictedRate: string | null;
 }
 
-/** market_stats rates are PERCENT per 1 h (codec notes): an exact 2-place decimal shift. */
+/** market_stats rates are PERCENT per 1 h (codec notes): exact × 0.01. */
 function percentToFraction(v: unknown): string | null {
   const s = typeof v === "string" ? v.trim() : typeof v === "number" && Number.isFinite(v) ? String(v) : null;
-  if (s === null || s === "") return null;
-  const f = shiftDecimal(s, -2);
-  return f === undefined ? null : f;
+  if (s === null || !/^-?\d+(\.\d+)?$/.test(s)) return null;
+  return mulDecimal(s, "0.01"); // exact (no float)
 }
 
 const STATS_TTL_MS = 10_000;
