@@ -304,6 +304,8 @@ function signingSummary(p: ApproveAgentParams, master: { evm: string | null; sol
       return [`Nothing — ${VARIATIONAL_READ_ONLY_REMEDIATION}.`];
     case "grvt":
       return ["Nothing — GRVT is read-only (market data) in this version; trading is planned for a later release."];
+    case "extended":
+      return ["Nothing — Extended is read-only (market data) in this version; trading is planned for a later release."];
   }
 }
 

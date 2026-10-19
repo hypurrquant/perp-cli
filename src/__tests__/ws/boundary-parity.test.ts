@@ -24,9 +24,10 @@ const CODECS = [hyperliquid, pacifica, lighter, lighterRh, aster, arcus];
 /**
  * CLI venues with no perp-cli/ws codec yet. Explicit and test-visible: ondo/qfex arrive in 0.15.1;
  * risex/txflow are CLI venues without a ws codec; variational documents no WebSocket at all;
- * grvt has per-instrument selectors only (no all-markets stream) and 150 concurrent streams < its 184 perps.
+ * grvt has per-instrument selectors only (no all-markets stream) and 150 concurrent streams < its 184 perps; extended opens one socket per stream URL
+ * with no subscribe frame (see skills/perp-cli/references/ws-library.md).
  */
-const CLI_VENUES_WITHOUT_WS = ["ondo", "qfex", "risex", "txflow", "variational", "grvt"];
+const CLI_VENUES_WITHOUT_WS = ["ondo", "qfex", "risex", "txflow", "variational", "grvt", "extended"];
 
 function tsFiles(dir: string): string[] {
   return readdirSync(dir).flatMap(n => {

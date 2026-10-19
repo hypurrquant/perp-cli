@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dw/perp-cli.svg)](https://www.npmjs.com/package/perp-cli)
 [![license](https://img.shields.io/npm/l/perp-cli.svg)](https://github.com/hypurrquant/perp-cli/blob/main/LICENSE)
 
-Multi-DEX perpetual futures CLI — **Pacifica** (Solana), **Hyperliquid** (HyperEVM), **Lighter** (Ethereum), **Aster** (BNB Chain), **Lighter RH** (Robinhood chain), **Ondo Perps** (off-chain), **Arcus** (Robinhood chain), **QFEX** (off-chain, TradFi perps), **RISEx** (RISE chain — read-only in 0.15.0, trading in a later release), **TxFlow** (market data only — unofficial API), **Variational Omni** (market data only — official API, RFQ venue), **GRVT** (market data only — official API; trading in a later release), and **Derive** options data (read-only).
+Multi-DEX perpetual futures CLI — **Pacifica** (Solana), **Hyperliquid** (HyperEVM), **Lighter** (Ethereum), **Aster** (BNB Chain), **Lighter RH** (Robinhood chain), **Ondo Perps** (off-chain), **Arcus** (Robinhood chain), **QFEX** (off-chain, TradFi perps), **RISEx** (RISE chain — read-only in 0.15.0, trading in a later release), **TxFlow** (market data only — unofficial API), **Variational Omni** (market data only — official API, RFQ venue), **GRVT** (market data only — official API; trading in a later release), **Extended** (Starknet, market data only — official API; trading in a later release), and **Derive** options data (read-only).
 
 ```bash
 npm install -g perp-cli       # global install
@@ -16,7 +16,7 @@ npx -y perp-cli --json portfolio
 
 ## Features
 
-- **12 perp venues** — trade on 8: Pacifica, Hyperliquid, Lighter, Aster, Lighter RH, Ondo Perps, Arcus, QFEX (bridge / perp-perp arb cover the original four); market data on RISEx (read-only in 0.15.0, trading in a later release) TxFlow (unofficial API, read-only), Variational (official API, read-only — no public trading API yet) and GRVT (official API, read-only in this version — trading in a later release); plus **Derive** options data (read-only). See the [support matrix](#support-matrix)
+- **13 perp venues** — trade on 8: Pacifica, Hyperliquid, Lighter, Aster, Lighter RH, Ondo Perps, Arcus, QFEX (bridge / perp-perp arb cover the original four); market data on RISEx (read-only in 0.15.0, trading in a later release) TxFlow (unofficial API, read-only), Variational (official API, read-only — no public trading API yet) GRVT (official API, read-only in this version — trading in a later release) and Extended (official API, read-only in this version — trading in a later release); plus **Derive** options data (read-only). See the [support matrix](#support-matrix)
 - **Funding Rate Arb** — perp-perp + spot-perp scan & one-command dual-leg execution
 - **Portfolio** — single call returns balances, positions, risk level across all exchanges
 - **Funds** — deposit, withdraw, transfer, multi-provider bridge (cctp/relay/debridge), inter-exchange rebalance — all in one group
@@ -42,6 +42,7 @@ What each venue supports in this release, derived from the code (venue definitio
 | TxFlow | ✅ | unverified (display only, `--include-unverified`) | — | — (market data only) | — | — | — | **unofficial** |
 | Variational | ✅ (`market book` = RFQ quotes, not an order book) | unverified (display only, `--include-unverified`); interval per market (1h / 4h / 8h) | — | — (market data only) | — | — | equities / ETFs / commodities; pre-IPO (not matched) | official |
 | GRVT | ✅ | unverified (display only, `--include-unverified`); interval per market (4h / 8h) | — (per-instrument streams only) | — (market data only in this version; trading in a later release) | — | — | equities / ETFs, commodities; pre-IPO not matched | official |
+| Extended | ✅ (crypto plus equities / ETFs / commodities / indices / FX) | unverified (display only, `--include-unverified`), hourly; `_24_5` equities print 0 off-hours | — (one socket per stream; not supported yet) | — (read-only in 0.15.0) | — | — | asset-class column; pre-IPO and ambiguous tickers not matched | official |
 | Derive | options only (`perp -e derive options …`) | — | — | — (**read-only**; trading in a later release) | — | — | options: underlyings, expiries, chain (IV, greeks), quote | official |
 
 - **Funding** ✅ = the rate's unit is verified against settled payments (`fundingVerified`), so the venue takes part in `arb scan` and funding strategies; unverified venues are shown only with `--include-unverified`, never ranked or traded.
@@ -138,6 +139,7 @@ Secrets are stored once (see `docs/SSOT_RULES.md` Rule #3): Lighter RH → `~/.p
 | RISEx | `risex` (`rise`) | **no — read-only in 0.15.0** (trading in a later release; see **RISEx** below) | Fully on-chain order book on RISE chain, USDC; official API. Market data, funding and account reads by address; every trade / agent / bot path → `CAPABILITY_UNSUPPORTED`; deposits / withdrawals in the RISEx app only |
 | Variational | `variational` (`var`, `omni`) | **no — market data only** (see **Variational** below) | Variational Omni, an RFQ venue (one market maker, no order book); official read-only API, no public trading API yet. Funding is unverified (shown only with `--include-unverified`); restricted: US, CA and others |
 | GRVT | `grvt` (`grv`) | **no — market data only in this version** (trading in a later release; see **GRVT** below) | Hybrid perps exchange, USDT collateral; official Market Data API. Funding is unverified (shown only with `--include-unverified`); testnet = `-n testnet`; trading needs KYC; restricted: US, CA, SG, HK and others |
+| Extended | `extended` (`ext`, `x10`) | **no — market data only in this version** (trading in a later release; see **Extended** below) | Perps order book on Starknet (formerly X10), USD collateral; official public API. Crypto plus RWA (equities, ETFs, indices, commodities, FX). Funding is unverified (shown only with `--include-unverified`); testnet = Sepolia (`-n testnet`); restricted: US, GB, CA, HK and others |
 | TxFlow | `txflow` (`txf`) | **no — market data only** | **UNOFFICIAL API**: TxFlow has no official API yet; perp-cli reads the undocumented API its web app uses. It may change or break without notice. Funding is unverified (shown only with `--include-unverified`) |
 
 - **Time in force:** `trade limit` defaults to `GTC` on every venue (common names `GTC | IOC | FOK | ALO`; a TIF the venue does not offer → `CAPABILITY_UNSUPPORTED`). Lighter post-only (`ALO`) is disabled until verified on the venue.
@@ -173,7 +175,7 @@ Every mark below comes from a real-money mainnet run, not from code reading — 
 | Deposit via perp-cli | ✅ | (HL) | ✅ | ✅ | ✅ | ✅ | ✅ | — (web app) | — (address only) |
 | Withdraw (to your own address)⁶ | ✅ | (HL) | ✅ | ✅ | ✅ | ✅ (`--asset USDC`) | ⛔⁴ | ✅ | ⛔⁵ |
 
-RISEx, TxFlow, Variational and GRVT are not in this table: none trades in this release. RISEx trading (shipped but disabled in 0.15.0) was exercised on **testnet** only (2026-10-14); no mainnet RISEx order has been run.
+RISEx, TxFlow, Variational, GRVT and Extended are not in this table: none trades in this release. RISEx trading (shipped but disabled in 0.15.0) was exercised on **testnet** only (2026-10-14); no mainnet RISEx order has been run.
 
 ² perp-cli has no native TWAP for this venue: `trade twap` runs the client-side TWAP (slices) instead. Whether the venue's API offers one is not checked.  
 ³ Verified in the session; no saved log file.  
@@ -295,6 +297,23 @@ perp health                                       # probed as an official venue
 - **Symbols:** crypto by ticker; equities / ETFs by ticker from a reviewed list; XAU / XAG / CL / BZ → GOLD / SILVER / WTI / Brent; pre-IPO markets (OPENAI, ANTHROPIC, SPACEX) and ambiguous tickers are never matched across venues. No lot step is published (`stepSize` null); max leverage comes from GRVT's margin rules (`market list|prices|info`, cached up to 6 h — `leverageAsOf`).
 - **Requests:** GRVT has no bulk ticker, so a full market read is one ticker per market (~185 requests, ~5 s), reused for 15 s; documented limits (1500 / min for tickers, 500 / min otherwise) are enforced by the venue limiter.
 - **Refused** (`CAPABILITY_UNSUPPORTED`, "GRVT is read-only (market data) in this version; trading is planned for a later release", before any request — also under `--dry-run`): every trade / account / portfolio / funds / agent / builder / strategy / arb exec command, `setup --venues grvt`, and every MCP account or trading tool. No `perp-cli/ws` codec (GRVT streams are per instrument, capped below its market count).
+
+### Extended (market data only — official API)
+
+Extended (formerly X10) is a perps order book on Starknet (USD collateral) listing crypto and RWA markets (equities, ETFs, indices, commodities, FX). perp-cli reads its **official**, keyless public API (`https://api.starknet.extended.exchange/api/v1`; testnet Sepolia `-n testnet`). In this version Extended is read-only; trading is planned for a later release.
+
+```bash
+perp -e extended market list | prices | info <SYM>   # base tickers (BTC, TSLA, SPX500M); wire names (TSLA_24_5-USD) also accepted
+perp -e extended market book TSLA                     # order book (RFQ markets: the indicative book)
+perp -e extended market funding ETH                   # applied hourly funding prints
+perp -e extended market trades | kline BTC …          # public tape / candles
+perp arb scan --rates --include-unverified            # Extended funding rows, display only
+perp health                                           # probed as an official venue
+```
+
+- **Funding is unverified:** applied once per hour, a fraction per hour rounded to 6 decimals. Market rows carry the current hour's accruing rate (`fundingRateKind: "accruing"`); `market funding` shows the applied prints. It has not been checked against an account's funding payments, and `_24_5` equities print 0 while their underlying is closed, so it is shown only with `--include-unverified` — never ranked or traded.
+- **Symbols:** the asset name without the `_24_5` suffix (`TSLA_24_5-USD` → `TSLA`); `market list` shows an asset-class column. Crypto by ticker; equities / ETFs by ticker; XAU / XAG / WTI / XBR → GOLD / SILVER / WTI / Brent, SPX500M / TECH100M → SPX / NDX. Pre-IPO markets, RWA tickers that are crypto tickers elsewhere (PURR, QNT, BB, ON, ADI, BOT), XIAOMI and the crypto `SPX` (SPX6900) are never matched across venues.
+- **Refused** (`CAPABILITY_UNSUPPORTED`, "Extended is read-only (market data) in this version; trading is planned for a later release", before any request — also under `--dry-run`): every trade / account / portfolio / funds / agent / builder / strategy / arb exec command, `setup --venues extended`, and every MCP account or trading tool. No `perp-cli/ws` codec (Extended streams are one socket per stream URL, with no subscribe frame).
 
 ### Options market data — Derive (read-only)
 

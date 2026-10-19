@@ -1,0 +1,147 @@
+{
+ "_source": "Live mainnet 2026-10-19 (UTC 2026-10-18 17:21\u201318:02): GET /api/v1/info/markets?market=\u2026 every 20 s up to the 18:00 UTC settlement (marketStats.fundingRate, marketStats.nextFundingRate), then GET /api/v1/info/<market>/funding (applied prints). Public market data only.",
+ "settlementTime": 1792346400000,
+ "samplesBefore": 117,
+ "samplesAfter": 6,
+ "settlements": [
+  {
+   "market": "ENA-USD",
+   "lastAccruing": "0.000013",
+   "lastAccruingAt": 1792346394193,
+   "applied": "0.000013",
+   "appliedAt": 1792346400849,
+   "nextFundingTimeBefore": 1792346400000,
+   "firstAccruingAfter": "0.000013",
+   "nextFundingTimeAfter": 1792350000000,
+   "firstAccruingInWindow": "0.000009",
+   "firstAccruingAt": 1792344051530,
+   "distinctAccruingValuesInWindow": [
+    "0.000008",
+    "0.000009",
+    "0.000010",
+    "0.000011",
+    "0.000012",
+    "0.000013"
+   ]
+  },
+  {
+   "market": "BTC-USD",
+   "lastAccruing": "0.000013",
+   "lastAccruingAt": 1792346394193,
+   "applied": "0.000013",
+   "appliedAt": 1792346400849,
+   "nextFundingTimeBefore": 1792346400000,
+   "firstAccruingAfter": "0.000013",
+   "nextFundingTimeAfter": 1792350000000,
+   "firstAccruingInWindow": "0.000013",
+   "firstAccruingAt": 1792344051530,
+   "distinctAccruingValuesInWindow": [
+    "0.000013"
+   ]
+  },
+  {
+   "market": "ETH-USD",
+   "lastAccruing": "0.000013",
+   "lastAccruingAt": 1792346394193,
+   "applied": "0.000013",
+   "appliedAt": 1792346400849,
+   "nextFundingTimeBefore": 1792346400000,
+   "firstAccruingAfter": "0.000013",
+   "nextFundingTimeAfter": 1792350000000,
+   "firstAccruingInWindow": "0.000013",
+   "firstAccruingAt": 1792344051530,
+   "distinctAccruingValuesInWindow": [
+    "0.000013"
+   ]
+  },
+  {
+   "market": "SOL-USD",
+   "lastAccruing": "-0.000004",
+   "lastAccruingAt": 1792346394193,
+   "applied": "-0.000004",
+   "appliedAt": 1792346400849,
+   "nextFundingTimeBefore": 1792346400000,
+   "firstAccruingAfter": "-0.000004",
+   "nextFundingTimeAfter": 1792350000000,
+   "firstAccruingInWindow": "-0.000003",
+   "firstAccruingAt": 1792344051530,
+   "distinctAccruingValuesInWindow": [
+    "-0.000001",
+    "-0.000002",
+    "-0.000003",
+    "-0.000004"
+   ]
+  },
+  {
+   "market": "DOGE-USD",
+   "lastAccruing": "0.000013",
+   "lastAccruingAt": 1792346394193,
+   "applied": "0.000013",
+   "appliedAt": 1792346400849,
+   "nextFundingTimeBefore": 1792346400000,
+   "firstAccruingAfter": "0.000013",
+   "nextFundingTimeAfter": 1792350000000,
+   "firstAccruingInWindow": "0.000013",
+   "firstAccruingAt": 1792344051530,
+   "distinctAccruingValuesInWindow": [
+    "0.000013"
+   ]
+  },
+  {
+   "market": "XAU-USD",
+   "lastAccruing": "0.000004",
+   "lastAccruingAt": 1792346394193,
+   "applied": "0.000004",
+   "appliedAt": 1792346400849,
+   "nextFundingTimeBefore": 1792346400000,
+   "firstAccruingAfter": "0.000004",
+   "nextFundingTimeAfter": 1792350000000,
+   "firstAccruingInWindow": "0.000004",
+   "firstAccruingAt": 1792344051530,
+   "distinctAccruingValuesInWindow": [
+    "0.000004"
+   ]
+  },
+  {
+   "market": "TSLA_24_5-USD",
+   "lastAccruing": "-0.000010",
+   "lastAccruingAt": 1792346394193,
+   "applied": "-0.00001",
+   "appliedAt": 1792346400849,
+   "nextFundingTimeBefore": 1792346400000,
+   "firstAccruingAfter": "-0.000010",
+   "nextFundingTimeAfter": 1792350000000,
+   "firstAccruingInWindow": "0.000000",
+   "firstAccruingAt": 1792344051530,
+   "distinctAccruingValuesInWindow": [
+    "-0.000001",
+    "-0.000002",
+    "-0.000003",
+    "-0.000004",
+    "-0.000005",
+    "-0.000006",
+    "-0.000007",
+    "-0.000008",
+    "-0.000009",
+    "-0.000010",
+    "0.000000"
+   ]
+  },
+  {
+   "market": "HYPE-USD",
+   "lastAccruing": "0.000013",
+   "lastAccruingAt": 1792346394193,
+   "applied": "0.000013",
+   "appliedAt": 1792346400849,
+   "nextFundingTimeBefore": 1792346400000,
+   "firstAccruingAfter": "0.000013",
+   "nextFundingTimeAfter": 1792350000000,
+   "firstAccruingInWindow": "0.000013",
+   "firstAccruingAt": 1792344051530,
+   "distinctAccruingValuesInWindow": [
+    "0.000013"
+   ]
+  }
+ ],
+ "note": "lastAccruing = marketStats.fundingRate in the last sample before the hour; applied = the /info/<market>/funding print at the hour. distinctAccruingValuesInWindow shows the rate moving within the hour (accruing, recomputed every minute)."
+}

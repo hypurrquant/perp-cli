@@ -1,0 +1,1713 @@
+{
+ "_source": "GET https://api.starknet.extended.exchange/api/v1/info/markets (live 2026-10-19; subset of 407 rows; riskFactorConfig trimmed to 3 available + 1 unavailable tier; deleverageLevels dropped). Public market data, no account data.",
+ "status": "OK",
+ "data": [
+  {
+   "name": "ENA-USD",
+   "type": "PERPETUAL",
+   "uiName": "ENA-USD",
+   "category": "Crypto",
+   "subCategory": "DeFi",
+   "assetName": "ENA",
+   "assetPrecision": 0,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "Ethena",
+   "active": true,
+   "isRfq": false,
+   "isOffHours": false,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "1827567.558200",
+    "dailyVolumeBase": "9865760",
+    "dailyPriceChange": "-0.00366",
+    "dailyPriceChangePercentage": "-0.0196",
+    "dailyLow": "0.17956",
+    "dailyHigh": "0.19261",
+    "lastPrice": "0.18316",
+    "askPrice": "0.18196",
+    "bidPrice": "0.18195",
+    "markPrice": "0.18191367585",
+    "indexPrice": "0.18203352345",
+    "fundingRate": "0.000009",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "712405.434095",
+    "openInterestBase": "3913380"
+   },
+   "tradingConfig": {
+    "minOrderSize": "100",
+    "minOrderSizeChange": "10",
+    "minPriceChange": "0.00001",
+    "maxMarketOrderValue": "500000",
+    "maxLimitOrderValue": "2500000",
+    "maxPositionValue": "7000000",
+    "maxLeverage": "50.00",
+    "hourlyFundingRateCap": "0.5",
+    "openInterestLimit": "0",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.02",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "1000000",
+      "riskFactor": "0.04",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "1500000",
+      "riskFactor": "0.06",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "7500000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x454e412d3000000000000000000000",
+    "syntheticResolution": 1,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "null",
+   "createdAt": 1752829532673
+  },
+  {
+   "name": "SHOP-USD",
+   "type": "PERPETUAL",
+   "uiName": "SHOP-USD",
+   "category": "RWA",
+   "subCategory": "Equity",
+   "assetName": "SHOP",
+   "assetPrecision": 2,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "Shopify",
+   "active": true,
+   "isRfq": true,
+   "isOffHours": true,
+   "status": "ACTIVE",
+   "tradingHours": "NO_OVERNIGHT",
+   "marketStats": {
+    "dailyVolume": "0.000000",
+    "dailyVolumeBase": "0.00",
+    "dailyPriceChange": "0",
+    "dailyPriceChangePercentage": "0",
+    "dailyLow": "0",
+    "dailyHigh": "0",
+    "lastPrice": "169.490",
+    "askPrice": "174.059",
+    "bidPrice": "163.853",
+    "markPrice": "168.955",
+    "indexPrice": "168.955",
+    "fundingRate": "0.000026",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "456103.366000",
+    "openInterestBase": "2697.40"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.1",
+    "minOrderSizeChange": "0.01",
+    "minPriceChange": "0.001",
+    "maxMarketOrderValue": "50000",
+    "maxLimitOrderValue": "200000",
+    "maxPositionValue": "250000",
+    "maxLeverage": "10.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "500000",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "250000",
+      "riskFactor": "0.1",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "750000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x53484f502d33000000000000000000",
+    "syntheticResolution": 1000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "us_equity",
+   "createdAt": 1785349134165
+  },
+  {
+   "name": "PAXG-USD",
+   "type": "PERPETUAL",
+   "uiName": "PAXG-USD",
+   "category": "Crypto",
+   "subCategory": "Commodity",
+   "assetName": "PAXG",
+   "assetPrecision": 3,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "PAX Gold",
+   "active": true,
+   "isRfq": true,
+   "isOffHours": false,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "447788.085800",
+    "dailyVolumeBase": "107.884",
+    "dailyPriceChange": "45.2",
+    "dailyPriceChangePercentage": "0.0110",
+    "dailyLow": "4102.4",
+    "dailyHigh": "4159.1",
+    "lastPrice": "4147.6",
+    "askPrice": "4145.6",
+    "bidPrice": "4145.5",
+    "markPrice": "4143.6178287",
+    "indexPrice": "4145.25107381",
+    "fundingRate": "0.000009",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "1131126.179243",
+    "openInterestBase": "273.108"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.001",
+    "minOrderSizeChange": "0.001",
+    "minPriceChange": "0.1",
+    "maxMarketOrderValue": "300000",
+    "maxLimitOrderValue": "1500000",
+    "maxPositionValue": "2500000",
+    "maxLeverage": "25.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "5000000",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.04",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "1500000",
+      "riskFactor": "0.08",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "2500000",
+      "riskFactor": "0.12",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "3500000",
+      "riskFactor": "0.16",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x504158472d34000000000000000000",
+    "syntheticResolution": 10000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "null",
+   "createdAt": 1784633305277
+  },
+  {
+   "name": "KR200-USD",
+   "type": "PERPETUAL",
+   "uiName": "KR200-USD",
+   "category": "RWA",
+   "subCategory": "ETF/Index",
+   "assetName": "KR200",
+   "assetPrecision": 3,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "KOSPI 200",
+   "active": true,
+   "isRfq": true,
+   "isOffHours": false,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "3007.810240",
+    "dailyVolumeBase": "3.558",
+    "dailyPriceChange": "-2.20",
+    "dailyPriceChangePercentage": "-0.0026",
+    "dailyLow": "843.48",
+    "dailyHigh": "845.68",
+    "lastPrice": "843.48",
+    "askPrice": "841.55",
+    "bidPrice": "840.72",
+    "markPrice": "842.195590745152",
+    "indexPrice": "843.605415965324",
+    "fundingRate": "-0.000063",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "195591.815394",
+    "openInterestBase": "231.843"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.01",
+    "minOrderSizeChange": "0.001",
+    "minPriceChange": "0.01",
+    "maxMarketOrderValue": "150000",
+    "maxLimitOrderValue": "750000",
+    "maxPositionValue": "1000000",
+    "maxLeverage": "20.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "2000000",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.05",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "1000000",
+      "riskFactor": "0.1",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "1500000",
+      "riskFactor": "0.15",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "1500000",
+      "riskFactor": "0.15",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x4b5232303000000000000000000000",
+    "syntheticResolution": 10000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "us_equity",
+   "createdAt": 1789643751352
+  },
+  {
+   "name": "TSLA_24_5-USD",
+   "type": "PERPETUAL",
+   "uiName": "TSLA-USD",
+   "category": "RWA",
+   "subCategory": "Equity",
+   "assetName": "TSLA_24_5",
+   "assetPrecision": 2,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "Tesla",
+   "active": true,
+   "isRfq": true,
+   "isOffHours": false,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "9279.928800",
+    "dailyVolumeBase": "26.52",
+    "dailyPriceChange": "-1.59",
+    "dailyPriceChangePercentage": "-0.0045",
+    "dailyLow": "348.50",
+    "dailyHigh": "351.38",
+    "lastPrice": "349.79",
+    "askPrice": "348.87",
+    "bidPrice": "348.86",
+    "markPrice": "348.900293410495",
+    "indexPrice": "349.187065936263",
+    "fundingRate": "0.000000",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "378387.017873",
+    "openInterestBase": "1083.42"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.01",
+    "minOrderSizeChange": "0.01",
+    "minPriceChange": "0.01",
+    "maxMarketOrderValue": "150000",
+    "maxLimitOrderValue": "750000",
+    "maxPositionValue": "1000000",
+    "maxLeverage": "10.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "2000000",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.1",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "1000000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "1500000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "1500000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x54534c415f32345f35000000000000",
+    "syntheticResolution": 1000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "us_equity",
+   "createdAt": 1770891119064
+  },
+  {
+   "name": "XAU-USD",
+   "type": "PERPETUAL",
+   "uiName": "XAU-USD",
+   "category": "RWA",
+   "subCategory": "Commodity",
+   "assetName": "XAU",
+   "assetPrecision": 3,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "Gold",
+   "active": true,
+   "isRfq": false,
+   "isOffHours": true,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "10149183.3176000000000000",
+    "dailyVolumeBase": "2441.4300000000000000",
+    "dailyPriceChange": "-4.1",
+    "dailyPriceChangePercentage": "-0.0010",
+    "dailyLow": "4147.8",
+    "dailyHigh": "4161.6",
+    "lastPrice": "4155.6",
+    "askPrice": "4155.700000",
+    "bidPrice": "4155.6",
+    "markPrice": "4154.790712305579962173",
+    "indexPrice": "4154.790712305579962173",
+    "fundingRate": "0.000004",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "10798259.513375",
+    "openInterestBase": "2598.9900000000000000"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.001",
+    "minOrderSizeChange": "0.001",
+    "minPriceChange": "0.1",
+    "maxMarketOrderValue": "500000",
+    "maxLimitOrderValue": "2500000",
+    "maxPositionValue": "5000000",
+    "maxLeverage": "25.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "0",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.15",
+    "limitPriceFloor": "0.15",
+    "riskFactorConfig": [
+     {
+      "upperBound": "2500000",
+      "riskFactor": "0.04",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "5000000",
+      "riskFactor": "0.08",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "7500000",
+      "riskFactor": "0.12",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "7500000",
+      "riskFactor": "0.12",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x5841552d5553442d38000000000000",
+    "syntheticResolution": 10000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "commodity_cme",
+   "createdAt": 1752829532673
+  },
+  {
+   "name": "WTI-USD",
+   "type": "PERPETUAL",
+   "uiName": "WTI-USD",
+   "category": "RWA",
+   "subCategory": "Commodity",
+   "assetName": "WTI",
+   "assetPrecision": 2,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "WTI Crude Oil",
+   "active": true,
+   "isRfq": false,
+   "isOffHours": false,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "7886402.757140",
+    "dailyVolumeBase": "79786.68",
+    "dailyPriceChange": "-0.038",
+    "dailyPriceChangePercentage": "-0.0004",
+    "dailyLow": "98.492",
+    "dailyHigh": "99.350",
+    "lastPrice": "98.794",
+    "askPrice": "98.793",
+    "bidPrice": "98.788",
+    "markPrice": "98.927",
+    "indexPrice": "98.927",
+    "fundingRate": "-0.000084",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "7209241.595130",
+    "openInterestBase": "72855.21"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.1",
+    "minOrderSizeChange": "0.01",
+    "minPriceChange": "0.001",
+    "maxMarketOrderValue": "400000",
+    "maxLimitOrderValue": "2000000",
+    "maxPositionValue": "4000000",
+    "maxLeverage": "10.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "0",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.15",
+    "limitPriceFloor": "0.15",
+    "riskFactorConfig": [
+     {
+      "upperBound": "2000000",
+      "riskFactor": "0.1",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "4000000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "6000000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "6000000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x575449000000000000000000000000",
+    "syntheticResolution": 1000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "commodity_cme",
+   "createdAt": 1774006635869
+  },
+  {
+   "name": "ANTHROP-USD",
+   "type": "PERPETUAL",
+   "uiName": "ANTHROPIC-USD",
+   "category": "RWA",
+   "subCategory": "Pre-market",
+   "assetName": "ANTHROP",
+   "assetPrecision": 3,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "Anthropic (pre-IPO)",
+   "active": true,
+   "isRfq": true,
+   "isOffHours": false,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "14298.365200",
+    "dailyVolumeBase": "7.684",
+    "dailyPriceChange": "22.5",
+    "dailyPriceChangePercentage": "0.0122",
+    "dailyLow": "1841.5",
+    "dailyHigh": "1879.9",
+    "lastPrice": "1872.6",
+    "askPrice": "1872.9",
+    "bidPrice": "1872",
+    "markPrice": "1871.376529626",
+    "indexPrice": "1871.376529626",
+    "fundingRate": "0.000006",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "18212.604280",
+    "openInterestBase": "9.740"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.01",
+    "minOrderSizeChange": "0.001",
+    "minPriceChange": "0.1",
+    "maxMarketOrderValue": "50000",
+    "maxLimitOrderValue": "200000",
+    "maxPositionValue": "250000",
+    "maxLeverage": "10.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "500000",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "250000",
+      "riskFactor": "0.1",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "750000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x414e5448524f500000000000000000",
+    "syntheticResolution": 10000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "always_open",
+   "createdAt": 1784651834254
+  },
+  {
+   "name": "EUR-USD",
+   "type": "PERPETUAL",
+   "uiName": "EUR-USD",
+   "category": "RWA",
+   "subCategory": "FX",
+   "assetName": "EUR",
+   "assetPrecision": 0,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "Euro",
+   "active": true,
+   "isRfq": false,
+   "isOffHours": true,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "89549.201120",
+    "dailyVolumeBase": "79726",
+    "dailyPriceChange": "-0.00030",
+    "dailyPriceChangePercentage": "-0.0003",
+    "dailyLow": "1.12287",
+    "dailyHigh": "1.12405",
+    "lastPrice": "1.12332",
+    "askPrice": "1.12302",
+    "bidPrice": "1.12249",
+    "markPrice": "1.123338547666131468",
+    "indexPrice": "1.123338547666131468",
+    "fundingRate": "0.000004",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "6541195.666867",
+    "openInterestBase": "5822437"
+   },
+   "tradingConfig": {
+    "minOrderSize": "10",
+    "minOrderSizeChange": "1",
+    "minPriceChange": "0.00001",
+    "maxMarketOrderValue": "500000",
+    "maxLimitOrderValue": "2500000",
+    "maxPositionValue": "5000000",
+    "maxLeverage": "100.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "0",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "2000000",
+      "riskFactor": "0.01",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "4000000",
+      "riskFactor": "0.02",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "6000000",
+      "riskFactor": "0.03",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "12000000",
+      "riskFactor": "0.06",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x4555522d5553442d38000000000000",
+    "syntheticResolution": 10,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "fx",
+   "createdAt": 1752829532673
+  },
+  {
+   "name": "BTC-USD",
+   "type": "PERPETUAL",
+   "uiName": "BTC-USD",
+   "category": "Crypto",
+   "subCategory": "L1",
+   "assetName": "BTC",
+   "assetPrecision": 5,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "Bitcoin",
+   "active": true,
+   "isRfq": false,
+   "isOffHours": false,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "98854237.565380",
+    "dailyVolumeBase": "1213.39170",
+    "dailyPriceChange": "-135",
+    "dailyPriceChangePercentage": "-0.0017",
+    "dailyLow": "80693",
+    "dailyHigh": "82149",
+    "lastPrice": "81028",
+    "askPrice": "81029",
+    "bidPrice": "81028",
+    "markPrice": "81001.946713500001",
+    "indexPrice": "81044.52007657499",
+    "fundingRate": "0.000013",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "44731532.853272",
+    "openInterestBase": "552.20945"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.0001",
+    "minOrderSizeChange": "0.00001",
+    "minPriceChange": "1",
+    "maxMarketOrderValue": "3000000",
+    "maxLimitOrderValue": "15000000",
+    "maxPositionValue": "60000000",
+    "maxLeverage": "50.00",
+    "hourlyFundingRateCap": "0.25",
+    "openInterestLimit": "0",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.05",
+    "limitPriceFloor": "0.05",
+    "riskFactorConfig": [
+     {
+      "upperBound": "4000000",
+      "riskFactor": "0.02",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "8000000",
+      "riskFactor": "0.04",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "12000000",
+      "riskFactor": "0.06",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "64000000",
+      "riskFactor": "0.32",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": true,
+    "postWithdrawalMarginFactor": "0.1"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x4254432d3600000000000000000000",
+    "syntheticResolution": 1000000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "null",
+   "createdAt": 1752829532673
+  },
+  {
+   "name": "PURR-USD",
+   "type": "PERPETUAL",
+   "uiName": "PURR-USD",
+   "category": "RWA",
+   "subCategory": "Equity",
+   "assetName": "PURR",
+   "assetPrecision": 1,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "Hyperliquid Strategies Inc.",
+   "active": true,
+   "isRfq": true,
+   "isOffHours": false,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "2962.506340",
+    "dailyVolumeBase": "332.2",
+    "dailyPriceChange": "-0.0174",
+    "dailyPriceChangePercentage": "-0.0019",
+    "dailyLow": "8.9003",
+    "dailyHigh": "8.9336",
+    "lastPrice": "8.9107",
+    "askPrice": "8.788",
+    "bidPrice": "8.7745",
+    "markPrice": "8.789410353134",
+    "indexPrice": "8.776711927392",
+    "fundingRate": "-0.000083",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "44407.177330",
+    "openInterestBase": "5072.0"
+   },
+   "tradingConfig": {
+    "minOrderSize": "1",
+    "minOrderSizeChange": "0.1",
+    "minPriceChange": "0.0001",
+    "maxMarketOrderValue": "50000",
+    "maxLimitOrderValue": "200000",
+    "maxPositionValue": "250000",
+    "maxLeverage": "10.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "500000",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "250000",
+      "riskFactor": "0.1",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "750000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x505552520000000000000000000000",
+    "syntheticResolution": 100,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "us_equity",
+   "createdAt": 1784651834254
+  },
+  {
+   "name": "SPX-USD",
+   "type": "PERPETUAL",
+   "uiName": "SPX6900-USD",
+   "category": "Crypto",
+   "subCategory": "Meme",
+   "assetName": "SPX",
+   "assetPrecision": 0,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "SPX6900",
+   "active": true,
+   "isRfq": true,
+   "isOffHours": false,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "82396.693060",
+    "dailyVolumeBase": "226290",
+    "dailyPriceChange": "0.00406",
+    "dailyPriceChangePercentage": "0.0114",
+    "dailyLow": "0.35170",
+    "dailyHigh": "0.37554",
+    "lastPrice": "0.36062",
+    "askPrice": "0.36022",
+    "bidPrice": "0.35995",
+    "markPrice": "0.359892355499",
+    "indexPrice": "0.3599922285",
+    "fundingRate": "0.000013",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "48004.963670",
+    "openInterestBase": "133350"
+   },
+   "tradingConfig": {
+    "minOrderSize": "10",
+    "minOrderSizeChange": "1",
+    "minPriceChange": "0.00001",
+    "maxMarketOrderValue": "150000",
+    "maxLimitOrderValue": "750000",
+    "maxPositionValue": "1000000",
+    "maxLeverage": "10.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "2000000",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.1",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "1000000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "1500000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "1500000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x5350582d3100000000000000000000",
+    "syntheticResolution": 10,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "null",
+   "createdAt": 1754986667400
+  },
+  {
+   "name": "USDJPY-USD",
+   "type": "PERPETUAL",
+   "uiName": "USDJPY-USD",
+   "category": "RWA",
+   "subCategory": "FX",
+   "assetName": "USDJPY",
+   "assetPrecision": 2,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "Japanese Yen",
+   "active": true,
+   "isRfq": false,
+   "isOffHours": true,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "13401.679180",
+    "dailyVolumeBase": "84.90",
+    "dailyPriceChange": "0.433",
+    "dailyPriceChangePercentage": "0.0027",
+    "dailyLow": "157.542",
+    "dailyHigh": "157.979",
+    "lastPrice": "157.975",
+    "askPrice": "157.814",
+    "bidPrice": "157.609",
+    "markPrice": "157.847650263310183635",
+    "indexPrice": "157.847650263310183635",
+    "fundingRate": "0.000004",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "403958.971124",
+    "openInterestBase": "2559.17"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.1",
+    "minOrderSizeChange": "0.01",
+    "minPriceChange": "0.001",
+    "maxMarketOrderValue": "150000",
+    "maxLimitOrderValue": "750000",
+    "maxPositionValue": "2000000",
+    "maxLeverage": "25.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "0",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.15",
+    "limitPriceFloor": "0.15",
+    "riskFactorConfig": [
+     {
+      "upperBound": "2000000",
+      "riskFactor": "0.04",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "4000000",
+      "riskFactor": "0.08",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "6000000",
+      "riskFactor": "0.12",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "4000000",
+      "riskFactor": "0.08",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x5553444a5059000000000000000000",
+    "syntheticResolution": 1000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "fx",
+   "createdAt": 1773304907585
+  },
+  {
+   "name": "DRAM-USD",
+   "type": "PERPETUAL",
+   "uiName": "DRAM-USD",
+   "category": "RWA",
+   "subCategory": "ETF/Index",
+   "assetName": "DRAM",
+   "assetPrecision": 2,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "Roundhill Memory ETF",
+   "active": true,
+   "isRfq": true,
+   "isOffHours": false,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "4819.666140",
+    "dailyVolumeBase": "108.18",
+    "dailyPriceChange": "-0.078",
+    "dailyPriceChangePercentage": "-0.0017",
+    "dailyLow": "44.000",
+    "dailyHigh": "46.247",
+    "lastPrice": "45.509",
+    "askPrice": "45.373",
+    "bidPrice": "45.367",
+    "markPrice": "45.352329299999",
+    "indexPrice": "45.443172532387",
+    "fundingRate": "-0.000049",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "192470.977826",
+    "openInterestBase": "4230.84"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.1",
+    "minOrderSizeChange": "0.01",
+    "minPriceChange": "0.001",
+    "maxMarketOrderValue": "150000",
+    "maxLimitOrderValue": "750000",
+    "maxPositionValue": "1000000",
+    "maxLeverage": "10.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "2000000",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.1",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "1000000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "1500000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "1500000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x4452414d0000000000000000000000",
+    "syntheticResolution": 1000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "us_equity",
+   "createdAt": 1783613458374
+  },
+  {
+   "name": "QNT-USD",
+   "type": "PERPETUAL",
+   "uiName": "QNT-USD",
+   "category": "RWA",
+   "subCategory": "Equity",
+   "assetName": "QNT",
+   "assetPrecision": 2,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "Quantinuum",
+   "active": true,
+   "isRfq": true,
+   "isOffHours": false,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "358.470000",
+    "dailyVolumeBase": "10.00",
+    "dailyPriceChange": "0.000",
+    "dailyPriceChangePercentage": "0.0000",
+    "dailyLow": "35.847",
+    "dailyHigh": "35.847",
+    "lastPrice": "35.847",
+    "askPrice": "36.346",
+    "bidPrice": "36.276",
+    "markPrice": "36.30086475764",
+    "indexPrice": "36.346887134897",
+    "fundingRate": "0.000000",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "11104.746985",
+    "openInterestBase": "305.06"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.1",
+    "minOrderSizeChange": "0.01",
+    "minPriceChange": "0.001",
+    "maxMarketOrderValue": "50000",
+    "maxLimitOrderValue": "200000",
+    "maxPositionValue": "250000",
+    "maxLeverage": "10.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "500000",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "250000",
+      "riskFactor": "0.1",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "750000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x514e54000000000000000000000000",
+    "syntheticResolution": 1000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "us_equity",
+   "createdAt": 1784647887381
+  },
+  {
+   "name": "TECH100m-USD",
+   "type": "PERPETUAL",
+   "uiName": "NDX-USD",
+   "category": "RWA",
+   "subCategory": "ETF/Index",
+   "assetName": "TECH100m",
+   "assetPrecision": 4,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "Nasdaq-100",
+   "active": true,
+   "isRfq": false,
+   "isOffHours": true,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "3228387.521400",
+    "dailyVolumeBase": "111.0464",
+    "dailyPriceChange": "-60",
+    "dailyPriceChangePercentage": "-0.0021",
+    "dailyLow": "28905",
+    "dailyHigh": "29179",
+    "lastPrice": "29048",
+    "askPrice": "29022",
+    "bidPrice": "29019",
+    "markPrice": "29047.69973289860261532",
+    "indexPrice": "29047.69973289860261532",
+    "fundingRate": "0.000004",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "2517190.447260",
+    "openInterestBase": "86.6518"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.0001",
+    "minOrderSizeChange": "0.0001",
+    "minPriceChange": "1",
+    "maxMarketOrderValue": "300000",
+    "maxLimitOrderValue": "1500000",
+    "maxPositionValue": "3000000",
+    "maxLeverage": "20.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "0",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.15",
+    "limitPriceFloor": "0.15",
+    "riskFactorConfig": [
+     {
+      "upperBound": "1000000",
+      "riskFactor": "0.05",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "2000000",
+      "riskFactor": "0.1",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "3000000",
+      "riskFactor": "0.15",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "4000000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x5445432d483130304d2d3800000000",
+    "syntheticResolution": 100000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "us_index_fut",
+   "createdAt": 1752829532673
+  },
+  {
+   "name": "SPX500m-USD",
+   "type": "PERPETUAL",
+   "uiName": "SPX-USD",
+   "category": "RWA",
+   "subCategory": "ETF/Index",
+   "assetName": "SPX500m",
+   "assetPrecision": 3,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "S&P 500",
+   "active": true,
+   "isRfq": false,
+   "isOffHours": true,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "6820586.9224000000000000",
+    "dailyVolumeBase": "891.8060000000000000",
+    "dailyPriceChange": "-15.0",
+    "dailyPriceChangePercentage": "-0.0020",
+    "dailyLow": "7621.2",
+    "dailyHigh": "7678.8",
+    "lastPrice": "7637.2",
+    "askPrice": "7633.9",
+    "bidPrice": "7633.6",
+    "markPrice": "7635.322764996852291653",
+    "indexPrice": "7635.322764996852291653",
+    "fundingRate": "0.000004",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "7131357.785043",
+    "openInterestBase": "933.9420000000000000"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.001",
+    "minOrderSizeChange": "0.001",
+    "minPriceChange": "0.1",
+    "maxMarketOrderValue": "300000",
+    "maxLimitOrderValue": "1500000",
+    "maxPositionValue": "3000000",
+    "maxLeverage": "25.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "0",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.15",
+    "limitPriceFloor": "0.15",
+    "riskFactorConfig": [
+     {
+      "upperBound": "1000000",
+      "riskFactor": "0.04",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "2000000",
+      "riskFactor": "0.08",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "3000000",
+      "riskFactor": "0.12",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "4000000",
+      "riskFactor": "0.16",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x5350582d3530304d2d380000000000",
+    "syntheticResolution": 10000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "us_index_fut",
+   "createdAt": 1752829532673
+  },
+  {
+   "name": "NOW_24_5-USD",
+   "type": "PERPETUAL",
+   "uiName": "NA32-USD",
+   "category": "RWA",
+   "subCategory": "Equity",
+   "assetName": "NOW_24_5",
+   "assetPrecision": 2,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "ServiceNow",
+   "active": true,
+   "isRfq": true,
+   "isOffHours": false,
+   "status": "DELISTED",
+   "tradingHours": "WEEKDAYS",
+   "marketStats": {
+    "dailyVolume": "0",
+    "dailyVolumeBase": "0",
+    "dailyPriceChange": "0",
+    "dailyPriceChangePercentage": "0",
+    "dailyLow": "0",
+    "dailyHigh": "0",
+    "lastPrice": "0",
+    "askPrice": "111.686999999999",
+    "bidPrice": "111.686999999999",
+    "markPrice": "111.686999999999",
+    "indexPrice": "111.686999999999",
+    "fundingRate": "0.000005",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "0",
+    "openInterestBase": "0"
+   },
+   "tradingConfig": {
+    "minOrderSize": "1",
+    "minOrderSizeChange": "0.01",
+    "minPriceChange": "0.001",
+    "maxMarketOrderValue": "75000",
+    "maxLimitOrderValue": "375000",
+    "maxPositionValue": "500000",
+    "maxLeverage": "10.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "1000000",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.1",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "1000000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "1500000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "1000000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x4e4f575f32345f352d330000000000",
+    "syntheticResolution": 1000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": false,
+   "referenceMarket": "us_equity",
+   "createdAt": 1784107111980
+  },
+  {
+   "name": "NOW-USD",
+   "type": "PERPETUAL",
+   "uiName": "NOW-USD",
+   "category": "RWA",
+   "subCategory": "Equity",
+   "assetName": "NOW",
+   "assetPrecision": 2,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "ServiceNow",
+   "active": true,
+   "isRfq": true,
+   "isOffHours": false,
+   "status": "PRELISTED",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "0.000000",
+    "dailyVolumeBase": "0.00",
+    "dailyPriceChange": "0",
+    "dailyPriceChangePercentage": "0",
+    "dailyLow": "0",
+    "dailyHigh": "0",
+    "lastPrice": "142.80",
+    "askPrice": "141.22",
+    "bidPrice": "140.93",
+    "markPrice": "141.008679405049",
+    "indexPrice": "141.021189916496",
+    "fundingRate": "0.000000",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "0.000000",
+    "openInterestBase": "0"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.1",
+    "minOrderSizeChange": "0.01",
+    "minPriceChange": "0.01",
+    "maxMarketOrderValue": "50000",
+    "maxLimitOrderValue": "200000",
+    "maxPositionValue": "250000",
+    "maxLeverage": "10.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "500000",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "250000",
+      "riskFactor": "0.1",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "750000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": false
+     },
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x4e4f57000000000000000000000000",
+    "syntheticResolution": 1000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": false,
+   "referenceMarket": "us_equity",
+   "createdAt": 1791096266363
+  },
+  {
+   "name": "USDTSPOT-USD",
+   "type": "SPOT",
+   "uiName": "USDT/USDC",
+   "category": "Crypto",
+   "subCategory": "Stable",
+   "assetName": "USDTSPOT",
+   "assetPrecision": 6,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "Tether USD",
+   "active": true,
+   "isRfq": false,
+   "isOffHours": false,
+   "status": "ACTIVE",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "1143.678576",
+    "dailyVolumeBase": "1147.004892",
+    "dailyPriceChange": "0.0000",
+    "dailyPriceChangePercentage": "0.0000",
+    "dailyLow": "0.9971",
+    "dailyHigh": "0.9971",
+    "lastPrice": "0.9971",
+    "askPrice": "0.9989",
+    "bidPrice": "0.9971",
+    "markPrice": "0",
+    "indexPrice": "0.99873",
+    "fundingRate": "0",
+    "nextFundingRate": 0,
+    "openInterest": "0",
+    "openInterestBase": "0"
+   },
+   "tradingConfig": {
+    "minOrderSize": "10",
+    "minOrderSizeChange": "1",
+    "minPriceChange": "0.0001",
+    "maxMarketOrderValue": "150000",
+    "maxLimitOrderValue": "750000",
+    "maxPositionValue": "1500000",
+    "maxLeverage": "1",
+    "hourlyFundingRateCap": "0.25",
+    "openInterestLimit": "0",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.15",
+    "limitPriceFloor": "0.15",
+    "riskFactorConfig": [
+     {
+      "upperBound": "1500000",
+      "riskFactor": "1",
+      "isAvailableForUsers": true
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x068f5c6a61780768455de69077e07e89787839bf8166decfbf92b645209c0fb8",
+    "syntheticResolution": 1000000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": true,
+   "referenceMarket": "null",
+   "createdAt": 1778512433342
+  },
+  {
+   "name": "MKR-USD",
+   "type": "PERPETUAL",
+   "uiName": "MKR-USD",
+   "category": "Crypto",
+   "subCategory": "DeFi",
+   "assetName": "MKR",
+   "assetPrecision": 3,
+   "collateralAssetName": "USD",
+   "collateralAssetPrecision": 6,
+   "description": "MKR",
+   "active": true,
+   "isRfq": false,
+   "isOffHours": false,
+   "status": "REDUCE_ONLY",
+   "tradingHours": "CONTINUOUS",
+   "marketStats": {
+    "dailyVolume": "0",
+    "dailyVolumeBase": "0",
+    "dailyPriceChange": "0",
+    "dailyPriceChangePercentage": "0",
+    "dailyLow": "0",
+    "dailyHigh": "0",
+    "lastPrice": "1580.186",
+    "askPrice": "0",
+    "bidPrice": "0",
+    "markPrice": "1663.9",
+    "indexPrice": "1663.4002805",
+    "fundingRate": "0.000013",
+    "nextFundingRate": 1792346400000,
+    "openInterest": "11.647300",
+    "openInterestBase": "0.007"
+   },
+   "tradingConfig": {
+    "minOrderSize": "0.01",
+    "minOrderSizeChange": "0.001",
+    "minPriceChange": "0.001",
+    "maxMarketOrderValue": "150000",
+    "maxLimitOrderValue": "750000",
+    "maxPositionValue": "2500000",
+    "maxLeverage": "10.00",
+    "hourlyFundingRateCap": "1",
+    "openInterestLimit": "0",
+    "maxNumOrders": "200",
+    "limitPriceCap": "0.1",
+    "limitPriceFloor": "0.1",
+    "riskFactorConfig": [
+     {
+      "upperBound": "250000",
+      "riskFactor": "0.1",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "500000",
+      "riskFactor": "0.2",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "750000",
+      "riskFactor": "0.3",
+      "isAvailableForUsers": true
+     },
+     {
+      "upperBound": "1000000000",
+      "riskFactor": "1",
+      "isAvailableForUsers": false
+     }
+    ],
+    "uPnlWithdrawable": false,
+    "postWithdrawalMarginFactor": "0"
+   },
+   "l2Config": {
+    "type": "STARKX",
+    "collateralId": "0x1",
+    "syntheticId": "0x4d4b522d3400000000000000000000",
+    "syntheticResolution": 10000,
+    "collateralResolution": 1000000
+   },
+   "visibleOnUi": false,
+   "referenceMarket": "null",
+   "createdAt": 1752829532673
+  }
+ ]
+}

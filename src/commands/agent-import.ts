@@ -146,6 +146,7 @@ export function importSecretLabel(venue: VenueId): string {
     case "txflow": return "TxFlow key (not supported)";
     case "variational": return "Variational key (not supported)";
     case "grvt": return "GRVT key (not supported)";
+    case "extended": return "Extended key (not supported)";
   }
 }
 
@@ -843,6 +844,7 @@ export async function importVenueAgent(p: ImportAgentParams): Promise<ImportAgen
       case "txflow":
       case "variational":
       case "grvt":
+      case "extended":
         // Unreachable: assertImportSupported() refused these before the lock.
         throw new PerpError("CAPABILITY_UNSUPPORTED", `${p.venue} keys cannot be imported`);
     }

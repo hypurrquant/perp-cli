@@ -243,7 +243,7 @@ export function startJob(opts: StartJobOpts): JobEntry {
       if (id === "txflow" || id === "txf") {
         throw startRefusal(what, "TxFlow has no trading in perp-cli", unsupported("txflow", "trading", "TxFlow is integrated through an unofficial read-only API (market data only)", "Trade on the TxFlow website"));
       }
-      // Any other registered venue without the trading role (Variational, GRVT: read-only in this version).
+      // Any other registered venue without the trading role (Variational, GRVT, Extended: read-only in this version).
       const venueId = id === undefined ? null : tryResolveVenueId(id);
       if (venueId !== null && !getVenue(venueId).roles.includes("trading")) {
         const def = getVenue(venueId);

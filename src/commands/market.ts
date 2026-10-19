@@ -193,7 +193,16 @@ export function registerMarketCommands(
       }
 
       const perMarket = perMarketFunding(adapter.name);
-      console.log(makeTable(HEADERS, markets.map(m => marketRow(m, perMarket))));
+      // Rows that carry an asset class (Extended: crypto / equity / etf / index / commodity / fx / preIpo) show it.
+      const classOf = (m: object): string | null => {
+        const c = (m as { assetClass?: unknown }).assetClass;
+        return typeof c === "string" ? c : null;
+      };
+      if (markets.length > 0 && markets.every(m => classOf(m) !== null)) {
+        console.log(makeTable([...HEADERS, "Class"], markets.map(m => [...marketRow(m, perMarket), classOf(m) as string])));
+      } else {
+        console.log(makeTable(HEADERS, markets.map(m => marketRow(m, perMarket))));
+      }
 
       for (const [dex, m] of Object.entries(hip3)) {
         console.log(chalk.magenta.bold(`\n  HIP-3: ${dex}`) + chalk.gray(` (${m.length} markets)`));

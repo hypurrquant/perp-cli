@@ -58,6 +58,8 @@ export const EXPLICIT_CANONICAL: Readonly<Record<string, string>> = {
   "variational|XAG": "SILVER",
   "grvt|XAU": "GOLD",
   "grvt|XAG": "SILVER",
+  "extended|XAU": "GOLD",
+  "extended|XAG": "SILVER",
   // Crude oil (WTI)
   "ondo|WTI": "CRUDE_OIL_WTI",
   "hl:xyz|CL": "CRUDE_OIL_WTI",
@@ -73,13 +75,19 @@ export const EXPLICIT_CANONICAL: Readonly<Record<string, string>> = {
   "variational|CL": "CRUDE_OIL_WTI",
   "grvt|BZ": "CRUDE_OIL_BRENT",
   "grvt|CL": "CRUDE_OIL_WTI",
+  "extended|WTI": "CRUDE_OIL_WTI",
+  "extended|XBR": "CRUDE_OIL_BRENT",
   // US equity indices
   "ondo|US500": "SPX",
   "ondo|US100": "NDX",
   "qfex|US500": "SPX",
   "qfex|US100": "NDX",
+  // Extended SPX500m / TECH100m: S&P 500 / Nasdaq-100 index perps (uiName SPX-USD / NDX-USD).
+  "extended|SPX500M": "SPX",
+  "extended|TECH100M": "NDX",
   // FX
   "ondo|USDJPY": "USDJPY",
+  "extended|USDJPY": "USDJPY",
 };
 
 /** Pairs verified to be DIFFERENT products despite similar names. Never match. */

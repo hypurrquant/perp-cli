@@ -164,7 +164,7 @@ describe("funds merge — top-level commands consolidated under funds", () => {
     const withdraw = funds.commands.find((c) => c.name() === "withdraw");
     expect(withdraw).toBeTruthy();
     const withdrawSubs = withdraw!.commands.map((c) => c.name()).sort();
-    expect(withdrawSubs).toEqual(["arcus", "aster", "grvt", "hyperliquid", "lighter", "ondo", "pacifica", "qfex", "risex", "txflow", "variational"]);
+    expect(withdrawSubs).toEqual(["arcus", "aster", "extended", "grvt", "hyperliquid", "lighter", "ondo", "pacifica", "qfex", "risex", "txflow", "variational"]);
   });
 });
 

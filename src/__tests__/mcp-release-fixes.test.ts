@@ -368,8 +368,8 @@ describe("4b/6. suggest_command defaults and fund routes", () => {
     const venueSubs = (n: string) => funds.commands.find((c) => c.name() === n)!.commands.map((c) => c.name());
     const { listVenues } = await import("../exchanges/venue.js");
     const ids = new Set(listVenues().map((v) => v.id as string));
-    // Refusing deposit subcommands (RISEx: app-only funds; TxFlow / Variational / GRVT: market data only) are not MCP routes.
-    const refusingDeposit = new Set(["risex", "txflow", "variational", "grvt"]);
+    // Refusing deposit subcommands (RISEx: app-only funds; TxFlow / Variational / GRVT / Extended: market data only) are not MCP routes.
+    const refusingDeposit = new Set(["risex", "txflow", "variational", "grvt", "extended"]);
     expect([...mod.MCP_DEPOSIT_VENUES].sort()).toEqual(venueSubs("deposit").filter((n) => ids.has(n) && !refusingDeposit.has(n)).sort());
     // A venue that declares no withdraw asset (Ondo: API cannot withdraw; QFEX: switched off) keeps
     // a refusing subcommand but is not an MCP route.
