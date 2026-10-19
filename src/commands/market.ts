@@ -364,24 +364,27 @@ export function registerMarketCommands(
       };
 
       console.log(chalk.cyan.bold(`\n  Orderbook: ${sym} (${adapter.name})\n`));
-      console.log(chalk.gray("  Price          Size          Cum$              Depth"));
+      // A book with a non-USD quoteAsset (QFEX SAMSUNG-KRW) shows its currency, never a $.
+      const quote = nonUsdQuoteOf(book);
+      const money = (v: number): string => priceOrDash(String(v), book);
+      console.log(chalk.gray(`  Price          Size          ${quote === null ? "Cum$          " : `Cum (${quote})`.padEnd(14)}    Depth`));
       console.log(chalk.gray("  " + "─".repeat(60)));
       asks.forEach(([p, a], i) => {
         const cumUsd = askCums[i] * (Number(p));
         console.log(
-          chalk.red(`  ${formatUsd(p).padStart(12)}  ${String(a).padEnd(12)}  $${formatUsd(cumUsd).padEnd(14)}`) +
+          chalk.red(`  ${formatUsd(p).padStart(12)}  ${String(a).padEnd(12)}  ${money(cumUsd).padEnd(quote === null ? 15 : 18)}`) +
           chalk.red.dim(bar(askCums[i]))
         );
       });
       // Spread line
       const spreadStr = spreadAbs > 0
-        ? `$${formatUsd(spreadAbs)} (${spreadPct.toFixed(3)}%)`
+        ? `${money(spreadAbs)} (${spreadPct.toFixed(3)}%)`
         : "─";
       console.log(chalk.gray(`  ${"─".repeat(16)} spread: ${spreadStr} ${"─".repeat(10)}`));
       bids.forEach(([p, a], i) => {
         const cumUsd = bidCums[i] * (Number(p));
         console.log(
-          chalk.green(`  ${formatUsd(p).padStart(12)}  ${String(a).padEnd(12)}  $${formatUsd(cumUsd).padEnd(14)}`) +
+          chalk.green(`  ${formatUsd(p).padStart(12)}  ${String(a).padEnd(12)}  ${money(cumUsd).padEnd(quote === null ? 15 : 18)}`) +
           chalk.green.dim(bar(bidCums[i]))
         );
       });

@@ -1221,16 +1221,18 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
     };
   }
 
-  async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
+  /** `quoteAsset`: level prices are in the market's quote currency (KRW for SAMSUNG-KRW). */
+  async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][]; quoteAsset: string }> {
     // Resolved against refdata first: an unknown symbol is SYMBOL_NOT_FOUND, not the venue's
     // HTTP 404 surfacing as a retryable EXCHANGE_ERROR.
-    const venueSymbol = (await this.readableInstrument(symbol)).venueSymbol;
+    const instrument = await this.readableInstrument(symbol);
+    const venueSymbol = instrument.venueSymbol;
     const book = await this.client.publicGet<{ bids?: unknown; asks?: unknown }>(`/md/orderbook/${encodeURIComponent(venueSymbol)}`, null);
     // The venue lists empty price levels (quantity "0"); they are not part of the book.
     const side = (v: unknown, what: string): [string, string][] => listOf<string[]>(v, what)
       .filter(l => Array.isArray(l) && typeof l[0] === "string" && typeof l[1] === "string" && Number(l[1]) > 0)
       .map(l => [l[0], l[1]]);
-    return { bids: side(book.bids, "orderbook bids"), asks: side(book.asks, "orderbook asks") };
+    return { bids: side(book.bids, "orderbook bids"), asks: side(book.asks, "orderbook asks"), quoteAsset: instrument.quoteAsset };
   }
 
   async getRecentTrades(): Promise<ExchangePublicTrade[]> {

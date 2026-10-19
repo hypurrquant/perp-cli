@@ -994,7 +994,7 @@ describe("account reads and funding", () => {
   it("orderbook drops the venue's empty (quantity 0) levels; recent trades / funding payments are uniform unsupported", async () => {
     routes["GET /md/orderbook/AAPL-USD"] = () => reply(200, { ticker_id: "AAPL-USD", bids: [["333.37", "304.348"], ["333.36", "0"]], asks: [["333.47", "312.5"], ["333.48", "0"]] });
     const a = adapter({ readOnly: true, credentials: READ_ONLY_CREDENTIALS });
-    expect(await a.getOrderbook("AAPL")).toEqual({ bids: [["333.37", "304.348"]], asks: [["333.47", "312.5"]] });
+    expect(await a.getOrderbook("AAPL")).toEqual({ bids: [["333.37", "304.348"]], asks: [["333.47", "312.5"]], quoteAsset: "USD" });
     expect((await rejection(a.getRecentTrades())).structured.details).toMatchObject({ feature: "recentTrades" });
     expect((await rejection(a.getFundingPayments())).structured.details).toMatchObject({ feature: "fundingPayments" });
   });
