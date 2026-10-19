@@ -215,7 +215,9 @@ export class ExtendedPublicAdapter implements ExchangeAdapter {
     }
     const m = await this.market(symbol);
     const byTime = new Map<number, ExchangeKline>();
-    let cursor = endTime;
+    // `endTime` is exclusive on the wire (a bar opening exactly at it is not returned): +1 ms makes
+    // `--end` inclusive like every other venue.
+    let cursor = endTime + 1;
     for (let page = 0; page < EXTENDED_MAX_PAGES + 1; page++) {
       const want = Math.min(EXTENDED_CANDLES_PAGE_CAP, Math.ceil((cursor - startTime) / iv.ms) + 1);
       const body = await this.client.get<unknown>(`/info/candles/${encodeURIComponent(m.name)}/trades`, [
