@@ -125,3 +125,20 @@ export function canonicalFor(venueKey: VenueId | `hl:${string}`, symbol: string,
       return EXPLICIT_CANONICAL[`${venueKey}|${up}`] ?? null;
   }
 }
+
+/**
+ * Canonical key for a symbol a USER typed (no venue / asset class known — `arb scan --compare`):
+ * a "-PERP" suffix is dropped, a denomination alias maps to its canonical ticker (kPEPE →
+ * 1000PEPE, UBTC → BTC), and a venue ticker of the explicit table maps to its canonical key when
+ * every venue that lists it agrees (XAU → GOLD, CL → CRUDE_OIL_WTI). Anything else: upper-cased.
+ */
+export function canonicalQuerySymbol(symbol: string): string {
+  const up = symbol.trim().toUpperCase().replace(/-PERP$/, "");
+  const alias = DENOMINATION_ALIASES[up];
+  if (alias !== undefined) return alias;
+  const targets = new Set<string>();
+  for (const [key, canonical] of Object.entries(EXPLICIT_CANONICAL)) {
+    if (key.slice(key.indexOf("|") + 1) === up) targets.add(canonical);
+  }
+  return targets.size === 1 ? [...targets][0] : up;
+}

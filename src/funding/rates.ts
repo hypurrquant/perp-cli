@@ -19,6 +19,7 @@ import { rateToHourly, type FundingRateBasis, type Network, type VenueFundingRat
 import { ensureVenuesRegistered } from "../exchanges/venues/index.js";
 import { sharedApiNetwork } from "../api/public/urls.js";
 import { PerpError } from "../errors.js";
+import { canonicalQuerySymbol } from "../exchanges/canonical-symbols.js";
 
 // ── Types ──
 
@@ -366,7 +367,9 @@ export async function fetchAllFundingRates(opts?: {
  * Fetch rates for a single (canonical) symbol across all exchanges.
  */
 export async function fetchSymbolFundingRates(symbol: string, includeUnverified = false): Promise<SymbolFundingComparison | null> {
-  const snapshot = await fetchAllFundingRates({ symbols: [symbol.toUpperCase()], includeUnverified });
+  // The comparison groups by canonical key: a venue ticker / denomination alias (kPEPE) is
+  // looked up under its canonical symbol (1000PEPE), never as-is.
+  const snapshot = await fetchAllFundingRates({ symbols: [canonicalQuerySymbol(symbol)], includeUnverified });
   return snapshot.symbols[0] ?? null;
 }
 
