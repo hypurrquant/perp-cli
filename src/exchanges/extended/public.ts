@@ -365,37 +365,74 @@ function isMarketNotFound(e: unknown): boolean {
   return e instanceof PerpError && e.structured.details?.venueCode === EXTENDED_MARKET_NOT_FOUND;
 }
 
-/** Wire names a CLI symbol may be, in resolution order ("btc" → BTC-USD, BTC_24_5-USD). */
-export function extendedWireCandidates(input: string): string[] {
-  const raw = input.trim().replace(/-PERP$/i, "");
-  const up = raw.toUpperCase();
-  const names = up.endsWith("-USD") ? [raw, up] : [`${up}-USD`, `${up}_24_5-USD`];
-  return [...new Set(names)];
+/** Wire names a bare CLI symbol may be ("btc" → BTC-USD, BTC_24_5-USD): every name whose row maps to that symbol. */
+export function extendedWireCandidates(symbol: string): string[] {
+  const up = extendedSymbolOf(symbol.trim().replace(/-PERP$/i, ""));
+  return [`${up}-USD`, `${up}_24_5-USD`];
+}
+
+/** Rows of `GET /info/markets?market=<name>`; [] when the venue answers code 1001 (unknown name). */
+async function rowsByName(client: ExtendedClient, name: string): Promise<unknown[]> {
+  let body: Awaited<ReturnType<ExtendedClient["get"]>>;
+  try {
+    body = await client.get<unknown>("/info/markets", [["market", name]]);
+  } catch (e) {
+    if (isMarketNotFound(e)) return [];
+    throw e;
+  }
+  if (!Array.isArray(body.data)) throw extendedShapeError(`/info/markets?market=${name} data is not a list`);
+  return body.data;
+}
+
+/** The symbol a raw row maps to, or null when the row has no assetName (parseExtendedMarkets reports it). */
+function rawSymbolOf(row: unknown): string | null {
+  const a = row !== null && typeof row === "object" ? (row as { assetName?: unknown }).assetName : undefined;
+  return typeof a === "string" && a !== "" ? extendedSymbolOf(a) : null;
 }
 
 /**
- * Resolve a CLI symbol for a per-market read without the ~1 MB full listing: each wire-name
- * candidate is read with `GET /info/markets?market=<name>` (2–3 KB; case-sensitive; unknown =
- * HTTP 400 code 1001) and accepted only when it is a listed perpetual that resolveExtendedMarket
- * matches. When no candidate does (e.g. "spx500m" for SPX500m-USD), the full listing decides.
- * Any other error is thrown as is.
+ * Resolve a CLI symbol for a per-market read without the ~1 MB full listing, by the SAME rules as
+ * the listing (parseExtendedMarkets → dedupeSymbols, with its warning):
+ *  1. The symbol's wire names are read with `GET /info/markets?market=<name>` (2–3 KB each;
+ *     case-sensitive; unknown = HTTP 400 code 1001): for a bare symbol `<S>-USD` and
+ *     `<S>_24_5-USD`; for a wire name ("NOW-USD") that name first, then the other names of the
+ *     symbol its row maps to — so a ticker migration (NOW-USD + NOW_24_5-USD) is deduplicated here
+ *     exactly as in `market list`.
+ *  2. Every returned row goes through parseExtendedMarkets: not a listed perpetual, unpriced, or
+ *     losing the duplicate-symbol rule → not a market. resolveExtendedMarket then decides;
+ *     nothing left → SYMBOL_NOT_FOUND.
+ *  3. Only when EVERY name answered 1001 (no row at all — e.g. "spx500m" for SPX500m-USD) does the
+ *     full listing decide.
+ * A malformed row in a `?market=` reply is EXCHANGE_ERROR when it leaves no row to parse (the
+ * market asked for is unreadable — no fallback to the listing); next to a valid row it is skipped
+ * with a warning, as in the listing. Any error other than 1001 is thrown as is.
  */
 export async function resolveExtendedMarketRemote(client: ExtendedClient, input: string, deps: ExtendedPublicDeps = DEFAULT_DEPS): Promise<ExtendedMarketMeta> {
-  for (const name of extendedWireCandidates(input)) {
-    let body: Awaited<ReturnType<ExtendedClient["get"]>>;
-    try {
-      body = await client.get<unknown>("/info/markets", [["market", name]]);
-    } catch (e) {
-      if (isMarketNotFound(e)) continue;
-      throw e;
+  const raw = input.trim().replace(/-PERP$/i, "");
+  const up = raw.toUpperCase();
+  const rows = new Map<string, unknown>();
+  const queried = new Set<string>();
+  const read = async (name: string): Promise<unknown[]> => {
+    if (queried.has(name)) return [];
+    queried.add(name);
+    const got = await rowsByName(client, name);
+    for (const r of got) {
+      const n = r !== null && typeof r === "object" ? (r as { name?: unknown }).name : undefined;
+      rows.set(typeof n === "string" ? n : `#${rows.size}`, r);
     }
-    const metas = parseExtendedMarkets(body.data, deps.warn).map(r => r.meta);
-    if (metas.length === 0) continue; // e.g. a DELISTED / PRELISTED / SPOT row of that name
-    try {
-      return resolveExtendedMarket(metas, input);
-    } catch (e) {
-      if (!(e instanceof PerpError) || e.structured.code !== "SYMBOL_NOT_FOUND") throw e;
-    }
+    return got;
+  };
+  let names: string[];
+  if (up.endsWith("-USD")) {
+    let first = await read(raw);
+    if (first.length === 0 && up !== raw) first = await read(up);
+    const symbols = [...new Set(first.map(rawSymbolOf).filter((x): x is string => x !== null))];
+    names = symbols.flatMap(extendedWireCandidates);
+  } else {
+    names = extendedWireCandidates(up);
   }
-  return resolveExtendedMarket((await fetchExtendedMarketRows(client, deps)).map(r => r.meta), input);
+  for (const name of names) await read(name);
+  if (rows.size === 0) return resolveExtendedMarket((await fetchExtendedMarketRows(client, deps)).map(r => r.meta), input);
+  const metas = parseExtendedMarkets([...rows.values()], deps.warn).map(r => r.meta);
+  return resolveExtendedMarket(metas, input);
 }

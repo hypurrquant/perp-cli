@@ -392,18 +392,18 @@ describe("per-market symbol resolution without the full listing", () => {
   }
   const marketReads = (urls: string[]) => urls.filter(u => new URL(u).pathname.endsWith("/info/markets")).map(u => new URL(u).searchParams.get("market"));
 
-  it("wire-name candidates: name as typed, else <S>-USD then <S>_24_5-USD", () => {
+  it("wire-name candidates of a bare symbol: <S>-USD and <S>_24_5-USD", () => {
     expect(extendedWireCandidates("btc")).toEqual(["BTC-USD", "BTC_24_5-USD"]);
-    expect(extendedWireCandidates("SPX500m-USD")).toEqual(["SPX500m-USD", "SPX500M-USD"]);
     expect(extendedWireCandidates("eth-perp")).toEqual(["ETH-USD", "ETH_24_5-USD"]);
+    expect(extendedWireCandidates("TSLA_24_5")).toEqual(["TSLA-USD", "TSLA_24_5-USD"]);
   });
 
-  it("BTC → one ?market=BTC-USD read; TSLA → TSLA-USD (1001) then TSLA_24_5-USD; no full listing", async () => {
+  it("bare symbols read every candidate (BTC-USD + BTC_24_5-USD, TSLA-USD + TSLA_24_5-USD); no full listing", async () => {
     const urls = venueMock({ "/info/markets/BTC-USD/orderbook": BOOK, "/info/markets/TSLA_24_5-USD/orderbook": BOOK });
     const a = new ExtendedPublicAdapter(getVenue("extended"), "mainnet");
     await a.getOrderbook("btc");
     await a.getOrderbook("TSLA");
-    expect(marketReads(urls)).toEqual(["BTC-USD", "TSLA-USD", "TSLA_24_5-USD"]);
+    expect(marketReads(urls)).toEqual(["BTC-USD", "BTC_24_5-USD", "TSLA-USD", "TSLA_24_5-USD"]);
   });
 
   it("a symbol no candidate matches (spx500m) falls to the full listing once; an unlisted one is SYMBOL_NOT_FOUND", async () => {
@@ -411,6 +411,82 @@ describe("per-market symbol resolution without the full listing", () => {
     expect((await resolveExtendedMarketRemote(new ExtendedClient(getVenue("extended").networks.mainnet.restUrl, getVenue("extended").rateLimit, "extended:test"), "spx500m")).name).toBe("SPX500m-USD");
     expect(marketReads(urls)).toEqual(["SPX500M-USD", "SPX500M_24_5-USD", null]);
     await expect(new ExtendedPublicAdapter(getVenue("extended"), "mainnet").getOrderbook("NOPE")).rejects.toMatchObject({ structured: { code: "SYMBOL_NOT_FOUND" } });
+  });
+
+  describe("duplicate symbols: the remote path agrees with the listing (dedupeSymbols)", () => {
+    const base = () => row("TSLA_24_5-USD");
+    const mk = (name: string, status: string) => ({ ...base(), name, assetName: name.replace(/-USD$/, ""), status });
+    /** `?market=` answers from `table` (absent = 1001); the bare listing is every row of `table`. */
+    function tableMock(table: Record<string, Record<string, unknown>>): string[] {
+      const urls: string[] = [];
+      fetchMock.mockImplementation(async (u: string) => {
+        urls.push(u);
+        const url = new URL(u);
+        const name = url.searchParams.get("market");
+        if (name === null) return jsonResponse(200, { status: "OK", data: Object.values(table) });
+        const hit = table[name];
+        return hit !== undefined ? jsonResponse(200, { status: "OK", data: [hit] }) : jsonResponse(400, { status: "ERROR", error: { code: 1001, message: "Market not found" } });
+      });
+      return urls;
+    }
+    const client = () => new ExtendedClient(getVenue("extended").networks.mainnet.restUrl, getVenue("extended").rateLimit, "extended:test");
+    const listingPick = (table: Record<string, Record<string, unknown>>, input: string) => {
+      try { return resolveExtendedMarket(parse(Object.values(table)).map(r => r.meta), input).name; } catch (e) { return (e as PerpError).structured.code; }
+    };
+    const remotePick = async (table: Record<string, Record<string, unknown>>, input: string, warn = vi.fn()) => {
+      tableMock(table);
+      try { return (await resolveExtendedMarketRemote(client(), input, { warn })).name; } catch (e) { return (e as PerpError).structured.code; }
+    };
+
+    it.each([
+      ["NOW-USD REDUCE_ONLY + NOW_24_5-USD ACTIVE", "REDUCE_ONLY", "ACTIVE", "NOW_24_5-USD", true],
+      ["NOW-USD ACTIVE + NOW_24_5-USD REDUCE_ONLY", "ACTIVE", "REDUCE_ONLY", "NOW-USD", true],
+      ["both ACTIVE", "ACTIVE", "ACTIVE", "SYMBOL_NOT_FOUND", true],
+      ["both REDUCE_ONLY", "REDUCE_ONLY", "REDUCE_ONLY", "SYMBOL_NOT_FOUND", true],
+      ["NOW-USD DELISTED + NOW_24_5-USD ACTIVE", "DELISTED", "ACTIVE", "NOW_24_5-USD", false],
+      ["NOW-USD ACTIVE + NOW_24_5-USD DELISTED", "ACTIVE", "DELISTED", "NOW-USD", false],
+    ])("%s → %s (bare NOW and wire name NOW-USD agree with the listing)", async (_label, a, b, expected, warned) => {
+      const table = { "NOW-USD": mk("NOW-USD", a), "NOW_24_5-USD": mk("NOW_24_5-USD", b) };
+      for (const input of ["NOW", "now", "NOW-USD", "NOW_24_5-USD"]) {
+        const warn = vi.fn();
+        const got = await remotePick(table, input, warn);
+        expect(got, input).toBe(listingPick(table, input));
+        if (input === "NOW") expect(got).toBe(expected);
+        expect(warn.mock.calls.some(c => String(c[0]).includes("map to symbol NOW")), input).toBe(warned);
+      }
+    });
+
+    it("a migrated wire name reads the sibling name too (NOW-USD → NOW_24_5-USD), never the full listing", async () => {
+      const urls = tableMock({ "NOW-USD": mk("NOW-USD", "REDUCE_ONLY"), "NOW_24_5-USD": mk("NOW_24_5-USD", "ACTIVE") });
+      await resolveExtendedMarketRemote(client(), "NOW-USD", { warn: vi.fn() });
+      expect(marketReads(urls)).toEqual(["NOW-USD", "NOW_24_5-USD"]);
+    });
+
+    it("a malformed single row in a ?market= reply → EXCHANGE_ERROR (no fallback to the listing)", async () => {
+      const bad = { ...mk("NOW-USD", "ACTIVE") } as Record<string, unknown>;
+      delete (bad.tradingConfig as Record<string, unknown>).minPriceChange;
+      const urls = tableMock({ "NOW-USD": bad });
+      await expect(resolveExtendedMarketRemote(client(), "NOW", { warn: vi.fn() })).rejects.toMatchObject({ structured: { code: "EXCHANGE_ERROR" } });
+      expect(marketReads(urls)).not.toContain(null);
+    });
+
+    it("a malformed row next to a valid one is handled as in the listing (skipped, warned)", async () => {
+      // No status: unreadable before the duplicate rule → skipped, NOW-USD is the only NOW row.
+      const noStatus = mk("NOW_24_5-USD", "ACTIVE") as Record<string, unknown>;
+      delete noStatus.status;
+      let table: Record<string, Record<string, unknown>> = { "NOW-USD": mk("NOW-USD", "ACTIVE"), "NOW_24_5-USD": noStatus };
+      const warn = vi.fn();
+      expect(await remotePick(table, "NOW", warn)).toBe("NOW-USD");
+      expect(listingPick(table, "NOW")).toBe("NOW-USD");
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("malformed"));
+      // A listed ACTIVE row with a broken trading config still counts in the duplicate rule (two
+      // ACTIVE NOW rows → both skipped), in the listing and here alike.
+      const badConfig = mk("NOW_24_5-USD", "ACTIVE") as unknown as { tradingConfig: Record<string, unknown> };
+      delete badConfig.tradingConfig.minPriceChange;
+      table = { "NOW-USD": mk("NOW-USD", "ACTIVE"), "NOW_24_5-USD": badConfig as unknown as Record<string, unknown> };
+      expect(await remotePick(table, "NOW")).toBe(listingPick(table, "NOW"));
+      expect(listingPick(table, "NOW")).toBe("SYMBOL_NOT_FOUND");
+    });
   });
 
   it("a candidate that is not a listed perpetual (DELISTED NOW_24_5-USD) is not accepted", async () => {
