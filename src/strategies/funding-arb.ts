@@ -1,16 +1,15 @@
 import { assertCanClosePositions } from "../exchanges/trading-v2.js";
 import { MAX_PRICE_DEVIATION_PCT, type ExchangeAdapter } from "../exchanges/index.js";
-import { symbolMatch, logSettledRejections } from "../utils.js";
+import { symbolMatch } from "../utils.js";
 import { logExecution } from "../execution-log.js";
 import { updateJobState } from "../jobs.js";
 import { invalidateCache } from "../cache.js";
 import { fetchBalancesWithFailures, computeRebalancePlan, hasEnoughBalance, marketLeverageOf, requiredArbMargin, type ExchangeBalanceSnapshot } from "../rebalance.js";
 import { checkArbLiquidity } from "../liquidity.js";
-import { computeAnnualSpread, toHourlyRate } from "../funding.js";
-import {
-  fetchPacificaPrices, fetchHyperliquidMeta,
-  fetchLighterOrderBookDetails, fetchLighterFundingRates,
-} from "../shared-api.js";
+import { computeAnnualSpread, getFundingHours, toHourlyRate } from "../funding.js";
+import { fetchVenuesRates } from "../funding/rates.js";
+import { getVenue } from "../exchanges/venue.js";
+import { sharedApiNetwork } from "../api/public/urls.js";
 import { computeMatchedSize } from "../arb-sizing.js";
 import { closePerpPairVerified, openPerpPairVerified } from "../commands/arb-auto.js";
 import { closePerpVerified, isOutcomeUnknown, rejectedLotSize } from "../bot/perp-order.js";
@@ -59,53 +58,14 @@ interface ArbPosition {
 }
 
 async function fetchAllRates(): Promise<FundingRate[]> {
-  // SSOT rule #2: each DEX is independent. allSettled keeps the comparison
-  // alive when one DEX errors out, while rejection reasons get logged to
-  // stderr (explicit failure, never silent).
-  const [pacRates, hlRates, ltRates] = await Promise.allSettled([
-    fetchPacificaPrices().then(assets => assets.map(p => ({
-      exchange: "pacifica", symbol: p.symbol, fundingRate: p.funding, markPrice: p.mark,
-    }))),
-    fetchHyperliquidMeta().then(assets => assets.map(a => ({
-      exchange: "hyperliquid", symbol: a.symbol, fundingRate: a.funding, markPrice: a.markPx,
-    }))),
-    (async () => {
-      const [details, funding] = await Promise.all([
-        fetchLighterOrderBookDetails(),
-        fetchLighterFundingRates(),
-      ]);
-      const priceMap = new Map(details.map(d => [d.marketId, d.lastTradePrice]));
-      const symMap = new Map(details.map(d => [d.marketId, d.symbol]));
-      const out: FundingRate[] = [];
-      for (const fr of funding) {
-        const symbol = fr.symbol || symMap.get(fr.marketId) || "";
-        if (!symbol) continue;
-        // Prefer fr.markPrice; fall back to orderBook last-trade as documented
-        // price source preference (NOT an error fallback).
-        const directMark = fr.markPrice;
-        const fallbackMark = priceMap.get(fr.marketId);
-        let markPrice: number | undefined;
-        if (directMark !== null && Number.isFinite(directMark) && directMark > 0) {
-          markPrice = directMark;
-        } else if (fallbackMark !== undefined && Number.isFinite(fallbackMark) && fallbackMark > 0) {
-          markPrice = fallbackMark;
-        }
-        // SSOT rule #2: skip rows whose mark price cannot be resolved at all
-        // — never publish a 0 mark price downstream.
-        if (markPrice === undefined) continue;
-        out.push({ exchange: "lighter", symbol, fundingRate: fr.rate, markPrice });
-      }
-      return out;
-    })(),
-  ]);
-
-  logSettledRejections([pacRates, hlRates, ltRates], ["pacifica", "hyperliquid", "lighter"], "funding-arb");
-
-  return [
-    ...(pacRates.status === "fulfilled" ? pacRates.value : []),
-    ...(hlRates.status === "fulfilled" ? hlRates.value : []),
-    ...(ltRates.status === "fulfilled" ? ltRates.value : []),
-  ];
+  // The SAME rate rows as `arb scan --rates` (fetchVenuesRates): one per venue and canonical
+  // symbol (unclassified / ambiguous tickers have no canonical and never pair). Each venue is
+  // independent; a failed one is reported on stderr (explicit, never silent).
+  const venues = ["pacifica", "hyperliquid", "lighter"].map(id => getVenue(id));
+  const { rates, exchangeErrors } = await fetchVenuesRates(venues, sharedApiNetwork(), false);
+  for (const [ex, msg] of Object.entries(exchangeErrors)) process.stderr.write(`[funding-arb] ${ex}: funding rates unavailable — ${msg}\n`);
+  // computeAnnualSpread / toHourlyRate normalize with the venue's basis: keep each rate in it.
+  return rates.map(r => ({ exchange: r.exchange, symbol: r.canonical, fundingRate: r.hourlyRate * getFundingHours(r.exchange), markPrice: r.markPrice }));
 }
 
 // annualize: use computeAnnualSpread from funding.ts for cross-exchange comparison

@@ -63,6 +63,11 @@ export interface SymbolFundingComparison {
    * trading is gated in this release): the spread is data only — `arb exec` refuses it.
    */
   executable: boolean;
+  /**
+   * true = the row's rates are of different kinds (e.g. Lighter lastSettled vs Hyperliquid
+   * accruing) — the perp-ws comparator's `mixedKinds`: the spread compares unlike quantities.
+   */
+  mixedKinds: boolean;
   /** Venues of the long/short pair that perp-cli cannot trade (read-only); [] when executable. */
   readOnlyLegs: string[];
   /**
@@ -371,6 +376,7 @@ export async function fetchAllFundingRates(opts?: {
       bestMarkPrice: bestMarkPrice(rates),
       estHourlyIncomeUsd,
       ...pairExecutability(lowest.exchange, highest.exchange),
+      mixedKinds: new Set(rates.map(r => r.rateKind)).size > 1,
     });
   }
 

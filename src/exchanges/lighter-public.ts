@@ -274,6 +274,11 @@ const STATS_TTL_MS = 10_000;
 const STATS_TIMEOUT_MS = 10_000;
 const statsCache = new Map<string, { at: number; value: Promise<Map<number, LighterFundingStat>> }>();
 
+/** Drop the shared market_stats snapshots (tests; a network switch). */
+export function clearLighterFundingStatsCache(): void {
+  statsCache.clear();
+}
+
 /**
  * Settled + predicted hourly funding of every market, keyed by market_id: the first frame of the
  * WS `market_stats/all` channel (the source of the perp-ws `rate` / `predictedRate`). REST has no

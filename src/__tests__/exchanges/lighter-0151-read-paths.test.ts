@@ -162,7 +162,7 @@ describe("Lighter market list: live markets only, the same set as the WS directo
       const rec = MARKETS[venue];
       (a as unknown as { ensureMarketMap: unknown }).ensureMarketMap = async () => {};
       (a as unknown as { restGet: unknown }).restGet = async () => rec.orderBookDetails;
-      (a as unknown as { getFundingRates: unknown }).getFundingRates = async () => new Map();
+      (a as unknown as { fundingStats: unknown }).fundingStats = async () => new Map();
       vi.spyOn(console, "error").mockImplementation(() => {});
       const cli = (await a.getMarkets()).map((m) => m.symbol).sort();
       const inactive = rec.orderBookDetails.order_book_details.filter((d) => d.market_type === "perp" && d.status !== "active").map((d) => d.symbol);

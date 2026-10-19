@@ -11,9 +11,23 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
+// Lighter's settled rate is the WS market_stats snapshot: served from the mocked lt.funding rows
+// (rate = a fraction per 1 h → percent on the wire), never a real socket.
+const wsState = vi.hoisted(() => ({ stats: {} as Record<string, { funding_rate: string; current_funding_rate: string }> }));
+vi.mock("ws", async () => {
+  const { EventEmitter } = await import("node:events");
+  class FakeWs extends EventEmitter {
+    constructor() { super(); setTimeout(() => this.emit("open"), 0); }
+    send() { setTimeout(() => this.emit("message", JSON.stringify({ type: "subscribed/market_stats", channel: "market_stats:all", market_stats: wsState.stats })), 0); }
+    close() { /* closed */ }
+  }
+  return { default: FakeWs, WebSocket: FakeWs };
+});
+
 // Import after mocking fetch
 const { fetchAllFundingRates, fetchSymbolFundingRates, TOP_SYMBOLS } = await import("../funding-rates.js");
 const { invalidateCache } = await import("../cache.js");
+const { clearLighterFundingStatsCache } = await import("../exchanges/lighter-public.js");
 
 // ── Helpers to build mock API responses ──
 //
@@ -77,6 +91,7 @@ function setupMockFetch(opts: {
   hlError?: boolean;
   ltError?: boolean;
 }) {
+  wsState.stats = Object.fromEntries((opts.lt?.funding ?? []).map(f => [String(f.market_id), { funding_rate: String(f.rate * 100), current_funding_rate: String(f.rate * 100) }]));
   mockFetch.mockImplementation(async (url: string | URL) => {
     const urlStr = typeof url === "string" ? url : url.toString();
 
@@ -112,6 +127,7 @@ function setupMockFetch(opts: {
 beforeEach(() => {
   mockFetch.mockReset();
   invalidateCache();
+  clearLighterFundingStatsCache();
 });
 
 // ──────────────────────────────────────────────
@@ -550,5 +566,18 @@ describe("fetchSymbolFundingRates canonicalizes the argument", () => {
     setupRecordedHl(hl, [{ symbol: "BTC", funding: 0.0001, mark: btcMark }]);
     const result = await fetchSymbolFundingRates("UBTC");
     expect(result!.symbol).toBe("BTC");
+  });
+});
+
+describe("SymbolFundingComparison.mixedKinds (the perp-ws comparator flag)", () => {
+  it("Pacifica lastSettled vs Hyperliquid accruing → mixedKinds true; each rate names its kind", async () => {
+    setupMockFetch({
+      pac: [{ symbol: "BTC", funding: 0.0001, mark: 60000 }],
+      hl: { assets: [{ name: "BTC" }], ctxs: [{ funding: 0.00005, markPx: 60010 }] },
+    });
+    const snapshot = await fetchAllFundingRates();
+    const btc = snapshot.symbols.find(s => s.symbol === "BTC")!;
+    expect(btc.rates.map(r => [r.exchange, r.rateKind]).sort()).toEqual([["hyperliquid", "accruing"], ["pacifica", "lastSettled"]]);
+    expect(btc.mixedKinds).toBe(true);
   });
 });
