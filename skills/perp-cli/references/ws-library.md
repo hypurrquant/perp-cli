@@ -245,6 +245,9 @@ volume24hNotional, venueTs, recvTs, source, changed[], asOf{}`.
 Funding:
 - `rate` is **raw per `rateIntervalHours`** — never pre-annualized. Use `toHourly(rate, h)` to compare and
   `toApr(rate, h)` only for display (both return `null` for `null` input).
+- **Units:** `toHourly` and `toApr` return **fractions** (`toApr` 0.1095 = 10.95 % a year, simple ×24×365).
+  The CLI's `annualizedPct` (`perp --json arb scan --rates`, MCP `get_funding_rates`) is the same figure in
+  **percent** (10.95). Multiply `toApr` by 100 before comparing it with `annualizedPct` or printing a "%".
 - `rateKind`: `"lastSettled"` (the last payment), `"accruing"` (the current period so far, the "if it
   settled now" rate), `"predicted"` (the venue's estimate of the next payment). `predictedRate` is always
   kind `"predicted"`.

@@ -880,9 +880,17 @@ interface FundingComparator {
     subscribe(cb: (rows: FundingRow[], changed: string[]) => void): () => void;
     close(): void;
 }
-/** @experimental 0.15.x (stable from 0.16.0 after consumer sign-off) */
+/**
+ * Rate per hour as a FRACTION (0.0000125 = 0.00125 %/h): `rate / rateIntervalHours`.
+ * @experimental 0.15.x (stable from 0.16.0 after consumer sign-off)
+ */
 declare function toHourly(rate: Dec | null, rateIntervalHours: number | null): number | null;
-/** @experimental 0.15.x (stable from 0.16.0 after consumer sign-off) */
+/**
+ * Simple annualized rate as a FRACTION, not a percent: `toHourly × 24 × 365` (0.0000125/h → 0.1095,
+ * i.e. 10.95 %). The CLI's `annualizedPct` (`arb scan --rates`, MCP `get_funding_rates`) is the same
+ * quantity in PERCENT (10.95): multiply `toApr` by 100 to compare the two.
+ * @experimental 0.15.x (stable from 0.16.0 after consumer sign-off)
+ */
 declare function toApr(rate: Dec | null, rateIntervalHours: number | null): number | null;
 /** @experimental 0.15.x (stable from 0.16.0 after consumer sign-off) */
 declare function createFundingComparator(opts: FundingComparatorOptions): FundingComparator;

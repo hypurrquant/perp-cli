@@ -72,14 +72,22 @@ export interface FundingComparator {
   close(): void;
 }
 
-/** @experimental 0.15.x (stable from 0.16.0 after consumer sign-off) */
+/**
+ * Rate per hour as a FRACTION (0.0000125 = 0.00125 %/h): `rate / rateIntervalHours`.
+ * @experimental 0.15.x (stable from 0.16.0 after consumer sign-off)
+ */
 export function toHourly(rate: Dec | null, rateIntervalHours: number | null): number | null {
   if (rate === null || rateIntervalHours === null || !(rateIntervalHours > 0)) return null;
   const n = Number(rate);
   return Number.isFinite(n) ? n / rateIntervalHours : null;
 }
 
-/** @experimental 0.15.x (stable from 0.16.0 after consumer sign-off) */
+/**
+ * Simple annualized rate as a FRACTION, not a percent: `toHourly × 24 × 365` (0.0000125/h → 0.1095,
+ * i.e. 10.95 %). The CLI's `annualizedPct` (`arb scan --rates`, MCP `get_funding_rates`) is the same
+ * quantity in PERCENT (10.95): multiply `toApr` by 100 to compare the two.
+ * @experimental 0.15.x (stable from 0.16.0 after consumer sign-off)
+ */
 export function toApr(rate: Dec | null, rateIntervalHours: number | null): number | null {
   const h = toHourly(rate, rateIntervalHours);
   return h === null ? null : h * 24 * 365;
