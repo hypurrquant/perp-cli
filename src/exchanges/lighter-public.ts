@@ -33,6 +33,8 @@ import { PerpError } from "../errors.js";
 import { venueRateField } from "../utils/numeric.js";
 import { acquireRate, rateLimitedError } from "./rate-limiter.js";
 import { canonicalFor } from "./canonical-symbols.js";
+import { isLighterMarketLive } from "../ws/lighter-market.js";
+import { addDecimal } from "./precision.js";
 import type { AssetClass, FundingRateBasis, Network, VenueFundingRate, VenueMarket } from "./venue-types.js";
 import type { VenuePublicData } from "./venue.js";
 import { lighterFamilyNetworks, lighterFamilyRateLimit } from "./venues/lighter-family.js";
@@ -138,6 +140,33 @@ export function lighterWafChallenge(venue: string, status: number, body: string)
   });
 }
 
+/** `limit` of GET /api/v1/orderBookOrders: the documented maximum (apidocs.lighter.xyz/reference/orderbookorders, 1..250). */
+export const LIGHTER_BOOK_ORDERS_LIMIT = 250;
+
+/**
+ * One side of GET /api/v1/orderBookOrders (individual resting ORDERS, best price first) → price
+ * levels: `remaining_base_amount` summed per price, in the venue's order — the shape of the WS
+ * `order_book/{id}` channel (levels). A side of exactly `limit` orders may have more orders at its
+ * last price beyond the page, so that (possibly partial) level is dropped. A row without a price /
+ * remaining amount is a payload error (never skipped, never "0").
+ */
+export function lighterBookLevels(venue: string, rows: unknown, what: string, limit = LIGHTER_BOOK_ORDERS_LIMIT): [string, string][] {
+  if (rows === undefined || rows === null) return [];
+  if (!Array.isArray(rows)) throw new PerpError("EXCHANGE_ERROR", `${venue} orderBookOrders ${what}: side is not a list`, { exchange: venue });
+  const levels = new Map<string, string>();
+  for (const r of rows as Array<Record<string, unknown>>) {
+    const price = r?.price;
+    const size = r?.remaining_base_amount ?? r?.size;
+    if (typeof price !== "string" || typeof size !== "string" || !Number.isFinite(Number(price)) || !Number.isFinite(Number(size))) {
+      throw new PerpError("EXCHANGE_ERROR", `${venue} orderBookOrders ${what}: order without price / remaining size: ${JSON.stringify(r).slice(0, 160)}`, { exchange: venue });
+    }
+    const prev = levels.get(price);
+    levels.set(price, prev === undefined ? size : addDecimal(prev, size));
+  }
+  const out = Array.from(levels);
+  if (rows.length >= limit && out.length > 1) out.pop();
+  return out;
+}
 
 async function getJson(venue: LighterVenueId, net: Network, path: string, endpoint: string): Promise<unknown> {
   await acquireRate(`${venue}:${net}`, lighterFamilyRateLimit(venue), endpoint);
@@ -258,7 +287,7 @@ function toMarket(venue: LighterVenueId, net: Network, d: RawDetail, assetClass:
     maxLeverage: Math.floor(10000 / d.min_initial_margin_fraction),
     marginTiers: null,
     session: null, // RH: 24/7, no session info published
-    tradable: d.status === "active" && d.is_frozen !== true,
+    tradable: isLighterMarketLive(d),
   };
 }
 

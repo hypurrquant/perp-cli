@@ -82,10 +82,12 @@ export const LIGHTER_ROUTES = {
   "GET https://mainnet.zklighter.elliot.ai/api/v1/orderBooks": {
     code: 200,
     order_books: [
-      { symbol: "ETH", market_id: 0, market_type: "perp" },
-      { symbol: "BTC", market_id: 1, market_type: "perp" },
-      { symbol: "NATGAS", market_id: 158, market_type: "perp" },
+      { symbol: "ETH", market_id: 0, market_type: "perp", status: "active", is_frozen: false },
+      { symbol: "BTC", market_id: 1, market_type: "perp", status: "active", is_frozen: false },
+      { symbol: "NATGAS", market_id: 158, market_type: "perp", status: "active", is_frozen: false },
       { symbol: "ETH/USDC", market_id: 2048, market_type: "spot" },
+      // Live shape 2026-10-19: an inactive perp is listed (status "inactive") but is not a live market.
+      { symbol: "SPACEX", market_id: 145, market_type: "perp", status: "inactive", is_frozen: false },
     ],
   },
 };
@@ -94,9 +96,9 @@ export const LIGHTER_RH_ROUTES = {
   "GET https://api.rh.lighter.xyz/api/v1/orderBooks": {
     code: 200,
     order_books: [
-      { symbol: "ETH", market_id: 0, market_type: "perp" },
-      { symbol: "BTC", market_id: 1, market_type: "perp" },
-      { symbol: "ZEC", market_id: 4, market_type: "perp" },
+      { symbol: "ETH", market_id: 0, market_type: "perp", status: "active", is_frozen: false },
+      { symbol: "BTC", market_id: 1, market_type: "perp", status: "active", is_frozen: false },
+      { symbol: "ZEC", market_id: 4, market_type: "perp", status: "active", is_frozen: false },
     ],
   },
 };

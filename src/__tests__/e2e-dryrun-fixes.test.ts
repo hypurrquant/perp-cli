@@ -101,8 +101,8 @@ describe("#2 LighterAdapter.getMarkets reads the mark from orderBookDetails", ()
   it("lists markets keyless with orderBookDetails mark/index price", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const lt = lighterWithDetails([
-      { symbol: "TSLA", market_id: 10, market_type: "perp", mark_price: "355.77", index_price: "355.44", min_initial_margin_fraction: 500 },
-      { symbol: "ETH", market_id: 0, market_type: "perp", mark_price: "2697.15", index_price: "2698.54", min_initial_margin_fraction: 500 },
+      { symbol: "TSLA", market_id: 10, market_type: "perp", status: "active", mark_price: "355.77", index_price: "355.44", min_initial_margin_fraction: 500 },
+      { symbol: "ETH", market_id: 0, market_type: "perp", status: "active", mark_price: "2697.15", index_price: "2698.54", min_initial_margin_fraction: 500 },
       { symbol: "USDG/X", market_id: 99, market_type: "spot", mark_price: "1" },
     ]);
     const markets = await lt.getMarkets();
@@ -114,7 +114,7 @@ describe("#2 LighterAdapter.getMarkets reads the mark from orderBookDetails", ()
 
   it("perps listed but none with a mark → EXCHANGE_ERROR, not an empty success", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const lt = lighterWithDetails([{ symbol: "TSLA", market_id: 10, market_type: "perp", min_initial_margin_fraction: 500 }]);
+    const lt = lighterWithDetails([{ symbol: "TSLA", market_id: 10, market_type: "perp", status: "active", min_initial_margin_fraction: 500 }]);
     await expect(lt.getMarkets()).rejects.toMatchObject({ structured: { code: "EXCHANGE_ERROR" } });
   });
 

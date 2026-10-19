@@ -10,7 +10,7 @@
 import { TX_EVENT_FILL_SOURCE, type SpotAdapter, type SpotMarketInfo, type SpotBalance, type SpotOrderResult } from "./spot-interface.js";
 import type { ResolvedSlippage } from "./slippage.js";
 import type { LighterAdapter, LighterRowMatch } from "./lighter.js";
-import { lighterWafChallenge } from "./lighter-public.js";
+import { LIGHTER_BOOK_ORDERS_LIMIT, lighterBookLevels, lighterWafChallenge } from "./lighter-public.js";
 import {
   LIGHTER_TIF, lighterEventFilledBase, lighterEventOrderId, lighterGeneratedClientOrderIndex, lighterOrderIdOf, lighterOrderSignIndex,
   lighterPostSendTx, lighterRowOutcomeOf, lighterSelectAccount, lighterTakerFilledBase, lighterTxState,
@@ -18,6 +18,7 @@ import {
 } from "./lighter.js";
 import { alignProtectionPrice, floorSize, formatComputedPrice, requireOnTick, slippagePrice, subDecimal, toUnitsExact } from "./precision.js";
 import { unsupported } from "./trading-v2.js";
+import { rateLimitedError } from "./rate-limiter.js";
 import { PerpError, orderNotSent, parsePositiveDecimal } from "../errors.js";
 
 /** The row match (market + send time) _placeOrder attached to its result; absent → null (no extra match). */
@@ -203,20 +204,20 @@ export class LighterSpotAdapter implements SpotAdapter {
     const resolved = this.resolveSymbol(symbol);
     const marketId = this._spotMarketMap.get(resolved);
     if (marketId === undefined) {
-      throw new Error(`Unknown Lighter spot market: ${symbol}`);
+      throw new PerpError("SYMBOL_NOT_FOUND", `Unknown Lighter spot market: ${symbol}`, {
+        exchange: this.name, remediation: `Check the symbol: perp -e ${this.name} market spot-list`,
+      });
     }
-    try {
-      const res = await this._restGet("/orderBookOrders", {
-        market_id: String(marketId),
-        limit: "50",
-      }) as { asks?: Record<string, string>[]; bids?: Record<string, string>[] };
-      return {
-        bids: (res.bids ?? []).map((l) => [l.price, l.remaining_base_amount ?? l.size ?? "0"] as [string, string]),
-        asks: (res.asks ?? []).map((l) => [l.price, l.remaining_base_amount ?? l.size ?? "0"] as [string, string]),
-      };
-    } catch {
-      return { bids: [], asks: [] };
-    }
+    // A failed read throws its typed error (429 / WAF / transport) — never an empty book, which
+    // callers (arb-auto, liquidity) would read as "no liquidity". Orders → price levels as on perps.
+    const res = await this._restGet("/orderBookOrders", {
+      market_id: String(marketId),
+      limit: String(LIGHTER_BOOK_ORDERS_LIMIT),
+    }) as { asks?: unknown; bids?: unknown };
+    return {
+      bids: lighterBookLevels(this.name, res.bids, `${resolved} bids`),
+      asks: lighterBookLevels(this.name, res.asks, `${resolved} asks`),
+    };
   }
 
   /**
@@ -995,6 +996,8 @@ export class LighterSpotAdapter implements SpotAdapter {
     const res = await fetch(url.toString());
     if (!res.ok) {
       const text = await res.text();
+      // apidocs.lighter.xyz/docs/rate-limits: a breached limit answers "HTTP 429" (as LighterAdapter.restGet).
+      if (res.status === 429) throw rateLimitedError(this._lt.name, res.headers.get("retry-after"), text);
       const waf = lighterWafChallenge(this._lt.name, res.status, text);
       if (waf !== null) throw waf;
       const clean = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
