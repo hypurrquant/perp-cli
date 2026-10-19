@@ -21,7 +21,7 @@ venue-specific fix branches and are not listed here.
 | RISEx | `/v1/orderbook` | 250 levels (docs) | 250 | `--depth` sent (was always 50), > 250 → `INVALID_PARAMS` |
 | TxFlow | `candleSnapshot` | window > ~3000 bars → `200 []` (3000 OK, 3050 empty; 1m / 5m / 1h / 1d) | — | windows of ≤ 2900 bars, merged (max 50 requests) |
 | TxFlow | `candleSnapshot` intervals | 3d / 1w / 1M always `[]` (HTTP 500 HTML on some) | — | refused (`INVALID_PARAMS`) |
-| Extended | `/info/candles/<m>/trades` | **2800** rows (PT1M / PT5M; PT24H 816 = all history); no pagination field | 10,000 | pages backwards by `endTime`; 40 d of 1m = 57,601 bars, 0 gaps, 21 pages |
+| Extended | `/info/candles/<m>/trades` | **2800** rows on every interval with that much history (PT1M, PT5M, PT15M, PT30M, PT1H, PT2H, PT4H: 2800; PT8H 2445, PT12H 1631, PT24H 816, P7D 118, P30D 28 = all history since 2024-07); no pagination field | 10,000 | pages backwards by `endTime`, stops only on an empty page or at `--start` (a short page is not trusted as the end); 40 d of 1m = 57,601 bars, 0 gaps, 21 pages |
 | Extended | `/info/<m>/funding` | **1000** rows (newest) | 10,000 | pages backwards by `endTime` |
 | Extended | `/info/markets/<m>/trades` | 50, no `limit` parameter | — | `--limit` > 50 → `INVALID_PARAMS` |
 | GRVT | `/full/v1/kline` | `next` cursor runs dry after ~1000 bars (page 2: 2 rows, `next` "") | 1000 / page | pages backwards by `end_time`; 40 d of 1m = 57,583 bars in 58 pages (17 one-minute gaps: minutes GRVT publishes no bar for). Up-front limit 60 nominal pages (60,000 bars ≈ 41.6 d of 1m); read budget 75 pages (real pages are short); running out before `--start` → `EXCHANGE_ERROR` naming the time reached |

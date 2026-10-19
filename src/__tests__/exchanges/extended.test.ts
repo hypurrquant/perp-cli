@@ -422,6 +422,21 @@ describe("server caps (live 2026-10-19): candles 2800 / funding 1000 rows per re
     expect(h[0].time).toBeGreaterThan(h[1499].time); // newest first
   });
 
+  it("a venue cap below 2800 on some interval (short full pages) still yields the whole range", async () => {
+    const H = 3_600_000;
+    const end = 1792404000000;
+    const start = end - 2999 * H;
+    const venue = capped(1000, H, 0, candle);
+    fetchMock.mockImplementation(async (u: string) => {
+      const url = new URL(u);
+      if (url.pathname.endsWith("/info/markets")) return new Response(JSON.stringify(MARKETS), { status: 200 });
+      return new Response(JSON.stringify(venue(url)), { status: 200 });
+    });
+    const k = await new ExtendedPublicAdapter(getVenue("extended"), "mainnet").getKlines("BTC", "1h", start, end);
+    expect(k.length).toBe(3000);
+    expect(k[0].time).toBe(start);
+  });
+
   it("1M maps to P30D", () => {
     expect(EXTENDED_KLINE_INTERVALS["1M"].wire).toBe("P30D");
   });
