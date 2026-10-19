@@ -602,7 +602,7 @@ export function registerWalletCommands(
         const info = EXCHANGE_ENV_MAP[resolved];
         if (!info) {
           throw new PerpError("INVALID_PARAMS", `Unknown exchange: ${exchange}`, {
-            remediation: "Use: pacifica, hyperliquid, lighter, aster (or hl, pac, lt, ast). Lighter RH / Ondo / Arcus use: perp wallet agent approve <lighter-rh|ondo|arcus>; QFEX: perp wallet agent import qfex. TxFlow and Variational are market data only; RISEx is read-only in this release (trading later).",
+            remediation: "Use: pacifica, hyperliquid, lighter, aster (or hl, pac, lt, ast). Lighter RH / Ondo / Arcus use: perp wallet agent approve <lighter-rh|ondo|arcus>; QFEX: perp wallet agent import qfex. TxFlow, Variational and Extended are market data only; RISEx is read-only in this release (trading later).",
           });
         }
 

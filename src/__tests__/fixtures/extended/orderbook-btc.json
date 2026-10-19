@@ -1,0 +1,51 @@
+{
+ "_source": "GET /api/v1/info/markets/BTC-USD/orderbook (live 2026-10-19, 5 levels per side)",
+ "status": "OK",
+ "data": {
+  "market": "BTC-USD",
+  "bid": [
+   {
+    "qty": "1.46199",
+    "price": "81036"
+   },
+   {
+    "qty": "0.06181",
+    "price": "81035"
+   },
+   {
+    "qty": "0.00640",
+    "price": "81032"
+   },
+   {
+    "qty": "0.19151",
+    "price": "81031"
+   },
+   {
+    "qty": "0.74558",
+    "price": "81030"
+   }
+  ],
+  "ask": [
+   {
+    "qty": "9.00871",
+    "price": "81037"
+   },
+   {
+    "qty": "0.66920",
+    "price": "81038"
+   },
+   {
+    "qty": "0.76049",
+    "price": "81039"
+   },
+   {
+    "qty": "0.66786",
+    "price": "81040"
+   },
+   {
+    "qty": "2.14622",
+    "price": "81041"
+   }
+  ]
+ }
+}

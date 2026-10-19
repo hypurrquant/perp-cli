@@ -142,6 +142,7 @@ async function agentOf(venue: VenueId): Promise<VenueCredentials["agent"]> {
     case "txflow": return null;
     case "variational": return null;
     case "grvt": return null;
+    case "extended": return null;
     case "pacifica":
     case "hyperliquid":
     case "lighter":
@@ -166,6 +167,7 @@ async function agentForNetwork(venue: VenueId, network: Network): Promise<VenueC
     case "txflow": return null;
     case "variational": return null;
     case "grvt": return null;
+    case "extended": return null;
     case "pacifica":
     case "hyperliquid":
     case "lighter":

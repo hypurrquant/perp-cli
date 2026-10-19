@@ -145,6 +145,7 @@ printf '%s' "$KEY" | OWS_PASSPHRASE=<pp> perp --json wallet set hl
 | `txflow` \| `txf` | — | none: MARKET DATA ONLY through an UNOFFICIAL API (every write → `CAPABILITY_UNSUPPORTED`) |
 | `variational` \| `var` \| `omni` | — | none: MARKET DATA ONLY through the official read-only API; no public trading API yet (every write → `CAPABILITY_UNSUPPORTED`) |
 | `grvt` \| `grv` | — (USDT; off-chain matching) | none: MARKET DATA ONLY in this version, official API (every write → `CAPABILITY_UNSUPPORTED`; trading planned) |
+| `extended` \| `ext` \| `x10` | Starknet | none: MARKET DATA ONLY in this version, official API (every write → `CAPABILITY_UNSUPPORTED`; trading planned) |
 
 Default `-e` = `settings.defaultExchange`, else `pacifica` — always pass `-e`.
 

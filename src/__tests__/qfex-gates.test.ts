@@ -99,8 +99,8 @@ describe("funding exclusion (venue flag fundingVerified)", () => {
     return { def, fetchFundingRates };
   };
 
-  it("qfex, txflow (unofficial API), variational (predicted, no settled-payment check) and grvt (indicative rate) are the only venues with unverified funding", () => {
-    expect(listVenues().filter(v => !v.fundingVerified).map(v => v.id)).toEqual(["qfex", "txflow", "variational", "grvt"]);
+  it("qfex, txflow (unofficial API), variational (predicted, no settled-payment check) grvt (indicative rate) and extended (no settled-payment check; `_24_5` equities print 0 off hours) are the only venues with unverified funding", () => {
+    expect(listVenues().filter(v => !v.fundingVerified).map(v => v.id)).toEqual(["qfex", "txflow", "variational", "grvt", "extended"]);
   });
 
   it("fetchVenuesRates drops an unverified venue (not even fetched) unless includeUnverified", async () => {

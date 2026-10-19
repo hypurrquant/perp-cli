@@ -11,13 +11,13 @@ import type { AppliedBuilderFee } from "./builder-fee.js";
 
 export type VenueId =
   | "pacifica" | "hyperliquid" | "lighter" | "aster"
-  | "lighter-rh" | "ondo" | "arcus" | "qfex" | "risex" | "txflow" | "variational" | "grvt";
+  | "lighter-rh" | "ondo" | "arcus" | "qfex" | "risex" | "txflow" | "variational" | "grvt" | "extended";
 
 export type LegacyVenueId = "pacifica" | "hyperliquid" | "lighter" | "aster";
 
 export const VENUE_IDS: readonly VenueId[] = [
   "pacifica", "hyperliquid", "lighter", "aster",
-  "lighter-rh", "ondo", "arcus", "qfex", "risex", "txflow", "variational", "grvt",
+  "lighter-rh", "ondo", "arcus", "qfex", "risex", "txflow", "variational", "grvt", "extended",
 ] as const;
 
 export const LEGACY_VENUE_IDS: readonly LegacyVenueId[] = ["pacifica", "hyperliquid", "lighter", "aster"] as const;

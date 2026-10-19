@@ -14,6 +14,7 @@ import type { VenueId } from "../exchanges/venue-types.js";
 import { getVenue, requireCapabilities, roleUnsupported, READ_ONLY_CREDENTIALS, type Network as VenueNetwork, type VenueDefinition } from "../exchanges/venue.js";
 import { RISEX_APP_URL, RISEX_FUNDS_APP_ONLY } from "../exchanges/venues/risex.js";
 import { VARIATIONAL_READ_ONLY_REMEDIATION } from "../exchanges/venues/variational.js";
+import { EXTENDED_READ_ONLY_REMEDIATION } from "../exchanges/venues/extended.js";
 import { unsupported } from "../exchanges/trading-v2.js";
 import { registerOnchainFundsCommands } from "./funds-onchain.js";
 import { QFEX_BANKER_NETWORK, QFEX_WITHDRAW_DISABLED, QFEX_WITHDRAW_ENABLED, QFEX_WITHDRAW_NETWORK } from "../exchanges/venues/qfex.js";
@@ -1178,6 +1179,13 @@ export function registerFundsCommands(
     .action(async () => {
       throw roleUnsupported(getVenue("grvt"), "withdraw");
     });
+  // Extended: market data only in this version.
+  supportsDryRun(withdraw.command("extended [amount]"))
+    .description("Not available: Extended is market data only in this version — refused, also with --dry-run")
+    .option("--to <address>", "Ignored")
+    .action(async () => {
+      throw roleUnsupported(getVenue("extended"), "withdraw");
+    });
 
   for (const venueId of ["arcus"] as const) {
     const def = getVenue(venueId);
@@ -1342,6 +1350,11 @@ export function registerFundsCommands(
     .action(async () => {
       throw roleUnsupported(getVenue("grvt"), "deposit");
     });
+  supportsDryRun(deposit.command("extended [amount]"))
+    .description("Not available: Extended is market data only in this version — refused, also with --dry-run")
+    .action(async () => {
+      throw roleUnsupported(getVenue("extended"), "deposit");
+    });
 
   supportsDryRun(deposit.command("qfex"))
     .description("Show the QFEX deposit address for USDC on Arbitrum One (perp-cli sends nothing — transfer from your own wallet; supports --dry-run)")
@@ -1496,6 +1509,7 @@ export function registerFundsCommands(
             txflow: { supported: false, note: "TxFlow is market data only in perp-cli (unofficial read-only API)" },
             variational: { supported: false, note: VARIATIONAL_READ_ONLY_REMEDIATION },
             grvt: { supported: false, note: "GRVT is read-only (market data) in this version; trading is planned for a later release" },
+            extended: { supported: false, note: EXTENDED_READ_ONLY_REMEDIATION },
           },
           withdraw: {
             pacifica: { chain: "Solana", token: "USDC", speed: "~10s", fee: "none" },
@@ -1511,6 +1525,7 @@ export function registerFundsCommands(
             txflow: { supported: false, note: "TxFlow is market data only in perp-cli (unofficial read-only API)" },
             variational: { supported: false, note: VARIATIONAL_READ_ONLY_REMEDIATION },
             grvt: { supported: false, note: "GRVT is read-only (market data) in this version; trading is planned for a later release" },
+            extended: { supported: false, note: EXTENDED_READ_ONLY_REMEDIATION },
             aster: { chain: "BNB Chain (default) / Arbitrum", token: "USDT (default) / USDC", command: "perp funds withdraw aster <amount> [--chain bsc|arbitrum] [--asset USDT|USDC]", fee: "POST /fapi/v3/aster/user-withdraw-info (taken from the amount)", requires: "mainnet; API wallet approved with --can-withdraw --ip-whitelist; destination = the account's own address" },
           },
         }));
