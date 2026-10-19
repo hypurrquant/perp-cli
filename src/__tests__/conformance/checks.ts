@@ -124,7 +124,7 @@ export function baseOf(symbol: string): string {
   let s = symbol.toUpperCase();
   if (s.includes(":")) s = s.split(":").pop() as string;
   for (;;) {
-    const next = s.replace(/[-_/. ]?(USDT|USDC|USD1|USDE|USDG|USD|PERP|P)$/, "");
+    const next = s.replace(/(?:[-_/ ]?(?:USDT|USDC|USD1|USDE|USDG|USD|PERP)|\.P)$/, "");
     if (next === s || next === "") return s;
     s = next;
   }

@@ -17,6 +17,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
@@ -65,6 +66,8 @@ export interface ConformanceFixture {
   capturedAt: number;
   recordedWith: string;
   keep: string[];
+  /** Cells recorded whole (row-cap evidence: full page + next-page probes) — never pruned. */
+  full?: string[];
   http: HttpExchange[];
   ws: WsExchange[];
 }
@@ -72,8 +75,13 @@ export interface ConformanceFixture {
 /** Frames kept per recorded socket (trimmed to the keep-symbols afterwards). */
 const WS_MAX_FRAMES = 2000;
 
+/**
+ * `<name>.json` (trimmed, indented for review) or `<name>.json.gz` (untrimmed full directories /
+ * full server pages — compressed, they are MBs of JSON).
+ */
 export function fixturePath(name: string): string {
-  return join(FIXTURE_DIR, `${name}.json`);
+  const gz = join(FIXTURE_DIR, `${name}.json.gz`);
+  return existsSync(gz) ? gz : join(FIXTURE_DIR, `${name}.json`);
 }
 
 export function hasFixture(name: string): boolean {
@@ -81,7 +89,9 @@ export function hasFixture(name: string): boolean {
 }
 
 export function loadFixture(name: string): ConformanceFixture {
-  const f = JSON.parse(readFileSync(fixturePath(name), "utf8")) as ConformanceFixture;
+  const file = fixturePath(name);
+  const raw = readFileSync(file);
+  const f = JSON.parse((file.endsWith(".gz") ? gunzipSync(raw) : raw).toString("utf8")) as ConformanceFixture;
   const bodies = f.bodies ?? {};
   const deref = (j: Json): Json => {
     const ref = j !== null && typeof j === "object" && !Array.isArray(j) ? (j as { $body?: unknown }).$body : undefined;
@@ -186,8 +196,14 @@ export class Session {
     delete (globalThis as { __perpConformance?: Session }).__perpConformance;
   }
 
-  begin(cell: string): void {
+  /** Requests (HTTP + WebSocket) issued per cell — "refused before any I/O" checks read it. */
+  readonly calls = new Map<string, number>();
+  private untrimmed = new Set<string>();
+
+  /** Start a cell. `full`: keep this cell's responses whole (a full server page at a row cap). */
+  begin(cell: string, opts: { full?: boolean } = {}): void {
     this.cell = cell;
+    if (opts.full === true) this.untrimmed.add(cell);
     if (process.env.PERP_CONFORMANCE_DEBUG === "1") process.stderr.write(`[conformance] ${this.name} ${cell} @${new Date().toISOString()}\n`);
   }
 
@@ -198,6 +214,7 @@ export class Session {
 
   private async fetch(input: unknown, init?: { method?: string; body?: unknown }): Promise<Response> {
     const req = requestParts(input, init);
+    this.calls.set(this.cell, (this.calls.get(this.cell) ?? 0) + 1);
     if (process.env.PERP_CONFORMANCE_DEBUG === "1") process.stderr.write(`[conformance]   ${req.method} ${req.url}\n`);
     if (IS_LIVE) {
       const res = await this.realFetch(input as string, init as RequestInit);
@@ -236,6 +253,7 @@ export class Session {
     const session = this;
     if (IS_LIVE) {
       return function RecordingWs(url: string, opts?: unknown) {
+        session.calls.set(session.cell, (session.calls.get(session.cell) ?? 0) + 1);
         const ws = new Real(url, opts) as InstanceType<RealWsCtor> & { send(d: unknown, ...rest: unknown[]): void };
         const rec: WsExchange = { cell: session.cell, url, sent: [], frames: [] };
         if (MODE === "record") session.ws.push(rec);
@@ -254,6 +272,7 @@ export class Session {
       private replayed = false;
       constructor(url: string) {
         super();
+        session.calls.set(session.cell, (session.calls.get(session.cell) ?? 0) + 1);
         const all = session.fixture!.ws;
         let idx = all.findIndex((x, i) => !session.usedWs.has(i) && x.cell === session.cell && norm(x.url) === norm(url));
         if (idx < 0) idx = all.findIndex(x => norm(x.url) === norm(url));
@@ -285,6 +304,28 @@ export class Session {
     } as unknown as RealWsCtor;
   }
 
+  /** The last HTTP exchange recorded in `cell` whose URL contains `needle` (record mode). */
+  lastHttp(cell: string, needle: string): HttpExchange | null {
+    for (let i = this.http.length - 1; i >= 0; i--) if (this.http[i].cell === cell && (this.http[i].url + (this.http[i].body ?? "")).includes(needle)) return this.http[i];
+    return null;
+  }
+
+  /** A WebSocket opened directly by the test (perp-cli/ws transport): record mode logs it. */
+  wsRecord(url: string): WsExchange {
+    const rec: WsExchange = { cell: this.cell, url, sent: [], frames: [] };
+    if (MODE === "record") this.ws.push(rec);
+    return rec;
+  }
+
+  /** The recorded socket for `url` in the current cell (replay); null = not recorded. */
+  wsReplay(url: string): WsExchange | null {
+    const all = this.fixture?.ws ?? [];
+    const idx = all.findIndex((x, i) => !this.usedWs.has(i) && x.cell === this.cell && norm(x.url) === norm(url));
+    if (idx < 0) { this.misses.push(`${this.cell}: WS ${url}`); return null; }
+    this.usedWs.add(idx);
+    return all[idx];
+  }
+
   /** record: trim + scrub + write the fixture. prune: rewrite with the used exchanges only. */
   finalize(): void {
     if (MODE === "record") {
@@ -300,25 +341,31 @@ export class Session {
       const scrub = new PublicScrubber();
       const http = this.http.map(x => ({
         ...x,
-        response: scrub.walk(this.trim ? trimResponse(x.response, this.keep, idsFor(x.url)) : x.response) ?? null,
+        response: scrub.walk(this.trim && !this.untrimmed.has(x.cell) ? trimResponse(x.response, this.keep, idsFor(x.url)) : x.response) ?? null,
         text: x.text !== null && x.text.length > 2000 ? x.text.slice(0, 2000) : x.text,
       }));
       const ws = this.ws.map(w => ({ ...w, frames: (scrub.walk(this.trim ? trimResponse(w.frames, this.keep, idsFor(w.url)) : w.frames) ?? []) as Json[] }));
       // capturedAt = END of the recording: replay's clock never runs behind a recorded response.
-      this.write({ schema: 1, name: this.name, capturedAt: Date.now(), recordedWith: "scripts/conformance/record.ts (live public mainnet, read-only)", keep: this.trim ? this.keep : [], http, ws });
+      this.write({ schema: 1, name: this.name, capturedAt: Date.now(), recordedWith: "scripts/conformance/record.ts (live public mainnet, read-only)", keep: this.trim ? this.keep : [], full: [...this.untrimmed], http, ws });
     } else if (MODE === "prune" && this.fixture !== null) {
-      const http = this.fixture.http.filter((_, i) => this.usedHttp.has(i));
+      const full = new Set(this.fixture.full ?? []);
+      const http = this.fixture.http.filter((x, i) => this.usedHttp.has(i) || full.has(x.cell));
       const ws = this.fixture.ws.filter((_, i) => this.usedWs.has(i));
       this.write({ ...this.fixture, http, ws });
     }
   }
 
   private write(f: ConformanceFixture): void {
-    const file = fixturePath(this.name);
-    const text = JSON.stringify(dedupe(f), null, 1) + "\n";
+    // Untrimmed fixtures (full directories / full pages) are written compact + gzipped; trimmed ones
+    // as indented JSON for review.
+    const whole = !this.trim || (f.full ?? []).length > 0;
+    const plain = join(FIXTURE_DIR, `${this.name}.json`);
+    const file = whole ? `${plain}.gz` : plain;
+    const text = JSON.stringify(dedupe(f), null, whole ? undefined : 1) + "\n";
     guardFixtureText(text, file);
     mkdirSync(FIXTURE_DIR, { recursive: true });
-    writeFileSync(file, text);
+    rmSync(whole ? plain : `${plain}.gz`, { force: true });
+    writeFileSync(file, whole ? gzipSync(text, { level: 9 }) : text);
   }
 }
 
@@ -376,8 +423,34 @@ function parseDocs(out: string): unknown[] {
   return docs;
 }
 
+/**
+ * PERP_CONFORMANCE_BIN=<path to an installed perp bin> (live mode only): run the PUBLISHED package
+ * as a child process instead of the in-repo command tree — scripts/release-qa/run.mjs uses it to
+ * hold the npm tarball to the same contracts.
+ */
+export const CLI_BIN: string | null = process.env.PERP_CONFORMANCE_BIN ?? null;
+if (CLI_BIN !== null && !IS_LIVE) throw new Error("PERP_CONFORMANCE_BIN needs PERP_LIVE=1 (a child process cannot be replayed)");
+
+async function runBin(argv: string[]): Promise<CliRun> {
+  const { spawn } = await import("node:child_process");
+  const full = ["--json", ...argv];
+  return new Promise(resolve => {
+    const child = spawn(process.execPath, [CLI_BIN as string, ...full], { env: { ...process.env, NO_COLOR: "1" } });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", d => { out += String(d); });
+    child.stderr.on("data", d => { err += String(d); });
+    child.on("close", () => {
+      const docs = parseDocs(out);
+      const envelope = (docs[0] as Envelope | undefined) ?? { ok: false, error: { code: "NO_OUTPUT", message: `no JSON document; stderr: ${err.slice(0, 500)}` } };
+      resolve({ argv, envelope, docs: docs.length, stderr: err });
+    });
+  });
+}
+
 /** Run `perp --json <argv>` in-process through the real command tree (src/cli-program.ts). */
 export async function runCli(argv: string[]): Promise<CliRun> {
+  if (CLI_BIN !== null) return runBin(argv);
   const { buildProgram } = await import("../../cli-program.js");
   const { PerpError } = await import("../../errors.js");
   const out: string[] = [];

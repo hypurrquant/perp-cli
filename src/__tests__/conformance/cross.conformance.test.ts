@@ -60,10 +60,16 @@ const CLI_CELLS: Record<string, string[]> = {
   "arb-compare-unverified": ["arb", "scan", "--compare", "BTC", "--include-unverified"],
   "arb-gaps": ["arb", "scan", "--gaps"],
   "arb-basis": ["arb", "scan", "--basis"],
-  ...Object.fromEntries(VENUES.map(v => [`list:${v}`, ["-e", v, "market", "list"]])),
 };
+/**
+ * get_markets ⇔ market list run in their own session over UNTRIMMED responses (fixture
+ * "parity", gzipped): a trimmed directory would make every count agree, and a cache filled by a
+ * trimmed cell would feed the full one. It runs after the cross session (fresh cache dir, later clock).
+ */
+const PARITY_CLI: Record<string, string[]> = Object.fromEntries(VENUES.map(v => [`list:${v}`, ["-e", v, "market", "list"]]));
+const PARITY_MCP: Record<string, [string, Record<string, unknown>]> =
+  Object.fromEntries(VENUES.map(v => [`get_markets:${v}`, ["get_markets", { exchange: v }] as [string, Record<string, unknown>]]));
 const MCP_CELLS: Record<string, [string, Record<string, unknown>]> = {
-  ...Object.fromEntries(VENUES.map(v => [`get_markets:${v}`, ["get_markets", { exchange: v }] as [string, Record<string, unknown>]])),
   get_funding_rates: ["get_funding_rates", { symbols: PARITY_SYMBOLS }],
   get_prices: ["get_prices", { symbols: PARITY_SYMBOLS }],
   health_check: ["health_check", {}],
@@ -72,7 +78,7 @@ const MCP_CELLS: Record<string, [string, Record<string, unknown>]> = {
 const cli = new Map<string, CliRun>();
 const mcp = new Map<string, Envelope>();
 
-const runnable = IS_LIVE || hasFixture("cross");
+const runnable = IS_LIVE || (hasFixture("cross") && hasFixture("parity"));
 
 describe(`cross-venue + CLI ⇄ MCP parity (${MODE})`, () => {
   it("has a recorded fixture (pnpm conformance:record --cross)", () => {
@@ -99,7 +105,24 @@ describe(`cross-venue + CLI ⇄ MCP parity (${MODE})`, () => {
     } finally {
       session.stop();
     }
-  }, IS_LIVE ? 900_000 : 120_000);
+    const parity = new Session("parity", [], { trim: false });
+    parity.start();
+    try {
+      for (const [cell, argv] of Object.entries(PARITY_CLI)) {
+        parity.begin(`cli:${cell}`);
+        cli.set(cell, await runCli(argv));
+      }
+      for (const [cell, [tool, args]] of Object.entries(PARITY_MCP)) {
+        parity.begin(`mcp:${cell}`);
+        const r = await tools.get(tool)!(args);
+        mcp.set(cell, JSON.parse(r.content[0].text) as Envelope);
+      }
+      parity.finalize();
+      if (parity.misses.length > 0) console.warn(`[conformance] parity: requests missing from the fixture:\n  ${parity.misses.join("\n  ")}`);
+    } finally {
+      parity.stop();
+    }
+  }, IS_LIVE ? 900_000 : 180_000);
 
   const data = (cell: string): unknown => cli.get(cell)!.envelope.data;
   const schema = (id: string, cell: string, s: z.ZodType) => it(`${cell}: schema`, () => {
@@ -192,14 +215,14 @@ describe(`cross-venue + CLI ⇄ MCP parity (${MODE})`, () => {
           : null;
         expectCheck(`parity:get_markets:${v}:count`, fail);
       });
-      it(`get_markets(${v}) ⇔ market list: same base symbols and marks`, () => {
-        const c = new Map(cliRows(v).map(r => [baseOf(String(r.symbol)), Number(r.markPrice)]));
-        const m = new Map(mcpRows(v).map(r => [baseOf(String(r.symbol)), Number(r.markPrice)]));
-        const onlyCli = [...c.keys()].filter(k => !m.has(k));
-        const onlyMcp = [...m.keys()].filter(k => !c.has(k));
-        const diff = [...c].filter(([k, p]) => m.has(k) && Math.abs(m.get(k)! / p - 1) > 0.001).map(([k]) => k);
-        const fail = onlyCli.length + onlyMcp.length + diff.length === 0 ? null
-          : `cli-only ${onlyCli.slice(0, 5).join(",")}; mcp-only ${onlyMcp.slice(0, 5).join(",")}; mark differs ${diff.slice(0, 5).join(",")}`;
+      it(`get_markets(${v}) ⇔ market list: same base symbols`, () => {
+        // Marks are not compared: the two read different endpoints at different moments.
+        const c = new Set(cliRows(v).map(r => baseOf(String(r.symbol))));
+        const m = new Set(mcpRows(v).map(r => baseOf(String(r.symbol))));
+        const onlyCli = [...c].filter(k => !m.has(k));
+        const onlyMcp = [...m].filter(k => !c.has(k));
+        const fail = onlyCli.length + onlyMcp.length === 0 ? null
+          : `cli-only [${onlyCli.slice(0, 6).join(",")}${onlyCli.length > 6 ? ` +${onlyCli.length - 6}` : ""}]; mcp-only [${onlyMcp.slice(0, 6).join(",")}${onlyMcp.length > 6 ? ` +${onlyMcp.length - 6}` : ""}]`;
         expectCheck(`parity:get_markets:${v}:symbols`, fail);
       });
     }

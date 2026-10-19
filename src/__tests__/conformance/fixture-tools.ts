@@ -39,7 +39,7 @@ const HASH_KEY = /^(hash|tx_hash|txHash|transaction_hash|txn_hash)$/i;
 const EDGE = 6;
 const MAP_MIN_KEYS = 20;
 
-const SUFFIX = "(?:[-_/. ]?(?:USDT|USDC|USD1|USDE|USDG|USD|KRW|PERP|P))*";
+const SUFFIX = "(?:[-_/ ]?(?:USDT|USDC|USD1|USDE|USDG|USD|KRW|PERP)|\\.P)*";
 export function symbolMatcher(keep: readonly string[]): (s: string) => boolean {
   const res = keep.map(k => new RegExp(`^(?:[A-Z0-9]+:)?${k.toUpperCase()}${SUFFIX}$`));
   return (s: string) => {

@@ -145,6 +145,7 @@ describe("cross-venue price agreement (same canonical symbol ⇒ same meaning)",
 
 afterAll(() => {
   if (VENUE_FILTER !== null) return;
-  const stale = staleKnownFailures([...ALL.map(v => `${v.id}:`), "agreement:"]);
+  // Range / cap ids (`<venue>:kline-<iv>:…`, `<venue>:cap:…`) belong to ranges.conformance.test.ts.
+  const stale = staleKnownFailures([...ALL.map(v => `${v.id}:`), "agreement:"], /^[^:]+:(kline-|cap:)/);
   expect(stale, "KNOWN_FAILURES entries that no check evaluated (remove them)").toEqual([]);
 });

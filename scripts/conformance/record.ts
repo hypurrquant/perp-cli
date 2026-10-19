@@ -2,7 +2,8 @@
  * Record conformance fixtures from LIVE public mainnet endpoints (read-only; no keys — the suite
  * runs with an isolated HOME). Writes src/__tests__/fixtures/conformance/<name>.json.
  *
- *   pnpm conformance:record --venue ondo            one venue (comma-separated list allowed)
+ *   pnpm conformance:record --venue ondo            one venue (comma-separated list allowed): its
+ *                                                   venue, ranges and (WS codec venues) ws fixtures
  *   pnpm conformance:record --all                   every registered venue
  *   pnpm conformance:record --cross                 the cross-venue / CLI ⇄ MCP fixture (cross.json)
  *
@@ -35,7 +36,13 @@ if (venues === null && !all && !cross) {
 }
 
 const files: string[] = [];
-if (venues !== null || all) files.push("src/__tests__/conformance/venues.conformance.test.ts");
+if (venues !== null || all) {
+  files.push(
+    "src/__tests__/conformance/venues.conformance.test.ts",
+    "src/__tests__/conformance/ranges.conformance.test.ts",
+    "src/__tests__/conformance/ws.conformance.test.ts",
+  );
+}
 if (cross) files.push("src/__tests__/conformance/cross.conformance.test.ts");
 
 function vitest(env: Record<string, string>, config: string | null): number {
