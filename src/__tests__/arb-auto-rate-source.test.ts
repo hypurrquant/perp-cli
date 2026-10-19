@@ -15,18 +15,20 @@ const row = (exchange: ExchangeFundingRate["exchange"], canonical: string, hourl
 vi.mock("../funding/rates.js", async (orig) => ({
   ...(await orig<typeof import("../funding/rates.js")>()),
   fetchVenuesRates: vi.fn(async () => ({
-    rates: [row("lighter", "BTC", 0.000012, "lastSettled"), row("hyperliquid", "BTC", 0.00005, "accruing"), row("aster", "BTC", 0.0000125, "accruing", 8)],
+    rates: [row("lighter", "BTC", 0.000012, "lastSettled"), row("hyperliquid", "BTC", 0.00005, "accruing"), row("aster", "BTC", 0.0000125, "accruing", 8),
+      // An aliased asset: Hyperliquid kPEPE and Lighter 1000PEPE share the canonical 1000PEPE.
+      { ...row("hyperliquid", "1000PEPE", 0.0004, "accruing"), symbol: "kPEPE" }, row("lighter", "1000PEPE", 0.00001, "lastSettled")],
     exchangeStatus: { lighter: "ok", hyperliquid: "ok", aster: "ok", pacifica: "ok" }, exchangeErrors: {},
   })),
 }));
 
 import "../exchanges/venues/index.js";
 import { getFundingHours } from "../funding.js";
-import { fetchFundingSpreads } from "../commands/arb-auto.js";
+import { fetchFundingSpreads, legSymbol } from "../commands/arb-auto.js";
 
 describe("arb auto funding source", () => {
   it("rows from fetchVenuesRates: rates in each venue's basis, legs labelled with rateKind", async () => {
-    const [s] = await fetchFundingSpreads();
+    const s = (await fetchFundingSpreads()).find(x => x.symbol === "BTC")!;
     expect(s.symbol).toBe("BTC");
     expect(s.ltRate).toBeCloseTo(0.000012 * getFundingHours("lighter"), 12);
     expect(s.hlRate).toBeCloseTo(0.00005 * getFundingHours("hyperliquid"), 12);
@@ -34,5 +36,13 @@ describe("arb auto funding source", () => {
     expect(s.astHours).toBe(8);
     expect(s.rateKinds).toEqual({ lighter: "lastSettled", hyperliquid: "accruing", aster: "accruing" });
     expect([s.longExch, s.shortExch]).toEqual(["lighter", "hyperliquid"]);
+  });
+
+  it("an aliased row carries each venue's own symbol: the HL leg trades kPEPE, the Lighter leg 1000PEPE", async () => {
+    const s = (await fetchFundingSpreads()).find(x => x.symbol === "1000PEPE")!;
+    expect(s.venueSymbols).toEqual({ hyperliquid: "kPEPE", lighter: "1000PEPE" });
+    expect([s.longExch, s.shortExch]).toEqual(["lighter", "hyperliquid"]);
+    expect(legSymbol(s, s.longExch)).toBe("1000PEPE");
+    expect(legSymbol(s, s.shortExch)).toBe("kPEPE");
   });
 });

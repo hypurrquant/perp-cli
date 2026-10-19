@@ -147,11 +147,13 @@ export async function computeAutoSize(
   shortAdapter: ExchangeAdapter,
   symbol: string,
   maxSlippagePct: number = 0.3,
+  /** The short venue's own symbol when it differs (kPEPE ↔ 1000PEPE); default `symbol`. */
+  shortSymbol: string = symbol,
 ): Promise<number> {
   // Step 1: Get orderbooks from both sides
   const [longOB, shortOB, longBal, shortBal] = await Promise.all([
     longAdapter.getOrderbook(symbol),
-    shortAdapter.getOrderbook(symbol),
+    shortAdapter.getOrderbook(shortSymbol),
     longAdapter.getBalance(),
     shortAdapter.getBalance(),
   ]);

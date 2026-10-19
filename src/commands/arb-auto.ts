@@ -71,6 +71,28 @@ interface FundingSnapshot {
   astHours: number | null;
   /** Which rate each paired venue's value is (arb scan rateKind): "lastSettled" | "accruing" | "predicted" | null. */
   rateKinds?: Record<string, FundingRateKind | null>;
+  /**
+   * Each venue's OWN symbol for this canonical row (Hyperliquid kPEPE, Lighter 1000PEPE): orders,
+   * position matching and closes use it, never the canonical key. Absent = the venue trades `symbol`.
+   */
+  venueSymbols?: Record<string, string>;
+}
+
+/** The venue symbol a snapshot / position leg trades on `exchange` (the canonical key when the venue uses it). */
+export function legSymbol(row: { symbol: string; venueSymbols?: Record<string, string> }, exchange: string): string {
+  return row.venueSymbols?.[exchange] ?? row.symbol;
+}
+
+/** longSymbol / shortSymbol of a new position — only when a leg's venue symbol differs from the key. */
+function legSymbolsOf(snap: FundingSnapshot, longExchange: string, shortExchange: string): { longSymbol?: string; shortSymbol?: string } {
+  const l = legSymbol(snap, longExchange), sh = legSymbol(snap, shortExchange);
+  return l === snap.symbol && sh === snap.symbol ? {} : { longSymbol: l, shortSymbol: sh };
+}
+
+/** --symbols matches a row by its canonical key or any venue's own symbol (kPEPE or 1000PEPE). */
+export function matchesSymbolFilter(row: { symbol: string; venueSymbols?: Record<string, string> }, filter: readonly string[]): boolean {
+  const want = new Set(filter.map(s => s.toUpperCase()));
+  return want.has(row.symbol.toUpperCase()) || Object.values(row.venueSymbols ?? {}).some(v => want.has(v.toUpperCase()));
 }
 
 interface ArbPosition {
@@ -83,6 +105,9 @@ interface ArbPosition {
   entryMarkPrice: number | null;
   accumulatedFundingUsd: number;  // estimated funding collected so far
   lastCheckTime: number;          // unix ms of last spread check
+  /** Venue symbols of the legs when they differ from `symbol` (the canonical key). */
+  longSymbol?: string;
+  shortSymbol?: string;
 }
 
 // ── Fee-Adjusted Net Spread Calculation ──
@@ -553,12 +578,16 @@ export async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
   const astRates = new Map<string, number>(), astPrices = new Map<string, number>();
   const astHoursBySym = new Map<string, number>();
   const kindsBySym = new Map<string, Record<string, FundingRateKind | null>>();
+  const venueSymbolsBySym = new Map<string, Record<string, string>>();
   const astNoInterval: string[] = [];
   for (const r of rates) {
     const sym = r.canonical;
     const kinds = kindsBySym.get(sym) ?? {};
     kinds[r.exchange] = r.rateKind;
     kindsBySym.set(sym, kinds);
+    const vs = venueSymbolsBySym.get(sym) ?? {};
+    vs[r.exchange] = r.symbol; // the venue's own symbol (orders use it)
+    venueSymbolsBySym.set(sym, vs);
     if (r.exchange === "aster") {
       if (r.basis.kind !== "perHours") { astNoInterval.push(r.symbol); continue; }
       astRates.set(sym, r.fundingRate); astPrices.set(sym, r.markPrice); astHoursBySym.set(sym, r.basis.hours);
@@ -658,6 +687,7 @@ export async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
       astMarkPrice: astPrices.get(sym) ?? 0,
       astHours: ast !== undefined ? astHours : null,
       rateKinds: Object.fromEntries(available.map(r => [r.exchange, kindsBySym.get(sym)?.[r.exchange] ?? null])),
+      venueSymbols: venueSymbolsBySym.get(sym) ?? {},
     });
   }
 
@@ -845,7 +875,7 @@ export function registerArbAutoCommands(
             (await getAdapterForExchange(p.shortExchange)).getPositions(),
           ]);
           const has = (list: { symbol: string; side: string; size: string }[], side: "long" | "short") =>
-            list.some(x => symbolMatch(x.symbol, p.symbol) && x.side === side && Math.abs(Number(x.size)) > 0);
+            list.some(x => symbolMatch(x.symbol, (side === "long" ? p.longSymbol : p.shortSymbol) ?? p.symbol) && x.side === side && Math.abs(Number(x.size)) > 0);
           if (has(longs, "long") && has(shorts, "short")) { staleSymbols.delete(p.symbol); return true; }
           if (!staleSymbols.has(p.symbol)) {
             console.log(chalk.yellow(`  ${new Date().toLocaleTimeString()} STALE STATE: ${p.symbol} (long ${p.longExchange} / short ${p.shortExchange}, since ${p.entryTime}) is not on the venues — not counted, not managed; drop it: perp arb close ${p.symbol} --state-only`));
@@ -874,6 +904,7 @@ export function registerArbAutoCommands(
             entryMarkPrice: persisted.entryLongPrice,
             accumulatedFundingUsd: persisted.accumulatedFunding,
             lastCheckTime: new Date(persisted.lastCheckTime).getTime(),
+            longSymbol: persisted.longSymbol, shortSymbol: persisted.shortSymbol,
           });
         }
         daemonState.lastStartTime = new Date().toISOString();
@@ -945,6 +976,7 @@ export function registerArbAutoCommands(
                 entryMarkPrice: persisted.entryLongPrice,
                 accumulatedFundingUsd: persisted.accumulatedFunding,
                 lastCheckTime: new Date(persisted.lastCheckTime).getTime(),
+                longSymbol: persisted.longSymbol, shortSymbol: persisted.shortSymbol,
               });
             }
           }
@@ -967,7 +999,7 @@ export function registerArbAutoCommands(
         try {
           const spreads = await fetchFundingSpreads();
           const filtered = filterSymbols
-            ? spreads.filter(s => filterSymbols.includes(s.symbol))
+            ? spreads.filter(s => matchesSymbolFilter(s, filterSymbols))
             : spreads;
 
           const now = new Date().toLocaleTimeString();
@@ -981,7 +1013,9 @@ export function registerArbAutoCommands(
             // Per-position isolation: one position's failing exit check (e.g. an
             // unknown funding basis in snapshotHourly) must not skip the others.
             try {
-              const current = filtered.find(s => s.symbol === pos.symbol);
+              // By canonical key; a position opened before 0.15.1 is keyed by its (shared) venue symbol.
+              const current = filtered.find(s => s.symbol === pos.symbol
+                || (legSymbol(s, pos.longExchange) === pos.symbol && legSymbol(s, pos.shortExchange) === pos.symbol));
               if (!current) continue;
 
               const currentSpread = Math.abs(current.spread);
@@ -1045,8 +1079,8 @@ export function registerArbAutoCommands(
                     const sizeStr = String(pos.size);
                     const closeRes = await closePerpPairVerified({
                       source: "arb-auto", sym: pos.symbol,
-                      longAdapter, longExch: pos.longExchange, longSym: pos.symbol, longSize: sizeStr,
-                      shortAdapter, shortExch: pos.shortExchange, shortSym: pos.symbol, shortSize: sizeStr, smart: false,
+                      longAdapter, longExch: pos.longExchange, longSym: pos.longSymbol ?? pos.symbol, longSize: sizeStr,
+                      shortAdapter, shortExch: pos.shortExchange, shortSym: pos.shortSymbol ?? pos.symbol, shortSize: sizeStr, smart: false,
                       log: (m) => console.log(chalk.red(m)),
                     });
 
@@ -1344,7 +1378,7 @@ export function registerArbAutoCommands(
                 try {
                   const longAdapter = await getAdapterForExchange(longExchange);
                   const shortAdapter = await getAdapterForExchange(shortExchange);
-                  actualSizeUsd = await computeAutoSize(longAdapter, shortAdapter, snap.symbol, 0.3);
+                  actualSizeUsd = await computeAutoSize(longAdapter, shortAdapter, legSymbol(snap, longExchange), 0.3, legSymbol(snap, shortExchange));
                   if (actualSizeUsd <= 0) {
                     console.log(chalk.gray(`  ${now} SKIP ${snap.symbol}: auto-size returned $0 (insufficient depth/margin)`));
                     continue;
@@ -1389,7 +1423,7 @@ export function registerArbAutoCommands(
                   legsStarted = true;
                   const res = await openPerpPairVerified({
                     source: "arb-auto", sym: snap.symbol,
-                    longAdapter, longExch: longExchange, longSym: snap.symbol, shortAdapter, shortExch: shortExchange, shortSym: snap.symbol,
+                    longAdapter, longExch: longExchange, longSym: legSymbol(snap, longExchange), shortAdapter, shortExch: shortExchange, shortSym: legSymbol(snap, shortExchange),
                     size: sizeInAsset, smart: false, log: (m) => console.log(chalk.red(m)),
                   });
                   legsStarted = false; // outcome known (opened / not opened / quarantined)
@@ -1420,6 +1454,7 @@ export function registerArbAutoCommands(
                         entryShortPrice: snap.markPrice,
                         accumulatedFunding: 0,
                         lastCheckTime: entryTime,
+                        ...legSymbolsOf(snap, longExchange, shortExchange),
                       });
                     } catch (e) {
                       // A hedged pair the state cannot record (write failed / conflicting entry): never
@@ -1444,6 +1479,9 @@ export function registerArbAutoCommands(
                     });
                     console.error(chalk.red(`  ${now} ENTRY FAILED ${snap.symbol}: ${res.reason}${res.rolledBack !== null ? ` — rolled back long ${res.rolledBack}; no open exposure` : " — nothing opened"}`));
                     donePending();
+                    // Cool down like a close: a leg the venue rejects (unknown symbol, lot, margin)
+                    // is not re-sent — with its fees and rollback — every cycle.
+                    closeCooldowns.set(snap.symbol, Date.now());
                     continue;
                   } else {
                     donePending(); // quarantined (persisted) by openPerpPairVerified
@@ -1494,6 +1532,7 @@ export function registerArbAutoCommands(
                 entryMarkPrice: snap.markPrice,
                 accumulatedFundingUsd: 0,
                 lastCheckTime: Date.now(),
+                ...legSymbolsOf(snap, longExchange, shortExchange),
               });
 
               // Dry-run: record the simulated entry in the in-memory state only (never the real file).
@@ -1742,7 +1781,7 @@ export function registerArbAutoCommands(
                 const topCheck = filtered.slice(0, 5);
                 await Promise.allSettled(topCheck.map(async (s) => {
                   try {
-                    const [hlOB, ltOB] = await Promise.all([fetchHLOrderbook(s.symbol), fetchLighterOrderbook(s.symbol)]);
+                    const [hlOB, ltOB] = await Promise.all([fetchHLOrderbook(legSymbol(s, "hyperliquid")), fetchLighterOrderbook(legSymbol(s, "lighter"))]);
                     const hlDepth = hlOB.reduce((sum, l) => sum + l[0] * l[1], 0);
                     const ltDepth = ltOB.reduce((sum, l) => sum + l[0] * l[1], 0);
                     const hlBest = hlOB[0]?.[0] ?? 0;

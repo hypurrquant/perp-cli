@@ -98,11 +98,13 @@ export async function checkArbLiquidity(
   sizeUsd: number,
   maxSlippagePct: number = 0.5,
   log?: (msg: string) => void,
+  /** The short venue's own symbol when it differs (kPEPE ↔ 1000PEPE); default `symbol`. */
+  shortSymbol: string = symbol,
 ): Promise<{ viable: boolean; adjustedSizeUsd: number; longSlippage: number; shortSlippage: number }> {
   try {
     const [longOB, shortOB] = await Promise.all([
       longAdapter.getOrderbook(symbol),
-      shortAdapter.getOrderbook(symbol),
+      shortAdapter.getOrderbook(shortSymbol),
     ]);
 
     // For long entry we consume asks, for short entry we consume bids

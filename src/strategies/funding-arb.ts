@@ -42,7 +42,10 @@ export interface FundingArbParams {
 
 interface FundingRate {
   exchange: string;
+  /** Canonical key (rows of one asset group under it). */
   symbol: string;
+  /** The venue's own symbol (orders / positions use it: Hyperliquid kPEPE, Lighter 1000PEPE). */
+  venueSymbol: string;
   fundingRate: number;
   markPrice: number;
 }
@@ -55,6 +58,9 @@ interface ArbPosition {
   entrySpread: number;
   openedAt: number;
   entryPrices: { long: number; short: number };
+  /** Venue symbols of the legs (= `symbol` when the venues use the canonical key). */
+  longSymbol: string;
+  shortSymbol: string;
 }
 
 async function fetchAllRates(): Promise<FundingRate[]> {
@@ -65,7 +71,7 @@ async function fetchAllRates(): Promise<FundingRate[]> {
   const { rates, exchangeErrors } = await fetchVenuesRates(venues, sharedApiNetwork(), false);
   for (const [ex, msg] of Object.entries(exchangeErrors)) process.stderr.write(`[funding-arb] ${ex}: funding rates unavailable — ${msg}\n`);
   // computeAnnualSpread / toHourlyRate normalize with the venue's basis: keep each rate in it.
-  return rates.map(r => ({ exchange: r.exchange, symbol: r.canonical, fundingRate: r.hourlyRate * getFundingHours(r.exchange), markPrice: r.markPrice }));
+  return rates.map(r => ({ exchange: r.exchange, symbol: r.canonical, venueSymbol: r.symbol, fundingRate: r.hourlyRate * getFundingHours(r.exchange), markPrice: r.markPrice }));
 }
 
 // annualize: use computeAnnualSpread from funding.ts for cross-exchange comparison
@@ -116,8 +122,12 @@ export async function runFundingArb(
 
       // Group by symbol
       const rateMap = new Map<string, FundingRate[]>();
+      // --symbols selects an asset by its canonical key or any venue's own symbol (kPEPE selects
+      // the whole 1000PEPE group, Lighter's leg included).
+      const want = new Set((params.symbols ?? []).map(s => s.toUpperCase()));
+      const wanted = new Set(rates.filter(r => want.has(r.symbol.toUpperCase()) || want.has(r.venueSymbol.toUpperCase())).map(r => r.symbol));
       for (const r of rates) {
-        if (params.symbols?.length && !params.symbols.includes(r.symbol)) continue;
+        if (want.size > 0 && !wanted.has(r.symbol)) continue;
         if (!rateMap.has(r.symbol)) rateMap.set(r.symbol, []);
         rateMap.get(r.symbol)!.push(r);
       }
@@ -237,6 +247,8 @@ export async function runFundingArb(
           if (annualSpread >= params.minSpread) {
             const longEx = lowest.exchange;
             const shortEx = highest.exchange;
+            const longSym = lowest.venueSymbol;
+            const shortSym = highest.venueSymbol;
 
             log(`[ARB] ENTRY signal: ${symbol} spread ${annualSpread.toFixed(1)}% — long ${longEx} (${(lowest.fundingRate * 100).toFixed(4)}%) / short ${shortEx} (${(highest.fundingRate * 100).toFixed(4)}%)`);
 
@@ -251,7 +263,7 @@ export async function runFundingArb(
 
               // Check orderbook liquidity & adjust size
               const requestedUsd = params.sizeUsd ?? Number(params.size) * highest.markPrice;
-              const liq = await checkArbLiquidity(longAdapter, shortAdapter, symbol, requestedUsd, 0.5, log);
+              const liq = await checkArbLiquidity(longAdapter, shortAdapter, longSym, requestedUsd, 0.5, log, shortSym);
               if (!liq.viable) continue;
 
               // Compute matched size (same for both legs) at each venue's published size precision —
@@ -259,7 +271,7 @@ export async function runFundingArb(
               let longDec: number | null;
               let shortDec: number | null;
               try {
-                [longDec, shortDec] = await Promise.all([sizeDecimalsOf(longAdapter, symbol), sizeDecimalsOf(shortAdapter, symbol)]);
+                [longDec, shortDec] = await Promise.all([sizeDecimalsOf(longAdapter, longSym), sizeDecimalsOf(shortAdapter, shortSym)]);
               } catch (e) {
                 log(`[ARB] Skip ${symbol}: could not read the market size precision (${e instanceof Error ? e.message : String(e)})`);
                 continue;
@@ -280,7 +292,7 @@ export async function runFundingArb(
                 let longLev: number | null;
                 let shortLev: number | null;
                 try {
-                  [longLev, shortLev] = await Promise.all([marketLeverageOf(longAdapter, symbol), marketLeverageOf(shortAdapter, symbol)]);
+                  [longLev, shortLev] = await Promise.all([marketLeverageOf(longAdapter, longSym), marketLeverageOf(shortAdapter, shortSym)]);
                 } catch (e) {
                   log(`[ARB] Skip ${symbol}: could not read the market leverage (${e instanceof Error ? e.message : String(e)})`);
                   continue;
@@ -296,8 +308,8 @@ export async function runFundingArb(
               log(`[ARB] Opening: ${matched.size} ${symbol} — long ${longEx} then short ${shortEx}, each verified ($${matched.notional.toFixed(0)}/leg, slippage ~${liq.longSlippage.toFixed(2)}%/${liq.shortSlippage.toFixed(2)}%)...`);
               const openPair = (size: string) => openPerpPairVerified({
                 source: SOURCE, sym: symbol,
-                longAdapter, longExch: longEx, longSym: symbol,
-                shortAdapter, shortExch: shortEx, shortSym: symbol,
+                longAdapter, longExch: longEx, longSym,
+                shortAdapter, shortExch: shortEx, shortSym,
                 size, smart: false, log, shortLotRetry: true,
               });
               let res = await openPair(matched.size);
@@ -328,6 +340,8 @@ export async function runFundingArb(
                 entrySpread: annualSpread,
                 openedAt: Date.now(),
                 entryPrices: { long: lowest.markPrice, short: highest.markPrice },
+                longSymbol: longSym,
+                shortSymbol: shortSym,
               });
 
               // Entry record: `arb status` / `arb close` confirm this pair from it (arbPairProvenance).
@@ -410,8 +424,8 @@ async function closeArbPosition(pos: ArbPosition, adapters: Map<string, Exchange
   let shortSize: string | null;
   try {
     [longSize, shortSize] = await Promise.all([
-      venueLegSize(longAdapter, pos.symbol, "long").then(cap),
-      venueLegSize(shortAdapter, pos.symbol, "short").then(cap),
+      venueLegSize(longAdapter, pos.longSymbol, "long").then(cap),
+      venueLegSize(shortAdapter, pos.shortSymbol, "short").then(cap),
     ]);
   } catch (err) {
     log(`[ARB] Close ${pos.symbol}: position read failed (${err instanceof Error ? err.message : String(err)}) — nothing sent, retry next cycle`);
@@ -424,8 +438,8 @@ async function closeArbPosition(pos: ArbPosition, adapters: Map<string, Exchange
   if (longSize !== null && shortSize !== null) {
     const res = await closePerpPairVerified({
       source: SOURCE, sym: pos.symbol,
-      longAdapter, longExch: pos.longExchange, longSym: pos.symbol, longSize,
-      shortAdapter, shortExch: pos.shortExchange, shortSym: pos.symbol, shortSize,
+      longAdapter, longExch: pos.longExchange, longSym: pos.longSymbol, longSize,
+      shortAdapter, shortExch: pos.shortExchange, shortSym: pos.shortSymbol, shortSize,
       smart: false, log,
     });
     if (res.status === "closed") {
@@ -452,7 +466,7 @@ async function closeArbPosition(pos: ArbPosition, adapters: Map<string, Exchange
     return false;
   };
   try {
-    const c = await closePerpVerified(adapter, venue, pos.symbol, side, size);
+    const c = await closePerpVerified(adapter, venue, leg === "long" ? pos.longSymbol : pos.shortSymbol, side, size);
     if (c.residual > 0) return q(`orphaned ${leg} close on ${venue} closed ${c.closed} of ${size}, ${c.residual} still open${c.note !== null ? ` (${c.note})` : ""}`);
   } catch (err) {
     if (!isOutcomeUnknown(err) && isPositionGone(err)) return true;
