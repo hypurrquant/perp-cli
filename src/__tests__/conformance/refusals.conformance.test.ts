@@ -99,3 +99,35 @@ for (const def of READ_ONLY) {
     }
   });
 }
+
+/**
+ * Keyless account reads on a venue WITH the account role: one typed refusal everywhere —
+ * NO_SIGNER_AVAILABLE (or a venue-specific signer code) with remediation, never UNKNOWN / a 500
+ * ("No private key configured" was a bare Error on hyperliquid / lighter / pacifica).
+ */
+const ACCOUNT_VENUES = listVenues().filter(v => v.roles.includes("account"));
+const SIGNER_CODES = new Set(["NO_SIGNER_AVAILABLE", "KEY_NOT_FOUND", "AGENT_NOT_REGISTERED"]);
+describe("keyless account reads refuse with a typed signer code on every account venue", () => {
+  // Public start-up reads a venue adapter makes before any account call (Aster server time, the
+  // Lighter market directory) are answered minimally; any other request fails the cell.
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn(async (u: unknown) => {
+      const url = String(u);
+      if (url.includes("/fapi/v3/time")) return new Response(JSON.stringify({ serverTime: Date.now() }), { status: 200 });
+      if (url.includes("/api/v1/orderBooks")) return new Response(JSON.stringify({ code: 200, order_books: [{ symbol: "BTC", market_id: 1, market_type: "perp", status: "active", supported_size_decimals: 5, supported_price_decimals: 1 }] }), { status: 200 });
+      throw new Error(`unexpected request before the refusal: ${url}`);
+    }));
+  });
+  it("the registry has account venues", () => expect(ACCOUNT_VENUES.length).toBeGreaterThan(0));
+  for (const def of ACCOUNT_VENUES) {
+    for (const argv of [["-e", def.id, "account", "positions"], ["-e", def.id, "account", "orders"], ["-e", def.id, "account", "trades"]]) {
+      it(`perp ${argv.join(" ")} (no key) → a signer code with remediation, not UNKNOWN`, async () => {
+        const r = await runCli(argv);
+        expect(r.envelope.ok, "a keyless account read cannot succeed").toBe(false);
+        const e = r.envelope.error!;
+        expect(SIGNER_CODES.has(e.code), `${def.id}: ${e.code} ${e.message}`).toBe(true);
+        expect(issues(ErrorEnvelope, r.envelope), "refusal carries a remediation").toBe("");
+      });
+    }
+  }
+});

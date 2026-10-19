@@ -19,7 +19,7 @@ import type { EvmSigner } from "../signer/index.js";
 import { LocalEvmSigner } from "../signer/index.js";
 import type { AgentMeta } from "../settings.js";
 import { isExpired } from "../agent-wallet/expiry.js";
-import { PerpError, classifyError, extractErrorMessage, orderNotSent, orderOutcomeUnknown, sendFailure, unknownActionRemediation, parsePositiveDecimal, DEFINITE_ORDER_FAILURE_CODES, type ErrorCode } from "../errors.js";
+import { PerpError, classifyError, extractErrorMessage, orderNotSent, orderOutcomeUnknown, sendFailure, unknownActionRemediation, parsePositiveDecimal, DEFINITE_ORDER_FAILURE_CODES, type ErrorCode, noAccountKeyError } from "../errors.js";
 import { parseFiniteVenueNumber, venueRateField } from "../utils/numeric.js";
 import type { Network, VenueNetworkConfig } from "./venue.js";
 import {
@@ -1510,7 +1510,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getBalance(): Promise<ExchangeBalance> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     const acct = await this.fetchAccount();
     // Rule #2: no account is not a zero balance — say so (like getMarketSettings).
     if (!acct) {
@@ -1548,7 +1548,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getPositions(): Promise<ExchangePosition[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     const acct = await this.fetchAccount();
     if (!acct) return [];
 
@@ -1584,7 +1584,7 @@ export class LighterAdapter implements ExchangeAdapter {
    * position or not).
    */
   async getMarketSettings(): Promise<Array<{ symbol: string; leverage: number; marginMode: "cross" | "isolated" }>> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     const acct = await this.fetchAccount();
     if (acct === null) throw new PerpError("EXCHANGE_ERROR", `${this.name}: no account found for ${this._address}`, { exchange: this.name });
     if (!Array.isArray(acct.positions)) {
@@ -1606,7 +1606,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getOpenOrders(): Promise<ExchangeOrder[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     if (this._accountIndex < 0 || this._readOnly) return [];
     // ONE request for every perp market. Docs (apidocs.lighter.xyz/reference/accountactiveorders):
     // market_id — "If not specified, returns active orders for all markets."; market_type —
@@ -2406,7 +2406,7 @@ export class LighterAdapter implements ExchangeAdapter {
    * is optional ("default": "255"), market_type is "all" | "spot" | "perp".
    */
   async getOrderHistory(limit = 30): Promise<ExchangeOrder[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     const orders = await this.historyRows("/accountInactiveOrders", "orders", { market_type: "perp" }, limit, true);
     // Every field is required: a missing price / size / status / type is an unreadable row, never "0" / "done" / "limit".
     const req = (o: Record<string, unknown>, k: string): string => lighterRowField(o, k, this.name, "order history");
@@ -2436,7 +2436,7 @@ export class LighterAdapter implements ExchangeAdapter {
    * so the fee is usd_amount × fee / 1e6 for the side this account took.
    */
   async getTradeHistory(limit = 30): Promise<ExchangeTrade[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     const trades = await this.historyRows("/trades", "trades", { sort_by: "timestamp", market_type: "perp" }, limit, false);
     return trades.map((t) => {
       const sold = t.ask_account_id === this._accountIndex;
@@ -2471,7 +2471,7 @@ export class LighterAdapter implements ExchangeAdapter {
    * quote amount: a short at a positive rate has a positive change).
    */
   async getFundingPayments(limit = 200): Promise<ExchangeFundingPayment[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     const items = await this.historyRows("/positionFunding", "position_fundings", { side: "all" }, limit, true);
     return items.map((f) => {
       if (typeof f.timestamp !== "number" || typeof f.change !== "string") {

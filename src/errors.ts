@@ -407,3 +407,14 @@ export function parsePositiveDecimal(raw: string, what: string): string {
   }
   return s;
 }
+
+/**
+ * A keyless account read (positions, balance, orders, history): the one typed refusal every venue
+ * returns — NO_SIGNER_AVAILABLE with the setup remediation (never an UNKNOWN 500).
+ */
+export function noAccountKeyError(venue: string): PerpError {
+  return new PerpError("NO_SIGNER_AVAILABLE", `${venue}: no account key configured — account data unavailable`, {
+    exchange: venue,
+    remediation: `Set up an account for ${venue}: perp setup (or perp -e ${venue} wallet show to check)`,
+  });
+}

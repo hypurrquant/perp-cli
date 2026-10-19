@@ -21,7 +21,7 @@ import type { AgentMeta } from "../settings.js";
 import { isExpired } from "../agent-wallet/expiry.js";
 import { isPacificaPerpetual } from "../ws/pacifica-instrument.js";
 import { randomUUID } from "crypto";
-import { PerpError, extractErrorMessage, isDefiniteOrderFailure, orderNotSent, orderOutcomeUnknown } from "../errors.js";
+import { PerpError, extractErrorMessage, isDefiniteOrderFailure, orderNotSent, orderOutcomeUnknown, noAccountKeyError } from "../errors.js";
 import { parseFiniteVenueNumber, venueRateField } from "../utils/numeric.js";
 import type { MarketInfo } from "../pacifica/types/market.js";
 import type { TimeInForce as PacificaTif } from "../pacifica/types/order.js";
@@ -791,7 +791,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async getBalance(): Promise<ExchangeBalance> {
-    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._hasRealKey) throw noAccountKeyError("pacifica");
     const [info, positions, prices] = await Promise.all([
       this.client.getAccount(this.account),
       this._getPositions(),
@@ -837,7 +837,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async getPositions(): Promise<ExchangePosition[]> {
-    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._hasRealKey) throw noAccountKeyError("pacifica");
     const [positions, prices] = await Promise.all([
       this._getPositions(),
       this._getPrices(),
@@ -942,7 +942,7 @@ export class PacificaAdapter implements ExchangeAdapter {
   }
 
   async getOpenOrders(): Promise<ExchangeOrder[]> {
-    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._hasRealKey) throw noAccountKeyError("pacifica");
     // GET /orders covers every market; spot orders (SOL-USDC) belong to the spot adapter.
     const [orders, info] = await Promise.all([this.client.getOrders(this.account), this.client.getInfo()]);
     const nonPerp = nonPerpInfoSymbols(info);
@@ -1143,7 +1143,7 @@ export class PacificaAdapter implements ExchangeAdapter {
    * null = not among them. history_by_id itself takes only `order_id`, so this resolves the id.
    */
   async orderByClientId(clientOrderId: string): Promise<{ orderId: string; symbol: string; type: string; open: boolean } | null> {
-    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._hasRealKey) throw noAccountKeyError("pacifica");
     const wanted = requirePacificaClientOrderId(clientOrderId, pacificaTifOf(clientOrderId.toLowerCase())).toLowerCase();
     const pick = (rows: unknown, open: boolean) => {
       if (!Array.isArray(rows)) {
@@ -1719,7 +1719,7 @@ export class PacificaAdapter implements ExchangeAdapter {
    * readable field → EXCHANGE_ERROR, never an empty list or a placeholder value.
    */
   async getOrderHistory(limit = 30): Promise<ExchangeOrder[]> {
-    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._hasRealKey) throw noAccountKeyError("pacifica");
     const rows = await this.client.getOrderHistory(this.account, { limit });
     if (!Array.isArray(rows)) {
       throw new PerpError("EXCHANGE_ERROR", `Pacifica /orders/history returned no order list (${JSON.stringify(rows).slice(0, 120)})`, { exchange: "pacifica" });
@@ -1751,7 +1751,7 @@ export class PacificaAdapter implements ExchangeAdapter {
    * rows that carry an order side. Anything else, a non-list or an unreadable field → EXCHANGE_ERROR.
    */
   async getTradeHistory(limit = 30): Promise<ExchangeTrade[]> {
-    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._hasRealKey) throw noAccountKeyError("pacifica");
     const rows = await this.client.getTradeHistory(this.account, { limit });
     if (!Array.isArray(rows)) {
       throw new PerpError("EXCHANGE_ERROR", `Pacifica /trades/history returned no list (${JSON.stringify(rows).slice(0, 120)})`, { exchange: "pacifica" });
@@ -1771,7 +1771,7 @@ export class PacificaAdapter implements ExchangeAdapter {
 
   /** Funding paid / received per position (GET /funding/history, `payout` signed). Strict like getTradeHistory. */
   async getFundingPayments(limit = 200): Promise<ExchangeFundingPayment[]> {
-    if (!this._hasRealKey) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._hasRealKey) throw noAccountKeyError("pacifica");
     const rows = await this.client.getFundingAccountHistory(this.account, { limit });
     if (!Array.isArray(rows)) {
       throw new PerpError("EXCHANGE_ERROR", `Pacifica /funding/history returned no list (${JSON.stringify(rows).slice(0, 120)})`, { exchange: "pacifica" });

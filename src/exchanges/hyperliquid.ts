@@ -15,7 +15,7 @@ import type { ResolvedSlippage } from "./slippage.js";
 import type { EvmSigner } from "../signer/index.js";
 import { LocalEvmSigner } from "../signer/index.js";
 import type { AgentMeta } from "../settings.js";
-import { DEFINITE_ORDER_FAILURE_CODES, PerpError, classifyError, extractErrorMessage, orderNotSent, orderOutcomeUnknown, sendFailure, type ErrorCode } from "../errors.js";
+import { DEFINITE_ORDER_FAILURE_CODES, PerpError, classifyError, extractErrorMessage, orderNotSent, orderOutcomeUnknown, sendFailure, type ErrorCode, noAccountKeyError } from "../errors.js";
 import { parseFiniteVenueNumber, venueRateField } from "../utils/numeric.js";
 import { alignProtectionPrice, floorSize, formatComputedPrice, slippagePrice, subDecimal } from "./precision.js";
 import { unsupported } from "./trading-v2.js";
@@ -1066,7 +1066,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
 
   private ensureAddress(): void {
     if (!this._address) {
-      throw new Error("No private key configured — account data unavailable. Run: perp setup");
+      throw noAccountKeyError(this.name);
     }
   }
 
