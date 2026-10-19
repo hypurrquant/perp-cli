@@ -44,7 +44,7 @@ describe("funding history rows carry intervalHours + rateKind", () => {
 
   it("arcus: hourly", async () => {
     const a = bare(ArcusAdapter.prototype, {
-      market: vi.fn(async () => ({ marketDisplayName: "BTC-USD" })),
+      market: vi.fn(async () => ({ marketDisplayName: "BTC-USD", status: "ONLINE" })),
       client: { get: vi.fn(async () => ({ fundingRates: [{ fundingRate: "0.000007703166719716", time: 1792404000000000 }] })) },
     });
     expect((await a.getFundingHistory("BTC", 1))[0]).toEqual({ time: 1792404000000, rate: "0.000007703166719716", price: null, ...SETTLED_1H });
