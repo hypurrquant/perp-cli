@@ -263,48 +263,68 @@ export interface LighterFundingStat {
   predictedRate: string | null;
 }
 
-/** market_stats rates are PERCENT per 1 h (codec notes): exact × 0.01. */
-function percentToFraction(v: unknown): string | null {
+/** market_stats rates are PERCENT per 1 h (codec notes): exact × 0.01. undefined = malformed. */
+function percentToFraction(v: unknown): string | null | undefined {
+  if (v === undefined || v === null) return null;
   const s = typeof v === "string" ? v.trim() : typeof v === "number" && Number.isFinite(v) ? String(v) : null;
-  if (s === null || !/^-?\d+(\.\d+)?$/.test(s)) return null;
+  if (s === null || !/^-?\d+(\.\d+)?$/.test(s)) return undefined;
   return mulDecimal(s, "0.01"); // exact (no float)
 }
 
 const STATS_TTL_MS = 10_000;
-const STATS_TIMEOUT_MS = 10_000;
-const statsCache = new Map<string, { at: number; value: Promise<Map<number, LighterFundingStat>> }>();
+/** A failed read is remembered this long (one stderr line / meta warning, not a socket per call). */
+const STATS_FAILURE_TTL_MS = 60_000;
+const STATS_TIMEOUT_MS = 4_000;
+const statsCache = new Map<string, { at: number; value: Promise<Map<number, LighterFundingStat>>; failure: string | null }>();
 
-/** Drop the shared market_stats snapshots (tests; a network switch). */
+/** Drop the shared market_stats snapshots and remembered failures (tests; a network switch). */
 export function clearLighterFundingStatsCache(): void {
   statsCache.clear();
 }
 
 /**
- * Settled + predicted hourly funding of every market, keyed by market_id: the first frame of the
- * WS `market_stats/all` channel (the source of the perp-ws `rate` / `predictedRate`). REST has no
- * bulk settled source: /funding-rates is the PREDICTED rate × 8 (live 2026-10-19: ETH 0.0009 % /h
- * predicted → 0.000072; settled 0.0012 % /h), and /fundings is one market per request. One
- * snapshot per venue / network is shared for STATS_TTL_MS.
+ * Why the settled rate of `venue` / `net` is unavailable right now (the remembered failure of the
+ * last snapshot read), null when it was read or not tried. Callers put it in `meta.warnings`
+ * (CLI --json, MCP) next to the rows whose fundingRate is null.
+ */
+export function lighterFundingStatsWarning(venue: LighterVenueId, net: Network): string | null {
+  const hit = statsCache.get(`${venue}:${net}`);
+  return hit !== undefined && hit.failure !== null && Date.now() - hit.at < STATS_FAILURE_TTL_MS
+    ? `${venue}: fundingRate null — settled funding rate unavailable (${hit.failure})` : null;
+}
+
+/**
+ * Settled + predicted hourly funding of every market, keyed by market_id: the SNAPSHOT frame
+ * (`subscribed/market_stats`, channel `market_stats:all` — later `update/…` frames carry only the
+ * markets that changed) of the WS `market_stats/all` channel, the source of the perp-ws `rate` /
+ * `predictedRate`. REST has no bulk settled source: /funding-rates is the PREDICTED rate × 8 (live
+ * 2026-10-19: ETH 0.0009 % /h predicted → 0.000072; settled 0.0012 % /h), and /fundings is one
+ * market per request. One snapshot per venue / network is shared STATS_TTL_MS; a failure is
+ * remembered STATS_FAILURE_TTL_MS (lighterFundingStatsWarning).
  */
 export function fetchLighterFundingStats(venue: LighterVenueId, net: Network): Promise<Map<number, LighterFundingStat>> {
   const key = `${venue}:${net}`;
   const hit = statsCache.get(key);
-  if (hit !== undefined && Date.now() - hit.at < STATS_TTL_MS) return hit.value;
+  if (hit !== undefined && Date.now() - hit.at < (hit.failure === null ? STATS_TTL_MS : STATS_FAILURE_TTL_MS)) return hit.value;
   const value = readFundingStats(venue, net);
-  statsCache.set(key, { at: Date.now(), value });
-  value.catch(() => statsCache.delete(key));
+  const entry = { at: Date.now(), value, failure: null as string | null };
+  statsCache.set(key, entry);
+  value.catch((e: unknown) => { entry.failure = e instanceof Error ? e.message : String(e); entry.at = Date.now(); });
   return value;
 }
 
 async function readFundingStats(venue: LighterVenueId, net: Network): Promise<Map<number, LighterFundingStat>> {
   const url = lighterFamilyNetworks(venue)[net].wsUrl;
   if (url === null) {
-    throw new PerpError("EXCHANGE_UNREACHABLE", `${venue} ${net} has no WebSocket endpoint: the settled funding rate (market_stats) cannot be read`, { exchange: venue });
+    throw new PerpError("CAPABILITY_UNSUPPORTED", `${venue} ${net} publishes no WebSocket endpoint, so its settled funding rate (market_stats) cannot be read`, { exchange: venue });
   }
   const { default: WebSocket } = await import("ws");
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
+    let settled = false;
     const done = (err: unknown, value?: Map<number, LighterFundingStat>) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       try { ws.close(); } catch { /* already closed */ }
       if (err !== null) reject(err); else resolve(value!);
@@ -312,6 +332,7 @@ async function readFundingStats(venue: LighterVenueId, net: Network): Promise<Ma
     const timer = setTimeout(() => done(new PerpError("EXCHANGE_UNREACHABLE", `${venue} market_stats: no snapshot within ${STATS_TIMEOUT_MS / 1000} s`, { exchange: venue })), STATS_TIMEOUT_MS);
     ws.on("open", () => ws.send(JSON.stringify({ type: "subscribe", channel: "market_stats/all" })));
     ws.on("error", (e: Error) => done(new PerpError("EXCHANGE_UNREACHABLE", `${venue} market_stats: ${e.message}`, { exchange: venue })));
+    ws.on("close", (code: number) => done(new PerpError("EXCHANGE_UNREACHABLE", `${venue} market_stats: socket closed (code ${code}) before the snapshot`, { exchange: venue })));
     ws.on("message", (data: unknown) => {
       let f: Record<string, unknown>;
       try { f = JSON.parse(String(data)) as Record<string, unknown>; } catch { return; }
@@ -319,13 +340,23 @@ async function readFundingStats(venue: LighterVenueId, net: Network): Promise<Ma
         done(new PerpError("EXCHANGE_ERROR", `${venue} market_stats: ${JSON.stringify(f.error).slice(0, 200)}`, { exchange: venue }));
         return;
       }
+      // Only the snapshot frame has every market ("connected" and update frames are skipped).
+      if (f.type !== "subscribed/market_stats" || f.channel !== "market_stats:all") return;
       const stats = f.market_stats;
-      if (stats === null || typeof stats !== "object") return; // a frame before the snapshot (connected)
-      const out = new Map<number, LighterFundingStat>();
-      for (const [id, r] of Object.entries(stats as Record<string, Record<string, unknown>>)) {
-        if (r === null || typeof r !== "object") continue;
-        out.set(Number(id), { rate: percentToFraction(r.funding_rate), predictedRate: percentToFraction(r.current_funding_rate) });
+      if (stats === null || typeof stats !== "object") {
+        done(new PerpError("EXCHANGE_ERROR", `${venue} market_stats snapshot without market_stats`, { exchange: venue }));
+        return;
       }
+      const out = new Map<number, LighterFundingStat>();
+      const malformed: string[] = [];
+      for (const [id, r] of Object.entries(stats as Record<string, Record<string, unknown>>)) {
+        if (r === null || typeof r !== "object") { malformed.push(`#${id}`); continue; }
+        const rate = percentToFraction(r.funding_rate);
+        const predictedRate = percentToFraction(r.current_funding_rate);
+        if (rate === undefined || predictedRate === undefined) malformed.push(typeof r.symbol === "string" ? r.symbol : `#${id}`);
+        out.set(Number(id), { rate: rate ?? null, predictedRate: predictedRate ?? null });
+      }
+      if (malformed.length > 0) console.warn(`[${venue}] market_stats: ${malformed.length} market(s) with a malformed funding value (rate null): ${malformed.slice(0, 10).join(", ")}`);
       done(null, out);
     });
   });
@@ -367,12 +398,12 @@ function toMarket(venue: LighterVenueId, net: Network, d: RawDetail, assetClass:
 
 export function lighterPublicData(venue: LighterVenueId): VenuePublicData {
   return {
-    async fetchMarkets(net) {
+    async fetchMarkets(net, opts) {
       // The settled rate is the WS snapshot: unreadable → the rows are listed with fundingRate null
       // (unknown, never 0), and the reason is printed.
       const [details, funding] = await Promise.all([
         fetchPerpDetails(venue, net),
-        fetchLighterFundingStats(venue, net).catch((e: unknown) => {
+        opts?.funding === false ? Promise.resolve(new Map<number, LighterFundingStat>()) : fetchLighterFundingStats(venue, net).catch((e: unknown) => {
           console.warn(`[${venue}] settled funding rate unavailable (fundingRate null): ${e instanceof Error ? e.message : String(e)}`);
           return new Map<number, LighterFundingStat>();
         }),

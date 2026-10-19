@@ -265,7 +265,7 @@ export interface PriceGroupSnapshot {
 export async function fetchCanonicalPriceGroups(venues: VenueDefinition[], opts?: { symbols?: string[]; network?: Network; tag?: string }): Promise<PriceGroupSnapshot> {
   ensureVenuesRegistered();
   const net = opts?.network ?? sharedApiNetwork();
-  const settled = await Promise.allSettled(venues.map(v => v.publicData.fetchMarkets(net)));
+  const settled = await Promise.allSettled(venues.map(v => v.publicData.fetchMarkets(net, { funding: false })));
   const exchangeStatus: Record<string, "ok" | "error"> = {};
   const exchangeErrors: Record<string, string> = {};
   const prices: VenuePrice[] = [];

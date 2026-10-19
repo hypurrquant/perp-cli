@@ -116,6 +116,15 @@ function printUnofficialNotes(venues: string[]): void {
   }
 }
 
+/**
+ * meta.warnings for market rows whose fundingRate is null for a known reason (Lighter: the
+ * settled-rate snapshot could not be read) — the reason reaches --json, not only stderr.
+ */
+function fundingWarnings(adapters: ExchangeAdapter[]): { warnings: string[] } | undefined {
+  const w = adapters.map(a => (a as { fundingWarning?: () => string | null }).fundingWarning?.() ?? null).filter((x): x is string => x !== null);
+  return w.length > 0 ? { warnings: w } : undefined;
+}
+
 /** null = venue does not publish the value → "-" (never rendered as $0). */
 const usdOrDash = (v: string | null): string => (v === null ? chalk.gray("-") : `$${formatUsd(v)}`);
 
@@ -253,11 +262,13 @@ export function registerMarketCommands(
       if (!explicitExchange && getAdapterForExchange) {
         const grouped: Record<string, { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null; volume24h: string | null; openInterest: string | null; maxLeverage: number | null }[]> = {};
         const errors: Record<string, string> = {};
+        const listed: ExchangeAdapter[] = [];
 
         await Promise.all(MARKET_DATA_VENUES.map(async (ex) => {
           try {
             const adapter = await getAdapterForExchange(ex);
             grouped[ex] = await adapter.getMarkets();
+            listed.push(adapter);
             // --hip3: fetch HIP-3 dex markets
             if (opts.hip3 && ex === "hyperliquid" && isDexCapable(adapter)) {
               const dexes = await adapter.listDeployedDexes();
@@ -272,7 +283,7 @@ export function registerMarketCommands(
         }));
 
         if (isJson()) {
-          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }));
+          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }, fundingWarnings(listed)));
         }
 
         // Per-exchange tables
@@ -308,7 +319,7 @@ export function registerMarketCommands(
         if (Object.keys(hip3).length > 0) {
           return printJson(jsonOk({ main: markets, hip3 }));
         }
-        return printJson(jsonOk(markets));
+        return printJson(jsonOk(markets, fundingWarnings([adapter])));
       }
 
       const perMarket = perMarketFunding(adapter.name);
@@ -345,18 +356,20 @@ export function registerMarketCommands(
       if (!explicitExchange && getAdapterForExchange) {
         const grouped: Record<string, { symbol: string; markPrice: string; indexPrice: string | null; fundingRate: string | null }[]> = {};
         const errors: Record<string, string> = {};
+        const listed: ExchangeAdapter[] = [];
 
         await Promise.all(MARKET_DATA_VENUES.map(async (ex) => {
           try {
             const adapter = await getAdapterForExchange(ex);
             grouped[ex] = await adapter.getMarkets();
+            listed.push(adapter);
           } catch (err) {
             errors[ex] = err instanceof Error ? err.message : String(err);
           }
         }));
 
         if (isJson()) {
-          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }));
+          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }, fundingWarnings(listed)));
         }
 
         for (const [ex, markets] of Object.entries(grouped)) {
@@ -372,7 +385,7 @@ export function registerMarketCommands(
       const adapter = await getAdapter();
       // One normalized shape on every venue (Pacifica included — it printed the raw /info/prices rows).
       const markets = await adapter.getMarkets();
-      if (isJson()) return printJson(jsonOk(markets));
+      if (isJson()) return printJson(jsonOk(markets, fundingWarnings([adapter])));
       console.log(makeTable(PRICE_HEADERS, markets.map(m => priceRow(m, perMarketFunding(adapter.name)))));
     });
 
@@ -416,7 +429,7 @@ export function registerMarketCommands(
           });
         });
       }
-      if (isJson()) return printJson(jsonOk(m));
+      if (isJson()) return printJson(jsonOk(m, fundingWarnings([adapter])));
       printMarketInfo(adapter.name, m);
     });
 

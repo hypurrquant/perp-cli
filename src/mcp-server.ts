@@ -30,6 +30,7 @@ import { getVenue, listVenues, listVenuesWithRole, networkConfig, READ_ONLY_CRED
 import "./exchanges/venues/index.js";
 import type { OrderRequest, VenueId } from "./exchanges/venue-types.js";
 import { venueMarketRow } from "./exchanges/venue-types.js";
+import { lighterFundingStatsWarning } from "./exchanges/lighter-public.js";
 import { newVenueClientOrderId, placeAndConfirm, validateLegacyTif, validateOrderRequest, type PlacedOrder } from "./exchanges/trading-v2.js";
 import { closePerpVerified, isOutcomeUnknown } from "./bot/perp-order.js";
 import { quarantineSymbol } from "./bot/quarantine.js";
@@ -136,6 +137,17 @@ async function tryGetAdapter(exchange: string): Promise<ExchangeAdapter | null> 
  */
 async function fetchMarketsPublic(exchange: string) {
   return labelMarketRows(exchange, await getVenue(exchange).publicData.fetchMarkets(MCP_NETWORK));
+}
+
+/**
+ * meta.warnings when a venue's rows carry fundingRate null for a known reason (Lighter: the
+ * settled-rate snapshot could not be read) — the reason reaches the agent, not only stderr.
+ */
+function fundingWarningMeta(exchange: string): { warnings?: string[] } {
+  const id = getVenue(exchange).id;
+  if (id !== "lighter" && id !== "lighter-rh") return {};
+  const w = lighterFundingStatsWarning(id, MCP_NETWORK);
+  return w === null ? {} : { warnings: [w] };
 }
 
 /**
@@ -300,13 +312,13 @@ server.tool(
       const adapter = await tryGetAdapter(exchange);
       if (adapter) {
         const markets = labelMarketRows(exchange, await adapter.getMarkets());
-        return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, ...apiMeta(exchange) }) }] };
+        return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, ...apiMeta(exchange), ...fundingWarningMeta(exchange) }) }] };
       }
       // No credentials: the venue's public directory — price-only on GRVT (no 184-request
       // margin_rules fan-out per call) — in the CLI market-row shape (venueMarketRow), with the
       // same market set as `perp market list` (the venue's shared eligibility / listing rule).
       const markets = await fetchMarketRowsPublic(exchange);
-      return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, source: "public", ...apiMeta(exchange) }) }] };
+      return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, source: "public", ...apiMeta(exchange), ...fundingWarningMeta(exchange) }) }] };
     } catch (e) {
       return { content: [{ type: "text", text: errOf(e, { exchange }) }], isError: true };
     }

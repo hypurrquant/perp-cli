@@ -480,5 +480,5 @@ export function matchSpotPerp(
 
 /** The perp venue's public markets (canonical + asset class + mark) on `net` (default: process network). */
 export function fetchPerpMarketsForMatching(perpVenue: string, net: Network = sharedApiNetwork()): Promise<VenueMarket[]> {
-  return getVenue(perpVenue).publicData.fetchMarkets(net);
+  return getVenue(perpVenue).publicData.fetchMarkets(net, { funding: false });
 }

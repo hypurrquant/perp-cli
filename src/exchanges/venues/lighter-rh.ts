@@ -12,8 +12,8 @@ const publicData: VenuePublicData = {
   async fetchFundingRates(net) {
     return (await import("../lighter-public.js")).lighterPublicData("lighter-rh").fetchFundingRates(net);
   },
-  async fetchMarkets(net) {
-    return (await import("../lighter-public.js")).lighterPublicData("lighter-rh").fetchMarkets(net);
+  async fetchMarkets(net, opts) {
+    return (await import("../lighter-public.js")).lighterPublicData("lighter-rh").fetchMarkets(net, opts);
   },
 };
 

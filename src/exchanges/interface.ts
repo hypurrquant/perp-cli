@@ -287,7 +287,8 @@ export interface ExchangeAdapter {
   init?(): Promise<void>;
 
   // ── Market Data ──
-  getMarkets(): Promise<ExchangeMarketInfo[]>;
+  /** `opts.funding: false` = marks / precision only (Lighter skips its funding snapshot read). */
+  getMarkets(opts?: { funding?: boolean }): Promise<ExchangeMarketInfo[]>;
   /** `depth` (levels per side) sizes the request on venues that take it; callers cut the answer to it. */
   getOrderbook(symbol: string, depth?: number): Promise<{ bids: [string, string][]; asks: [string, string][] }>;
   getRecentTrades(symbol: string, limit?: number): Promise<ExchangePublicTrade[]>;

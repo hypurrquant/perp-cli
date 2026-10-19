@@ -133,7 +133,11 @@ export interface RateLimitPolicy {
 
 export interface VenuePublicData {
   fetchFundingRates(net: Network): Promise<VenueFundingRate[]>;
-  fetchMarkets(net: Network): Promise<VenueMarket[]>;
+  /**
+   * `opts.funding: false` = the caller needs marks / precision only: a venue whose funding rate
+   * costs an extra read (Lighter: the WS market_stats snapshot) skips it (rows fundingRate null).
+   */
+  fetchMarkets(net: Network, opts?: { funding?: boolean }): Promise<VenueMarket[]>;
 }
 
 // ── Creation ──

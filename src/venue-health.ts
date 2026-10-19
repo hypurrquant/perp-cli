@@ -95,7 +95,7 @@ export async function probeVenueHealth(network: Network, venueIds?: readonly str
     const ping = pingFor(v.id, network);
     return ping !== null
       ? ping()
-      : timed("markets", async () => { await v.publicData.fetchMarkets(network); return { ok: true, status: null }; });
+      : timed("markets", async () => { await v.publicData.fetchMarkets(network, { funding: false }); return { ok: true, status: null }; });
   }));
   const probes = probed.map((v, i): VenueProbe => ({ venue: v.id, ...results[i], apiStatus: v.apiStatus.kind }));
   return { probes, skipped, allHealthy: probes.every(p => p.ok) };

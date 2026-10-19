@@ -192,3 +192,12 @@ describe("market list|prices without -e covers every market-data venue (QA 0.15.
     expect(asked).toEqual(expect.arrayContaining(["txflow", "variational", "grvt", "extended"]));
   });
 });
+
+describe("meta.warnings: why a fundingRate is null reaches --json", () => {
+  it("market list -e <venue> --json carries the adapter's funding warning", async () => {
+    const warning = "lighter: fundingRate null — settled funding rate unavailable (closed)";
+    const { out } = await run({ getMarkets: async () => [{ ...BTC, fundingRate: null }], fundingWarning: () => warning } as Partial<ExchangeAdapter>, ["-e", "lighter", "market", "list"], true);
+    const env = JSON.parse(out.at(-1)!) as { meta: { warnings?: string[] } };
+    expect(env.meta.warnings).toEqual([warning]);
+  });
+});

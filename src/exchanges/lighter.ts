@@ -27,7 +27,7 @@ import {
   LIGHTER_GTT_EXPIRY_MS, LIGHTER_CLIENT_ORDER_INDEX_MAX, LIGHTER_REFERENCE_PRICE_SOURCE,
 } from "./venues/lighter-family.js";
 import { acquireRate, rateLimitedError } from "./rate-limiter.js";
-import { fetchLighterFundingStats, LIGHTER_BOOK_ORDERS_LIMIT, lighterBook, lighterWafChallenge, type LighterFundingStat } from "./lighter-public.js";
+import { fetchLighterFundingStats, lighterFundingStatsWarning, LIGHTER_BOOK_ORDERS_LIMIT, lighterBook, lighterWafChallenge, type LighterFundingStat } from "./lighter-public.js";
 import { fetchAndCache, invalidateCache, setCached, withCache, TTL_ACCOUNT } from "../cache.js";
 import type { LighterVenueId } from "./venues/lighter-family.js";
 
@@ -1372,8 +1372,14 @@ export class LighterAdapter implements ExchangeAdapter {
     return fetchLighterFundingStats(this.venueId, this.networkName);
   }
 
-  async getMarkets(): Promise<ExchangeMarketInfo[]> {
+  /** Why the last listing's fundingRate is null (the settled-rate snapshot failed), else null. */
+  fundingWarning(): string | null {
+    return lighterFundingStatsWarning(this.venueId, this.networkName);
+  }
+
+  async getMarkets(opts?: { funding?: boolean }): Promise<ExchangeMarketInfo[]> {
     if (this._marketsCache && Date.now() - this._marketsCacheTime < LighterAdapter.CACHE_TTL) return this._marketsCache;
+    const withFunding = opts?.funding !== false;
     const markets: ExchangeMarketInfo[] = [];
 
     // Ensure _marketDecimals is populated (has supported_size_decimals per symbol)
@@ -1399,7 +1405,7 @@ export class LighterAdapter implements ExchangeAdapter {
       }>,
       // Settled + predicted hourly rates (WS market_stats snapshot — the public directory and
       // perp-ws read the same source). Unreadable → fundingRate null (unknown), reason printed.
-      this.fundingStats().catch((e: unknown) => {
+      !withFunding ? Promise.resolve(new Map<number, LighterFundingStat>()) : this.fundingStats().catch((e: unknown) => {
         console.error(`[${this.name}] settled funding rate unavailable (fundingRate null): ${e instanceof Error ? e.message : String(e)}`);
         return new Map<number, LighterFundingStat>();
       }),
@@ -1452,7 +1458,9 @@ export class LighterAdapter implements ExchangeAdapter {
       });
     }
 
-    this._marketsCache = markets; this._marketsCacheTime = Date.now(); return markets;
+    // A marks-only listing (no funding read) is not cached as the full one.
+    if (withFunding) { this._marketsCache = markets; this._marketsCacheTime = Date.now(); }
+    return markets;
   }
 
   private get accountCacheKey(): string {
