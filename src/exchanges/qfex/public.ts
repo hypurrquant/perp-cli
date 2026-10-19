@@ -381,8 +381,16 @@ export async function fetchQfexMarketsWithInstruments(net: Network): Promise<{ m
   return { markets, instruments, volumeNotional: snap.volumeNotional };
 }
 
+/** "active" = ACTIVE and USD-quoted; "nonUsdQuote" = ACTIVE, quoted in KRW / JPY / … (readable, never ordered). */
+export function qfexListedStatus(i: Pick<QfexInstrument, "status" | "quoteAsset" | "venueSymbol">): "active" | "nonUsdQuote" {
+  if (i.status !== "ACTIVE") throw new PerpError("EXCHANGE_ERROR", `QFEX ${i.venueSymbol} is ${i.status}; it is not listed`, { exchange: "qfex" });
+  return qfexTradable(i) ? "active" : "nonUsdQuote";
+}
+
 async function fetchMarkets(net: Network): Promise<VenueMarket[]> {
-  return (await fetchQfexMarketsWithInstruments(net)).markets;
+  const { markets, instruments } = await fetchQfexMarketsWithInstruments(net);
+  const bySymbol = new Map(instruments.map(i => [i.venueSymbol, i]));
+  return markets.map(m => { const i = bySymbol.get(m.venueSymbol); return i === undefined ? m : { ...m, status: qfexListedStatus(i) }; });
 }
 
 export function buildQfexFundingRates(

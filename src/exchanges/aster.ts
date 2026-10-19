@@ -21,6 +21,7 @@
 
 import { nonEmptyOrListed } from "./unknown-symbol.js";
 import { asterCliSymbol, isAsterListedPerpetual } from "../ws/aster-market.js";
+import { decimalsOf } from "./venue-types.js";
 import { accountCacheEpoch } from "../cache.js";
 import type {
   ExchangeAdapter,
@@ -536,7 +537,9 @@ export class AsterAdapter implements ExchangeAdapter {
         // /fapi/v3/exchangeInfo and ticker/24hr carry no open interest.
         openInterest: null,
         maxLeverage: maxLev,
-        sizeDecimals: s.quantityPrecision != null ? Number(s.quantityPrecision) : null,
+        // The LOT_SIZE step is the authoritative grid (quantityPrecision can disagree with it: CFX
+        // step "1", precision 1); its decimals, the public directory's rule (venueMarketRow).
+        sizeDecimals: lotFilter?.stepSize != null ? decimalsOf(String(lotFilter.stepSize)) : s.quantityPrecision != null ? Number(s.quantityPrecision) : null,
         stepSize: lotFilter?.stepSize != null ? String(lotFilter.stepSize) : null,
         fundingHours: fundingHours ?? null,
         marginTiers: null,

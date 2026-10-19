@@ -96,6 +96,11 @@ export interface VenueMarket {
   session: MarketSession | null;
   /** false = listed but not tradable right now (offline / paused / corporate action). */
   tradable: boolean;
+  /**
+   * The venue's listing status as the CLI market row shows it (Extended "ACTIVE" / "REDUCE_ONLY",
+   * Ondo "active" / …, QFEX "active" / "nonUsdQuote"); absent = the venue states none.
+   */
+  status?: string | null;
 }
 
 /**
@@ -103,7 +108,7 @@ export interface VenueMarket {
  * "1" → 0; TxFlow "10" / "100" and a "0.5" step → null): a decimals count cannot express them, and
  * 0 next to stepSize "10" read as "any integer". `stepSize` is the authoritative grid.
  */
-function decimalsOf(step: string): number | null {
+export function decimalsOf(step: string): number | null {
   const s = step.includes("e") || step.includes("E") ? Number(step).toFixed(20) : step;
   const t = s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s;
   if (!/^(1|0\.0*1)$/.test(t)) return null;
@@ -130,6 +135,9 @@ export function requireTradingPrecision(m: VenueMarket): { tickSize: string; ste
  *  - aster: premiumIndex lastFundingRate moves during the period (WS markPrice@arr `r`) — accruing.
  *  - pacifica: /info/prices `funding` = the last settled hourly rate (WS prices `funding`).
  *  - lighter, lighter-rh: WS market_stats funding_rate = the newest /fundings print — lastSettled.
+ *  - grvt: the ticker's funding rate is the next settlement's (predicted) — as the adapter labels it.
+ *  - extended: /info/markets fundingRate is the current hour's accruing rate.
+ *  - variational: the quoted rate is the predicted next payment.
  *  - ondo, qfex: not verified against settled prints → null.
  */
 const VENUE_MARKET_RATE_KIND: Partial<Record<VenueMarket["venue"], FundingRateKind>> = {
@@ -141,6 +149,9 @@ const VENUE_MARKET_RATE_KIND: Partial<Record<VenueMarket["venue"], FundingRateKi
   pacifica: "lastSettled",
   lighter: "lastSettled",
   "lighter-rh": "lastSettled",
+  grvt: "predicted",
+  extended: "accruing",
+  variational: "predicted",
 };
 
 export function fundingRateKindOf(venue: VenueMarket["venue"], fundingRate: string | null): FundingRateKind | null {

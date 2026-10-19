@@ -311,7 +311,7 @@ export async function fetchExtendedMarketRows(client: ExtendedClient, deps: Exte
 }
 
 export async function fetchExtendedMarkets(net: Network, deps: ExtendedPublicDeps = DEFAULT_DEPS): Promise<VenueMarket[]> {
-  return (await fetchExtendedMarketRows(extendedClient(net), deps)).map(r => r.market);
+  return (await fetchExtendedMarketRows(extendedClient(net), deps)).map(r => ({ ...r.market, status: r.meta.status }));
 }
 
 /** Funding rows: the current hour's accruing rate (fraction per hour); a market without one has no row. */

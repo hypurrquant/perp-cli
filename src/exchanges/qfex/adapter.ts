@@ -66,7 +66,7 @@ import { loadQfexCredentials, QFEX_IMPORT_REMEDIATION } from "./agent.js";
 import { QfexClient } from "./client.js";
 import { qfexStatusClass } from "./errors.js";
 import {
-  buildQfexFundingRates, buildQfexMarkets, fetchQfexInstruments, fetchQfexMarketsWithInstruments, qfexFundingWindowClosed, qfexIndexPrices, qfexPlainSymbol, qfexPublicData, qfexTradable, qfexVenueSymbol,
+  buildQfexFundingRates, buildQfexMarkets, fetchQfexInstruments, fetchQfexMarketsWithInstruments, qfexFundingWindowClosed, qfexIndexPrices, qfexListedStatus, qfexPlainSymbol, qfexPublicData, qfexTradable, qfexVenueSymbol,
   type QfexContractRow, type QfexInstrument,
 } from "./public.js";
 import {
@@ -176,10 +176,6 @@ export type QfexMarketRow = ExchangeMarketInfo & { tradable: boolean; status: Qf
  */
 export type QfexListedStatus = "active" | "nonUsdQuote";
 
-function qfexListedStatus(i: QfexInstrument): QfexListedStatus {
-  if (i.status !== "ACTIVE") throw new PerpError("EXCHANGE_ERROR", `QFEX ${i.venueSymbol} is ${i.status}; it is not listed`, { exchange: "qfex" });
-  return qfexTradable(i) ? "active" : "nonUsdQuote";
-}
 
 function listOf<T>(v: unknown, what: string): T[] {
   if (v === null || v === undefined) return []; // the venue encodes an empty list as JSON null

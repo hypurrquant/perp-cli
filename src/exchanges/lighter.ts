@@ -1443,7 +1443,8 @@ export class LighterAdapter implements ExchangeAdapter {
         openInterest: d.open_interest != null ? String(d.open_interest) : null,
         maxLeverage: maxLev,
         sizeDecimals: dec ? dec.size : null,
-        stepSize: null,
+        // The lot grid of the size decimals (the public directory's stepSize, lighter-public.ts).
+        stepSize: dec ? (dec.size === 0 ? "1" : `0.${"0".repeat(dec.size - 1)}1`) : null,
         // `fundingRate` is per 1 h (hourly settlement).
         fundingHours: 1,
         marginTiers: null,

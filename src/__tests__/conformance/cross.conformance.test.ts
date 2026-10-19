@@ -226,6 +226,35 @@ describe(`cross-venue + CLI ⇄ MCP parity (${MODE})`, () => {
         expectCheck(`parity:get_markets:${v}:symbols`, fail);
       });
     }
+    /**
+     * Same market, same row: the fields both paths read from the venue definition / directory
+     * must carry the same VALUE (prices / volumes are read at different moments and not compared).
+     * A field absent on one side (a venue that does not state it) is not compared.
+     */
+    const VALUE_FIELDS = ["fundingRateKind", "status", "tradable", "quoteAsset", "fundingHours", "sizeDecimals", "stepSize", "maxLeverage"] as const;
+    /**
+     * A field the KEYLESS path does not read by design (null there = not read, the CLI reads it):
+     * GRVT maxLeverage comes from one margin_rules request per market (184), which keyless MCP
+     * get_markets deliberately skips (price-only public path).
+     */
+    const KEYLESS_UNREAD: Readonly<Record<string, ReadonlySet<string>>> = { grvt: new Set(["maxLeverage"]) };
+    for (const v of VENUES) {
+      it(`get_markets(${v}) ⇔ market list: same values per market (${VALUE_FIELDS.join(", ")})`, () => {
+        const cliBy = new Map(cliRows(v).map(r => [String(r.symbol), r]));
+        const bad: string[] = [];
+        for (const m of mcpRows(v)) {
+          const c = cliBy.get(String(m.symbol));
+          if (c === undefined) continue; // the set is checked by :symbols
+          for (const f of VALUE_FIELDS) {
+            if (!(f in c) || !(f in m)) continue;
+            if (m[f] === null && KEYLESS_UNREAD[v]?.has(f) === true) continue;
+            const norm = (x: unknown) => (x === undefined ? null : typeof x === "string" && /^-?\d+(\.\d+)?$/.test(x) ? String(Number(x)) : x);
+            if (JSON.stringify(norm(c[f])) !== JSON.stringify(norm(m[f]))) bad.push(`${m.symbol}.${f}: mcp ${JSON.stringify(m[f])} cli ${JSON.stringify(c[f])}`);
+          }
+        }
+        expectCheck(`parity:get_markets:${v}:values`, bad.length === 0 ? null : `${bad.length} difference(s): ${bad.slice(0, 4).join("; ")}`);
+      });
+    }
     it("get_markets rows carry the CLI market-row contract fields", () => {
       const bad = VENUES.flatMap(v => {
         const r = mcpRows(v)[0];

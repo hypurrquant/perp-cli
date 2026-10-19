@@ -315,7 +315,7 @@ export async function fetchOndoMarketsWithStatus(net: Network): Promise<Array<{ 
 }
 
 async function fetchMarkets(net: Network): Promise<VenueMarket[]> {
-  return (await fetchOndoMarketsWithStatus(net)).map(r => r.market);
+  return (await fetchOndoMarketsWithStatus(net)).map(r => ({ ...r.market, status: r.status }));
 }
 
 async function fetchFundingRates(net: Network): Promise<VenueFundingRate[]> {
