@@ -53,6 +53,15 @@ export function bareSymbolOf(arg: string): string {
   return normalizeSymbolArg(arg.trim()).replace(/-PERP$/, "").replace(/-(USD|USDC|USDT)$/, "").replace(/_24_5$/, "");
 }
 
+/**
+ * History order, one rule for every venue: trades and funding history newest first, candles
+ * oldest first (Aster / QFEX answered funding oldest first, GRVT trades oldest first). A stable
+ * copy — the adapter's array (and its non-enumerable tape metadata) is left as is.
+ */
+export function newestFirst<T extends { time: number }>(rows: readonly T[]): T[] {
+  return [...rows].sort((a, b) => b.time - a.time);
+}
+
 /** Multi-venue human output: the footnote of every listed venue read through an unofficial API. */
 function printUnofficialNotes(venues: string[]): void {
   for (const ex of venues) {
@@ -420,8 +429,9 @@ export function registerMarketCommands(
     .action(async (symbol: string, opts: { limit: string }) => {
       const limit = parsePositiveIntArg(opts.limit, "--limit");
       const adapter = await getAdapter();
-      const trades = await adapter.getRecentTrades(normalizeSymbolArg(symbol), limit);
-      const skipped = tapeSkippedOf(trades);
+      const raw = await adapter.getRecentTrades(normalizeSymbolArg(symbol), limit);
+      const skipped = tapeSkippedOf(raw);
+      const trades = newestFirst(raw);
       if (isJson()) return printJson(jsonOk(trades, skipped !== null ? { skippedRows: skipped } : undefined));
       if (skipped !== null) console.log(chalk.yellow(`  ${skipped.count} tape row(s) skipped: ${skipped.reason}`));
       if (trades.length === 0) {
@@ -446,7 +456,7 @@ export function registerMarketCommands(
       const adapter = await getAdapter();
       // A venue without a funding-history API (Variational): its current funding terms, labelled as such.
       if (adapter.getFundingTerms !== undefined) return printFundingTerms(await adapter.getFundingTerms(normalizeSymbolArg(symbol)), isJson());
-      const history = await adapter.getFundingHistory(normalizeSymbolArg(symbol), limit);
+      const history = newestFirst(await adapter.getFundingHistory(normalizeSymbolArg(symbol), limit));
       if (isJson()) return printJson(jsonOk(history));
       if (history.length === 0) {
         console.log(chalk.gray("\n  No funding history.\n"));
@@ -537,7 +547,8 @@ export function registerMarketCommands(
           });
         }
 
-        const klines = await adapter.getKlines(normalizeSymbolArg(symbol), interval, startTime, endTime);
+        // Candles oldest first (ascending open time) on every venue.
+        const klines = [...await adapter.getKlines(normalizeSymbolArg(symbol), interval, startTime, endTime)].sort((a, b) => a.time - b.time);
         if (isJson()) return printJson(jsonOk(klines));
         if (klines.length === 0) {
           console.log(chalk.gray("\n  No kline data.\n"));

@@ -96,3 +96,17 @@ describe("S4 market info symbol forms", () => {
     expect(JSON.parse((await run({ getMarkets: async () => [hip3] }, ["market", "info", "XYZ100"])).out).data.symbol).toBe("xyz:XYZ100");
   });
 });
+
+describe("T3 one history order on every venue", () => {
+  it("funding history and trades newest first, klines oldest first — whatever the adapter answered", async () => {
+    const f = (t: number) => ({ time: t, rate: "0.0001", price: null, intervalHours: 1, rateKind: "lastSettled" as const });
+    const fund = await run({ getFundingHistory: async () => [f(1), f(3), f(2)] }, ["market", "funding", "BTC"]);
+    expect(JSON.parse(fund.out).data.map((r: { time: number }) => r.time)).toEqual([3, 2, 1]);
+    const tr = (t: number) => ({ time: t, symbol: "BTC", side: "buy" as const, price: "1", size: "1", fee: null });
+    const trades = await run({ getRecentTrades: async () => [tr(1), tr(2)] }, ["market", "trades", "BTC"]);
+    expect(JSON.parse(trades.out).data.map((r: { time: number }) => r.time)).toEqual([2, 1]);
+    const k = (t: number) => ({ time: t, open: "1", high: "1", low: "1", close: "1", volume: null, quoteVolume: null, trades: null });
+    const kl = await run({ getKlines: async () => [k(3), k(1), k(2)] }, ["market", "kline", "BTC", "1h"]);
+    expect(JSON.parse(kl.out).data.map((r: { time: number }) => r.time)).toEqual([1, 2, 3]);
+  });
+});
