@@ -93,7 +93,7 @@ describe("Ondo listing state", () => {
       const e = await rejection(read());
       expect(e.structured).toMatchObject({ code: "SYMBOL_NOT_FOUND", details: expect.objectContaining({ status: "disabled" }) });
       expect(e.message).toBe("Ondo Perps OPENAI-USD.P is disabled (delisted / paused) — no live market data");
-      expect(requests.every(u => u.pathname === "/v1/markets")).toBe(true);
+      expect(requests.every(u => u.pathname === "/v1/markets" || u.pathname === "/v1/perps/contracts")).toBe(true);
     }
   });
 });
@@ -114,5 +114,25 @@ describe("Ondo symbol normalizer", () => {
       expect((await a.getFundingHistory(s, 3))[0]).toMatchObject({ rate: "0.0000063", intervalHours: 1 });
       expect(requests.find(u => u.pathname === "/v1/perps/funding_rate_history")?.searchParams.get("market")).toBe("AAPL-USD.P");
     }
+  });
+});
+
+describe("Ondo disabled predicate (B2-6)", () => {
+  it("a contract flagged disabled with a live pair is refused on reads AND left out of the listing (one predicate)", async () => {
+    // Recorded fixture with AAPL's /v1/perps/contracts row flipped to disabled (live 2026-10-19 the
+    // two sources agreed; the reads checked only the pair, the listing both).
+    const contracts = JSON.parse(JSON.stringify(CONTRACTS)) as { result: Array<{ market: string; disabled: boolean }> };
+    contracts.result.find(c => c.market === "AAPL-USD.P")!.disabled = true;
+    vi.stubGlobal("fetch", vi.fn(async (input: string) => {
+      const url = new URL(input);
+      const body = url.pathname === "/v1/markets" ? MARKETS : url.pathname === "/v1/perps/contracts" ? contracts
+        : url.pathname === "/v1/perps/mark_prices" ? MARKS : undefined;
+      if (body === undefined) throw new Error(`unexpected request ${url.href}`);
+      return reply(body);
+    }));
+    const a = adapter();
+    expect((await a.getMarkets()).some(m => m.symbol === "AAPL")).toBe(false);
+    const e = await rejection(a.getOrderbook("AAPL"));
+    expect(e.structured).toMatchObject({ code: "SYMBOL_NOT_FOUND", details: expect.objectContaining({ status: "disabled" }) });
   });
 });

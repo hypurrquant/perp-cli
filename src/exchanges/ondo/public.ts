@@ -148,8 +148,13 @@ export type OndoMarketStatus = "active" | "disabled" | "closed" | "reduceOnly";
 /** State of a LISTED market: a disabled one is not listed (listing policy: delisted / disabled / inactive → not listed). */
 export type OndoListedStatus = Exclude<OndoMarketStatus, "disabled">;
 
+/** The one "disabled" predicate (listing and every per-symbol read): either source flags it. */
+export function ondoDisabled(pair: Pick<OndoTradingPair, "disabled">, contract: Pick<OndoContract, "disabled"> | null): boolean {
+  return pair.disabled === true || contract?.disabled === true;
+}
+
 export function ondoMarketStatus(pair: Pick<OndoTradingPair, "disabled">, contract: Pick<OndoContract, "disabled" | "isClosed" | "reduceOnly"> | null): OndoMarketStatus {
-  if (pair.disabled === true || contract?.disabled === true) return "disabled";
+  if (ondoDisabled(pair, contract)) return "disabled";
   if (contract?.isClosed === true) return "closed";
   if (contract?.reduceOnly === true) return "reduceOnly";
   return "active";

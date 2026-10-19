@@ -59,8 +59,8 @@ import { builderGateOf, builderRejectionOf, NO_BUILDER, requireFeeBps, type Buil
 import { loadOndoCredentials, ONDO_APPROVE_REMEDIATION } from "./agent.js";
 import { OndoClient, type OndoCredentials } from "./client.js";
 import {
-  fetchOndoMarketsWithStatus, fetchOndoTradingPairs, ondoMarketStatus, ondoPlainSymbol, ondoPublicData, ondoVenueSymbol, parseOndoTime, strOrNull,
-  type OndoListedStatus, type OndoMarkPrice, type OndoTradingPair,
+  fetchOndoMarketsWithStatus, fetchOndoTradingPairs, ondoDisabled, ondoPlainSymbol, ondoPublicData, ondoVenueSymbol, parseOndoTime, strOrNull,
+  type OndoContract, type OndoListedStatus, type OndoMarkPrice, type OndoTradingPair,
 } from "./public.js";
 
 // ── Raw shapes (OpenAPI rest-spec.json) ──
@@ -258,6 +258,7 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
   private readonly caps: VenueCapabilities;
   private readonly client: OndoClient;
   private pairsCache: { at: number; byMarket: Map<string, OndoTradingPair> } | null = null;
+  private contractsCache: { at: number; byMarket: Map<string, OndoContract> } | null = null;
   /**
    * Builder-fee gate (settings builder.ondo; Ondo has no approval step); null = not
    * configured. Set by the venue definition's create — the adapter never reads settings.
@@ -324,6 +325,15 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
       this.pairsCache = { at: Date.now(), byMarket: new Map(pairs.map(p => [p.market, p])) };
     }
     return this.pairsCache.byMarket;
+  }
+
+  private async contractsByMarket(): Promise<Map<string, OndoContract>> {
+    if (this.contractsCache === null || Date.now() - this.contractsCache.at > PAIRS_TTL_MS) {
+      const rows = await this.client.publicGet<OndoContract[]>("/v1/perps/contracts", null);
+      if (!Array.isArray(rows)) throw new PerpError("EXCHANGE_ERROR", "Ondo Perps: /v1/perps/contracts is not a list");
+      this.contractsCache = { at: Date.now(), byMarket: new Map(rows.map(c => [c.market, c])) };
+    }
+    return this.contractsCache.byMarket;
   }
 
   private async pairOf(symbol: string): Promise<OndoTradingPair> {
@@ -804,7 +814,8 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
   private async readableMarket(symbol: string): Promise<string> {
     const market = ondoVenueSymbol(symbol);
     const pair = (await this.pairsByMarket()).get(market);
-    if (pair !== undefined && ondoMarketStatus(pair, null) === "disabled") {
+    // Same predicate as the listing (ondoDisabled): the /v1/markets pair OR the contracts row.
+    if (pair !== undefined && ondoDisabled(pair, (await this.contractsByMarket()).get(market) ?? null)) {
       throw new PerpError("SYMBOL_NOT_FOUND", `Ondo Perps ${market} is disabled (delisted / paused) — no live market data`, {
         exchange: "ondo", status: "disabled", remediation: "List tradable markets with: perp market list -e ondo",
       });

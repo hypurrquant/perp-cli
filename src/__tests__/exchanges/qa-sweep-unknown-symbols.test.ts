@@ -180,7 +180,7 @@ const ONDO_PAIRS = (listed: string[]) => ({ perps: { tradingPairs: listed.map(s 
 describe("Ondo", () => {
   it("trades / candles: 200 [] for an unlisted market → SYMBOL_NOT_FOUND; a listed market keeps []", async () => {
     const client = { publicGet: vi.fn(async (path: string) => path === "/v1/markets" ? ONDO_PAIRS(["AAPL"]) : []), get: vi.fn(async () => []) };
-    const a = stubAdapter(OndoAdapter.prototype, "ondo", { client, pairsCache: null }, ["AAPL"]);
+    const a = stubAdapter(OndoAdapter.prototype, "ondo", { client, pairsCache: null, contractsCache: null }, ["AAPL"]);
     await expect(a.getRecentTrades("NOPE")).rejects.toMatchObject(NOT_FOUND("ondo"));
     await expect(a.getKlines("NOPE", "1h", 0, 3_600_000)).rejects.toMatchObject(NOT_FOUND("ondo"));
     await expect(a.getRecentTrades("AAPL")).resolves.toEqual([]);
@@ -188,7 +188,7 @@ describe("Ondo", () => {
 
   it("a venue-form symbol (TSLA-USD.P) of a listed market with an empty window stays []", async () => {
     const client = { publicGet: vi.fn(async (path: string) => path === "/v1/markets" ? ONDO_PAIRS(["TSLA"]) : []), get: vi.fn(async () => []) };
-    const a = stubAdapter(OndoAdapter.prototype, "ondo", { client, pairsCache: null }, ["TSLA"]);
+    const a = stubAdapter(OndoAdapter.prototype, "ondo", { client, pairsCache: null, contractsCache: null }, ["TSLA"]);
     await expect(a.getRecentTrades("TSLA-USD.P")).resolves.toEqual([]);
     await expect(a.getKlines("tsla-usd.p", "1h", 0, 3_600_000)).resolves.toEqual([]);
   });
