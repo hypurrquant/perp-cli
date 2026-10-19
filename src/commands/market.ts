@@ -7,6 +7,7 @@ import { PerpError } from "../errors.js";
 import { midDecimal } from "../exchanges/precision.js";
 import { hasPacificaSdk, isDexCapable, klinesNeedAuth } from "../exchanges/capabilities.js";
 import { getVenue, listVenuesWithRole, tryResolveVenueId, unofficialApiNote } from "../exchanges/venue.js";
+import { venueCapOf } from "../exchanges/venue-cap.js";
 import "../exchanges/venues/index.js";
 
 /** Venues with an adapter (market-data-only venues have none — see `perp arb scan`). */
@@ -297,6 +298,8 @@ export function registerMarketCommands(
       if (!m) {
         // Printed (envelope / Error + Remediation) and exit 1 via withJsonErrors.
         return void await withJsonErrors(isJson(), async () => {
+          const delistedErr = (adapter as { delistedError?: (s: string) => PerpError | null }).delistedError?.(symbol) ?? null;
+          if (delistedErr !== null) throw delistedErr;
           const delisted = typeof (adapter as { delistedMessage?: unknown }).delistedMessage === "function"
             ? (adapter as unknown as { delistedMessage(s: string): string | null }).delistedMessage(symbol)
             : null;
@@ -320,9 +323,13 @@ export function registerMarketCommands(
       // RFQ venue (Variational): no order book — the maker's indicative quotes, labelled as such.
       if (adapter.getRfqQuotes !== undefined) return printRfqQuotes(await adapter.getRfqQuotes(sym), isJson());
       const book = await adapter.getOrderbook(sym);
-      if (isJson()) return printJson(jsonOk(book));
-
       const depth = parseInt(opts.depth);
+      // `-d` applies to JSON too; a depth beyond what the venue served carries meta.venueCap.
+      const venueMax = venueCapOf(book);
+      const bookCap = venueMax !== null && depth > venueMax.cappedAt ? { ...venueMax, requested: depth, truncated: true } : null;
+      if (isJson()) return printJson(jsonOk({ ...book, bids: book.bids.slice(0, depth), asks: book.asks.slice(0, depth) }, bookCap !== null ? { venueCap: bookCap } : undefined));
+      if (bookCap !== null) console.log(chalk.yellow(`  ${bookCap.reason} (asked for ${depth})`));
+
       const asks = book.asks.slice(0, depth).reverse();
       const bids = book.bids.slice(0, depth);
 
@@ -378,8 +385,10 @@ export function registerMarketCommands(
       const adapter = await getAdapter();
       const trades = await adapter.getRecentTrades(normalizeSymbolArg(symbol), parseInt(opts.limit));
       const skipped = tapeSkippedOf(trades);
-      if (isJson()) return printJson(jsonOk(trades, skipped !== null ? { skippedRows: skipped } : undefined));
+      const cap = venueCapOf(trades);
+      if (isJson()) return printJson(jsonOk(trades, skipped !== null || cap !== null ? { ...(skipped !== null ? { skippedRows: skipped } : {}), ...(cap !== null ? { venueCap: cap } : {}) } : undefined));
       if (skipped !== null) console.log(chalk.yellow(`  ${skipped.count} tape row(s) skipped: ${skipped.reason}`));
+      if (cap !== null) console.log(chalk.yellow(`  ${cap.returned} of ${cap.requested} trades shown: ${cap.reason}`));
       if (trades.length === 0) {
         console.log(chalk.gray("\n  No recent trades.\n"));
         return;
@@ -485,7 +494,9 @@ export function registerMarketCommands(
         const endTime = opts.end ? parseInt(opts.end) : now;
 
         const klines = await adapter.getKlines(normalizeSymbolArg(symbol), interval, startTime, endTime);
-        if (isJson()) return printJson(jsonOk(klines));
+        const kCap = venueCapOf(klines);
+        if (isJson()) return printJson(jsonOk(klines, kCap !== null ? { venueCap: kCap } : undefined));
+        if (kCap !== null) console.log(chalk.yellow(`  Truncated: ${kCap.reason}`));
         if (klines.length === 0) {
           console.log(chalk.gray("\n  No kline data.\n"));
           return;
@@ -530,7 +541,8 @@ export function registerMarketCommands(
         const rows = dexes.map(d => [
           chalk.white.bold(d.name),
           chalk.gray(d.deployer ? d.deployer.slice(0, 6) + "..." + d.deployer.slice(-4) : "-"),
-          String(d.assets.length),
+          // Live (non-delisted) assets; a dex whose every asset is delisted is marked as such.
+          (d as { delisted?: boolean }).delisted === true ? chalk.gray("delisted") : String(d.assets.length),
           d.assets.slice(0, 5).join(", ") + (d.assets.length > 5 ? ` +${d.assets.length - 5}` : ""),
         ]);
         console.log(makeTable(["DEX", "Deployer", "Assets", "Markets"], rows));
