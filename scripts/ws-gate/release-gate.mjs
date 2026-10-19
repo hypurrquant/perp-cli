@@ -85,7 +85,11 @@ if (tgz === undefined) throw new Error("no tarball");
 const TGZ = join(WORK, tgz);
 const list = spawnSync("tar", ["-tzf", TGZ], { encoding: "utf8" }).stdout.split("\n");
 const need = ["package/package.json", "package/dist/ws/index.js", "package/dist/ws/index.d.ts", "package/dist/ws/node.js", "package/dist/ws/node.d.ts", "package/skills/perp-cli/references/ws-library.md"];
-check("tarball contents", need.every(f => list.includes(f)) && !list.some(f => /^package\/dist\/ws\/(?!index|node)/.test(f)),
+// dist/ws/ holds only the two tsup bundles, plus tsc output of src/ws modules that the CLI itself
+// imports (src/ws may only import within src/ws, so shared helpers live there). Those are not in
+// the `exports` map, so `perp-cli/ws` consumers cannot reach them.
+const CLI_SHARED_WS = /^package\/dist\/ws\/(?:index|node|pacifica-instrument)\.(?:js|d\.ts)$/;
+check("tarball contents", need.every(f => list.includes(f)) && list.filter(f => f.startsWith("package/dist/ws/")).every(f => CLI_SHARED_WS.test(f)),
   `${tgz}: ${list.filter(f => f.startsWith("package/dist/ws/")).join(", ")}; required present: ${need.filter(f => list.includes(f)).length}/${need.length}`);
 void pack;
 
