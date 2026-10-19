@@ -538,6 +538,8 @@ describe("Derive quote edge cases (audit 0.15.0)", () => {
     expect(fmtGreek("-0.00012345")).toBe("-0.000123");
     expect(fmtGreek("0.5123")).toBe("0.512");
     expect(fmtGreek("0")).toBe("0");
+    expect(fmtGreek("0.000000123")).toBe("0.000000123"); // fixed, never 1.23e-7
+    expect(fmtGreek("-1.5e-8")).toBe("-0.000000015");
     expect(fmtGreek(null)).not.toMatch(/\d/);
   });
 });

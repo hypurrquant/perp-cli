@@ -174,3 +174,10 @@ describe("--depth / default --limit policy (review)", () => {
     expect(getRecentTrades).toHaveBeenCalledWith("BTC", undefined);
   });
 });
+
+describe("--start in seconds (review)", () => {
+  it("a 10-digit value is refused with a seconds hint", () => {
+    expect(() => parseTimeArg("1792368000", "--start")).toThrow(/looks like unix seconds/);
+    expect(parseTimeArg("1792368000000", "--start")).toBe(1792368000000);
+  });
+});

@@ -55,6 +55,12 @@ export function assertBookDepth(venue: string, depth: number): void {
 export function parseTimeArg(raw: string, flag: string): number {
   const t = raw.trim();
   const ms = /^\d+$/.test(t) ? Number(t) : /^\d{4}-\d{2}-\d{2}/.test(t) ? Date.parse(t) : NaN;
+  // A unix-seconds value (10 digits today) read as ms lands in 1970: refused with a hint.
+  if (/^\d+$/.test(t) && ms < 1e11) {
+    throw new PerpError("INVALID_PARAMS", `${flag} ${raw} looks like unix seconds; pass milliseconds or an ISO date`, {
+      remediation: `Pass e.g. ${flag} ${t}000 or ${flag} 2026-10-18T00:00:00Z`,
+    });
+  }
   if (!Number.isFinite(ms)) {
     throw new PerpError("INVALID_PARAMS", `${flag} must be unix milliseconds or an ISO date (got "${raw}")`, {
       remediation: `Pass e.g. ${flag} 1792368000000 or ${flag} 2026-10-18T00:00:00Z`,
