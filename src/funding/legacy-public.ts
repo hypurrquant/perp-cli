@@ -29,7 +29,7 @@
 
 import { HL_MIN_ORDER_VALUE_USD } from "../constants.js";
 import { isPacificaPerpetual } from "../ws/pacifica-instrument.js";
-import { isAsterListedPerpetual } from "../ws/aster-market.js";
+import { asterCliSymbol, asterMatchable, isAsterListedPerpetual } from "../ws/aster-market.js";
 import { PerpError } from "../errors.js";
 import { venueRateString } from "../utils/numeric.js";
 import { assertOk } from "../api/public/_http.js";
@@ -282,13 +282,18 @@ async function asterRows(net: Network): Promise<Row[]> {
   const out: Row[] = [];
   const unpriced: string[] = [];
   const noInterval: string[] = [];
+  const listedAster = symbols.filter(x => isAsterListedPerpetual(x)).map(x => ({ baseAsset: String(x.baseAsset), quoteAsset: x.quoteAsset }));
   for (const s of symbols) {
-    // Shared eligibility (SETTLING / PENDING_TRADING rows were listed with tradable false).
-    if (!isAsterListedPerpetual(s) || s.quoteAsset !== "USDT") continue;
+    // Shared eligibility (SETTLING / PENDING_TRADING rows were listed with tradable false); every
+    // quote, like the CLI adapter and the WS directory.
+    if (!isAsterListedPerpetual(s)) continue;
     const venueSymbol = String(s.symbol);
-    const symbol = String(s.baseAsset);
+    const symbol = asterCliSymbol({ symbol: venueSymbol, baseAsset: String(s.baseAsset), quoteAsset: s.quoteAsset });
+    const base = String(s.baseAsset);
     const subTypes = Array.isArray(s.underlyingSubType) ? (s.underlyingSubType as unknown[]).map(String) : [];
-    const assetClass = classifyAster(symbol, subTypes);
+    const assetClass = classifyAster(base, subTypes);
+    // A second listing of a base (BTCUSD1 beside BTCUSDT) or a non-USD quote (U): canonical null.
+    const matchable = asterMatchable({ baseAsset: base, quoteAsset: s.quoteAsset }, listedAster);
     const p = premiumBySymbol.get(venueSymbol);
     const mark = p ? positiveNumStr(p.markPrice) : null;
     if (!p || mark === null) { unpriced.push(venueSymbol); continue; }
@@ -304,10 +309,10 @@ async function asterRows(net: Network): Promise<Row[]> {
         venue: "aster",
         venueSymbol,
         symbol,
-        canonical: canonicalFor("aster", symbol, assetClass),
+        canonical: matchable ? canonicalFor("aster", base, assetClass) : null,
         assetClass,
         settle: s.marginAsset,
-        quoteAsset: s.quoteAsset,
+        quoteAsset: typeof s.quoteAsset === "string" && s.quoteAsset !== "" ? s.quoteAsset : null,
         markPrice: mark,
         indexPrice: positiveNumStr(p.indexPrice),
         fundingRate: rateStr(p.lastFundingRate),

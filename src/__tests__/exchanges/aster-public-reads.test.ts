@@ -2,16 +2,16 @@
  * Aster public reads (reported from the perp_app port against v0.14.2):
  *  1. exchangeInfo has no maxLeverage → null (was a hard-coded 50 on every market).
  *  2. A symbol missing from premiumIndex is not listed (was listed at last price / "0").
- *  3. USD1 / U quoted perps are not listed (the CLI symbol mapping only addresses USDT).
+ *  3. USD1 / U quoted perps are listed by venue symbol (BTCUSD1), with quoteAsset / venueSymbol — the WS set.
  *  4. klines are paged in 1500-bar requests (was cut to the first 500 bars).
  */
 import { describe, it, expect, vi } from "vitest";
 
 const SYMBOLS = [
-  { symbol: "BTCUSDT", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USDT", quantityPrecision: 3, filters: [{ filterType: "LOT_SIZE", stepSize: "0.001" }] },
-  { symbol: "ETHUSDT", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USDT", quantityPrecision: 3, filters: [] },
-  { symbol: "BTCUSD1", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USD1", quantityPrecision: 3, filters: [] },
-  { symbol: "ETHU", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "U", quantityPrecision: 3, filters: [] },
+  { symbol: "BTCUSDT", baseAsset: "BTC", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USDT", quantityPrecision: 3, filters: [{ filterType: "LOT_SIZE", stepSize: "0.001" }] },
+  { symbol: "ETHUSDT", baseAsset: "ETH", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USDT", quantityPrecision: 3, filters: [] },
+  { symbol: "BTCUSD1", baseAsset: "BTC", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USD1", quantityPrecision: 3, filters: [] },
+  { symbol: "ETHU", baseAsset: "ETH", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "U", quantityPrecision: 3, filters: [] },
 ];
 
 async function adapter(publicGet: (path: string, params?: Record<string, string>) => unknown) {
@@ -31,11 +31,22 @@ const marketsRoute = (premiums: unknown) => (path: string) => {
 };
 
 describe("AsterAdapter.getMarkets", () => {
-  it("USDT perps only, mark from premiumIndex, maxLeverage null; a symbol without a mark is not listed at 0", async () => {
-    const a = await adapter(marketsRoute([{ symbol: "BTCUSDT", markPrice: "83010", lastFundingRate: "0.0001" }, { symbol: "BTCUSD1", markPrice: "83000" }]));
+  it("every quote listed (USDT by base, USD1 / U by venue symbol), mark from premiumIndex, maxLeverage null; a symbol without a mark is not listed at 0", async () => {
+    const a = await adapter(marketsRoute([{ symbol: "BTCUSDT", markPrice: "83010", lastFundingRate: "0.0001" }, { symbol: "BTCUSD1", markPrice: "83000" }, { symbol: "ETHU", markPrice: "2500" }]));
     const m = await a.getMarkets();
-    expect(m.map((x) => x.symbol)).toEqual(["BTC"]); // ETHUSDT has no premiumIndex row; USD1 / U not listed
-    expect(m[0]).toMatchObject({ markPrice: "83010", maxLeverage: null, fundingRate: "0.0001" });
+    expect(m.map((x) => x.symbol)).toEqual(["BTC", "BTCUSD1", "ETHU"]); // ETHUSDT has no premiumIndex row
+    expect(m[0]).toMatchObject({ markPrice: "83010", maxLeverage: null, fundingRate: "0.0001", venueSymbol: "BTCUSDT", quoteAsset: "USDT" });
+    expect(m[1]).toMatchObject({ venueSymbol: "BTCUSD1", quoteAsset: "USD1" });
+    expect(m[2]).toMatchObject({ venueSymbol: "ETHU", quoteAsset: "U" });
+  });
+
+  it("a non-USDT CLI symbol reaches the venue as is (BTCUSD1, and ETHU once exchangeInfo is read); a base gains USDT", async () => {
+    const a = await adapter(marketsRoute([{ symbol: "BTCUSDT", markPrice: "83010" }]));
+    const toApi = (s: string) => (a as unknown as { _toApi(s: string): string })._toApi(s);
+    expect(toApi("BTCUSD1")).toBe("BTCUSD1");
+    expect(toApi("ETH")).toBe("ETHUSDT");
+    await a.getMarkets();
+    expect(toApi("ETHU")).toBe("ETHU");
   });
 
   it("an unreadable premiumIndex throws (never a last-trade / zero stand-in)", async () => {

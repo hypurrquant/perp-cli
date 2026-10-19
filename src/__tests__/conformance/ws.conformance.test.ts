@@ -19,6 +19,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import "../../exchanges/venues/index.js";
 import { createVenueStream } from "../../ws/stream.js";
+import { USD_LIKE_QUOTES } from "../../ws/canonical.js";
 import { hyperliquid } from "../../ws/codecs/hyperliquid.js";
 import { pacifica } from "../../ws/codecs/pacifica.js";
 import { lighter, lighterRh } from "../../ws/codecs/lighter.js";
@@ -297,10 +298,13 @@ for (const c of CASES.filter(x => VENUE_FILTER === null || VENUE_FILTER.has(x.ve
       }
     }, IS_LIVE ? 600_000 : 60_000);
 
-    /** CLI rows by canonical key (CLI symbols are base symbols, "-PERP" stripped). */
-    const cliKeys = () => new Set(((list.envelope.data ?? []) as Array<{ symbol: string }>).map(r => keyOf(r.symbol)));
-    /** WS entries by canonical (dex prefix kept), else by venue symbol. */
-    const wsKeys = () => new Set(dir.map(m => keyOf(m.canonical ?? m.symbol)));
+    const cliRows = () => (list.envelope.data ?? []) as Array<{ symbol: string; venueSymbol?: unknown }>;
+    /** CLI rows that name their venue symbol (Aster: one row per venue market, any quote) are compared by it. */
+    const byVenueSymbol = () => cliRows().length > 0 && cliRows().every(r => typeof r.venueSymbol === "string");
+    /** CLI rows by canonical key (CLI symbols are base symbols, "-PERP" stripped), or by venue symbol. */
+    const cliKeys = () => new Set(cliRows().map(r => keyOf(byVenueSymbol() ? String(r.venueSymbol) : r.symbol)));
+    /** WS entries by canonical (dex prefix kept), else by venue symbol — or by venue symbol (see byVenueSymbol). */
+    const wsKeys = () => new Set(dir.map(m => keyOf(byVenueSymbol() ? m.venueSymbol : (m.canonical ?? m.symbol))));
     /** WS entries of non-tradable venue symbols, by canonical key. */
     const wsKeyOfVenueSymbol = (vs: string): string | null => {
       const m = dir.find(d => keyOf(d.venueSymbol) === keyOf(vs) || keyOf(d.symbol) === keyOf(vs));
@@ -330,8 +334,10 @@ for (const c of CASES.filter(x => VENUE_FILTER === null || VENUE_FILTER.has(x.ve
         : `cli ${a.size} vs ws ${b.size}; cli-only [${onlyCli.slice(0, 6).join(",")}${onlyCli.length > 6 ? ` +${onlyCli.length - 6}` : ""}]; ws-only [${onlyWs.slice(0, 6).join(",")}${onlyWs.length > 6 ? ` +${onlyWs.length - 6}` : ""}]`);
     });
 
-    it("canonical symbols agree (every WS entry has a canonical; CLI symbols are canonical keys)", () => {
-      const missing = dir.filter(m => m.canonical === null).map(m => m.symbol);
+    it("canonical symbols agree (every USD-quoted / dex WS entry has a canonical; CLI symbols are canonical keys)", () => {
+      // A market quoted in a non-USD currency (Aster "U") is not comparable by default: canonical
+      // null by contract (defaultCanonicalize), like a canonical-null CLI / public row.
+      const missing = dir.filter(m => m.canonical === null && (m.dex !== null || m.quote === null || USD_LIKE_QUOTES.has(m.quote.toUpperCase()))).map(m => m.symbol);
       expectCheck(id("canonical-parity"), missing.length === 0 ? null : `${missing.length} WS entries without canonical: ${missing.slice(0, 5).join(",")}`);
     });
 

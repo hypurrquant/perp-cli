@@ -86,6 +86,8 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **Pacifica `market trades --limit`** above 20 returned ~20 rows silently (`GET /trades` has no limit or cursor: the last 20 fills): `--limit` outside 1..20 is `INVALID_PARAMS`.
 - **Spot-perp arb price estimate** returned 0 on a failed market read and `NaN` for a Pacifica `"-"` mark (sized as `"NaN"`): a read error propagates (the entry is skipped and logged), a missing market or non-positive / non-finite mark is null, and sizing refuses a non-finite price.
 - **Pacifica vault deposit whitelist (unofficial endpoint):** an unreadable whitelist is `{ addresses: null, error: <code> }` (was a bare null).
+- **Public market directory (keyless MCP `get_markets`, the arb / funding public path) left out ambiguous tickers** that `perp market list` shows (SPX6900 on Hyperliquid / Aster / Lighter, Pacifica BP / CHIP, Lighter BB / BOT / WEN / QNT, Lighter RH USELESS), so the two listings disagreed. They are listed with `assetClass: "unclassified"` and `canonical: null`: never matched across venues (funding comparison, price groups, spot-perp), and left out of MCP `get_prices` (which groups by symbol).
+- **Aster USD1 / U quoted perps** (BTCUSD1, BTCU, ETHU, GPROUSD1, …; 24 on 2026-10-19) were streamed by the WS directory but missing from `market list|prices|info` and the public directory. Every TRADING perpetual is now listed on every surface, one shared rule (`isAsterListedPerpetual`, `asterCliSymbol`, `asterMatchable` in `src/ws/aster-market.ts`): the USDT market by its base (`BTC`), any other quote by its venue symbol (`BTCUSD1`, passed to the venue as is). A base keeps one matchable listing — the USDT one, else its only USD1 one — and every other listing is `canonical: null`, so `arb` never pairs two Aster listings of one base.
 
 ### JSON contract changes
 
@@ -136,6 +138,8 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - Pacifica k-prefixed markets: rows carry the venue spelling (`kPEPE`); `trades` / `funding` / `kline` return data (was `[]`); `market * SOL-USDC -e pacifica`: `SYMBOL_NOT_FOUND`.
 - `market funding -e pacifica -l N`: up to N rows for N > 4000 (was 4000).
 - Pacifica vault `depositWhitelist` (CLI `vault info --json`, MCP): gains `error` (string | null) — additive.
+- Public market directory / MCP keyless `get_markets`: rows for ambiguous tickers are added (`assetClass: "unclassified"`, a new `AssetClass` value; `canonical: null`). MCP `get_prices` is unchanged (those rows are skipped).
+- `market list|prices|info -e aster`, MCP `get_markets` (aster): USD1 / U quoted perps are listed (CLI symbol = venue symbol, e.g. `BTCUSD1`); CLI rows gain `venueSymbol` and `quoteAsset` — additive.
 
 ### Testing (no runtime change)
 

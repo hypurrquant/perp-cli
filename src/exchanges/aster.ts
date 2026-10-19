@@ -20,7 +20,7 @@
  */
 
 import { nonEmptyOrListed } from "./unknown-symbol.js";
-import { isAsterListedPerpetual } from "../ws/aster-market.js";
+import { asterCliSymbol, isAsterListedPerpetual } from "../ws/aster-market.js";
 import { accountCacheEpoch } from "../cache.js";
 import type {
   ExchangeAdapter,
@@ -407,10 +407,14 @@ export class AsterAdapter implements ExchangeAdapter {
 
   // ── Symbol helpers ──
 
-  /** CLI symbol → Aster API symbol (ETH → ETHUSDT) */
+  /**
+   * CLI symbol → Aster API symbol (ETH → ETHUSDT). A non-USDT market's CLI symbol is its venue
+   * symbol (BTCUSD1, BTCU — asterCliSymbol): passed as is when exchangeInfo lists it (or by its
+   * USD1 suffix before exchangeInfo is read).
+   */
   private _toApi(symbol: string): string {
     const s = symbol.toUpperCase().replace(/-PERP$/, "");
-    if (s.endsWith("USDT") || s.endsWith("BUSD")) return s;
+    if (s.endsWith("USDT") || s.endsWith("BUSD") || s.endsWith("USD1") || this._priceFilters.has(s)) return s;
     return `${s}USDT`;
   }
 
@@ -496,10 +500,9 @@ export class AsterAdapter implements ExchangeAdapter {
 
     this._ingestPriceFilters(info.symbols);
 
-    // USDT-quoted perps only: the CLI symbol mapping (ETH ↔ ETHUSDT) cannot address the USD1 / U
-    // quoted markets (live 2026-10-13: 22 USD1 + 2 U), so listing them would offer untradeable rows.
-    const tradingSymbols = info.symbols
-      .filter((s) => isAsterListedPerpetual(s) && String(s.quoteAsset) === "USDT");
+    // Every listed perpetual, any quote (the WS directory's set): USDT-quoted ones by base (ETH),
+    // USD1 / U quoted ones by venue symbol (BTCUSD1, BTCU — asterCliSymbol), with quoteAsset.
+    const tradingSymbols = info.symbols.filter((s) => isAsterListedPerpetual(s));
 
     const result = tradingSymbols.flatMap((s) => {
       const sym = String(s.symbol);
@@ -513,10 +516,13 @@ export class AsterAdapter implements ExchangeAdapter {
       const lotFilter = (s.filters as Array<Record<string, unknown>> | undefined)
         ?.find(f => f.filterType === "LOT_SIZE");
 
+      const cliSymbol = asterCliSymbol({ symbol: sym, baseAsset: String(s.baseAsset), quoteAsset: s.quoteAsset });
       const fundingHours = this._fundingHoursCache.get(this._fromApi(sym));
 
       return [{
-        symbol: this._fromApi(sym),
+        symbol: cliSymbol,
+        venueSymbol: sym,
+        quoteAsset: typeof s.quoteAsset === "string" ? s.quoteAsset : null,
         markPrice: String(premium.markPrice),
         indexPrice: premium?.indexPrice != null ? String(premium.indexPrice) : null,
         fundingRate: premium?.lastFundingRate != null ? String(premium.lastFundingRate) : null,
