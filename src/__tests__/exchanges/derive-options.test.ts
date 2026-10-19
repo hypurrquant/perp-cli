@@ -514,3 +514,30 @@ describe("perp options (CLI, --json)", () => {
     expect(f).not.toHaveBeenCalled();
   });
 });
+
+describe("Derive quote edge cases (audit 0.15.0)", () => {
+  // Live get_instrument of an expired, settled option (2026-10-19).
+  const EXPIRED = { result: { instrument_type: "option", instrument_name: "ETH-20261019-2400-C", scheduled_activation: 1792051200, scheduled_deactivation: 1792396740, is_active: false, base_currency: "ETH", quote_currency: "USDC", option_details: { index: "ETH-USD", expiry: 1792396800, strike: "2400", option_type: "C", settlement_price: "2430.293794029823" } } };
+
+  it("an expired instrument says expired + settled, not 'listed but not active (activation …)'", async () => {
+    routeFetch({ get_instrument: EXPIRED, get_ticker: ERR_TICKER });
+    const e = await caught(testVenue().getQuote("ETH-20261019-2400-C"));
+    expect(e.structured.code).toBe("SYMBOL_NOT_FOUND");
+    expect(e.message).toBe("Derive option ETH-20261019-2400-C expired at 2026-10-19T08:00:00.000Z, settled at 2430.293794029823");
+    expect(e.structured.details).toMatchObject({ expired: true, settlementPrice: "2430.293794029823" });
+  });
+
+  it("a decimal strike is sent in the venue form (0.0045 → 0_0045)", async () => {
+    const { deriveInstrumentName } = await import("../../exchanges/derive/options.js");
+    expect(deriveInstrumentName("pump-20261023-0.0045-c")).toBe("PUMP-20261023-0_0045-C");
+    expect(deriveInstrumentName("ETH-20261225-3500-P")).toBe("ETH-20261225-3500-P");
+  });
+
+  it("greeks are printed by significant figures (theta was -0.000)", async () => {
+    const { fmtGreek } = await import("../../commands/options.js");
+    expect(fmtGreek("-0.00012345")).toBe("-0.000123");
+    expect(fmtGreek("0.5123")).toBe("0.512");
+    expect(fmtGreek("0")).toBe("0");
+    expect(fmtGreek(null)).not.toMatch(/\d/);
+  });
+});

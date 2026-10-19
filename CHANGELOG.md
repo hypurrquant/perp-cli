@@ -39,6 +39,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **TxFlow asset class:** ~38 TradFi markets are listed WITHOUT the TradFi tag (`tagIds: []`: COPPER, NATGAS, MRNA, GS, PATH, TEAM, TLT, SOXS, …) and were classed crypto with a crypto canonical, so `arb` could pair GS or PATH with same-named crypto tokens. A row is now TradFi when tagged, when its perpMeta description / `fullName` reads like a share, ETF, commodity, FX or pre-IPO contract (Variational's looksTradFi idea), or when it is one of the untagged, description-less equities of the live listing; an unclassified TradFi row has canonical null (never matched). Its class comes from the text (commodity / fx / etf / preIpo / equity).
 - **`sizeDecimals` with a coarse lot step:** a step that is not a power of ten ≤ 1 (TxFlow `"10"` / `"100"`, from negative `szDecimals`) gave `sizeDecimals: 0` ("any integer"); it is now null and `stepSize` is the authoritative grid (all VenueMarket-based venues).
 - **TxFlow HTTP 5xx errors** quoted a raw Cloudflare HTML page; the markup is stripped.
+- **Derive options:** `options quote` of an expired option said "listed but not active (activation …)"; it now says `expired at <expiry>, settled at <settlement_price>` (`details.expired`, `details.settlementPrice`). A decimal strike is accepted in the CLI form (`PUMP-20261023-0.0045-C` → the venue's `0_0045`). Human greeks print 3 significant figures (theta of cheap options printed `-0.000`), with a note on Derive's 1e-5 resolution.
 
 ### JSON contract changes
 
