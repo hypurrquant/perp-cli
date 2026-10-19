@@ -254,6 +254,13 @@ export function registerBacktestCommands(
         return;
       }
 
+      // Only the most recent 5000 candles exist on Hyperliquid (docs "Candle snapshot"): with 1h
+      // candles a --days above ~208 starts later than asked. The covered period is reported, never
+      // presented as the requested one.
+      const dataFrom = klines[0].t;
+      const truncated = dataFrom > startTime + 60 * 60 * 1000;
+      const coveredDays = (endTime - dataFrom) / (24 * 60 * 60 * 1000);
+
       // Build grid levels
       const step = (upperPrice - lowerPrice) / (grids - 1);
       const gridLevels: number[] = [];
@@ -330,6 +337,8 @@ export function registerBacktestCommands(
         symbol: sym,
         period: `${days} days`,
         klines: klines.length,
+        dataFrom: new Date(dataFrom).toISOString(),
+        truncated,
         priceRange,
         gridRange: `$${formatUsd(String(lowerPrice))} - $${formatUsd(String(upperPrice))}`,
         grids,
@@ -347,6 +356,7 @@ export function registerBacktestCommands(
 
       console.log(chalk.cyan.bold(`\n  Grid Backtest — ${sym}\n`));
       console.log(`  Period:         ${days} days (${klines.length} candles)`);
+      if (truncated) console.log(chalk.yellow(`  Truncated:      Hyperliquid serves only the most recent 5000 candles — data starts ${new Date(dataFrom).toISOString()} (${coveredDays.toFixed(1)} of ${days} days)`));
       console.log(`  Price range:    ${priceRange}`);
       console.log(`  Grid range:     $${formatUsd(String(lowerPrice))} - $${formatUsd(String(upperPrice))}`);
       console.log(`  Grid lines:     ${grids} (step: $${step.toFixed(2)})`);
