@@ -282,7 +282,8 @@ export async function fetchOndoMarketsWithStatus(net: Network): Promise<Array<{ 
       markPrice: mark.markPrice,
       // /v1/perps/contracts `indexPrice` is frozen (live 2026-10-19: BTC 82702.30 unchanged for 17 min
       // while the mark_prices oracle moved 0.5%); the oracle of /v1/perps/mark_prices is the live index.
-      indexPrice: priceOrNull(mark.oraclePrice),
+      // A disabled listing's oracle is frozen too (OPENAI-USD.P 1600) → no index.
+      indexPrice: status === "disabled" ? null : priceOrNull(mark.oraclePrice),
       // A disabled listing's rate is stale (fetchFundingRates skips it too): no current rate.
       fundingRate: status === "disabled" ? null : strOrNull(contract.fundingRate),
       fundingRateBasis: ONDO_FUNDING_BASIS,
