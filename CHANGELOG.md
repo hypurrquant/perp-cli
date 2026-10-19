@@ -27,6 +27,12 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **MCP `portfolio`** without credentials returned `totalEquity: 0`; the totals are now null when no balance was read, with `accountState` (`"noAccount"` | `"unread"` | `"ok"`) and `totalsCover` (the venues the totals sum).
 - **MCP `get_markets` row counts vs the CLI:** without credentials MCP reads the venue's public directory (`VenueMarket` rows; price-only on GRVT, so a call does not fan out 184 margin-rules requests), while `perp -e <venue> market list` reads the adapter. The row SHAPE therefore differs by design; the row SET differs only where the two paths filtered differently — Aster (public path had no status filter: SETTLING / PENDING_TRADING rows, fixed below with one shared eligibility helper) and Lighter (directory source, owned by the Lighter fix).
 
+- **CLI ⇄ WS directory parity, Aster:** the `perp-cli/ws` / `@hypurrquant/perp-ws` Aster directory had no status filter, so `allMarkets` and the funding comparator streamed 23 SETTLING perps (TONUSDT, IRUSDT, …) and 6 PENDING_TRADING rows with `contractType ""` (MBLUSDT — never emits, AFEEUSDT, …), and the public market-data path (arb scan, MCP keyless `get_markets`) listed the SETTLING ones with `tradable: false`. One helper, `isAsterListedPerpetual` (`contractType` PERPETUAL + `status` TRADING; `src/ws/aster-market.ts`), now decides for the CLI adapter, the public path and the WS codec. The CLI additionally lists USDT-quoted perps only (its symbol mapping cannot address USD1 / U); the WS keeps those with canonical null, and a canonical-null row is no longer a "did you mean" candidate by base (BTCU / BTCUSD1 for `BTC`).
+- **CLI ⇄ WS directory parity, Arcus:** OFFLINE markets (F, BAC, CCL, VT, SGOV, RVI-USD; 6 of 70 on 2026-10-19) were streamed with mark / index / rate / OI / volume `"0"` placeholders. They are no longer in the WS directory — the CLI's rule (`isArcusOnlineMarket`, `src/ws/arcus-market.ts`, shared by the CLI list, the public path and the codec).
+- **Aster:** `market trades BTC-PERP` echoed `"symbol": "BTC-PERP"` (the tape rows carry no symbol): it is the normalized `BTC`; a malformed tape row is `EXCHANGE_ERROR` (was `"0"` placeholders). A parameter rejection the venue sends inside HTTP 200 (`{"status":"ERROR","type":"VALID",…}`, e.g. funding `--limit 1001`) is `INVALID_PARAMS` with the venue's message (was `EXCHANGE_ERROR "fundingRate history is not a list"`).
+- **Arcus market-data reads of an OFFLINE market** (`book` / `mid` answered `ORDER_NOT_FOUND` 404, `trades` / `funding` / `kline` `ok, []`, while `info` said `SYMBOL_NOT_FOUND`) now refuse with one `SYMBOL_NOT_FOUND` naming the status (`details.status`, `tradable: false`) before any request. `--limit` above 1000 for trades / funding (the documented max, silently capped) is `INVALID_PARAMS`.
+- **One history order on every venue** (`perp market`): `trades` and `funding` newest first, `kline` oldest first, enforced after the adapter call (Aster / QFEX answered funding oldest first).
+
 ### JSON contract changes
 
 - `market funding` (all venues with a history): rows gain `intervalHours` (number | null) and `rateKind` (`"lastSettled"` | null) — additive.
@@ -40,6 +46,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - `arb scan` rows: spot-perp rows gain `grossSpread` / `netSpread`, perp-perp / all rows gain `grossSpreadPct` / `netSpreadPct` — additive.
 - `arb scan --gaps`: symbols whose venue prices disagree beyond the outlier guard are no longer listed.
 - MCP `health_check`: `healthy` added. MCP `portfolio`: `accountState`, `totalsCover` added; `totalEquity` / `totalAvailable` / `totalMarginUsed` / `totalUnrealizedPnl` / `riskMetrics.marginUtilization` are null (were 0) when no balance was read.
+- WS (`perp-cli/ws`, `@hypurrquant/perp-ws`) `markets()` / `allMarkets`: Aster SETTLING / PENDING_TRADING rows and Arcus OFFLINE markets are gone (they were not tradable and streamed placeholders). No API (type) change.
+- Public market data (arb scan, MCP keyless `get_markets`): Aster SETTLING rows (`tradable: false`) are no longer listed.
+- `market trades -e aster`: `symbol` is the normalized symbol (was the raw argument).
+- `market funding -e aster|qfex`: rows newest first (were oldest first).
 - `fundingHours` on hyperliquid / pacifica / lighter / lighter-rh market rows: null → 1 / 1 / 8 / 8.
 
 ## [0.15.0] — 2026-10-19

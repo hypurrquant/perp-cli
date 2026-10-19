@@ -13,6 +13,7 @@
  */
 
 import { badShape, fetchJson } from "../directory.js";
+import { isAsterListedPerpetual } from "../aster-market.js";
 import { VENUE_STATIC } from "../venue-static.js";
 import type { CodecContext, DecodedEvent, MarketDirectoryEntry, MarketPatch, VenueCodec, WireSub } from "../types.js";
 import {
@@ -108,6 +109,9 @@ export const aster: VenueCodec = {
       if (!isObj(s) || typeof s.symbol !== "string" || typeof s.baseAsset !== "string") {
         throw badShape("aster", "exchangeInfo symbol without symbol/baseAsset");
       }
+      // Not a listed perpetual (SETTLING, PENDING_TRADING, contractType "") → not in the
+      // directory, the same rule as the CLI adapter (isAsterListedPerpetual).
+      if (!isAsterListedPerpetual(s)) continue;
       const quote = typeof s.quoteAsset === "string" && s.quoteAsset !== "" ? s.quoteAsset : null;
       listed.add(s.symbol);
       const hours = intervals.get(s.symbol);

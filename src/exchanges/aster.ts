@@ -20,6 +20,7 @@
  */
 
 import { nonEmptyOrListed } from "./unknown-symbol.js";
+import { isAsterListedPerpetual } from "../ws/aster-market.js";
 import { accountCacheEpoch } from "../cache.js";
 import type {
   ExchangeAdapter,
@@ -492,7 +493,7 @@ export class AsterAdapter implements ExchangeAdapter {
     // USDT-quoted perps only: the CLI symbol mapping (ETH ↔ ETHUSDT) cannot address the USD1 / U
     // quoted markets (live 2026-10-13: 22 USD1 + 2 U), so listing them would offer untradeable rows.
     const tradingSymbols = info.symbols
-      .filter((s) => String(s.contractType) === "PERPETUAL" && String(s.status) === "TRADING" && String(s.quoteAsset) === "USDT");
+      .filter((s) => isAsterListedPerpetual(s) && String(s.quoteAsset) === "USDT");
 
     const result = tradingSymbols.flatMap((s) => {
       const sym = String(s.symbol);
@@ -654,14 +655,15 @@ export class AsterAdapter implements ExchangeAdapter {
       limit: String(limit),
     }) as Array<Record<string, unknown>>;
 
-    return (trades ?? []).map((t) => ({
-      time: Number(t.time ?? 0),
-      symbol: this._fromApi(String(t.symbol ?? symbol)),
-      side: t.isBuyerMaker ? "sell" as const : "buy" as const,
-      price: String(t.price ?? "0"),
-      size: String(t.qty ?? "0"),
-      fee: null, // the public tape carries no fee
-    }));
+    if (!Array.isArray(trades)) throw new PerpError("EXCHANGE_ERROR", `Aster trades is not a list (${JSON.stringify(trades).slice(0, 120)})`, { exchange: "aster" });
+    // The tape rows carry no symbol: the normalized venue symbol (was the raw argument, "BTC-PERP").
+    const sym = this._fromApi(this._toApi(symbol));
+    return trades.map((t) => {
+      if (typeof t.time !== "number" || typeof t.price !== "string" || typeof t.qty !== "string" || typeof t.isBuyerMaker !== "boolean") {
+        throw new PerpError("EXCHANGE_ERROR", `Aster trade row without time / price / qty / isBuyerMaker: ${JSON.stringify(t).slice(0, 160)}`, { exchange: "aster" });
+      }
+      return { time: t.time, symbol: sym, side: t.isBuyerMaker ? "sell" as const : "buy" as const, price: t.price, size: t.qty, fee: null }; // the public tape carries no fee
+    });
   }
 
   async getFundingHistory(symbol: string, limit = 10): Promise<FundingHistoryRow[]> {
@@ -1976,6 +1978,15 @@ export class AsterAdapter implements ExchangeAdapter {
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetch(url);
       const result = await this._handleResponse(res, "GET", path, attempt);
+      // A parameter rejection arrives as HTTP 200 with an error body (live 2026-10-19,
+      // fundingRate limit=1001: {"status":"ERROR","type":"VALID","code":"000002","errorData":{"limit":"…"}}).
+      if (result !== null && typeof result === "object" && !Array.isArray(result) && (result as { status?: unknown }).status === "ERROR") {
+        const r = result as { type?: unknown; code?: unknown; errorData?: unknown };
+        const detail = JSON.stringify(r.errorData ?? r).slice(0, 200);
+        throw new PerpError(r.type === "VALID" ? "INVALID_PARAMS" : "EXCHANGE_ERROR", `Aster ${path} rejected the request: ${detail}`, {
+          exchange: "aster", venueCode: r.code, remediation: "Check the request parameters (e.g. --limit 1..1000)",
+        });
+      }
       if (result !== null) return result;
     }
     throw new Error(`GET ${path} failed: max retries exceeded`);

@@ -164,3 +164,19 @@ describe("maxLeverageForNotional — tiers without a headline", () => {
     expect(maxLeverageForNotional(m, 2e6)).toBe(10);
   });
 });
+
+describe("Aster T5 (audit 0.15.0)", () => {
+  it("a validation error inside HTTP 200 (fundingRate limit=1001, live body) → INVALID_PARAMS, not 'not a list'", async () => {
+    const { AsterAdapter } = await import("../../exchanges/aster.js");
+    const a = new AsterAdapter(undefined, false);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "ERROR", type: "VALID", code: "000002", errorData: { limit: "limit can not greater than 1000" } }), { status: 200 })));
+    try {
+      await expect(a.getFundingHistory("BTC", 1001)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "INVALID_PARAMS", message: expect.stringContaining("limit can not greater than 1000") }) });
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("trades echo the normalized symbol (BTC-PERP → BTC); the live tape row has no symbol", async () => {
+    const a = await adapter(() => [{ id: 148953155, price: "82301.7", qty: "0.641", quoteQty: "52755.3", time: 1792407851150, isBuyerMaker: false }]);
+    expect((await a.getRecentTrades("BTC-PERP", 1))[0]).toEqual({ time: 1792407851150, symbol: "BTC", side: "buy", price: "82301.7", size: "0.641", fee: null });
+  });
+});
