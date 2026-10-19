@@ -6,7 +6,7 @@ import chalk from "chalk";
 import { PerpError } from "../errors.js";
 import { midDecimal } from "../exchanges/precision.js";
 import { isDexCapable, klinesNeedAuth } from "../exchanges/capabilities.js";
-import { getVenue, listVenuesWithRole, tryResolveVenueId, unofficialApiNote } from "../exchanges/venue.js";
+import { getVenue, listVenuesWithRole, tryResolveVenueId, unofficialApiNote, withFundingVerified } from "../exchanges/venue.js";
 import "../exchanges/venues/index.js";
 
 /**
@@ -285,7 +285,7 @@ export function registerMarketCommands(
         }));
 
         if (isJson()) {
-          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }, fundingWarnings(listed, Object.values(grouped).flat())));
+          return printJson(jsonOk({ exchanges: Object.fromEntries(Object.entries(grouped).map(([ex, rows]) => [ex, withFundingVerified(ex, rows)])), errors: Object.keys(errors).length > 0 ? errors : undefined }, fundingWarnings(listed, Object.values(grouped).flat())));
         }
 
         // Per-exchange tables
@@ -319,9 +319,9 @@ export function registerMarketCommands(
 
       if (isJson()) {
         if (Object.keys(hip3).length > 0) {
-          return printJson(jsonOk({ main: markets, hip3 }));
+          return printJson(jsonOk({ main: withFundingVerified(adapter.name, markets), hip3: Object.fromEntries(Object.entries(hip3).map(([d, rows]) => [d, withFundingVerified(adapter.name, rows)])) }));
         }
-        return printJson(jsonOk(markets, fundingWarnings([adapter], markets)));
+        return printJson(jsonOk(withFundingVerified(adapter.name, markets), fundingWarnings([adapter], markets)));
       }
 
       const perMarket = perMarketFunding(adapter.name);
@@ -371,7 +371,7 @@ export function registerMarketCommands(
         }));
 
         if (isJson()) {
-          return printJson(jsonOk({ exchanges: grouped, errors: Object.keys(errors).length > 0 ? errors : undefined }, fundingWarnings(listed, Object.values(grouped).flat())));
+          return printJson(jsonOk({ exchanges: Object.fromEntries(Object.entries(grouped).map(([ex, rows]) => [ex, withFundingVerified(ex, rows)])), errors: Object.keys(errors).length > 0 ? errors : undefined }, fundingWarnings(listed, Object.values(grouped).flat())));
         }
 
         for (const [ex, markets] of Object.entries(grouped)) {
@@ -387,7 +387,7 @@ export function registerMarketCommands(
       const adapter = await getAdapter();
       // One normalized shape on every venue (Pacifica included — it printed the raw /info/prices rows).
       const markets = await adapter.getMarkets();
-      if (isJson()) return printJson(jsonOk(markets, fundingWarnings([adapter], markets)));
+      if (isJson()) return printJson(jsonOk(withFundingVerified(adapter.name, markets), fundingWarnings([adapter], markets)));
       console.log(makeTable(PRICE_HEADERS, markets.map(m => priceRow(m, perMarketFunding(adapter.name)))));
     });
 
@@ -402,7 +402,7 @@ export function registerMarketCommands(
       if (typeof single === "function") {
         return void await withJsonErrors(isJson(), async () => {
           const one = await single.call(adapter, symbol);
-          if (isJson()) return printJson(jsonOk(one));
+          if (isJson()) return printJson(jsonOk(withFundingVerified(adapter.name, [one])[0]));
           printMarketInfo(adapter.name, one);
         });
       }
@@ -431,7 +431,7 @@ export function registerMarketCommands(
           });
         });
       }
-      if (isJson()) return printJson(jsonOk(m, fundingWarnings([adapter], [m])));
+      if (isJson()) return printJson(jsonOk(withFundingVerified(adapter.name, [m])[0], fundingWarnings([adapter], [m])));
       printMarketInfo(adapter.name, m);
     });
 

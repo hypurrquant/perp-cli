@@ -421,6 +421,19 @@ export function assertFundingArbVenue(ref: string): void {
   });
 }
 
+/**
+ * Market rows (`market list|prices|info`, MCP get_markets) state whether their venue's funding rate
+ * is verified — on every venue, true or false (VenueDefinition.fundingVerified), so a consumer
+ * never has to read a missing field as "verified". A venue ref ("hip3:xyz" → hyperliquid) is
+ * resolved; an unknown ref leaves the rows as they are.
+ */
+export function withFundingVerified<T extends object>(venue: string, rows: T[]): Array<T & { fundingVerified: boolean }> | T[] {
+  const id = tryResolveVenueId(venue.startsWith("hip3:") ? "hyperliquid" : venue);
+  const def = id === null ? undefined : _venues.get(id);
+  if (def === undefined) return rows;
+  return rows.map(r => ({ ...r, fundingVerified: def.fundingVerified }));
+}
+
 export function isLegacyVenue(def: VenueDefinition): def is VenueDefinition & { id: LegacyVenueId } {
   return def.id === "pacifica" || def.id === "hyperliquid" || def.id === "lighter" || def.id === "aster";
 }

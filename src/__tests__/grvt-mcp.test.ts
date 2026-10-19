@@ -96,7 +96,7 @@ describe("MCP get_markets labels unverified funding", () => {
     expect(r.meta).toMatchObject({ apiStatus: "official", fundingVerified: false, fundingNote: expect.stringContaining("GRVT: funding rate UNVERIFIED") });
   });
 
-  it("qfex only gains the label; txflow is unchanged; a verified venue is untouched", async () => {
+  it("qfex gains fundingVerified false; txflow venueApi too; a verified venue states fundingVerified true", async () => {
     expect(getVenue("qfex").fundingVerified).toBe(false);
     const q = await call("get_markets", { exchange: "qfex" });
     expect((q.data as Array<Record<string, unknown>>)[0]).toEqual({ ...shaped(row("qfex", "BTC")), fundingVerified: false });
@@ -108,7 +108,7 @@ describe("MCP get_markets labels unverified funding", () => {
     expect(t.meta.fundingNote).toBeUndefined();
 
     const r = await call("get_markets", { exchange: "risex" });
-    expect((r.data as Array<Record<string, unknown>>)[0]).toEqual(shaped(row("risex", "BTC")));
+    expect((r.data as Array<Record<string, unknown>>)[0]).toEqual({ ...shaped(row("risex", "BTC")), fundingVerified: true });
     expect(r.meta.fundingVerified).toBeUndefined();
   });
 });

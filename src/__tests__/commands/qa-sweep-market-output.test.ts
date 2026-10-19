@@ -170,7 +170,7 @@ describe("market prices: Pacifica returns the normalized market rows (QA 0.15.0)
     vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { out.push(a.map(String).join(" ")); });
     await program.parseAsync(["node", "perp", "-e", "pacifica", "market", "prices"]);
     const j = JSON.parse(out.join("\n"));
-    expect(j.data).toEqual([AAVE]);
+    expect(j.data).toEqual([{ ...AAVE, fundingVerified: true }]);
     expect(Object.keys(j.data[0])).toEqual(expect.arrayContaining(["markPrice", "indexPrice", "fundingRate"]));
     expect(j.data[0]).not.toHaveProperty("mid");
   });

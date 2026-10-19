@@ -165,12 +165,12 @@ async function fetchMarketRowsPublic(exchange: string) {
 
 /**
  * The one row label for market rows of any source (public data path or a credentialed adapter):
- * unofficial-API rows carry venueApi + fundingVerified; unverified-funding rows carry fundingVerified false.
+ * every row carries fundingVerified (true or false — as `perp market list`), unofficial-API rows venueApi.
  */
 function labelMarketRows<T extends object>(exchange: string, rows: T[]) {
   const def = getVenue(exchange);
-  if (def.apiStatus.kind === "unofficial") return rows.map(r => ({ ...r, venueApi: "unofficial" as const, fundingVerified: def.fundingVerified }));
-  return def.fundingVerified ? rows : rows.map(r => ({ ...r, fundingVerified: false as const }));
+  const labelled = rows.map(r => ({ ...r, fundingVerified: def.fundingVerified }));
+  return def.apiStatus.kind === "unofficial" ? labelled.map(r => ({ ...r, venueApi: "unofficial" as const })) : labelled;
 }
 
 /**

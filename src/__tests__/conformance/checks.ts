@@ -10,6 +10,7 @@ import {
 } from "./contracts.js";
 import { FUNDING_LIMIT, KLINE_INTERVAL_MS, TRADES_LIMIT, type Expect, type ReadCommand } from "./capabilities.js";
 import type { CliRun } from "./harness.js";
+import { getVenue } from "../../exchanges/venue.js";
 
 export interface Check { name: string; run(): string | null }
 
@@ -43,9 +44,23 @@ function monotonic(ts: number[]): "asc" | "desc" | null {
   return null;
 }
 
-function marketListChecks(r: CliRun, symbol: string): Check[] {
+/**
+ * Every market row states its venue's fundingVerified (a boolean, the venue definition's value):
+ * a missing field must never read as "verified" (Extended info lacked it while list had it).
+ */
+function fundingVerifiedCheck(r: CliRun, venue: string | undefined, of: () => Array<Record<string, unknown>>): Check {
+  return { name: "fundingVerified", run: () => {
+    if (venue === undefined) return null;
+    const want = getVenue(venue).fundingVerified;
+    const bad = of().filter(x => x.fundingVerified !== want);
+    return bad.length === 0 ? null : `${bad.length}/${of().length} rows: fundingVerified ${JSON.stringify(bad[0]?.fundingVerified)} (venue: ${want})`;
+  } };
+}
+
+function marketListChecks(r: CliRun, symbol: string, venue?: string): Check[] {
   return [
     schemaCheck(r, MarketList),
+    fundingVerifiedCheck(r, venue, () => rows(r)),
     { name: "null-not-zero", run: () => zeroStandIn(rows(r), ["markPrice", "indexPrice", "volume24h", "openInterest"]) },
     { name: "lists-symbol", run: () => (rows(r).some(x => baseOf(String(x.symbol)) === symbol) ? null : `${symbol} not listed`) },
   ];
@@ -173,10 +188,10 @@ export function cellChecks(cmd: ReadCommand, exp: Expect, r: CliRun, ctx: { symb
   } }];
   switch (cmd) {
     case "list":
-    case "prices": return [...base, ...marketListChecks(r, ctx.symbol)];
+    case "prices": return [...base, ...marketListChecks(r, ctx.symbol, ctx.venue)];
     // One symbol shape on every venue: `market info BTC` answers `"symbol":"BTC"` — the plain
     // asset, not a venue form ("BTC-PERP", "BTC-USD", "BTCUSDT"; those belong in venueSymbol).
-    case "info": return [...base, schemaCheck(r, MarketRow), { name: "symbol", run: () => {
+    case "info": return [...base, schemaCheck(r, MarketRow), fundingVerifiedCheck(r, ctx.venue, () => [r.envelope.data as Record<string, unknown>]), { name: "symbol", run: () => {
       const sym = (r.envelope.data as { symbol?: unknown })?.symbol;
       return sym === ctx.symbol ? null : `info ${ctx.symbol} returned symbol ${JSON.stringify(sym)} (want the plain asset ${JSON.stringify(ctx.symbol)})`;
     } }];
