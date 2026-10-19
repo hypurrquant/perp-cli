@@ -18,6 +18,7 @@ async function buildAdapter() {
   (pac as unknown as { client: { createStopOrder: typeof createStopOrder } }).client = {
     createStopOrder,
     setRequestAgentWallet: vi.fn(),
+    getInfo: async () => ["BTC", "ETH", "SOL"].map((symbol) => ({ symbol, instrument_type: "perpetual" })),
   } as never;
   return { pac, createStopOrder };
 }

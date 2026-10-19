@@ -160,3 +160,53 @@ describe("Pacifica trades --limit (GET /trades: the last 20 fills, no limit / cu
     await expect(a.getRecentTrades("kPEPE", 20)).resolves.toHaveLength(20);
   });
 });
+
+describe("Pacifica order / cancel / TP-SL payloads use the venue spelling (kPEPE), nothing sent live", () => {
+  function trader() {
+    const sent: Record<string, unknown> = {};
+    const stop = (name: string) => vi.fn(async (params: unknown) => { sent[name] = params; throw new Error(`${name} captured`); });
+    const ok = (name: string) => vi.fn(async (params: unknown) => { sent[name] = params; return { success: true, data: {} }; });
+    const client = {
+      getInfo: vi.fn(async () => FX.info.data),
+      createMarketOrder: stop("market"), createLimitOrder: stop("limit"), createStopOrder: stop("stop"), editOrder: ok("edit"),
+      cancelOrder: ok("cancel"), cancelStopOrder: ok("cancelStop"), setTPSL: ok("tpsl"), updateLeverage: ok("leverage"),
+    };
+    const a = pac(client);
+    Object.assign(a as object, { ensureSigner: () => {}, account: "acct", signMessage: async () => new Uint8Array(64), builderCode: async () => null });
+    return { a, sent };
+  }
+
+  it("market / limit / stop / edit / leverage send kPEPE for KPEPE", async () => {
+    const { a, sent } = trader();
+    await expect(a.marketOrder("KPEPE", "buy", "1000", { reduceOnly: false, slippage: { bps: 50 } as never })).rejects.toThrow();
+    await expect(a.limitOrder("KPEPE", "buy", "0.004", "1000")).rejects.toThrow();
+    await expect(a.stopOrder("KPEPE", "sell", "1000", "0.003", { reduceOnly: true })).rejects.toThrow();
+    await a.editOrder("KPEPE", "1", "0.004", "1000");
+    await a.setLeverage("KPEPE", 3);
+    for (const k of ["market", "limit", "stop", "edit", "leverage"]) expect(sent[k]).toMatchObject({ symbol: "kPEPE" });
+  });
+
+  it("cancel / cancel-stop / position TP-SL send kPEPE; an unlisted symbol is sent as typed (delisted market cancel)", async () => {
+    const { a, sent } = trader();
+    await a.cancelOrder("KPEPE", "1");
+    await a.cancelStopOrder("KPEPE", "2");
+    await a.setPositionTpSl("KPEPE", "long", { tp: "0.005", tpLimit: null, sl: null });
+    for (const k of ["cancel", "cancelStop", "tpsl"]) expect(sent[k]).toMatchObject({ symbol: "kPEPE" });
+    await a.cancelOrder("GONE", "3");
+    expect(sent.cancel).toMatchObject({ symbol: "GONE" });
+  });
+
+  it("opening orders on spot SOL-USDC are not sent (definite ORDER_REJECTED-class refusal)", async () => {
+    const { a, sent } = trader();
+    await expect(a.limitOrder("SOL-USDC", "buy", "100", "1")).rejects.toMatchObject({ structured: expect.objectContaining({ code: "SYMBOL_NOT_FOUND" }) });
+    expect(sent.limit).toBeUndefined();
+  });
+});
+
+describe("Pacifica funding: a short history with has_more is an error", () => {
+  it("has_more true without a next_cursor before `limit` rows → EXCHANGE_ERROR", async () => {
+    const page = { ...FX.fundingPages[1].response, next_cursor: undefined };
+    const a = pac({ getInfo: vi.fn(async () => FX.info.data), getEnvelope: vi.fn(async () => page) });
+    await expect(a.getFundingHistory("BTC", 5)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR", message: expect.stringMatching(/has_more/) }) });
+  });
+});

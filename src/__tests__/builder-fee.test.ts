@@ -201,7 +201,7 @@ describe("env vars are not builder / affiliate sources", () => {
     }) as InstanceType<typeof PacificaAdapter>;
     expect(adapter.builderFee).toBeNull();
     const createMarketOrder = vi.fn().mockResolvedValue({ success: true, data: {} });
-    (adapter as unknown as { client: Record<string, unknown> }).client = { createMarketOrder, setRequestAgentWallet: () => {} };
+    (adapter as unknown as { client: Record<string, unknown> }).client = { createMarketOrder, setRequestAgentWallet: () => {}, getInfo: async () => ["BTC", "ETH", "SOL"].map((symbol) => ({ symbol, instrument_type: "perpetual" })) };
     await adapter.marketOrder("BTC", "buy", "0.1", { reduceOnly: true, slippage });
     expect(createMarketOrder.mock.calls[0][3]).toBeNull();
     vi.unstubAllEnvs();
@@ -460,7 +460,7 @@ describe("Hyperliquid order action", () => {
 function pac() {
   const a = new PacificaAdapter(Keypair.generate(), "mainnet");
   const ok = vi.fn().mockResolvedValue({ success: true, data: {} });
-  const client = { createMarketOrder: ok, createLimitOrder: vi.fn().mockResolvedValue({ success: true, data: {} }), createStopOrder: vi.fn().mockResolvedValue({ success: true }), setTPSL: vi.fn().mockResolvedValue({ success: true }), setRequestAgentWallet: () => {}, getInfo: vi.fn() };
+  const client = { createMarketOrder: ok, createLimitOrder: vi.fn().mockResolvedValue({ success: true, data: {} }), createStopOrder: vi.fn().mockResolvedValue({ success: true }), setTPSL: vi.fn().mockResolvedValue({ success: true }), setRequestAgentWallet: () => {}, getInfo: async () => ["BTC", "ETH", "SOL"].map((symbol) => ({ symbol, instrument_type: "perpetual" })) };
   (a as unknown as { client: unknown }).client = client;
   return { a, client };
 }
