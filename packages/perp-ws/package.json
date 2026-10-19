@@ -1,6 +1,6 @@
 {
   "name": "@hypurrquant/perp-ws",
-  "version": "0.14.3",
+  "version": "0.15.0",
   "description": "Live market, funding and account WebSocket streams for perp DEXes (Hyperliquid incl. HIP-3, Pacifica, Lighter, Lighter RH, Aster, Arcus) — zero-dependency browser + Node library, the same code as perp-cli/ws",
   "type": "module",
   "exports": {

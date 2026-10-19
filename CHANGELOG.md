@@ -4,6 +4,8 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-10-19
+
 ### NEW: Extended (formerly X10, Starknet) — read-only market data (`perp -e extended`, aliases `ext` / `x10`)
 
 - **Phase 1, market data only**, through Extended's **official** public REST API (api.docs.extended.exchange; mainnet `api.starknet.extended.exchange/api/v1`, testnet Sepolia `api.starknet.sepolia.extended.exchange/api/v1` via `-n testnet`). Keyless; no signing. Every write / account / funds / agent / builder / bot path refuses with `CAPABILITY_UNSUPPORTED` before any request, also under `--dry-run` — remediation "Extended is read-only (market data) in this version; trading is planned for a later release". New refusing subcommands `funds deposit|withdraw extended`.
