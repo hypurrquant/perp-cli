@@ -59,7 +59,11 @@ describe("nonEmptyOrListed", () => {
     await expect(nonEmptyOrListed(adapter(["BTC"]), "NOPE", [])).rejects.toMatchObject(NOT_FOUND("pacifica"));
   });
   it("empty + listed → the real empty result", async () => {
-    await expect(nonEmptyOrListed(adapter(["BTC"]), "btc", [])).resolves.toEqual([]);
+    await expect(nonEmptyOrListed(adapter(["BTC"]), "BTC", [])).resolves.toEqual([]);
+  });
+  it("a casing miss is SYMBOL_NOT_FOUND, never an empty result (Pacifica KPEPE vs kPEPE)", async () => {
+    await expect(nonEmptyOrListed(adapter(["kPEPE"]), "KPEPE", [])).rejects.toMatchObject(NOT_FOUND("pacifica"));
+    await expect(nonEmptyOrListed(adapter(["BTC"]), "btc", [])).rejects.toMatchObject(NOT_FOUND("pacifica"));
   });
   it("compares the directory form of a venue-form symbol (passed by the adapter)", async () => {
     await expect(nonEmptyOrListed(adapter(["TSLA"]), "TSLA-USD.P", [], "TSLA")).resolves.toEqual([]);
@@ -73,12 +77,17 @@ describe("nonEmptyOrListed", () => {
     const b = { name: "aster", getMarkets: vi.fn(async () => { throw new Error("fetch failed"); }) };
     await expect(nonEmptyOrListed(b, "NOPE", [])).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_UNREACHABLE", retryable: true }) });
   });
-  it("matches case-insensitively, ignoring a -PERP suffix", () => {
-    expect(listsSymbol([{ symbol: "BTC-PERP" }], "btc")).toBe(true);
+  it("matches the exact wire symbol, ignoring a -PERP suffix", () => {
+    expect(listsSymbol([{ symbol: "BTC-PERP" }], "BTC")).toBe(true);
+    expect(listsSymbol([{ symbol: "BTC-PERP" }], "btc")).toBe(false);
+    expect(listsSymbol([{ symbol: "kPEPE" }], "kPEPE-PERP")).toBe(true);
     expect(listsSymbol([{ symbol: "BTC" }], "BTC-PERP")).toBe(true);
     expect(listsSymbol([{ symbol: "BTC" }], "BTCX")).toBe(false);
   });
 });
+
+/** GET /info rows (perps) for the Pacifica symbol resolution. */
+const pacInfo = (listed: string[]) => vi.fn(async () => listed.map((symbol) => ({ symbol, instrument_type: "perpetual" })));
 
 describe("Pacifica", () => {
   const TAPE = [
@@ -91,7 +100,7 @@ describe("Pacifica", () => {
     { event_type: "fulfill_taker", price: "83600", amount: "0.1", side: "open_long", cause: "normal", created_at: 1 },
     { event_type: "fulfill_taker", price: "83500", amount: "0.2", side: "close_long", cause: "normal", created_at: 0 },
   ];
-  const pac = (client: Record<string, unknown>, listed = ["BTC"]) => stubAdapter(PacificaAdapter.prototype, "pacifica", { client }, listed);
+  const pac = (client: Record<string, unknown>, listed = ["BTC"]) => stubAdapter(PacificaAdapter.prototype, "pacifica", { client: { getInfo: pacInfo(listed), ...client } }, listed);
 
   it("tape = taker rows with the taker's direction (open_long / close_short buy, open_short / close_long sell)", async () => {
     const t = await pac({ getTrades: vi.fn(async () => TAPE) }).getRecentTrades("BTC", 20);
@@ -147,7 +156,7 @@ describe("Pacifica", () => {
   });
 
   it("trades / kline / funding: 200 [] for an unlisted symbol → SYMBOL_NOT_FOUND; [] for a listed one stays []", async () => {
-    const client = { getTrades: vi.fn(async () => []), getKline: vi.fn(async () => []), getFundingHistory: vi.fn(async () => []) };
+    const client = { getTrades: vi.fn(async () => []), getKline: vi.fn(async () => []), getEnvelope: vi.fn(async () => ({ success: true, data: [], has_more: false })) };
     const a = pac(client);
     await expect(a.getRecentTrades("NOPE")).rejects.toMatchObject(NOT_FOUND("pacifica"));
     await expect(a.getKlines("NOPE", "1h", 0, 1)).rejects.toMatchObject(NOT_FOUND("pacifica"));
@@ -158,7 +167,9 @@ describe("Pacifica", () => {
 });
 
 describe("Pacifica funding history is strict (review L2)", () => {
-  const pac = (rows: unknown) => stubAdapter(PacificaAdapter.prototype, "pacifica", { client: { getFundingHistory: vi.fn(async () => rows) } }, ["BTC"]);
+  const pac = (rows: unknown) => stubAdapter(PacificaAdapter.prototype, "pacifica", {
+    client: { getInfo: pacInfo(["BTC"]), getEnvelope: vi.fn(async () => ({ success: true, data: rows, has_more: false })) },
+  }, ["BTC"]);
 
   it("maps the live row shape", async () => {
     const r = await pac([{ oracle_price: "83703.548788", funding_rate: "0.0000125", next_funding_rate: "0.0000125", created_at: 1791950402115 }]).getFundingHistory("BTC");
