@@ -29,6 +29,26 @@ export function parsePositiveIntArg(raw: string, flag: string): number {
 }
 
 /**
+ * Most order-book levels per side each venue serves (measured live 2026-10-19; the request size
+ * where the venue takes one): one rule for every venue — `--depth` above it is INVALID_PARAMS
+ * naming the max, never clamped or silently short. Absent = the full book (Extended).
+ */
+export const BOOK_DEPTH_MAX: Readonly<Record<string, number>> = {
+  hyperliquid: 20, pacifica: 10, lighter: 50, "lighter-rh": 50, aster: 50, arcus: 50, ondo: 50,
+  qfex: 20, txflow: 20, risex: 250, grvt: 500,
+};
+
+export function assertBookDepth(venue: string, depth: number): void {
+  const id = tryResolveVenueId(venue);
+  const max = id === null ? undefined : BOOK_DEPTH_MAX[id];
+  if (max !== undefined && depth > max) {
+    throw new PerpError("INVALID_PARAMS", `--depth ${depth} exceeds ${venue}'s order book (max ${max} levels per side)`, {
+      exchange: venue, remediation: `Pass --depth 1..${max}`,
+    });
+  }
+}
+
+/**
  * `--start` / `--end`: unix ms (digits) or an ISO-8601 date / time (`Date.parse`; "2026-10-18" is
  * UTC midnight). parseInt("2026-10-18") read 2026 ms. Non-finite → INVALID_PARAMS.
  */
@@ -376,6 +396,7 @@ export function registerMarketCommands(
       if (adapter.getRfqQuotes !== undefined) return printRfqQuotes(await adapter.getRfqQuotes(sym), isJson());
       // `depth` reaches venues that size the request by it (GRVT, RISEx); every answer is cut to
       // `depth` levels per side — JSON included (it printed the venue's full book).
+      assertBookDepth(adapter.name, depth);
       const full = await adapter.getOrderbook(sym, depth);
       const book = { ...full, bids: full.bids.slice(0, depth), asks: full.asks.slice(0, depth) };
       if (isJson()) return printJson(jsonOk(book));
@@ -430,9 +451,11 @@ export function registerMarketCommands(
   market
     .command("trades <symbol>")
     .description("Recent trades for a symbol")
-    .option("--limit <n>", "Number of recent trades to show", "20")
-    .action(async (symbol: string, opts: { limit: string }) => {
-      const limit = parsePositiveIntArg(opts.limit, "--limit");
+    .option("--limit <n>", "Number of recent trades to show (default: the venue's own default, within its cap)")
+    .action(async (symbol: string, opts: { limit?: string }) => {
+      // No --limit → undefined: each adapter applies its own default within its venue cap, so a
+      // plain `market trades` never trips a cap (HL serves 10).
+      const limit = opts.limit === undefined ? undefined : parsePositiveIntArg(opts.limit, "--limit");
       const adapter = await getAdapter();
       const raw = await adapter.getRecentTrades(normalizeSymbolArg(symbol), limit);
       const trades = newestFirst(raw);

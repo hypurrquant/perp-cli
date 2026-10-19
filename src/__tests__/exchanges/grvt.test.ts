@@ -386,6 +386,10 @@ describe("public-only adapter", () => {
     expect(bodies[0]).toMatchObject({ limit: 1500 });
     await expect(adapter().getFundingHistory("BTC", 0)).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
   });
+  it("above 500 → INVALID_PARAMS (was clamped to 500)", async () => {
+    fetchMock.mockImplementation(routeFixtures());
+    await expect(adapter().getOrderbook("BTC", 501)).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+  });
   it("recent trades: taker side, ns → ms, no fee", async () => {
     fetchMock.mockImplementation(routeFixtures());
     const trades = await adapter().getRecentTrades("btc", 3);

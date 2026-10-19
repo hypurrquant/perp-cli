@@ -31,5 +31,9 @@ venue-specific fix branches and are not listed here.
 | Aster | `/fapi/v3/fundingRate` | 1000; more → HTTP 200 `{"status":"ERROR","type":"VALID"}` | 1000 | that body → `INVALID_PARAMS` |
 | Aster | `/fapi/v3/klines` intervals | 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M (others: -1120) | same | refused before any request |
 
+Order book `--depth` max (levels per side, measured): hyperliquid 20, pacifica 10, lighter / lighter-rh /
+aster / arcus / ondo 50, qfex / txflow 20, risex 250, grvt 500, extended full book. Above it →
+`INVALID_PARAMS` naming the max (`BOOK_DEPTH_MAX`, src/commands/market.ts).
+
 History order (every venue, enforced in `perp market` after the adapter call): `trades` and
 `funding` newest first, `kline` oldest first.

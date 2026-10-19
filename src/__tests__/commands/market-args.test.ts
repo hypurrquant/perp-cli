@@ -151,3 +151,26 @@ describe("history sort keeps adapter metadata (review)", () => {
     expect(JSON.parse(out).meta.skippedRows).toEqual({ count: 1, reason: "x" });
   });
 });
+
+describe("--depth / default --limit policy (review)", () => {
+  it("--depth above the venue's book is INVALID_PARAMS naming the max; within it reaches the adapter", async () => {
+    const getOrderbook = vi.fn(async () => ({ bids: [], asks: [] }));
+    const over = await run({ getOrderbook }, ["market", "book", "BTC", "--depth", "21"]);
+    expect(code(over.error)).toBe("INVALID_PARAMS");
+    expect((over.error as Error).message).toMatch(/max 20 levels/);
+    expect(getOrderbook).not.toHaveBeenCalled();
+    await run({ getOrderbook }, ["market", "book", "BTC", "--depth", "20"]);
+    expect(getOrderbook).toHaveBeenCalledWith("BTC", 20);
+  });
+
+  it("the default --depth (10) is within every venue's max", async () => {
+    const { BOOK_DEPTH_MAX } = await import("../../commands/market.js");
+    expect(Math.min(...Object.values(BOOK_DEPTH_MAX))).toBeGreaterThanOrEqual(10);
+  });
+
+  it("market trades without --limit passes undefined (the adapter's own default within its cap)", async () => {
+    const getRecentTrades = vi.fn(async () => []);
+    await run({ getRecentTrades }, ["market", "trades", "BTC"]);
+    expect(getRecentTrades).toHaveBeenCalledWith("BTC", undefined);
+  });
+});

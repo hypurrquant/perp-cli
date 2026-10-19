@@ -157,8 +157,11 @@ export class GrvtPublicAdapter implements ExchangeAdapter {
 
   async getOrderbook(symbol: string, depth = 50): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
     const m = await this.market(symbol);
-    // The smallest served depth that covers the request; above 500 levels, the deepest one (500).
-    const d = GRVT_BOOK_DEPTHS.find(x => x >= depth) ?? 500;
+    // The smallest served depth that covers the request; above 500 → INVALID_PARAMS (never clamped).
+    const d = GRVT_BOOK_DEPTHS.find(x => x >= depth);
+    if (d === undefined || !Number.isInteger(depth) || depth < 1) {
+      throw new PerpError("INVALID_PARAMS", `GRVT: book depth must be 1..500 (got ${depth})`, { exchange: "grvt", remediation: "Pass --depth 1..500" });
+    }
     const res = await this.client.result<{ bids?: unknown; asks?: unknown }>("book", { instrument: m.instrument, depth: d });
     if (res === null || typeof res !== "object" || !Array.isArray(res.bids) || !Array.isArray(res.asks)) {
       throw grvtShapeError("book has no bids / asks arrays");
