@@ -24,7 +24,7 @@
  * Funding is UNVERIFIED (venue flag fundingVerified: false, Q4): the rate's unit is not
  * confirmed against settled payments and `funding_rate` vs `next_funding_rate` is undecided.
  * Markets therefore carry fundingRate null; fetchFundingRates returns the raw `funding_rate`
- * for the explicit, flagged reads only (`perp funding`, `arb scan --include-unverified`).
+ * for the explicit, flagged reads only (`arb scan --rates|--compare --include-unverified`).
  *
  * Symbols: "AAPL-USD" → CLI symbol "AAPL". Non-USD quotes keep the suffix ("SKHYNIX-KRW"),
  * have no canonical symbol and are NOT tradable through perp-cli (USD-assuming sizing / risk).

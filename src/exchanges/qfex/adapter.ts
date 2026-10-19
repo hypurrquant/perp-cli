@@ -1212,7 +1212,7 @@ export class QfexAdapter implements ExchangeAdapter, TradingV2 {
 
   /**
    * `market info` of one ACTIVE market. fundingRate is the CURRENT /md/contracts `funding_rate`
-   * (the rate `market funding` / `perp funding` show), labelled fundingVerified false: QFEX funding
+   * (the rate `market funding` / `arb scan --rates --include-unverified` show), labelled fundingVerified false: QFEX funding
    * is unverified (Q4, display only). Market lists keep fundingRate null so no scan / bot reads it.
    */
   async getMarketInfo(symbol: string): Promise<QfexMarketRow & { fundingVerified: false; fundingNote: string; marketClosed: boolean | null }> {
