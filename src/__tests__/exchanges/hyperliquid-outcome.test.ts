@@ -456,3 +456,13 @@ describe("HyperliquidOutcomeAdapter — per-outcome quote token", () => {
       .rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" }, message: expect.stringContaining("10 USDC") });
   });
 });
+
+describe("HIP-4 template outcomes (QA 0.15.0)", () => {
+  it("a template:binaryPrice description (live) yields underlying, threshold and time", async () => {
+    const { HyperliquidOutcomeAdapter } = await import("../../exchanges/hyperliquid-outcome.js");
+    const p = HyperliquidOutcomeAdapter.parseDescription("perp:ZEC|priceDescription:the Pyth ZEC/USD price|seconds:90|threshold:1057|time:20261023-0800");
+    expect(p).toEqual({ underlying: "ZEC", targetPrice: 1057, expiryMs: Date.UTC(2026, 9, 23, 8, 0) });
+    const u = HyperliquidOutcomeAdapter._computeUnderlying({ ...p, class: "priceBinary" }, { ZEC: "1100" });
+    expect(u).toMatchObject({ symbol: "ZEC", markPrice: "1100", targetPrice: 1057, inTheMoney: "yes" });
+  });
+});

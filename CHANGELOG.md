@@ -40,6 +40,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **`sizeDecimals` with a coarse lot step:** a step that is not a power of ten ≤ 1 (TxFlow `"10"` / `"100"`, from negative `szDecimals`) gave `sizeDecimals: 0` ("any integer"); it is now null and `stepSize` is the authoritative grid (all VenueMarket-based venues).
 - **TxFlow HTTP 5xx errors** quoted a raw Cloudflare HTML page; the markup is stripped.
 - **Derive options:** `options quote` of an expired option said "listed but not active (activation …)"; it now says `expired at <expiry>, settled at <settlement_price>` (`details.expired`, `details.settlementPrice`). A decimal strike is accepted in the CLI form (`PUMP-20261023-0.0045-C` → the venue's `0_0045`). Human greeks print 3 significant figures (theta of cheap options printed `-0.000`), with a note on Derive's 1e-5 resolution.
+- **HIP-4 template outcomes:** `outcome view` of a `template:binaryPrice` outcome (description `perp:ZEC|…|threshold:1057|time:20261023-0800`) had `underlying: null`, no class and no expiry; `perp` / `threshold` / `time` are now read (class `priceBinary`). Sides gain `label` (the name without `template:`) and `wideSpread` (bid–ask wider than 0.2 → the mid-implied probability is a weak estimate; `impliedProb` is kept).
 
 ### JSON contract changes
 
@@ -61,6 +62,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - perp-ws: `WsError.code` / `WsError.remediation` added; the use-after-close rejection gains `details.closeReason`; Hyperliquid `account.unrealizedPnl` null → the summed value.
 - Market rows (`market list|prices|info`, venues built on VenueMarket: Ondo, QFEX, Arcus, RISEx, TxFlow, GRVT, Extended, Variational) gain `tradable` (boolean) — additive. Absent on hyperliquid / pacifica / lighter / lighter-rh / aster rows (their adapters list live markets only).
 - TxFlow market rows: `assetClass` / `canonical` change for the untagged TradFi markets (crypto + ticker canonical → TradFi class + null). VenueMarket-based rows: `sizeDecimals` null (was 0 / a wrong count) when the step is not a power of ten ≤ 1.
+- `outcome view`: sides gain `label`, `wideSpread`; template outcomes gain `underlying`, `class`, `expiryMs` (were null / absent).
 - `fundingHours` on hyperliquid / pacifica / lighter / lighter-rh market rows: null → 1 / 1 / 8 / 8.
 
 ## [0.15.0] — 2026-10-19

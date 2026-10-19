@@ -48,6 +48,9 @@ type RawOutcomeMeta = {
   questions: unknown[];
 };
 
+/** Bid–ask width (probability points) above which a side's mid-implied probability is flagged. */
+export const OUTCOME_WIDE_SPREAD = 0.2;
+
 export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
   readonly name = "hyperliquid";
   private _hl: HyperliquidAdapter;
@@ -110,6 +113,11 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
       else if (key === "expiry") out.expiryMs = HyperliquidOutcomeAdapter._parseExpiry(val);
       else if (key === "targetPrice") out.targetPrice = Number(val);
       else if (key === "period") out.period = val;
+      // Template outcomes (name "template:binaryPrice", live 2026-10-19):
+      // "perp:ZEC|priceDescription:…|seconds:90|threshold:1057|time:20261023-0800".
+      else if (key === "perp" && out.underlying === undefined) out.underlying = val;
+      else if (key === "threshold" && out.targetPrice === undefined) out.targetPrice = Number(val);
+      else if (key === "time" && out.expiryMs === undefined) out.expiryMs = HyperliquidOutcomeAdapter._parseExpiry(val);
     }
     return out;
   }
@@ -364,6 +372,8 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
       });
     }
     const parsed = HyperliquidOutcomeAdapter.parseDescription(meta.description);
+    // A template binary-price outcome is a price binary (Yes = underlying ≥ threshold at `time`).
+    if (parsed.class === undefined && meta.name === "template:binaryPrice") parsed.class = "priceBinary";
 
     // Fetch books for every side in parallel + allMids once for mids and
     // the underlying symbol's mark price.
@@ -387,6 +397,13 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
         bestBid: trimmed.bestBid,
         bestAsk: trimmed.bestAsk,
         impliedProb: mid !== undefined ? Number(mid) : undefined,
+        // Template side names ("template:Yes") without the prefix; `name` stays as published.
+        label: spec.name.replace(/^template:/, ""),
+        // The mid of a book wider than OUTCOME_WIDE_SPREAD (e.g. 0.0257 / 0.9899) says little
+        // about the probability: flagged, never dropped.
+        wideSpread: trimmed.bestBid !== undefined && trimmed.bestAsk !== undefined
+          ? Number(trimmed.bestAsk) - Number(trimmed.bestBid) > OUTCOME_WIDE_SPREAD
+          : null,
       };
     });
 
