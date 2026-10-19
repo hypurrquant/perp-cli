@@ -4,6 +4,8 @@
 //
 //   node scripts/release-qa/run.mjs --version 0.15.0 [--out <dir>] [--ws-seconds 12]
 //   pnpm release-qa --version latest
+//   pnpm release-qa --tarball <perp-cli-x.y.z.tgz> --tarball <hypurrquant-perp-ws-x.y.z.tgz>
+//                                          (a local release candidate: both packs, before publishing)
 //
 // Steps (read-only public mainnet; no keys — every child runs with an empty temp HOME):
 //   1. install perp-cli@<v> + @hypurrquant/perp-ws@<v> (+ ws) into a temp dir; check both versions
@@ -21,7 +23,11 @@ const REPO = resolve(import.meta.dirname, "../..");
 const args = process.argv.slice(2);
 const opt = (name, dflt) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : dflt; };
 let version = opt("--version", null);
-if (!version) { console.error("usage: node scripts/release-qa/run.mjs --version <x.y.z|latest> [--out dir]"); process.exit(2); }
+const tarballs = args.flatMap((a, i) => (a === "--tarball" && args[i + 1] ? [resolve(args[i + 1])] : []));
+if (!version && tarballs.length === 0) { console.error("usage: node scripts/release-qa/run.mjs (--version <x.y.z|latest> | --tarball <perp-cli.tgz> --tarball <perp-ws.tgz>) [--out dir]"); process.exit(2); }
+if (version && tarballs.length > 0) { console.error("--version and --tarball are exclusive"); process.exit(2); }
+const tarballVersion = (tgz) => JSON.parse(spawnSync("tar", ["-xOzf", tgz, "package/package.json"], { encoding: "utf8" }).stdout);
+const source = tarballs.length > 0 ? "local tarballs" : "the published npm packages";
 const WORK = mkdtempSync(join(tmpdir(), "perp-release-qa-"));
 const HOME = join(WORK, "home");
 mkdirSync(HOME);
@@ -42,9 +48,20 @@ function run(name, cmd, argv, opts = {}) {
 }
 
 // 1. install
-if (version === "latest") version = spawnSync("npm", ["view", "perp-cli", "version"], { encoding: "utf8" }).stdout.trim();
+let installSpecs;
+if (tarballs.length > 0) {
+  const pkgs = tarballs.map(t => ({ t, pkg: tarballVersion(t) }));
+  const cli = pkgs.find(p => p.pkg.name === "perp-cli");
+  const ws = pkgs.find(p => p.pkg.name === "@hypurrquant/perp-ws");
+  if (!cli || !ws || pkgs.length !== 2) { console.error("--tarball needs exactly the perp-cli and the @hypurrquant/perp-ws tarballs"); process.exit(2); }
+  version = cli.pkg.version;
+  installSpecs = [cli.t, ws.t];
+} else {
+  if (version === "latest") version = spawnSync("npm", ["view", "perp-cli", "version"], { encoding: "utf8" }).stdout.trim();
+  installSpecs = [`perp-cli@${version}`, `@hypurrquant/perp-ws@${version}`];
+}
 writeFileSync(join(WORK, "package.json"), JSON.stringify({ name: "perp-release-qa", private: true, type: "module" }));
-run("npm install", "npm", ["install", "--no-audit", "--no-fund", `perp-cli@${version}`, `@hypurrquant/perp-ws@${version}`, "ws@^8"]);
+run("npm install", "npm", ["install", "--no-audit", "--no-fund", ...installSpecs, "ws@^8"]);
 const installed = (p) => JSON.parse(readFileSync(join(WORK, "node_modules", p, "package.json"), "utf8")).version;
 const versionProblems = [];
 for (const p of ["perp-cli", "@hypurrquant/perp-ws"]) {
@@ -77,11 +94,11 @@ const newFailures = scripted.filter(c => !c.ok && !known.includes(c.id));
 const fixedKnown = scripted.filter(c => c.ok && known.includes(c.id)).map(c => c.id);
 
 const failed = versionProblems.length > 0 || steps.find(s => s.name === "npm install").code !== 0 || matrix.code !== 0 || newFailures.length > 0;
-const report = { version, at: new Date().toISOString(), failed, versionProblems, matrixExit: matrix.code, newFailures, fixedKnown, checks: scripted };
+const report = { version, source, tarballs, at: new Date().toISOString(), failed, versionProblems, matrixExit: matrix.code, newFailures, fixedKnown, checks: scripted };
 writeFileSync(join(OUT, "release-qa.json"), JSON.stringify(report, null, 1));
 writeFileSync(join(OUT, "release-qa.md"), [
   `# perp-cli ${version} release QA — ${failed ? "FAIL" : "PASS"}`, "",
-  `Run ${report.at} against the published npm packages (keyless, mainnet public reads).`, "",
+  `Run ${report.at} against ${source}${tarballs.length ? ` (${tarballs.join(", ")})` : ""} (keyless, mainnet public reads).`, "",
   "## Steps", ...steps.map(s => `- ${s.code === 0 ? "PASS" : "FAIL"} ${s.name} (${s.ms} ms)`), "",
   "## Version", ...(versionProblems.length ? versionProblems.map(p => `- ${p}`) : ["- perp-cli and @hypurrquant/perp-ws match"]), "",
   "## New failures (not in KNOWN_FAILURES)", ...(newFailures.length ? newFailures.map(c => `- \`${c.id}\`: ${c.detail}`) : ["- none"]), "",

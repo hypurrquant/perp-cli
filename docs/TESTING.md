@@ -155,6 +155,7 @@ changed (re-record + fix), a new bug (fix or register), or an outage (note it on
 
 ```bash
 pnpm release-qa --version 0.15.1          # after `npm publish`, before announcing
+pnpm release-qa --tarball perp-cli-0.15.1.tgz --tarball hypurrquant-perp-ws-0.15.1.tgz   # a local RC, before publishing
 ```
 
 Installs `perp-cli@<v>` + `@hypurrquant/perp-ws@<v>` into a temp dir (empty HOME, no keys),
