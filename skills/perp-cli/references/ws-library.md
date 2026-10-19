@@ -124,7 +124,7 @@ declare function show(venue: string, text: string): void; // your UI: one status
 const streams: VenueStream[] = [hyperliquid, pacifica, lighter, aster, arcus].map((c) => createVenueStream(c));
 for (const stream of streams) {
   // canonicals: "BTC" → hyperliquid/pacifica/lighter BTC, aster BTCUSDT, arcus BTC-USD (Aster's
-  // second BTC listing, BTCUSD1, is canonical null — one matchable listing per base, as in the CLI).
+  // BTCUSD1 / BTCU listings are canonical null — only the USDT listing is matchable, as in the CLI).
   // (symbols would need each venue's directory symbols; ["BTC"] rejects on aster and arcus.)
   // A canonical this venue does not list (e.g. SOL somewhere) is skipped with a non-fatal warning;
   // ready rejects only when the venue lists none of them.
@@ -177,8 +177,8 @@ await Promise.all(streams.map((s) => s.close()));
     aster and `BTC-USD` on arcus; HIP-3 markets are `"<dex>:<BASE>"` (`"xyz:TSLA"`, with `hip3Dexes`) and
     `"BTC"` never pulls them in. Canonicals come from `opts.canonicalize` (default: USD-like quotes
     collapse; an ambiguous ticker — SPX6900 on Hyperliquid / Aster / Lighter / Pacifica, Pacifica BP /
-    CHIP, Lighter BB / BOT / WEN / QNT, an unclassified Lighter RH market — and a second Aster listing
-    of a base are null, never grouped: the CLI's rule) — see `MarketDirectoryEntry.canonical` in `stream.markets()`. Canonicals the venue does
+    CHIP, Lighter BB / BOT / WEN / QNT, an unclassified Lighter RH market — and a non-USDT Aster listing
+    are null, never grouped: the CLI's rule) — see `MarketDirectoryEntry.canonical` in `stream.markets()`. Canonicals the venue does
     not list are **skipped and reported once** as a non-fatal control
     `{ type: "error", code: "SYMBOL_NOT_FOUND", fatal: false, details: { missing: string[], suggestions:
     Record<string, string[]> } }` (suggestions e.g. `"xyz:TSLA"` for `"TSLA"`; the others are subscribed and
@@ -297,8 +297,8 @@ Options and defaults:
   need exact like-for-like numbers (e.g. P&L attribution, or an accruing rate early in its period that
   can still move a lot) — then use `kind: "accruing"` or `"predicted"` and accept fewer legs.
 - **One leg per venue by default:** Aster lists BTC as `BTCUSDT` (quote USDT) and `BTCUSD1` (quote
-  USD1); the default canonicalization keeps one matchable listing per base (the USDT one, else its only
-  USD1 one) and gives the other `canonical: null`, as the CLI does. A custom `canonicalize` that
+  USD1); the default canonicalization keeps only the USDT listing matchable and gives every other
+  quote `canonical: null`, as the CLI does. A custom `canonicalize` that
   returns a key for both brings back several legs per venue — pick one before ranking.
 - **`fundingVerified`** (per leg): the CLI's verdict that the venue's funding unit and which published
   rate actually settles were confirmed against its funding payments. All six venues in 0.15.0 are

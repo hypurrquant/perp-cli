@@ -6,7 +6,7 @@
  * 6 (MBLUSDT, AFEEUSDT, …) — neither of the latter two streams or trades.
  *
  * The quote asset is NOT part of eligibility: USD1 / U quoted perps are live markets, listed by
- * every surface (asterCliSymbol / asterListedCanonical give their CLI symbol and canonical).
+ * every surface (asterCliSymbol gives the CLI symbol, asterMatchable whether it gets a canonical).
  */
 export function isAsterListedPerpetual(row: { contractType?: unknown; status?: unknown }): boolean {
   return row.contractType === "PERPETUAL" && row.status === "TRADING";
@@ -21,16 +21,12 @@ export function asterCliSymbol(row: { symbol: string; baseAsset: string; quoteAs
   return row.quoteAsset === "USDT" ? row.baseAsset : row.symbol;
 }
 
-/** Quotes a USD-quoted canonical may come from (Aster "U" is not one: its markets are canonical null). */
-const ASTER_USD_QUOTES: ReadonlySet<string> = new Set(["USDT", "USD1"]);
-
 /**
- * Whether a listed Aster market may carry a cross-venue canonical (then `base`): its quote is USD
- * (USDT / USD1) and it is the only such listing of its base, the USDT one first (BTCUSD1 next to
- * BTCUSDT → not matchable, so a base is never two rows of one venue in a comparison).
+ * Whether a listed Aster market may carry a cross-venue canonical (then `base`): only its USDT
+ * market. USD1 / U quoted ones (BTCUSD1, GPROUSD1, BTCU) are listed but never matched across
+ * venues — so `arb` (scan / auto / exec) never takes one as a leg: Aster arb sizing, margin checks
+ * and transfers are USDT-collateral, and a USD1 / U margined leg is not handled.
  */
-export function asterMatchable(row: { baseAsset: string; quoteAsset?: unknown }, listed: ReadonlyArray<{ baseAsset: string; quoteAsset?: unknown }>): boolean {
-  if (typeof row.quoteAsset !== "string" || !ASTER_USD_QUOTES.has(row.quoteAsset)) return false;
-  if (row.quoteAsset === "USDT") return true;
-  return !listed.some(o => o.baseAsset === row.baseAsset && o.quoteAsset === "USDT");
+export function asterMatchable(row: { quoteAsset?: unknown }): boolean {
+  return row.quoteAsset === "USDT";
 }

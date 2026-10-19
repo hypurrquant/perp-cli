@@ -283,7 +283,6 @@ async function asterRows(net: Network): Promise<Row[]> {
   const out: Row[] = [];
   const unpriced: string[] = [];
   const noInterval: string[] = [];
-  const listedAster = symbols.filter(x => isAsterListedPerpetual(x)).map(x => ({ baseAsset: String(x.baseAsset), quoteAsset: x.quoteAsset }));
   for (const s of symbols) {
     // Shared eligibility (SETTLING / PENDING_TRADING rows were listed with tradable false); every
     // quote, like the CLI adapter and the WS directory.
@@ -294,7 +293,7 @@ async function asterRows(net: Network): Promise<Row[]> {
     const subTypes = Array.isArray(s.underlyingSubType) ? (s.underlyingSubType as unknown[]).map(String) : [];
     const assetClass = classifyAster(base, subTypes);
     // A second listing of a base (BTCUSD1 beside BTCUSDT) or a non-USD quote (U): canonical null.
-    const matchable = asterMatchable({ baseAsset: base, quoteAsset: s.quoteAsset }, listedAster);
+    const matchable = asterMatchable(s);
     const p = premiumBySymbol.get(venueSymbol);
     const mark = p ? positiveNumStr(p.markPrice) : null;
     if (!p || mark === null) { unpriced.push(venueSymbol); continue; }

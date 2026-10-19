@@ -368,7 +368,7 @@ for (const c of CASES.filter(x => VENUE_FILTER === null || VENUE_FILTER.has(x.ve
      */
     /** A market the CLI never matches across venues: an ambiguous ticker, or a second Aster listing of a base. */
     const neverMatched = (m: MarketDirectoryEntry): boolean => m.dex === null && (isUnclassifiedTicker(c.venue, m.base)
-      || (c.venue === "aster" && !asterMatchable({ baseAsset: m.base, quoteAsset: m.quote }, dir.map(x => ({ baseAsset: x.base, quoteAsset: x.quote })))));
+      || (c.venue === "aster" && !asterMatchable({ quoteAsset: m.quote })));
 
     it("canonical values: every market the CLI never matches is canonical null in the WS directory", () => {
       expect(publicError, `public directory read failed: ${publicError}`).toBeNull();
