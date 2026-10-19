@@ -302,32 +302,75 @@ describe("public-only adapter", () => {
     expect(JSON.parse(String((bookCall[1] as RequestInit).body))).toMatchObject({ depth: 10 });
   });
 
-  it("klines follow the `next` cursor past a full 1000-bar page; a cap warns", async () => {
+  it("klines page by time past the dry cursor (live: page 2 = 2 rows, next \"\") — the whole range, deduped, ascending", async () => {
+    const MIN = 60_000;
     const bar = (t: number) => ({ open_time: `${t}000000`, close_time: `${t + 59_999}000000`, open: "1", close: "1", high: "1", low: "1", volume_b: "1", volume_q: "1", trades: 1, instrument: "BTC_USDT_Perp" });
-    const page = (from: number, n: number) => Array.from({ length: n }, (_, i) => bar(from - i * 60_000));
+    const end = 1_800_000_000_000;
+    const start = end - 2878 * MIN;
     const bodies: Array<Record<string, unknown>> = [];
     fetchMock.mockImplementation(routeFixtures({
       kline: b => {
         bodies.push(b);
-        return b.cursor === undefined ? { result: page(1_800_000_000_000, 1000), next: "c1" } : { result: page(1_800_000_000_000 - 1000 * 60_000, 3), next: "c2" };
+        // The venue: newest-first bars in [start_time, end_time], at most `limit`; the cursor is dry after 1000.
+        const e = Math.floor(Number(BigInt(String(b.end_time)) / 1_000_000n) / MIN) * MIN;
+        const s0 = Number(BigInt(String(b.start_time)) / 1_000_000n);
+        const out = [];
+        for (let t = e; t >= s0 && out.length < Number(b.limit); t -= MIN) out.push(bar(t));
+        return { result: out, next: bodies.length === 1 ? "c1" : "" };
       },
     }));
-    const k = await adapter().getKlines("BTC", "1m", 0, 1_800_000_000_000);
-    expect(k).toHaveLength(1003);
-    expect(bodies.map(b => b.cursor)).toEqual([undefined, "c1"]);
-    expect(k[0].time).toBeLessThan(k[k.length - 1].time);
-
-    const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    fetchMock.mockImplementation(routeFixtures({ kline: () => ({ result: page(1_800_000_000_000, 1000), next: "again" }) }));
-    expect(await adapter().getKlines("BTC", "1m", 0, 1_800_000_000_000)).toHaveLength(10_000);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("stopped after 10000 bars"));
+    const k = await adapter().getKlines("BTC", "1m", start, end);
+    expect(k).toHaveLength(2879);
+    expect(k[0].time).toBe(start);
+    expect(k.at(-1)!.time).toBe(end);
+    expect(new Set(k.map(c => c.time)).size).toBe(k.length);
+    expect(bodies.every(b => b.cursor === undefined)).toBe(true);
+    expect(bodies.length).toBe(3);
   });
 
+  it("klines: an off-grid start is floored to the interval (no truncated first bar); too many pages → INVALID_PARAMS", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    fetchMock.mockImplementation(routeFixtures({ kline: b => { bodies.push(b); return { result: [], next: "" }; } }));
+    const H4 = 14_400_000;
+    const offGrid = 1_792_300_000_000 + 7 * 60_000;
+    await adapter().getKlines("BTC", "4h", offGrid, offGrid + 3 * H4);
+    expect(BigInt(String(bodies[0].start_time)) / 1_000_000n % BigInt(H4)).toBe(0n);
+    await expect(adapter().getKlines("BTC", "1m", 0, 1_800_000_000_000)).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+  });
+
+  it("klines: a truncated leading calendar bar (1w covering 4 days, live) is dropped", async () => {
+    const D = 86_400_000;
+    const wk = (open: number, close: number) => ({ open_time: `${open}000000`, close_time: `${close}000000`, open: "1", close: "1", high: "1", low: "1", volume_b: "1", volume_q: "1", trades: 1, instrument: "BTC_USDT_Perp" });
+    const t0 = 1_791_849_600_000;
+    fetchMock.mockImplementation(routeFixtures({ kline: () => ({ result: [wk(t0 + 7 * D, t0 + 9 * D), wk(t0, t0 + 7 * D), wk(t0 - 4 * D, t0)], next: "" }) }));
+    const k = await adapter().getKlines("BTC", "1w", t0 - 4 * D, t0 + 9 * D);
+    expect(k.map(c => c.time)).toEqual([t0, t0 + 7 * D]);
+  });
+
+  it("trades are newest first (the venue answers oldest first) and the limit is validated, never clamped", async () => {
+    fetchMock.mockImplementation(routeFixtures());
+    const t = await adapter().getRecentTrades("BTC", 3);
+    expect(t.map(x => x.time)).toEqual([...t.map(x => x.time)].sort((a, b) => b - a));
+    for (const bad of [0, -5, Number.NaN, 1001]) {
+      await expect(adapter().getRecentTrades("BTC", bad)).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+    }
+  });
+
+  it("funding history sends the requested limit (was clamped to 1000)", async () => {
+    const bodies: unknown[] = [];
+    fetchMock.mockImplementation(async (u: string, init?: RequestInit) => {
+      if (String(u).endsWith("/funding")) bodies.push(JSON.parse(String(init?.body)));
+      return routeFixtures()(u, init);
+    });
+    await adapter().getFundingHistory("BTC", 1500);
+    expect(bodies[0]).toMatchObject({ limit: 1500 });
+    await expect(adapter().getFundingHistory("BTC", 0)).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+  });
   it("recent trades: taker side, ns → ms, no fee", async () => {
     fetchMock.mockImplementation(routeFixtures());
     const trades = await adapter().getRecentTrades("btc", 3);
     expect(trades).toHaveLength(3);
-    expect(trades[0]).toEqual({ time: 1_792_343_786_845, symbol: "BTC", side: "sell", price: "81148.5", size: "0.002", fee: null });
+    expect(trades.at(-1)).toEqual({ time: 1_792_343_786_845, symbol: "BTC", side: "sell", price: "81148.5", size: "0.002", fee: null });
   });
 
   it("funding history: settled rates as fractions per the record's interval (8 h BTC, 4 h SAMSUNG)", async () => {
@@ -341,7 +384,7 @@ describe("public-only adapter", () => {
 
   it("klines ascending by open time; unsupported interval → INVALID_PARAMS", async () => {
     fetchMock.mockImplementation(routeFixtures());
-    const k = await adapter().getKlines("BTC", "1h", 0, 1_792_344_000_000);
+    const k = await adapter().getKlines("BTC", "1h", 1_792_344_000_000 - 1000 * 3_600_000, 1_792_344_000_000);
     expect(k.map(c => c.time)).toEqual([...k.map(c => c.time)].sort((x, y) => x - y));
     expect(k[0]).toMatchObject({ open: expect.any(String), volume: expect.any(String), quoteVolume: expect.any(String) });
     await expect(adapter().getKlines("BTC", "7m", 0, 1)).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
