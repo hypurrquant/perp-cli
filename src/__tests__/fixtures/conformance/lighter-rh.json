@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "name": "lighter-rh",
- "capturedAt": 1792414347739,
+ "capturedAt": 1792415908269,
  "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
  "keep": [
   "BTC",
@@ -18,19 +18,7 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "7e29e4d515a65076"
-   },
-   "text": null
-  },
-  {
-   "cell": "list",
-   "method": "GET",
-   "url": "https://api.rh.lighter.xyz/api/v1/orderBookDetails",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json; charset=utf-8",
-   "response": {
-    "$body": "299c098b1d834be6"
+    "$body": "02e70aa2057e4804"
    },
    "text": null
   },
@@ -42,7 +30,19 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "d588f9bba4a46f82"
+    "$body": "856e1200fd21fe8a"
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "GET",
+   "url": "https://api.rh.lighter.xyz/api/v1/orderBookDetails",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "response": {
+    "$body": "8b45b05332d6443e"
    },
    "text": null
   },
@@ -54,7 +54,7 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "7e29e4d515a65076"
+    "$body": "02e70aa2057e4804"
    },
    "text": null
   },
@@ -66,7 +66,7 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "299c098b1d834be6"
+    "$body": "8b45b05332d6443e"
    },
    "text": null
   },
@@ -78,7 +78,7 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "d588f9bba4a46f82"
+    "$body": "856e1200fd21fe8a"
    },
    "text": null
   },
@@ -90,19 +90,7 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "7e29e4d515a65076"
-   },
-   "text": null
-  },
-  {
-   "cell": "info",
-   "method": "GET",
-   "url": "https://api.rh.lighter.xyz/api/v1/funding-rates",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json; charset=utf-8",
-   "response": {
-    "$body": "d588f9bba4a46f82"
+    "$body": "02e70aa2057e4804"
    },
    "text": null
   },
@@ -114,7 +102,19 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "299c098b1d834be6"
+    "$body": "8b45b05332d6443e"
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "GET",
+   "url": "https://api.rh.lighter.xyz/api/v1/funding-rates",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "response": {
+    "$body": "856e1200fd21fe8a"
    },
    "text": null
   },
@@ -126,14 +126,14 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "7e29e4d515a65076"
+    "$body": "02e70aa2057e4804"
    },
    "text": null
   },
   {
    "cell": "funding",
    "method": "GET",
-   "url": "https://api.rh.lighter.xyz/api/v1/fundings?market_id=1&resolution=1h&start_timestamp=1792392747&end_timestamp=1792414347&count_back=5",
+   "url": "https://api.rh.lighter.xyz/api/v1/fundings?market_id=1&resolution=1h&start_timestamp=1792394307&end_timestamp=1792415907&count_back=5",
    "body": null,
    "status": 200,
    "contentType": "application/json; charset=utf-8",
@@ -141,12 +141,6 @@
     "code": 200,
     "resolution": "1h",
     "fundings": [
-     {
-      "timestamp": 1792393200,
-      "value": "0.99426360",
-      "rate": "0.0012",
-      "direction": "long"
-     },
      {
       "timestamp": 1792396800,
       "value": "0.99275520",
@@ -176,6 +170,12 @@
       "value": "0.98828400",
       "rate": "0.0012",
       "direction": "long"
+     },
+     {
+      "timestamp": 1792414800,
+      "value": "0.99119400",
+      "rate": "0.0012",
+      "direction": "long"
      }
     ]
    },
@@ -189,262 +189,262 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "7e29e4d515a65076"
+    "$body": "02e70aa2057e4804"
    },
    "text": null
   },
   {
    "cell": "book",
    "method": "GET",
-   "url": "https://api.rh.lighter.xyz/api/v1/orderBookOrders?market_id=1&limit=50",
+   "url": "https://api.rh.lighter.xyz/api/v1/orderBookOrders?market_id=1&limit=250",
    "body": null,
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
     "code": 200,
-    "total_asks": 50,
+    "total_asks": 250,
     "asks": [
      {
-      "order_index": 562950106893271,
-      "order_id": "562950106893271",
-      "owner_account_index": 3026,
-      "initial_base_amount": "0.00462",
-      "remaining_base_amount": "0.00372",
-      "price": "82464.5",
-      "order_expiry": 1794833544700,
+      "order_index": 562950106930673,
+      "order_id": "562950106930673",
+      "owner_account_index": 2256,
+      "initial_base_amount": "0.04022",
+      "remaining_base_amount": "0.04022",
+      "price": "82539.9",
+      "order_expiry": 1794835107496,
       "transaction_time": 0
      },
      {
-      "order_index": 562950106893160,
-      "order_id": "562950106893160",
-      "owner_account_index": 39705,
-      "initial_base_amount": "0.12126",
-      "remaining_base_amount": "0.12126",
-      "price": "82469.2",
-      "order_expiry": 1792414673152,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 562950106893290,
-      "order_id": "562950106893290",
-      "owner_account_index": 281474976710569,
-      "initial_base_amount": "0.00727",
-      "remaining_base_amount": "0.00727",
-      "price": "82469.8",
-      "order_expiry": 1792414945166,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 562950106893072,
-      "order_id": "562950106893072",
-      "owner_account_index": 16969,
-      "initial_base_amount": "0.00500",
-      "remaining_base_amount": "0.00500",
-      "price": "82470.3",
-      "order_expiry": 1794833542862,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 562950106893217,
-      "order_id": "562950106893217",
-      "owner_account_index": 7951,
-      "initial_base_amount": "0.00460",
-      "remaining_base_amount": "0.00270",
-      "price": "82472.1",
-      "order_expiry": 1794833543474,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 562950106893296,
-      "order_id": "562950106893296",
-      "owner_account_index": 6611,
-      "initial_base_amount": "0.06992",
-      "remaining_base_amount": "0.06992",
-      "price": "82472.2",
-      "order_expiry": 1794833546954,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 562950106892080,
-      "order_id": "562950106892080",
-      "owner_account_index": 3692,
-      "initial_base_amount": "0.00606",
-      "remaining_base_amount": "0.00606",
-      "price": "82491.0",
-      "order_expiry": 1792417906479,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 562950106891693,
-      "order_id": "562950106891693",
-      "owner_account_index": 39,
-      "initial_base_amount": "0.62433",
-      "remaining_base_amount": "0.62433",
-      "price": "82491.8",
-      "order_expiry": 1794833486314,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 562950106893086,
-      "order_id": "562950106893086",
-      "owner_account_index": 281474976709805,
-      "initial_base_amount": "0.01818",
-      "remaining_base_amount": "0.01818",
-      "price": "82492.1",
-      "order_expiry": 1792417942924,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 562950106893292,
-      "order_id": "562950106893292",
-      "owner_account_index": 22163,
-      "initial_base_amount": "0.21319",
-      "remaining_base_amount": "0.21319",
-      "price": "82492.5",
-      "order_expiry": 1792500746477,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 562950106892883,
-      "order_id": "562950106892883",
-      "owner_account_index": 2601,
-      "initial_base_amount": "0.00194",
-      "remaining_base_amount": "0.00194",
-      "price": "82494.0",
-      "order_expiry": 1794833532690,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 562950106893218,
-      "order_id": "562950106893218",
+      "order_index": 562950106930668,
+      "order_id": "562950106930668",
       "owner_account_index": 2302,
-      "initial_base_amount": "0.05331",
-      "remaining_base_amount": "0.05331",
-      "price": "82494.2",
-      "order_expiry": 1794833543501,
+      "initial_base_amount": "0.05381",
+      "remaining_base_amount": "0.05381",
+      "price": "82540.0",
+      "order_expiry": 1794835107401,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 562950106930665,
+      "order_id": "562950106930665",
+      "owner_account_index": 2297,
+      "initial_base_amount": "0.05653",
+      "remaining_base_amount": "0.05653",
+      "price": "82540.1",
+      "order_expiry": 1794835107341,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 562950106930658,
+      "order_id": "562950106930658",
+      "owner_account_index": 39,
+      "initial_base_amount": "0.62712",
+      "remaining_base_amount": "0.62712",
+      "price": "82540.2",
+      "order_expiry": 1794835107287,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 562950106930662,
+      "order_id": "562950106930662",
+      "owner_account_index": 8556,
+      "initial_base_amount": "0.09362",
+      "remaining_base_amount": "0.09362",
+      "price": "82540.2",
+      "order_expiry": 1794835107321,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 562950106930656,
+      "order_id": "562950106930656",
+      "owner_account_index": 3026,
+      "initial_base_amount": "0.00077",
+      "remaining_base_amount": "0.00077",
+      "price": "82540.4",
+      "order_expiry": 1794835106978,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 562950106611094,
+      "order_id": "562950106611094",
+      "owner_account_index": 11818,
+      "initial_base_amount": "0.00031",
+      "remaining_base_amount": "0.00031",
+      "price": "82735.6",
+      "order_expiry": 1794997037902,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 562950106611112,
+      "order_id": "562950106611112",
+      "owner_account_index": 39041,
+      "initial_base_amount": "0.00090",
+      "remaining_base_amount": "0.00090",
+      "price": "82736.1",
+      "order_expiry": 1794997038048,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 562950106619425,
+      "order_id": "562950106619425",
+      "owner_account_index": 281474976708861,
+      "initial_base_amount": "0.00021",
+      "remaining_base_amount": "0.00021",
+      "price": "82736.3",
+      "order_expiry": 1794997299787,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 562950106800532,
+      "order_id": "562950106800532",
+      "owner_account_index": 16651,
+      "initial_base_amount": "0.00021",
+      "remaining_base_amount": "0.00021",
+      "price": "82736.3",
+      "order_expiry": 1794829867288,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 562950106611111,
+      "order_id": "562950106611111",
+      "owner_account_index": 40582,
+      "initial_base_amount": "0.00024",
+      "remaining_base_amount": "0.00024",
+      "price": "82737.4",
+      "order_expiry": 1794997038047,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 562950106611136,
+      "order_id": "562950106611136",
+      "owner_account_index": 20514,
+      "initial_base_amount": "0.00049",
+      "remaining_base_amount": "0.00049",
+      "price": "82738.0",
+      "order_expiry": 1794997038274,
       "transaction_time": 0
      }
     ],
-    "total_bids": 50,
+    "total_bids": 250,
     "bids": [
      {
-      "order_index": 844424777370843,
-      "order_id": "844424777370843",
+      "order_index": 844424777325285,
+      "order_id": "844424777325285",
+      "owner_account_index": 8556,
+      "initial_base_amount": "0.08117",
+      "remaining_base_amount": "0.07671",
+      "price": "82532.7",
+      "order_expiry": 1794835107372,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 844424777325316,
+      "order_id": "844424777325316",
+      "owner_account_index": 39705,
+      "initial_base_amount": "0.12117",
+      "remaining_base_amount": "0.12117",
+      "price": "82529.7",
+      "order_expiry": 1792416236355,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 844424777326929,
+      "order_id": "844424777326929",
       "owner_account_index": 16969,
       "initial_base_amount": "0.00500",
       "remaining_base_amount": "0.00500",
-      "price": "82460.5",
-      "order_expiry": 1794833543271,
+      "price": "82528.6",
+      "order_expiry": 1794835050535,
       "transaction_time": 0
      },
      {
-      "order_index": 844424777370727,
-      "order_id": "844424777370727",
-      "owner_account_index": 44130,
-      "initial_base_amount": "0.00364",
-      "remaining_base_amount": "0.00364",
-      "price": "82459.5",
-      "order_expiry": 1794833545814,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 844424777370771,
-      "order_id": "844424777370771",
-      "owner_account_index": 2297,
-      "initial_base_amount": "0.05607",
-      "remaining_base_amount": "0.05607",
-      "price": "82457.4",
-      "order_expiry": 1794833544501,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 844424777370862,
-      "order_id": "844424777370862",
-      "owner_account_index": 45735,
-      "initial_base_amount": "0.03883",
-      "remaining_base_amount": "0.03883",
-      "price": "82457.3",
-      "order_expiry": 1794833543112,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 844424777370760,
-      "order_id": "844424777370760",
-      "owner_account_index": 39705,
-      "initial_base_amount": "0.12127",
-      "remaining_base_amount": "0.12127",
-      "price": "82457.3",
-      "order_expiry": 1792414674702,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 844424777380338,
-      "order_id": "844424777380338",
-      "owner_account_index": 25336,
-      "initial_base_amount": "0.12127",
-      "remaining_base_amount": "0.10823",
-      "price": "82456.6",
-      "order_expiry": 1794833223286,
-      "transaction_time": 0
-     },
-     {
-      "order_index": 844424777371024,
-      "order_id": "844424777371024",
+      "order_index": 844424777325278,
+      "order_id": "844424777325278",
       "owner_account_index": 39,
-      "initial_base_amount": "0.63668",
-      "remaining_base_amount": "0.63668",
-      "price": "82437.0",
-      "order_expiry": 1794833542333,
+      "initial_base_amount": "0.61718",
+      "remaining_base_amount": "0.61718",
+      "price": "82527.7",
+      "order_expiry": 1794835107596,
       "transaction_time": 0
      },
      {
-      "order_index": 844424777371006,
-      "order_id": "844424777371006",
-      "owner_account_index": 281474976709585,
-      "initial_base_amount": "0.09096",
-      "remaining_base_amount": "0.09096",
-      "price": "82436.5",
-      "order_expiry": 1794833542505,
+      "order_index": 844424777332529,
+      "order_id": "844424777332529",
+      "owner_account_index": 25336,
+      "initial_base_amount": "0.12117",
+      "remaining_base_amount": "0.10688",
+      "price": "82527.6",
+      "order_expiry": 1794834840300,
       "transaction_time": 0
      },
      {
-      "order_index": 844424777408591,
-      "order_id": "844424777408591",
-      "owner_account_index": 31427,
-      "initial_base_amount": "0.00118",
-      "remaining_base_amount": "0.00118",
-      "price": "82435.9",
-      "order_expiry": 1795005076364,
+      "order_index": 844424777325503,
+      "order_id": "844424777325503",
+      "owner_account_index": 45735,
+      "initial_base_amount": "0.03865",
+      "remaining_base_amount": "0.03865",
+      "price": "82524.7",
+      "order_expiry": 1794835097521,
       "transaction_time": 0
      },
      {
-      "order_index": 844424777374121,
-      "order_id": "844424777374121",
-      "owner_account_index": 32392,
-      "initial_base_amount": "0.02032",
-      "remaining_base_amount": "0.02032",
-      "price": "82435.4",
-      "order_expiry": 1794833430825,
+      "order_index": 844424777440202,
+      "order_id": "844424777440202",
+      "owner_account_index": 281474976709554,
+      "initial_base_amount": "0.00049",
+      "remaining_base_amount": "0.00049",
+      "price": "82297.9",
+      "order_expiry": 1795004033877,
       "transaction_time": 0
      },
      {
-      "order_index": 844424777625100,
-      "order_id": "844424777625100",
-      "owner_account_index": 281474976710654,
-      "initial_base_amount": "0.89239",
-      "remaining_base_amount": "0.89239",
-      "price": "82435.3",
-      "order_expiry": 1794997906504,
+      "order_index": 844424777447253,
+      "order_id": "844424777447253",
+      "owner_account_index": 281474976709371,
+      "initial_base_amount": "0.00038",
+      "remaining_base_amount": "0.00038",
+      "price": "82297.6",
+      "order_expiry": 1795003787874,
       "transaction_time": 0
      },
      {
-      "order_index": 844424777372759,
-      "order_id": "844424777372759",
-      "owner_account_index": 3692,
-      "initial_base_amount": "0.00607",
-      "remaining_base_amount": "0.00607",
-      "price": "82435.1",
-      "order_expiry": 1792417877554,
+      "order_index": 844424777438639,
+      "order_id": "844424777438639",
+      "owner_account_index": 31303,
+      "initial_base_amount": "0.00024",
+      "remaining_base_amount": "0.00024",
+      "price": "82296.8",
+      "order_expiry": 1795004083588,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 844424777455717,
+      "order_id": "844424777455717",
+      "owner_account_index": 2601,
+      "initial_base_amount": "0.00194",
+      "remaining_base_amount": "0.00149",
+      "price": "82296.1",
+      "order_expiry": 1794830768038,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 844424777447250,
+      "order_id": "844424777447250",
+      "owner_account_index": 281474976709868,
+      "initial_base_amount": "0.00298",
+      "remaining_base_amount": "0.00298",
+      "price": "82295.1",
+      "order_expiry": 1795003787886,
+      "transaction_time": 0
+     },
+     {
+      "order_index": 844424777447256,
+      "order_id": "844424777447256",
+      "owner_account_index": 281474976709941,
+      "initial_base_amount": "0.00039",
+      "remaining_base_amount": "0.00039",
+      "price": "82294.8",
+      "order_expiry": 1795003787866,
       "transaction_time": 0
      }
     ]
@@ -459,7 +459,7 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "7e29e4d515a65076"
+    "$body": "02e70aa2057e4804"
    },
    "text": null
   },
@@ -474,179 +474,177 @@
     "code": 200,
     "trades": [
      {
-      "trade_id": 1812311070,
-      "trade_id_str": "1812311070",
+      "trade_id": 1813021594,
+      "trade_id_str": "1813021594",
       "tx_hash": "dummy-1",
       "type": "trade",
       "market_id": 1,
       "market_symbol": "BTC",
       "market_kind": "perps",
-      "size": "0.00090",
-      "price": "82464.5",
-      "usd_amount": "74.218050",
-      "ask_id": 562950106893271,
-      "ask_id_str": "562950106893271",
-      "bid_id": 844424777370717,
-      "bid_id_str": "844424777370717",
-      "ask_client_id": 490467819,
-      "ask_client_id_str": "490467819",
-      "bid_client_id": 179241434608068,
-      "bid_client_id_str": "179241434608068",
+      "size": "0.00446",
+      "price": "82532.7",
+      "usd_amount": "368.095842",
+      "ask_id": 562950106930675,
+      "ask_id_str": "562950106930675",
+      "bid_id": 844424777325285,
+      "bid_id_str": "844424777325285",
+      "ask_client_id": 40132174431658,
+      "ask_client_id_str": "40132174431658",
+      "bid_client_id": 11774031742483,
+      "bid_client_id_str": "11774031742483",
       "ask_account_id": 900002,
       "bid_account_id": 900003,
-      "is_maker_ask": true,
-      "block_height": 41685967,
-      "timestamp": 1792414346330,
-      "taker_position_size_before": "-0.00090",
-      "taker_entry_quote_before": "74.204640",
-      "taker_initial_margin_fraction_before": 1000,
-      "taker_position_sign_changed": true,
-      "maker_position_size_before": "0.00231",
-      "maker_entry_quote_before": "190.493457",
-      "maker_initial_margin_fraction_before": 200,
-      "transaction_time": 1792414346398096,
+      "is_maker_ask": false,
+      "block_height": 41697652,
+      "timestamp": 1792415907573,
+      "taker_position_size_before": "-0.10631",
+      "taker_entry_quote_before": "8767.665863",
+      "taker_initial_margin_fraction_before": 500,
+      "maker_fee": 102,
+      "maker_position_size_before": "-5.49438",
+      "maker_entry_quote_before": "449850.299751",
+      "maker_initial_margin_fraction_before": 5000,
+      "transaction_time": 1792415907594796,
       "ask_order_version": 0,
       "bid_order_version": 0
      },
      {
-      "trade_id": 1812310813,
-      "trade_id_str": "1812310813",
+      "trade_id": 1813021593,
+      "trade_id_str": "1813021593",
       "tx_hash": "dummy-4",
       "type": "trade",
       "market_id": 1,
       "market_symbol": "BTC",
       "market_kind": "perps",
-      "size": "0.00675",
-      "price": "82460.1",
-      "usd_amount": "556.605675",
-      "ask_id": 562950106893283,
-      "ask_id_str": "562950106893283",
-      "bid_id": 844424777370738,
-      "bid_id_str": "844424777370738",
-      "ask_client_id": 0,
-      "ask_client_id_str": "0",
-      "bid_client_id": 5471904952673,
-      "bid_client_id_str": "5471904952673",
-      "ask_account_id": 900005,
-      "bid_account_id": 900006,
+      "size": "0.00120",
+      "price": "82532.7",
+      "usd_amount": "99.039240",
+      "ask_id": 562950106930675,
+      "ask_id_str": "562950106930675",
+      "bid_id": 844424777325325,
+      "bid_id_str": "844424777325325",
+      "ask_client_id": 40132174431658,
+      "ask_client_id_str": "40132174431658",
+      "bid_client_id": 95937994798091,
+      "bid_client_id_str": "95937994798091",
+      "ask_account_id": 900002,
+      "bid_account_id": 900005,
       "is_maker_ask": false,
-      "block_height": 41685964,
-      "timestamp": 1792414346050,
-      "taker_fee": 298,
-      "taker_position_size_before": "2.41076",
-      "taker_entry_quote_before": "197492.486203",
-      "taker_initial_margin_fraction_before": 200,
-      "maker_fee": 84,
-      "maker_position_size_before": "1.18093",
-      "maker_entry_quote_before": "97438.763171",
-      "maker_initial_margin_fraction_before": 200,
-      "transaction_time": 1792414346050738,
+      "block_height": 41697652,
+      "timestamp": 1792415907573,
+      "taker_position_size_before": "-0.10511",
+      "taker_entry_quote_before": "8668.626623",
+      "taker_initial_margin_fraction_before": 500,
+      "maker_position_size_before": "0.00102",
+      "maker_entry_quote_before": "84.123015",
+      "maker_initial_margin_fraction_before": 3333,
+      "transaction_time": 1792415907594735,
       "ask_order_version": 0,
       "bid_order_version": 0
      },
      {
-      "trade_id": 1812310404,
-      "trade_id_str": "1812310404",
-      "tx_hash": "dummy-7",
+      "trade_id": 1813020433,
+      "trade_id_str": "1813020433",
+      "tx_hash": "dummy-6",
       "type": "trade",
       "market_id": 1,
       "market_symbol": "BTC",
       "market_kind": "perps",
-      "size": "0.02400",
-      "price": "82458.7",
-      "usd_amount": "1979.008800",
-      "ask_id": 562950106893258,
-      "ask_id_str": "562950106893258",
-      "bid_id": 844424777370837,
-      "bid_id_str": "844424777370837",
-      "ask_client_id": 85103740614144,
-      "ask_client_id_str": "85103740614144",
-      "bid_client_id": 237740737716374,
-      "bid_client_id_str": "237740737716374",
-      "ask_account_id": 900008,
-      "bid_account_id": 900009,
+      "size": "0.00654",
+      "price": "82530.6",
+      "usd_amount": "539.750124",
+      "ask_id": 562950106930629,
+      "ask_id_str": "562950106930629",
+      "bid_id": 844424777325480,
+      "bid_id_str": "844424777325480",
+      "ask_client_id": 0,
+      "ask_client_id_str": "0",
+      "bid_client_id": 237740739271036,
+      "bid_client_id_str": "237740739271036",
+      "ask_account_id": 900007,
+      "bid_account_id": 900008,
       "is_maker_ask": false,
-      "block_height": 41685956,
-      "timestamp": 1792414344278,
-      "taker_position_size_before": "0.01188",
-      "taker_entry_quote_before": "980.244445",
+      "block_height": 41697634,
+      "timestamp": 1792415906048,
+      "taker_fee": 298,
+      "taker_position_size_before": "0.65555",
+      "taker_entry_quote_before": "53703.478989",
       "taker_initial_margin_fraction_before": 200,
-      "taker_position_sign_changed": true,
       "maker_fee": 96,
-      "maker_position_size_before": "-0.08058",
-      "maker_entry_quote_before": "6646.263930",
+      "maker_position_size_before": "-0.03621",
+      "maker_entry_quote_before": "2987.922568",
       "maker_initial_margin_fraction_before": 5000,
-      "transaction_time": 1792414344393989,
+      "transaction_time": 1792415906048974,
       "ask_order_version": 0,
       "bid_order_version": 0
      },
      {
-      "trade_id": 1812310403,
-      "trade_id_str": "1812310403",
-      "tx_hash": "dummy-10",
+      "trade_id": 1813020432,
+      "trade_id_str": "1813020432",
+      "tx_hash": "dummy-9",
+      "type": "trade",
+      "market_id": 1,
+      "market_symbol": "BTC",
+      "market_kind": "perps",
+      "size": "0.00021",
+      "price": "82532.6",
+      "usd_amount": "17.331846",
+      "ask_id": 562950106930629,
+      "ask_id_str": "562950106930629",
+      "bid_id": 844424777325414,
+      "bid_id_str": "844424777325414",
+      "ask_client_id": 0,
+      "ask_client_id_str": "0",
+      "bid_client_id": 692901418332,
+      "bid_client_id_str": "692901418332",
+      "ask_account_id": 900007,
+      "bid_account_id": 900010,
+      "is_maker_ask": false,
+      "block_height": 41697634,
+      "timestamp": 1792415906048,
+      "taker_fee": 298,
+      "taker_position_size_before": "0.65576",
+      "taker_entry_quote_before": "53720.682453",
+      "taker_initial_margin_fraction_before": 200,
+      "maker_position_size_before": "-0.00026",
+      "maker_entry_quote_before": "21.447642",
+      "maker_initial_margin_fraction_before": 5000,
+      "transaction_time": 1792415906048928,
+      "ask_order_version": 0,
+      "bid_order_version": 0
+     },
+     {
+      "trade_id": 1813020393,
+      "trade_id_str": "1813020393",
+      "tx_hash": "dummy-11",
       "type": "trade",
       "market_id": 1,
       "market_symbol": "BTC",
       "market_kind": "perps",
       "size": "0.00024",
-      "price": "82459.3",
-      "usd_amount": "19.790232",
-      "ask_id": 562950106893258,
-      "ask_id_str": "562950106893258",
-      "bid_id": 844424777370789,
-      "bid_id_str": "844424777370789",
-      "ask_client_id": 85103740614144,
-      "ask_client_id_str": "85103740614144",
-      "bid_client_id": 194060,
-      "bid_client_id_str": "194060",
-      "ask_account_id": 900008,
-      "bid_account_id": 900011,
+      "price": "82540.6",
+      "usd_amount": "19.809744",
+      "ask_id": 562950106930621,
+      "ask_id_str": "562950106930621",
+      "bid_id": 844424777325627,
+      "bid_id_str": "844424777325627",
+      "ask_client_id": 252318422689192,
+      "ask_client_id_str": "252318422689192",
+      "bid_client_id": 195018,
+      "bid_client_id_str": "195018",
+      "ask_account_id": 900012,
+      "bid_account_id": 900013,
       "is_maker_ask": false,
-      "block_height": 41685956,
-      "timestamp": 1792414344278,
-      "taker_position_size_before": "0.01212",
-      "taker_entry_quote_before": "1000.047364",
-      "taker_initial_margin_fraction_before": 200,
+      "block_height": 41697633,
+      "timestamp": 1792415905904,
+      "taker_position_size_before": "0.00110",
+      "taker_entry_quote_before": "90.734930",
+      "taker_initial_margin_fraction_before": 5000,
       "maker_position_size_before": "-0.00024",
-      "maker_entry_quote_before": "19.788720",
+      "maker_entry_quote_before": "19.807320",
       "maker_initial_margin_fraction_before": 200,
       "maker_position_sign_changed": true,
-      "transaction_time": 1792414344393935,
-      "ask_order_version": 0,
-      "bid_order_version": 0
-     },
-     {
-      "trade_id": 1812310390,
-      "trade_id_str": "1812310390",
-      "tx_hash": "dummy-12",
-      "type": "trade",
-      "market_id": 1,
-      "market_symbol": "BTC",
-      "market_kind": "perps",
-      "size": "0.00462",
-      "price": "82464.7",
-      "usd_amount": "380.986914",
-      "ask_id": 562950106893255,
-      "ask_id_str": "562950106893255",
-      "bid_id": 844424777370807,
-      "bid_id_str": "844424777370807",
-      "ask_client_id": 40132174431039,
-      "ask_client_id_str": "40132174431039",
-      "bid_client_id": 490467818,
-      "bid_client_id_str": "490467818",
-      "ask_account_id": 900013,
-      "bid_account_id": 900002,
-      "is_maker_ask": false,
-      "block_height": 41685956,
-      "timestamp": 1792414344278,
-      "taker_position_size_before": "0.02358",
-      "taker_entry_quote_before": "1944.281980",
-      "taker_initial_margin_fraction_before": 500,
-      "maker_position_size_before": "-0.00231",
-      "maker_entry_quote_before": "190.449336",
-      "maker_initial_margin_fraction_before": 200,
-      "maker_position_sign_changed": true,
-      "transaction_time": 1792414344340554,
+      "transaction_time": 1792415905975690,
       "ask_order_version": 0,
       "bid_order_version": 0
      }
@@ -662,14 +660,14 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "7e29e4d515a65076"
+    "$body": "d8fafc3137953911"
    },
    "text": null
   },
   {
    "cell": "kline",
    "method": "GET",
-   "url": "https://api.rh.lighter.xyz/api/v1/candles?market_id=1&resolution=1h&start_timestamp=1792327947615&end_timestamp=1792414347615&count_back=100",
+   "url": "https://api.rh.lighter.xyz/api/v1/candles?market_id=1&resolution=1h&start_timestamp=1792329508108&end_timestamp=1792415909108&count_back=24",
    "body": null,
    "status": 200,
    "contentType": "application/json; charset=utf-8",
@@ -678,74 +676,64 @@
     "r": "1h",
     "c": [
      {
-      "t": 1792054800000,
-      "o": 81332.4,
-      "h": 81374.4,
-      "l": 81149.7,
-      "c": 81219.5,
-      "v": 28.825540000000032,
-      "V": 2342491.230162,
-      "i": 1671969247
+      "t": 1792332000000,
+      "o": 81501.7,
+      "h": 81536.4,
+      "l": 80993.8,
+      "c": 81061.3,
+      "v": 52.962670000001005,
+      "V": 4301431.485675007,
+      "i": 1781564054
      },
      {
-      "t": 1792058400000,
-      "o": 81219.5,
-      "h": 81237.8,
-      "l": 80817.7,
-      "c": 80989.7,
-      "v": 60.04337999999925,
-      "V": 4864744.198047996,
-      "i": 1673545899
+      "t": 1792335600000,
+      "o": 81061.3,
+      "h": 81217.3,
+      "l": 80967.8,
+      "c": 81144.6,
+      "v": 57.21045999999999,
+      "V": 4640173.225812997,
+      "i": 1782760228
      },
      {
-      "t": 1792062000000,
-      "o": 80989.7,
-      "h": 81147.7,
-      "l": 80795.2,
-      "c": 80945.8,
-      "v": 37.91212000000047,
-      "V": 3070896.8521909965,
-      "i": 1675521614
+      "t": 1792339200000,
+      "o": 81144.6,
+      "h": 81240.9,
+      "l": 80989.3,
+      "c": 81048.4,
+      "v": 46.237080000000624,
+      "V": 3749784.8645170066,
+      "i": 1783916419
      },
      {
-      "t": 1792065600000,
-      "o": 80945.8,
-      "h": 81136.9,
-      "l": 80498.5,
-      "c": 80518.5,
-      "v": 111.58946000000209,
-      "V": 9018222.322916007,
-      "i": 1678424748
+      "t": 1792342800000,
+      "o": 81048.4,
+      "h": 81200.2,
+      "l": 81044,
+      "c": 81165.1,
+      "v": 37.28713999999989,
+      "V": 3025542.4455170017,
+      "i": 1784766657
      },
      {
-      "t": 1792069200000,
-      "o": 80518.5,
-      "h": 80733.4,
-      "l": 79742.4,
-      "c": 80168.1,
-      "v": 96.18190999999861,
-      "V": 7726482.603204963,
-      "i": 1682611642
+      "t": 1792346400000,
+      "o": 81165.1,
+      "h": 81259,
+      "l": 81045.2,
+      "c": 81154.7,
+      "v": 32.35948999999968,
+      "V": 2625798.8931810013,
+      "i": 1785507565
      },
      {
-      "t": 1792072800000,
-      "o": 80168.1,
-      "h": 81996.5,
-      "l": 80068.4,
-      "c": 81824.3,
-      "v": 99.97275000000225,
-      "V": 8112034.917223974,
-      "i": 1686844880
-     },
-     {
-      "t": 1792393200000,
-      "o": 82804.3,
-      "h": 83138.5,
-      "l": 82635,
-      "c": 82688,
-      "v": 49.74428999999998,
-      "V": 4122337.9711019904,
-      "i": 1804821143
+      "t": 1792350000000,
+      "o": 81154.7,
+      "h": 81169.6,
+      "l": 80760.3,
+      "c": 80843.7,
+      "v": 43.676820000000504,
+      "V": 3535341.7421720135,
+      "i": 1786985897
      },
      {
       "t": 1792396800000,
@@ -792,10 +780,20 @@
       "o": 82314.2,
       "h": 82661.3,
       "l": 82283.4,
-      "c": 82464.5,
-      "v": 31.28578000000002,
-      "V": 2580190.193235006,
-      "i": 1812311070
+      "c": 82569.9,
+      "v": 35.87036,
+      "V": 2958569.297239005,
+      "i": 1812470731
+     },
+     {
+      "t": 1792414800000,
+      "o": 82569.9,
+      "h": 82723.4,
+      "l": 82448,
+      "c": 82532.7,
+      "v": 16.471800000000073,
+      "V": 1360137.137219002,
+      "i": 1813021594
      }
     ]
    },
@@ -809,7 +807,7 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "7e29e4d515a65076"
+    "$body": "d8fafc3137953911"
    },
    "text": null
   },
@@ -821,7 +819,7 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "299c098b1d834be6"
+    "$body": "8b45b05332d6443e"
    },
    "text": null
   },
@@ -833,7 +831,81 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "d588f9bba4a46f82"
+    "code": 200,
+    "funding_rates": [
+     {
+      "market_id": 3,
+      "exchange": "binance",
+      "symbol": "SOL",
+      "rate": 0.00007501
+     },
+     {
+      "market_id": 0,
+      "exchange": "binance",
+      "symbol": "ETH",
+      "rate": 0.0000854
+     },
+     {
+      "market_id": 1,
+      "exchange": "binance",
+      "symbol": "BTC",
+      "rate": 0.00007446
+     },
+     {
+      "market_id": 1,
+      "exchange": "bybit",
+      "symbol": "BTC",
+      "rate": 0.00007447
+     },
+     {
+      "market_id": 0,
+      "exchange": "bybit",
+      "symbol": "ETH",
+      "rate": 0.00003587
+     },
+     {
+      "market_id": 3,
+      "exchange": "bybit",
+      "symbol": "SOL",
+      "rate": -0.00002549
+     },
+     {
+      "market_id": 1,
+      "exchange": "hyperliquid",
+      "symbol": "BTC",
+      "rate": 0.0001
+     },
+     {
+      "market_id": 0,
+      "exchange": "hyperliquid",
+      "symbol": "ETH",
+      "rate": 0.000042928
+     },
+     {
+      "market_id": 3,
+      "exchange": "hyperliquid",
+      "symbol": "SOL",
+      "rate": 0.0001
+     },
+     {
+      "market_id": 1,
+      "exchange": "lighter",
+      "symbol": "BTC",
+      "rate": 0.00009599999999999999
+     },
+     {
+      "market_id": 3,
+      "exchange": "lighter",
+      "symbol": "SOL",
+      "rate": 0.00009599999999999999
+     },
+     {
+      "market_id": 0,
+      "exchange": "lighter",
+      "symbol": "ETH",
+      "rate": 0.000023999999999999997
+     }
+    ]
    },
    "text": null
   },
@@ -845,7 +917,7 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "7e29e4d515a65076"
+    "$body": "d8fafc3137953911"
    },
    "text": null
   },
@@ -857,7 +929,7 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "7e29e4d515a65076"
+    "$body": "d8fafc3137953911"
    },
    "text": null
   },
@@ -869,7 +941,7 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "7e29e4d515a65076"
+    "$body": "d8fafc3137953911"
    },
    "text": null
   },
@@ -881,78 +953,16 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "$body": "7e29e4d515a65076"
+    "$body": "d8fafc3137953911"
    },
    "text": null
   }
  ],
  "ws": [],
  "bodies": {
-  "7e29e4d515a65076": {
+  "02e70aa2057e4804": {
    "code": 200,
    "order_books": [
-    {
-     "symbol": "ETH/USDG",
-     "market_id": 2048,
-     "market_type": "spot",
-     "base_asset_id": 1,
-     "quote_asset_id": 3,
-     "status": "active",
-     "taker_fee": "0.0000",
-     "is_taker_fee_enabled": true,
-     "maker_fee": "0.0000",
-     "is_maker_fee_enabled": true,
-     "liquidation_fee": "0.0000",
-     "min_base_amount": "0.0050",
-     "min_quote_amount": "10.000000",
-     "order_quote_limit": "281474976.710655",
-     "supported_size_decimals": 4,
-     "supported_price_decimals": 2,
-     "supported_quote_decimals": 6,
-     "created_at": "1782846609702",
-     "multiplier": "1.000000000000000000",
-     "start_timestamp": 0,
-     "end_timestamp": 0,
-     "open_interest": "0.000000",
-     "outcome": 0,
-     "operator_account_index": 1,
-     "settlement_cap": 0,
-     "settlement_type": 0,
-     "settlement_price": 0,
-     "default_price": 0,
-     "is_frozen": false
-    },
-    {
-     "symbol": "ETH",
-     "market_id": 0,
-     "market_type": "perp",
-     "base_asset_id": 0,
-     "quote_asset_id": 0,
-     "status": "active",
-     "taker_fee": "0.0000",
-     "is_taker_fee_enabled": true,
-     "maker_fee": "0.0000",
-     "is_maker_fee_enabled": true,
-     "liquidation_fee": "1.0000",
-     "min_base_amount": "0.0050",
-     "min_quote_amount": "10.000000",
-     "order_quote_limit": "281474976.710655",
-     "supported_size_decimals": 4,
-     "supported_price_decimals": 2,
-     "supported_quote_decimals": 6,
-     "created_at": "1782499410884",
-     "multiplier": "1.000000000000000000",
-     "start_timestamp": 0,
-     "end_timestamp": 0,
-     "open_interest": "140.365948",
-     "outcome": 0,
-     "operator_account_index": 1,
-     "settlement_cap": 0,
-     "settlement_type": 0,
-     "settlement_price": 0,
-     "default_price": 0,
-     "is_frozen": false
-    },
     {
      "symbol": "SOL",
      "market_id": 3,
@@ -975,7 +985,7 @@
      "multiplier": "1.000000000000000000",
      "start_timestamp": 0,
      "end_timestamp": 0,
-     "open_interest": "44.805326",
+     "open_interest": "45.302240",
      "outcome": 0,
      "operator_account_index": 1,
      "settlement_cap": 0,
@@ -1006,7 +1016,69 @@
      "multiplier": "1.000000000000000000",
      "start_timestamp": 0,
      "end_timestamp": 0,
-     "open_interest": "34.751798",
+     "open_interest": "34.667820",
+     "outcome": 0,
+     "operator_account_index": 1,
+     "settlement_cap": 0,
+     "settlement_type": 0,
+     "settlement_price": 0,
+     "default_price": 0,
+     "is_frozen": false
+    },
+    {
+     "symbol": "ETH",
+     "market_id": 0,
+     "market_type": "perp",
+     "base_asset_id": 0,
+     "quote_asset_id": 0,
+     "status": "active",
+     "taker_fee": "0.0000",
+     "is_taker_fee_enabled": true,
+     "maker_fee": "0.0000",
+     "is_maker_fee_enabled": true,
+     "liquidation_fee": "1.0000",
+     "min_base_amount": "0.0050",
+     "min_quote_amount": "10.000000",
+     "order_quote_limit": "281474976.710655",
+     "supported_size_decimals": 4,
+     "supported_price_decimals": 2,
+     "supported_quote_decimals": 6,
+     "created_at": "1782499410884",
+     "multiplier": "1.000000000000000000",
+     "start_timestamp": 0,
+     "end_timestamp": 0,
+     "open_interest": "140.912304",
+     "outcome": 0,
+     "operator_account_index": 1,
+     "settlement_cap": 0,
+     "settlement_type": 0,
+     "settlement_price": 0,
+     "default_price": 0,
+     "is_frozen": false
+    },
+    {
+     "symbol": "ETH/USDG",
+     "market_id": 2048,
+     "market_type": "spot",
+     "base_asset_id": 1,
+     "quote_asset_id": 3,
+     "status": "active",
+     "taker_fee": "0.0000",
+     "is_taker_fee_enabled": true,
+     "maker_fee": "0.0000",
+     "is_maker_fee_enabled": true,
+     "liquidation_fee": "0.0000",
+     "min_base_amount": "0.0050",
+     "min_quote_amount": "10.000000",
+     "order_quote_limit": "281474976.710655",
+     "supported_size_decimals": 4,
+     "supported_price_decimals": 2,
+     "supported_quote_decimals": 6,
+     "created_at": "1782846609702",
+     "multiplier": "1.000000000000000000",
+     "start_timestamp": 0,
+     "end_timestamp": 0,
+     "open_interest": "0.000000",
      "outcome": 0,
      "operator_account_index": 1,
      "settlement_cap": 0,
@@ -1017,73 +1089,86 @@
     }
    ]
   },
-  "299c098b1d834be6": {
+  "856e1200fd21fe8a": {
+   "code": 200,
+   "funding_rates": [
+    {
+     "market_id": 3,
+     "exchange": "binance",
+     "symbol": "SOL",
+     "rate": 0.00007501
+    },
+    {
+     "market_id": 0,
+     "exchange": "binance",
+     "symbol": "ETH",
+     "rate": 0.0000854
+    },
+    {
+     "market_id": 1,
+     "exchange": "binance",
+     "symbol": "BTC",
+     "rate": 0.00007446
+    },
+    {
+     "market_id": 1,
+     "exchange": "bybit",
+     "symbol": "BTC",
+     "rate": 0.00007447
+    },
+    {
+     "market_id": 0,
+     "exchange": "bybit",
+     "symbol": "ETH",
+     "rate": 0.00003587
+    },
+    {
+     "market_id": 3,
+     "exchange": "bybit",
+     "symbol": "SOL",
+     "rate": -0.00002549
+    },
+    {
+     "market_id": 1,
+     "exchange": "hyperliquid",
+     "symbol": "BTC",
+     "rate": 0.0001
+    },
+    {
+     "market_id": 0,
+     "exchange": "hyperliquid",
+     "symbol": "ETH",
+     "rate": 0.000042928
+    },
+    {
+     "market_id": 3,
+     "exchange": "hyperliquid",
+     "symbol": "SOL",
+     "rate": 0.0001
+    },
+    {
+     "market_id": 3,
+     "exchange": "lighter",
+     "symbol": "SOL",
+     "rate": 0.00009599999999999999
+    },
+    {
+     "market_id": 1,
+     "exchange": "lighter",
+     "symbol": "BTC",
+     "rate": 0.00009599999999999999
+    },
+    {
+     "market_id": 0,
+     "exchange": "lighter",
+     "symbol": "ETH",
+     "rate": 0.000023999999999999997
+    }
+   ]
+  },
+  "8b45b05332d6443e": {
    "code": 200,
    "order_book_details": [
-    {
-     "symbol": "SOL",
-     "market_id": 3,
-     "market_type": "perp",
-     "base_asset_id": 0,
-     "quote_asset_id": 0,
-     "status": "active",
-     "taker_fee": "0.0000",
-     "is_taker_fee_enabled": true,
-     "maker_fee": "0.0000",
-     "is_maker_fee_enabled": true,
-     "liquidation_fee": "1.0000",
-     "min_base_amount": "0.100",
-     "min_quote_amount": "10.000000",
-     "order_quote_limit": "281474976.710655",
-     "supported_size_decimals": 3,
-     "supported_price_decimals": 3,
-     "supported_quote_decimals": 6,
-     "created_at": "1782499410942",
-     "multiplier": "1.000000000000000000",
-     "start_timestamp": 0,
-     "end_timestamp": 0,
-     "outcome": 0,
-     "operator_account_index": 1,
-     "settlement_cap": 0,
-     "settlement_type": 0,
-     "settlement_price": 0,
-     "default_price": 0,
-     "is_frozen": false,
-     "size_decimals": 3,
-     "price_decimals": 3,
-     "quote_multiplier": 1,
-     "default_initial_margin_fraction": 5000,
-     "min_initial_margin_fraction": 400,
-     "maintenance_margin_fraction": 240,
-     "closeout_margin_fraction": 160,
-     "mark_price": "105.080",
-     "index_price": "105.131",
-     "last_trade_price": 105.122,
-     "daily_trades_count": 23472,
-     "daily_base_token_volume": 69552.068,
-     "daily_quote_token_volume": 7210428.437807,
-     "daily_price_low": 100.338,
-     "daily_price_high": 106.146,
-     "daily_price_change": 2.0901758818384994,
-     "open_interest": 22402.663,
-     "daily_chart": {},
-     "market_config": {
-      "market_margin_mode": 0,
-      "insurance_fund_account_index": 281474976710655,
-      "liquidation_mode": 0,
-      "force_reduce_only": false,
-      "trading_hours": "",
-      "funding_fee_discounts_enabled": false,
-      "hidden": false,
-      "rfq_enabled": true
-     },
-     "strategy_index": 0,
-     "market_flags": 0,
-     "funding_premium_multiplier": 100,
-     "funding_clamp_small": "0.0500",
-     "funding_clamp_big": "4.0000",
-     "base_interest_rate": "0.0100"
-    },
     {
      "symbol": "ETH",
      "market_id": 0,
@@ -1120,16 +1205,80 @@
      "min_initial_margin_fraction": 200,
      "maintenance_margin_fraction": 120,
      "closeout_margin_fraction": 80,
-     "mark_price": "2422.06",
-     "index_price": "2423.18",
-     "last_trade_price": 2422.39,
-     "daily_trades_count": 75127,
-     "daily_base_token_volume": 17124.9813,
-     "daily_quote_token_volume": 41010418.403149,
+     "mark_price": "2421.24",
+     "index_price": "2422.63",
+     "last_trade_price": 2421.33,
+     "daily_trades_count": 72730,
+     "daily_base_token_volume": 16500.8766,
+     "daily_quote_token_volume": 39522186.272593,
      "daily_price_low": 2327.03,
      "daily_price_high": 2445.52,
-     "daily_price_change": 1.1111667877633853,
-     "open_interest": 7018.2771,
+     "daily_price_change": 1.915921679546105,
+     "open_interest": 7045.6513,
+     "daily_chart": {},
+     "market_config": {
+      "market_margin_mode": 0,
+      "insurance_fund_account_index": 281474976710655,
+      "liquidation_mode": 0,
+      "force_reduce_only": false,
+      "trading_hours": "",
+      "funding_fee_discounts_enabled": false,
+      "hidden": false,
+      "rfq_enabled": true
+     },
+     "strategy_index": 0,
+     "market_flags": 0,
+     "funding_premium_multiplier": 100,
+     "funding_clamp_small": "0.0500",
+     "funding_clamp_big": "4.0000",
+     "base_interest_rate": "0.0100"
+    },
+    {
+     "symbol": "SOL",
+     "market_id": 3,
+     "market_type": "perp",
+     "base_asset_id": 0,
+     "quote_asset_id": 0,
+     "status": "active",
+     "taker_fee": "0.0000",
+     "is_taker_fee_enabled": true,
+     "maker_fee": "0.0000",
+     "is_maker_fee_enabled": true,
+     "liquidation_fee": "1.0000",
+     "min_base_amount": "0.100",
+     "min_quote_amount": "10.000000",
+     "order_quote_limit": "281474976.710655",
+     "supported_size_decimals": 3,
+     "supported_price_decimals": 3,
+     "supported_quote_decimals": 6,
+     "created_at": "1782499410942",
+     "multiplier": "1.000000000000000000",
+     "start_timestamp": 0,
+     "end_timestamp": 0,
+     "outcome": 0,
+     "operator_account_index": 1,
+     "settlement_cap": 0,
+     "settlement_type": 0,
+     "settlement_price": 0,
+     "default_price": 0,
+     "is_frozen": false,
+     "size_decimals": 3,
+     "price_decimals": 3,
+     "quote_multiplier": 1,
+     "default_initial_margin_fraction": 5000,
+     "min_initial_margin_fraction": 400,
+     "maintenance_margin_fraction": 240,
+     "closeout_margin_fraction": 160,
+     "mark_price": "105.290",
+     "index_price": "105.337",
+     "last_trade_price": 105.305,
+     "daily_trades_count": 22419,
+     "daily_base_token_volume": 65881.055,
+     "daily_quote_token_volume": 6835138.230827,
+     "daily_price_low": 100.338,
+     "daily_price_high": 106.146,
+     "daily_price_change": 3.1275405757495616,
+     "open_interest": 22651.12,
      "daily_chart": {},
      "market_config": {
       "market_margin_mode": 0,
@@ -1184,16 +1333,16 @@
      "min_initial_margin_fraction": 200,
      "maintenance_margin_fraction": 120,
      "closeout_margin_fraction": 80,
-     "mark_price": "82453.9",
-     "index_price": "82488.0",
-     "last_trade_price": 82462.6,
-     "daily_trades_count": 141930,
-     "daily_base_token_volume": 1032.24706,
-     "daily_quote_token_volume": 84488455.824391,
+     "mark_price": "82535.6",
+     "index_price": "82572.0",
+     "last_trade_price": 82537.2,
+     "daily_trades_count": 138768,
+     "daily_base_token_volume": 987.24752,
+     "daily_quote_token_volume": 80839540.079456,
      "daily_price_low": 80650.2,
      "daily_price_high": 83138.5,
-     "daily_price_change": 1.1523686009003493,
-     "open_interest": 173.77622,
+     "daily_price_change": 1.8215844058755535,
+     "open_interest": 173.3498,
      "daily_chart": {},
      "market_config": {
       "market_margin_mode": 0,
@@ -1257,80 +1406,132 @@
     }
    ]
   },
-  "d588f9bba4a46f82": {
+  "d8fafc3137953911": {
    "code": 200,
-   "funding_rates": [
+   "order_books": [
     {
-     "market_id": 3,
-     "exchange": "binance",
-     "symbol": "SOL",
-     "rate": 0.000079
-    },
-    {
-     "market_id": 0,
-     "exchange": "binance",
      "symbol": "ETH",
-     "rate": 0.00008983
-    },
-    {
-     "market_id": 1,
-     "exchange": "binance",
-     "symbol": "BTC",
-     "rate": 0.00008136
-    },
-    {
-     "market_id": 1,
-     "exchange": "bybit",
-     "symbol": "BTC",
-     "rate": 0.00008241
-    },
-    {
      "market_id": 0,
-     "exchange": "bybit",
-     "symbol": "ETH",
-     "rate": 0.00003489
+     "market_type": "perp",
+     "base_asset_id": 0,
+     "quote_asset_id": 0,
+     "status": "active",
+     "taker_fee": "0.0000",
+     "is_taker_fee_enabled": true,
+     "maker_fee": "0.0000",
+     "is_maker_fee_enabled": true,
+     "liquidation_fee": "1.0000",
+     "min_base_amount": "0.0050",
+     "min_quote_amount": "10.000000",
+     "order_quote_limit": "281474976.710655",
+     "supported_size_decimals": 4,
+     "supported_price_decimals": 2,
+     "supported_quote_decimals": 6,
+     "created_at": "1782499410884",
+     "multiplier": "1.000000000000000000",
+     "start_timestamp": 0,
+     "end_timestamp": 0,
+     "open_interest": "140.912304",
+     "outcome": 0,
+     "operator_account_index": 1,
+     "settlement_cap": 0,
+     "settlement_type": 0,
+     "settlement_price": 0,
+     "default_price": 0,
+     "is_frozen": false
     },
     {
-     "market_id": 3,
-     "exchange": "bybit",
-     "symbol": "SOL",
-     "rate": -0.00001675
-    },
-    {
-     "market_id": 1,
-     "exchange": "hyperliquid",
      "symbol": "BTC",
-     "rate": 0.0001
-    },
-    {
-     "market_id": 0,
-     "exchange": "hyperliquid",
-     "symbol": "ETH",
-     "rate": 0.0001
-    },
-    {
-     "market_id": 3,
-     "exchange": "hyperliquid",
-     "symbol": "SOL",
-     "rate": 0.0000722704
-    },
-    {
      "market_id": 1,
-     "exchange": "lighter",
-     "symbol": "BTC",
-     "rate": 0.00009599999999999999
+     "market_type": "perp",
+     "base_asset_id": 0,
+     "quote_asset_id": 0,
+     "status": "active",
+     "taker_fee": "0.0000",
+     "is_taker_fee_enabled": true,
+     "maker_fee": "0.0000",
+     "is_maker_fee_enabled": true,
+     "liquidation_fee": "1.0000",
+     "min_base_amount": "0.00020",
+     "min_quote_amount": "10.000000",
+     "order_quote_limit": "281474976.710655",
+     "supported_size_decimals": 5,
+     "supported_price_decimals": 1,
+     "supported_quote_decimals": 6,
+     "created_at": "1782499410902",
+     "multiplier": "1.000000000000000000",
+     "start_timestamp": 0,
+     "end_timestamp": 0,
+     "open_interest": "34.667820",
+     "outcome": 0,
+     "operator_account_index": 1,
+     "settlement_cap": 0,
+     "settlement_type": 0,
+     "settlement_price": 0,
+     "default_price": 0,
+     "is_frozen": false
     },
     {
-     "market_id": 0,
-     "exchange": "lighter",
-     "symbol": "ETH",
-     "rate": 0.000032
-    },
-    {
-     "market_id": 3,
-     "exchange": "lighter",
      "symbol": "SOL",
-     "rate": 0.000056
+     "market_id": 3,
+     "market_type": "perp",
+     "base_asset_id": 0,
+     "quote_asset_id": 0,
+     "status": "active",
+     "taker_fee": "0.0000",
+     "is_taker_fee_enabled": true,
+     "maker_fee": "0.0000",
+     "is_maker_fee_enabled": true,
+     "liquidation_fee": "1.0000",
+     "min_base_amount": "0.100",
+     "min_quote_amount": "10.000000",
+     "order_quote_limit": "281474976.710655",
+     "supported_size_decimals": 3,
+     "supported_price_decimals": 3,
+     "supported_quote_decimals": 6,
+     "created_at": "1782499410942",
+     "multiplier": "1.000000000000000000",
+     "start_timestamp": 0,
+     "end_timestamp": 0,
+     "open_interest": "45.302240",
+     "outcome": 0,
+     "operator_account_index": 1,
+     "settlement_cap": 0,
+     "settlement_type": 0,
+     "settlement_price": 0,
+     "default_price": 0,
+     "is_frozen": false
+    },
+    {
+     "symbol": "ETH/USDG",
+     "market_id": 2048,
+     "market_type": "spot",
+     "base_asset_id": 1,
+     "quote_asset_id": 3,
+     "status": "active",
+     "taker_fee": "0.0000",
+     "is_taker_fee_enabled": true,
+     "maker_fee": "0.0000",
+     "is_maker_fee_enabled": true,
+     "liquidation_fee": "0.0000",
+     "min_base_amount": "0.0050",
+     "min_quote_amount": "10.000000",
+     "order_quote_limit": "281474976.710655",
+     "supported_size_decimals": 4,
+     "supported_price_decimals": 2,
+     "supported_quote_decimals": 6,
+     "created_at": "1782846609702",
+     "multiplier": "1.000000000000000000",
+     "start_timestamp": 0,
+     "end_timestamp": 0,
+     "open_interest": "0.000000",
+     "outcome": 0,
+     "operator_account_index": 1,
+     "settlement_cap": 0,
+     "settlement_type": 0,
+     "settlement_price": 0,
+     "default_price": 0,
+     "is_frozen": false
     }
    ]
   }

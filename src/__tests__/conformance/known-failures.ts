@@ -14,43 +14,35 @@
 import { expect } from "vitest";
 import { IS_LIVE } from "./harness.js";
 
-// Owned by fix/0.15.1-pacifica-lighter (not merged yet): its entries stay until it lands.
-const FIX_PL = "0.15.1 fix in progress (fix/0.15.1-pacifica-lighter)";
-const NEW = "new finding of the conformance suite (2026-10-19), not yet triaged";
+/**
+ * Every remaining entry is a documented, by-design difference between two read paths (0.15.1
+ * CHANGELOG), not an open bug: the contract decision — allowlist it in the check, or align the
+ * paths — is pending. Re-triage at the next release.
+ */
+const BY_DESIGN = "by design in 0.15.1 (documented), contract decision pending";
 
 export const KNOWN_FAILURES: Readonly<Record<string, string>> = {
-  // Lighter RH `market book` returns individual resting orders, not price levels (repeated prices).
-  // (Lighter mainnet passes on the recorded book: its first --depth 10 levels hold no repeated price
-  // since the JSON book is cut to --depth; the aggregation fix is the same branch.)
-  "lighter-rh:book:ordered": `${FIX_PL}: book levels are not aggregated`,
-  // Lighter `market kline` sends count_back=100 and ignores the default 24 h window.
-  "lighter:kline:window": `${FIX_PL}: count_back=100 ignores the 24 h window`,
-  "lighter-rh:kline:window": `${FIX_PL}: count_back=100 ignores the 24 h window`,
-  // MCP get_markets rows are VenueMarket (venueSymbol, fundingRateBasis, …), CLI rows ExchangeMarketInfo
-  // — documented as different by design in 0.15.1 (CHANGELOG "MCP get_markets row counts vs the CLI").
-  "parity:get_markets:fields": `${NEW}: MCP keyless rows are VenueMarket, CLI rows ExchangeMarketInfo (row shape differs by design — contract decision pending)`,
-  // MCP get_markets and `market list` disagree on the market set (re-recorded 2026-10-19): the public
-  // directory behind keyless MCP leaves out markets whose asset class is ambiguous, documented in
-  // 0.15.1 — cli-only: pacifica BP, CHIP; hyperliquid SPX; aster SPX; lighter QNT, BOT, WEN, SPX, BB;
-  // lighter-rh USELESS. Contract decision pending (allowlist the documented exclusions).
+  // MCP keyless get_markets rows are the public directory's VenueMarket rows (venueSymbol,
+  // fundingRateBasis, no sizeDecimals / fundingHours), CLI rows ExchangeMarketInfo.
+  "parity:get_markets:fields": `${BY_DESIGN}: MCP keyless rows are VenueMarket, CLI rows ExchangeMarketInfo`,
+  // The public directory behind keyless MCP leaves out markets whose asset class is ambiguous, so a
+  // same-name ticker is never matched across venues (recorded 2026-10-19, cli-only: pacifica BP,
+  // CHIP; hyperliquid SPX; aster SPX; lighter QNT, BOT, WEN, SPX, BB; lighter-rh USELESS).
   ...Object.fromEntries(["pacifica", "hyperliquid", "aster", "lighter-rh", "lighter"].flatMap(v => [
-    [`parity:get_markets:${v}:count`, `${NEW}: MCP leaves out ambiguous-class markets the CLI lists (documented in 0.15.1)`],
-    [`parity:get_markets:${v}:symbols`, `${NEW}: MCP leaves out ambiguous-class markets the CLI lists (documented in 0.15.1)`],
+    [`parity:get_markets:${v}:count`, `${BY_DESIGN}: MCP leaves out ambiguous-class markets the CLI lists`],
+    [`parity:get_markets:${v}:symbols`, `${BY_DESIGN}: MCP leaves out ambiguous-class markets the CLI lists`],
   ])),
-  // ── Row caps / ranges / intervals (ranges.conformance.test.ts) ──
-  // No interval table: an unknown interval is sent to the venue and fails after I/O.
-  ...Object.fromEntries(["pacifica", "lighter", "lighter-rh"].map(v => [`${v}:kline-unsupported:refused-before-io`, `${FIX_PL}: no interval table — an unknown interval reaches the venue`])),
-  // The interval IS refused before the candles request, but the adapter's own start-up request
-  // (Hyperliquid info "meta", Aster /fapi/v3/time) runs first and the cell counts every request.
-  ...Object.fromEntries(["hyperliquid", "aster"].map(v => [`${v}:kline-unsupported:refused-before-io`, `${NEW}: adapter start-up request precedes the interval check (no candles request is sent)`])),
   // ── WS library (perp-cli/ws, @hypurrquant/perp-ws) ──
-  "ws:aster:directory-parity": `${NEW}: WS-only BTCU, ETHU, GPRO, BNC, … (10) — the CLI lists USDT-quoted perps only, the WS keeps USD1 / U-quoted ones with canonical null (by design in 0.15.1; allowlist pending)`,
-  "ws:lighter:eligibility-cli": `${FIX_PL}: CLI market list includes Lighter inactive markets`,
-  "ws:lighter:eligibility-ws": `${FIX_PL}: WS directory streams Lighter inactive markets`,
-  "ws:lighter:directory-parity": `${FIX_PL}: Lighter WS directory 235 vs CLI 238 (cli-only DOLO, MYX, RESOLV)`,
-  ...Object.fromEntries(["pacifica", "lighter", "lighter-rh"].map(v => [`ws:${v}:ratekind-parity`, `${v === "pacifica" ? FIX_PL : NEW}: CLI fundingRateKind ${v === "pacifica" ? "(predicted / lastSettled per row)" : "null (REST field not verified)"} vs the WS funding rateKind`])),
-  "ws:lighter:stream-no-zero-placeholder": `${FIX_PL}: Lighter market_stats last_trade_price "0" for markets without trades`,
-  "ws:aster:canonical-parity": `${NEW}: Aster WS directory entries BTCU / ETHU without canonical`,
+  // The CLI lists USDT-quoted Aster perps only (its symbol mapping cannot address USD1 / U); the WS
+  // directory keeps those with canonical null (WS-only BTCU, ETHU, GPRO, BNC, POLYMARKET, … — 10).
+  "ws:aster:directory-parity": `${BY_DESIGN}: WS keeps USD1 / U-quoted Aster perps the CLI does not list`,
+  "ws:aster:canonical-parity": `${BY_DESIGN}: the USD1 / U-quoted BTCU / ETHU carry canonical null on purpose`,
+  // CLI and WS read different funding fields: Pacifica CLI rows show next_funding_rate ("predicted"),
+  // the WS prices channel the settled rate; Lighter / Lighter RH REST rates are not verified against
+  // settled prints (null) while the WS market_stats rate is labelled lastSettled.
+  "ws:pacifica:ratekind-parity": `${BY_DESIGN}: CLI predicted (next_funding_rate) vs WS lastSettled — different fields, each labelled`,
+  "ws:lighter:ratekind-parity": `${BY_DESIGN}: CLI null (REST rate unverified) vs WS lastSettled`,
+  "ws:lighter-rh:ratekind-parity": `${BY_DESIGN}: CLI null (REST rate unverified) vs WS lastSettled`,
 };
 
 const seen = new Set<string>();

@@ -246,7 +246,11 @@ describe(`cross-venue + CLI ⇄ MCP parity (${MODE})`, () => {
         .map(s => [s.symbol.toUpperCase(), s.rates.map(r => r.exchange).sort().join(",")]));
       const a = pick(m.data);
       const b = pick(c.data);
-      const diffs = [...new Set([...a.keys(), ...b.keys()])].filter(k => a.get(k) !== b.get(k)).map(k => `${k}: mcp [${a.get(k) ?? "-"}] cli [${b.get(k) ?? "-"}]`);
+      // `arb scan --rates` lists the top symbols by spread (BTC / ETH only when they rank), while
+      // get_funding_rates was asked for them: compare the symbols the CLI listed; MCP must have each.
+      const shared = [...b.keys()];
+      const diffs = shared.filter(k => a.get(k) !== b.get(k)).map(k => `${k}: mcp [${a.get(k) ?? "-"}] cli [${b.get(k) ?? "-"}]`);
+      if (a.size === 0) diffs.push(`mcp returned none of ${PARITY_SYMBOLS.join(", ")}`);
       const rows = ((m.data as { symbols: Array<{ rates: unknown[] }> }).symbols ?? []).flatMap(s => s.rates);
       const shape = rows.length > 0 ? issues(RateRow.array(), rows) : "";
       expectCheck("parity:get_funding_rates:same", diffs.length === 0 && shape === "" ? null : [...diffs, shape].filter(Boolean).join("; "));

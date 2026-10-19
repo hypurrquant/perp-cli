@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "name": "ranges-lighter",
- "capturedAt": 1792414403055,
+ "capturedAt": 1792415910691,
  "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
  "keep": [
   "BTC",
@@ -18,219 +18,7 @@
    "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "code": 200,
-    "order_books": [
-     {
-      "symbol": "SOL",
-      "market_id": 2,
-      "market_type": "perp",
-      "base_asset_id": 0,
-      "quote_asset_id": 0,
-      "status": "active",
-      "taker_fee": "0.0000",
-      "is_taker_fee_enabled": true,
-      "maker_fee": "0.0000",
-      "is_maker_fee_enabled": true,
-      "liquidation_fee": "1.0000",
-      "min_base_amount": "0.055",
-      "min_quote_amount": "10.000000",
-      "order_quote_limit": "281474976.710655",
-      "supported_size_decimals": 3,
-      "supported_price_decimals": 3,
-      "supported_quote_decimals": 6,
-      "created_at": "1737098461127",
-      "multiplier": "1.000000000000000000",
-      "start_timestamp": 0,
-      "end_timestamp": 0,
-      "open_interest": "303.856310",
-      "outcome": 0,
-      "operator_account_index": 1,
-      "settlement_cap": 0,
-      "settlement_type": 0,
-      "settlement_price": 0,
-      "default_price": 0,
-      "is_frozen": false
-     },
-     {
-      "symbol": "BTC",
-      "market_id": 1,
-      "market_type": "perp",
-      "base_asset_id": 0,
-      "quote_asset_id": 0,
-      "status": "active",
-      "taker_fee": "0.0000",
-      "is_taker_fee_enabled": true,
-      "maker_fee": "0.0000",
-      "is_maker_fee_enabled": true,
-      "liquidation_fee": "1.0000",
-      "min_base_amount": "0.00007",
-      "min_quote_amount": "10.000000",
-      "order_quote_limit": "281474976.710655",
-      "supported_size_decimals": 5,
-      "supported_price_decimals": 1,
-      "supported_quote_decimals": 6,
-      "created_at": "1737098461107",
-      "multiplier": "1.000000000000000000",
-      "start_timestamp": 0,
-      "end_timestamp": 0,
-      "open_interest": "420.481890",
-      "outcome": 0,
-      "operator_account_index": 1,
-      "settlement_cap": 0,
-      "settlement_type": 0,
-      "settlement_price": 0,
-      "default_price": 0,
-      "is_frozen": false
-     },
-     {
-      "symbol": "ETH",
-      "market_id": 0,
-      "market_type": "perp",
-      "base_asset_id": 0,
-      "quote_asset_id": 0,
-      "status": "active",
-      "taker_fee": "0.0000",
-      "is_taker_fee_enabled": true,
-      "maker_fee": "0.0000",
-      "is_maker_fee_enabled": true,
-      "liquidation_fee": "1.0000",
-      "min_base_amount": "0.0020",
-      "min_quote_amount": "10.000000",
-      "order_quote_limit": "281474976.710655",
-      "supported_size_decimals": 4,
-      "supported_price_decimals": 2,
-      "supported_quote_decimals": 6,
-      "created_at": "1737098461100",
-      "multiplier": "1.000000000000000000",
-      "start_timestamp": 0,
-      "end_timestamp": 0,
-      "open_interest": "668.565706",
-      "outcome": 0,
-      "operator_account_index": 1,
-      "settlement_cap": 0,
-      "settlement_type": 0,
-      "settlement_price": 0,
-      "default_price": 0,
-      "is_frozen": false
-     },
-     {
-      "symbol": "ETH/USDC",
-      "market_id": 2048,
-      "market_type": "spot",
-      "base_asset_id": 1,
-      "quote_asset_id": 3,
-      "status": "active",
-      "taker_fee": "0.0000",
-      "is_taker_fee_enabled": true,
-      "maker_fee": "0.0000",
-      "is_maker_fee_enabled": true,
-      "liquidation_fee": "0.0000",
-      "min_base_amount": "0.0050",
-      "min_quote_amount": "10.000000",
-      "order_quote_limit": "2500000.000000",
-      "supported_size_decimals": 4,
-      "supported_price_decimals": 2,
-      "supported_quote_decimals": 6,
-      "created_at": "1765036263130",
-      "multiplier": "1.000000000000000000",
-      "start_timestamp": 0,
-      "end_timestamp": 0,
-      "open_interest": "0.000000",
-      "outcome": 0,
-      "operator_account_index": 1,
-      "settlement_cap": 0,
-      "settlement_type": 0,
-      "settlement_price": 0,
-      "default_price": 0,
-      "is_frozen": false
-     }
-    ]
-   },
-   "text": null
-  },
-  {
-   "cell": "warm",
-   "method": "GET",
-   "url": "https://mainnet.zklighter.elliot.ai/api/v1/funding-rates",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json; charset=utf-8",
-   "response": {
-    "code": 200,
-    "funding_rates": [
-     {
-      "market_id": 0,
-      "exchange": "binance",
-      "symbol": "ETH",
-      "rate": 0.00008951
-     },
-     {
-      "market_id": 1,
-      "exchange": "binance",
-      "symbol": "BTC",
-      "rate": 0.00008043
-     },
-     {
-      "market_id": 2,
-      "exchange": "binance",
-      "symbol": "SOL",
-      "rate": 0.00007838
-     },
-     {
-      "market_id": 1,
-      "exchange": "bybit",
-      "symbol": "BTC",
-      "rate": 0.00008146
-     },
-     {
-      "market_id": 0,
-      "exchange": "bybit",
-      "symbol": "ETH",
-      "rate": 0.00003489
-     },
-     {
-      "market_id": 2,
-      "exchange": "bybit",
-      "symbol": "SOL",
-      "rate": -0.00001757
-     },
-     {
-      "market_id": 1,
-      "exchange": "hyperliquid",
-      "symbol": "BTC",
-      "rate": 0.0001
-     },
-     {
-      "market_id": 0,
-      "exchange": "hyperliquid",
-      "symbol": "ETH",
-      "rate": 0.0001
-     },
-     {
-      "market_id": 2,
-      "exchange": "hyperliquid",
-      "symbol": "SOL",
-      "rate": 0.0000755864
-     },
-     {
-      "market_id": 0,
-      "exchange": "lighter",
-      "symbol": "ETH",
-      "rate": 0.000064
-     },
-     {
-      "market_id": 2,
-      "exchange": "lighter",
-      "symbol": "SOL",
-      "rate": 0.00009599999999999999
-     },
-     {
-      "market_id": 1,
-      "exchange": "lighter",
-      "symbol": "BTC",
-      "rate": 0.00009599999999999999
-     }
-    ]
+    "$body": "b36b6c9c1cc164fa"
    },
    "text": null
   },
@@ -245,70 +33,6 @@
     "code": 200,
     "order_book_details": [
      {
-      "symbol": "BTC",
-      "market_id": 1,
-      "market_type": "perp",
-      "base_asset_id": 0,
-      "quote_asset_id": 0,
-      "status": "active",
-      "taker_fee": "0.0000",
-      "is_taker_fee_enabled": true,
-      "maker_fee": "0.0000",
-      "is_maker_fee_enabled": true,
-      "liquidation_fee": "1.0000",
-      "min_base_amount": "0.00007",
-      "min_quote_amount": "10.000000",
-      "order_quote_limit": "281474976.710655",
-      "supported_size_decimals": 5,
-      "supported_price_decimals": 1,
-      "supported_quote_decimals": 6,
-      "created_at": "1737098461107",
-      "multiplier": "1.000000000000000000",
-      "start_timestamp": 0,
-      "end_timestamp": 0,
-      "outcome": 0,
-      "operator_account_index": 1,
-      "settlement_cap": 0,
-      "settlement_type": 0,
-      "settlement_price": 0,
-      "default_price": 0,
-      "is_frozen": false,
-      "size_decimals": 5,
-      "price_decimals": 1,
-      "quote_multiplier": 1,
-      "default_initial_margin_fraction": 500,
-      "min_initial_margin_fraction": 200,
-      "maintenance_margin_fraction": 120,
-      "closeout_margin_fraction": 80,
-      "mark_price": "82541.2",
-      "index_price": "82572.5",
-      "last_trade_price": 82532,
-      "daily_trades_count": 933819,
-      "daily_base_token_volume": 11329.93688,
-      "daily_quote_token_volume": 928705828.128594,
-      "daily_price_low": 80663,
-      "daily_price_high": 83148.6,
-      "daily_price_change": 1.2628161794565707,
-      "open_interest": 2102.61724,
-      "daily_chart": {},
-      "market_config": {
-       "market_margin_mode": 0,
-       "insurance_fund_account_index": 281474976710655,
-       "liquidation_mode": 0,
-       "force_reduce_only": false,
-       "trading_hours": "",
-       "funding_fee_discounts_enabled": false,
-       "hidden": false,
-       "rfq_enabled": true
-      },
-      "strategy_index": 2,
-      "market_flags": 0,
-      "funding_premium_multiplier": 100,
-      "funding_clamp_small": "0.0500",
-      "funding_clamp_big": "4.0000",
-      "base_interest_rate": "0.0100"
-     },
-     {
       "symbol": "ETH",
       "market_id": 0,
       "market_type": "perp",
@@ -337,6 +61,7 @@
       "settlement_price": 0,
       "default_price": 0,
       "is_frozen": false,
+      "market_deployer": "lighter",
       "size_decimals": 4,
       "price_decimals": 2,
       "quote_multiplier": 1,
@@ -344,16 +69,81 @@
       "min_initial_margin_fraction": 200,
       "maintenance_margin_fraction": 120,
       "closeout_margin_fraction": 80,
-      "mark_price": "2423.06",
-      "index_price": "2424.28",
-      "last_trade_price": 2422.74,
-      "daily_trades_count": 256368,
-      "daily_base_token_volume": 275998.6113,
-      "daily_quote_token_volume": 657772406.38213,
+      "mark_price": "2421.30",
+      "index_price": "2422.66",
+      "last_trade_price": 2421.06,
+      "daily_trades_count": 249753,
+      "daily_base_token_volume": 266654.1217,
+      "daily_quote_token_volume": 635459314.555454,
       "daily_price_low": 2327.07,
       "daily_price_high": 2445.64,
-      "daily_price_change": 1.1708213286567288,
-      "open_interest": 33428.7685,
+      "daily_price_change": 1.8911435232332074,
+      "open_interest": 33664.3365,
+      "daily_chart": {},
+      "market_config": {
+       "market_margin_mode": 0,
+       "insurance_fund_account_index": 281474976710655,
+       "liquidation_mode": 0,
+       "force_reduce_only": false,
+       "trading_hours": "",
+       "funding_fee_discounts_enabled": false,
+       "hidden": false,
+       "rfq_enabled": true
+      },
+      "strategy_index": 2,
+      "market_flags": 0,
+      "funding_premium_multiplier": 100,
+      "funding_clamp_small": "0.0500",
+      "funding_clamp_big": "4.0000",
+      "base_interest_rate": "0.0100"
+     },
+     {
+      "symbol": "BTC",
+      "market_id": 1,
+      "market_type": "perp",
+      "base_asset_id": 0,
+      "quote_asset_id": 0,
+      "status": "active",
+      "taker_fee": "0.0000",
+      "is_taker_fee_enabled": true,
+      "maker_fee": "0.0000",
+      "is_maker_fee_enabled": true,
+      "liquidation_fee": "1.0000",
+      "min_base_amount": "0.00007",
+      "min_quote_amount": "10.000000",
+      "order_quote_limit": "281474976.710655",
+      "supported_size_decimals": 5,
+      "supported_price_decimals": 1,
+      "supported_quote_decimals": 6,
+      "created_at": "1737098461107",
+      "multiplier": "1.000000000000000000",
+      "start_timestamp": 0,
+      "end_timestamp": 0,
+      "outcome": 0,
+      "operator_account_index": 1,
+      "settlement_cap": 0,
+      "settlement_type": 0,
+      "settlement_price": 0,
+      "default_price": 0,
+      "is_frozen": false,
+      "market_deployer": "lighter",
+      "size_decimals": 5,
+      "price_decimals": 1,
+      "quote_multiplier": 1,
+      "default_initial_margin_fraction": 500,
+      "min_initial_margin_fraction": 200,
+      "maintenance_margin_fraction": 120,
+      "closeout_margin_fraction": 80,
+      "mark_price": "82546.6",
+      "index_price": "82572.7",
+      "last_trade_price": 82553,
+      "daily_trades_count": 909386,
+      "daily_base_token_volume": 10994.45044,
+      "daily_quote_token_volume": 901591893.237985,
+      "daily_price_low": 80663,
+      "daily_price_high": 83148.6,
+      "daily_price_change": 1.81389199282682,
+      "open_interest": 2121.53262,
       "daily_chart": {},
       "market_config": {
        "market_margin_mode": 0,
@@ -401,6 +191,7 @@
       "settlement_price": 0,
       "default_price": 0,
       "is_frozen": false,
+      "market_deployer": "lighter",
       "size_decimals": 3,
       "price_decimals": 3,
       "quote_multiplier": 1,
@@ -408,16 +199,16 @@
       "min_initial_margin_fraction": 400,
       "maintenance_margin_fraction": 240,
       "closeout_margin_fraction": 160,
-      "mark_price": "105.195",
-      "index_price": "105.234",
-      "last_trade_price": 105.209,
-      "daily_trades_count": 110990,
-      "daily_base_token_volume": 785233.437,
-      "daily_quote_token_volume": 81635712.666433,
+      "mark_price": "105.312",
+      "index_price": "105.344",
+      "last_trade_price": 105.311,
+      "daily_trades_count": 108595,
+      "daily_base_token_volume": 764909.811,
+      "daily_quote_token_volume": 79577147.87274,
       "daily_price_low": 100.37,
       "daily_price_high": 106.162,
-      "daily_price_change": 2.265790548027761,
-      "open_interest": 151928.155,
+      "daily_price_change": 3.1548120433309172,
+      "open_interest": 159087.199,
       "daily_chart": {},
       "market_config": {
        "market_margin_mode": 0,
@@ -468,16 +259,103 @@
       "settlement_price": 0,
       "default_price": 0,
       "is_frozen": false,
+      "market_deployer": "lighter",
       "size_decimals": 4,
       "price_decimals": 2,
-      "last_trade_price": 2424.07,
-      "daily_trades_count": 5671,
-      "daily_base_token_volume": 254.7253,
-      "daily_quote_token_volume": 608750.727217,
+      "last_trade_price": 2422.35,
+      "daily_trades_count": 5503,
+      "daily_base_token_volume": 249.8514,
+      "daily_quote_token_volume": 597087.71825,
       "daily_price_low": 2332.12,
       "daily_price_high": 2445.81,
-      "daily_price_change": 1.1580256393136141,
+      "daily_price_change": 1.9275922138907824,
       "daily_chart": {}
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "warm",
+   "method": "GET",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/funding-rates",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "response": {
+    "code": 200,
+    "funding_rates": [
+     {
+      "market_id": 2,
+      "exchange": "binance",
+      "symbol": "SOL",
+      "rate": 0.00007501
+     },
+     {
+      "market_id": 0,
+      "exchange": "binance",
+      "symbol": "ETH",
+      "rate": 0.0000854
+     },
+     {
+      "market_id": 1,
+      "exchange": "binance",
+      "symbol": "BTC",
+      "rate": 0.00007446
+     },
+     {
+      "market_id": 1,
+      "exchange": "bybit",
+      "symbol": "BTC",
+      "rate": 0.00007447
+     },
+     {
+      "market_id": 0,
+      "exchange": "bybit",
+      "symbol": "ETH",
+      "rate": 0.00003587
+     },
+     {
+      "market_id": 2,
+      "exchange": "bybit",
+      "symbol": "SOL",
+      "rate": -0.00002549
+     },
+     {
+      "market_id": 1,
+      "exchange": "hyperliquid",
+      "symbol": "BTC",
+      "rate": 0.0001
+     },
+     {
+      "market_id": 0,
+      "exchange": "hyperliquid",
+      "symbol": "ETH",
+      "rate": 0.0000435584
+     },
+     {
+      "market_id": 2,
+      "exchange": "hyperliquid",
+      "symbol": "SOL",
+      "rate": 0.0001
+     },
+     {
+      "market_id": 1,
+      "exchange": "lighter",
+      "symbol": "BTC",
+      "rate": 0.00009599999999999999
+     },
+     {
+      "market_id": 2,
+      "exchange": "lighter",
+      "symbol": "SOL",
+      "rate": 0.00009599999999999999
+     },
+     {
+      "market_id": 0,
+      "exchange": "lighter",
+      "symbol": "ETH",
+      "rate": 0
      }
     ]
    },
@@ -486,7 +364,19 @@
   {
    "cell": "kline:1m",
    "method": "GET",
-   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=1m&start_timestamp=1792414042555&end_timestamp=1792414402555&count_back=100",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/orderBooks",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "response": {
+    "$body": "b36b6c9c1cc164fa"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1m",
+   "method": "GET",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=1m&start_timestamp=1792415550147&end_timestamp=1792415911147&count_back=6",
    "body": null,
    "status": 200,
    "contentType": "application/json; charset=utf-8",
@@ -495,124 +385,64 @@
     "r": "1m",
     "c": [
      {
-      "t": 1792408440000,
-      "o": 82164.5,
-      "h": 82190.6,
-      "l": 82150,
-      "c": 82181.1,
-      "v": 4.266340000000004,
-      "V": 350604.07007799955,
-      "i": 35376356456
+      "t": 1792415580000,
+      "o": 82535.3,
+      "h": 82537.5,
+      "l": 82500.1,
+      "c": 82507.4,
+      "v": 5.64912,
+      "V": 466122.74241400004,
+      "i": 35389857604
      },
      {
-      "t": 1792408500000,
-      "o": 82181.1,
-      "h": 82187.4,
-      "l": 82133.4,
-      "c": 82145.5,
-      "v": 26.815659999999973,
-      "V": 2202811.9789719977,
-      "i": 35376476128
+      "t": 1792415640000,
+      "o": 82507.4,
+      "h": 82531.3,
+      "l": 82496.6,
+      "c": 82496.7,
+      "v": 7.40399,
+      "V": 610895.098618,
+      "i": 35389965667
      },
      {
-      "t": 1792408560000,
-      "o": 82145.5,
-      "h": 82184.2,
-      "l": 82133.8,
-      "c": 82178.7,
-      "v": 20.628989999999934,
-      "V": 1695065.8393100009,
-      "i": 35376599102
+      "t": 1792415700000,
+      "o": 82496.7,
+      "h": 82516.6,
+      "l": 82468.1,
+      "c": 82497.9,
+      "v": 3.3698799999999998,
+      "V": 277991.362074,
+      "i": 35390080558
      },
      {
-      "t": 1792408620000,
-      "o": 82178.7,
-      "h": 82212.7,
-      "l": 82150.1,
-      "c": 82210.4,
-      "v": 47.46343000000001,
-      "V": 3900751.0598839996,
-      "i": 35376707737
+      "t": 1792415760000,
+      "o": 82497.9,
+      "h": 82500.8,
+      "l": 82462.7,
+      "c": 82467.8,
+      "v": 1.81158,
+      "V": 149419.509743,
+      "i": 35390201752
      },
      {
-      "t": 1792408680000,
-      "o": 82210.4,
-      "h": 82232.1,
-      "l": 82200.9,
-      "c": 82225.8,
-      "v": 7.260710000000014,
-      "V": 596989.0432469998,
-      "i": 35376799067
+      "t": 1792415820000,
+      "o": 82467.8,
+      "h": 82526.6,
+      "l": 82466.4,
+      "c": 82524.9,
+      "v": 16.556149999999942,
+      "V": 1365784.0992790004,
+      "i": 35390323491
      },
      {
-      "t": 1792408740000,
-      "o": 82225.8,
-      "h": 82243,
-      "l": 82209.4,
-      "c": 82231.8,
-      "v": 14.663929999999983,
-      "V": 1205697.0799799985,
-      "i": 35376887752
-     },
-     {
-      "t": 1792414080000,
-      "o": 82501,
-      "h": 82547.3,
-      "l": 82488.3,
-      "c": 82545.6,
-      "v": 12.988970000000009,
-      "V": 1071820.8223350004,
-      "i": 35387062074
-     },
-     {
-      "t": 1792414140000,
-      "o": 82545.6,
-      "h": 82552.9,
-      "l": 82513.1,
-      "c": 82518.8,
-      "v": 3.6174099999999965,
-      "V": 298545.9033450001,
-      "i": 35387164557
-     },
-     {
-      "t": 1792414200000,
-      "o": 82518.8,
-      "h": 82529.8,
-      "l": 82483.1,
-      "c": 82487.6,
-      "v": 10.538500000000052,
-      "V": 869489.7902160004,
-      "i": 35387262669
-     },
-     {
-      "t": 1792414260000,
-      "o": 82487.6,
-      "h": 82497.1,
-      "l": 82457.9,
-      "c": 82462.1,
-      "v": 13.47621999999995,
-      "V": 1111549.7342470014,
-      "i": 35387360051
-     },
-     {
-      "t": 1792414320000,
-      "o": 82462.1,
-      "h": 82559.9,
-      "l": 82452.4,
-      "c": 82555.5,
-      "v": 10.861070000000039,
-      "V": 895912.2799889995,
-      "i": 35387469847
-     },
-     {
-      "t": 1792414380000,
-      "o": 82555.5,
-      "h": 82559.5,
-      "l": 82526.7,
-      "c": 82527.2,
-      "v": 3.6193499999999967,
-      "V": 298754.2466720001,
-      "i": 35387510198
+      "t": 1792415880000,
+      "o": 82524.9,
+      "h": 82559.6,
+      "l": 82524.2,
+      "c": 82545.7,
+      "v": 15.169580000000002,
+      "V": 1252249.239188,
+      "i": 35390388287
      }
     ]
    },
@@ -621,7 +451,19 @@
   {
    "cell": "kline:5m",
    "method": "GET",
-   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=5m&start_timestamp=1792412602610&end_timestamp=1792414402610&count_back=100",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/orderBooks",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "response": {
+    "$body": "b36b6c9c1cc164fa"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:5m",
+   "method": "GET",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=5m&start_timestamp=1792414110211&end_timestamp=1792415911211&count_back=6",
    "body": null,
    "status": 200,
    "contentType": "application/json; charset=utf-8",
@@ -630,124 +472,64 @@
     "r": "5m",
     "c": [
      {
-      "t": 1792384500000,
-      "o": 82653.9,
-      "h": 82671.1,
-      "l": 82595,
-      "c": 82635.8,
-      "v": 14.95912,
-      "V": 1235891.86533,
-      "i": 35337549961
-     },
-     {
-      "t": 1792384800000,
-      "o": 82635.8,
-      "h": 82768,
-      "l": 82631.9,
-      "c": 82762.8,
-      "v": 22.06981,
-      "V": 1825090.275771,
-      "i": 35337991411
-     },
-     {
-      "t": 1792385100000,
-      "o": 82762.8,
-      "h": 82872.4,
-      "l": 82715.1,
-      "c": 82859.9,
-      "v": 28.29345,
-      "V": 2342901.668738,
-      "i": 35338521430
-     },
-     {
-      "t": 1792385400000,
-      "o": 82859.9,
-      "h": 82866.7,
-      "l": 82786.4,
-      "c": 82810.7,
-      "v": 22.7748,
-      "V": 1886221.30193,
-      "i": 35338994463
-     },
-     {
-      "t": 1792385700000,
-      "o": 82810.7,
-      "h": 82810.7,
-      "l": 82752.8,
-      "c": 82769.2,
-      "v": 16.892349999999997,
-      "V": 1398449.7584209999,
-      "i": 35339375026
-     },
-     {
-      "t": 1792386000000,
-      "o": 82769.2,
-      "h": 82779.3,
-      "l": 82517.6,
-      "c": 82539.1,
-      "v": 21.28255,
-      "V": 1758263.260669,
-      "i": 35339981828
-     },
-     {
-      "t": 1792412700000,
-      "o": 82546,
-      "h": 82554,
-      "l": 82494.2,
-      "c": 82536.2,
-      "v": 26.531949999999373,
-      "V": 2189385.1685529966,
-      "i": 35384941315
-     },
-     {
-      "t": 1792413000000,
-      "o": 82536.2,
-      "h": 82620.1,
-      "l": 82533,
-      "c": 82569.7,
-      "v": 18.306839999999728,
-      "V": 1511762.9445579948,
-      "i": 35385530689
-     },
-     {
-      "t": 1792413300000,
-      "o": 82569.7,
-      "h": 82673.3,
-      "l": 82561.2,
-      "c": 82579.7,
-      "v": 14.808590000000107,
-      "V": 1223364.6707270024,
-      "i": 35386135124
-     },
-     {
-      "t": 1792413600000,
-      "o": 82579.7,
-      "h": 82614.6,
-      "l": 82540.5,
-      "c": 82552.1,
-      "v": 18.543439999999656,
-      "V": 1531082.0948930026,
-      "i": 35386666758
-     },
-     {
-      "t": 1792413900000,
-      "o": 82552.1,
-      "h": 82587.4,
-      "l": 82482.1,
-      "c": 82518.8,
-      "v": 36.03858999999992,
-      "V": 2973862.0912750023,
-      "i": 35387164557
-     },
-     {
       "t": 1792414200000,
       "o": 82518.8,
-      "h": 82559.9,
+      "h": 82597.3,
       "l": 82452.4,
-      "c": 82535.7,
-      "v": 38.495539999999785,
-      "V": 3175739.065378004,
-      "i": 35387511191
+      "c": 82548,
+      "v": 45.773559999999996,
+      "V": 3776663.72457,
+      "i": 35387657738
+     },
+     {
+      "t": 1792414500000,
+      "o": 82548,
+      "h": 82588,
+      "l": 82505.4,
+      "c": 82580.8,
+      "v": 51.33988,
+      "V": 4238186.175051,
+      "i": 35388092103
+     },
+     {
+      "t": 1792414800000,
+      "o": 82580.8,
+      "h": 82734.3,
+      "l": 82550,
+      "c": 82725.6,
+      "v": 85.71741,
+      "V": 7081113.861572,
+      "i": 35388784204
+     },
+     {
+      "t": 1792415100000,
+      "o": 82725.6,
+      "h": 82727.6,
+      "l": 82561.3,
+      "c": 82571.8,
+      "v": 30.32954,
+      "V": 2506502.1660970002,
+      "i": 35389366743
+     },
+     {
+      "t": 1792415400000,
+      "o": 82571.8,
+      "h": 82586.9,
+      "l": 82496.6,
+      "c": 82496.7,
+      "v": 41.83522,
+      "V": 3453346.060679,
+      "i": 35389965667
+     },
+     {
+      "t": 1792415700000,
+      "o": 82496.7,
+      "h": 82559.6,
+      "l": 82462.7,
+      "c": 82545.7,
+      "v": 36.90718999999982,
+      "V": 3045444.210284002,
+      "i": 35390388287
      }
     ]
    },
@@ -756,7 +538,19 @@
   {
    "cell": "kline:15m",
    "method": "GET",
-   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=15m&start_timestamp=1792409002661&end_timestamp=1792414402661&count_back=100",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/orderBooks",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "response": {
+    "$body": "b36b6c9c1cc164fa"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:15m",
+   "method": "GET",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=15m&start_timestamp=1792410510275&end_timestamp=1792415911275&count_back=6",
    "body": null,
    "status": 200,
    "contentType": "application/json; charset=utf-8",
@@ -765,93 +559,13 @@
     "r": "15m",
     "c": [
      {
-      "t": 1792324800000,
-      "o": 82040.3,
-      "h": 82110.8,
-      "l": 81992.7,
-      "c": 82024.9,
-      "v": 67.13077,
-      "V": 5509503.156083,
-      "i": 35235293514
-     },
-     {
-      "t": 1792325700000,
-      "o": 82024.9,
-      "h": 82069.5,
-      "l": 81965.4,
-      "c": 81984.1,
-      "v": 154.95651999999998,
-      "V": 12705306.153334001,
-      "i": 35236088947
-     },
-     {
-      "t": 1792326600000,
-      "o": 81984.1,
-      "h": 81987,
-      "l": 81894.8,
-      "c": 81896.7,
-      "v": 56.62906,
-      "V": 4640206.729887,
-      "i": 35236955734
-     },
-     {
-      "t": 1792327500000,
-      "o": 81896.7,
-      "h": 81964.7,
-      "l": 81870.5,
-      "c": 81944.5,
-      "v": 61.2669,
-      "V": 5019397.717269,
-      "i": 35237728501
-     },
-     {
-      "t": 1792328400000,
-      "o": 81944.5,
-      "h": 81950.6,
-      "l": 81863,
-      "c": 81866.3,
-      "v": 48.490520000000004,
-      "V": 3971691.734299,
-      "i": 35238750113
-     },
-     {
-      "t": 1792329300000,
-      "o": 81866.3,
-      "h": 81912,
-      "l": 81450.3,
-      "c": 81537.5,
-      "v": 265.4058,
-      "V": 21674270.329802003,
-      "i": 35240472857
-     },
-     {
-      "t": 1792409400000,
-      "o": 82207.6,
-      "h": 82310,
-      "l": 82100.3,
-      "c": 82288,
-      "v": 141.48811000001209,
-      "V": 11629241.69913701,
-      "i": 35379617625
-     },
-     {
-      "t": 1792410300000,
-      "o": 82288,
-      "h": 82389.1,
-      "l": 82224.9,
-      "c": 82325.7,
-      "v": 120.39894000001372,
-      "V": 9907671.847266046,
-      "i": 35381116947
-     },
-     {
       "t": 1792411200000,
       "o": 82325.7,
       "h": 82498.1,
       "l": 82289.8,
       "c": 82489.9,
-      "v": 59.447339999999166,
-      "V": 4896429.557752012,
+      "v": 59.44734,
+      "V": 4896429.557752,
       "i": 35383118186
      },
      {
@@ -860,8 +574,8 @@
       "h": 82604.5,
       "l": 82427.5,
       "c": 82536.2,
-      "v": 130.65592000001632,
-      "V": 10784567.794401964,
+      "v": 130.65592,
+      "V": 10784567.794402,
       "i": 35384941315
      },
      {
@@ -870,19 +584,39 @@
       "h": 82673.3,
       "l": 82533,
       "c": 82552.1,
-      "v": 51.65886999999903,
-      "V": 4266209.710178004,
+      "v": 51.65887,
+      "V": 4266209.710178,
       "i": 35386666758
      },
      {
       "t": 1792413900000,
       "o": 82552.1,
-      "h": 82587.4,
+      "h": 82597.3,
       "l": 82452.4,
-      "c": 82535.7,
-      "v": 74.53413000000137,
-      "V": 6149601.15665299,
-      "i": 35387511191
+      "c": 82580.8,
+      "v": 133.15203,
+      "V": 10988711.990896001,
+      "i": 35388092103
+     },
+     {
+      "t": 1792414800000,
+      "o": 82580.8,
+      "h": 82734.3,
+      "l": 82496.6,
+      "c": 82496.7,
+      "v": 157.88217,
+      "V": 13040962.088348,
+      "i": 35389965667
+     },
+     {
+      "t": 1792415700000,
+      "o": 82496.7,
+      "h": 82559.6,
+      "l": 82462.7,
+      "c": 82545.7,
+      "v": 36.90718999999982,
+      "V": 3045444.210284002,
+      "i": 35390388287
      }
     ]
    },
@@ -891,7 +625,19 @@
   {
    "cell": "kline:30m",
    "method": "GET",
-   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=30m&start_timestamp=1792403602712&end_timestamp=1792414402712&count_back=100",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/orderBooks",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "response": {
+    "$body": "b36b6c9c1cc164fa"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:30m",
+   "method": "GET",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=30m&start_timestamp=1792405110336&end_timestamp=1792415911336&count_back=6",
    "body": null,
    "status": 200,
    "contentType": "application/json; charset=utf-8",
@@ -900,83 +646,13 @@
     "r": "30m",
     "c": [
      {
-      "t": 1792234800000,
-      "o": 81615.2,
-      "h": 81659.9,
-      "l": 81524.4,
-      "c": 81527,
-      "v": 80.11829,
-      "V": 6537220.561536,
-      "i": 35140526961
-     },
-     {
-      "t": 1792236600000,
-      "o": 81527,
-      "h": 81592.8,
-      "l": 81520,
-      "c": 81534.4,
-      "v": 73.92022,
-      "V": 6027757.478154,
-      "i": 35141707429
-     },
-     {
-      "t": 1792238400000,
-      "o": 81534.4,
-      "h": 81590.8,
-      "l": 81495.1,
-      "c": 81524.7,
-      "v": 86.29438,
-      "V": 7035602.895336,
-      "i": 35143338133
-     },
-     {
-      "t": 1792240200000,
-      "o": 81524.7,
-      "h": 81563.4,
-      "l": 81448.8,
-      "c": 81494.8,
-      "v": 77.12854,
-      "V": 6284661.846682,
-      "i": 35145084511
-     },
-     {
-      "t": 1792242000000,
-      "o": 81494.8,
-      "h": 81552.8,
-      "l": 81436.3,
-      "c": 81502.8,
-      "v": 61.65126,
-      "V": 5023600.995163,
-      "i": 35146981014
-     },
-     {
-      "t": 1792243800000,
-      "o": 81502.8,
-      "h": 81510.6,
-      "l": 81432.4,
-      "c": 81465.9,
-      "v": 72.39118,
-      "V": 5897146.789584,
-      "i": 35148438122
-     },
-     {
-      "t": 1792404000000,
-      "o": 82736.2,
-      "h": 82870.5,
-      "l": 82236.3,
-      "c": 82308.1,
-      "v": 462.89999,
-      "V": 38218616.88683,
-      "i": 35370087622
-     },
-     {
       "t": 1792405800000,
       "o": 82308.1,
       "h": 82463.4,
       "l": 82066.5,
       "c": 82395.7,
-      "v": 627.1664199999144,
-      "V": 51602090.10822195,
+      "v": 627.16642,
+      "V": 51602090.108222,
       "i": 35374524273
      },
      {
@@ -985,8 +661,8 @@
       "h": 82397,
       "l": 82133.4,
       "c": 82207.6,
-      "v": 342.94591000002754,
-      "V": 28195706.576120026,
+      "v": 342.94591,
+      "V": 28195706.57612,
       "i": 35377855513
      },
      {
@@ -995,8 +671,8 @@
       "h": 82389.1,
       "l": 82100.3,
       "c": 82325.7,
-      "v": 261.8870500000424,
-      "V": 21536913.546402954,
+      "v": 261.88705,
+      "V": 21536913.546403,
       "i": 35381116947
      },
      {
@@ -1005,8 +681,8 @@
       "h": 82604.5,
       "l": 82289.8,
       "c": 82536.2,
-      "v": 190.10326000003172,
-      "V": 15680997.352153905,
+      "v": 190.10326,
+      "V": 15680997.352154,
       "i": 35384941315
      },
      {
@@ -1014,10 +690,20 @@
       "o": 82536.2,
       "h": 82673.3,
       "l": 82452.4,
-      "c": 82535.7,
-      "v": 126.19300000000732,
-      "V": 10415810.866830984,
-      "i": 35387511191
+      "c": 82580.8,
+      "v": 184.8109,
+      "V": 15254921.701074,
+      "i": 35388092103
+     },
+     {
+      "t": 1792414800000,
+      "o": 82580.8,
+      "h": 82734.3,
+      "l": 82462.7,
+      "c": 82550.4,
+      "v": 194.7898000000029,
+      "V": 16086442.62074298,
+      "i": 35390389323
      }
     ]
    },
@@ -1026,7 +712,19 @@
   {
    "cell": "kline:1h",
    "method": "GET",
-   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=1h&start_timestamp=1792392802768&end_timestamp=1792414402768&count_back=100",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/orderBooks",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "response": {
+    "$body": "b36b6c9c1cc164fa"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1h",
+   "method": "GET",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=1h&start_timestamp=1792394310395&end_timestamp=1792415911395&count_back=6",
    "body": null,
    "status": 200,
    "contentType": "application/json; charset=utf-8",
@@ -1034,76 +732,6 @@
     "code": 200,
     "r": "1h",
     "c": [
-     {
-      "t": 1792054800000,
-      "o": 81348.6,
-      "h": 81385.9,
-      "l": 81165.1,
-      "c": 81237.3,
-      "v": 213.66571,
-      "V": 17366376.932976,
-      "i": 34782347974
-     },
-     {
-      "t": 1792058400000,
-      "o": 81237.3,
-      "h": 81250.3,
-      "l": 80824,
-      "c": 80994.8,
-      "v": 301.69414,
-      "V": 24444622.557978,
-      "i": 34788999371
-     },
-     {
-      "t": 1792062000000,
-      "o": 80994.8,
-      "h": 81156.3,
-      "l": 80806.5,
-      "c": 80948.2,
-      "v": 360.41345,
-      "V": 29202119.033128,
-      "i": 34797010106
-     },
-     {
-      "t": 1792065600000,
-      "o": 80948.2,
-      "h": 81143.6,
-      "l": 80507.3,
-      "c": 80531.4,
-      "v": 653.96272,
-      "V": 52855320.884966,
-      "i": 34809387490
-     },
-     {
-      "t": 1792069200000,
-      "o": 80531.4,
-      "h": 80748.3,
-      "l": 79753.4,
-      "c": 80173,
-      "v": 1179.38096,
-      "V": 94718212.20823,
-      "i": 34826141458
-     },
-     {
-      "t": 1792072800000,
-      "o": 80173,
-      "h": 82018.3,
-      "l": 80067.6,
-      "c": 81837.8,
-      "v": 1360.40869,
-      "V": 110481479.07993999,
-      "i": 34843893800
-     },
-     {
-      "t": 1792393200000,
-      "o": 82818.1,
-      "h": 83148.6,
-      "l": 82656.5,
-      "c": 82700.7,
-      "v": 671.12945,
-      "V": 55624248.411134996,
-      "i": 35356070339
-     },
      {
       "t": 1792396800000,
       "o": 82700.7,
@@ -1130,8 +758,8 @@
       "h": 82870.5,
       "l": 82066.5,
       "c": 82395.7,
-      "v": 1090.0664099998703,
-      "V": 89820706.99505174,
+      "v": 1090.06641,
+      "V": 89820706.995052,
       "i": 35374524273
      },
      {
@@ -1140,8 +768,8 @@
       "h": 82397,
       "l": 82100.3,
       "c": 82325.7,
-      "v": 604.8329599999117,
-      "V": 49732620.12252279,
+      "v": 604.83296,
+      "V": 49732620.122523,
       "i": 35381116947
      },
      {
@@ -1149,10 +777,20 @@
       "o": 82325.7,
       "h": 82673.3,
       "l": 82289.8,
-      "c": 82535.7,
-      "v": 316.2962600000731,
-      "V": 26096808.21898491,
-      "i": 35387511191
+      "c": 82580.8,
+      "v": 374.91416,
+      "V": 30935919.053228002,
+      "i": 35388092103
+     },
+     {
+      "t": 1792414800000,
+      "o": 82580.8,
+      "h": 82734.3,
+      "l": 82462.7,
+      "c": 82550.4,
+      "v": 194.7898000000029,
+      "V": 16086442.62074298,
+      "i": 35390389323
      }
     ]
    },
@@ -1161,7 +799,19 @@
   {
    "cell": "kline:4h",
    "method": "GET",
-   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=4h&start_timestamp=1792328002824&end_timestamp=1792414402824&count_back=100",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/orderBooks",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "response": {
+    "$body": "b36b6c9c1cc164fa"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:4h",
+   "method": "GET",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=4h&start_timestamp=1792329510456&end_timestamp=1792415911456&count_back=6",
    "body": null,
    "status": 200,
    "contentType": "application/json; charset=utf-8",
@@ -1169,66 +819,6 @@
     "code": 200,
     "r": "4h",
     "c": [
-     {
-      "t": 1790985600000,
-      "o": 84475,
-      "h": 84684.8,
-      "l": 84400,
-      "c": 84660.8,
-      "v": 405.21529,
-      "V": 34272403.712527,
-      "i": 33126636879
-     },
-     {
-      "t": 1791000000000,
-      "o": 84660.8,
-      "h": 84692.2,
-      "l": 84483.6,
-      "c": 84516.6,
-      "v": 354.85396,
-      "V": 30009169.354137,
-      "i": 33137170858
-     },
-     {
-      "t": 1791014400000,
-      "o": 84516.6,
-      "h": 84659.4,
-      "l": 84506.7,
-      "c": 84640.4,
-      "v": 353.91282,
-      "V": 29934025.602052,
-      "i": 33147935378
-     },
-     {
-      "t": 1791028800000,
-      "o": 84640.4,
-      "h": 84934.7,
-      "l": 84623.4,
-      "c": 84838.8,
-      "v": 570.72635,
-      "V": 48392982.212906,
-      "i": 33159976620
-     },
-     {
-      "t": 1791043200000,
-      "o": 84838.8,
-      "h": 85003.7,
-      "l": 84675.4,
-      "c": 84813.9,
-      "v": 386.57036,
-      "V": 32800974.774869,
-      "i": 33171958715
-     },
-     {
-      "t": 1791057600000,
-      "o": 84813.9,
-      "h": 84885,
-      "l": 84509.2,
-      "c": 84730.4,
-      "v": 475.36012,
-      "V": 40275133.176514,
-      "i": 33182209050
-     },
      {
       "t": 1792339200000,
       "o": 81155,
@@ -1275,19 +865,19 @@
       "h": 83079.9,
       "l": 82066.5,
       "c": 82325.7,
-      "v": 2721.339459999427,
-      "V": 224573690.2564121,
+      "v": 2721.33946,
+      "V": 224573690.256413,
       "i": 35381116947
      },
      {
       "t": 1792411200000,
       "o": 82325.7,
-      "h": 82673.3,
+      "h": 82734.3,
       "l": 82289.8,
-      "c": 82535.7,
-      "v": 316.2962600000731,
-      "V": 26096808.21898491,
-      "i": 35387511191
+      "c": 82550.4,
+      "v": 569.7039599999931,
+      "V": 47022361.673971035,
+      "i": 35390389323
      }
     ]
    },
@@ -1296,7 +886,19 @@
   {
    "cell": "kline:12h",
    "method": "GET",
-   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=12h&start_timestamp=1792155202877&end_timestamp=1792414402877&count_back=100",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/orderBooks",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "response": {
+    "$body": "b36b6c9c1cc164fa"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:12h",
+   "method": "GET",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=12h&start_timestamp=1792156710517&end_timestamp=1792415911517&count_back=6",
    "body": null,
    "status": 200,
    "contentType": "application/json; charset=utf-8",
@@ -1304,66 +906,6 @@
     "code": 200,
     "r": "12h",
     "c": [
-     {
-      "t": 1788134400000,
-      "o": 77650.4,
-      "h": 78783.3,
-      "l": 77360.5,
-      "c": 78282.8,
-      "v": 3681.98142,
-      "V": 287339886.471013,
-      "i": 28986727862
-     },
-     {
-      "t": 1788177600000,
-      "o": 78282.8,
-      "h": 79231,
-      "l": 77665.6,
-      "c": 78552.9,
-      "v": 4960.53298,
-      "V": 389475664.432125,
-      "i": 29046904221
-     },
-     {
-      "t": 1788220800000,
-      "o": 78552.9,
-      "h": 79205.8,
-      "l": 77697,
-      "c": 78068.1,
-      "v": 3294.29741,
-      "V": 258084821.169591,
-      "i": 29097717551
-     },
-     {
-      "t": 1788264000000,
-      "o": 78068.1,
-      "h": 78406.3,
-      "l": 76387,
-      "c": 77405.9,
-      "v": 7093.63648,
-      "V": 550407828.695086,
-      "i": 29163711356
-     },
-     {
-      "t": 1788307200000,
-      "o": 77405.9,
-      "h": 77773.4,
-      "l": 76231.5,
-      "c": 76801.9,
-      "v": 3992.86398,
-      "V": 308078842.840294,
-      "i": 29216950033
-     },
-     {
-      "t": 1788350400000,
-      "o": 76801.9,
-      "h": 77544.2,
-      "l": 76568.4,
-      "c": 77297.2,
-      "v": 4001.27898,
-      "V": 308609499.994372,
-      "i": 29274046185
-     },
      {
       "t": 1792195200000,
       "o": 81591.1,
@@ -1410,19 +952,19 @@
       "h": 83148.6,
       "l": 81983.5,
       "c": 82325.7,
-      "v": 5831.077420007444,
-      "V": 481467895.636935,
+      "v": 5831.07742,
+      "V": 481467895.636938,
       "i": 35381116947
      },
      {
       "t": 1792411200000,
       "o": 82325.7,
-      "h": 82673.3,
+      "h": 82734.3,
       "l": 82289.8,
-      "c": 82535.7,
-      "v": 316.2962600000731,
-      "V": 26096808.21898491,
-      "i": 35387511191
+      "c": 82550.4,
+      "v": 569.7039599999931,
+      "V": 47022361.673971035,
+      "i": 35390389323
      }
     ]
    },
@@ -1431,7 +973,19 @@
   {
    "cell": "kline:1d",
    "method": "GET",
-   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=1d&start_timestamp=1791896002933&end_timestamp=1792414402933&count_back=100",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/orderBooks",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json; charset=utf-8",
+   "response": {
+    "$body": "b36b6c9c1cc164fa"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1d",
+   "method": "GET",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=1d&start_timestamp=1791897510578&end_timestamp=1792415911578&count_back=6",
    "body": null,
    "status": 200,
    "contentType": "application/json; charset=utf-8",
@@ -1439,66 +993,6 @@
     "code": 200,
     "r": "1d",
     "c": [
-     {
-      "t": 1783814400000,
-      "o": 63784.7,
-      "h": 64267.5,
-      "l": 63606.2,
-      "c": 63750.4,
-      "v": 4925.65305,
-      "V": 314884657.752517,
-      "i": 25172837779
-     },
-     {
-      "t": 1783900800000,
-      "o": 63750.4,
-      "h": 64396.5,
-      "l": 61803.6,
-      "c": 62315.2,
-      "v": 9894.11362,
-      "V": 620613953.460698,
-      "i": 25266185094
-     },
-     {
-      "t": 1783987200000,
-      "o": 62315.2,
-      "h": 65073.6,
-      "l": 62242.9,
-      "c": 65015.1,
-      "v": 12764.3035,
-      "V": 812390130.414212,
-      "i": 25351958125
-     },
-     {
-      "t": 1784073600000,
-      "o": 65015.1,
-      "h": 65555.3,
-      "l": 64454.3,
-      "c": 64725.3,
-      "v": 8235.6807,
-      "V": 534701680.492147,
-      "i": 25429876758
-     },
-     {
-      "t": 1784160000000,
-      "o": 64725.3,
-      "h": 64972,
-      "l": 63714.2,
-      "c": 63784.4,
-      "v": 9981.519189999999,
-      "V": 642197064.866675,
-      "i": 25513486273
-     },
-     {
-      "t": 1784246400000,
-      "o": 63784.4,
-      "h": 64353.5,
-      "l": 62498.5,
-      "c": 63904.2,
-      "v": 12311.29343,
-      "V": 779970379.746314,
-      "i": 25601959530
-     },
      {
       "t": 1791936000000,
       "o": 83140.6,
@@ -1554,10 +1048,10 @@
       "o": 82082.5,
       "h": 83148.6,
       "l": 81983.5,
-      "c": 82535.7,
-      "v": 6147.373680013657,
-      "V": 507564703.85591686,
-      "i": 35387511191
+      "c": 82550.4,
+      "v": 6400.7813800001195,
+      "V": 528490257.31090903,
+      "i": 35390389323
      }
     ]
    },
@@ -1566,16 +1060,150 @@
   {
    "cell": "kline:unsupported",
    "method": "GET",
-   "url": "https://mainnet.zklighter.elliot.ai/api/v1/candles?market_id=1&resolution=7m&start_timestamp=1792328002988&end_timestamp=1792414402988&count_back=100",
+   "url": "https://mainnet.zklighter.elliot.ai/api/v1/orderBooks",
    "body": null,
-   "status": 400,
+   "status": 200,
    "contentType": "application/json; charset=utf-8",
    "response": {
-    "code": 20001,
-    "message": "invalid param "
+    "$body": "b36b6c9c1cc164fa"
    },
    "text": null
   }
  ],
- "ws": []
+ "ws": [],
+ "bodies": {
+  "b36b6c9c1cc164fa": {
+   "code": 200,
+   "order_books": [
+    {
+     "symbol": "SOL",
+     "market_id": 2,
+     "market_type": "perp",
+     "base_asset_id": 0,
+     "quote_asset_id": 0,
+     "status": "active",
+     "taker_fee": "0.0000",
+     "is_taker_fee_enabled": true,
+     "maker_fee": "0.0000",
+     "is_maker_fee_enabled": true,
+     "liquidation_fee": "1.0000",
+     "min_base_amount": "0.055",
+     "min_quote_amount": "10.000000",
+     "order_quote_limit": "281474976.710655",
+     "supported_size_decimals": 3,
+     "supported_price_decimals": 3,
+     "supported_quote_decimals": 6,
+     "created_at": "1737098461127",
+     "multiplier": "1.000000000000000000",
+     "start_timestamp": 0,
+     "end_timestamp": 0,
+     "open_interest": "318.169674",
+     "outcome": 0,
+     "operator_account_index": 1,
+     "settlement_cap": 0,
+     "settlement_type": 0,
+     "settlement_price": 0,
+     "default_price": 0,
+     "is_frozen": false,
+     "market_deployer": "lighter"
+    },
+    {
+     "symbol": "BTC",
+     "market_id": 1,
+     "market_type": "perp",
+     "base_asset_id": 0,
+     "quote_asset_id": 0,
+     "status": "active",
+     "taker_fee": "0.0000",
+     "is_taker_fee_enabled": true,
+     "maker_fee": "0.0000",
+     "is_maker_fee_enabled": true,
+     "liquidation_fee": "1.0000",
+     "min_base_amount": "0.00007",
+     "min_quote_amount": "10.000000",
+     "order_quote_limit": "281474976.710655",
+     "supported_size_decimals": 5,
+     "supported_price_decimals": 1,
+     "supported_quote_decimals": 6,
+     "created_at": "1737098461107",
+     "multiplier": "1.000000000000000000",
+     "start_timestamp": 0,
+     "end_timestamp": 0,
+     "open_interest": "424.295128",
+     "outcome": 0,
+     "operator_account_index": 1,
+     "settlement_cap": 0,
+     "settlement_type": 0,
+     "settlement_price": 0,
+     "default_price": 0,
+     "is_frozen": false,
+     "market_deployer": "lighter"
+    },
+    {
+     "symbol": "ETH/USDC",
+     "market_id": 2048,
+     "market_type": "spot",
+     "base_asset_id": 1,
+     "quote_asset_id": 3,
+     "status": "active",
+     "taker_fee": "0.0000",
+     "is_taker_fee_enabled": true,
+     "maker_fee": "0.0000",
+     "is_maker_fee_enabled": true,
+     "liquidation_fee": "0.0000",
+     "min_base_amount": "0.0050",
+     "min_quote_amount": "10.000000",
+     "order_quote_limit": "2500000.000000",
+     "supported_size_decimals": 4,
+     "supported_price_decimals": 2,
+     "supported_quote_decimals": 6,
+     "created_at": "1765036263130",
+     "multiplier": "1.000000000000000000",
+     "start_timestamp": 0,
+     "end_timestamp": 0,
+     "open_interest": "0.000000",
+     "outcome": 0,
+     "operator_account_index": 1,
+     "settlement_cap": 0,
+     "settlement_type": 0,
+     "settlement_price": 0,
+     "default_price": 0,
+     "is_frozen": false,
+     "market_deployer": "lighter"
+    },
+    {
+     "symbol": "ETH",
+     "market_id": 0,
+     "market_type": "perp",
+     "base_asset_id": 0,
+     "quote_asset_id": 0,
+     "status": "active",
+     "taker_fee": "0.0000",
+     "is_taker_fee_enabled": true,
+     "maker_fee": "0.0000",
+     "is_maker_fee_enabled": true,
+     "liquidation_fee": "1.0000",
+     "min_base_amount": "0.0020",
+     "min_quote_amount": "10.000000",
+     "order_quote_limit": "281474976.710655",
+     "supported_size_decimals": 4,
+     "supported_price_decimals": 2,
+     "supported_quote_decimals": 6,
+     "created_at": "1737098461100",
+     "multiplier": "1.000000000000000000",
+     "start_timestamp": 0,
+     "end_timestamp": 0,
+     "open_interest": "673.287272",
+     "outcome": 0,
+     "operator_account_index": 1,
+     "settlement_cap": 0,
+     "settlement_type": 0,
+     "settlement_price": 0,
+     "default_price": 0,
+     "is_frozen": false,
+     "market_deployer": "lighter"
+    }
+   ]
+  }
+ }
 }

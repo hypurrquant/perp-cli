@@ -198,6 +198,8 @@ export class Session {
 
   /** Requests (HTTP + WebSocket) issued per cell — "refused before any I/O" checks read it. */
   readonly calls = new Map<string, number>();
+  /** HTTP request keys (method, URL, body; volatile times normalized) issued per cell. */
+  readonly requestKeys = new Map<string, string[]>();
   private untrimmed = new Set<string>();
 
   /** Start a cell. `full`: keep this cell's responses whole (a full server page at a row cap). */
@@ -215,6 +217,7 @@ export class Session {
   private async fetch(input: unknown, init?: { method?: string; body?: unknown }): Promise<Response> {
     const req = requestParts(input, init);
     this.calls.set(this.cell, (this.calls.get(this.cell) ?? 0) + 1);
+    this.requestKeys.set(this.cell, [...(this.requestKeys.get(this.cell) ?? []), keyOf(req.method, req.url, req.body)]);
     if (process.env.PERP_CONFORMANCE_DEBUG === "1") process.stderr.write(`[conformance]   ${req.method} ${req.url}\n`);
     if (IS_LIVE) {
       const res = await this.realFetch(input as string, init as RequestInit);

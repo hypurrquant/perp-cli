@@ -213,8 +213,12 @@ Errors: unknown symbol → `SYMBOL_NOT_FOUND` + remediation; unsupported feature
       let the fixture prove the venue has no data (`no-silent-empty`).
    3. **interval verified** — every interval of `KLINE_INTERVALS` has a recorded cell whose bars are
       spaced by exactly that interval (`spacing`); an unsupported interval is refused before any I/O
-      (`refused-before-io`).
+      (`refused-before-io`) — beyond the adapter's own start-up requests (those the warm `market info`
+      cell makes too, e.g. Hyperliquid `meta`, Aster `/time`).
    4. **documented caps** — `SERVER_CAPS` is the one table of measured caps; tests reference it.
+      Caps that cannot be paged (`REFUSED_CAPS`: `BOOK_DEPTH_MAX`, `FUNDING_HISTORY_CAP`, trade
+      caps) are imported from the code, and `CAP_TABLE_AGREEMENT` holds the CLI tables to the adapter
+      constants.
       **Documented limits are not trusted until measured live; record the measurement date** (and
       how) in the table. Unmeasured endpoints are listed in `UNMEASURED_CAPS` and get no paging claim.
 6. **Unknown symbol** → `SYMBOL_NOT_FOUND` with remediation on `info / funding / book / trades / kline`

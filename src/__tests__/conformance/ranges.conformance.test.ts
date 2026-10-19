@@ -116,7 +116,7 @@ for (const venue of VENUES) {
       const session = new Session(name, VENUE_CONFORMANCE[venue as VenueId].keep);
       session.start();
       try {
-        // Warm the market directory so the refusal cell measures the interval check alone.
+        // Warm cell: its requests mark the adapter start-up, so the refusal cell measures the interval check alone.
         session.begin("warm");
         await runCli(["-e", venue, "market", "info", symbol]);
         for (const iv of intervals) {
@@ -140,6 +140,11 @@ for (const venue of VENUES) {
           }
         }
         for (const [cell, n] of session.calls) calls.set(cell, n);
+        // Requests of the refusal cell that the warm `market info` cell made too are the adapter's own
+        // start-up (Hyperliquid info meta, Aster /time, Lighter market directory) — every command
+        // makes them in a fresh process. The interval check is measured by what remains.
+        const startup = new Set(session.requestKeys.get("warm") ?? []);
+        calls.set("kline:unsupported", (session.requestKeys.get("kline:unsupported") ?? []).filter(k => !startup.has(k)).length);
         session.finalize();
         if (session.misses.length > 0) console.warn(`[conformance] ${name}: requests missing from the fixture:\n  ${session.misses.join("\n  ")}`);
       } finally {
@@ -167,7 +172,7 @@ for (const venue of VENUES) {
         const n = calls.get("kline:unsupported") ?? 0;
         const fail = r.envelope.ok ? `ok:true (${times(r).length} bars)`
           : !["INVALID_PARAMS", "CAPABILITY_UNSUPPORTED"].includes(r.envelope.error!.code) ? `code ${r.envelope.error!.code}`
-          : n > 0 ? `refused after ${n} request(s)` : null;
+          : n > 0 ? `refused after ${n} request(s) beyond the adapter start-up` : null;
         expectCheck(`${venue}:kline-unsupported:refused-before-io`, fail);
       });
     }
