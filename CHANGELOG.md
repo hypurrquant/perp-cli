@@ -23,6 +23,9 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **`arb scan --rates --include-unverified`:** a pair with an unverified-funding leg (QFEX, Variational, GRVT, Extended, TxFlow) showed `executable: true` although such venues are display only. `executable` is now false whenever a leg is read-only OR unverified, and rows (and MCP `get_funding_opportunities`) carry `unverifiedLegs`. `arb exec` / `arb auto` already refuse such legs (`assertFundingArbVenue`).
 - **`arb scan --gaps`** matched same-ticker listings that are different instruments (SAMSUNG / SKHYNIX: Pacifica ~166 USD vs Lighter 220,597, KRW-quoted → a 199.7 % "gap"). Each symbol's prices now pass the funding scan's median price-outlier guard (`MAX_PRICE_DEVIATION_PCT`, one stderr warning per symbol / venue) before a gap is computed; a symbol left with fewer than two agreeing venues is not shown.
 - **`arb scan` spread names:** spot-perp rows used `grossSpreadPct` / `netSpreadPct`, perp-perp / all rows `grossSpread` / `netSpread`. Every row now carries both names (same values).
+- **MCP `health_check`** gains `healthy` (every official-API venue up) next to `allHealthy`, the two verdicts of `perp health --json`.
+- **MCP `portfolio`** without credentials returned `totalEquity: 0`; the totals are now null when no balance was read, with `accountState` (`"noAccount"` | `"unread"` | `"ok"`) and `totalsCover` (the venues the totals sum).
+- **MCP `get_markets` row counts vs the CLI:** without credentials MCP reads the venue's public directory (`VenueMarket` rows; price-only on GRVT, so a call does not fan out 184 margin-rules requests), while `perp -e <venue> market list` reads the adapter. The row SHAPE therefore differs by design; the row SET differs only where the two paths filtered differently — Aster (public path had no status filter: SETTLING / PENDING_TRADING rows, fixed below with one shared eligibility helper) and Lighter (directory source, owned by the Lighter fix).
 
 ### JSON contract changes
 
@@ -36,6 +39,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - `arb scan --rates` / `--compare` rows and MCP opportunities gain `unverifiedLegs` (additive); `executable` is now false for pairs with an unverified-funding leg (it was true — plainly wrong per the documented "display only").
 - `arb scan` rows: spot-perp rows gain `grossSpread` / `netSpread`, perp-perp / all rows gain `grossSpreadPct` / `netSpreadPct` — additive.
 - `arb scan --gaps`: symbols whose venue prices disagree beyond the outlier guard are no longer listed.
+- MCP `health_check`: `healthy` added. MCP `portfolio`: `accountState`, `totalsCover` added; `totalEquity` / `totalAvailable` / `totalMarginUsed` / `totalUnrealizedPnl` / `riskMetrics.marginUtilization` are null (were 0) when no balance was read.
 - `fundingHours` on hyperliquid / pacifica / lighter / lighter-rh market rows: null → 1 / 1 / 8 / 8.
 
 ## [0.15.0] — 2026-10-19
