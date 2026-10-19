@@ -238,6 +238,29 @@ async function marketFundingHours(adapter: ExchangeAdapter, exchangeName: string
  * points, or the per-symbol funding basis is unknown). A failed read THROWS — callers must not
  * mistake a 429 / timeout for "history too thin".
  */
+/**
+ * Funding-history rows one request (or the adapter's paging) can serve per venue — a
+ * `history_periods` above it fails every scoring call, so strategies validate it at config time.
+ * Venues without an entry page without a limit. Measured / documented in docs/VENUE_READ_CAPS.md.
+ */
+export const FUNDING_HISTORY_CAP: Readonly<Record<string, number>> = {
+  lighter: 750, "lighter-rh": 750, arcus: 1000, aster: 1000, grvt: 10_000, extended: 10_000,
+};
+
+/** Throws INVALID_PARAMS when `periods` is not a positive integer or exceeds a leg venue's cap. */
+export function assertFundingHistoryPeriods(periods: unknown, venues: readonly string[], param = "history_periods"): void {
+  if (typeof periods !== "number" || !Number.isInteger(periods) || periods < 1) {
+    throw new PerpError("INVALID_PARAMS", `${param} must be a positive integer (got ${String(periods)})`, { remediation: `Set ${param} to e.g. 6` });
+  }
+  const over = venues.map(v => v.toLowerCase()).filter(v => FUNDING_HISTORY_CAP[v] !== undefined && periods > FUNDING_HISTORY_CAP[v]);
+  if (over.length > 0) {
+    const caps = over.map(v => `${v} ${FUNDING_HISTORY_CAP[v]}`).join(", ");
+    throw new PerpError("INVALID_PARAMS", `${param} ${periods} exceeds the funding-history cap of ${caps}`, {
+      remediation: `Set ${param} to at most ${Math.min(...over.map(v => FUNDING_HISTORY_CAP[v]))}`,
+    });
+  }
+}
+
 export async function scoreFunding(
   adapter: ExchangeAdapter,
   symbol: string,
@@ -252,16 +275,20 @@ export async function scoreFunding(
   const fH = venueHours !== null ? venueHours : await marketFundingHours(adapter, exchangeName, symbol);
   if (fH === null) return null; // per-symbol basis unknown — the hourly rate would be a guess
   const history = await adapter.getFundingHistory(symbol, periods);
-  if (history.length < 2) return null;
-  const rates = history.map(h => parseFloat(h.rate));
+  // A print without a rate (market closed) is unknown, not 0: left out of the average.
+  const known = history.filter((h): h is typeof h & { rate: string } => h.rate !== null);
+  if (known.length < 2) return null;
+  const rates = known.map(h => parseFloat(h.rate));
   if (rates.some(r => !Number.isFinite(r))) {
     throw new PerpError("EXCHANGE_ERROR", `${exchangeName} ${symbol}: funding history has a non-numeric rate`, { exchange: exchangeName });
   }
-  const avgRate = rates.reduce((s, r) => s + r, 0) / rates.length;
+  // Every print normalized by its own interval (Lighter /fundings prints are per 1 h while the
+  // venue's quoted rate is per 8 h); intervalHours null → the market basis fH.
+  const hourly = known.map((h, i) => rates[i] / (typeof h.intervalHours === "number" ? h.intervalHours : fH));
+  const avgHourly = hourly.reduce((s, r) => s + r, 0) / hourly.length;
+  /** Average rate per the market's own interval (fH), from interval-normalized prints. */
+  const avgRate = avgHourly * fH;
   const consistency = rates.filter(r => r > 0).length / rates.length;
-  // A row that states its own interval (Lighter /fundings prints are per 1 h while the venue's
-  // quoted rate is per 8 h) is normalized with it; intervalHours null → the market basis fH.
-  const avgHourly = history.reduce((s, h, i) => s + rates[i] / (typeof h.intervalHours === "number" ? h.intervalHours : fH), 0) / rates.length;
   const annualized = annualizeHourlyRate(avgHourly);
   const score: FundingScore = { symbol, exchange: exchangeName, avgRate, consistency, annualized, payments: rates.length };
   cache?.set(key, { score, ts: Date.now() });

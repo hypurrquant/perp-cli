@@ -65,3 +65,26 @@ describe("scoreFunding normalizes by the row's own interval", () => {
     expect(s?.annualized).toBeCloseTo(10.512, 2);
   });
 });
+
+describe("scoreFunding / strategy config (review)", () => {
+  it("avgRate is per the market interval from interval-normalized prints; null rates are skipped, not 0", async () => {
+    const { scoreFunding } = await import("../../bot/strategies/funding-arb-utils.js");
+    const rows = [
+      { time: 3, rate: "0.000012", price: null, intervalHours: 1, rateKind: "lastSettled" as const },
+      { time: 2, rate: null, price: null, intervalHours: 1, rateKind: "lastSettled" as const, marketClosed: true },
+      { time: 1, rate: "0.000012", price: null, intervalHours: 1, rateKind: "lastSettled" as const },
+    ];
+    const venue = { name: "lighter", getFundingHistory: vi.fn(async () => rows) } as never;
+    const s = await scoreFunding(venue, "BTC", "lighter", 3);
+    // lighter basis is 8 h: 0.000012 / h × 8 = 0.000096 per 8 h (was the raw hourly mean 0.000012).
+    expect(s?.avgRate).toBeCloseTo(0.000096, 10);
+    expect(s?.payments).toBe(2);
+  });
+
+  it("history_periods above a leg venue's cap is refused at config time", async () => {
+    const { assertFundingHistoryPeriods } = await import("../../bot/strategies/funding-arb-utils.js");
+    expect(() => assertFundingHistoryPeriods(800, ["hyperliquid", "lighter"])).toThrow(/exceeds the funding-history cap of lighter 750/);
+    expect(() => assertFundingHistoryPeriods(0, ["lighter"])).toThrow(/positive integer/);
+    expect(() => assertFundingHistoryPeriods(6, ["lighter", "arcus"])).not.toThrow();
+  });
+});

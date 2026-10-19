@@ -473,7 +473,7 @@ export function registerMarketCommands(
       const rows = history.map((h) => {
         const base = [
           new Date(h.time).toLocaleString(),
-          formatPercent(h.rate),
+          h.rate === null ? chalk.gray(h.marketClosed === true ? "closed" : "N/A") : formatPercent(h.rate),
           h.intervalHours === null ? chalk.gray("-") : `${h.intervalHours}h`,
         ];
         if (hasPrice) base.push(h.price != null ? `$${formatUsd(h.price)}` : chalk.gray("n/a"));

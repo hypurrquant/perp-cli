@@ -171,10 +171,13 @@ export interface ExchangeFundingPayment {
  */
 export interface FundingHistoryRow {
   time: number;
-  rate: string;
+  /** null = the venue published no rate for that print (e.g. the market was closed). Never "0" as a stand-in. */
+  rate: string | null;
   price: string | null;
   intervalHours: number | null;
   rateKind: "lastSettled" | null;
+  /** true = the underlying market was closed for this print (no funding accrued); absent = not reported. */
+  marketClosed?: boolean;
 }
 
 export interface ExchangeKline {
