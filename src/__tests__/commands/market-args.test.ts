@@ -130,8 +130,12 @@ describe("T1 tradable carried through the market row", () => {
     await program.parseAsync(["node", "perp", "-e", "ondo", "market", "list"]);
     // eslint-disable-next-line no-control-regex
     const text = out.join("\n").replace(/\x1b\[[0-9;]*m/g, "");
-    expect(text).toMatch(/OPENAI \(not tradable\)/);
-    expect(text).not.toMatch(/BTC \(not tradable\)/);
+    expect(text).toMatch(/OPENAI \(not tradable right now\)/);
+    expect(text).not.toMatch(/BTC \(/);
+    const { notTradableReason } = await import("../../commands/market.js");
+    expect(notTradableReason({ tradable: false, status: "nonUsdQuote" })).toMatch(/non-USD quote/);
+    expect(notTradableReason({ tradable: false, status: "SETTLEMENT" })).toBe("SETTLEMENT");
+    expect(notTradableReason({ tradable: true, status: "nonUsdQuote" })).toBeNull();
   });
 });
 

@@ -43,6 +43,11 @@ export interface ExchangeMarketInfo {
    */
   tradable?: boolean;
   /**
+   * Why a listed market is not tradable (with `tradable: false`), e.g. "nonUsdQuote", "offHours",
+   * "reduceOnly", "halted"; or the venue's own status. Absent / null = no reason published.
+   */
+  status?: string | null;
+  /**
    * What `fundingRate` is, in the WS `rateKind` vocabulary: "accruing" (the current period so far),
    * "predicted" (the rate expected at the next payment), "lastSettled" (the last payment). null =
    * not verified for this venue's REST field. Absent on rows built before 0.15.1 conventions.
