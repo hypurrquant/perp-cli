@@ -338,6 +338,26 @@ describe("public-only adapter", () => {
     await expect(adapter().getKlines("BTC", "1m", 0, 1_800_000_000_000)).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
   });
 
+  it("klines: short pages that exhaust the read budget before `start` → EXCHANGE_ERROR saying how far it got (never a silent cut)", async () => {
+    const MIN = 60_000;
+    const bar = (t: number) => ({ open_time: `${t}000000`, close_time: `${t + 59_999}000000`, open: "1", close: "1", high: "1", low: "1", volume_b: "1", volume_q: "1", trades: 1, instrument: "BTC_USDT_Perp" });
+    const end = 1_800_000_000_000;
+    const start = end - 50_000 * MIN; // 50 nominal pages: passes the up-front check
+    let calls = 0;
+    fetchMock.mockImplementation(routeFixtures({
+      kline: b => {
+        calls++;
+        const e = Math.floor(Number(BigInt(String(b.end_time)) / 1_000_000n) / MIN) * MIN;
+        // 600 bars per page (gappy minutes): 84 pages would be needed
+        return { result: Array.from({ length: 600 }, (_, i) => bar(e - i * MIN)), next: "" };
+      },
+    }));
+    const err = await adapter().getKlines("BTC", "1m", start, end).catch(e => e) as { structured: { code: string; message: string; details?: Record<string, unknown> } };
+    expect(err.structured.code).toBe("EXCHANGE_ERROR");
+    expect(err.structured.message).toMatch(/reached only .* after 75 pages/);
+    expect(calls).toBe(75);
+  });
+
   it("klines: a truncated leading calendar bar (1w covering 4 days, live) is dropped", async () => {
     const D = 86_400_000;
     const wk = (open: number, close: number) => ({ open_time: `${open}000000`, close_time: `${close}000000`, open: "1", close: "1", high: "1", low: "1", volume_b: "1", volume_q: "1", trades: 1, instrument: "BTC_USDT_Perp" });
@@ -384,7 +404,7 @@ describe("public-only adapter", () => {
 
   it("klines ascending by open time; unsupported interval → INVALID_PARAMS", async () => {
     fetchMock.mockImplementation(routeFixtures());
-    const k = await adapter().getKlines("BTC", "1h", 1_792_344_000_000 - 1000 * 3_600_000, 1_792_344_000_000);
+    const k = await adapter().getKlines("BTC", "1h", 1_792_335_600_000, 1_792_344_000_000); // the fixture's span
     expect(k.map(c => c.time)).toEqual([...k.map(c => c.time)].sort((x, y) => x - y));
     expect(k[0]).toMatchObject({ open: expect.any(String), volume: expect.any(String), quoteVolume: expect.any(String) });
     await expect(adapter().getKlines("BTC", "7m", 0, 1)).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });

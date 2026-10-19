@@ -24,7 +24,7 @@ venue-specific fix branches and are not listed here.
 | Extended | `/info/candles/<m>/trades` | **2800** rows (PT1M / PT5M; PT24H 816 = all history); no pagination field | 10,000 | pages backwards by `endTime`; 40 d of 1m = 57,601 bars, 0 gaps, 21 pages |
 | Extended | `/info/<m>/funding` | **1000** rows (newest) | 10,000 | pages backwards by `endTime` |
 | Extended | `/info/markets/<m>/trades` | 50, no `limit` parameter | — | `--limit` > 50 → `INVALID_PARAMS` |
-| GRVT | `/full/v1/kline` | `next` cursor runs dry after ~1000 bars (page 2: 2 rows, `next` "") | 1000 / page | pages backwards by `end_time`; 40 d of 1m = 57,583 bars in 58 pages (17 one-minute gaps: minutes GRVT publishes no bar for); max 50 pages |
+| GRVT | `/full/v1/kline` | `next` cursor runs dry after ~1000 bars (page 2: 2 rows, `next` "") | 1000 / page | pages backwards by `end_time`; 40 d of 1m = 57,583 bars in 58 pages (17 one-minute gaps: minutes GRVT publishes no bar for). Up-front limit 60 nominal pages (60,000 bars ≈ 41.6 d of 1m); read budget 75 pages (real pages are short); running out before `--start` → `EXCHANGE_ERROR` naming the time reached |
 | GRVT | `/full/v1/trade` | 1000, no cursor (limit 1500 → 1000) | 1000 | `--limit` > 1000 → `INVALID_PARAMS` |
 | GRVT | `/full/v1/funding` | ≥ 10,000 in one answer (limit 10,000 → 10,000) | 1000 | limit sent as asked (was clamped to 1000), 1..10,000 |
 | Arcus | `/v1/trades`, `/v1/fundingRates` | 1000 (docs) | 1000 | `--limit` > 1000 → `INVALID_PARAMS` (was silently 1000) |

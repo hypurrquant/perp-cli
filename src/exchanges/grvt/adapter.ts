@@ -43,11 +43,17 @@ const GRVT_KLINE_NOMINAL_MS: Readonly<Record<string, number>> = {
  * walk `end_time` back to just before the oldest bar returned instead.
  */
 export const GRVT_KLINE_PAGE = 1000;
+/**
+ * Pages actually read before giving up. Real pages hold fewer than 1000 bars (minutes without a
+ * bar: 40 d of 1m took 58 pages for 57,583 bars), so the read budget is 25 % above the nominal
+ * GRVT_KLINE_MAX_PAGES. 75 requests stay well inside GRVT's 500 market-data requests / minute.
+ */
+export const GRVT_KLINE_READ_PAGES = 75;
 /** Measured live 2026-10-19: /trade answers at most 1000 rows (limit 1500 → 1000, no cursor). */
 export const GRVT_TRADES_CAP = 1000;
 /** Measured live 2026-10-19: /funding honours limit 10,000 in one answer (BTC). */
 export const GRVT_FUNDING_CAP = 10_000;
-export const GRVT_KLINE_MAX_PAGES = 50;
+export const GRVT_KLINE_MAX_PAGES = 60;
 
 const WARN = (msg: string) => { process.stderr.write(`${msg}\n`); };
 
@@ -239,20 +245,34 @@ export class GrvtPublicAdapter implements ExchangeAdapter {
     // bar returned. Done when a page is empty or reaches `start` — never on the cursor alone.
     const byOpen = new Map<string, Record<string, unknown>>();
     let end = endTime;
-    for (let page = 0; page <= GRVT_KLINE_MAX_PAGES; page++) {
+    let oldestSeen = Infinity;
+    let exhausted = false;
+    for (let page = 0; page < GRVT_KLINE_READ_PAGES; page++) {
       const res = await this.client.post<{ result?: unknown; next?: unknown }>("kline", {
         instrument: m.instrument, interval: ci, type: "TRADE", start_time: msToNs(start), end_time: msToNs(end), limit: GRVT_KLINE_PAGE,
       });
       if (res === null || typeof res !== "object" || !Array.isArray(res.result)) throw grvtShapeError("kline result is not an array");
-      if (res.result.length === 0) break;
+      if (res.result.length === 0) { exhausted = true; break; } // no older bars: history starts here
       let oldest = Infinity;
       for (const c of res.result as Record<string, unknown>[]) {
         const t = nsToMs(c.open_time, "kline open_time");
         byOpen.set(String(c.open_time), c);
         if (t < oldest) oldest = t;
       }
+      if (oldest >= oldestSeen) {
+        throw new PerpError("EXCHANGE_ERROR", `GRVT: kline page did not move back past ${new Date(oldestSeen).toISOString()} (venue answered bars outside end_time)`, { exchange: "grvt" });
+      }
+      oldestSeen = oldest;
       if (oldest <= start) break;
       end = oldest - 1;
+    }
+    // Ran out of the read budget before reaching `start`: the oldest bars would be missing — never
+    // returned as the whole range.
+    if (!exhausted && oldestSeen > start) {
+      throw new PerpError("EXCHANGE_ERROR", `GRVT: ${interval} candles reached only ${new Date(oldestSeen).toISOString()} after ${GRVT_KLINE_READ_PAGES} pages (requested from ${new Date(start).toISOString()})`, {
+        exchange: "grvt", reachedMs: oldestSeen, requestedFromMs: start,
+        remediation: `Narrow --start / --end (or use a longer interval); fetch older bars with --end ${oldestSeen - 1}`,
+      });
     }
     const rows = [...byOpen.values()];
     const bars = rows.map(c => {
