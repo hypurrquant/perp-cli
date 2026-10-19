@@ -21,7 +21,7 @@ import { PerpError } from "../errors.js";
 import type { ExchangeAdapter } from "../exchanges/interface.js";
 import { PacificaAdapter } from "../exchanges/pacifica.js";
 import { resolveVenueId } from "../exchanges/venue.js";
-import { PacificaClient } from "../pacifica/client.js";
+import { PacificaClient, requireSolanaAddress } from "../pacifica/client.js";
 import { logExecution } from "../execution-log.js";
 import { jsonOk, makeTable, printJson } from "../utils.js";
 import { mulDecimal } from "../exchanges/precision.js";
@@ -401,11 +401,7 @@ export function registerPacificaEarnCommands(program: Command, getAdapterForExch
 // ── helpers ──────────────────────────────────────────────────────────────
 
 function requireAddress(s: string): string {
-  const a = s.trim();
-  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a)) {
-    throw new PerpError("INVALID_PARAMS", `Not a Solana (base58) address: "${s}"`, { remediation: "Pass a base58 Solana address" });
-  }
-  return a;
+  return requireSolanaAddress(s);
 }
 
 function parseDirection(s: string): PrintDirection {

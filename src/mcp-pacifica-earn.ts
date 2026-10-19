@@ -6,7 +6,7 @@
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { PacificaClient } from "./pacifica/client.js";
+import { PacificaClient, requireSolanaAddress } from "./pacifica/client.js";
 import type { Network } from "./exchanges/venue-types.js";
 import { fetchPrintGames, fetchPrintHistory, fetchPrintMarket, fetchPrintPositions, findPrintGame, quotePrintOrder } from "./exchanges/pacifica-print.js";
 import { DEPOSIT_WHITELIST_API_STATUS, readDepositWhitelist, fetchVaults, findVault, heldShares, withdrawWindowAt } from "./exchanges/pacifica-vaults.js";
@@ -27,7 +27,7 @@ export function registerPacificaEarnMcpTools(
       return { content: [{ type: "text", text: errOf(e, meta) }], isError: true };
     }
   };
-  const address = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "base58 Solana address");
+  const address = z.string().refine((v) => { try { requireSolanaAddress(v); return true; } catch { return false; } }, "base58 Solana address (32-byte public key; not an EVM address)");
 
   server.tool(
     "pacifica_print_products",

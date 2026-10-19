@@ -2,6 +2,7 @@ import { MAINNET_REST, type Network, getNetworkConfig } from "./constants.js";
 import { buildSignedRequest, buildAgentSignedRequest, signWithWallet } from "./signing.js";
 import { PerpError, extractErrorMessage, orderNotSent, orderOutcomeUnknown, sendFailure } from "../errors.js";
 import { invalidateCache } from "../cache.js";
+import bs58 from "bs58";
 import {
   PACIFICA_COST_CANCEL, PACIFICA_COST_STANDARD, PACIFICA_MAX_THROTTLE_WAIT_MS, PACIFICA_READ_NEED, PACIFICA_SIGNED_MAX_WAIT_MS,
   pacificaRateLimiter, type PacificaRateLimiter, type RateNeed, type RateTicket,
@@ -87,6 +88,31 @@ export interface PacificaClientConfig {
   apiKey?: string;
 }
 
+/** Query parameters that carry a Solana address (account reads, Print orders, vaults). */
+const ADDRESS_PARAMS: ReadonlySet<string> = new Set(["account", "game_account", "lake"]);
+
+/**
+ * A Pacifica address is a base58 Solana public key (32 bytes). Anything else — an EVM 0x address
+ * above all — is refused with INVALID_PARAMS before a request: the venue answers an unknown
+ * address with `success: true` and empty data, which would read as "no positions / orders".
+ */
+export function requireSolanaAddress(value: string, field = "address"): string {
+  const a = value.trim();
+  let bytes: Uint8Array | null = null;
+  try { bytes = bs58.decode(a); } catch { bytes = null; }
+  if (bytes === null || bytes.length !== 32) {
+    const evm = /^0x[0-9a-fA-F]{40}$/.test(a);
+    throw new PerpError("INVALID_PARAMS", `Not a Solana (base58) ${field}: "${value}"${evm ? " — that is an EVM address; Pacifica accounts are Solana addresses" : ""}`, {
+      exchange: "pacifica", remediation: "Pass the base58 Solana address you use on Pacifica",
+    });
+  }
+  return a;
+}
+
+function checkAddressParams(params: Record<string, string> | undefined): void {
+  for (const [k, v] of Object.entries(params ?? {})) if (ADDRESS_PARAMS.has(k) && v !== undefined && v !== null) requireSolanaAddress(v, k);
+}
+
 export class PacificaClient {
   private baseUrl: string;
   private apiKey?: string;
@@ -144,6 +170,7 @@ export class PacificaClient {
   }
 
   private async get<T>(path: string, params?: Record<string, string>): Promise<T> {
+    checkAddressParams(params);
     const url = new URL(`${this.baseUrl}${path}`);
     if (params) {
       Object.entries(params).forEach(([k, v]) => {
@@ -660,6 +687,7 @@ export class PacificaClient {
    * non-JSON / non-object body → EXCHANGE_ERROR (a read: nothing can have changed).
    */
   async getEnvelope(path: string, params: Record<string, string> = {}): Promise<Record<string, unknown>> {
+    checkAddressParams(params);
     const url = new URL(`${this.baseUrl}${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     const what = `GET ${path}`;
