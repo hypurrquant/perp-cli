@@ -49,3 +49,25 @@ describe("MCP write / account tools refuse extended", () => {
     });
   }
 });
+
+describe("MCP get_markets labels Extended's unverified funding (keyless path; Extended has no credentialed path)", () => {
+  it("rows and meta carry fundingVerified false; apiStatus official; no venueApi", async () => {
+    const { getVenue } = await import("../exchanges/venue.js");
+    const def = getVenue("extended");
+    const market = {
+      venue: "extended", venueSymbol: "BTC-USD", symbol: "BTC", canonical: "BTC", assetClass: "crypto", settle: "USD", quoteAsset: "USD",
+      markPrice: "81000", indexPrice: "81001", fundingRate: "0.000013", fundingRateBasis: { kind: "perHours", hours: 1 }, settlementIntervalHours: 1,
+      openInterest: "1", volume24h: "1", tickSize: "1", stepSize: "0.00001", minSize: "0.0001", minNotional: null, maxLeverage: 50, marginTiers: null, session: null, tradable: true,
+    };
+    const spy = vi.spyOn(def.publicData, "fetchMarkets").mockResolvedValue([market as never]);
+    try {
+      const r = JSON.parse((await tools.get("get_markets")!({ exchange: "ext" })).content[0].text) as { ok: boolean; data: Array<Record<string, unknown>>; meta: Record<string, unknown> };
+      expect(r.ok).toBe(true);
+      expect(r.data).toEqual([{ ...market, fundingVerified: false }]);
+      expect(r.meta).toMatchObject({ source: "public", apiStatus: "official", fundingVerified: false, fundingNote: expect.stringContaining("Extended: funding rate UNVERIFIED") });
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
