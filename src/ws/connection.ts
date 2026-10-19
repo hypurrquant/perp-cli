@@ -406,7 +406,11 @@ function stateDetails(s: ConnectionState): Record<string, unknown> {
   return rest;
 }
 
-/** Thrown into ready when the stream is closed. */
+/**
+ * Thrown into ready when the client closed the stream (`close()`). The close reason CLIENT_CLOSE is
+ * not an error code (WsErrorCode ⊂ the CLI's ErrorCode), so the rejection is INVALID_PARAMS — a
+ * use-after-close — and carries the reason in `details.closeReason`.
+ */
 export function closedError(venue: VenueId): WsError {
-  return new WsError("INVALID_PARAMS", `${venue} stream is closed`, { exchange: venue, remediation: "Create a new stream" });
+  return new WsError("INVALID_PARAMS", `${venue} stream is closed`, { exchange: venue, remediation: "Create a new stream", details: { closeReason: "CLIENT_CLOSE" } });
 }

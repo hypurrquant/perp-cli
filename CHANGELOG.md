@@ -32,6 +32,9 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **Aster:** `market trades BTC-PERP` echoed `"symbol": "BTC-PERP"` (the tape rows carry no symbol): it is the normalized `BTC`; a malformed tape row is `EXCHANGE_ERROR` (was `"0"` placeholders). A parameter rejection the venue sends inside HTTP 200 (`{"status":"ERROR","type":"VALID",…}`, e.g. funding `--limit 1001`) is `INVALID_PARAMS` with the venue's message (was `EXCHANGE_ERROR "fundingRate history is not a list"`).
 - **Arcus market-data reads of an OFFLINE market** (`book` / `mid` answered `ORDER_NOT_FOUND` 404, `trades` / `funding` / `kline` `ok, []`, while `info` said `SYMBOL_NOT_FOUND`) now refuse with one `SYMBOL_NOT_FOUND` naming the status (`details.status`, `tradable: false`) before any request. `--limit` above 1000 for trades / funding (the documented max, silently capped) is `INVALID_PARAMS`.
 - **One history order on every venue** (`perp market`): `trades` and `funding` newest first, `kline` oldest first, enforced after the adapter call (Aster / QFEX answered funding oldest first).
+- **perp-ws errors:** `WsError` gains `code` and `remediation` getters mirroring `structured` (kept), so `err.code` works on `ready` rejections as `e.code` does on error events (API snapshot: additive). `subscribe` after `close()` rejects `INVALID_PARAMS` "stream is closed" as before — `CLIENT_CLOSE` is a close reason, not an error code — now with `details.closeReason: "CLIENT_CLOSE"`; the docs said "rejects with the close reason" and now describe this case.
+- **perp-ws Hyperliquid `account.unrealizedPnl`** was always null; `clearinghouseState` has no account-level field but carries every position's `unrealizedPnl`, so it is now their exact sum (`"0"` with no position, null if any position lacks it). Pacifica and Lighter stay null on `account` (their account feeds publish none; Lighter has it per position) — documented per venue.
+- **ws-library docs:** Aster `volume24hNotional` stays null for minutes (`!ticker@arr` pushes changed tickers only) — note added and the `MIN_NOTIONAL` example now counts unknown-volume legs instead of silently dropping them; bundle size corrected (~170 KB ESM, ~41 KB gzip — it said ~100 KB).
 
 ### JSON contract changes
 
@@ -50,6 +53,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - Public market data (arb scan, MCP keyless `get_markets`): Aster SETTLING rows (`tradable: false`) are no longer listed.
 - `market trades -e aster`: `symbol` is the normalized symbol (was the raw argument).
 - `market funding -e aster|qfex`: rows newest first (were oldest first).
+- perp-ws: `WsError.code` / `WsError.remediation` added; the use-after-close rejection gains `details.closeReason`; Hyperliquid `account.unrealizedPnl` null → the summed value.
 - `fundingHours` on hyperliquid / pacifica / lighter / lighter-rh market rows: null → 1 / 1 / 8 / 8.
 
 ## [0.15.0] — 2026-10-19

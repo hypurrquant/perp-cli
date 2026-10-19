@@ -26,7 +26,7 @@ Two packages, **the same code and API** (built from one source):
 
 | Package | Install | When |
 |---|---|---|
-| **`@hypurrquant/perp-ws`** (recommended for integrators) | `npm install @hypurrquant/perp-ws` (+ `ws` for the Node entry) | apps, dashboards, bots — **no dependencies** (~100 KB ESM) |
+| **`@hypurrquant/perp-ws`** (recommended for integrators) | `npm install @hypurrquant/perp-ws` (+ `ws` for the Node entry) | apps, dashboards, bots — **no dependencies** (~170 KB ESM, ~41 KB gzip; 0.15.1 build) |
 | `perp-cli/ws` | `npm install perp-cli` | perp-cli is already installed (the CLI pulls ~140 MB of CLI deps) |
 
 | Runtime | `@hypurrquant/perp-ws` | `perp-cli` | Transport |
@@ -211,7 +211,9 @@ await Promise.all(streams.map((s) => s.close()));
   `connecting` / `reconnecting`: it stays `live` with
   `sockets` = open sockets and `pending` = sockets still opening — the channels on those are not ready
   yet (their `ready` resolves when they open). `pending` is present only on multi-socket streams.
-- `closed` is terminal: a later `subscribe` rejects with the close reason. A handshake failure before
+- `closed` is terminal: a later `subscribe` rejects with the close reason (e.g. the code that exhausted
+  the reconnects). After your own `close()` the reason is `CLIENT_CLOSE`, which is not an error code: the
+  rejection is `INVALID_PARAMS` "stream is closed" with `details.closeReason: "CLIENT_CLOSE"`. A handshake failure before
   open = `EXCHANGE_UNREACHABLE` ("network, venue outage, or Origin/CORS block").
 - Ack timeout: no acknowledgement and no data within the channel's stale threshold → a **pending**
   subscription fails with `WS_PROTOCOL_ERROR`.
@@ -231,6 +233,11 @@ did not carry keeps its last value, with `asOf[field]` = receive time. `Dec` = t
 funding{ rate, rateKind, rateSource, rateIntervalHours, settlementIntervalHours, intervalSource,
 nextFundingTime, predictedRate, marketClosed }, openInterest{ value, unit: "base"|"usd"|null, sides },
 volume24hNotional, venueTs, recvTs, source, changed[], asOf{}`.
+
+- **Aster `volume24hNotional` can stay `null` for minutes after subscribing:** the venue's `!ticker@arr`
+  pushes only the tickers that changed, so a quiet market's first ticker (and its 24 h notional) arrives
+  late. `null` there means "not received yet", not "no volume" — a volume filter must not treat it as 0
+  (see the example in §5, which keeps such legs out explicitly and says so).
 
 Funding:
 - `rate` is **raw per `rateIntervalHours`** — never pre-annualized. Use `toHourly(rate, h)` to compare and
@@ -316,13 +323,19 @@ for (const s of streams) {
 }
 
 const MIN_NOTIONAL = 1_000_000;
-/** One leg per venue: the most liquid market that passes the filter (null volume = unknown → skipped). */
+/**
+ * One leg per venue: the most liquid market that passes the filter. A leg whose 24 h notional is not
+ * known yet (Aster sends a ticker only when it changes — minutes on quiet markets) is skipped, never
+ * read as 0; `unknownVolume` counts them so a dashboard can show "N legs waiting for volume".
+ */
+let unknownVolume = 0;
 function pickLegs(row: FundingRow): FundingLeg[] {
   const best = new Map<string, { leg: FundingLeg; vol: number }>();
   for (const leg of row.legs) {
     if (leg.rate === null || leg.stale || !leg.fundingVerified) continue;
     const vol = notional.get(`${leg.venue}|${leg.symbol}`);
-    if (vol === undefined || vol < MIN_NOTIONAL) continue;
+    if (vol === undefined) { unknownVolume++; continue; } // not received yet — unknown, not 0
+    if (vol < MIN_NOTIONAL) continue;
     const cur = best.get(leg.venue);
     if (cur === undefined || vol > cur.vol) best.set(leg.venue, { leg, vol });
   }
@@ -408,7 +421,13 @@ sub.on((e) => {
 
 Events:
 - `account` — `equity, available, marginUsed, unrealizedPnl` (+ `dex` on hyperliquid, one per perp dex);
-  `source: "snapshot"` when the frame was a full snapshot.
+  `source: "snapshot"` when the frame was a full snapshot. `unrealizedPnl` per venue:
+  hyperliquid = the exact sum of that dex's position `unrealizedPnl` in the same `clearinghouseState`
+  frame (`"0"` with no position; `null` if a position lacks it — the frame has no account-level field);
+  pacifica = `null` (`account_info` publishes none, and the position stream carries no unrealized PnL
+  either); lighter / lighter-rh = `null` on `account` (`user_stats` publishes none) — per position it is
+  `PositionRow.unrealizedPnl` (`unrealized_pnl` on the positions channel); arcus = `null` on `account`,
+  per position on `PositionRow`.
 - `positions` / `orders` — always the **full current set** (snapshot + merged deltas). Pacifica
   `account_positions` snapshots older than the last applied one (envelope `li`) are dropped.
   `orders.complete` = every part of the set came from a venue snapshot. **Pacifica sends no order
@@ -436,7 +455,9 @@ Mark price in `PositionRow` is null except on Arcus — join the `MarketUpdate` 
 
 `StreamControl { type: "error", code, message, remediation, raw (redacted ≤ 200 chars), fatal }` — always
 check `fatal`: a fatal error ended that subscription, a non-fatal one is informational (it keeps running);
-`ready` rejects with a `WsError` whose `structured = { code, message, status, retryable, remediation? }`.
+`ready` rejects with a `WsError` whose `structured = { code, message, status, retryable, remediation? }`;
+`err.code` and `err.remediation` (null when none) mirror `structured`, so one handler reads `code` the same
+way on error events (`e.code`) and on rejections (`err.code`).
 
 Where an error surfaces:
 - **Thrown synchronously** (`WsError`, `INVALID_PARAMS`) — bad options, before anything starts:

@@ -74,6 +74,10 @@ declare class WsError extends Error {
         remediation?: string;
         details?: Record<string, unknown>;
     });
+    /** `structured.code` — the same place as `code` on error events (`e.code`). */
+    get code(): WsErrorCode;
+    /** `structured.remediation` — the same place as `remediation` on error events; null when none. */
+    get remediation(): string | null;
 }
 /** Structural check: a PerpError (CLI) or a WsError — anything carrying `structured.{code,message}`. */
 declare function isPerpError(e: unknown): e is {
