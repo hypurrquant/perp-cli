@@ -4,6 +4,35 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed
+
+- **Lighter / Lighter RH `market kline` ignored `--start`:** `GET /api/v1/candles` answers max(`count_back`, bars in the window) newest bars ending at `end_timestamp`, at most 500 (probed live 2026-10-19), and the adapter always sent `count_back` 100 — a 6 h window returned 100 bars back from `--end`, a long range only the newest 500, a future window past bars. `count_back` is now the number of bar opens in the window, rows are filtered to [`--start`, `--end`], longer windows are paged backwards in 500-bar chunks (≤ 5000 bars, beyond → `INVALID_PARAMS`; a page that does not move back, or full pages that never reach `--start`, → `EXCHANGE_ERROR`), `end_timestamp` (exclusive, whole seconds) is sent as `--end` + 1 s, and the answer's `r` must be the requested interval. Mainnet, testnet and Lighter RH.
+- **Lighter / Lighter RH `market kline` intervals:** only `1m 5m 15m 30m 1h 4h 12h 1d` are served (live-verified on all three hosts); others (`3m 2h 8h 1w 1M`, …) are `INVALID_PARAMS` before any request (was `UNKNOWN` from the venue's HTTP 400 / code 20001).
+- **Lighter / Lighter RH `market book` listed individual orders, not price levels:** `/orderBookOrders` rows are orders (50 BTC asks = 42 prices). They are now summed per price, with `limit=250` (the documented max; a possibly partial last level of a full page is dropped), and match the WS `order_book` levels. Same for the Lighter spot book.
+- **Lighter / Lighter RH `market list|prices|info`, MCP `get_markets` and the perp-ws directory listed inactive markets as live** (26 on mainnet). One rule now (`status === "active"` and not `is_frozen`, `src/ws/lighter-market.ts`) for the CLI adapter, the public data path and the WS directory: 213 live perps on REST and WS (was 238 REST / 239 MCP / 235 WS; MYX, RESOLV, MKR and DOLO are inactive and only in `orderBookDetails`). Inactive markets still resolve for reads and closes; a non-reduce-only order on one is refused before signing (`ORDER_REJECTED`, `details.marketInactive`).
+- **Lighter / Lighter RH `market trades --limit`** outside 1..100 (the venue's cap) is `INVALID_PARAMS` naming the max (was `UNKNOWN`).
+- **Lighter spot orderbook returned an empty book on any read error** (used by `arb` spot-perp checks): the typed error is thrown (HTTP 429 → `RATE_LIMITED`; unknown market → `SYMBOL_NOT_FOUND`); spot order pre-checks raise typed errors (`SIZE_TOO_SMALL`, `PRICE_STALE`).
+- **perp-ws Lighter / Lighter RH:** `openInterest.sides` is `"one"` (USD notional; inferred — the venue does not document it: WS / mark = REST base, and the venue's daily `exchangeMetrics` snapshot read ≈ 2×). `last` is null for a market without trades (the venue sends `"0"` / `"0.000"`).
+- **Pacifica k-prefixed markets (kBONK, kPEPE, kSHIB):** the CLI upper-cases the argument and Pacifica is case-sensitive, so `trades` / `funding` / `kline` returned `ok, []` and `book` / `mid` `SYMBOL_NOT_FOUND`. Every market-data read, order, cancel, edit, leverage and TP/SL now resolves the symbol to the venue's spelling from `/info` (exact, then case-insensitive; ambiguous → `INVALID_PARAMS`).
+- **Shared empty-result guard (`listsSymbol`) is case-sensitive:** an empty answer passes as "no data" only when the exact wire symbol is listed, so a casing miss is `SYMBOL_NOT_FOUND` (Pacifica, Ondo, Aster callers resolve the venue spelling first).
+- **Pacifica perp reads served spot SOL-USDC** (`book` / `trades` / `kline`) while `info` / `funding` said it does not exist: non-`perpetual` `/info` rows are refused with `SYMBOL_NOT_FOUND` before any request.
+- **Pacifica `market kline`:** intervals checked locally (`1m 3m 5m 15m 30m 1h 2h 4h 8h 12h 1d 1w 1M`; `2m` / `6h` → `INVALID_PARAMS`, was `UNKNOWN`); a range over 4000 bars (venue: HTTP 400, surfaced as `SIZE_TOO_LARGE`) is read in 4000-bar windows (≤ 40,000 bars, beyond → `INVALID_PARAMS`).
+- **Pacifica `market funding -l` above 4000 silently returned 4000:** pages are followed with `cursor` / `next_cursor` (1..40,000); a short read while the venue reports `has_more` is `EXCHANGE_ERROR`.
+- **Pacifica `market trades --limit`** above 20 returned ~20 rows silently (`GET /trades` has no limit or cursor: the last 20 fills): `--limit` outside 1..20 is `INVALID_PARAMS`.
+- **Spot-perp arb price estimate** returned 0 on a failed market read and `NaN` for a Pacifica `"-"` mark (sized as `"NaN"`): a read error propagates (the entry is skipped and logged), a missing market or non-positive / non-finite mark is null, and sizing refuses a non-finite price.
+- **Pacifica vault deposit whitelist (unofficial endpoint):** an unreadable whitelist is `{ addresses: null, error: <code> }` (was a bare null).
+
+### JSON contract changes
+
+- `market kline -e lighter|lighter-rh`: rows are exactly the bars opening in [`--start`, `--end`] (was 100 bars back from `--end`); more than 100 rows for a long window.
+- `market book -e lighter|lighter-rh` (and the Lighter spot book): each row is a price level with the summed size (was one row per order; equal prices repeated).
+- `market list|prices|info -e lighter|lighter-rh`, MCP `get_markets`: inactive / frozen markets are not listed (`info` on one → `SYMBOL_NOT_FOUND`).
+- perp-ws Lighter / Lighter RH: `allMarkets` no longer streams inactive markets; `openInterest.sides` `null` → `"one"`; `last` `"0"` → null for markets without trades.
+- `market trades -e lighter|lighter-rh --limit` outside 1..100, `-e pacifica --limit` outside 1..20, `market kline` unsupported intervals: `INVALID_PARAMS` (was `UNKNOWN` / a silent cap).
+- Pacifica k-prefixed markets: rows carry the venue spelling (`kPEPE`); `trades` / `funding` / `kline` return data (was `[]`); `market * SOL-USDC -e pacifica`: `SYMBOL_NOT_FOUND`.
+- `market funding -e pacifica -l N`: up to N rows for N > 4000 (was 4000).
+- Pacifica vault `depositWhitelist` (CLI `vault info --json`, MCP): gains `error` (string | null) — additive.
+
 ## [0.15.0] — 2026-10-19
 
 ### NEW: Extended (formerly X10, Starknet) — read-only market data (`perp -e extended`, aliases `ext` / `x10`)
