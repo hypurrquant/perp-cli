@@ -180,3 +180,14 @@ describe("Aster T5 (audit 0.15.0)", () => {
     expect((await a.getRecentTrades("BTC-PERP", 1))[0]).toEqual({ time: 1792407851150, symbol: "BTC", side: "buy", price: "82301.7", size: "0.641", fee: null });
   });
 });
+
+describe("Aster kline intervals (conformance U4)", () => {
+  it("an interval outside the live-verified set is INVALID_PARAMS before any request", async () => {
+    const get = vi.fn(() => []);
+    const a = await adapter(get);
+    await expect(a.getKlines("BTC", "7m", 0, 60_000)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "INVALID_PARAMS", remediation: expect.stringContaining("1m, 3m, 5m") }) });
+    expect(get).not.toHaveBeenCalled();
+    await a.getKlines("BTC", "1M", 0, 60_000);
+    expect(get).toHaveBeenCalled();
+  });
+});

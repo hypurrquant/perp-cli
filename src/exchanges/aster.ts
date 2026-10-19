@@ -224,6 +224,12 @@ const ASTER_KLINE_PAGE = 1500;
 /** Page cap for one range (150 000 bars). */
 const ASTER_KLINE_MAX_PAGES = 100;
 
+/**
+ * Kline intervals verified live 2026-10-19 (/fapi/v3/klines BTCUSDT: each answers bars of that
+ * length; "7m" / "2d" → -1120 "Invalid interval."). Anything else is refused before a request.
+ */
+export const ASTER_KLINE_INTERVALS: ReadonlySet<string> = new Set(["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"]);
+
 export class AsterAdapter implements ExchangeAdapter {
   readonly name = "aster";
   readonly chain = "bnb";
@@ -699,6 +705,11 @@ export class AsterAdapter implements ExchangeAdapter {
    * range is never cut to the first page. More than ASTER_KLINE_MAX_PAGES pages → INVALID_PARAMS.
    */
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
+    if (!ASTER_KLINE_INTERVALS.has(interval)) {
+      throw new PerpError("INVALID_PARAMS", `Aster: unsupported candle interval "${interval}"`, {
+        remediation: `Use one of: ${[...ASTER_KLINE_INTERVALS].join(", ")}`,
+      });
+    }
     if (!(startTime <= endTime)) {
       throw new PerpError("INVALID_PARAMS", `Aster klines: start ${startTime} is after end ${endTime}`, {
         remediation: "Pass a --start that is before --end",

@@ -41,6 +41,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **TxFlow HTTP 5xx errors** quoted a raw Cloudflare HTML page; the markup is stripped.
 - **Derive options:** `options quote` of an expired option said "listed but not active (activation …)"; it now says `expired at <expiry>, settled at <settlement_price>` (`details.expired`, `details.settlementPrice`). A decimal strike is accepted in the CLI form (`PUMP-20261023-0.0045-C` → the venue's `0_0045`). Human greeks print 3 significant figures (theta of cheap options printed `-0.000`), with a note on Derive's 1e-5 resolution.
 - **HIP-4 template outcomes:** `outcome view` of a `template:binaryPrice` outcome (description `perp:ZEC|…|threshold:1057|time:20261023-0800`) had `underlying: null`, no class and no expiry; `perp` / `threshold` / `time` are now read (class `priceBinary`). Sides gain `label` (the name without `template:`) and `wideSpread` (bid–ask wider than 0.2 → the mid-implied probability is a weak estimate; `impliedProb` is kept).
+- **Aster `market kline`** sent any interval to the venue; an interval outside the live-verified set (1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M) is now `INVALID_PARAMS` before any request.
 
 ### JSON contract changes
 
