@@ -24,6 +24,14 @@ perp --json -e hyperliquid --dex <DEX> market list           # one HIP-3 dex's m
 perp --json -e hyperliquid --dex <DEX> market book <SYMBOL>  # any market/account/trade command takes --dex the same way
 ```
 
+Hyperliquid read-path notes:
+- **Venue caps → `meta.venueCap`** `{ cappedAt, requested, returned, availableFrom, truncated, reason }` (human output prints a warning). `trades`: the venue serves only the last 10 trades. `book`: at most 20 levels per side (`-d` slices JSON too). `kline`: only the most recent 5000 candles per interval exist — a range starting earlier comes back with `truncated: true` and `availableFrom` (first candle's open, ms); a range wholly older than that window → `INVALID_PARAMS`.
+- **kline intervals:** `1m,3m,5m,15m,30m,1h,2h,4h,8h,12h,1d,3d,1w,1M` (anything else → `INVALID_PARAMS`, not retryable). `1M` candles are **30-day buckets**, not calendar months; `1w` candles open **Thursday 00:00 UTC**. Each candle carries `closed` (false on the in-progress last candle).
+- **funding:** `--limit N` = the last N hourly settlements (paged over the venue's 500-row cap; max 5000).
+- **Delisted markets** (meta `isDelisted`, e.g. `MATIC`, every asset of `--dex km`) → `SYMBOL_NOT_FOUND` with `details.reason: "delisted"` on `info` / `trades` / `funding` / `book` / `kline`; orders / positions / history still resolve them. `market hip3` lists live assets only (`assets`), plus `delistedAssets` and `delisted: true` for a dex with no live asset; `deployer` comes from `perpDexs`.
+- **Symbol naming:** `market list` / `info` rows use the display name `BTC-PERP` (HIP-3: `xyz:XYZ100`); `market trades` rows and the WS codec use the raw venue coin `BTC`. Strip `-PERP` to compare.
+- **marginTiers:** a market on a single-tier table (`marginTableId` < 50) reports `[{ lowerBound: 0, maxLeverage: <id> }]` (docs "Margin tiers"), not null.
+
 ## Account (read-only, safe)
 ```bash
 perp --json portfolio -e <VENUE_ID>            # perp balance + spot holdings + 24h funding; venue id or alias (hl, lt, …)
