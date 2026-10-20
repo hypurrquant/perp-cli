@@ -758,6 +758,16 @@ export class PacificaAdapter implements ExchangeAdapter {
     return this.client;
   }
 
+  /**
+   * The configured account for an account read (settings, TWAP orders, …): no Pacifica key
+   * configured → NO_SIGNER_AVAILABLE. A keyless adapter holds a generated throwaway keypair, whose
+   * empty account would otherwise read as "no settings / no orders".
+   */
+  accountForReads(): string {
+    if (!this._hasRealKey) throw noAccountKeyError("pacifica");
+    return this.account;
+  }
+
   get signer(): (msg: Uint8Array) => Promise<Uint8Array> {
     return this.signMessage;
   }

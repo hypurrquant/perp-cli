@@ -107,7 +107,10 @@ for (const def of READ_ONLY) {
  */
 const ACCOUNT_VENUES = listVenues().filter(v => v.roles.includes("account"));
 const SIGNER_CODES = new Set(["NO_SIGNER_AVAILABLE", "KEY_NOT_FOUND", "AGENT_NOT_REGISTERED"]);
-describe("keyless account reads refuse with a typed signer code on every account venue", () => {
+const CAPABILITY_CODES = new Set(["CAPABILITY_UNSUPPORTED"]);
+/** Every `account` subcommand that reads the configured account (balance is a rename pointer; --address is public). */
+const ACCOUNT_SUBCOMMANDS: string[][] = [["positions"], ["orders"], ["history"], ["settings"], ["trades"], ["funding-history"], ["margin", "BTC"], ["pnl"], ["twap-orders"]];
+describe("keyless account reads refuse with a typed code on every account venue × every account subcommand", () => {
   // Public start-up reads a venue adapter makes before any account call (Aster server time, the
   // Lighter market directory) are answered minimally; any other request fails the cell.
   beforeEach(() => {
@@ -120,12 +123,17 @@ describe("keyless account reads refuse with a typed signer code on every account
   });
   it("the registry has account venues", () => expect(ACCOUNT_VENUES.length).toBeGreaterThan(0));
   for (const def of ACCOUNT_VENUES) {
-    for (const argv of [["-e", def.id, "account", "positions"], ["-e", def.id, "account", "orders"], ["-e", def.id, "account", "trades"]]) {
-      it(`perp ${argv.join(" ")} (no key) → a signer code with remediation, not UNKNOWN`, async () => {
+    for (const sub of ACCOUNT_SUBCOMMANDS) {
+      // twap-orders on a venue without native TWAP answers NOT_SUPPORTED (exit 0) — its contract is
+      // under review; the Pacifica cell (the account read) is checked.
+      if (sub[0] === "twap-orders" && def.id !== "pacifica") continue;
+      const argv = ["-e", def.id, "account", ...sub];
+      it(`perp ${argv.join(" ")} (no key) → a typed refusal with remediation, never ok:true / UNKNOWN`, async () => {
         const r = await runCli(argv);
         expect(r.envelope.ok, "a keyless account read cannot succeed").toBe(false);
         const e = r.envelope.error!;
-        expect(SIGNER_CODES.has(e.code), `${def.id}: ${e.code} ${e.message}`).toBe(true);
+        // A venue without the feature refuses with its capability code; every other keyless read with a signer code.
+        expect(SIGNER_CODES.has(e.code) || CAPABILITY_CODES.has(e.code), `${def.id}: ${e.code} ${e.message}`).toBe(true);
         expect(issues(ErrorEnvelope, r.envelope), "refusal carries a remediation").toBe("");
       });
     }

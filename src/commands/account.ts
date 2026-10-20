@@ -9,6 +9,12 @@ import { PerpError } from "../errors.js";
 import { unsupported } from "../exchanges/trading-v2.js";
 
 
+/** The configured Pacifica account of an account read; keyless → NO_SIGNER_AVAILABLE (never the throwaway keypair's). */
+function pacificaAccount(adapter: ExchangeAdapter & { publicKey: string }): string {
+  const read = (adapter as { accountForReads?: () => string }).accountForReads;
+  return typeof read === "function" ? read.call(adapter) : adapter.publicKey;
+}
+
 function pac(adapter: ExchangeAdapter) {
   if (!hasPacificaSdk(adapter)) throw new Error("Market settings are only available on Pacifica.");
   return adapter;
@@ -418,7 +424,7 @@ export function registerAccountCommands(
       // Pacifica: use dedicated SDK endpoint
       if (hasPacificaSdk(adapter)) {
         const sdk = adapter.sdk as Record<string, (...args: any[]) => any>;
-        const settings = await sdk.getAccountSettings(adapter.publicKey);
+        const settings = await sdk.getAccountSettings(pacificaAccount(adapter));
         if (isJson()) return printJson(jsonOk(settings));
         // GET /account/settings returns an object; per-market entries are in `margin_settings`
         // (only markets changed from the default cross / max leverage are listed).
@@ -510,7 +516,8 @@ export function registerAccountCommands(
     .description("Margin details for a specific symbol position")
     .action(async (symbol: string) => {
       const sym = symbol.toUpperCase();
-      try {
+      // Errors: the one envelope (code, status, remediation) and exit 1 via withJsonErrors.
+      return void await withJsonErrors(isJson(), async () => {
         const adapter = await getAdapter();
 
         const [balance, positions] = await Promise.all([
@@ -562,19 +569,7 @@ export function registerAccountCommands(
         console.log(`  Liquidation:      ${pos.liquidationPrice === null ? chalk.gray("-") : `$${formatUsd(pos.liquidationPrice)}`}`);
         console.log(`  Unrealized PnL:   ${formatPnl(pos.unrealizedPnl)}`);
         console.log();
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (isJson()) {
-          const { classifyError } = await import("../errors.js");
-          const classified = classifyError(err);
-          return printJson(jsonError(classified.code, classified.message, {
-            status: classified.status,
-            retryable: classified.retryable,
-          }));
-        }
-        console.error(chalk.red(`Error: ${msg}`));
-        process.exitCode = 1;
-      }
+      });
     });
 
   // ── PnL Report ──
@@ -733,7 +728,7 @@ export function registerAccountCommands(
       }
       const p = pac(adapter);
       const sdk = p.sdk as Record<string, (...args: any[]) => any>;
-      const orders = await sdk.getTWAPOrders(p.publicKey);
+      const orders = await sdk.getTWAPOrders(pacificaAccount(p));
       if (isJson()) return printJson(jsonOk(orders));
 
       if (!orders || orders.length === 0) {
