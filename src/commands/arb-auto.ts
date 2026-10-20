@@ -705,6 +705,45 @@ export let handleSpotClose: ((
   isJson: () => boolean,
 ) => Promise<void>) | undefined;
 
+/**
+ * `arb auto` flag validation: every numeric flag must be a finite number in its range, `--size` a
+ * number or "auto", `--settle-strategy` one of block | aggressive | off. INVALID_PARAMS otherwise.
+ */
+export function assertArbAutoFlags(opts: Record<string, unknown>): void {
+  const num = (flag: string, key: string, min: number, opt: { integer?: boolean; exclusiveMin?: boolean } = {}): void => {
+    const raw = opts[key];
+    if (raw === undefined) return;
+    const text = String(raw).trim();
+    const v = Number(text);
+    const ok = text !== "" && Number.isFinite(v) && (opt.exclusiveMin ? v > min : v >= min) && (!opt.integer || Number.isInteger(v));
+    if (!ok) {
+      throw new PerpError("INVALID_PARAMS", `${flag} must be ${opt.integer ? "a whole number" : "a number"} ${opt.exclusiveMin ? ">" : ">="} ${min}, got "${text}"`, {
+        remediation: `Pass e.g. ${flag} ${opt.exclusiveMin ? min + 1 : Math.max(min, 1)}`,
+      });
+    }
+  };
+  num("--min-spread", "minSpread", 0);
+  num("--close-spread", "closeSpread", 0);
+  if (opts.size !== undefined && String(opts.size).toLowerCase() !== "auto") num("--size", "size", 0, { exclusiveMin: true });
+  num("--min-size", "minSize", 0);
+  num("--max-positions", "maxPositions", 1, { integer: true });
+  num("--interval", "interval", 0, { integer: true });
+  num("--hold-days", "holdDays", 0, { exclusiveMin: true });
+  num("--bridge-cost", "bridgeCost", 0);
+  num("--min-margin", "minMargin", 0);
+  num("--max-basis", "maxBasis", 0, { exclusiveMin: true });
+  num("--cooldown", "cooldown", 0);
+  num("--min-oi", "minOi", 0);
+  const strat = opts.settleStrategy;
+  if (strat !== undefined && !["block", "aggressive", "off"].includes(String(strat))) {
+    throw new PerpError("INVALID_PARAMS", `--settle-strategy must be block, aggressive or off, got "${String(strat)}"`, { remediation: "Pass --settle-strategy block (default)" });
+  }
+  const grade = opts.minGrade;
+  if (grade !== undefined && !["A", "B", "C", "D"].includes(String(grade).toUpperCase())) {
+    throw new PerpError("INVALID_PARAMS", `--min-grade must be A, B, C or D, got "${String(grade)}"`, { remediation: "Pass --min-grade C (default)" });
+  }
+}
+
 export function registerArbAutoCommands(
   program: Command,
   getAdapterForExchange: (exchange: string) => Promise<ExchangeAdapter>,
@@ -755,6 +794,9 @@ export function registerArbAutoCommands(
       background?: boolean;
       hip3?: boolean; minOi: string; minGrade: string;
     }) => {
+      // Numeric flags are checked up front (also before --background starts a job): a value that is
+      // not a number ("--cooldown abc" → NaN) would otherwise silently disable the check it feeds.
+      assertArbAutoFlags(opts);
       // Route to HIP-3 dex-auto logic if --hip3 flag is set
       if (opts.hip3) {
         return handleDexAuto({
