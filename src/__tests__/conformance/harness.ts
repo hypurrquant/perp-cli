@@ -168,10 +168,17 @@ export class Session {
    */
   readonly trim: boolean;
 
-  constructor(name: string, keep: string[], opts: { trim?: boolean } = {}) {
+  /**
+   * record: reduce a recorded response to what the code under test reads (account responses of a
+   * third party: drop names, descriptions and other identifying fields). Runs before the scrubber.
+   */
+  private readonly responseFilter: ((url: string, response: Json) => Json) | null;
+
+  constructor(name: string, keep: string[], opts: { trim?: boolean; responseFilter?: (url: string, response: Json) => Json } = {}) {
     this.name = name;
     this.keep = keep;
     this.trim = opts.trim ?? true;
+    this.responseFilter = opts.responseFilter ?? null;
     if (MODE === "replay" || MODE === "prune") {
       if (!hasFixture(name)) throw new Error(`no conformance fixture "${name}" — record it: pnpm conformance:record --venue ${name}`);
       this.fixture = loadFixture(name);
@@ -329,6 +336,25 @@ export class Session {
     return all[idx];
   }
 
+  /** real → dummy replacements applied to every recorded URL, body and response (record). */
+  private redactions: Array<[string, string]> = [];
+
+  /**
+   * Record a request input (an account address the test passes) under a dummy: the fixture never
+   * carries `real` — URLs, bodies and responses are rewritten (case-insensitive) and the written
+   * fixture is checked for it. The replay passes `dummy`.
+   */
+  redact(real: string, dummy: string): void {
+    if (real.toLowerCase() !== dummy.toLowerCase()) this.redactions.push([real, dummy]);
+  }
+
+  private applyRedactions<T>(v: T): T {
+    if (this.redactions.length === 0 || v === null || v === undefined) return v;
+    let text = JSON.stringify(v);
+    for (const [real, dummy] of this.redactions) text = text.replace(new RegExp(real.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), dummy);
+    return JSON.parse(text) as T;
+  }
+
   /** record: trim + scrub + write the fixture. prune: rewrite with the used exchanges only. */
   finalize(): void {
     if (MODE === "record") {
@@ -344,12 +370,16 @@ export class Session {
       const scrub = new PublicScrubber();
       const http = this.http.map(x => ({
         ...x,
-        response: scrub.walk(this.trim && !this.untrimmed.has(x.cell) ? trimResponse(x.response, this.keep, idsFor(x.url)) : x.response) ?? null,
+        response: scrub.walk((r => (this.trim && !this.untrimmed.has(x.cell) ? trimResponse(r, this.keep, idsFor(x.url)) : r))(this.responseFilter !== null ? this.responseFilter(x.url, x.response) : x.response)) ?? null,
         text: x.text !== null && x.text.length > 2000 ? x.text.slice(0, 2000) : x.text,
       }));
       const ws = this.ws.map(w => ({ ...w, frames: (scrub.walk(this.trim ? trimResponse(w.frames, this.keep, idsFor(w.url)) : w.frames) ?? []) as Json[] }));
+      const redactedHttp = this.applyRedactions(http);
+      const redactedWs = this.applyRedactions(ws);
+      const written = JSON.stringify({ http: redactedHttp, ws: redactedWs }).toLowerCase();
+      for (const [real] of this.redactions) if (written.includes(real.toLowerCase())) throw new Error(`refusing to write fixture ${this.name}: a redacted input is still present`);
       // capturedAt = END of the recording: replay's clock never runs behind a recorded response.
-      this.write({ schema: 1, name: this.name, capturedAt: Date.now(), recordedWith: "scripts/conformance/record.ts (live public mainnet, read-only)", keep: this.trim ? this.keep : [], full: [...this.untrimmed], http, ws });
+      this.write({ schema: 1, name: this.name, capturedAt: Date.now(), recordedWith: "scripts/conformance/record.ts (live public mainnet, read-only)", keep: this.trim ? this.keep : [], full: [...this.untrimmed], http: redactedHttp, ws: redactedWs });
     } else if (MODE === "prune" && this.fixture !== null) {
       const full = new Set(this.fixture.full ?? []);
       const http = this.fixture.http.filter((x, i) => this.usedHttp.has(i) || full.has(x.cell));

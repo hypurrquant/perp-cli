@@ -92,6 +92,11 @@ function warnExcluded(venue: LegacyPublicVenue, what: string, symbols: string[])
 
 // ── HTTP ──
 
+/** One public JSON read with the venue error mapping (rate limits, HTTP status, invalid JSON). */
+export async function legacyPublicJson(venue: LegacyPublicVenue, url: string, label: string, init?: RequestInit): Promise<unknown> {
+  return getJson(venue, url, label, init);
+}
+
 async function getJson(venue: LegacyPublicVenue, url: string, label: string, init?: RequestInit): Promise<unknown> {
   const res = await fetch(url, { ...init, signal: AbortSignal.timeout(15_000) });
   await assertOk(res, `${venue} ${label}`);

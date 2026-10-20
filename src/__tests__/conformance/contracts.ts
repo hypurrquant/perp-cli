@@ -216,3 +216,23 @@ export function issues(schema: z.ZodType, value: unknown, max = 6): string {
   if (r.success) return "";
   return r.error.issues.slice(0, max).map(i => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ");
 }
+
+// ── account positions --address (public, keyless) ──
+
+/** One open position (`account positions`, `--address`, MCP get_positions / get_positions_by_address). */
+export const PositionRow = z.looseObject({
+  symbol: z.string().min(1),
+  side: z.enum(["long", "short"]),
+  size: PosDec,
+  entryPrice: Dec,
+  markPrice: Dec,
+  liquidationPrice: DecOrNull,
+  unrealizedPnl: Dec,
+  leverage: z.number().positive(),
+  marginMode: z.enum(["cross", "isolated"]).optional(),
+  /** Hyperliquid public reads: the HIP-3 dex, null = native. */
+  dex: z.string().min(1).nullable().optional(),
+  /** Lighter public reads: the account (sub-account) index. */
+  accountIndex: z.number().int().nonnegative().optional(),
+});
+export const PositionList = z.array(PositionRow);

@@ -422,6 +422,10 @@ sub.on((e) => {
   (Aster / Ondo / QFEX — planned, not yet available). Without it they reject `CAPABILITY_UNSUPPORTED` in a browser.
 - `UserRef` per venue: hyperliquid `{ address }` (no auth), pacifica `{ account }` (Solana address, no
   auth), lighter / lighter-rh `{ accountIndex }`, arcus `{ address, subaccount }` (`null` = account 0, no auth).
+- **Any account, keyless:** the Hyperliquid (`{ address }`) and Pacifica (`{ account }`) user channels
+  need no auth, so `user()` may return ANY public address — a live positions / fills feed of someone
+  else's account. The REST counterpart (one snapshot, also Lighter / Lighter RH / RISEx) is
+  `perp --json -e <venue> account positions --address <addr>` / MCP `get_positions_by_address`.
 - **KNOWN GAP: Aster user channels are not implemented** — `kind: "user"` on aster rejects
   `CAPABILITY_UNSUPPORTED` (no parity; planned, not yet available).
 

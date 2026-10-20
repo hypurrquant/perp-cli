@@ -10,7 +10,8 @@
  */
 
 import { PerpError } from "../errors.js";
-import type { ExchangeAdapter } from "./interface.js";
+import type { ExchangeAdapter, ExchangePosition } from "./interface.js";
+import { requireAddressOfKind, type AddressKind } from "./address.js";
 import type { SpotAdapter } from "./spot-interface.js";
 import type {
   FundingRateBasis, LegacyVenueId, Network, TimeInForce, VenueFundingRate, VenueId, VenueMarket,
@@ -138,6 +139,38 @@ export interface VenuePublicData {
    * costs an extra read (Lighter: the WS market_stats snapshot) skips it (rows fundingRate null).
    */
   fetchMarkets(net: Network, opts?: { funding?: boolean }): Promise<VenueMarket[]>;
+  /**
+   * Keyless open positions of ANY account by its public address (`account positions --address`,
+   * MCP get_positions_by_address). Present = the venue supports it; `addressKind` is then the
+   * address format it takes (checked before any request). Rows are the keyed `getPositions`
+   * mapping (the same mapper) with plain symbols.
+   */
+  addressKind?: AddressKind;
+  fetchPositionsByAddress?(net: Network, address: string, opts: PublicPositionsOptions): Promise<PublicPositionsResult>;
+}
+
+export interface PublicPositionsOptions {
+  /** Lighter: one account of the address (sub-accounts); default every account. */
+  accountIndex?: number;
+}
+
+/** A position read by public address: the keyed row plus where it lives. */
+export interface PublicPosition extends ExchangePosition {
+  /** Hyperliquid: the HIP-3 dex of the row; null = the native perp dex. */
+  dex?: string | null;
+  /** Lighter: the account (sub-account) index the row belongs to. */
+  accountIndex?: number;
+}
+
+export interface PublicPositionsResult {
+  positions: PublicPosition[];
+  /**
+   * Sub-reads that failed while the others succeeded (Hyperliquid: one HIP-3 dex), keyed by
+   * source ("hip3:xyz"). Their rows are unknown — never silently absent: callers surface them.
+   */
+  errors: Record<string, { code: string; message: string }>;
+  /** Human notes on an empty answer ("no Lighter account for this address"). */
+  notes: string[];
 }
 
 // ── Creation ──
@@ -302,6 +335,37 @@ export function listVenues(): VenueDefinition[] {
 
 export function listVenuesWithRole(role: VenueRole): VenueDefinition[] {
   return listVenues().filter(v => v.roles.includes(role));
+}
+
+/** Venues that read positions by public address (VenuePublicData.fetchPositionsByAddress). */
+export function listPublicPositionVenues(): VenueDefinition[] {
+  return listVenues().filter(v => typeof v.publicData.fetchPositionsByAddress === "function" && v.publicData.addressKind !== undefined);
+}
+
+/** CAPABILITY_UNSUPPORTED for a venue without public-address position reads (registry-derived). */
+export function publicPositionsUnsupported(def: VenueDefinition): PerpError {
+  const reason = !def.roles.includes("account")
+    ? `${def.displayName} is available for market data only (no account reads)`
+    : `${def.displayName} publishes positions only to the account itself (signed or API-key reads)`;
+  const supported = listPublicPositionVenues().map(v => v.id).join(", ");
+  return new PerpError("CAPABILITY_UNSUPPORTED", `${def.id} does not support publicPositions — ${reason}`, {
+    venue: def.id, feature: "publicPositions", reason,
+    remediation: `Public-address reads: ${supported}; for your own account: perp -e ${def.id} account positions`,
+  });
+}
+
+/**
+ * Open positions of `address` on `venue`, keyless: unsupported venue → CAPABILITY_UNSUPPORTED,
+ * wrong address format → INVALID_PARAMS, both before any request.
+ */
+export async function fetchPositionsByAddress(venue: string, net: Network, address: string, opts: PublicPositionsOptions = {}): Promise<PublicPositionsResult> {
+  const def = getVenue(venue);
+  const pd = def.publicData;
+  if (pd.fetchPositionsByAddress === undefined || pd.addressKind === undefined) throw publicPositionsUnsupported(def);
+  if (opts.accountIndex !== undefined && def.id !== "lighter" && def.id !== "lighter-rh") {
+    throw new PerpError("INVALID_PARAMS", `--account-index applies to Lighter only (${def.id} has one account per address)`, { exchange: def.id, remediation: "Drop --account-index" });
+  }
+  return pd.fetchPositionsByAddress(net, requireAddressOfKind(def.id, pd.addressKind, address), opts);
 }
 
 export function networkConfig(def: VenueDefinition, net: Network): VenueNetworkConfig {

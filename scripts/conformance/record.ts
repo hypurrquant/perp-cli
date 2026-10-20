@@ -6,6 +6,8 @@
  *                                                   venue, ranges and (WS codec venues) ws fixtures
  *   pnpm conformance:record --all                   every registered venue
  *   pnpm conformance:record --cross                 the cross-venue / CLI ⇄ MCP fixture (cross.json)
+ *   pnpm conformance:record --positions             public-address positions (positions-by-address.json.gz;
+ *                                                   accounts from PERP_CONFORMANCE_ADDRESS_<VENUE>, redacted)
  *
  * Steps (docs/TESTING.md §3.2):
  *   1. record  — the conformance suite runs live with PERP_RECORD=1; every HTTP / WebSocket exchange
@@ -30,8 +32,9 @@ const flag = (name: string): string | null => {
 const venues = flag("--venue");
 const all = args.includes("--all");
 const cross = args.includes("--cross");
-if (venues === null && !all && !cross) {
-  console.error("usage: pnpm conformance:record (--venue <id[,id]> | --all | --cross)");
+const positions = args.includes("--positions");
+if (venues === null && !all && !cross && !positions) {
+  console.error("usage: pnpm conformance:record (--venue <id[,id]> | --all | --cross | --positions)");
   process.exit(2);
 }
 
@@ -44,6 +47,7 @@ if (venues !== null || all) {
   );
 }
 if (cross) files.push("src/__tests__/conformance/cross.conformance.test.ts");
+if (positions) files.push("src/__tests__/conformance/positions.conformance.test.ts");
 
 function vitest(env: Record<string, string>, config: string | null): number {
   const r = spawnSync("pnpm", ["exec", "vitest", "run", ...(config ? ["-c", config] : []), ...files], {
@@ -53,7 +57,7 @@ function vitest(env: Record<string, string>, config: string | null): number {
 }
 
 const filter: Record<string, string> = venues !== null ? { PERP_CONFORMANCE_VENUES: venues } : {};
-console.log(`\n== 1/3 record (live public mainnet) ${venues ?? (all ? "all venues" : "")}${cross ? " + cross" : ""}`);
+console.log(`\n== 1/3 record (live public mainnet) ${venues ?? (all ? "all venues" : "")}${cross ? " + cross" : ""}${positions ? " + positions" : ""}`);
 vitest({ ...filter, PERP_RECORD: "1" }, "vitest.conformance.live.config.ts");
 console.log("\n== 2/3 prune (keep only the exchanges the replay uses)");
 vitest({ ...filter, PERP_CONFORMANCE_PRUNE: "1" }, null);

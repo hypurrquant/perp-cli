@@ -26,7 +26,7 @@ import { z } from "zod";
 import type { ExchangeAdapter } from "./exchanges/interface.js";
 import { hasCredentials, listConfiguredAccountVenues, resolveCredentials, NO_CLI_CREDENTIAL_OPTS } from "./config.js";
 import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
-import { getVenue, listVenues, listVenuesWithRole, networkConfig, READ_ONLY_CREDENTIALS, requireCapabilities, roleUnsupported, type VenueDefinition } from "./exchanges/venue.js";
+import { getVenue, listPublicPositionVenues, listVenues, listVenuesWithRole, networkConfig, READ_ONLY_CREDENTIALS, requireCapabilities, roleUnsupported, type VenueDefinition } from "./exchanges/venue.js";
 import "./exchanges/venues/index.js";
 import type { OrderRequest, VenueId } from "./exchanges/venue-types.js";
 import { venueMarketRow } from "./exchanges/venue-types.js";
@@ -41,6 +41,7 @@ import { invalidateCache } from "./cache.js";
 import { probeVenueHealth } from "./venue-health.js";
 import { getOptionsVenue, listOptionsVenueIds } from "./exchanges/options-venues.js";
 import { fetchAllFundingRates, isRankedComparison } from "./funding-rates.js";
+import { readPositionsByAddress } from "./positions-by-address.js";
 import { loadArbState } from "./arb/state.js";
 import { validateTrade } from "./trade-validator.js";
 import { orderResultJson, symbolMatch } from "./utils.js";
@@ -596,6 +597,29 @@ server.tool(
       const adapter = await getOrCreateAdapter(exchange);
       const positions = await adapter.getPositions();
       return { content: [{ type: "text", text: ok(positions, { exchange, count: positions.length }) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: errOf(e, { exchange }) }], isError: true };
+    }
+  },
+);
+
+server.tool(
+  "get_positions_by_address",
+  `Open positions of ANY account by its public address — keyless, read-only (public venue data; nothing is signed, no key is needed). Venues: ${listPublicPositionVenues().map(v => `${v.id} (${v.publicData.addressKind === "solana" ? "base58 Solana address" : "0x address"})`).join(", ")}. Hyperliquid reads the native dex and every HIP-3 dex (rows carry dex: null | "<dex>"; a dex that fails is listed in meta.errors / meta.warnings — its rows are missing, not absent); Lighter reads every account of the address (rows carry accountIndex; accountIndex narrows). Other venues: CAPABILITY_UNSUPPORTED; a wrong address format: INVALID_PARAMS. Same rows as \`perp -e <venue> account positions --address <addr>\`.`,
+  {
+    exchange: z.string().describe(`Exchange: ${listPublicPositionVenues().map(v => v.id).join(", ")} (aliases accepted)`),
+    address: z.string().describe("Public account address (0x… for hyperliquid / lighter / lighter-rh; base58 Solana for pacifica)"),
+    symbol: z.string().optional().describe("Only this market (plain asset, e.g. BTC)"),
+    accountIndex: z.number().int().nonnegative().optional().describe("Lighter only: one account (sub-account) of the address"),
+  },
+  async ({ exchange, address, symbol, accountIndex }) => {
+    try {
+      const r = await readPositionsByAddress(exchange, MCP_NETWORK, address, { symbol, accountIndex });
+      return { content: [{ type: "text", text: ok(r.positions, {
+        exchange: r.venue, address, source: "public", count: r.positions.length,
+        ...(r.warnings.length > 0 ? { warnings: r.warnings, errors: r.errors } : {}),
+        ...(r.notes.length > 0 ? { notes: r.notes } : {}),
+      }) }] };
     } catch (e) {
       return { content: [{ type: "text", text: errOf(e, { exchange }) }], isError: true };
     }

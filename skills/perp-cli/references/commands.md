@@ -29,13 +29,15 @@ Hyperliquid read-path notes:
 - **kline intervals:** `1m,3m,5m,15m,30m,1h,2h,4h,8h,12h,1d,3d,1w,1M` (anything else → `INVALID_PARAMS`, not retryable). `1M` candles are **30-day buckets**, not calendar months; `1w` candles open **Thursday 00:00 UTC**. Each candle carries `closed` (false on the in-progress last candle).
 - **funding:** `--limit N` = the last N hourly settlements (paged over the venue's 500-row cap; max 5000).
 - **Delisted markets** (meta `isDelisted`, e.g. `MATIC`, every asset of `--dex km`) → `SYMBOL_NOT_FOUND` with `details.reason: "delisted"` on `info` / `trades` / `funding` / `book` / `kline`; orders / positions / history still resolve them. `market hip3` lists live assets only (`assets`), plus `delistedAssets` and `delisted: true` for a dex with no live asset; `deployer` comes from `perpDexs`.
-- **Symbol naming:** `market list` / `info` rows use the display name `BTC-PERP` (HIP-3: `xyz:XYZ100`); `market trades` rows and the WS codec use the raw venue coin `BTC`. Strip `-PERP` to compare.
+- **Symbol naming:** `market list` / `info` rows use the plain coin `BTC` (HIP-3: `xyz:XYZ100`; the wire coin is in `venueSymbol`), as `market trades` rows and the WS codec. `-PERP` arguments still resolve. Keyed `account positions` rows still show `BTC-PERP`; strip `-PERP` to compare.
 - **marginTiers:** a market on a single-tier table (`marginTableId` < 50) reports `[{ lowerBound: 0, maxLeverage: <id> }]` (docs "Margin tiers"), not null.
 
 ## Account (read-only, safe)
 ```bash
 perp --json portfolio -e <VENUE_ID>            # perp balance + spot holdings + 24h funding; venue id or alias (hl, lt, …)
 perp --json -e <EX> account positions          # open positions
+perp --json -e <EX> account positions --address <ADDR>   # ANY account's open positions, keyless (public data; nothing signed)
+perp --json account positions --address <0xADDR>         # every supporting venue: { venues, errors?, notes? }
 perp --json -e <EX> account orders             # open/pending orders
 perp --json -e <EX> account history            # order history
 perp --json -e <EX> account trades             # trade fill history
@@ -46,6 +48,14 @@ perp --json -e <EX> account pnl                # realized + unrealized + funding
 perp --json -e <EX> account twap-orders        # active TWAP orders
 perp --json portfolio                          # cross-exchange unified view
 # funding24h is null (with fundingError) when a venue's funding history is unreadable; totals.fundingIncomplete = true then
+# --address (public-address positions): hyperliquid / lighter / lighter-rh / risex take a 0x address, pacifica a base58
+#   Solana address (a wrong format → INVALID_PARAMS before any request); other venues → CAPABILITY_UNSUPPORTED
+#   (feature publicPositions). Rows = the account positions rows with plain symbols, plus:
+#   hyperliquid: native + EVERY HIP-3 dex (one read each), `dex: null | "<dex>"`; a dex that fails is in
+#     meta.errors["hip3:<dex>"] + meta.warnings — its rows are missing, the others are kept (exit 0).
+#   lighter / lighter-rh: every account (sub-account) of the address, `accountIndex` on each row; zero-size rows
+#     dropped; --account-index <n> narrows (not an account of the address → INVALID_PARAMS). No account → [] + meta.notes.
+#   --symbol <SYM> filters (GOLD matches xyz:GOLD). meta: { address, source: "public" }. MCP: get_positions_by_address.
 perp --json portfolio --arb                    # full dashboard with arb top 5
 ```
 

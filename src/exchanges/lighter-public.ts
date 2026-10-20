@@ -170,7 +170,7 @@ export function lighterBook(venue: string, res: { asks?: unknown; bids?: unknown
   return { bids: bids.slice(0, depth), asks: asks.slice(0, depth) };
 }
 
-async function getJson(venue: LighterVenueId, net: Network, path: string, endpoint: string): Promise<unknown> {
+async function getJson(venue: LighterVenueId, net: Network, path: string, endpoint: string, notFound?: (status: number, text: string) => boolean): Promise<unknown> {
   await acquireRate(`${venue}:${net}`, lighterFamilyRateLimit(venue), endpoint);
   const base = lighterFamilyNetworks(venue)[net].restUrl;
   const res = await fetch(`${base}/api/v1${path}`, { signal: AbortSignal.timeout(15_000) });
@@ -178,6 +178,7 @@ async function getJson(venue: LighterVenueId, net: Network, path: string, endpoi
   if (res.status === 429) throw rateLimitedError(venue, res.headers.get("retry-after"), text);
   const waf = lighterWafChallenge(venue, res.status, text);
   if (waf !== null) throw waf;
+  if (notFound !== undefined && notFound(res.status, text)) return null;
   if (!res.ok) {
     throw new PerpError("EXCHANGE_ERROR", `${venue} GET ${path} HTTP ${res.status}`, { body: text.slice(0, 500) });
   }
@@ -232,6 +233,32 @@ async function fetchPerpDetails(venue: LighterVenueId, net: Network): Promise<Ra
     out.push(d);
   }
   warnExcluded(venue, "malformed market(s)", malformed);
+  return out;
+}
+
+/**
+ * Every account of an L1 (EVM) address — `GET /account?by=l1_address&value=` (public). One
+ * address can own several accounts (sub-accounts). An address without a Lighter account answers
+ * HTTP 400 `{"code":21100,"message":"account not found"}` (live 2026-10-19) → null, not an error.
+ */
+export async function fetchLighterAccountsByL1(venue: LighterVenueId, net: Network, address: string): Promise<Array<Record<string, unknown>> | null> {
+  const json = await getJson(venue, net, `/account?by=l1_address&value=${encodeURIComponent(address)}`, "account",
+    (status, text) => status === 400 && /"code"\s*:\s*21100\b/.test(text));
+  if (json === null) return null;
+  const list = (json as { accounts?: unknown }).accounts;
+  if (!Array.isArray(list)) throw new PerpError("EXCHANGE_ERROR", `${venue} account: missing accounts array`, { exchange: venue });
+  return list as Array<Record<string, unknown>>;
+}
+
+/** Perp price decimals by symbol (upper case) — `GET /orderBooks` `supported_price_decimals`, as the adapter's market map. */
+export async function fetchLighterPriceDecimals(venue: LighterVenueId, net: Network): Promise<Map<string, number>> {
+  const json = await getJson(venue, net, "/orderBooks", "orderBooks");
+  const list = (json as { order_books?: unknown }).order_books;
+  if (!Array.isArray(list)) throw new PerpError("EXCHANGE_ERROR", `${venue} orderBooks: missing order_books array`, { exchange: venue });
+  const out = new Map<string, number>();
+  for (const d of list as Array<Record<string, unknown>>) {
+    if (d.market_type === "perp" && typeof d.symbol === "string" && Number.isInteger(d.supported_price_decimals)) out.set(d.symbol.toUpperCase(), d.supported_price_decimals as number);
+  }
   return out;
 }
 

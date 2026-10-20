@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../../exchanges/venues/index.js";
-import { getVenue, listVenues, type VenueRole } from "../../exchanges/venue.js";
+import { getVenue, listPublicPositionVenues, listVenues, type VenueRole } from "../../exchanges/venue.js";
 import { ErrorEnvelope, issues } from "./contracts.js";
 import { runCli } from "./harness.js";
 
@@ -130,4 +130,55 @@ describe("keyless account reads refuse with a typed signer code on every account
       });
     }
   }
+});
+
+/**
+ * Public-address positions (`account positions --address`): registry-driven. A venue without
+ * VenuePublicData.fetchPositionsByAddress refuses with CAPABILITY_UNSUPPORTED (feature
+ * publicPositions, remediation naming the supporting venues); a supporting venue refuses an address
+ * of the wrong format with INVALID_PARAMS — both before any request or key load.
+ */
+const PUBLIC_POSITION_VENUES = listPublicPositionVenues();
+const EVM = "0x0000000000000000000000000000000000000001";
+const SOL = "So11111111111111111111111111111111111111112";
+describe("account positions --address: unsupported venues refuse before I/O (registry-driven)", () => {
+  it("the registry has supporting venues, each with an address kind", () => {
+    expect(PUBLIC_POSITION_VENUES.map(v => v.id).sort()).toEqual(["hyperliquid", "lighter", "lighter-rh", "pacifica", "risex"]);
+    expect(PUBLIC_POSITION_VENUES.every(v => v.publicData.addressKind === "evm" || v.publicData.addressKind === "solana")).toBe(true);
+  });
+  const supported = new Set(PUBLIC_POSITION_VENUES.map(v => v.id));
+  for (const def of listVenues().filter(v => !supported.has(v.id))) {
+    it(`perp -e ${def.id} account positions --address … → CAPABILITY_UNSUPPORTED (publicPositions), nothing sent`, async () => {
+      const create = def.create === null ? null : vi.spyOn(getVenue(def.id), "create" as never);
+      const r = await runCli(["-e", def.id, "account", "positions", "--address", EVM]);
+      expect(r.docs).toBe(1);
+      expect(r.envelope.error?.code, r.envelope.error?.message).toBe("CAPABILITY_UNSUPPORTED");
+      expect(r.envelope.error?.message).toMatch(/publicPositions/);
+      expect(String(r.envelope.error?.remediation)).toContain([...supported].sort()[0]);
+      expect(issues(ErrorEnvelope, r.envelope)).toBe("");
+      expect(fetchMock).not.toHaveBeenCalled();
+      if (create !== null) expect(create).not.toHaveBeenCalled();
+    });
+  }
+});
+
+describe("account positions --address: a wrong address format is INVALID_PARAMS before I/O", () => {
+  const wrong = (kind: string | undefined): string[] => (kind === "solana" ? [EVM, "not-an-address", "0x1234"] : [SOL, "not-an-address", "0x1234", `${EVM}00`]);
+  for (const def of PUBLIC_POSITION_VENUES) {
+    for (const addr of wrong(def.publicData.addressKind)) {
+      it(`perp -e ${def.id} account positions --address ${addr} → INVALID_PARAMS naming the expected form`, async () => {
+        const r = await runCli(["-e", def.id, "account", "positions", "--address", addr]);
+        expect(r.docs).toBe(1);
+        expect(r.envelope.error?.code, r.envelope.error?.message).toBe("INVALID_PARAMS");
+        expect(r.envelope.error?.message).toMatch(def.publicData.addressKind === "solana" ? /base58 Solana address/ : /EVM 0x address/);
+        expect(issues(ErrorEnvelope, r.envelope)).toBe("");
+        expect(fetchMock).not.toHaveBeenCalled();
+      });
+    }
+  }
+  it("--account-index on a venue with one account per address → INVALID_PARAMS, nothing sent", async () => {
+    const r = await runCli(["-e", "hyperliquid", "account", "positions", "--address", EVM, "--account-index", "1"]);
+    expect(r.envelope.error?.code).toBe("INVALID_PARAMS");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

@@ -6,6 +6,25 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [0.15.1] — 2026-10-20
 
+### NEW: positions of any account by public address (`account positions --address`, MCP `get_positions_by_address`)
+
+- `perp -e <venue> account positions --address <addr>` reads the open positions of ANY account from public venue data, keyless: no key is loaded, nothing is signed. Without `-e` it reads every supporting venue (`{ venues, errors?, notes? }`). MCP: `get_positions_by_address { exchange, address, symbol?, accountIndex? }`.
+- **Venues** (registry-driven: `VenuePublicData.fetchPositionsByAddress` + `addressKind`):
+  - **Hyperliquid** (0x): `clearinghouseState` of the native dex plus every HIP-3 dex of `perpDexs`, one read each. Rows carry `dex: null | "<dex>"` and HIP-3 rows keep the prefixed symbol (`xyz:GOLD`). A dex (or the dex list) that fails is listed in `meta.errors["hip3:<dex>"]` and `meta.warnings`: its rows are missing, the others are kept.
+  - **Lighter / Lighter RH** (0x): every account (sub-account) of the address. Rows are tagged `accountIndex`, and `--account-index <n>` narrows to one. The venue keeps zero-size rows for every market an account touched; those are dropped. An address without an account is `[]` plus `meta.notes`.
+  - **Pacifica** (base58 Solana).
+  - **RISEx** (0x).
+- **Same mappers:** rows use the same mappers as the keyed `account positions` (`hlPositionRows`, `lighterPositionRows`, `pacificaPositionRows`, the RISEx adapter's own read), with plain symbols.
+- **Errors:** another venue → `CAPABILITY_UNSUPPORTED` (feature `publicPositions`; the remediation lists the supporting venues). An address of the wrong format → `INVALID_PARAMS` naming the expected form. Both are returned before any request.
+- **Tests:**
+  - conformance cell `positions.conformance.test.ts` (recorded live keyless, addresses redacted to dummies, account fields reduced: fixture `positions-by-address.json.gz`);
+  - registry-driven refusal and address-format tables;
+  - CLI ⇄ MCP value parity;
+  - Lighter zero-size and sub-account handling;
+  - an HL HIP-3 fan-out with one dex failing.
+  Record with `pnpm conformance:record --positions`.
+- **Not in this release:** `portfolio --address`.
+
 ### Fixed
 
 - **Ondo `market kline`:** candles opened at the request minute (`:01`, `:06`) instead of the interval boundary, and the last row was a zero-volume candle opening after the requested end. `GET /v1/perps/candles` buckets minute-based resolutions from the requested `from`; the adapter now floors `from` to the interval boundary (day / week / month are already venue-aligned) and drops candles opening after `--end`. The endpoint stays the authenticated `/v1/perps/candles` (string decimals); without a registered Ondo key `market kline` refuses with `NO_SIGNER_AVAILABLE`.
@@ -176,6 +195,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - `arb scan --rates|--compare --include-unverified`, MCP `get_funding_rates` with `includeUnverified`: `longExchange` / `shortExchange` / `maxSpreadAnnual` / `estHourlyIncomeUsd` are `null` on a row with fewer than two verified rates (was a pair that could include an unverified venue); on other rows the pair and spread exclude unverified rates. Plainly wrong before (unverified rates are display only).
 - `arb scan --rates --json`, MCP `get_funding_rates`: `data.minSpread` / `data.belowMinSpread` (numbers; CLI also in `meta`) — additive.
 - Ondo market rows `fundingRateKind`, `arb scan` / MCP `get_funding_rates` Ondo `rateKind`: null → `"lastSettled"`. Hyperliquid / Lighter / Lighter RH / Pacifica funding rows `nextFundingTime`: null → the next UTC hour mark (ms).
+- `account positions --address` (new), MCP `get_positions_by_address` (new): `PositionRow[]` (meta `address`, `source: "public"`, `warnings?`, `errors?`, `notes?`) — additive. `ApiResponse.meta` gains the optional `address` / `source` / `errors` / `notes` fields.
 - perp-ws `capabilities.notes` text: `book` / `trades` / `user` notes and the Aster `user` note no longer name a version ("Planned, not yet available"); the `CAPABILITY_UNSUPPORTED` remediation of `book` / `trades` likewise.
 
 ### Testing (no runtime change)

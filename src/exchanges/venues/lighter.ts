@@ -14,6 +14,11 @@ const publicData: VenuePublicData = {
   async fetchMarkets(net, opts) {
     return (await import("../lighter-public.js")).lighterPublicData("lighter").fetchMarkets(net, opts);
   },
+  // Keyless positions of any account by public address (account positions --address).
+  addressKind: "evm",
+  async fetchPositionsByAddress(net, address, opts) {
+    return (await import("../public-positions.js")).lighterPositionsByAddress("lighter", net, address, opts);
+  },
 };
 
 export const lighterVenue: VenueDefinition = {

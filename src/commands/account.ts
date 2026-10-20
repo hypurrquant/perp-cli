@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { listConfiguredAccountVenues } from "../config.js";
 import type { ExchangeAdapter, ExchangePosition, ExchangeOrder } from "../exchanges/index.js";
+import type { PublicPosition } from "../exchanges/venue.js";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk, jsonError, symbolMatch, withJsonErrors } from "../utils.js";
 import chalk from "chalk";
 import { hasPacificaSdk, isDexCapable } from "../exchanges/capabilities.js";
@@ -76,12 +77,76 @@ export function registerAccountCommands(
       .filter(r => r.items.length > 0);
   }
 
+  /** `account positions --address`: keyless public read (registry: VenuePublicData.fetchPositionsByAddress). */
+  async function positionsByAddress(address: string, venue: string | null, opts: { accountIndex?: string; symbol?: string; hip3?: boolean }): Promise<void> {
+    const { readPositionsByAddress, readPositionsByAddressAll } = await import("../positions-by-address.js");
+    const { networkOf } = await import("../cli-flags.js");
+    let accountIndex: number | undefined;
+    if (opts.accountIndex !== undefined) {
+      if (!/^\d+$/.test(opts.accountIndex.trim())) throw new PerpError("INVALID_PARAMS", `--account-index must be a whole number, got "${opts.accountIndex}"`);
+      accountIndex = Number(opts.accountIndex);
+    }
+    const net = networkOf(program);
+    const row = (p: PublicPosition, ex: string | null): string[] => [
+      chalk.white.bold(p.symbol),
+      ...(ex !== null ? [chalk.gray(ex)] : []),
+      p.dex != null ? chalk.magenta(p.dex) : p.accountIndex !== undefined ? chalk.gray(String(p.accountIndex)) : chalk.gray("-"),
+      p.side === "long" ? chalk.green("LONG") : chalk.red("SHORT"),
+      p.size,
+      `$${formatUsd(p.entryPrice)}`,
+      `$${formatUsd(p.markPrice)}`,
+      p.liquidationPrice === null ? chalk.gray("-") : `$${formatUsd(p.liquidationPrice)}`,
+      formatPnl(p.unrealizedPnl),
+      `${p.leverage}x`,
+    ];
+    if (venue !== null) {
+      const r = await readPositionsByAddress(venue, net, address, { accountIndex, symbol: opts.symbol });
+      if (isJson()) {
+        return printJson(jsonOk(r.positions, {
+          exchange: r.venue, address, source: "public",
+          ...(r.warnings.length > 0 ? { warnings: r.warnings, errors: r.errors } : {}),
+          ...(r.notes.length > 0 ? { notes: r.notes } : {}),
+        }));
+      }
+      for (const w of r.warnings) console.log(chalk.yellow(`  ${w}`));
+      if (r.positions.length === 0) {
+        console.log(chalk.gray(`\n  No open positions for ${address} on ${r.venue}${r.notes.length > 0 ? ` (${r.notes.join("; ")})` : ""}.\n`));
+        return;
+      }
+      console.log(makeTable(["Symbol", "Dex/Acct", "Side", "Size", "Entry", "Mark", "Liq", "PnL", "Lev"], r.positions.map(p => row(p, null))));
+      return;
+    }
+    const all = await readPositionsByAddressAll(net, address, { accountIndex, symbol: opts.symbol });
+    if (isJson()) {
+      return printJson(jsonOk({
+        venues: all.venues,
+        ...(Object.keys(all.errors).length > 0 ? { errors: all.errors } : {}),
+        ...(Object.keys(all.notes).length > 0 ? { notes: all.notes } : {}),
+      }, { address, source: "public", ...(all.warnings.length > 0 ? { warnings: all.warnings } : {}) }));
+    }
+    const rows = Object.entries(all.venues).flatMap(([ex, ps]) => ps.map(p => row(p, ex)));
+    if (rows.length > 0) console.log(makeTable(["Symbol", "Exch", "Dex/Acct", "Side", "Size", "Entry", "Mark", "Liq", "PnL", "Lev"], rows));
+    else console.log(chalk.gray(`\n  No open positions for ${address} on ${Object.keys(all.venues).join(", ") || "any venue"}.\n`));
+    for (const [ex, e] of Object.entries(all.errors)) console.log(chalk.gray(`  ${ex}: ${e.code} ${e.message}`));
+    for (const [ex, n] of Object.entries(all.notes)) console.log(chalk.gray(`  ${ex}: ${n.join("; ")}`));
+  }
+
   account
     .command("positions")
-    .description("Show open positions")
+    .description("Show open positions (yours; or any account's, keyless, with --address)")
     .option("--hip3", "Include HIP-3 dex positions (Hyperliquid)")
-    .action(async (opts: { hip3?: boolean }) => {
+    .option("--address <address>", "Read this public address instead of your account — keyless (hyperliquid, lighter, lighter-rh: 0x address; pacifica: Solana address). Without -e: every venue that supports it")
+    .option("--account-index <n>", "With --address on Lighter: only this account (sub-account) of the address")
+    .option("--symbol <symbol>", "With --address: only this market (plain asset, e.g. BTC)")
+    .action(async (opts: { hip3?: boolean; address?: string; accountIndex?: string; symbol?: string }) => {
       const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
+
+      if (opts.address !== undefined) {
+        return void await withJsonErrors(isJson(), () => positionsByAddress(opts.address as string, explicitExchange ? String(program.opts().exchange) : null, opts));
+      }
+      if (opts.accountIndex !== undefined || opts.symbol !== undefined) {
+        throw new PerpError("INVALID_PARAMS", "--account-index / --symbol apply to --address reads", { remediation: "Add --address <address>, or drop the option" });
+      }
 
       if (!explicitExchange && getAdapterForExchange) {
         const EXCHANGES = await listConfiguredAccountVenues();
