@@ -442,6 +442,47 @@ function hlSide(v: unknown, endpoint: string): "buy" | "sell" {
   throw new PerpError("EXCHANGE_ERROR", `Hyperliquid ${endpoint} row with unknown side ${JSON.stringify(v)}`, { exchange: "hyperliquid" });
 }
 
+/**
+ * Open positions of one clearinghouseState (info `clearinghouseState` {user[, dex]}): rows with
+ * szi 0 dropped. The ONE mapper of the keyed `getPositions` and the public-address read
+ * (`account positions --address`); `symbolOf` names the row (keyed: the adapter's display name,
+ * public: the plain coin — "BTC", HIP-3 "xyz:GOLD").
+ */
+export function hlPositionRows(state: Record<string, unknown>, symbolOf: (coin: string) => string): ExchangePosition[] {
+  const positions = ((state as Record<string, unknown>)?.assetPositions ?? []) as Record<string, unknown>[];
+  return positions
+    .filter((p: Record<string, unknown>) => {
+      const pos = (p.position ?? p) as Record<string, unknown>;
+      return parseFiniteVenueNumber(pos.szi, "position.szi", "hyperliquid") !== 0;
+    })
+    .map((p: Record<string, unknown>) => {
+      const pos = (p.position ?? p) as Record<string, unknown>;
+      const szi = parseFiniteVenueNumber(pos.szi, "position.szi", "hyperliquid");
+      const positionValue = pos.positionValue !== undefined && pos.positionValue !== null
+        ? parseFiniteVenueNumber(pos.positionValue, "position.positionValue", "hyperliquid")
+        : 0;
+      return {
+        symbol: symbolOf(String(pos.coin ?? "")),
+        side: szi > 0 ? ("long" as const) : ("short" as const),
+        size: String(Math.abs(szi)),
+        entryPrice: String(pos.entryPx ?? "0"),
+        // clearinghouseState has no per-position mark: positionValue / |szi| is computed, so it is
+        // formatted (no "2727.2000000000003").
+        markPrice: szi !== 0 && positionValue !== 0
+          ? formatComputedPrice(positionValue / Math.abs(szi))
+          : String(pos.markPx ?? "0"),
+        liquidationPrice: pos.liquidationPx != null ? String(pos.liquidationPx) : null,
+        unrealizedPnl: String(pos.unrealizedPnl ?? "0"),
+        leverage: parseFiniteVenueNumber(
+          (pos.leverage as { value?: number })?.value,
+          "position.leverage.value",
+          "hyperliquid",
+          { defaultValue: 1 },
+        ),
+      };
+    });
+}
+
 export class HyperliquidAdapter implements ExchangeAdapter {
   readonly name = "hyperliquid";
   readonly chain = "evm";
@@ -1270,40 +1311,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   async getPositions(): Promise<ExchangePosition[]> {
-    const state = await this._getClearinghouseState();
-    const positions = ((state as Record<string, unknown>)?.assetPositions ?? []) as Record<string, unknown>[];
-
-    return positions
-      .filter((p: Record<string, unknown>) => {
-        const pos = (p.position ?? p) as Record<string, unknown>;
-        return parseFiniteVenueNumber(pos.szi, "position.szi", "hyperliquid") !== 0;
-      })
-      .map((p: Record<string, unknown>) => {
-        const pos = (p.position ?? p) as Record<string, unknown>;
-        const szi = parseFiniteVenueNumber(pos.szi, "position.szi", "hyperliquid");
-        const positionValue = pos.positionValue !== undefined && pos.positionValue !== null
-          ? parseFiniteVenueNumber(pos.positionValue, "position.positionValue", "hyperliquid")
-          : 0;
-        return {
-          symbol: this._displaySymbol(String(pos.coin ?? "")),
-          side: szi > 0 ? ("long" as const) : ("short" as const),
-          size: String(Math.abs(szi)),
-          entryPrice: String(pos.entryPx ?? "0"),
-          // clearinghouseState has no per-position mark: positionValue / |szi| is computed, so it is
-          // formatted (no "2727.2000000000003").
-          markPrice: szi !== 0 && positionValue !== 0
-            ? formatComputedPrice(positionValue / Math.abs(szi))
-            : String(pos.markPx ?? "0"),
-          liquidationPrice: pos.liquidationPx != null ? String(pos.liquidationPx) : null,
-          unrealizedPnl: String(pos.unrealizedPnl ?? "0"),
-          leverage: parseFiniteVenueNumber(
-            (pos.leverage as { value?: number })?.value,
-            "position.leverage.value",
-            "hyperliquid",
-            { defaultValue: 1 },
-          ),
-        };
-      });
+    return hlPositionRows(await this._getClearinghouseState(), (coin) => this._displaySymbol(coin));
   }
 
   /**

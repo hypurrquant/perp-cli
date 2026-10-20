@@ -23,7 +23,8 @@ import { isPacificaPerpetual } from "../ws/pacifica-instrument.js";
 import { randomUUID } from "crypto";
 import { PerpError, extractErrorMessage, isDefiniteOrderFailure, orderNotSent, orderOutcomeUnknown, noAccountKeyError } from "../errors.js";
 import { parseFiniteVenueNumber, venueRateField } from "../utils/numeric.js";
-import type { MarketInfo } from "../pacifica/types/market.js";
+import type { MarketInfo, PriceInfo } from "../pacifica/types/market.js";
+import type { Position } from "../pacifica/types/position.js";
 import type { TimeInForce as PacificaTif } from "../pacifica/types/order.js";
 import type { IocOutcome } from "./ioc-outcome.js";
 import { unsupported, validateLegacyTif } from "./trading-v2.js";
@@ -444,6 +445,90 @@ function pacificaField(row: Record<string, unknown>, key: string, endpoint: stri
   throw new PerpError("EXCHANGE_ERROR", `Pacifica ${endpoint} row without a readable ${key}: ${JSON.stringify(row).slice(0, 160)}`, { exchange: "pacifica" });
 }
 
+/**
+ * Open positions of one Pacifica account (`GET /positions?account=`), marked with `/info/prices`.
+ * The ONE mapper of the keyed `getPositions` and the public-address read: unresolved leverage is
+ * read from the account's `/account/settings` (public, by address), then the market max.
+ */
+export async function pacificaPositionRows(
+  positions: Position[],
+  prices: PriceInfo[],
+  deps: { accountSettings: () => Promise<unknown>; maxLeverage: () => Promise<Map<string, number | null>> },
+): Promise<ExchangePosition[]> {
+  const priceMap = new Map(prices.map((p) => [p.symbol, p]));
+
+  const mapped = positions.map((p) => {
+    const mark = priceMap.get(p.symbol)?.mark ?? p.mark_price ?? "0";
+    const side = p.side === "bid" ? "long" : "short";
+    const size = parseFiniteVenueNumber(p.amount, "position.amount", "pacifica");
+    const entry = parseFiniteVenueNumber(p.entry_price, "position.entry_price", "pacifica");
+    const markNum = parseFiniteVenueNumber(mark, "position.mark", "pacifica");
+
+    // API often returns unrealized_pnl=0 — compute from price delta when needed
+    let upnl = parseFiniteVenueNumber(p.unrealized_pnl, "position.unrealized_pnl", "pacifica");
+    if (upnl === 0 && size > 0 && entry > 0 && markNum > 0) {
+      const dir = side === "long" ? 1 : -1;
+      upnl = (markNum - entry) * size * dir;
+    }
+
+    // Leverage, in order: (1) the API's own `leverage` when present; (2) for an ISOLATED
+    // position, entry-notional / margin — the docs define `margin` as "Amount of margin
+    // allocated to an isolated position (only shown when isolated)", so a cross position
+    // reports "0" here; (3)/(4) resolved below from GET /account/settings, then the market max.
+    const marginNum = parseFiniteVenueNumber(p.margin ?? p.margin_used, "position.margin", "pacifica", { defaultValue: 0 });
+    const apiLev = typeof p.leverage === "number" && p.leverage > 0 ? p.leverage : 0;
+    const entryNotional = size * entry;
+    const derivedLev = marginNum > 0 && entryNotional > 0 ? Math.round(entryNotional / marginNum) : 0;
+
+    return {
+      symbol: p.symbol,
+      side: side as "long" | "short",
+      size: String(p.amount),
+      entryPrice: String(p.entry_price),
+      markPrice: mark,
+      liquidationPrice: p.liquidation_price != null ? String(p.liquidation_price) : null,
+      unrealizedPnl: upnl.toFixed(4),
+      // 0 = unresolved; resolved from the account settings / market max below.
+      leverage: apiLev > 0 ? apiLev : derivedLev,
+    };
+  });
+
+  // Unresolved (cross) positions: (3) the symbol's entry in GET /account/settings
+  // `margin_settings` — "Current leverage set by the user"; (4) no entry = the symbol is at its
+  // default, and the docs (get-account-settings) say "all markets have margin settings default
+  // to cross margin and leverage default to max ... will return blank" → the market's max
+  // leverage. Neither known → EXCHANGE_ERROR (never a fabricated value). Both reads happen ONLY
+  // when something is unresolved; a failure of either propagates.
+  if (mapped.some((m) => m.leverage <= 0)) {
+    const settings = await deps.accountSettings() as { margin_settings?: unknown } | null;
+    if (settings === null || typeof settings !== "object" || !Array.isArray(settings.margin_settings)) {
+      throw new PerpError("EXCHANGE_ERROR", `Pacifica /account/settings returned no margin_settings list (got ${JSON.stringify(settings).slice(0, 160)})`, { exchange: "pacifica" });
+    }
+    const setLev = new Map<string, number>();
+    for (const s of settings.margin_settings as Array<{ symbol?: unknown; leverage?: unknown }>) {
+      if (typeof s?.symbol !== "string" || typeof s.leverage !== "number" || !(s.leverage > 0)) {
+        throw new PerpError("EXCHANGE_ERROR", `Pacifica /account/settings: malformed margin_settings entry ${JSON.stringify(s)}`, { exchange: "pacifica" });
+      }
+      setLev.set(s.symbol, s.leverage);
+    }
+    let maxLevMap: Map<string, number | null> | null = null;
+    for (const m of mapped) {
+      if (m.leverage > 0) continue;
+      const configured = setLev.get(m.symbol);
+      if (configured !== undefined) { m.leverage = configured; continue; }
+      if (maxLevMap === null) maxLevMap = await deps.maxLeverage();
+      const max = maxLevMap.get(m.symbol);
+      if (typeof max !== "number" || !(max > 0)) {
+        throw new PerpError("EXCHANGE_ERROR", `Pacifica ${m.symbol}: the position's leverage cannot be determined (no leverage on the position, no /account/settings entry, and no max leverage for the market)`, {
+          exchange: "pacifica", remediation: "Check the market: perp -e pacifica market info " + m.symbol,
+        });
+      }
+      m.leverage = max;
+    }
+  }
+  return mapped;
+}
+
 export class PacificaAdapter implements ExchangeAdapter {
   readonly name = "pacifica";
   readonly chain = "solana";
@@ -842,78 +927,10 @@ export class PacificaAdapter implements ExchangeAdapter {
       this._getPositions(),
       this._getPrices(),
     ]);
-    const priceMap = new Map(prices.map((p) => [p.symbol, p]));
-
-    const mapped = positions.map((p) => {
-      const mark = priceMap.get(p.symbol)?.mark ?? p.mark_price ?? "0";
-      const side = p.side === "bid" ? "long" : "short";
-      const size = parseFiniteVenueNumber(p.amount, "position.amount", "pacifica");
-      const entry = parseFiniteVenueNumber(p.entry_price, "position.entry_price", "pacifica");
-      const markNum = parseFiniteVenueNumber(mark, "position.mark", "pacifica");
-
-      // API often returns unrealized_pnl=0 — compute from price delta when needed
-      let upnl = parseFiniteVenueNumber(p.unrealized_pnl, "position.unrealized_pnl", "pacifica");
-      if (upnl === 0 && size > 0 && entry > 0 && markNum > 0) {
-        const dir = side === "long" ? 1 : -1;
-        upnl = (markNum - entry) * size * dir;
-      }
-
-      // Leverage, in order: (1) the API's own `leverage` when present; (2) for an ISOLATED
-      // position, entry-notional / margin — the docs define `margin` as "Amount of margin
-      // allocated to an isolated position (only shown when isolated)", so a cross position
-      // reports "0" here; (3)/(4) resolved below from GET /account/settings, then the market max.
-      const marginNum = parseFiniteVenueNumber(p.margin ?? p.margin_used, "position.margin", "pacifica", { defaultValue: 0 });
-      const apiLev = typeof p.leverage === "number" && p.leverage > 0 ? p.leverage : 0;
-      const entryNotional = size * entry;
-      const derivedLev = marginNum > 0 && entryNotional > 0 ? Math.round(entryNotional / marginNum) : 0;
-
-      return {
-        symbol: p.symbol,
-        side: side as "long" | "short",
-        size: String(p.amount),
-        entryPrice: String(p.entry_price),
-        markPrice: mark,
-        liquidationPrice: p.liquidation_price != null ? String(p.liquidation_price) : null,
-        unrealizedPnl: upnl.toFixed(4),
-        // 0 = unresolved; resolved from the account settings / market max below.
-        leverage: apiLev > 0 ? apiLev : derivedLev,
-      };
+    return pacificaPositionRows(positions, prices, {
+      accountSettings: () => this.client.getAccountSettings(this.account),
+      maxLeverage: async () => new Map((await this.getMarkets()).map((mk) => [mk.symbol, mk.maxLeverage])),
     });
-
-    // Unresolved (cross) positions: (3) the symbol's entry in GET /account/settings
-    // `margin_settings` — "Current leverage set by the user"; (4) no entry = the symbol is at its
-    // default, and the docs (get-account-settings) say "all markets have margin settings default
-    // to cross margin and leverage default to max ... will return blank" → the market's max
-    // leverage. Neither known → EXCHANGE_ERROR (never a fabricated value). Both reads happen ONLY
-    // when something is unresolved; a failure of either propagates.
-    if (mapped.some((m) => m.leverage <= 0)) {
-      const settings = await this.client.getAccountSettings(this.account) as { margin_settings?: unknown } | null;
-      if (settings === null || typeof settings !== "object" || !Array.isArray(settings.margin_settings)) {
-        throw new PerpError("EXCHANGE_ERROR", `Pacifica /account/settings returned no margin_settings list (got ${JSON.stringify(settings).slice(0, 160)})`, { exchange: "pacifica" });
-      }
-      const setLev = new Map<string, number>();
-      for (const s of settings.margin_settings as Array<{ symbol?: unknown; leverage?: unknown }>) {
-        if (typeof s?.symbol !== "string" || typeof s.leverage !== "number" || !(s.leverage > 0)) {
-          throw new PerpError("EXCHANGE_ERROR", `Pacifica /account/settings: malformed margin_settings entry ${JSON.stringify(s)}`, { exchange: "pacifica" });
-        }
-        setLev.set(s.symbol, s.leverage);
-      }
-      let maxLevMap: Map<string, number | null> | null = null;
-      for (const m of mapped) {
-        if (m.leverage > 0) continue;
-        const configured = setLev.get(m.symbol);
-        if (configured !== undefined) { m.leverage = configured; continue; }
-        if (maxLevMap === null) maxLevMap = new Map((await this.getMarkets()).map((mk) => [mk.symbol, mk.maxLeverage]));
-        const max = maxLevMap.get(m.symbol);
-        if (typeof max !== "number" || !(max > 0)) {
-          throw new PerpError("EXCHANGE_ERROR", `Pacifica ${m.symbol}: the position's leverage cannot be determined (no leverage on the position, no /account/settings entry, and no max leverage for the market)`, {
-            exchange: "pacifica", remediation: "Check the market: perp -e pacifica market info " + m.symbol,
-          });
-        }
-        m.leverage = max;
-      }
-    }
-    return mapped;
   }
 
   /**

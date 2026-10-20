@@ -483,6 +483,39 @@ export function lighterRowCreatedMs(row: Record<string, unknown>): number | null
  * leverage = floor(10000 / bps), which returns the integer leverage that was set. margin_mode:
  * 0 cross, 1 isolated (the values updateLeverage signs). Anything else throws — never a guess.
  */
+/**
+ * Open positions of one Lighter account (`GET /account` `accounts[].positions[]`): the venue lists
+ * every market the account ever traded or configured, so rows with `position` 0 are dropped. The
+ * ONE mapper of the keyed `getPositions` and the public-address read; `priceDecimalsOf` formats
+ * the computed mark (position_value / size) to the market's price decimals when known.
+ */
+export function lighterPositionRows(positions: unknown, venue: string, priceDecimalsOf: (symbol: string) => number | undefined): ExchangePosition[] {
+  return ((positions as Record<string, unknown>[] | undefined) ?? [])
+    .filter((p: Record<string, unknown>) => parseFiniteVenueNumber(p.position, "position", "lighter") !== 0)
+    .map((p: Record<string, unknown>) => {
+      const posSize = parseFiniteVenueNumber(p.position, "position", "lighter");
+      const positionValue = parseFiniteVenueNumber(p.position_value, "position_value", "lighter");
+      return {
+        symbol: String(p.symbol || `Market-${p.market_id}`),
+        side: (Number(p.sign) > 0 ? "long" : "short") as "long" | "short",
+        size: String(Math.abs(posSize)),
+        entryPrice: String(p.avg_entry_price || "0"),
+        markPrice: (() => {
+          if (posSize === 0) return "0";
+          const rawMark = positionValue / Math.abs(posSize);
+          const priceDec = priceDecimalsOf(String(p.symbol || ""));
+          return priceDec !== undefined ? rawMark.toFixed(priceDec) : formatComputedPrice(rawMark);
+        })(),
+        // The venue reports "0" when the position has no liquidation price (e.g. cross margin
+        // well covered): that is "none", not a price.
+        liquidationPrice: Number(p.liquidation_price) > 0 ? String(p.liquidation_price) : null,
+        unrealizedPnl: String(p.unrealized_pnl || "0"),
+        // The leverage CONFIGURED for the market (what `trade leverage` set) — not notional / equity.
+        ...lighterPositionSettings(p, venue),
+      };
+    });
+}
+
 export function lighterPositionSettings(p: Record<string, unknown>, venue: string): { leverage: number; marginMode: "cross" | "isolated" } {
   const pct = typeof p.initial_margin_fraction === "string" && /^\d+(\.\d+)?$/.test(p.initial_margin_fraction) ? Number(p.initial_margin_fraction) : NaN;
   const bps = Math.round(pct * 100);
@@ -1552,30 +1585,7 @@ export class LighterAdapter implements ExchangeAdapter {
     const acct = await this.fetchAccount();
     if (!acct) return [];
 
-    return ((acct.positions as unknown as Record<string, unknown>[]) ?? [])
-      .filter((p: Record<string, unknown>) => parseFiniteVenueNumber(p.position, "position", "lighter") !== 0)
-      .map((p: Record<string, unknown>) => {
-        const posSize = parseFiniteVenueNumber(p.position, "position", "lighter");
-        const positionValue = parseFiniteVenueNumber(p.position_value, "position_value", "lighter");
-        return {
-          symbol: String(p.symbol || `Market-${p.market_id}`),
-          side: (Number(p.sign) > 0 ? "long" : "short") as "long" | "short",
-          size: String(Math.abs(posSize)),
-          entryPrice: String(p.avg_entry_price || "0"),
-          markPrice: (() => {
-            if (posSize === 0) return "0";
-            const rawMark = positionValue / Math.abs(posSize);
-            const priceDec = this._marketDecimals.get(String(p.symbol || "").toUpperCase())?.price;
-            return priceDec !== undefined ? rawMark.toFixed(priceDec) : formatComputedPrice(rawMark);
-          })(),
-          // The venue reports "0" when the position has no liquidation price (e.g. cross margin
-          // well covered): that is "none", not a price.
-          liquidationPrice: Number(p.liquidation_price) > 0 ? String(p.liquidation_price) : null,
-          unrealizedPnl: String(p.unrealized_pnl || "0"),
-          // The leverage CONFIGURED for the market (what `trade leverage` set) — not notional / equity.
-          ...lighterPositionSettings(p, this.name),
-        };
-      });
+    return lighterPositionRows(acct.positions, this.name, (sym) => this._marketDecimals.get(sym.toUpperCase())?.price);
   }
 
   /**
