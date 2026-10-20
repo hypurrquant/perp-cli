@@ -199,6 +199,8 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - `arb scan --rates --json`, MCP `get_funding_rates`: `data.minSpread` / `data.belowMinSpread` (numbers; CLI also in `meta`) — additive.
 - Ondo market rows `fundingRateKind`, `arb scan` / MCP `get_funding_rates` Ondo `rateKind`: null → `"lastSettled"`. Hyperliquid / Lighter / Lighter RH / Pacifica funding rows `nextFundingTime`: null → the next UTC hour mark (ms).
 - `account positions --address` (new), MCP `get_positions_by_address` (new): `PositionRow[]` (meta `address`, `source: "public"`, `warnings?`, `errors?`, `notes?`) — additive. `ApiResponse.meta` gains the optional `address` / `source` / `errors` / `notes` fields.
+- Pacifica address inputs (`print positions|history|events|cancel --account`, `vault positions|info|deposit --account`, MCP Pacifica earn tools, every PacificaClient account / Print / vault read): a non-Solana address (an EVM `0x…` address, or base58-looking text that is not a 32-byte key) answered `ok: true` with `[]` / empty data (the venue's `success: true, []`); it is now `INVALID_PARAMS` before any request. Plainly wrong before (a wrong address read as "nothing there").
+- `account settings -e pacifica`, `account twap-orders -e pacifica` without a configured key: `ok: true` (the throwaway keypair's empty data) → `NO_SIGNER_AVAILABLE`. `account margin <sym>` errors: the standard envelope (now with `remediation`; exit 1).
 - perp-ws `capabilities.notes` text: `book` / `trades` / `user` notes and the Aster `user` note no longer name a version ("Planned, not yet available"); the `CAPABILITY_UNSUPPORTED` remediation of `book` / `trades` likewise.
 
 ### Testing (no runtime change)
