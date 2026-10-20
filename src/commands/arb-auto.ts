@@ -878,6 +878,8 @@ export function registerArbAutoCommands(
       const marginUnknownNotified = new Set<string>();
       // Track close times per symbol to prevent close→re-entry loops
       const closeCooldowns = new Map<string, number>(); // symbol → close timestamp ms
+      // --symbols entries already reported as resolving to another canonical symbol (logged once).
+      const aliasNoted = new Set<string>();
       // Consecutive definite close failures per symbol (quarantined at MAX_PAIR_CLOSE_FAILURES)
       const closeFailures = new Map<string, number>();
 
@@ -1324,7 +1326,14 @@ export function registerArbAutoCommands(
             else { const k = reason.replace(/[-\d.]+/g, "#"); skipCounts.set(k, (skipCounts.get(k) ?? 0) + 1); }
           };
           for (const sym of filterSymbols ?? []) {
-            if (!filtered.some(x => x.symbol === sym)) console.log(chalk.gray(`  ${now} SKIP ${sym}: not in this cycle's funding scan (no rate on two compared venues)`));
+            // A --symbols entry may be a venue form (kPEPE): it monitors the canonical row it resolves to.
+            const hit = filtered.find(x => matchesSymbolFilter(x, [sym]));
+            if (hit === undefined) console.log(chalk.gray(`  ${now} SKIP ${sym}: not in this cycle's funding scan (no rate on two compared venues)`));
+            else if (hit.symbol !== sym && !aliasNoted.has(sym)) {
+              aliasNoted.add(sym);
+              const forms = Object.entries(hit.venueSymbols ?? {}).map(([v, vs]) => `${v} ${vs}`).join(" / ");
+              console.log(chalk.gray(`  ${now} MONITOR ${sym} → ${hit.symbol} (canonical${forms !== "" ? `; ${forms}` : ""})`));
+            }
           }
           if (openPositions.length >= maxPositions) {
             console.log(chalk.gray(`  ${now} NO ENTRY: max positions reached (${openPositions.length}/${maxPositions}: ${openPositions.map(p => `${p.symbol} ${p.longExchange}/${p.shortExchange}`).join(", ")})`));

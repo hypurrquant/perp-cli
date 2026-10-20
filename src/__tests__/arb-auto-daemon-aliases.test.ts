@@ -93,7 +93,10 @@ describe("arb auto daemon: aliased pair HL kPEPE ↔ Lighter 1000PEPE", () => {
   it("opens and closes each leg with its venue's own symbol", async () => {
     // cycle 1: wide spread (short HL, long Lighter) → entry; cycle 2: no spread → close; cycle 3: stop.
     h.hlRates = [0.0005, 0.00001, 0.00001];
-    await runDaemon(["--symbols", "kPEPE"]);
+    const logs = await runDaemon(["--symbols", "kPEPE"]);
+    // The venue form resolves to the canonical row: never "not in this cycle's funding scan".
+    expect(logs.filter(l => /SKIP KPEPE: not in this cycle/.test(l))).toEqual([]);
+    expect(logs.filter(l => /MONITOR KPEPE → 1000PEPE \(canonical; .*hyperliquid kPEPE/.test(l))).toHaveLength(1);
     const placed = h.orders.filter(o => o.kind === "place").map(o => `${o.exch}:${o.sym}:${o.side}`);
     const closed = h.orders.filter(o => o.kind === "close").map(o => `${o.exch}:${o.sym}:${o.side}`);
     expect(placed).toEqual(["lighter:1000PEPE:buy", "hyperliquid:kPEPE:sell"]);
