@@ -64,6 +64,8 @@ describe("market list --hip3 leaves the native adapter intact", () => {
 
     // the xyz group is xyz's markets, not the native list served from a shared cache
     expect(env.data.hip3.xyz.map((m: { symbol: string }) => m.symbol)).toEqual(["xyz:XYZ100", "xyz:TSLA", "xyz:GOLD"]);
+    // venueSymbol is the wire coin: lower-case dex prefix, as the venue names it (was "XYZ:TSLA").
+    expect(env.data.hip3.xyz.map((m: { venueSymbol: string }) => m.venueSymbol)).toEqual(["xyz:XYZ100", "xyz:TSLA", "xyz:GOLD"]);
     expect(env.data.main.map((m: { symbol: string }) => m.symbol)).toContain("BTC");
 
     // the native adapter is unchanged — checked first with the reads that do NOT reload an

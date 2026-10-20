@@ -981,7 +981,9 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         // One symbol shape on every venue: the plain asset ("BTC"; HIP-3 "km:US500"), the
         // venue's wire coin in venueSymbol. The internal "<COIN>-PERP" key is not shown.
         symbol: sym.replace(/-PERP$/, ""),
-        venueSymbol: this._venueCoin(sym),
+        // The coin exactly as the venue names it on the wire (native "kPEPE", HIP-3 "xyz:TSLA" —
+        // lower-case dex prefix); _venueCoin upper-cases its input, so it is not used here.
+        venueSymbol: sym.replace(/-PERP$/, ""),
         markPrice: String(ctx.markPx ?? mids[sym] ?? "0"),
         indexPrice: ctx.oraclePx != null ? String(ctx.oraclePx) : null,
         fundingRate: ctx.funding != null ? String(ctx.funding) : null,
