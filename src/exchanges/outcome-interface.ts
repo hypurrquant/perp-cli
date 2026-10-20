@@ -85,6 +85,10 @@ export interface OutcomeViewSide extends OutcomeSideInfo {
   bestAsk?: string;
   /** Implied probability of THIS side winning, derived from mid */
   impliedProb?: number;
+  /** Side name without a "template:" prefix ("template:Yes" → "Yes"). */
+  label?: string;
+  /** true = bid–ask wider than OUTCOME_WIDE_SPREAD: the mid is a weak probability estimate; null = one side empty. */
+  wideSpread?: boolean | null;
 }
 
 export interface OutcomeViewUnderlying {

@@ -1,3 +1,4 @@
+import { PerpError } from "../errors.js";
 import type { ResolvedSlippage } from "./slippage.js";
 
 /**
@@ -16,7 +17,9 @@ export interface ExchangeMarketInfo {
   /**
    * Open interest in BASE-asset units (contracts of the underlying, e.g. BTC) — every venue
    * publishes it that way, so it is never a USD figure. null = venue does not publish it
-   * (never "0" as a stand-in).
+   * (never "0" as a stand-in). One side where known (Lighter / Lighter RH: one side — inferred,
+   * not documented by the venue). The perp-ws `openInterest` is a different field with its own `unit` (Lighter:
+   * USD) — never compare the two without converting.
    */
   openInterest: string | null;
   /** null = the venue does not publish it (Aster: the public exchangeInfo carries no leverage) */
@@ -35,7 +38,32 @@ export interface ExchangeMarketInfo {
    * publish tiers (then `maxLeverage` applies at every size).
    */
   marginTiers: Array<{ lowerBound: number; maxLeverage: number }> | null;
+  /**
+   * Listed but not tradable right now (VenueMarket.tradable: off-hours, reduce-only, halted, paused)
+   * → false. Delisted / disabled / inactive markets are not listed at all (each venue's eligibility
+   * rule). Absent = the venue publishes no tradability flag (its adapter lists live markets only).
+   */
+  tradable?: boolean;
+  /**
+   * Why a listed market is not tradable (with `tradable: false`), e.g. "nonUsdQuote", "offHours",
+   * "reduceOnly", "halted"; or the venue's own status. Absent / null = no reason published.
+   */
+  status?: string | null;
+  /**
+   * What `fundingRate` is, in the WS `rateKind` vocabulary: "accruing" (the current period so far),
+   * "predicted" (the rate expected at the next payment), "lastSettled" (the last payment). null =
+   * not verified for this venue's REST field. Absent on rows built before 0.15.1 conventions.
+   */
+  fundingRateKind?: FundingRateKind | null;
+  /**
+   * The venue's predicted rate for the running / next period, same unit as `fundingRate`
+   * (Pacifica next_funding_rate; Lighter market_stats current_funding_rate) — the perp-ws
+   * `predictedRate`. Absent = the venue publishes none on this path.
+   */
+  predictedFundingRate?: string | null;
 }
+
+export type FundingRateKind = "accruing" | "predicted" | "lastSettled";
 
 /**
  * Effective max leverage for an order of `notional` USD.
@@ -123,6 +151,21 @@ export function withTapeSkipped<T>(rows: T[], skipped: TapeSkipped | null): T[] 
   return rows;
 }
 
+/**
+ * Rows sorted by time (a copy), keeping every non-index property the adapter attached to the
+ * array (TAPE_SKIPPED and any other symbol / metadata key, with its descriptor) — a plain
+ * `[...rows].sort()` drops them.
+ */
+export function sortByTime<T extends { time: number }>(rows: readonly T[], order: "asc" | "desc"): T[] {
+  const out = [...rows].sort((a, b) => (order === "asc" ? a.time - b.time : b.time - a.time));
+  for (const key of Reflect.ownKeys(rows)) {
+    if (key === "length" || (typeof key === "string" && /^\d+$/.test(key))) continue;
+    const d = Object.getOwnPropertyDescriptor(rows, key);
+    if (d !== undefined) Object.defineProperty(out, key, d);
+  }
+  return out;
+}
+
 export function tapeSkippedOf(rows: readonly unknown[]): TapeSkipped | null {
   const v = (rows as unknown as { [TAPE_SKIPPED]?: TapeSkipped })[TAPE_SKIPPED];
   return v === undefined ? null : v;
@@ -132,6 +175,22 @@ export interface ExchangeFundingPayment {
   time: number;       // unix ms
   symbol: string;
   payment: string;
+}
+
+/**
+ * One row of `market funding` (getFundingHistory). `rate` is a fraction per `intervalHours`
+ * (the hours one printed rate covers; null = unknown for that market), positive = longs pay.
+ * `rateKind` "lastSettled" = a rate the venue applied at `time`; null = the venue does not say.
+ */
+export interface FundingHistoryRow {
+  time: number;
+  /** null = the venue published no rate for that print (e.g. the market was closed). Never "0" as a stand-in. */
+  rate: string | null;
+  price: string | null;
+  intervalHours: number | null;
+  rateKind: "lastSettled" | null;
+  /** true = the underlying market was closed for this print (no funding accrued); absent = not reported. */
+  marketClosed?: boolean;
 }
 
 export interface ExchangeKline {
@@ -146,6 +205,20 @@ export interface ExchangeKline {
   quoteVolume: string | null;
   /** null = venue does not publish a trade count for the candle */
   trades: number | null;
+}
+
+/**
+ * Guard for a candle row that states its own interval (HL / TxFlow / Pacifica `i`, RISEx
+ * `interval`): a row of another interval than requested is never returned as the requested one
+ * (RISEx answers unsupported intervals with 1m bars). `rowInterval` undefined = the row carries
+ * no interval field (nothing to check).
+ */
+export function assertCandleInterval(venue: string, requested: string, rowInterval: unknown, remediation?: string): void {
+  if (rowInterval === undefined || rowInterval === requested) return;
+  throw new PerpError("EXCHANGE_ERROR", `${venue} candles: requested ${requested} candles, got a row labelled ${JSON.stringify(rowInterval)}`, {
+    exchange: venue,
+    remediation: remediation ?? `Use an interval ${venue} serves (see perp -e ${venue} market kline --help)`,
+  });
 }
 
 /** One indicative quote of an RFQ venue's maker at a fixed size. */
@@ -214,10 +287,12 @@ export interface ExchangeAdapter {
   init?(): Promise<void>;
 
   // ── Market Data ──
-  getMarkets(): Promise<ExchangeMarketInfo[]>;
-  getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }>;
+  /** `opts.funding: false` = marks / precision only (Lighter skips its funding snapshot read). */
+  getMarkets(opts?: { funding?: boolean }): Promise<ExchangeMarketInfo[]>;
+  /** `depth` (levels per side) sizes the request on venues that take it; callers cut the answer to it. */
+  getOrderbook(symbol: string, depth?: number): Promise<{ bids: [string, string][]; asks: [string, string][] }>;
   getRecentTrades(symbol: string, limit?: number): Promise<ExchangePublicTrade[]>;
-  getFundingHistory(symbol: string, limit?: number): Promise<{ time: number; rate: string; price: string | null }[]>;
+  getFundingHistory(symbol: string, limit?: number): Promise<FundingHistoryRow[]>;
   getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]>;
   /** RFQ venue (no order book): the maker's indicative quotes. Absent = the venue has an order book. */
   getRfqQuotes?(symbol: string): Promise<RfqQuotes>;

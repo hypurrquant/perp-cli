@@ -70,7 +70,9 @@ export class TxflowClient {
       });
     }
     if (!res.ok) {
-      throw new PerpError("EXCHANGE_ERROR", `TxFlow ${body.type}: HTTP ${res.status} ${text.slice(0, 200)}`, {
+      // A 5xx can be a raw Cloudflare HTML page (live: candleSnapshot 1w / 3d → HTTP 500): tags stripped.
+      const clean = text.replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+      throw new PerpError("EXCHANGE_ERROR", `TxFlow ${body.type}: HTTP ${res.status} ${clean}`, {
         exchange: "txflow", status: res.status, remediation: UNOFFICIAL_REMEDIATION(body.type),
       });
     }

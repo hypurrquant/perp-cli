@@ -1,12 +1,19 @@
 import { Command } from "commander";
 import { listConfiguredAccountVenues } from "../config.js";
 import type { ExchangeAdapter, ExchangePosition, ExchangeOrder } from "../exchanges/index.js";
+import type { PublicPosition } from "../exchanges/venue.js";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk, jsonError, symbolMatch, withJsonErrors } from "../utils.js";
 import chalk from "chalk";
 import { hasPacificaSdk, isDexCapable } from "../exchanges/capabilities.js";
 import { PerpError } from "../errors.js";
 import { unsupported } from "../exchanges/trading-v2.js";
 
+
+/** The configured Pacifica account of an account read; keyless → NO_SIGNER_AVAILABLE (never the throwaway keypair's). */
+function pacificaAccount(adapter: ExchangeAdapter & { publicKey: string }): string {
+  const read = (adapter as { accountForReads?: () => string }).accountForReads;
+  return typeof read === "function" ? read.call(adapter) : adapter.publicKey;
+}
 
 function pac(adapter: ExchangeAdapter) {
   if (!hasPacificaSdk(adapter)) throw new Error("Market settings are only available on Pacifica.");
@@ -64,9 +71,8 @@ export function registerAccountCommands(
     const dexes = await hlAdapter.listDeployedDexes();
     const results = await Promise.allSettled(
       dexes.map(async (d) => {
-        // Clone adapter with dex set
-        const dexAdapter = Object.create(hlAdapter) as ExchangeAdapter & import("../exchanges/capabilities.js").DexCapable;
-        dexAdapter.setDex(d.name);
+        // An independent per-dex adapter (a prototype copy + setDex emptied the native adapter's maps)
+        const dexAdapter = hlAdapter.forDex(d.name);
         const items = await fetcher(dexAdapter);
         return { dex: d.name, items };
       }),
@@ -77,12 +83,76 @@ export function registerAccountCommands(
       .filter(r => r.items.length > 0);
   }
 
+  /** `account positions --address`: keyless public read (registry: VenuePublicData.fetchPositionsByAddress). */
+  async function positionsByAddress(address: string, venue: string | null, opts: { accountIndex?: string; symbol?: string; hip3?: boolean }): Promise<void> {
+    const { readPositionsByAddress, readPositionsByAddressAll } = await import("../positions-by-address.js");
+    const { networkOf } = await import("../cli-flags.js");
+    let accountIndex: number | undefined;
+    if (opts.accountIndex !== undefined) {
+      if (!/^\d+$/.test(opts.accountIndex.trim())) throw new PerpError("INVALID_PARAMS", `--account-index must be a whole number, got "${opts.accountIndex}"`);
+      accountIndex = Number(opts.accountIndex);
+    }
+    const net = networkOf(program);
+    const row = (p: PublicPosition, ex: string | null): string[] => [
+      chalk.white.bold(p.symbol),
+      ...(ex !== null ? [chalk.gray(ex)] : []),
+      p.dex != null ? chalk.magenta(p.dex) : p.accountIndex !== undefined ? chalk.gray(String(p.accountIndex)) : chalk.gray("-"),
+      p.side === "long" ? chalk.green("LONG") : chalk.red("SHORT"),
+      p.size,
+      `$${formatUsd(p.entryPrice)}`,
+      `$${formatUsd(p.markPrice)}`,
+      p.liquidationPrice === null ? chalk.gray("-") : `$${formatUsd(p.liquidationPrice)}`,
+      formatPnl(p.unrealizedPnl),
+      `${p.leverage}x`,
+    ];
+    if (venue !== null) {
+      const r = await readPositionsByAddress(venue, net, address, { accountIndex, symbol: opts.symbol });
+      if (isJson()) {
+        return printJson(jsonOk(r.positions, {
+          exchange: r.venue, address, source: "public",
+          ...(r.warnings.length > 0 ? { warnings: r.warnings, errors: r.errors } : {}),
+          ...(r.notes.length > 0 ? { notes: r.notes } : {}),
+        }));
+      }
+      for (const w of r.warnings) console.log(chalk.yellow(`  ${w}`));
+      if (r.positions.length === 0) {
+        console.log(chalk.gray(`\n  No open positions for ${address} on ${r.venue}${r.notes.length > 0 ? ` (${r.notes.join("; ")})` : ""}.\n`));
+        return;
+      }
+      console.log(makeTable(["Symbol", "Dex/Acct", "Side", "Size", "Entry", "Mark", "Liq", "PnL", "Lev"], r.positions.map(p => row(p, null))));
+      return;
+    }
+    const all = await readPositionsByAddressAll(net, address, { accountIndex, symbol: opts.symbol });
+    if (isJson()) {
+      return printJson(jsonOk({
+        venues: all.venues,
+        ...(Object.keys(all.errors).length > 0 ? { errors: all.errors } : {}),
+        ...(Object.keys(all.notes).length > 0 ? { notes: all.notes } : {}),
+      }, { address, source: "public", ...(all.warnings.length > 0 ? { warnings: all.warnings } : {}) }));
+    }
+    const rows = Object.entries(all.venues).flatMap(([ex, ps]) => ps.map(p => row(p, ex)));
+    if (rows.length > 0) console.log(makeTable(["Symbol", "Exch", "Dex/Acct", "Side", "Size", "Entry", "Mark", "Liq", "PnL", "Lev"], rows));
+    else console.log(chalk.gray(`\n  No open positions for ${address} on ${Object.keys(all.venues).join(", ") || "any venue"}.\n`));
+    for (const [ex, e] of Object.entries(all.errors)) console.log(chalk.gray(`  ${ex}: ${e.code} ${e.message}`));
+    for (const [ex, n] of Object.entries(all.notes)) console.log(chalk.gray(`  ${ex}: ${n.join("; ")}`));
+  }
+
   account
     .command("positions")
-    .description("Show open positions")
+    .description("Show open positions (yours; or any account's, keyless, with --address)")
     .option("--hip3", "Include HIP-3 dex positions (Hyperliquid)")
-    .action(async (opts: { hip3?: boolean }) => {
+    .option("--address <address>", "Read this public address instead of your account — keyless (hyperliquid, lighter, lighter-rh: 0x address; pacifica: Solana address). Without -e: every venue that supports it")
+    .option("--account-index <n>", "With --address on Lighter: only this account (sub-account) of the address")
+    .option("--symbol <symbol>", "With --address: only this market (plain asset, e.g. BTC)")
+    .action(async (opts: { hip3?: boolean; address?: string; accountIndex?: string; symbol?: string }) => {
       const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
+
+      if (opts.address !== undefined) {
+        return void await withJsonErrors(isJson(), () => positionsByAddress(opts.address as string, explicitExchange ? String(program.opts().exchange) : null, opts));
+      }
+      if (opts.accountIndex !== undefined || opts.symbol !== undefined) {
+        throw new PerpError("INVALID_PARAMS", "--account-index / --symbol apply to --address reads", { remediation: "Add --address <address>, or drop the option" });
+      }
 
       if (!explicitExchange && getAdapterForExchange) {
         const EXCHANGES = await listConfiguredAccountVenues();
@@ -354,7 +424,7 @@ export function registerAccountCommands(
       // Pacifica: use dedicated SDK endpoint
       if (hasPacificaSdk(adapter)) {
         const sdk = adapter.sdk as Record<string, (...args: any[]) => any>;
-        const settings = await sdk.getAccountSettings(adapter.publicKey);
+        const settings = await sdk.getAccountSettings(pacificaAccount(adapter));
         if (isJson()) return printJson(jsonOk(settings));
         // GET /account/settings returns an object; per-market entries are in `margin_settings`
         // (only markets changed from the default cross / max leverage are listed).
@@ -446,7 +516,8 @@ export function registerAccountCommands(
     .description("Margin details for a specific symbol position")
     .action(async (symbol: string) => {
       const sym = symbol.toUpperCase();
-      try {
+      // Errors: the one envelope (code, status, remediation) and exit 1 via withJsonErrors.
+      return void await withJsonErrors(isJson(), async () => {
         const adapter = await getAdapter();
 
         const [balance, positions] = await Promise.all([
@@ -498,19 +569,7 @@ export function registerAccountCommands(
         console.log(`  Liquidation:      ${pos.liquidationPrice === null ? chalk.gray("-") : `$${formatUsd(pos.liquidationPrice)}`}`);
         console.log(`  Unrealized PnL:   ${formatPnl(pos.unrealizedPnl)}`);
         console.log();
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (isJson()) {
-          const { classifyError } = await import("../errors.js");
-          const classified = classifyError(err);
-          return printJson(jsonError(classified.code, classified.message, {
-            status: classified.status,
-            retryable: classified.retryable,
-          }));
-        }
-        console.error(chalk.red(`Error: ${msg}`));
-        process.exitCode = 1;
-      }
+      });
     });
 
   // ── PnL Report ──
@@ -669,7 +728,7 @@ export function registerAccountCommands(
       }
       const p = pac(adapter);
       const sdk = p.sdk as Record<string, (...args: any[]) => any>;
-      const orders = await sdk.getTWAPOrders(p.publicKey);
+      const orders = await sdk.getTWAPOrders(pacificaAccount(p));
       if (isJson()) return printJson(jsonOk(orders));
 
       if (!orders || orders.length === 0) {

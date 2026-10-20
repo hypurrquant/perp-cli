@@ -27,9 +27,9 @@ describe("LighterAdapter read-path parsing regressions", () => {
   it("getKlines reads candles from key `c` (not `candles`)", async () => {
     const a = makeAdapter();
     (a as unknown as { getCandles: () => Promise<unknown> }).getCandles = async () => ({
-      code: 200, c: [{ t: 1781970000000, o: "1", h: "2", l: "0.5", c: "1.5", v: "10", n: 3 }],
+      code: 200, r: "1h", c: [{ t: 1781967600000, o: "1", h: "2", l: "0.5", c: "1.5", v: "10", n: 3 }],
     });
-    const klines = await a.getKlines("BTC", "1h", 0, 0);
+    const klines = await a.getKlines("BTC", "1h", 1781967600000, 1781967600000);
     expect(klines).toHaveLength(1);
     expect(klines[0].open).toBe("1");
     expect(klines[0].close).toBe("1.5");

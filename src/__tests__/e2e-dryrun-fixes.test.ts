@@ -92,8 +92,8 @@ function lighterWithDetails(details: Detail[] | undefined): LighterAdapter {
     if (path !== "/orderBookDetails") throw new Error(`unexpected ${path}`);
     return details === undefined ? {} : { order_book_details: details };
   };
-  // /funding-rates carries no mark price (live) — only the rate.
-  internals.getFundingRates = async () => new Map([["TSLA", { rate: "0.00003", markPrice: null }]]);
+  // WS market_stats snapshot: settled + predicted hourly rates by market_id (no mark price).
+  internals.fundingStats = async () => new Map([[10, { rate: "0.000012", predictedRate: "0.00001" }]]);
   return lt;
 }
 
@@ -101,20 +101,21 @@ describe("#2 LighterAdapter.getMarkets reads the mark from orderBookDetails", ()
   it("lists markets keyless with orderBookDetails mark/index price", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const lt = lighterWithDetails([
-      { symbol: "TSLA", market_id: 10, market_type: "perp", mark_price: "355.77", index_price: "355.44", min_initial_margin_fraction: 500 },
-      { symbol: "ETH", market_id: 0, market_type: "perp", mark_price: "2697.15", index_price: "2698.54", min_initial_margin_fraction: 500 },
+      { symbol: "TSLA", market_id: 10, market_type: "perp", status: "active", mark_price: "355.77", index_price: "355.44", min_initial_margin_fraction: 500 },
+      { symbol: "ETH", market_id: 0, market_type: "perp", status: "active", mark_price: "2697.15", index_price: "2698.54", min_initial_margin_fraction: 500 },
       { symbol: "USDG/X", market_id: 99, market_type: "spot", mark_price: "1" },
     ]);
     const markets = await lt.getMarkets();
     expect(markets.map(m => m.symbol)).toEqual(["TSLA", "ETH"]);
     expect(markets[0].markPrice).toBe("355.77");
     expect(markets[0].indexPrice).toBe("355.44");
-    expect(markets[0].fundingRate).toBe("0.00003");
+    expect(markets[0]).toMatchObject({ fundingRate: "0.000012", fundingRateKind: "lastSettled", predictedFundingRate: "0.00001", fundingHours: 1 });
+    expect(markets[1]).toMatchObject({ fundingRate: null, fundingRateKind: null }); // no stat → unknown, never 0
   });
 
   it("perps listed but none with a mark → EXCHANGE_ERROR, not an empty success", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const lt = lighterWithDetails([{ symbol: "TSLA", market_id: 10, market_type: "perp", min_initial_margin_fraction: 500 }]);
+    const lt = lighterWithDetails([{ symbol: "TSLA", market_id: 10, market_type: "perp", status: "active", min_initial_margin_fraction: 500 }]);
     await expect(lt.getMarkets()).rejects.toMatchObject({ structured: { code: "EXCHANGE_ERROR" } });
   });
 

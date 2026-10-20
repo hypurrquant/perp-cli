@@ -82,10 +82,12 @@ export const LIGHTER_ROUTES = {
   "GET https://mainnet.zklighter.elliot.ai/api/v1/orderBooks": {
     code: 200,
     order_books: [
-      { symbol: "ETH", market_id: 0, market_type: "perp" },
-      { symbol: "BTC", market_id: 1, market_type: "perp" },
-      { symbol: "NATGAS", market_id: 158, market_type: "perp" },
+      { symbol: "ETH", market_id: 0, market_type: "perp", status: "active", is_frozen: false },
+      { symbol: "BTC", market_id: 1, market_type: "perp", status: "active", is_frozen: false },
+      { symbol: "NATGAS", market_id: 158, market_type: "perp", status: "active", is_frozen: false },
       { symbol: "ETH/USDC", market_id: 2048, market_type: "spot" },
+      // Live shape 2026-10-19: an inactive perp is listed (status "inactive") but is not a live market.
+      { symbol: "SPACEX", market_id: 145, market_type: "perp", status: "inactive", is_frozen: false },
     ],
   },
 };
@@ -94,9 +96,9 @@ export const LIGHTER_RH_ROUTES = {
   "GET https://api.rh.lighter.xyz/api/v1/orderBooks": {
     code: 200,
     order_books: [
-      { symbol: "ETH", market_id: 0, market_type: "perp" },
-      { symbol: "BTC", market_id: 1, market_type: "perp" },
-      { symbol: "ZEC", market_id: 4, market_type: "perp" },
+      { symbol: "ETH", market_id: 0, market_type: "perp", status: "active", is_frozen: false },
+      { symbol: "BTC", market_id: 1, market_type: "perp", status: "active", is_frozen: false },
+      { symbol: "ZEC", market_id: 4, market_type: "perp", status: "active", is_frozen: false },
     ],
   },
 };
@@ -108,6 +110,10 @@ export const ASTER_ROUTES = {
       asterSym("ASTERUSDT", "ASTER", "USDT"), asterSym("BTCUSDT", "BTC", "USDT"), asterSym("ETHUSDT", "ETH", "USDT"),
       asterSym("BTCUSD1", "BTC", "USD1"), asterSym("1000PEPEUSDT", "1000PEPE", "USDT"), asterSym("CLUSD1", "CL", "USD1"),
       asterSym("JPMUSDT", "JPM", "USDT"), asterSym("SOLUSDT", "SOL", "USDT"),
+      // Live exchangeInfo rows (2026-10-19) that are not listed perps: SETTLING (being delisted) and
+      // PENDING_TRADING with contractType "" — never in the directory.
+      { symbol: "TONUSDT", baseAsset: "TON", quoteAsset: "USDT", contractType: "PERPETUAL", status: "SETTLING" },
+      { symbol: "MBLUSDT", baseAsset: "MBL", quoteAsset: "USDT", contractType: "", status: "PENDING_TRADING" },
     ],
   },
   // PYTHUSDT is in premiumIndex/markPrice@arr but not exchangeInfo (unlisted → skipped by rule).
@@ -121,9 +127,11 @@ export const ASTER_ROUTES = {
 export const ARCUS_ROUTES = {
   "GET https://api.arcus.xyz/v1/markets": {
     markets: [
-      { marketDisplayName: "BTC-USD", marketId: 1, baseAsset: "BTC", quoteAsset: "USD" },
-      { marketDisplayName: "ETH-USD", marketId: 2, baseAsset: "ETH", quoteAsset: "USD" },
-      { marketDisplayName: "MSFT-USD", marketId: 32, baseAsset: "MSFT", quoteAsset: "USD" },
+      { marketDisplayName: "BTC-USD", marketId: 1, baseAsset: "BTC", quoteAsset: "USD", status: "ONLINE" },
+      { marketDisplayName: "ETH-USD", marketId: 2, baseAsset: "ETH", quoteAsset: "USD", status: "ONLINE" },
+      { marketDisplayName: "MSFT-USD", marketId: 32, baseAsset: "MSFT", quoteAsset: "USD", status: "ONLINE" },
+      // Live /v1/markets row of an OFFLINE market (2026-10-19): never in the directory.
+      { marketDisplayName: "F-USD", marketId: 11, baseAsset: "F", quoteAsset: "USD", status: "OFFLINE" },
     ],
   },
 };

@@ -20,9 +20,14 @@ export function symbolNotFound(venue: string, symbol: string, message?: string):
   });
 }
 
-/** Directory match: case-insensitive, a "-PERP" display suffix ignored on either side. */
+/**
+ * Directory match on the exact wire symbol (case-sensitive), a "-PERP" display suffix ignored on
+ * either side. Case-sensitive on purpose: the venues are (Pacifica `KPEPE` answers `200 []` where
+ * `kPEPE` has rows), so a casing miss must be SYMBOL_NOT_FOUND, never "no data". The adapter
+ * resolves the typed symbol to the venue's spelling before the request.
+ */
 export function listsSymbol(markets: readonly Pick<ExchangeMarketInfo, "symbol">[], symbol: string): boolean {
-  const norm = (s: string) => s.toUpperCase().replace(/-PERP$/, "");
+  const norm = (s: string) => s.replace(/-PERP$/i, "");
   const want = norm(symbol);
   return markets.some(m => norm(m.symbol) === want);
 }

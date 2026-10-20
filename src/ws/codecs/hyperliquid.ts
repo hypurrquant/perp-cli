@@ -12,6 +12,7 @@
 
 import { badShape, fetchJson } from "../directory.js";
 import { WsError } from "../errors.js";
+import { sumDecimals } from "../dec.js";
 import { VENUE_STATIC } from "../venue-static.js";
 import type {
   CodecDirectory, DecodedEvent, FillRow, MarketDirectoryEntry, MarketPatch, OrderRow, PositionRow, UserDelta, VenueCodec, WireSub,
@@ -253,6 +254,17 @@ function abs(d: string | null): string | null {
   return d === null ? null : d.replace(/^-/, "");
 }
 
+function accountUnrealized(rows: readonly PositionRow[], bad: readonly string[]): string | null {
+  if (bad.includes("assetPositions") || bad.includes("assetPositions[]")) return null;
+  const values: string[] = [];
+  for (const r of rows) {
+    if (r.unrealizedPnl === null) return null;
+    values.push(r.unrealizedPnl);
+  }
+  const sum = sumDecimals(values);
+  return sum === undefined ? null : sum;
+}
+
 function decodeClearinghouse(d: unknown): DecodedEvent[] {
   if (!isObj(d) || typeof d.dex !== "string" || !isObj(d.clearinghouseState)) return [protocolError("hyperliquid clearinghouseState frame without dex/clearinghouseState")];
   const wire = `clearinghouseState:${d.dex}`;
@@ -282,7 +294,10 @@ function decodeClearinghouse(d: unknown): DecodedEvent[] {
       equity: ms === null ? null : dec(ms, "accountValue", bad),
       available: dec(cs, "withdrawable", bad),
       marginUsed: ms === null ? null : dec(ms, "totalMarginUsed", bad),
-      unrealizedPnl: null, // not in clearinghouseState (per-position only)
+      // clearinghouseState has no account-level unrealizedPnl, but the frame carries every
+      // position of this dex with its own `unrealizedPnl`: the account value is their exact sum
+      // ("0" with no position). null when any position's value is missing (unknown, never guessed).
+      unrealizedPnl: accountUnrealized(rows, bad),
     },
     { kind: "positions", snapshot: true, scope: d.dex, rows, remove: [] },
   ];

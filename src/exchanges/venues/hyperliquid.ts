@@ -35,6 +35,11 @@ const publicData: VenuePublicData = {
   async fetchMarkets(net) {
     return (await import("../../funding/legacy-public.js")).legacyPublicData("hyperliquid").fetchMarkets(net);
   },
+  // Keyless positions of any account by public address (account positions --address).
+  addressKind: "evm",
+  async fetchPositionsByAddress(net, address) {
+    return (await import("../public-positions.js")).hyperliquidPositionsByAddress(net, address);
+  },
 };
 
 export const hyperliquidVenue: VenueDefinition = {

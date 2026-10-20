@@ -29,7 +29,7 @@ export async function quoteRulesOf(adapter: ExchangeAdapter, symbol: string): Pr
   if (network === null) {
     throw new PerpError("EXCHANGE_ERROR", `${adapter.name}: the adapter's network is unknown, so the ${symbol} tick / minimums cannot be read; nothing was sent`, { exchange: adapter.name });
   }
-  const [markets, stepSize] = await Promise.all([getVenue(adapter.name).publicData.fetchMarkets(network), lotStepOf(adapter, symbol)]);
+  const [markets, stepSize] = await Promise.all([getVenue(adapter.name).publicData.fetchMarkets(network, { funding: false }), lotStepOf(adapter, symbol)]);
   const vm = markets.find(m => symbolMatch(m.symbol, symbol));
   return { tickSize: vm?.tickSize ?? null, stepSize, minSize: vm?.minSize ?? null, minNotional: vm?.minNotional ?? null };
 }

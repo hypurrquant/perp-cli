@@ -300,10 +300,10 @@ describe("Cross-validate: Lighter", () => {
 describe("Cross-validate: Pacifica", () => {
 
   it("market prices match raw API", async () => {
-    // CLI returns raw pac format: { symbol, mark, funding, ... }
+    // The normalized market row shape of every venue (0.15.1; it printed the raw { mark, funding, … } rows).
     const cliResult = cli("-e pacifica market prices");
     expect(cliResult.ok).toBe(true);
-    const cliPrices = cliResult.data as { symbol: string; mark: string }[];
+    const cliPrices = cliResult.data as { symbol: string; markPrice: string }[];
 
     const rawData = await pacPrices();
     const rawPrices = new Map<string, number>();
@@ -315,7 +315,7 @@ describe("Cross-validate: Pacifica", () => {
       const cliEntry = cliPrices.find(p => p.symbol.toUpperCase() === sym);
       const rawPrice = rawPrices.get(sym);
       if (cliEntry && rawPrice && rawPrice > 0) {
-        const cliNum = Number(cliEntry.mark);
+        const cliNum = Number(cliEntry.markPrice);
         expect(cliNum).toBeGreaterThan(0);
         const pctDiff = Math.abs(cliNum - rawPrice) / rawPrice * 100;
         expect(pctDiff).toBeLessThan(2);
@@ -326,7 +326,7 @@ describe("Cross-validate: Pacifica", () => {
   it("funding rates match raw API", async () => {
     const cliResult = cli("-e pacifica market prices");
     expect(cliResult.ok).toBe(true);
-    const cliPrices = cliResult.data as { symbol: string; funding: string; next_funding: string }[];
+    const cliPrices = cliResult.data as { symbol: string; fundingRate: string | null }[];
 
     const rawData = await pacPrices();
     const rawFunding = new Map<string, number>();
@@ -338,8 +338,8 @@ describe("Cross-validate: Pacifica", () => {
       const cliEntry = cliPrices.find(p => p.symbol.toUpperCase() === sym);
       const rawRate = rawFunding.get(sym);
       if (cliEntry && rawRate !== undefined) {
-        const cliFunding = Number(cliEntry.next_funding ?? cliEntry.funding);
-        expect(Math.abs(cliFunding - rawRate)).toBeLessThan(0.01);
+        expect(cliEntry.fundingRate).not.toBeNull();
+        expect(Math.abs(Number(cliEntry.fundingRate) - rawRate)).toBeLessThan(0.01);
       }
     }
   });

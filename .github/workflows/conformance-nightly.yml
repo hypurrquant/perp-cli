@@ -1,0 +1,102 @@
+name: Conformance (nightly, live read-only)
+
+# Live read-only checks against public mainnet (docs/TESTING.md §3.7):
+#   1. the cross-venue conformance suite in live mode (PERP_LIVE=1) — no keys, isolated HOME;
+#   2. release QA of the PUBLISHED npm packages (perp-cli + @hypurrquant/perp-ws, version "latest"):
+#      read matrix against the installed CLI, WS checks, MCP checks.
+# On failure, opens or updates one issue labelled "conformance-nightly" with the reports.
+# Not a PR gate: ci.yml runs the offline suite (pnpm test).
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "npm version for the release QA (default: latest)"
+        required: false
+        default: "latest"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: conformance-nightly
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: Live conformance + published-package QA
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Live conformance suite (read-only public mainnet)
+        id: live
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mkdir -p reports
+          pnpm test:conformance:live 2>&1 | tee reports/conformance-live.txt
+
+      - name: Release QA of the published packages
+        id: qa
+        continue-on-error: true
+        run: node scripts/release-qa/run.mjs --version "${{ github.event.inputs.version || 'latest' }}" --out reports/release-qa
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-nightly-${{ github.run_id }}
+          path: reports/
+          retention-days: 30
+
+      - name: Open or update the nightly issue
+        if: steps.live.outcome == 'failure' || steps.qa.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const read = (p, n) => { try { return fs.readFileSync(p, "utf8").slice(-n); } catch { return "(no report)"; } };
+            const live = read("reports/conformance-live.txt", 6000).split("\n").filter(l => /×|FAIL|Tests|AssertionError/.test(l)).slice(-60).join("\n");
+            const qa = read("reports/release-qa/release-qa.md", 6000);
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              `Nightly live conformance failed — [run](${run}) (reports in the run artifacts).`,
+              "",
+              `- live conformance: **${{ steps.live.outcome }}**`,
+              `- release QA (published packages): **${{ steps.qa.outcome }}**`,
+              "",
+              "Triage (docs/TESTING.md §3.7): venue changed → re-record + fix; new bug → fix or register in KNOWN_FAILURES; outage → note it here.",
+              "",
+              "### Live conformance (failures)", "```", live || "(none)", "```",
+              "### Release QA", qa,
+            ].join("\n");
+            const label = "conformance-nightly";
+            try { await github.rest.issues.getLabel({ ...context.repo, name: label }); }
+            catch { await github.rest.issues.createLabel({ ...context.repo, name: label, color: "d93f0b" }); }
+            const open = await github.rest.issues.listForRepo({ ...context.repo, state: "open", labels: label, per_page: 1 });
+            if (open.data.length > 0) {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: open.data[0].number, body });
+            } else {
+              await github.rest.issues.create({ ...context.repo, title: "Nightly live conformance failing", labels: [label], body });
+            }
+
+      - name: Fail the job when a check failed
+        if: steps.live.outcome == 'failure' || steps.qa.outcome == 'failure'
+        run: exit 1

@@ -12,6 +12,7 @@ import type {
   CurrentFundingTerms, RfqQuotes,
   ExchangeAdapter, ExchangeBalance, ExchangeFundingPayment, ExchangeKline, ExchangeMarketInfo, ExchangeOrder,
   ExchangePosition, ExchangeTrade, ExchangePublicTrade,
+  FundingHistoryRow
 } from "../interface.js";
 import { unsupported } from "../trading-v2.js";
 import { roleUnsupported, type VenueDefinition } from "../venue.js";
@@ -143,7 +144,7 @@ export class VariationalPublicAdapter implements ExchangeAdapter {
       "Market stats (24h volume, open interest): perp -e variational market info <symbol>");
   }
 
-  async getFundingHistory(): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(): Promise<FundingHistoryRow[]> {
     throw unsupported("variational", "fundingHistory", "Variational's public API publishes no funding history",
       "Current funding terms: perp -e variational market funding <symbol>, or perp arb scan --rates");
   }

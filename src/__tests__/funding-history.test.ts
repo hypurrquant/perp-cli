@@ -50,8 +50,9 @@ function makeRate(overrides: Partial<ExchangeFundingRate> = {}): ExchangeFunding
     historicalAvg: null,
     fundingVerified: true,
     apiStatus: "official",
+    rateKind: "accruing",
     ...overrides,
-  };
+  } as ExchangeFundingRate;
 }
 
 function readJsonl(filePath: string): FundingHistoryEntry[] {

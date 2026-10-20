@@ -1,4 +1,5 @@
 import type { ExchangeAdapter, SpotAdapter } from "./exchanges/index.js";
+import { classifyError } from "./errors.js";
 
 export interface LiquidityCheck {
   /** Max executable size (base) within slippage tolerance */
@@ -97,11 +98,13 @@ export async function checkArbLiquidity(
   sizeUsd: number,
   maxSlippagePct: number = 0.5,
   log?: (msg: string) => void,
+  /** The short venue's own symbol when it differs (kPEPE ↔ 1000PEPE); default `symbol`. */
+  shortSymbol: string = symbol,
 ): Promise<{ viable: boolean; adjustedSizeUsd: number; longSlippage: number; shortSlippage: number }> {
   try {
     const [longOB, shortOB] = await Promise.all([
       longAdapter.getOrderbook(symbol),
-      shortAdapter.getOrderbook(symbol),
+      shortAdapter.getOrderbook(shortSymbol),
     ]);
 
     // For long entry we consume asks, for short entry we consume bids
@@ -203,8 +206,9 @@ export async function checkSpotPerpLiquidity(
       spotSlippage: spotCheck.slippagePct,
       perpSlippage: perpCheck.slippagePct,
     };
-  } catch {
-    log?.(`[LIQ] spot-perp ${spotSymbol}: orderbook fetch failed`);
+  } catch (e) {
+    const c = classifyError(e);
+    log?.(`[LIQ] spot-perp ${spotSymbol}: orderbook fetch failed (${c.code}: ${c.message})`);
     return { viable: false, adjustedSizeUsd: 0, spotSlippage: 0, perpSlippage: 0 };
   }
 }

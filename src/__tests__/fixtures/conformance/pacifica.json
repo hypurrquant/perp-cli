@@ -1,0 +1,800 @@
+{
+ "schema": 1,
+ "name": "pacifica",
+ "capturedAt": 1792415907033,
+ "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
+ "keep": [
+  "BTC",
+  "ETH",
+  "SOL"
+ ],
+ "full": [],
+ "http": [
+  {
+   "cell": "list",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info/prices",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "d50f88d07863c13a"
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info/prices",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "d50f88d07863c13a"
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info/prices",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "d50f88d07863c13a"
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/funding_rate/history?symbol=BTC&limit=5",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "oracle_price": "82600.512793",
+      "bid_impact_price": "82557.780884",
+      "ask_impact_price": "82573",
+      "funding_rate": "0.0000125",
+      "next_funding_rate": "0.0000125",
+      "created_at": 1792414802574
+     },
+     {
+      "oracle_price": "82357.956522",
+      "bid_impact_price": "82303.83808",
+      "ask_impact_price": "82321",
+      "funding_rate": "0.0000125",
+      "next_funding_rate": "0.0000125",
+      "created_at": 1792411202574
+     },
+     {
+      "oracle_price": "82422.348579",
+      "bid_impact_price": "82374.136034",
+      "ask_impact_price": "82376",
+      "funding_rate": "0.0000125",
+      "next_funding_rate": "0.0000125",
+      "created_at": 1792407602574
+     },
+     {
+      "oracle_price": "82761.2676",
+      "bid_impact_price": "82737",
+      "ask_impact_price": "82738",
+      "funding_rate": "0.0000125",
+      "next_funding_rate": "0.0000125",
+      "created_at": 1792404002574
+     },
+     {
+      "oracle_price": "82820.01852",
+      "bid_impact_price": "82793.650968",
+      "ask_impact_price": "82795",
+      "funding_rate": "0.0000125",
+      "next_funding_rate": "0.0000125",
+      "created_at": 1792400402574
+     }
+    ],
+    "next_cursor": "1111cnvCT",
+    "has_more": true
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/book?symbol=BTC",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": {
+     "s": "BTC",
+     "l": [
+      [
+       {
+        "p": "82539",
+        "a": "0.95745",
+        "n": 14
+       },
+       {
+        "p": "82538",
+        "a": "0.04846",
+        "n": 2
+       },
+       {
+        "p": "82537",
+        "a": "0.17403",
+        "n": 2
+       },
+       {
+        "p": "82536",
+        "a": "0.06142",
+        "n": 2
+       },
+       {
+        "p": "82535",
+        "a": "0.03634",
+        "n": 1
+       },
+       {
+        "p": "82534",
+        "a": "0.07245",
+        "n": 2
+       },
+       {
+        "p": "82533",
+        "a": "0.03634",
+        "n": 1
+       },
+       {
+        "p": "82532",
+        "a": "0.07245",
+        "n": 2
+       },
+       {
+        "p": "82531",
+        "a": "0.03664",
+        "n": 2
+       },
+       {
+        "p": "82530",
+        "a": "0.07246",
+        "n": 2
+       }
+      ],
+      [
+       {
+        "p": "82540",
+        "a": "0.04953",
+        "n": 2
+       },
+       {
+        "p": "82542",
+        "a": "0.13768",
+        "n": 1
+       },
+       {
+        "p": "82544",
+        "a": "0.09742",
+        "n": 4
+       },
+       {
+        "p": "82545",
+        "a": "0.07245",
+        "n": 2
+       },
+       {
+        "p": "82546",
+        "a": "0.61472",
+        "n": 4
+       },
+       {
+        "p": "82547",
+        "a": "0.16695",
+        "n": 5
+       },
+       {
+        "p": "82548",
+        "a": "0.66488",
+        "n": 5
+       },
+       {
+        "p": "82549",
+        "a": "0.11266",
+        "n": 4
+       },
+       {
+        "p": "82550",
+        "a": "0.72008",
+        "n": 4
+       },
+       {
+        "p": "82551",
+        "a": "0.07017",
+        "n": 3
+       }
+      ]
+     ],
+     "t": 1792415906694
+    },
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/trades?symbol=BTC",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "event_type": "fulfill_taker",
+      "price": "82510",
+      "amount": "0.02958",
+      "side": "open_long",
+      "cause": "normal",
+      "created_at": 1792415897669
+     },
+     {
+      "event_type": "fulfill_maker",
+      "price": "82510",
+      "amount": "0.02958",
+      "side": "open_short",
+      "cause": "normal",
+      "created_at": 1792415897669
+     },
+     {
+      "event_type": "fulfill_taker",
+      "price": "82510",
+      "amount": "0.00294",
+      "side": "open_long",
+      "cause": "normal",
+      "created_at": 1792415897669
+     },
+     {
+      "event_type": "fulfill_maker",
+      "price": "82510",
+      "amount": "0.00294",
+      "side": "open_short",
+      "cause": "normal",
+      "created_at": 1792415897669
+     },
+     {
+      "event_type": "fulfill_taker",
+      "price": "82503",
+      "amount": "0.64334",
+      "side": "close_short",
+      "cause": "normal",
+      "created_at": 1792415858882
+     },
+     {
+      "event_type": "fulfill_maker",
+      "price": "82503",
+      "amount": "0.64334",
+      "side": "close_long",
+      "cause": "normal",
+      "created_at": 1792415858882
+     },
+     {
+      "event_type": "fulfill_maker",
+      "price": "82485",
+      "amount": "0.94561",
+      "side": "open_short",
+      "cause": "normal",
+      "created_at": 1792415833757
+     },
+     {
+      "event_type": "fulfill_taker",
+      "price": "82470",
+      "amount": "0.00024",
+      "side": "close_short",
+      "cause": "normal",
+      "created_at": 1792415833288
+     },
+     {
+      "event_type": "fulfill_maker",
+      "price": "82470",
+      "amount": "0.00024",
+      "side": "open_short",
+      "cause": "normal",
+      "created_at": 1792415833288
+     },
+     {
+      "event_type": "fulfill_taker",
+      "price": "82470",
+      "amount": "0.00495",
+      "side": "open_long",
+      "cause": "normal",
+      "created_at": 1792415807544
+     },
+     {
+      "event_type": "fulfill_maker",
+      "price": "82470",
+      "amount": "0.00495",
+      "side": "open_short",
+      "cause": "normal",
+      "created_at": 1792415807544
+     },
+     {
+      "event_type": "fulfill_taker",
+      "price": "82470",
+      "amount": "0.02165",
+      "side": "open_long",
+      "cause": "normal",
+      "created_at": 1792415807544
+     }
+    ],
+    "error": null,
+    "code": null,
+    "last_order_id": 14609703161
+   },
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=1h&start_time=1792329506817&end_time=1792415906817",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1792332000000,
+      "T": 1792335600000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "81532",
+      "c": "81084",
+      "h": "81535",
+      "l": "81029",
+      "v": "198.08744",
+      "n": 1190
+     },
+     {
+      "t": 1792335600000,
+      "T": 1792339200000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "81076",
+      "c": "81164",
+      "h": "81215",
+      "l": "80985",
+      "v": "115.07892",
+      "n": 738
+     },
+     {
+      "t": 1792339200000,
+      "T": 1792342800000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "81159",
+      "c": "81068",
+      "h": "81238",
+      "l": "81017",
+      "v": "140.12894",
+      "n": 827
+     },
+     {
+      "t": 1792342800000,
+      "T": 1792346400000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "81089",
+      "c": "81171",
+      "h": "81198",
+      "l": "81089",
+      "v": "104.65278",
+      "n": 589
+     },
+     {
+      "t": 1792346400000,
+      "T": 1792350000000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "81170",
+      "c": "81183",
+      "h": "81263",
+      "l": "81065",
+      "v": "116.14104",
+      "n": 578
+     },
+     {
+      "t": 1792350000000,
+      "T": 1792353600000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "81175",
+      "c": "80889",
+      "h": "81175",
+      "l": "80788",
+      "v": "125.97018",
+      "n": 1051
+     },
+     {
+      "t": 1792396800000,
+      "T": 1792400400000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "82695",
+      "c": "82794",
+      "h": "82938",
+      "l": "82560",
+      "v": "220.52032",
+      "n": 1039
+     },
+     {
+      "t": 1792400400000,
+      "T": 1792404000000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "82794",
+      "c": "82758",
+      "h": "83065",
+      "l": "82723",
+      "v": "188.75248",
+      "n": 855
+     },
+     {
+      "t": 1792404000000,
+      "T": 1792407600000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "82723",
+      "c": "82375",
+      "h": "82848",
+      "l": "82083",
+      "v": "231.08806",
+      "n": 1428
+     },
+     {
+      "t": 1792407600000,
+      "T": 1792411200000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "82375",
+      "c": "82320",
+      "h": "82375",
+      "l": "82118",
+      "v": "204.99908",
+      "n": 896
+     },
+     {
+      "t": 1792411200000,
+      "T": 1792414800000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "82320",
+      "c": "82573",
+      "h": "82656",
+      "l": "82292",
+      "v": "190.0379",
+      "n": 1041
+     },
+     {
+      "t": 1792414800000,
+      "T": 1792418400000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "82573",
+      "c": "82510",
+      "h": "82718",
+      "l": "82469",
+      "v": "73.9562",
+      "n": 396
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info/prices",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "d50f88d07863c13a"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:funding",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:book",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:trades",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:kline",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  }
+ ],
+ "ws": [],
+ "bodies": {
+  "a1ec1b6cf95ffea2": {
+   "success": true,
+   "data": [
+    {
+     "symbol": "BTC",
+     "tick_size": "1",
+     "min_tick": "0",
+     "max_tick": "1000000",
+     "lot_size": "0.00001",
+     "max_leverage": 50,
+     "isolated_only": false,
+     "min_order_size": "10",
+     "max_order_size": "5000000",
+     "funding_rate": "0.0000125",
+     "next_funding_rate": "0.0000125",
+     "created_at": 1748881333944,
+     "instrument_type": "perpetual",
+     "base_asset": "BTC",
+     "execution_modes": [
+      "orderbook"
+     ]
+    },
+    {
+     "symbol": "ETH",
+     "tick_size": "0.1",
+     "min_tick": "0",
+     "max_tick": "1000000",
+     "lot_size": "0.0001",
+     "max_leverage": 50,
+     "isolated_only": false,
+     "min_order_size": "10",
+     "max_order_size": "5000000",
+     "funding_rate": "0.0000125",
+     "next_funding_rate": "0.0000124",
+     "created_at": 1748881333944,
+     "instrument_type": "perpetual",
+     "base_asset": "ETH",
+     "execution_modes": [
+      "orderbook"
+     ]
+    },
+    {
+     "symbol": "SOL",
+     "tick_size": "0.01",
+     "min_tick": "0",
+     "max_tick": "1000000",
+     "lot_size": "0.01",
+     "max_leverage": 20,
+     "isolated_only": false,
+     "min_order_size": "10",
+     "max_order_size": "1000000",
+     "funding_rate": "0.0000125",
+     "next_funding_rate": "0.0000125",
+     "created_at": 1748881333944,
+     "instrument_type": "perpetual",
+     "base_asset": "SOL",
+     "execution_modes": [
+      "orderbook"
+     ]
+    },
+    {
+     "symbol": "SOL-USDC",
+     "tick_size": "0.01",
+     "min_tick": "0",
+     "max_tick": "1000000",
+     "lot_size": "0.001",
+     "max_leverage": 1,
+     "isolated_only": false,
+     "min_order_size": "10",
+     "max_order_size": "1000000",
+     "funding_rate": "0",
+     "next_funding_rate": "0",
+     "created_at": 1776615970246,
+     "instrument_type": "spot",
+     "base_asset": "SOL",
+     "execution_modes": [
+      "orderbook"
+     ]
+    }
+   ],
+   "error": null,
+   "code": null
+  },
+  "d50f88d07863c13a": {
+   "success": true,
+   "data": [
+    {
+     "funding": "0.0000125",
+     "mark": "82539",
+     "mid": "82539.5",
+     "next_funding": "0.0000125",
+     "open_interest": "470.43027",
+     "oracle": "82571.313336",
+     "symbol": "BTC",
+     "timestamp": 1792415906025,
+     "volume_24h": "350125050.51744",
+     "yesterday_price": "81906"
+    },
+    {
+     "funding": "0.0000125",
+     "mark": "105.335976",
+     "mid": "105.335",
+     "next_funding": "0.0000125",
+     "open_interest": "152103.74",
+     "oracle": "105.335976",
+     "symbol": "SOL",
+     "timestamp": 1792415906025,
+     "volume_24h": "54158301.6752",
+     "yesterday_price": "103.9"
+    },
+    {
+     "funding": "0.0000125",
+     "mark": "2421.558",
+     "mid": "2421.45",
+     "next_funding": "0.0000125",
+     "open_interest": "14102.4402",
+     "oracle": "2422.61025",
+     "symbol": "ETH",
+     "timestamp": 1792415906025,
+     "volume_24h": "248969774.50294",
+     "yesterday_price": "2414.3"
+    },
+    {
+     "funding": "0",
+     "mark": "105.335976",
+     "mid": "105.335",
+     "next_funding": "0",
+     "open_interest": "0",
+     "oracle": "105.335976",
+     "symbol": "SOL-USDC",
+     "timestamp": 1792415906025,
+     "volume_24h": "120661.47768",
+     "yesterday_price": "104"
+    }
+   ],
+   "error": null,
+   "code": null
+  }
+ }
+}

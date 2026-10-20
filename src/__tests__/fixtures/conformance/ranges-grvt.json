@@ -1,0 +1,2104 @@
+{
+ "schema": 1,
+ "name": "ranges-grvt",
+ "capturedAt": 1792414418110,
+ "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
+ "keep": [
+  "BTC",
+  "ETH",
+  "SOL"
+ ],
+ "full": [],
+ "http": [
+  {
+   "cell": "warm",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/instruments",
+   "body": "{\"kind\":[\"PERPETUAL\"],\"is_active\":true,\"limit\":100000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "instrument": "BTC_USDT_Perp",
+      "instrument_hash": "0x030501",
+      "base": "BTC",
+      "quote": "USDT",
+      "kind": "PERPETUAL",
+      "venues": [
+       "ORDERBOOK",
+       "RFQ"
+      ],
+      "settlement_period": "PERPETUAL",
+      "base_decimals": 9,
+      "quote_decimals": 6,
+      "tick_size": "0.1",
+      "min_size": "0.001",
+      "create_time": "1790754389133825661",
+      "max_position_size": "1000.0",
+      "funding_interval_hours": 8,
+      "adjusted_funding_rate_cap": "0.3",
+      "adjusted_funding_rate_floor": "-0.3",
+      "min_notional": "100.0",
+      "asset_class": "CRYPTO",
+      "status": "ACTIVE"
+     },
+     {
+      "instrument": "ETH_USDT_Perp",
+      "instrument_hash": "0x030401",
+      "base": "ETH",
+      "quote": "USDT",
+      "kind": "PERPETUAL",
+      "venues": [
+       "ORDERBOOK",
+       "RFQ"
+      ],
+      "settlement_period": "PERPETUAL",
+      "base_decimals": 9,
+      "quote_decimals": 6,
+      "tick_size": "0.01",
+      "min_size": "0.001",
+      "create_time": "1790754389133837741",
+      "max_position_size": "30000.0",
+      "funding_interval_hours": 8,
+      "adjusted_funding_rate_cap": "0.3",
+      "adjusted_funding_rate_floor": "-0.3",
+      "min_notional": "20.0",
+      "asset_class": "CRYPTO",
+      "status": "ACTIVE"
+     },
+     {
+      "instrument": "SOL_USDT_Perp",
+      "instrument_hash": "0x030601",
+      "base": "SOL",
+      "quote": "USDT",
+      "kind": "PERPETUAL",
+      "venues": [
+       "ORDERBOOK",
+       "RFQ"
+      ],
+      "settlement_period": "PERPETUAL",
+      "base_decimals": 9,
+      "quote_decimals": 6,
+      "tick_size": "0.01",
+      "min_size": "0.01",
+      "create_time": "1790754389133890233",
+      "max_position_size": "300000.0",
+      "funding_interval_hours": 8,
+      "adjusted_funding_rate_cap": "0.375",
+      "adjusted_funding_rate_floor": "-0.375",
+      "min_notional": "5.0",
+      "asset_class": "CRYPTO",
+      "status": "ACTIVE"
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "warm",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/ticker",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": {
+     "event_time": "1792414413463324791",
+     "instrument": "BTC_USDT_Perp",
+     "mark_price": "82562.090084276",
+     "index_price": "82587.061161367",
+     "last_price": "82513.4",
+     "last_size": "0.005",
+     "mid_price": "82594.05",
+     "best_bid_price": "82594.0",
+     "best_bid_size": "3.631",
+     "best_ask_price": "82594.1",
+     "best_ask_size": "3.534",
+     "funding_rate_8h_curr": "0.01",
+     "funding_rate_8h_avg": "0.01",
+     "interest_rate": "0.0",
+     "forward_price": "0.0",
+     "buy_volume_24h_b": "954.666",
+     "sell_volume_24h_b": "930.3",
+     "buy_volume_24h_q": "78174104.9721",
+     "sell_volume_24h_q": "76166902.6335",
+     "high_price": "83140.2",
+     "low_price": "80659.7",
+     "open_price": "81922.7",
+     "open_interest": "2520.25832092",
+     "long_short_ratio": "2.540880",
+     "funding_rate": "0.01",
+     "next_funding_time": "1792425600000000000",
+     "status": "ACTIVE",
+     "session": "REGULAR"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "warm",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/margin_rules",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "instrument": "BTC_USDT_Perp",
+    "max_position_size": "1000.0",
+    "risk_brackets": [
+     {
+      "tier": 1,
+      "notional_floor": "0.0",
+      "notional_cap": "600000.0",
+      "maintenance_margin_rate": "0.01",
+      "initial_margin_rate": "0.02",
+      "max_leverage": 50,
+      "cumulative_maintenance_amount": "0.0"
+     },
+     {
+      "tier": 2,
+      "notional_floor": "600000.0",
+      "notional_cap": "1600000.0",
+      "maintenance_margin_rate": "0.02",
+      "initial_margin_rate": "0.04",
+      "max_leverage": 25,
+      "cumulative_maintenance_amount": "6000.0"
+     },
+     {
+      "tier": 3,
+      "notional_floor": "1600000.0",
+      "notional_cap": "4000000.0",
+      "maintenance_margin_rate": "0.025",
+      "initial_margin_rate": "0.05",
+      "max_leverage": 20,
+      "cumulative_maintenance_amount": "14000.0"
+     },
+     {
+      "tier": 4,
+      "notional_floor": "4000000.0",
+      "notional_cap": "10000000.0",
+      "maintenance_margin_rate": "0.05",
+      "initial_margin_rate": "0.1",
+      "max_leverage": 10,
+      "cumulative_maintenance_amount": "114000.0"
+     },
+     {
+      "tier": 5,
+      "notional_floor": "10000000.0",
+      "notional_cap": "20000000.0",
+      "maintenance_margin_rate": "0.1",
+      "initial_margin_rate": "0.2",
+      "max_leverage": 5,
+      "cumulative_maintenance_amount": "614000.0"
+     },
+     {
+      "tier": 6,
+      "notional_floor": "20000000.0",
+      "notional_cap": "50000000.0",
+      "maintenance_margin_rate": "0.125",
+      "initial_margin_rate": "0.25",
+      "max_leverage": 4,
+      "cumulative_maintenance_amount": "1114000.0"
+     },
+     {
+      "tier": 7,
+      "notional_floor": "50000000.0",
+      "notional_cap": "80000000.0",
+      "maintenance_margin_rate": "0.16665",
+      "initial_margin_rate": "0.3333",
+      "max_leverage": 3,
+      "cumulative_maintenance_amount": "3196500.0"
+     },
+     {
+      "tier": 8,
+      "notional_floor": "80000000.0",
+      "notional_cap": "101000000.0",
+      "maintenance_margin_rate": "0.25",
+      "initial_margin_rate": "0.5",
+      "max_leverage": 2,
+      "cumulative_maintenance_amount": "9864500.0"
+     },
+     {
+      "tier": 9,
+      "notional_floor": "101000000.0",
+      "maintenance_margin_rate": "0.5",
+      "initial_margin_rate": "1.0",
+      "max_leverage": 1,
+      "cumulative_maintenance_amount": "35114500.0"
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1m",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_1_M\",\"type\":\"TRADE\",\"start_time\":\"1792414020000000000\",\"end_time\":\"1792414413767000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792414380000000000",
+      "close_time": "1792414413794313633",
+      "open": "82513.4",
+      "close": "82513.4",
+      "high": "82513.4",
+      "low": "82513.4",
+      "volume_b": "0.0",
+      "volume_q": "0.0",
+      "trades": 0,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792414320000000000",
+      "close_time": "1792414380000000000",
+      "open": "82477.5",
+      "close": "82513.4",
+      "high": "82513.4",
+      "low": "82477.5",
+      "volume_b": "0.005",
+      "volume_q": "412.567",
+      "trades": 1,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792414260000000000",
+      "close_time": "1792414320000000000",
+      "open": "82562.2",
+      "close": "82477.5",
+      "high": "82562.2",
+      "low": "82477.5",
+      "volume_b": "0.002",
+      "volume_q": "164.955",
+      "trades": 1,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792414200000000000",
+      "close_time": "1792414260000000000",
+      "open": "82562.2",
+      "close": "82562.2",
+      "high": "82562.2",
+      "low": "82562.2",
+      "volume_b": "0.0",
+      "volume_q": "0.0",
+      "trades": 0,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792414140000000000",
+      "close_time": "1792414200000000000",
+      "open": "82562.2",
+      "close": "82562.2",
+      "high": "82562.2",
+      "low": "82562.2",
+      "volume_b": "0.0",
+      "volume_q": "0.0",
+      "trades": 0,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792414080000000000",
+      "close_time": "1792414140000000000",
+      "open": "82562.2",
+      "close": "82562.2",
+      "high": "82562.2",
+      "low": "82562.2",
+      "volume_b": "0.0",
+      "volume_q": "0.0",
+      "trades": 0,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792414020000000000",
+      "close_time": "1792414080000000000",
+      "open": "82562.2",
+      "close": "82562.2",
+      "high": "82562.2",
+      "low": "82562.2",
+      "volume_b": "0.0",
+      "volume_q": "0.0",
+      "trades": 0,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:3m",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_3_M\",\"type\":\"TRADE\",\"start_time\":\"1792413180000000000\",\"end_time\":\"1792414413920000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792414260000000000",
+      "close_time": "1792414380000000000",
+      "open": "82562.2",
+      "close": "82513.4",
+      "high": "82562.2",
+      "low": "82477.5",
+      "volume_b": "0.007",
+      "volume_q": "577.522",
+      "trades": 2,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792414080000000000",
+      "close_time": "1792414260000000000",
+      "open": "82562.2",
+      "close": "82562.2",
+      "high": "82562.2",
+      "low": "82562.2",
+      "volume_b": "0.0",
+      "volume_q": "0.0",
+      "trades": 0,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792413900000000000",
+      "close_time": "1792414080000000000",
+      "open": "82562.2",
+      "close": "82562.2",
+      "high": "82562.2",
+      "low": "82562.2",
+      "volume_b": "0.0",
+      "volume_q": "0.0",
+      "trades": 0,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792413720000000000",
+      "close_time": "1792413900000000000",
+      "open": "82584.0",
+      "close": "82562.2",
+      "high": "82584.0",
+      "low": "82562.2",
+      "volume_b": "6.997",
+      "volume_q": "577738.0564",
+      "trades": 3,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792413540000000000",
+      "close_time": "1792413720000000000",
+      "open": "82596.9",
+      "close": "82584.0",
+      "high": "82596.9",
+      "low": "82584.0",
+      "volume_b": "0.002",
+      "volume_q": "165.168",
+      "trades": 1,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792413360000000000",
+      "close_time": "1792413540000000000",
+      "open": "82579.2",
+      "close": "82596.9",
+      "high": "82613.0",
+      "low": "82579.2",
+      "volume_b": "5.397",
+      "volume_q": "445848.2205",
+      "trades": 4,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792413180000000000",
+      "close_time": "1792413360000000000",
+      "open": "82572.5",
+      "close": "82579.2",
+      "high": "82579.2",
+      "low": "82572.5",
+      "volume_b": "1.659",
+      "volume_q": "136998.8928",
+      "trades": 1,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:5m",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_5_M\",\"type\":\"TRADE\",\"start_time\":\"1792412400000000000\",\"end_time\":\"1792414414087000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792414200000000000",
+      "close_time": "1792414380000000000",
+      "open": "82562.2",
+      "close": "82513.4",
+      "high": "82562.2",
+      "low": "82477.5",
+      "volume_b": "0.007",
+      "volume_q": "577.522",
+      "trades": 2,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792413900000000000",
+      "close_time": "1792414200000000000",
+      "open": "82562.2",
+      "close": "82562.2",
+      "high": "82562.2",
+      "low": "82562.2",
+      "volume_b": "0.0",
+      "volume_q": "0.0",
+      "trades": 0,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792413600000000000",
+      "close_time": "1792413900000000000",
+      "open": "82596.9",
+      "close": "82562.2",
+      "high": "82596.9",
+      "low": "82562.2",
+      "volume_b": "6.999",
+      "volume_q": "577903.2244",
+      "trades": 4,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792413300000000000",
+      "close_time": "1792413600000000000",
+      "open": "82579.2",
+      "close": "82596.9",
+      "high": "82613.0",
+      "low": "82579.2",
+      "volume_b": "5.397",
+      "volume_q": "445848.2205",
+      "trades": 4,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792413000000000000",
+      "close_time": "1792413300000000000",
+      "open": "82543.8",
+      "close": "82579.2",
+      "high": "82579.2",
+      "low": "82543.8",
+      "volume_b": "1.661",
+      "volume_q": "137164.0378",
+      "trades": 2,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792412700000000000",
+      "close_time": "1792413000000000000",
+      "open": "82543.8",
+      "close": "82543.8",
+      "high": "82543.8",
+      "low": "82543.8",
+      "volume_b": "0.0",
+      "volume_q": "0.0",
+      "trades": 0,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792412400000000000",
+      "close_time": "1792412700000000000",
+      "open": "82568.4",
+      "close": "82543.8",
+      "high": "82568.4",
+      "low": "82431.8",
+      "volume_b": "19.228",
+      "volume_q": "1586340.8787",
+      "trades": 9,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:15m",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_15_M\",\"type\":\"TRADE\",\"start_time\":\"1792408500000000000\",\"end_time\":\"1792414414256000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792413900000000000",
+      "close_time": "1792414380000000000",
+      "open": "82562.2",
+      "close": "82513.4",
+      "high": "82562.2",
+      "low": "82477.5",
+      "volume_b": "0.007",
+      "volume_q": "577.522",
+      "trades": 2,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792413000000000000",
+      "close_time": "1792413900000000000",
+      "open": "82543.8",
+      "close": "82562.2",
+      "high": "82613.0",
+      "low": "82543.8",
+      "volume_b": "14.057",
+      "volume_q": "1160915.4827",
+      "trades": 10,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792412100000000000",
+      "close_time": "1792413000000000000",
+      "open": "82455.1",
+      "close": "82543.8",
+      "high": "82588.3",
+      "low": "82431.8",
+      "volume_b": "29.349",
+      "volume_q": "2421905.3401",
+      "trades": 16,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792411200000000000",
+      "close_time": "1792412100000000000",
+      "open": "82351.7",
+      "close": "82455.1",
+      "high": "82455.1",
+      "low": "82297.2",
+      "volume_b": "0.349",
+      "volume_q": "28753.6329",
+      "trades": 11,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792410300000000000",
+      "close_time": "1792411200000000000",
+      "open": "82239.2",
+      "close": "82351.7",
+      "high": "82361.1",
+      "low": "82233.3",
+      "volume_b": "19.506",
+      "volume_q": "1605677.2675",
+      "trades": 15,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792409400000000000",
+      "close_time": "1792410300000000000",
+      "open": "82184.5",
+      "close": "82239.2",
+      "high": "82248.9",
+      "low": "82104.4",
+      "volume_b": "13.56",
+      "volume_q": "1114983.1732",
+      "trades": 10,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792408500000000000",
+      "close_time": "1792409400000000000",
+      "open": "82161.1",
+      "close": "82184.5",
+      "high": "82210.4",
+      "low": "82151.9",
+      "volume_b": "0.095",
+      "volume_q": "7806.9658",
+      "trades": 6,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:30m",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_30_M\",\"type\":\"TRADE\",\"start_time\":\"1792402200000000000\",\"end_time\":\"1792414414425000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792413000000000000",
+      "close_time": "1792414380000000000",
+      "open": "82543.8",
+      "close": "82513.4",
+      "high": "82613.0",
+      "low": "82477.5",
+      "volume_b": "14.064",
+      "volume_q": "1161493.0047",
+      "trades": 12,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792411200000000000",
+      "close_time": "1792413000000000000",
+      "open": "82351.7",
+      "close": "82543.8",
+      "high": "82588.3",
+      "low": "82297.2",
+      "volume_b": "29.698",
+      "volume_q": "2450658.973",
+      "trades": 27,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792409400000000000",
+      "close_time": "1792411200000000000",
+      "open": "82184.5",
+      "close": "82351.7",
+      "high": "82361.1",
+      "low": "82104.4",
+      "volume_b": "33.066",
+      "volume_q": "2720660.4407",
+      "trades": 25,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792407600000000000",
+      "close_time": "1792409400000000000",
+      "open": "82423.7",
+      "close": "82184.5",
+      "high": "82423.7",
+      "low": "82151.9",
+      "volume_b": "14.613",
+      "volume_q": "1202714.987",
+      "trades": 27,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792405800000000000",
+      "close_time": "1792407600000000000",
+      "open": "82282.4",
+      "close": "82423.7",
+      "high": "82453.0",
+      "low": "82100.0",
+      "volume_b": "62.277",
+      "volume_q": "5125633.541",
+      "trades": 77,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792404000000000000",
+      "close_time": "1792405800000000000",
+      "open": "82766.3",
+      "close": "82282.4",
+      "high": "82850.3",
+      "low": "82282.4",
+      "volume_b": "66.725",
+      "volume_q": "5519184.1406",
+      "trades": 64,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792402260000000000",
+      "close_time": "1792404000000000000",
+      "open": "82944.1",
+      "close": "82766.3",
+      "high": "83069.8",
+      "low": "82757.0",
+      "volume_b": "24.091",
+      "volume_q": "1995918.5381",
+      "trades": 28,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:30m",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_30_M\",\"type\":\"TRADE\",\"start_time\":\"1792402200000000000\",\"end_time\":\"1792402259999000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792402260000000000",
+      "close_time": "1792404000000000000",
+      "open": "82944.1",
+      "close": "82766.3",
+      "high": "83069.8",
+      "low": "82757.0",
+      "volume_b": "24.091",
+      "volume_q": "1995918.5381",
+      "trades": 28,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1h",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_1_H\",\"type\":\"TRADE\",\"start_time\":\"1792389600000000000\",\"end_time\":\"1792414414770000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792411200000000000",
+      "close_time": "1792414320000000000",
+      "open": "82351.7",
+      "close": "82477.5",
+      "high": "82613.0",
+      "low": "82297.2",
+      "volume_b": "43.759",
+      "volume_q": "3611904.3657",
+      "trades": 39,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792407600000000000",
+      "close_time": "1792411200000000000",
+      "open": "82423.7",
+      "close": "82351.7",
+      "high": "82423.7",
+      "low": "82104.4",
+      "volume_b": "47.679",
+      "volume_q": "3923375.4277",
+      "trades": 52,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792404000000000000",
+      "close_time": "1792407600000000000",
+      "open": "82766.3",
+      "close": "82423.7",
+      "high": "82850.3",
+      "low": "82100.0",
+      "volume_b": "129.002",
+      "volume_q": "10644817.6816",
+      "trades": 141,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792400400000000000",
+      "close_time": "1792404000000000000",
+      "open": "82813.8",
+      "close": "82766.3",
+      "high": "83069.8",
+      "low": "82712.9",
+      "volume_b": "70.642",
+      "volume_q": "5849442.692",
+      "trades": 63,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792396800000000000",
+      "close_time": "1792400400000000000",
+      "open": "82706.5",
+      "close": "82813.8",
+      "high": "82920.6",
+      "low": "82574.1",
+      "volume_b": "63.237",
+      "volume_q": "5231151.8621",
+      "trades": 92,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792393200000000000",
+      "close_time": "1792396800000000000",
+      "open": "82830.1",
+      "close": "82706.5",
+      "high": "83140.2",
+      "low": "82698.8",
+      "volume_b": "156.812",
+      "volume_q": "12994195.5579",
+      "trades": 202,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792389600000000000",
+      "close_time": "1792393200000000000",
+      "open": "82698.1",
+      "close": "82830.1",
+      "high": "82887.3",
+      "low": "82691.1",
+      "volume_b": "73.552",
+      "volume_q": "6088112.3344",
+      "trades": 88,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:2h",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_2_H\",\"type\":\"TRADE\",\"start_time\":\"1792368000000000000\",\"end_time\":\"1792414414938000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792411200000000000",
+      "close_time": "1792414320000000000",
+      "open": "82351.7",
+      "close": "82477.5",
+      "high": "82613.0",
+      "low": "82297.2",
+      "volume_b": "43.759",
+      "volume_q": "3611904.3657",
+      "trades": 39,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792404000000000000",
+      "close_time": "1792411200000000000",
+      "open": "82766.3",
+      "close": "82351.7",
+      "high": "82850.3",
+      "low": "82100.0",
+      "volume_b": "176.681",
+      "volume_q": "14568193.1093",
+      "trades": 193,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792396800000000000",
+      "close_time": "1792404000000000000",
+      "open": "82706.5",
+      "close": "82766.3",
+      "high": "83069.8",
+      "low": "82574.1",
+      "volume_b": "133.879",
+      "volume_q": "11080594.5541",
+      "trades": 155,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792389600000000000",
+      "close_time": "1792396800000000000",
+      "open": "82698.1",
+      "close": "82706.5",
+      "high": "83140.2",
+      "low": "82691.1",
+      "volume_b": "230.364",
+      "volume_q": "19082307.8923",
+      "trades": 290,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792382400000000000",
+      "close_time": "1792389600000000000",
+      "open": "82453.4",
+      "close": "82698.1",
+      "high": "82820.1",
+      "low": "82450.9",
+      "volume_b": "70.62",
+      "volume_q": "5833258.7328",
+      "trades": 136,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792375200000000000",
+      "close_time": "1792382400000000000",
+      "open": "82448.8",
+      "close": "82453.4",
+      "high": "82777.3",
+      "low": "82345.0",
+      "volume_b": "70.937",
+      "volume_q": "5855226.1024",
+      "trades": 130,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792368000000000000",
+      "close_time": "1792375200000000000",
+      "open": "82098.6",
+      "close": "82448.8",
+      "high": "82544.8",
+      "low": "82060.2",
+      "volume_b": "123.602",
+      "volume_q": "10176431.7963",
+      "trades": 164,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:4h",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_4_H\",\"type\":\"TRADE\",\"start_time\":\"1792324800000000000\",\"end_time\":\"1792414415102000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792411200000000000",
+      "close_time": "1792414320000000000",
+      "open": "82351.7",
+      "close": "82477.5",
+      "high": "82613.0",
+      "low": "82297.2",
+      "volume_b": "43.759",
+      "volume_q": "3611904.3657",
+      "trades": 39,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792396800000000000",
+      "close_time": "1792411200000000000",
+      "open": "82706.5",
+      "close": "82351.7",
+      "high": "83069.8",
+      "low": "82100.0",
+      "volume_b": "310.56",
+      "volume_q": "25648787.6634",
+      "trades": 348,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792382400000000000",
+      "close_time": "1792396800000000000",
+      "open": "82453.4",
+      "close": "82706.5",
+      "high": "83140.2",
+      "low": "82450.9",
+      "volume_b": "300.984",
+      "volume_q": "24915566.6251",
+      "trades": 426,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792368000000000000",
+      "close_time": "1792382400000000000",
+      "open": "82098.6",
+      "close": "82453.4",
+      "high": "82777.3",
+      "low": "82060.2",
+      "volume_b": "194.539",
+      "volume_q": "16031657.8987",
+      "trades": 294,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792353600000000000",
+      "close_time": "1792368000000000000",
+      "open": "80868.3",
+      "close": "82098.6",
+      "high": "82164.7",
+      "low": "80659.7",
+      "volume_b": "359.354",
+      "volume_q": "29222795.1134",
+      "trades": 413,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792339200000000000",
+      "close_time": "1792353600000000000",
+      "open": "81095.0",
+      "close": "80868.3",
+      "high": "81200.0",
+      "low": "80786.1",
+      "volume_b": "155.979",
+      "volume_q": "12633089.163",
+      "trades": 214,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792324800000000000",
+      "close_time": "1792339200000000000",
+      "open": "82010.4",
+      "close": "81095.0",
+      "high": "82064.3",
+      "low": "81000.0",
+      "volume_b": "549.913",
+      "volume_q": "44746245.9185",
+      "trades": 401,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:6h",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_6_H\",\"type\":\"TRADE\",\"start_time\":\"1792281600000000000\",\"end_time\":\"1792414415268000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792411200000000000",
+      "close_time": "1792414320000000000",
+      "open": "82351.7",
+      "close": "82477.5",
+      "high": "82613.0",
+      "low": "82297.2",
+      "volume_b": "43.759",
+      "volume_q": "3611904.3657",
+      "trades": 39,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792389600000000000",
+      "close_time": "1792411200000000000",
+      "open": "82698.1",
+      "close": "82351.7",
+      "high": "83140.2",
+      "low": "82100.0",
+      "volume_b": "540.924",
+      "volume_q": "44731095.5557",
+      "trades": 638,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792368000000000000",
+      "close_time": "1792389600000000000",
+      "open": "82098.6",
+      "close": "82698.1",
+      "high": "82820.1",
+      "low": "82060.2",
+      "volume_b": "265.159",
+      "volume_q": "21864916.6315",
+      "trades": 430,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792346400000000000",
+      "close_time": "1792368000000000000",
+      "open": "81146.2",
+      "close": "82098.6",
+      "high": "82164.7",
+      "low": "80659.7",
+      "volume_b": "471.136",
+      "volume_q": "38271614.9279",
+      "trades": 576,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792324800000000000",
+      "close_time": "1792346400000000000",
+      "open": "82010.4",
+      "close": "81146.2",
+      "high": "82064.3",
+      "low": "81000.0",
+      "volume_b": "594.11",
+      "volume_q": "48330515.267",
+      "trades": 452,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792303200000000000",
+      "close_time": "1792324800000000000",
+      "open": "81672.1",
+      "close": "82010.4",
+      "high": "82271.6",
+      "low": "81621.1",
+      "volume_b": "486.894",
+      "volume_q": "39906452.9669",
+      "trades": 301,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792281600000000000",
+      "close_time": "1792303200000000000",
+      "open": "81457.6",
+      "close": "81672.1",
+      "high": "82034.2",
+      "low": "81373.7",
+      "volume_b": "294.907",
+      "volume_q": "24101745.1556",
+      "trades": 241,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:8h",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_8_H\",\"type\":\"TRADE\",\"start_time\":\"1792224000000000000\",\"end_time\":\"1792414415435000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792396800000000000",
+      "close_time": "1792414320000000000",
+      "open": "82706.5",
+      "close": "82477.5",
+      "high": "83069.8",
+      "low": "82100.0",
+      "volume_b": "354.319",
+      "volume_q": "29260692.0291",
+      "trades": 387,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792368000000000000",
+      "close_time": "1792396800000000000",
+      "open": "82098.6",
+      "close": "82706.5",
+      "high": "83140.2",
+      "low": "82060.2",
+      "volume_b": "495.523",
+      "volume_q": "40947224.5238",
+      "trades": 720,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792339200000000000",
+      "close_time": "1792368000000000000",
+      "open": "81095.0",
+      "close": "82098.6",
+      "high": "82164.7",
+      "low": "80659.7",
+      "volume_b": "515.333",
+      "volume_q": "41855884.2764",
+      "trades": 627,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792310400000000000",
+      "close_time": "1792339200000000000",
+      "open": "81647.6",
+      "close": "81095.0",
+      "high": "82271.6",
+      "low": "81000.0",
+      "volume_b": "946.119",
+      "volume_q": "77245218.708",
+      "trades": 650,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792281600000000000",
+      "close_time": "1792310400000000000",
+      "open": "81457.6",
+      "close": "81647.6",
+      "high": "82034.2",
+      "low": "81373.7",
+      "volume_b": "385.595",
+      "volume_q": "31509225.333",
+      "trades": 293,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792252800000000000",
+      "close_time": "1792281600000000000",
+      "open": "81327.7",
+      "close": "81457.6",
+      "high": "81639.0",
+      "low": "80796.1",
+      "volume_b": "844.817",
+      "volume_q": "68680595.2578",
+      "trades": 874,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792224000000000000",
+      "close_time": "1792252800000000000",
+      "open": "81662.5",
+      "close": "81327.7",
+      "high": "81715.4",
+      "low": "81274.8",
+      "volume_b": "650.478",
+      "volume_q": "53035229.2264",
+      "trades": 521,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:12h",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_12_H\",\"type\":\"TRADE\",\"start_time\":\"1792152000000000000\",\"end_time\":\"1792414415601000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792411200000000000",
+      "close_time": "1792414320000000000",
+      "open": "82351.7",
+      "close": "82477.5",
+      "high": "82613.0",
+      "low": "82297.2",
+      "volume_b": "43.759",
+      "volume_q": "3611904.3657",
+      "trades": 39,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792368000000000000",
+      "close_time": "1792411200000000000",
+      "open": "82098.6",
+      "close": "82351.7",
+      "high": "83140.2",
+      "low": "82060.2",
+      "volume_b": "806.083",
+      "volume_q": "66596012.1872",
+      "trades": 1068,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792324800000000000",
+      "close_time": "1792368000000000000",
+      "open": "82010.4",
+      "close": "82098.6",
+      "high": "82164.7",
+      "low": "80659.7",
+      "volume_b": "1065.246",
+      "volume_q": "86602130.1949",
+      "trades": 1028,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792281600000000000",
+      "close_time": "1792324800000000000",
+      "open": "81457.6",
+      "close": "82010.4",
+      "high": "82271.6",
+      "low": "81373.7",
+      "volume_b": "781.801",
+      "volume_q": "64008198.1225",
+      "trades": 542,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792238400000000000",
+      "close_time": "1792281600000000000",
+      "open": "81547.0",
+      "close": "81457.6",
+      "high": "81639.0",
+      "low": "80796.1",
+      "volume_b": "1205.321",
+      "volume_q": "98049510.0002",
+      "trades": 1153,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792195200000000000",
+      "close_time": "1792238400000000000",
+      "open": "81597.2",
+      "close": "81547.0",
+      "high": "81720.4",
+      "low": "81384.9",
+      "volume_b": "869.048",
+      "volume_q": "70885117.2635",
+      "trades": 617,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792152000000000000",
+      "close_time": "1792195200000000000",
+      "open": "82601.6",
+      "close": "81597.2",
+      "high": "82601.6",
+      "low": "80800.0",
+      "volume_b": "691.082",
+      "volume_q": "56447886.6306",
+      "trades": 879,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1d",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_1_D\",\"type\":\"TRADE\",\"start_time\":\"1791849600000000000\",\"end_time\":\"1792414415767000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792368000000000000",
+      "close_time": "1792414140000000000",
+      "open": "82098.6",
+      "close": "82562.2",
+      "high": "83140.2",
+      "low": "82060.2",
+      "volume_b": "849.798",
+      "volume_q": "70204282.8705",
+      "trades": 1100,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792281600000000000",
+      "close_time": "1792368000000000000",
+      "open": "81457.6",
+      "close": "82098.6",
+      "high": "82271.6",
+      "low": "80659.7",
+      "volume_b": "1842.628",
+      "volume_q": "150248354.7844",
+      "trades": 1567,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792195200000000000",
+      "close_time": "1792281600000000000",
+      "open": "81597.2",
+      "close": "81457.6",
+      "high": "81720.4",
+      "low": "80796.1",
+      "volume_b": "2063.129",
+      "volume_q": "168017830.6708",
+      "trades": 1760,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792108800000000000",
+      "close_time": "1792195200000000000",
+      "open": "82207.2",
+      "close": "81597.2",
+      "high": "82869.1",
+      "low": "80800.0",
+      "volume_b": "1633.896",
+      "volume_q": "133917789.4429",
+      "trades": 1658,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792022400000000000",
+      "close_time": "1792108800000000000",
+      "open": "81647.5",
+      "close": "82207.2",
+      "high": "82569.1",
+      "low": "79758.8",
+      "volume_b": "1619.625",
+      "volume_q": "131764909.5446",
+      "trades": 2313,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1791936000000000000",
+      "close_time": "1792022400000000000",
+      "open": "83125.6",
+      "close": "81647.5",
+      "high": "84088.8",
+      "low": "81425.9",
+      "volume_b": "1842.205",
+      "volume_q": "152809441.4731",
+      "trades": 2109,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1791849600000000000",
+      "close_time": "1791936000000000000",
+      "open": "81813.9",
+      "close": "83125.6",
+      "high": "84023.4",
+      "low": "81001.1",
+      "volume_b": "1541.954",
+      "volume_q": "128122359.8323",
+      "trades": 1541,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:3d",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_3_D\",\"type\":\"TRADE\",\"start_time\":\"1790859215938000000\",\"end_time\":\"1792414415938000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792368000000000000",
+      "close_time": "1792414140000000000",
+      "open": "82098.6",
+      "close": "82562.2",
+      "high": "83140.2",
+      "low": "82060.2",
+      "volume_b": "849.798",
+      "volume_q": "70204282.8705",
+      "trades": 1100,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1792108800000000000",
+      "close_time": "1792368000000000000",
+      "open": "82207.2",
+      "close": "82098.6",
+      "high": "82869.1",
+      "low": "80659.7",
+      "volume_b": "5539.653",
+      "volume_q": "452183974.8981",
+      "trades": 4985,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1791849600000000000",
+      "close_time": "1792108800000000000",
+      "open": "81813.9",
+      "close": "82207.2",
+      "high": "84088.8",
+      "low": "79758.8",
+      "volume_b": "5003.784",
+      "volume_q": "412696710.85",
+      "trades": 5963,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1791590400000000000",
+      "close_time": "1791849600000000000",
+      "open": "82599.0",
+      "close": "81813.9",
+      "high": "84314.9",
+      "low": "81729.6",
+      "volume_b": "5983.779",
+      "volume_q": "497238320.1982",
+      "trades": 4532,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1791331200000000000",
+      "close_time": "1791590400000000000",
+      "open": "85526.6",
+      "close": "82599.0",
+      "high": "85568.9",
+      "low": "80390.9",
+      "volume_b": "5345.248",
+      "volume_q": "443508777.8919",
+      "trades": 6748,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1791072000000000000",
+      "close_time": "1791331200000000000",
+      "open": "84718.4",
+      "close": "85526.6",
+      "high": "86973.4",
+      "low": "84692.7",
+      "volume_b": "5269.446",
+      "volume_q": "451676555.1133",
+      "trades": 5460,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1790899200000000000",
+      "close_time": "1791072000000000000",
+      "open": "84865.2",
+      "close": "84718.4",
+      "high": "87166.9",
+      "low": "83920.2",
+      "volume_b": "3627.906",
+      "volume_q": "309067976.1496",
+      "trades": 4028,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:3d",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_3_D\",\"type\":\"TRADE\",\"start_time\":\"1790859215938000000\",\"end_time\":\"1790899199999000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:5d",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_5_D\",\"type\":\"TRADE\",\"start_time\":\"1789822416264000000\",\"end_time\":\"1792414416264000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792368000000000000",
+      "close_time": "1792414140000000000",
+      "open": "82098.6",
+      "close": "82562.2",
+      "high": "83140.2",
+      "low": "82060.2",
+      "volume_b": "849.798",
+      "volume_q": "70204282.8705",
+      "trades": 1100,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1791936000000000000",
+      "close_time": "1792368000000000000",
+      "open": "83125.6",
+      "close": "82098.6",
+      "high": "84088.8",
+      "low": "79758.8",
+      "volume_b": "9001.483",
+      "volume_q": "736758325.9158",
+      "trades": 9407,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1791504000000000000",
+      "close_time": "1791936000000000000",
+      "open": "81687.9",
+      "close": "83125.6",
+      "high": "84314.9",
+      "low": "81001.1",
+      "volume_b": "9037.848",
+      "volume_q": "750226310.8465",
+      "trades": 7464,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1791072000000000000",
+      "close_time": "1791504000000000000",
+      "open": "84718.4",
+      "close": "81687.9",
+      "high": "86973.4",
+      "low": "80390.9",
+      "volume_b": "9102.579",
+      "volume_q": "770319702.1892",
+      "trades": 10817,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1790640000000000000",
+      "close_time": "1791072000000000000",
+      "open": "83474.6",
+      "close": "84718.4",
+      "high": "87166.9",
+      "low": "82761.3",
+      "volume_b": "8771.398",
+      "volume_q": "740101965.5778",
+      "trades": 9571,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1790208000000000000",
+      "close_time": "1790640000000000000",
+      "open": "84405.6",
+      "close": "83474.6",
+      "high": "85228.3",
+      "low": "82565.0",
+      "volume_b": "8990.508",
+      "volume_q": "756145274.6339",
+      "trades": 8031,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1789862400000000000",
+      "close_time": "1790208000000000000",
+      "open": "81230.0",
+      "close": "84405.6",
+      "high": "87345.0",
+      "low": "80116.2",
+      "volume_b": "7116.273",
+      "volume_q": "595603632.3233",
+      "trades": 9050,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:5d",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_5_D\",\"type\":\"TRADE\",\"start_time\":\"1789822416264000000\",\"end_time\":\"1789862399999000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1w",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_1_W\",\"type\":\"TRADE\",\"start_time\":\"1788785616819000000\",\"end_time\":\"1792414416819000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1792368000000000000",
+      "close_time": "1792414140000000000",
+      "open": "82098.6",
+      "close": "82562.2",
+      "high": "83140.2",
+      "low": "82060.2",
+      "volume_b": "849.798",
+      "volume_q": "70204282.8705",
+      "trades": 1100,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1791763200000000000",
+      "close_time": "1792368000000000000",
+      "open": "83707.4",
+      "close": "82098.6",
+      "high": "84314.9",
+      "low": "79758.8",
+      "volume_b": "12580.174",
+      "volume_q": "1034242992.6595",
+      "trades": 12964,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1791158400000000000",
+      "close_time": "1791763200000000000",
+      "open": "86425.3",
+      "close": "83707.4",
+      "high": "86973.4",
+      "low": "80390.9",
+      "volume_b": "12470.759",
+      "volume_q": "1044518114.5827",
+      "trades": 13045,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1790553600000000000",
+      "close_time": "1791158400000000000",
+      "open": "84427.5",
+      "close": "86425.3",
+      "high": "87166.9",
+      "low": "82565.0",
+      "volume_b": "12479.232",
+      "volume_q": "1053535681.3814",
+      "trades": 13165,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1789948800000000000",
+      "close_time": "1790553600000000000",
+      "open": "81135.2",
+      "close": "84427.5",
+      "high": "87345.0",
+      "low": "80828.2",
+      "volume_b": "12352.081",
+      "volume_q": "1044225830.0574",
+      "trades": 13496,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1789344000000000000",
+      "close_time": "1789948800000000000",
+      "open": "76788.9",
+      "close": "81135.2",
+      "high": "81900.0",
+      "low": "74915.7",
+      "volume_b": "13086.676",
+      "volume_q": "1024384954.9983",
+      "trades": 20880,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1788825600000000000",
+      "close_time": "1789344000000000000",
+      "open": "79068.5",
+      "close": "76788.9",
+      "high": "79800.0",
+      "low": "76000.0",
+      "volume_b": "10072.005",
+      "volume_q": "783718272.225",
+      "trades": 15430,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1w",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_1_W\",\"type\":\"TRADE\",\"start_time\":\"1788785616819000000\",\"end_time\":\"1788825599999000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:2w",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_2_W\",\"type\":\"TRADE\",\"start_time\":\"1785156817139000000\",\"end_time\":\"1792414417139000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1791763200000000000",
+      "close_time": "1792414140000000000",
+      "open": "83707.4",
+      "close": "82562.2",
+      "high": "84314.9",
+      "low": "79758.8",
+      "volume_b": "13429.972",
+      "volume_q": "1104447275.53",
+      "trades": 14064,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1790553600000000000",
+      "close_time": "1791763200000000000",
+      "open": "84427.5",
+      "close": "83707.4",
+      "high": "87166.9",
+      "low": "80390.9",
+      "volume_b": "24949.991",
+      "volume_q": "2098053795.9641",
+      "trades": 26210,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1789344000000000000",
+      "close_time": "1790553600000000000",
+      "open": "76788.9",
+      "close": "84427.5",
+      "high": "87345.0",
+      "low": "74915.7",
+      "volume_b": "25438.757",
+      "volume_q": "2068610785.0557",
+      "trades": 34376,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1788134400000000000",
+      "close_time": "1789344000000000000",
+      "open": "77646.2",
+      "close": "76788.9",
+      "high": "82253.4",
+      "low": "76000.0",
+      "volume_b": "22871.813",
+      "volume_q": "1792838545.1349",
+      "trades": 38417,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1786924800000000000",
+      "close_time": "1788134400000000000",
+      "open": "62873.8",
+      "close": "77646.2",
+      "high": "82773.9",
+      "low": "62738.3",
+      "volume_b": "27221.352837742",
+      "volume_q": "2016261415.128956",
+      "trades": 68037,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1785715200000000000",
+      "close_time": "1786924800000000000",
+      "open": "63548.9",
+      "close": "62873.8",
+      "high": "65500.0",
+      "low": "62277.9",
+      "volume_b": "28882.265",
+      "volume_q": "1847506770.4983",
+      "trades": 45250,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1785196800000000000",
+      "close_time": "1785715200000000000",
+      "open": "63725.2",
+      "close": "63548.9",
+      "high": "65369.0",
+      "low": "62247.5",
+      "volume_b": "18455.897",
+      "volume_q": "1174791727.9616",
+      "trades": 43025,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:2w",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_2_W\",\"type\":\"TRADE\",\"start_time\":\"1785156817139000000\",\"end_time\":\"1785196799999000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:3w",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_3_W\",\"type\":\"TRADE\",\"start_time\":\"1781528017464000000\",\"end_time\":\"1792414417464000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1791158400000000000",
+      "close_time": "1792414140000000000",
+      "open": "86425.3",
+      "close": "82562.2",
+      "high": "86973.4",
+      "low": "79758.8",
+      "volume_b": "25900.731",
+      "volume_q": "2148965390.1127",
+      "trades": 27109,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1789344000000000000",
+      "close_time": "1791158400000000000",
+      "open": "76788.9",
+      "close": "86425.3",
+      "high": "87345.0",
+      "low": "74915.7",
+      "volume_b": "37917.989",
+      "volume_q": "3122146466.4371",
+      "trades": 47541,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1787529600000000000",
+      "close_time": "1789344000000000000",
+      "open": "77734.9",
+      "close": "76788.9",
+      "high": "82773.9",
+      "low": "76000.0",
+      "volume_b": "35609.747837742",
+      "volume_q": "2797042300.011456",
+      "trades": 67448,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1785715200000000000",
+      "close_time": "1787529600000000000",
+      "open": "63548.9",
+      "close": "77734.9",
+      "high": "79533.5",
+      "low": "62277.9",
+      "volume_b": "43365.683",
+      "volume_q": "2859564430.7507",
+      "trades": 84256,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1783900800000000000",
+      "close_time": "1785715200000000000",
+      "open": "63769.7",
+      "close": "63548.9",
+      "high": "66911.1",
+      "low": "61819.2",
+      "volume_b": "96340.364",
+      "volume_q": "6196944390.163",
+      "trades": 138659,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1782086400000000000",
+      "close_time": "1783900800000000000",
+      "open": "63277.7",
+      "close": "63769.7",
+      "high": "65586.1",
+      "low": "57779.9",
+      "volume_b": "133722.869",
+      "volume_q": "8255662056.0718",
+      "trades": 382674,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1781568000000000000",
+      "close_time": "1782086400000000000",
+      "open": "66311.6",
+      "close": "63277.7",
+      "high": "66945.5",
+      "low": "62241.0",
+      "volume_b": "33071.43",
+      "volume_q": "2129136776.4999",
+      "trades": 170677,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:3w",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_3_W\",\"type\":\"TRADE\",\"start_time\":\"1781528017464000000\",\"end_time\":\"1781567999999000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:4w",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_4_W\",\"type\":\"TRADE\",\"start_time\":\"1777899217785000000\",\"end_time\":\"1792414417785000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [
+     {
+      "open_time": "1790553600000000000",
+      "close_time": "1792414140000000000",
+      "open": "84427.5",
+      "close": "82562.2",
+      "high": "87166.9",
+      "low": "79758.8",
+      "volume_b": "38379.963",
+      "volume_q": "3202501071.4941",
+      "trades": 40274,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1788134400000000000",
+      "close_time": "1790553600000000000",
+      "open": "77646.2",
+      "close": "84427.5",
+      "high": "87345.0",
+      "low": "74915.7",
+      "volume_b": "48310.57",
+      "volume_q": "3861449330.1906",
+      "trades": 72793,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1785715200000000000",
+      "close_time": "1788134400000000000",
+      "open": "63548.9",
+      "close": "77646.2",
+      "high": "82773.9",
+      "low": "62277.9",
+      "volume_b": "56103.617837742",
+      "volume_q": "3863768185.627256",
+      "trades": 113287,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1783296000000000000",
+      "close_time": "1785715200000000000",
+      "open": "63578.6",
+      "close": "63548.9",
+      "high": "66911.1",
+      "low": "61308.5",
+      "volume_b": "137046.069",
+      "volume_q": "8773705834.0123",
+      "trades": 211178,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1780876800000000000",
+      "close_time": "1783296000000000000",
+      "open": "63330.0",
+      "close": "63578.6",
+      "high": "68370.0",
+      "low": "57779.9",
+      "volume_b": "176754.173986252",
+      "volume_q": "11020130337.075782",
+      "trades": 720960,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1778457600000000000",
+      "close_time": "1780876800000000000",
+      "open": "82134.2",
+      "close": "63330.0",
+      "high": "82332.2",
+      "low": "59095.7",
+      "volume_b": "164381.70585171",
+      "volume_q": "12082471242.663602",
+      "trades": 1161849,
+      "instrument": "BTC_USDT_Perp"
+     },
+     {
+      "open_time": "1777939200000000000",
+      "close_time": "1778457600000000000",
+      "open": "79790.2",
+      "close": "82134.2",
+      "high": "82799.9",
+      "low": "79170.0",
+      "volume_b": "28685.971",
+      "volume_q": "2316892958.03",
+      "trades": 110887,
+      "instrument": "BTC_USDT_Perp"
+     }
+    ],
+    "next": ""
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:4w",
+   "method": "POST",
+   "url": "https://market-data.grvt.io/full/v1/kline",
+   "body": "{\"instrument\":\"BTC_USDT_Perp\",\"interval\":\"CI_4_W\",\"type\":\"TRADE\",\"start_time\":\"1777899217785000000\",\"end_time\":\"1777939199999000000\",\"limit\":1000}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "result": [],
+    "next": ""
+   },
+   "text": null
+  }
+ ],
+ "ws": []
+}

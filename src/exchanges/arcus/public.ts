@@ -25,6 +25,7 @@
  */
 
 import { PerpError } from "../../errors.js";
+import { isArcusOnlineMarket } from "../../ws/arcus-market.js";
 import { canonicalFor } from "../canonical-symbols.js";
 import type { AssetClass, MarketSession, Network, VenueFundingRate, VenueMarket } from "../venue-types.js";
 import type { VenuePublicData } from "../venue.js";
@@ -143,7 +144,7 @@ export function toArcusVenueMarket(m: ArcusRawMarket): VenueMarket {
     maxLeverage: maxLeverageOf(m),
     marginTiers: null,
     session: sessionOf(m),
-    tradable: m.status === "ONLINE",
+    tradable: isArcusOnlineMarket(m),
   };
 }
 
@@ -153,7 +154,7 @@ export function toArcusVenueMarket(m: ArcusRawMarket): VenueMarket {
  * market / funding lists rather than listed at a $0 price and 0 % funding.
  */
 export function onlineArcusMarkets(raw: ArcusRawMarket[]): ArcusRawMarket[] {
-  return raw.filter(m => m.status === "ONLINE");
+  return raw.filter(isArcusOnlineMarket);
 }
 
 async function fetchMarkets(net: Network): Promise<VenueMarket[]> {

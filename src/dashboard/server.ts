@@ -134,12 +134,12 @@ async function pollArbData(): Promise<DashboardSnapshot["arb"]> {
   let exchangeErrors: Record<string, string> = {};
 
   try {
-    const { fetchAllFundingRates } = await import("../funding/rates.js");
+    const { fetchAllFundingRates, isRankedComparison } = await import("../funding/rates.js");
     const snapshot = await fetchAllFundingRates({ minSpread: 5 });
     exchangeStatus = snapshot.exchangeStatus;
     exchangeErrors = snapshot.exchangeErrors;
 
-    for (const sym of snapshot.symbols.slice(0, 20)) {
+    for (const sym of snapshot.symbols.filter(isRankedComparison).slice(0, 20)) {
       opportunities.push({
         symbol: sym.symbol,
         longExchange: sym.longExchange,

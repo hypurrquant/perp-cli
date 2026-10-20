@@ -5,7 +5,11 @@
  *
  * Units (Phase 0, the key correction): WS `funding_rate` (last settled) and `current_funding_rate`
  * (predicted) are PERCENT per 1 h → converted to a fraction by an exact 2-place decimal shift,
- * rateIntervalHours = settlementIntervalHours = 1. `open_interest` is USD notional (not base).
+ * rateIntervalHours = settlementIntervalHours = 1. `open_interest` is USD notional (not base) and
+ * one side — INFERRED, not documented by the venue: WS open_interest / mark = REST orderBookDetails
+ * `open_interest` (base) (2026-10-19, BTC: 174.88 M USD / 82,387 = 2,122.7 BTC), and the venue's
+ * exchangeMetrics open_interest — a DAILY snapshot, two days old when compared — was ≈ 2× the
+ * current one-side figure (336.6 M USD).
  * Errors arrive as {error:{code,message}} with no channel field (matched by the channel name in
  * the message). Spot markets (market_type "spot" in /api/v1/orderBooks) are not perps and skipped.
  *
@@ -15,6 +19,7 @@
 import { mulDecimalInt, shiftDecimal } from "../dec.js";
 import { badShape, fetchJson } from "../directory.js";
 import { VENUE_STATIC } from "../venue-static.js";
+import { isLighterMarketLive } from "../lighter-market.js";
 import type {
   DecodedEvent, Dec, FillRow, MarketDirectoryEntry, MarketPatch, OrderRow, PositionRow, UserDelta, VenueCodec, WireSub,
 } from "../types.js";
@@ -25,8 +30,9 @@ import {
 const ALL = "market_stats/all";
 
 interface LighterData {
+  /** Every perp id → symbol (inactive ones too, so account rows on them keep their name). */
   idToSymbol: Map<string, string>;
-  /** Non-perp market ids (spot) present in the venue's market list. */
+  /** Market ids not streamed as markets: spot, and perps that are not live (isLighterMarketLive). */
   nonPerp: Set<string>;
   symbolToId: Map<string, string>;
 }
@@ -39,6 +45,15 @@ const ZERO = /^-?0*(\.0*)?$/;
 /** best bid/ask: Lighter sends "" when that side of the book is empty (live, 2026-10-13) → null. */
 function bookSide(o: Obj, key: string, bad: string[]): Dec | null | undefined {
   return o[key] === "" ? null : readDec(o, key, bad);
+}
+
+/**
+ * last_trade_price: a market with no trade yet is sent as "0" / "0.00" (live 2026-10-19: GME, BE,
+ * USDHKD — empty book, zero OI) — no last price, so null (unknown = null, never "0").
+ */
+function lastTrade(o: Obj, bad: string[]): Dec | null | undefined {
+  const v = readDec(o, "last_trade_price", bad);
+  return v !== undefined && v !== null && ZERO.test(v) ? null : v;
 }
 
 function percentToFraction(o: Obj, key: string, bad: string[]): Dec | null | undefined {
@@ -63,7 +78,7 @@ function makeLighter(venue: "lighter" | "lighter-rh", quote: string): VenueCodec
       notes: {
         rate: "WS funding is PERCENT per 1 h on the wire; emitted as a fraction per 1 h",
         nextFundingTime: "Hourly settlement rule (venue-definition)",
-        openInterest: "USD notional (Phase 0), sides not stated by the venue",
+        openInterest: "USD notional, one side — inferred, not documented by the venue (= REST orderBookDetails open_interest, base, × mark; the venue's exchangeMetrics kind=open_interest, a daily snapshot, read ≈ 2× when compared with the current value)",
         user: "By accountIndex. user_stats / account_all_positions / account_all_trades need no auth; account_all_orders needs CredentialProvider.authToken (re-called at 80 % TTL). account_all_trades does not replay → gap refetch-required for fills after a reconnect",
         clientId: "orders: client_order_id; fills: ask_/bid_client_id_str of our side; 0 = no client id → null",
         liquidationPrice: "liquidation_price; \"0\" (no liquidation price, e.g. well-covered cross margin) → null, as in the CLI REST path",
@@ -80,7 +95,7 @@ function makeLighter(venue: "lighter" | "lighter-rh", quote: string): VenueCodec
     limits: S.limits,
     closesOnBadSubscribe: false,
     staleAfterMs: S.staleAfterMs,
-    openInterest: { unit: "usd", sides: null },
+    openInterest: { unit: "usd", sides: "one" },
     refresh: null,
 
     async loadDirectory(ctx) {
@@ -96,6 +111,8 @@ function makeLighter(venue: "lighter" | "lighter-rh", quote: string): VenueCodec
         const id = String(m.market_id);
         if (m.market_type !== "perp") { nonPerp.add(id); continue; }
         idToSymbol.set(id, m.symbol);
+        // Inactive / frozen perps are not live markets (the CLI's market list applies the same rule).
+        if (!isLighterMarketLive(m)) { nonPerp.add(id); continue; }
         entries.push({
           venue, dex: null, symbol: m.symbol, venueSymbol: m.symbol, base: m.symbol, quote,
           canonical: ctx.canonicalize(venue, { venueSymbol: m.symbol, dex: null, base: m.symbol, quote }),
@@ -215,7 +232,7 @@ function decodeStats(venue: string, f: Obj, d: LighterData, recvTs: number): Dec
       index: readDec(r, "index_price", bad),
       bestBid: bookSide(r, "best_bid_price", bad),
       bestAsk: bookSide(r, "best_ask_price", bad),
-      last: readDec(r, "last_trade_price", bad),
+      last: lastTrade(r, bad),
       rate: percentToFraction(r, "funding_rate", bad),
       predictedRate: percentToFraction(r, "current_funding_rate", bad),
       openInterest: readDec(r, "open_interest", bad),

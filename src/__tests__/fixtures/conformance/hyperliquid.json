@@ -1,0 +1,1641 @@
+{
+ "schema": 1,
+ "name": "hyperliquid",
+ "capturedAt": 1792405401642,
+ "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
+ "keep": [
+  "BTC",
+  "ETH",
+  "SOL"
+ ],
+ "http": [
+  {
+   "cell": "list",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"meta\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8251c37cef68a3f5"
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"allMids\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "BTC": "82452.5",
+    "ETH": "2427.35",
+    "SOL": "105.005"
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"metaAndAssetCtxs\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "universe": [
+      {
+       "szDecimals": 5,
+       "name": "BTC",
+       "maxLeverage": 40,
+       "marginTableId": 56
+      },
+      {
+       "szDecimals": 4,
+       "name": "ETH",
+       "maxLeverage": 25,
+       "marginTableId": 55
+      },
+      {
+       "szDecimals": 2,
+       "name": "SOL",
+       "maxLeverage": 20,
+       "marginTableId": 54
+      }
+     ],
+     "marginTables": [
+      [
+       50,
+       {
+        "description": "",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 50
+         }
+        ]
+       }
+      ],
+      [
+       51,
+       {
+        "description": "tiered 10x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 10
+         },
+         {
+          "lowerBound": "3000000.0",
+          "maxLeverage": 5
+         }
+        ]
+       }
+      ],
+      [
+       52,
+       {
+        "description": "tiered 10x (2)",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 10
+         },
+         {
+          "lowerBound": "20000000.0",
+          "maxLeverage": 5
+         }
+        ]
+       }
+      ],
+      [
+       53,
+       {
+        "description": "tiered 20x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 20
+         },
+         {
+          "lowerBound": "40000000.0",
+          "maxLeverage": 10
+         }
+        ]
+       }
+      ],
+      [
+       54,
+       {
+        "description": "tiered 20x (2)",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 20
+         },
+         {
+          "lowerBound": "70000000.0",
+          "maxLeverage": 10
+         }
+        ]
+       }
+      ],
+      [
+       55,
+       {
+        "description": "tiered 25x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 25
+         },
+         {
+          "lowerBound": "100000000.0",
+          "maxLeverage": 15
+         }
+        ]
+       }
+      ],
+      [
+       56,
+       {
+        "description": "tiered 40x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 40
+         },
+         {
+          "lowerBound": "150000000.0",
+          "maxLeverage": 20
+         }
+        ]
+       }
+      ]
+     ],
+     "collateralToken": 0
+    },
+    [
+     {
+      "funding": "0.0000125",
+      "openInterest": "39878.11294",
+      "prevDayPx": "82203.0",
+      "dayNtlVlm": "2283943872.6556963921",
+      "premium": "-0.0004000679",
+      "oraclePx": "82486.0",
+      "markPx": "82452.0",
+      "midPx": "82452.5",
+      "impactPxs": [
+       "82450.8",
+       "82453.0"
+      ],
+      "dayBaseVlm": "27947.23008"
+     },
+     {
+      "funding": "0.0000125",
+      "openInterest": "1069996.5430000005",
+      "prevDayPx": "2424.7",
+      "dayNtlVlm": "1125139674.7887318134",
+      "premium": "-0.0003706755",
+      "oraclePx": "2428.0",
+      "markPx": "2427.2",
+      "midPx": "2427.05",
+      "impactPxs": [
+       "2427.0",
+       "2427.1"
+      ],
+      "dayBaseVlm": "471931.4263000003"
+     },
+     {
+      "funding": "0.0000051878",
+      "openInterest": "5513168.1599999992",
+      "prevDayPx": "104.19",
+      "dayNtlVlm": "209741635.0179003775",
+      "premium": "-0.0005234855",
+      "oraclePx": "105.065",
+      "markPx": "105.0095",
+      "midPx": "105.005",
+      "impactPxs": [
+       "105.0",
+       "105.01"
+      ],
+      "dayBaseVlm": "2025584.7200000004"
+     }
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"meta\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8251c37cef68a3f5"
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"allMids\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "BTC": "82452.5",
+    "ETH": "2427.35",
+    "SOL": "105.005"
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"metaAndAssetCtxs\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "universe": [
+      {
+       "szDecimals": 5,
+       "name": "BTC",
+       "maxLeverage": 40,
+       "marginTableId": 56
+      },
+      {
+       "szDecimals": 4,
+       "name": "ETH",
+       "maxLeverage": 25,
+       "marginTableId": 55
+      },
+      {
+       "szDecimals": 2,
+       "name": "SOL",
+       "maxLeverage": 20,
+       "marginTableId": 54
+      }
+     ],
+     "marginTables": [
+      [
+       50,
+       {
+        "description": "",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 50
+         }
+        ]
+       }
+      ],
+      [
+       51,
+       {
+        "description": "tiered 10x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 10
+         },
+         {
+          "lowerBound": "3000000.0",
+          "maxLeverage": 5
+         }
+        ]
+       }
+      ],
+      [
+       52,
+       {
+        "description": "tiered 10x (2)",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 10
+         },
+         {
+          "lowerBound": "20000000.0",
+          "maxLeverage": 5
+         }
+        ]
+       }
+      ],
+      [
+       53,
+       {
+        "description": "tiered 20x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 20
+         },
+         {
+          "lowerBound": "40000000.0",
+          "maxLeverage": 10
+         }
+        ]
+       }
+      ],
+      [
+       54,
+       {
+        "description": "tiered 20x (2)",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 20
+         },
+         {
+          "lowerBound": "70000000.0",
+          "maxLeverage": 10
+         }
+        ]
+       }
+      ],
+      [
+       55,
+       {
+        "description": "tiered 25x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 25
+         },
+         {
+          "lowerBound": "100000000.0",
+          "maxLeverage": 15
+         }
+        ]
+       }
+      ],
+      [
+       56,
+       {
+        "description": "tiered 40x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 40
+         },
+         {
+          "lowerBound": "150000000.0",
+          "maxLeverage": 20
+         }
+        ]
+       }
+      ]
+     ],
+     "collateralToken": 0
+    },
+    [
+     {
+      "funding": "0.0000125",
+      "openInterest": "39878.11294",
+      "prevDayPx": "82203.0",
+      "dayNtlVlm": "2283943952.8261961937",
+      "premium": "-0.0004000679",
+      "oraclePx": "82486.0",
+      "markPx": "82452.0",
+      "midPx": "82452.5",
+      "impactPxs": [
+       "82450.8",
+       "82453.0"
+      ],
+      "dayBaseVlm": "27947.23105"
+     },
+     {
+      "funding": "0.0000125",
+      "openInterest": "1069996.5430000005",
+      "prevDayPx": "2424.7",
+      "dayNtlVlm": "1125139674.7887318134",
+      "premium": "-0.0003706755",
+      "oraclePx": "2428.0",
+      "markPx": "2427.2",
+      "midPx": "2427.05",
+      "impactPxs": [
+       "2427.0",
+       "2427.1"
+      ],
+      "dayBaseVlm": "471931.4263000003"
+     },
+     {
+      "funding": "0.0000051878",
+      "openInterest": "5513168.1599999992",
+      "prevDayPx": "104.19",
+      "dayNtlVlm": "209741635.0179003775",
+      "premium": "-0.0005234855",
+      "oraclePx": "105.065",
+      "markPx": "105.0095",
+      "midPx": "105.005",
+      "impactPxs": [
+       "105.0",
+       "105.01"
+      ],
+      "dayBaseVlm": "2025584.7200000004"
+     }
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"meta\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8251c37cef68a3f5"
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"metaAndAssetCtxs\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "universe": [
+      {
+       "szDecimals": 5,
+       "name": "BTC",
+       "maxLeverage": 40,
+       "marginTableId": 56
+      },
+      {
+       "szDecimals": 4,
+       "name": "ETH",
+       "maxLeverage": 25,
+       "marginTableId": 55
+      },
+      {
+       "szDecimals": 2,
+       "name": "SOL",
+       "maxLeverage": 20,
+       "marginTableId": 54
+      }
+     ],
+     "marginTables": [
+      [
+       50,
+       {
+        "description": "",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 50
+         }
+        ]
+       }
+      ],
+      [
+       51,
+       {
+        "description": "tiered 10x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 10
+         },
+         {
+          "lowerBound": "3000000.0",
+          "maxLeverage": 5
+         }
+        ]
+       }
+      ],
+      [
+       52,
+       {
+        "description": "tiered 10x (2)",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 10
+         },
+         {
+          "lowerBound": "20000000.0",
+          "maxLeverage": 5
+         }
+        ]
+       }
+      ],
+      [
+       53,
+       {
+        "description": "tiered 20x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 20
+         },
+         {
+          "lowerBound": "40000000.0",
+          "maxLeverage": 10
+         }
+        ]
+       }
+      ],
+      [
+       54,
+       {
+        "description": "tiered 20x (2)",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 20
+         },
+         {
+          "lowerBound": "70000000.0",
+          "maxLeverage": 10
+         }
+        ]
+       }
+      ],
+      [
+       55,
+       {
+        "description": "tiered 25x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 25
+         },
+         {
+          "lowerBound": "100000000.0",
+          "maxLeverage": 15
+         }
+        ]
+       }
+      ],
+      [
+       56,
+       {
+        "description": "tiered 40x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 40
+         },
+         {
+          "lowerBound": "150000000.0",
+          "maxLeverage": 20
+         }
+        ]
+       }
+      ]
+     ],
+     "collateralToken": 0
+    },
+    [
+     {
+      "funding": "0.0000125",
+      "openInterest": "39878.11294",
+      "prevDayPx": "82203.0",
+      "dayNtlVlm": "2283964278.1141963005",
+      "premium": "-0.0004000679",
+      "oraclePx": "82486.0",
+      "markPx": "82452.0",
+      "midPx": "82452.5",
+      "impactPxs": [
+       "82452.0",
+       "82453.0"
+      ],
+      "dayBaseVlm": "27947.47697"
+     },
+     {
+      "funding": "0.0000125",
+      "openInterest": "1069996.5430000005",
+      "prevDayPx": "2424.7",
+      "dayNtlVlm": "1125139674.7887318134",
+      "premium": "-0.0003706755",
+      "oraclePx": "2428.0",
+      "markPx": "2427.2",
+      "midPx": "2427.05",
+      "impactPxs": [
+       "2427.0",
+       "2427.1"
+      ],
+      "dayBaseVlm": "471931.4263000003"
+     },
+     {
+      "funding": "0.0000051589",
+      "openInterest": "5513168.1599999992",
+      "prevDayPx": "104.19",
+      "dayNtlVlm": "209741635.0179003775",
+      "premium": "-0.0005234855",
+      "oraclePx": "105.065",
+      "markPx": "105.0095",
+      "midPx": "105.005",
+      "impactPxs": [
+       "105.0",
+       "105.01"
+      ],
+      "dayBaseVlm": "2025584.7200000004"
+     }
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"allMids\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "BTC": "82452.5",
+    "ETH": "2427.35",
+    "SOL": "105.005"
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"meta\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8251c37cef68a3f5"
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"fundingHistory\",\"coin\":\"BTC\",\"startTime\":1792319000577}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "coin": "BTC",
+     "fundingRate": "0.0000026977",
+     "premium": "-0.0004784188",
+     "time": 1792321200036
+    },
+    {
+     "coin": "BTC",
+     "fundingRate": "-0.0000020809",
+     "premium": "-0.000516647",
+     "time": 1792324800019
+    },
+    {
+     "coin": "BTC",
+     "fundingRate": "-0.0000033428",
+     "premium": "-0.0005267428",
+     "time": 1792328400028
+    },
+    {
+     "coin": "BTC",
+     "fundingRate": "0.000002996",
+     "premium": "-0.0004760321",
+     "time": 1792332000030
+    },
+    {
+     "coin": "BTC",
+     "fundingRate": "0.0000051897",
+     "premium": "-0.0004584828",
+     "time": 1792335600015
+    },
+    {
+     "coin": "BTC",
+     "fundingRate": "0.0000125",
+     "premium": "-0.0003924914",
+     "time": 1792339200062
+    },
+    {
+     "coin": "BTC",
+     "fundingRate": "0.0000108771",
+     "premium": "-0.0004129828",
+     "time": 1792386000034
+    },
+    {
+     "coin": "BTC",
+     "fundingRate": "0.0000086124",
+     "premium": "-0.0004311005",
+     "time": 1792389600028
+    },
+    {
+     "coin": "BTC",
+     "fundingRate": "0.0000114404",
+     "premium": "-0.0004084769",
+     "time": 1792393200025
+    },
+    {
+     "coin": "BTC",
+     "fundingRate": "0.0000125",
+     "premium": "-0.000332299",
+     "time": 1792396800057
+    },
+    {
+     "coin": "BTC",
+     "fundingRate": "0.0000125",
+     "premium": "-0.0003172973",
+     "time": 1792400400052
+    },
+    {
+     "coin": "BTC",
+     "fundingRate": "0.0000125",
+     "premium": "-0.0003042616",
+     "time": 1792404000055
+    }
+   ],
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"meta\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8251c37cef68a3f5"
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"l2Book\",\"coin\":\"BTC\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "coin": "BTC",
+    "time": 1792405400440,
+    "levels": [
+     [
+      {
+       "px": "82452.0",
+       "sz": "0.1502",
+       "n": 5
+      },
+      {
+       "px": "82451.0",
+       "sz": "0.00065",
+       "n": 1
+      },
+      {
+       "px": "82450.0",
+       "sz": "0.73125",
+       "n": 4
+      },
+      {
+       "px": "82449.0",
+       "sz": "0.00129",
+       "n": 1
+      },
+      {
+       "px": "82448.0",
+       "sz": "0.79115",
+       "n": 3
+      },
+      {
+       "px": "82447.0",
+       "sz": "0.00888",
+       "n": 3
+      },
+      {
+       "px": "82438.0",
+       "sz": "1.39974",
+       "n": 6
+      },
+      {
+       "px": "82437.0",
+       "sz": "0.34543",
+       "n": 7
+      },
+      {
+       "px": "82436.0",
+       "sz": "2.30112",
+       "n": 10
+      },
+      {
+       "px": "82435.0",
+       "sz": "6.27876",
+       "n": 7
+      },
+      {
+       "px": "82434.0",
+       "sz": "8.56575",
+       "n": 14
+      },
+      {
+       "px": "82433.0",
+       "sz": "4.00637",
+       "n": 12
+      }
+     ],
+     [
+      {
+       "px": "82453.0",
+       "sz": "10.34435",
+       "n": 30
+      },
+      {
+       "px": "82454.0",
+       "sz": "0.81065",
+       "n": 3
+      },
+      {
+       "px": "82456.0",
+       "sz": "0.78914",
+       "n": 1
+      },
+      {
+       "px": "82457.0",
+       "sz": "0.62403",
+       "n": 2
+      },
+      {
+       "px": "82458.0",
+       "sz": "0.39641",
+       "n": 5
+      },
+      {
+       "px": "82459.0",
+       "sz": "2.59758",
+       "n": 6
+      },
+      {
+       "px": "82468.0",
+       "sz": "3.81758",
+       "n": 5
+      },
+      {
+       "px": "82469.0",
+       "sz": "2.83209",
+       "n": 5
+      },
+      {
+       "px": "82470.0",
+       "sz": "1.31347",
+       "n": 5
+      },
+      {
+       "px": "82471.0",
+       "sz": "6.6724",
+       "n": 7
+      },
+      {
+       "px": "82472.0",
+       "sz": "4.93257",
+       "n": 5
+      },
+      {
+       "px": "82473.0",
+       "sz": "2.49625",
+       "n": 3
+      }
+     ]
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"meta\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8251c37cef68a3f5"
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"recentTrades\",\"coin\":\"BTC\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "coin": "BTC",
+     "side": "B",
+     "px": "82453.0",
+     "sz": "0.03915",
+     "time": 1792405400239,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000001",
+     "tid": 450471677705908,
+     "users": [
+      "0x0000000000000000000000000000000000000002",
+      "0x0000000000000000000000000000000000000003"
+     ]
+    },
+    {
+     "coin": "BTC",
+     "side": "B",
+     "px": "82453.0",
+     "sz": "0.12075",
+     "time": 1792405400239,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000001",
+     "tid": 410007718103600,
+     "users": [
+      "0x0000000000000000000000000000000000000002",
+      "0x0000000000000000000000000000000000000004"
+     ]
+    },
+    {
+     "coin": "BTC",
+     "side": "A",
+     "px": "82452.0",
+     "sz": "0.08586",
+     "time": 1792405400093,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000005",
+     "tid": 496651549188078,
+     "users": [
+      "0x0000000000000000000000000000000000000006",
+      "0x0000000000000000000000000000000000000007"
+     ]
+    },
+    {
+     "coin": "BTC",
+     "side": "A",
+     "px": "82452.0",
+     "sz": "0.00016",
+     "time": 1792405400093,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000008",
+     "tid": 1104077128801523,
+     "users": [
+      "0x0000000000000000000000000000000000000006",
+      "0x0000000000000000000000000000000000000009"
+     ]
+    },
+    {
+     "coin": "BTC",
+     "side": "B",
+     "px": "82453.0",
+     "sz": "0.00097",
+     "time": 1792405399991,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d00000000a",
+     "tid": 1118619259911433,
+     "users": [
+      "0x000000000000000000000000000000000000000b",
+      "0x0000000000000000000000000000000000000004"
+     ]
+    },
+    {
+     "coin": "BTC",
+     "side": "A",
+     "px": "82452.0",
+     "sz": "0.28842",
+     "time": 1792405398821,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d00000000c",
+     "tid": 109072256145364,
+     "users": [
+      "0x0000000000000000000000000000000000000006",
+      "0x000000000000000000000000000000000000000d"
+     ]
+    },
+    {
+     "coin": "BTC",
+     "side": "A",
+     "px": "82452.0",
+     "sz": "0.02425",
+     "time": 1792405398821,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d00000000c",
+     "tid": 571202749892110,
+     "users": [
+      "0x000000000000000000000000000000000000000e",
+      "0x000000000000000000000000000000000000000d"
+     ]
+    },
+    {
+     "coin": "BTC",
+     "side": "A",
+     "px": "82452.0",
+     "sz": "0.0003",
+     "time": 1792405398821,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d00000000c",
+     "tid": 935791808885554,
+     "users": [
+      "0x000000000000000000000000000000000000000f",
+      "0x000000000000000000000000000000000000000d"
+     ]
+    },
+    {
+     "coin": "BTC",
+     "side": "A",
+     "px": "82452.0",
+     "sz": "0.18703",
+     "time": 1792405398821,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d00000000c",
+     "tid": 520425163790088,
+     "users": [
+      "0x0000000000000000000000000000000000000010",
+      "0x000000000000000000000000000000000000000d"
+     ]
+    },
+    {
+     "coin": "BTC",
+     "side": "A",
+     "px": "82452.0",
+     "sz": "0.0048",
+     "time": 1792405397464,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000011",
+     "tid": 583502472558610,
+     "users": [
+      "0x0000000000000000000000000000000000000010",
+      "0x0000000000000000000000000000000000000012"
+     ]
+    }
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"meta\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8251c37cef68a3f5"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"candleSnapshot\",\"req\":{\"coin\":\"BTC\",\"interval\":\"1h\",\"startTime\":1792319000995,\"endTime\":1792405400995}}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "t": 1792317600000,
+     "T": 1792321199999,
+     "s": "BTC",
+     "i": "1h",
+     "o": "82110.0",
+     "c": "82049.0",
+     "h": "82222.0",
+     "l": "82039.0",
+     "v": "387.49518",
+     "n": 5939
+    },
+    {
+     "t": 1792321200000,
+     "T": 1792324799999,
+     "s": "BTC",
+     "i": "1h",
+     "o": "82050.0",
+     "c": "82016.0",
+     "h": "82112.0",
+     "l": "81950.0",
+     "v": "430.25987",
+     "n": 5844
+    },
+    {
+     "t": 1792324800000,
+     "T": 1792328399999,
+     "s": "BTC",
+     "i": "1h",
+     "o": "82016.0",
+     "c": "81939.0",
+     "h": "82082.0",
+     "l": "81870.0",
+     "v": "358.73028",
+     "n": 5826
+    },
+    {
+     "t": 1792328400000,
+     "T": 1792331999999,
+     "s": "BTC",
+     "i": "1h",
+     "o": "81939.0",
+     "c": "81496.0",
+     "h": "81939.0",
+     "l": "81264.0",
+     "v": "1546.97089",
+     "n": 13015
+    },
+    {
+     "t": 1792332000000,
+     "T": 1792335599999,
+     "s": "BTC",
+     "i": "1h",
+     "o": "81496.0",
+     "c": "81074.0",
+     "h": "81520.0",
+     "l": "81000.0",
+     "v": "1785.29751",
+     "n": 15168
+    },
+    {
+     "t": 1792335600000,
+     "T": 1792339199999,
+     "s": "BTC",
+     "i": "1h",
+     "o": "81073.0",
+     "c": "81152.0",
+     "h": "81207.0",
+     "l": "80970.0",
+     "v": "902.11693",
+     "n": 10525
+    },
+    {
+     "t": 1792386000000,
+     "T": 1792389599999,
+     "s": "BTC",
+     "i": "1h",
+     "o": "82739.0",
+     "c": "82718.0",
+     "h": "82752.0",
+     "l": "82515.0",
+     "v": "436.08258",
+     "n": 6583
+    },
+    {
+     "t": 1792389600000,
+     "T": 1792393199999,
+     "s": "BTC",
+     "i": "1h",
+     "o": "82718.0",
+     "c": "82826.0",
+     "h": "82875.0",
+     "l": "82645.0",
+     "v": "542.82334",
+     "n": 6626
+    },
+    {
+     "t": 1792393200000,
+     "T": 1792396799999,
+     "s": "BTC",
+     "i": "1h",
+     "o": "82817.0",
+     "c": "82701.0",
+     "h": "83138.0",
+     "l": "82657.0",
+     "v": "1010.33433",
+     "n": 11542
+    },
+    {
+     "t": 1792396800000,
+     "T": 1792400399999,
+     "s": "BTC",
+     "i": "1h",
+     "o": "82701.0",
+     "c": "82805.0",
+     "h": "82944.0",
+     "l": "82555.0",
+     "v": "1150.99381",
+     "n": 10424
+    },
+    {
+     "t": 1792400400000,
+     "T": 1792403999999,
+     "s": "BTC",
+     "i": "1h",
+     "o": "82804.0",
+     "c": "82722.0",
+     "h": "83073.0",
+     "l": "82722.0",
+     "v": "597.5018",
+     "n": 7989
+    },
+    {
+     "t": 1792404000000,
+     "T": 1792407599999,
+     "s": "BTC",
+     "i": "1h",
+     "o": "82722.0",
+     "c": "82453.0",
+     "h": "82866.0",
+     "l": "82415.0",
+     "v": "364.30956",
+     "n": 4588
+    }
+   ],
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"meta\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8251c37cef68a3f5"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"metaAndAssetCtxs\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "universe": [
+      {
+       "szDecimals": 5,
+       "name": "BTC",
+       "maxLeverage": 40,
+       "marginTableId": 56
+      },
+      {
+       "szDecimals": 4,
+       "name": "ETH",
+       "maxLeverage": 25,
+       "marginTableId": 55
+      },
+      {
+       "szDecimals": 2,
+       "name": "SOL",
+       "maxLeverage": 20,
+       "marginTableId": 54
+      }
+     ],
+     "marginTables": [
+      [
+       50,
+       {
+        "description": "",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 50
+         }
+        ]
+       }
+      ],
+      [
+       51,
+       {
+        "description": "tiered 10x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 10
+         },
+         {
+          "lowerBound": "3000000.0",
+          "maxLeverage": 5
+         }
+        ]
+       }
+      ],
+      [
+       52,
+       {
+        "description": "tiered 10x (2)",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 10
+         },
+         {
+          "lowerBound": "20000000.0",
+          "maxLeverage": 5
+         }
+        ]
+       }
+      ],
+      [
+       53,
+       {
+        "description": "tiered 20x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 20
+         },
+         {
+          "lowerBound": "40000000.0",
+          "maxLeverage": 10
+         }
+        ]
+       }
+      ],
+      [
+       54,
+       {
+        "description": "tiered 20x (2)",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 20
+         },
+         {
+          "lowerBound": "70000000.0",
+          "maxLeverage": 10
+         }
+        ]
+       }
+      ],
+      [
+       55,
+       {
+        "description": "tiered 25x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 25
+         },
+         {
+          "lowerBound": "100000000.0",
+          "maxLeverage": 15
+         }
+        ]
+       }
+      ],
+      [
+       56,
+       {
+        "description": "tiered 40x",
+        "marginTiers": [
+         {
+          "lowerBound": "0.0",
+          "maxLeverage": 40
+         },
+         {
+          "lowerBound": "150000000.0",
+          "maxLeverage": 20
+         }
+        ]
+       }
+      ]
+     ],
+     "collateralToken": 0
+    },
+    [
+     {
+      "funding": "0.0000125",
+      "openInterest": "39878.11294",
+      "prevDayPx": "82203.0",
+      "dayNtlVlm": "2283964278.1141963005",
+      "premium": "-0.0004000679",
+      "oraclePx": "82486.0",
+      "markPx": "82452.0",
+      "midPx": "82452.5",
+      "impactPxs": [
+       "82452.0",
+       "82453.0"
+      ],
+      "dayBaseVlm": "27947.47697"
+     },
+     {
+      "funding": "0.0000125",
+      "openInterest": "1069996.5430000005",
+      "prevDayPx": "2424.7",
+      "dayNtlVlm": "1125140169.3159818649",
+      "premium": "-0.0003706755",
+      "oraclePx": "2428.0",
+      "markPx": "2427.2",
+      "midPx": "2427.05",
+      "impactPxs": [
+       "2427.0",
+       "2427.1"
+      ],
+      "dayBaseVlm": "471931.6296000003"
+     },
+     {
+      "funding": "0.0000051589",
+      "openInterest": "5513168.1599999992",
+      "prevDayPx": "104.19",
+      "dayNtlVlm": "209741635.0179003775",
+      "premium": "-0.0005234855",
+      "oraclePx": "105.065",
+      "markPx": "105.0095",
+      "midPx": "105.005",
+      "impactPxs": [
+       "105.0",
+       "105.01"
+      ],
+      "dayBaseVlm": "2025584.7200000004"
+     }
+    ]
+   ],
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"allMids\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "BTC": "82452.5",
+    "ETH": "2427.35",
+    "SOL": "105.005"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:funding",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"meta\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8251c37cef68a3f5"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:book",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"meta\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8251c37cef68a3f5"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:book",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"l2Book\",\"coin\":\"NOPEXYZ\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": null,
+   "text": null
+  },
+  {
+   "cell": "unknown:trades",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"meta\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8251c37cef68a3f5"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:kline",
+   "method": "POST",
+   "url": "https://api.hyperliquid.xyz/info",
+   "body": "{\"type\":\"meta\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8251c37cef68a3f5"
+   },
+   "text": null
+  }
+ ],
+ "ws": [],
+ "bodies": {
+  "8251c37cef68a3f5": {
+   "universe": [
+    {
+     "szDecimals": 5,
+     "name": "BTC",
+     "maxLeverage": 40,
+     "marginTableId": 56
+    },
+    {
+     "szDecimals": 4,
+     "name": "ETH",
+     "maxLeverage": 25,
+     "marginTableId": 55
+    },
+    {
+     "szDecimals": 2,
+     "name": "SOL",
+     "maxLeverage": 20,
+     "marginTableId": 54
+    }
+   ],
+   "marginTables": [
+    [
+     50,
+     {
+      "description": "",
+      "marginTiers": [
+       {
+        "lowerBound": "0.0",
+        "maxLeverage": 50
+       }
+      ]
+     }
+    ],
+    [
+     51,
+     {
+      "description": "tiered 10x",
+      "marginTiers": [
+       {
+        "lowerBound": "0.0",
+        "maxLeverage": 10
+       },
+       {
+        "lowerBound": "3000000.0",
+        "maxLeverage": 5
+       }
+      ]
+     }
+    ],
+    [
+     52,
+     {
+      "description": "tiered 10x (2)",
+      "marginTiers": [
+       {
+        "lowerBound": "0.0",
+        "maxLeverage": 10
+       },
+       {
+        "lowerBound": "20000000.0",
+        "maxLeverage": 5
+       }
+      ]
+     }
+    ],
+    [
+     53,
+     {
+      "description": "tiered 20x",
+      "marginTiers": [
+       {
+        "lowerBound": "0.0",
+        "maxLeverage": 20
+       },
+       {
+        "lowerBound": "40000000.0",
+        "maxLeverage": 10
+       }
+      ]
+     }
+    ],
+    [
+     54,
+     {
+      "description": "tiered 20x (2)",
+      "marginTiers": [
+       {
+        "lowerBound": "0.0",
+        "maxLeverage": 20
+       },
+       {
+        "lowerBound": "70000000.0",
+        "maxLeverage": 10
+       }
+      ]
+     }
+    ],
+    [
+     55,
+     {
+      "description": "tiered 25x",
+      "marginTiers": [
+       {
+        "lowerBound": "0.0",
+        "maxLeverage": 25
+       },
+       {
+        "lowerBound": "100000000.0",
+        "maxLeverage": 15
+       }
+      ]
+     }
+    ],
+    [
+     56,
+     {
+      "description": "tiered 40x",
+      "marginTiers": [
+       {
+        "lowerBound": "0.0",
+        "maxLeverage": 40
+       },
+       {
+        "lowerBound": "150000000.0",
+        "maxLeverage": 20
+       }
+      ]
+     }
+    ]
+   ],
+   "collateralToken": 0
+  }
+ }
+}

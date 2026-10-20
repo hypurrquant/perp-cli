@@ -10,7 +10,7 @@
 import { TX_EVENT_FILL_SOURCE, type SpotAdapter, type SpotMarketInfo, type SpotBalance, type SpotOrderResult } from "./spot-interface.js";
 import type { ResolvedSlippage } from "./slippage.js";
 import type { LighterAdapter, LighterRowMatch } from "./lighter.js";
-import { lighterWafChallenge } from "./lighter-public.js";
+import { LIGHTER_BOOK_ORDERS_LIMIT, lighterBook, lighterWafChallenge } from "./lighter-public.js";
 import {
   LIGHTER_TIF, lighterEventFilledBase, lighterEventOrderId, lighterGeneratedClientOrderIndex, lighterOrderIdOf, lighterOrderSignIndex,
   lighterPostSendTx, lighterRowOutcomeOf, lighterSelectAccount, lighterTakerFilledBase, lighterTxState,
@@ -18,6 +18,7 @@ import {
 } from "./lighter.js";
 import { alignProtectionPrice, floorSize, formatComputedPrice, requireOnTick, slippagePrice, subDecimal, toUnitsExact } from "./precision.js";
 import { unsupported } from "./trading-v2.js";
+import { rateLimitedError } from "./rate-limiter.js";
 import { PerpError, orderNotSent, parsePositiveDecimal } from "../errors.js";
 
 /** The row match (market + send time) _placeOrder attached to its result; absent → null (no extra match). */
@@ -198,25 +199,22 @@ export class LighterSpotAdapter implements SpotAdapter {
     });
   }
 
-  async getSpotOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
+  async getSpotOrderbook(symbol: string, depth?: number): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
     await this.init();
     const resolved = this.resolveSymbol(symbol);
     const marketId = this._spotMarketMap.get(resolved);
     if (marketId === undefined) {
-      throw new Error(`Unknown Lighter spot market: ${symbol}`);
+      throw new PerpError("SYMBOL_NOT_FOUND", `Unknown Lighter spot market: ${symbol}`, {
+        exchange: this.name, remediation: `Check the symbol: perp -e ${this.name} market spot-list`,
+      });
     }
-    try {
-      const res = await this._restGet("/orderBookOrders", {
-        market_id: String(marketId),
-        limit: "50",
-      }) as { asks?: Record<string, string>[]; bids?: Record<string, string>[] };
-      return {
-        bids: (res.bids ?? []).map((l) => [l.price, l.remaining_base_amount ?? l.size ?? "0"] as [string, string]),
-        asks: (res.asks ?? []).map((l) => [l.price, l.remaining_base_amount ?? l.size ?? "0"] as [string, string]),
-      };
-    } catch {
-      return { bids: [], asks: [] };
-    }
+    // A failed read throws its typed error (429 / WAF / transport) — never an empty book, which
+    // callers (arb-auto, liquidity) would read as "no liquidity". Orders → price levels as on perps.
+    const res = await this._restGet("/orderBookOrders", {
+      market_id: String(marketId),
+      limit: String(LIGHTER_BOOK_ORDERS_LIMIT),
+    }) as { asks?: unknown; bids?: unknown };
+    return lighterBook(this.name, res, resolved, depth);
   }
 
   /**
@@ -440,30 +438,32 @@ export class LighterSpotAdapter implements SpotAdapter {
     const resolved = this.resolveSymbol(symbol);
     const marketId = this._spotMarketMap.get(resolved);
     if (marketId === undefined) {
-      throw new Error(`Unknown Lighter spot market: ${symbol}`);
+      throw new PerpError("SYMBOL_NOT_FOUND", `Unknown Lighter spot market: ${symbol}`, {
+        exchange: this.name, remediation: `Check the symbol: perp -e ${this.name} market spot-list`,
+      });
     }
 
     // Validate min order size
     const minSize = this._spotMinSize.get(resolved);
     const sizeNum = parseFloat(size);
     if (minSize && sizeNum < minSize.base) {
-      throw new Error(`Size ${size} below min_base_amount ${minSize.base} for ${resolved}`);
+      throw new PerpError("SIZE_TOO_SMALL", `Size ${size} below min_base_amount ${minSize.base} for ${resolved}`, { exchange: this.name });
     }
 
     // Protection price = best opposite quote ± the resolved slippage bound
     const ob = await this.getSpotOrderbook(resolved);
     let refPrice: number;
     if (side === "buy") {
-      if (ob.asks.length === 0) throw new Error(`No asks in ${resolved} spot orderbook`);
+      if (ob.asks.length === 0) throw new PerpError("PRICE_STALE", `No asks in ${resolved} spot orderbook — no reference price`, { exchange: this.name });
       refPrice = Number(ob.asks[0][0]);
     } else {
-      if (ob.bids.length === 0) throw new Error(`No bids in ${resolved} spot orderbook`);
+      if (ob.bids.length === 0) throw new PerpError("PRICE_STALE", `No bids in ${resolved} spot orderbook — no reference price`, { exchange: this.name });
       refPrice = Number(ob.bids[0][0]);
     }
 
     // Validate min quote amount (size × price ≥ min_quote)
     if (minSize && sizeNum * refPrice < minSize.quote) {
-      throw new Error(`Order value $${(sizeNum * refPrice).toFixed(2)} below min_quote_amount $${minSize.quote} for ${resolved}`);
+      throw new PerpError("SIZE_TOO_SMALL", `Order value $${(sizeNum * refPrice).toFixed(2)} below min_quote_amount $${minSize.quote} for ${resolved}`, { exchange: this.name });
     }
 
     const dec = this._getDecimals(resolved);
@@ -995,6 +995,8 @@ export class LighterSpotAdapter implements SpotAdapter {
     const res = await fetch(url.toString());
     if (!res.ok) {
       const text = await res.text();
+      // apidocs.lighter.xyz/docs/rate-limits: a breached limit answers "HTTP 429" (as LighterAdapter.restGet).
+      if (res.status === 429) throw rateLimitedError(this._lt.name, res.headers.get("retry-after"), text);
       const waf = lighterWafChallenge(this._lt.name, res.status, text);
       if (waf !== null) throw waf;
       const clean = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);

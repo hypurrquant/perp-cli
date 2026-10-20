@@ -11,9 +11,23 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
+// Lighter's settled rate is the WS market_stats snapshot: served from the mocked lt.funding rows
+// (rate = a fraction per 1 h → percent on the wire), never a real socket.
+const wsState = vi.hoisted(() => ({ stats: {} as Record<string, { funding_rate: string; current_funding_rate: string }> }));
+vi.mock("ws", async () => {
+  const { EventEmitter } = await import("node:events");
+  class FakeWs extends EventEmitter {
+    constructor() { super(); setTimeout(() => this.emit("open"), 0); }
+    send() { setTimeout(() => this.emit("message", JSON.stringify({ type: "subscribed/market_stats", channel: "market_stats:all", market_stats: wsState.stats })), 0); }
+    close() { /* closed */ }
+  }
+  return { default: FakeWs, WebSocket: FakeWs };
+});
+
 // Import after mocking fetch
 const { fetchAllFundingRates, fetchSymbolFundingRates, TOP_SYMBOLS } = await import("../funding-rates.js");
 const { invalidateCache } = await import("../cache.js");
+const { clearLighterFundingStatsCache } = await import("../exchanges/lighter-public.js");
 
 // ── Helpers to build mock API responses ──
 //
@@ -77,6 +91,7 @@ function setupMockFetch(opts: {
   hlError?: boolean;
   ltError?: boolean;
 }) {
+  wsState.stats = Object.fromEntries((opts.lt?.funding ?? []).map(f => [String(f.market_id), { funding_rate: String(f.rate * 100), current_funding_rate: String(f.rate * 100) }]));
   mockFetch.mockImplementation(async (url: string | URL) => {
     const urlStr = typeof url === "string" ? url : url.toString();
 
@@ -112,6 +127,7 @@ function setupMockFetch(opts: {
 beforeEach(() => {
   mockFetch.mockReset();
   invalidateCache();
+  clearLighterFundingStatsCache();
 });
 
 // ──────────────────────────────────────────────
@@ -318,8 +334,8 @@ describe("fetchAllFundingRates", () => {
 
     const snapshot = await fetchAllFundingRates();
     if (snapshot.symbols.length >= 2) {
-      expect(snapshot.symbols[0].maxSpreadAnnual).toBeGreaterThanOrEqual(
-        snapshot.symbols[1].maxSpreadAnnual,
+      expect(snapshot.symbols[0].maxSpreadAnnual!).toBeGreaterThanOrEqual(
+        snapshot.symbols[1].maxSpreadAnnual!,
       );
     }
   });
@@ -388,7 +404,7 @@ describe("fetchSymbolFundingRates", () => {
 // ──────────────────────────────────────────────
 
 describe("Pacifica nextFundingTime guard", () => {
-  it("does not populate nextFundingTime even when API returns next_funding", async () => {
+  it("nextFundingTime is the next top of the hour (docs: hourly settlement), never the API's next_funding rate", async () => {
     // Pacifica's API exposes next_funding as a small decimal (rate). Mock it
     // here as a value that would clearly be invalid as a unix-ms timestamp
     // (negative + sub-millisecond).
@@ -402,11 +418,18 @@ describe("Pacifica nextFundingTime guard", () => {
     expect(btc).toBeTruthy();
     const pacEntry = btc!.rates.find(r => r.exchange === "pacifica");
     expect(pacEntry).toBeTruthy();
-    // The API's next_funding (a rate) MUST NOT leak into nextFundingTime. Contract (venue-types,
-    // SSOT Rule #2): an unpublished value is null, never undefined / a guessed timestamp.
-    expect(pacEntry!.nextFundingTime).toBeNull();
-    // next_funding is the quoted funding rate itself (legacy-public.ts pacificaRows).
-    expect(pacEntry!.fundingRate).toBeCloseTo(-0.00014299);
+    // The API's next_funding (a rate) MUST NOT leak into nextFundingTime. The time is not published;
+    // Pacifica documents settlement at the end of each 1 h interval (on the hour) — the next one.
+    const hour = 3_600_000;
+    expect(pacEntry!.nextFundingTime! % hour).toBe(0);
+    expect(pacEntry!.nextFundingTime! - Date.now()).toBeGreaterThan(0);
+    expect(pacEntry!.nextFundingTime! - Date.now()).toBeLessThanOrEqual(hour);
+    const hlEntry = btc!.rates.find(r => r.exchange === "hyperliquid")!;
+    expect(hlEntry.nextFundingTime).toBe(pacEntry!.nextFundingTime);
+    // The compared rate is the last settled `funding` (legacy-public.ts pacificaRows), not the
+    // predicted next_funding; the row says so.
+    expect(pacEntry!.fundingRate).toBe(0.0001);
+    expect(pacEntry!.rateKind).toBe("lastSettled");
   });
 });
 
@@ -515,5 +538,51 @@ describe("3-DEX direction logic", () => {
     expect(eth).toBeTruthy();
     expect(eth!.shortExchange).toBe("pacifica");
     expect(eth!.longExchange).toBe("lighter");
+  });
+});
+
+// ──────────────────────────────────────────────
+// arb scan --compare: the argument is looked up by its canonical key (0.15.1 F9)
+// ──────────────────────────────────────────────
+
+describe("fetchSymbolFundingRates canonicalizes the argument", () => {
+  // Hyperliquid side: metaAndAssetCtxs recorded live 2026-10-19 (kPEPE / BTC rows).
+  const recordedHl = async () => (await import("./fixtures/hyperliquid/read-path-2026-10-19.json")).default.metaAndAssetCtxs;
+
+  function setupRecordedHl(hlBody: unknown, pac: { symbol: string; funding: number; mark: number }[]) {
+    setupMockFetch({ pac });
+    const pacOnly = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url: string | URL) => (String(url).includes("hyperliquid.xyz") ? json(hlBody) : pacOnly(url)));
+  }
+
+  it.each(["kPEPE", "KPEPE", "1000PEPE", "kpepe-perp"])("--compare %s finds HL kPEPE ≡ Pacifica 1000PEPE", async (arg) => {
+    const hl = await recordedHl();
+    const pepeMark = Number((hl[1] as Array<{ markPx: string }>)[3].markPx);
+    setupRecordedHl(hl, [{ symbol: "1000PEPE", funding: 0.0001, mark: pepeMark }]);
+    const result = await fetchSymbolFundingRates(arg);
+    expect(result).toBeTruthy();
+    expect(result!.symbol).toBe("1000PEPE");
+    expect(result!.rates.map(r => r.exchange).sort()).toEqual(["hyperliquid", "pacifica"]);
+  });
+
+  it("--compare UBTC (HL spot wrapper alias) compares BTC", async () => {
+    const hl = await recordedHl();
+    const btcMark = Number((hl[1] as Array<{ markPx: string }>)[0].markPx);
+    setupRecordedHl(hl, [{ symbol: "BTC", funding: 0.0001, mark: btcMark }]);
+    const result = await fetchSymbolFundingRates("UBTC");
+    expect(result!.symbol).toBe("BTC");
+  });
+});
+
+describe("SymbolFundingComparison.mixedKinds (the perp-ws comparator flag)", () => {
+  it("Pacifica lastSettled vs Hyperliquid accruing → mixedKinds true; each rate names its kind", async () => {
+    setupMockFetch({
+      pac: [{ symbol: "BTC", funding: 0.0001, mark: 60000 }],
+      hl: { assets: [{ name: "BTC" }], ctxs: [{ funding: 0.00005, markPx: 60010 }] },
+    });
+    const snapshot = await fetchAllFundingRates();
+    const btc = snapshot.symbols.find(s => s.symbol === "BTC")!;
+    expect(btc.rates.map(r => [r.exchange, r.rateKind]).sort()).toEqual([["hyperliquid", "accruing"], ["pacifica", "lastSettled"]]);
+    expect(btc.mixedKinds).toBe(true);
   });
 });

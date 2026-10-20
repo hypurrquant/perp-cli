@@ -1,0 +1,4794 @@
+{
+ "schema": 1,
+ "name": "arcus",
+ "capturedAt": 1792405431828,
+ "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
+ "keep": [
+  "BTC",
+  "ETH",
+  "SOL"
+ ],
+ "http": [
+  {
+   "cell": "list",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "markets": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "fullAssetName": "Bitcoin",
+      "marketId": 1,
+      "status": "ONLINE",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD",
+      "tickSize": "0.1",
+      "stepSize": "0.00000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "1000000",
+        "tick": "0.2"
+       },
+       {
+        "upToPrice": "2000000",
+        "tick": "0.5"
+       },
+       {
+        "upToPrice": "5000000",
+        "tick": "1"
+       },
+       {
+        "upToPrice": "10000000",
+        "tick": "2"
+       },
+       {
+        "tick": "5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.0001",
+      "maxOrderSize": "10000",
+      "oraclePrice": "82416",
+      "markPrice": "82384.6",
+      "lastTradePrice": "82388.4",
+      "fundingRate": "0.000007703166719716",
+      "nextFundingRate": "0.00001086469778409797",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0037",
+      "volume24h": "986.58",
+      "volume24hNotional": "81258389.44",
+      "high24h": "83046.1",
+      "low24h": "80551.9",
+      "trades24h": 99191,
+      "openInterest": "196.64652516",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 2500,
+      "initialMarginFraction": "0.025",
+      "maintenanceMarginFraction": "0.016667",
+      "offHoursInitialMarginFraction": "0.025",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "1",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "ETH-USD",
+      "fullAssetName": "Ethereum",
+      "marketId": 2,
+      "status": "ONLINE",
+      "baseAsset": "ETH",
+      "quoteAsset": "USD",
+      "tickSize": "0.01",
+      "stepSize": "0.0000001",
+      "tickTiers": [
+       {
+        "upToPrice": "10000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "20000",
+        "tick": "0.02"
+       },
+       {
+        "upToPrice": "50000",
+        "tick": "0.05"
+       },
+       {
+        "upToPrice": "100000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "200000",
+        "tick": "0.2"
+       },
+       {
+        "tick": "0.5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.001",
+      "maxOrderSize": "100000",
+      "oraclePrice": "2425.68",
+      "markPrice": "2425.09",
+      "lastTradePrice": "2425",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0020",
+      "volume24h": "11817.59",
+      "volume24hNotional": "28284314.16",
+      "high24h": "2443.26",
+      "low24h": "2324.89",
+      "trades24h": 46965,
+      "openInterest": "2686.9189104",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 4000,
+      "initialMarginFraction": "0.04",
+      "maintenanceMarginFraction": "0.026667",
+      "offHoursInitialMarginFraction": "0.04",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "2",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "SOL-USD",
+      "fullAssetName": "Solana",
+      "marketId": 3,
+      "status": "ONLINE",
+      "baseAsset": "SOL",
+      "quoteAsset": "USD",
+      "tickSize": "0.001",
+      "stepSize": "0.000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500",
+        "tick": "0.001"
+       },
+       {
+        "upToPrice": "1000",
+        "tick": "0.002"
+       },
+       {
+        "upToPrice": "2000",
+        "tick": "0.005"
+       },
+       {
+        "upToPrice": "5000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "10000",
+        "tick": "0.02"
+       },
+       {
+        "tick": "0.05"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.01",
+      "maxOrderSize": "1000000",
+      "oraclePrice": "104.995",
+      "markPrice": "104.949",
+      "lastTradePrice": "104.981",
+      "fundingRate": "0.000000816727169201",
+      "nextFundingRate": "0.00000133627723331378",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0093",
+      "volume24h": "104323.61",
+      "volume24hNotional": "10735700.4",
+      "high24h": "106.065",
+      "low24h": "100.225",
+      "trades24h": 14832,
+      "openInterest": "22189.581773",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 5000,
+      "initialMarginFraction": "0.05",
+      "maintenanceMarginFraction": "0.033334",
+      "offHoursInitialMarginFraction": "0.05",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "6",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "markets": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "fullAssetName": "Bitcoin",
+      "marketId": 1,
+      "status": "ONLINE",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD",
+      "tickSize": "0.1",
+      "stepSize": "0.00000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "1000000",
+        "tick": "0.2"
+       },
+       {
+        "upToPrice": "2000000",
+        "tick": "0.5"
+       },
+       {
+        "upToPrice": "5000000",
+        "tick": "1"
+       },
+       {
+        "upToPrice": "10000000",
+        "tick": "2"
+       },
+       {
+        "tick": "5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.0001",
+      "maxOrderSize": "10000",
+      "oraclePrice": "82416",
+      "markPrice": "82384.6",
+      "lastTradePrice": "82388.4",
+      "fundingRate": "0.000007703166719716",
+      "nextFundingRate": "0.00001086469778409797",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0037",
+      "volume24h": "986.43",
+      "volume24hNotional": "81244593.82",
+      "high24h": "83046.1",
+      "low24h": "80551.9",
+      "trades24h": 99175,
+      "openInterest": "196.6557284",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 2500,
+      "initialMarginFraction": "0.025",
+      "maintenanceMarginFraction": "0.016667",
+      "offHoursInitialMarginFraction": "0.025",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "1",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "ETH-USD",
+      "fullAssetName": "Ethereum",
+      "marketId": 2,
+      "status": "ONLINE",
+      "baseAsset": "ETH",
+      "quoteAsset": "USD",
+      "tickSize": "0.01",
+      "stepSize": "0.0000001",
+      "tickTiers": [
+       {
+        "upToPrice": "10000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "20000",
+        "tick": "0.02"
+       },
+       {
+        "upToPrice": "50000",
+        "tick": "0.05"
+       },
+       {
+        "upToPrice": "100000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "200000",
+        "tick": "0.2"
+       },
+       {
+        "tick": "0.5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.001",
+      "maxOrderSize": "100000",
+      "oraclePrice": "2425.68",
+      "markPrice": "2425.09",
+      "lastTradePrice": "2425",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0020",
+      "volume24h": "11817.68",
+      "volume24hNotional": "28284519.13",
+      "high24h": "2443.26",
+      "low24h": "2324.89",
+      "trades24h": 46967,
+      "openInterest": "2687.5079073",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 4000,
+      "initialMarginFraction": "0.04",
+      "maintenanceMarginFraction": "0.026667",
+      "offHoursInitialMarginFraction": "0.04",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "2",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "SOL-USD",
+      "fullAssetName": "Solana",
+      "marketId": 3,
+      "status": "ONLINE",
+      "baseAsset": "SOL",
+      "quoteAsset": "USD",
+      "tickSize": "0.001",
+      "stepSize": "0.000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500",
+        "tick": "0.001"
+       },
+       {
+        "upToPrice": "1000",
+        "tick": "0.002"
+       },
+       {
+        "upToPrice": "2000",
+        "tick": "0.005"
+       },
+       {
+        "upToPrice": "5000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "10000",
+        "tick": "0.02"
+       },
+       {
+        "tick": "0.05"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.01",
+      "maxOrderSize": "1000000",
+      "oraclePrice": "104.995",
+      "markPrice": "104.949",
+      "lastTradePrice": "104.981",
+      "fundingRate": "0.000000816727169201",
+      "nextFundingRate": "0.00000133627723331378",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0093",
+      "volume24h": "104324.59",
+      "volume24hNotional": "10735800.21",
+      "high24h": "106.065",
+      "low24h": "100.225",
+      "trades24h": 14833,
+      "openInterest": "22199.391218",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 5000,
+      "initialMarginFraction": "0.05",
+      "maintenanceMarginFraction": "0.033334",
+      "offHoursInitialMarginFraction": "0.05",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "6",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "markets": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "fullAssetName": "Bitcoin",
+      "marketId": 1,
+      "status": "ONLINE",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD",
+      "tickSize": "0.1",
+      "stepSize": "0.00000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "1000000",
+        "tick": "0.2"
+       },
+       {
+        "upToPrice": "2000000",
+        "tick": "0.5"
+       },
+       {
+        "upToPrice": "5000000",
+        "tick": "1"
+       },
+       {
+        "upToPrice": "10000000",
+        "tick": "2"
+       },
+       {
+        "tick": "5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.0001",
+      "maxOrderSize": "10000",
+      "oraclePrice": "82416.2",
+      "markPrice": "82384.7",
+      "lastTradePrice": "82388.4",
+      "fundingRate": "0.000007703166719716",
+      "nextFundingRate": "0.00001086469778409797",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0037",
+      "volume24h": "986.43",
+      "volume24hNotional": "81244593.82",
+      "high24h": "83046.1",
+      "low24h": "80551.9",
+      "trades24h": 99175,
+      "openInterest": "196.6557284",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 2500,
+      "initialMarginFraction": "0.025",
+      "maintenanceMarginFraction": "0.016667",
+      "offHoursInitialMarginFraction": "0.025",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "1",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "ETH-USD",
+      "fullAssetName": "Ethereum",
+      "marketId": 2,
+      "status": "ONLINE",
+      "baseAsset": "ETH",
+      "quoteAsset": "USD",
+      "tickSize": "0.01",
+      "stepSize": "0.0000001",
+      "tickTiers": [
+       {
+        "upToPrice": "10000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "20000",
+        "tick": "0.02"
+       },
+       {
+        "upToPrice": "50000",
+        "tick": "0.05"
+       },
+       {
+        "upToPrice": "100000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "200000",
+        "tick": "0.2"
+       },
+       {
+        "tick": "0.5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.001",
+      "maxOrderSize": "100000",
+      "oraclePrice": "2425.71",
+      "markPrice": "2425.11",
+      "lastTradePrice": "2425",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0020",
+      "volume24h": "11817.68",
+      "volume24hNotional": "28284519.13",
+      "high24h": "2443.26",
+      "low24h": "2324.89",
+      "trades24h": 46967,
+      "openInterest": "2687.5079073",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 4000,
+      "initialMarginFraction": "0.04",
+      "maintenanceMarginFraction": "0.026667",
+      "offHoursInitialMarginFraction": "0.04",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "2",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "SOL-USD",
+      "fullAssetName": "Solana",
+      "marketId": 3,
+      "status": "ONLINE",
+      "baseAsset": "SOL",
+      "quoteAsset": "USD",
+      "tickSize": "0.001",
+      "stepSize": "0.000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500",
+        "tick": "0.001"
+       },
+       {
+        "upToPrice": "1000",
+        "tick": "0.002"
+       },
+       {
+        "upToPrice": "2000",
+        "tick": "0.005"
+       },
+       {
+        "upToPrice": "5000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "10000",
+        "tick": "0.02"
+       },
+       {
+        "tick": "0.05"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.01",
+      "maxOrderSize": "1000000",
+      "oraclePrice": "104.995",
+      "markPrice": "104.949",
+      "lastTradePrice": "104.981",
+      "fundingRate": "0.000000816727169201",
+      "nextFundingRate": "0.00000133627723331378",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0093",
+      "volume24h": "104324.59",
+      "volume24hNotional": "10735800.21",
+      "high24h": "106.065",
+      "low24h": "100.225",
+      "trades24h": 14833,
+      "openInterest": "22199.391218",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 5000,
+      "initialMarginFraction": "0.05",
+      "maintenanceMarginFraction": "0.033334",
+      "offHoursInitialMarginFraction": "0.05",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "6",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "markets": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "fullAssetName": "Bitcoin",
+      "marketId": 1,
+      "status": "ONLINE",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD",
+      "tickSize": "0.1",
+      "stepSize": "0.00000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "1000000",
+        "tick": "0.2"
+       },
+       {
+        "upToPrice": "2000000",
+        "tick": "0.5"
+       },
+       {
+        "upToPrice": "5000000",
+        "tick": "1"
+       },
+       {
+        "upToPrice": "10000000",
+        "tick": "2"
+       },
+       {
+        "tick": "5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.0001",
+      "maxOrderSize": "10000",
+      "oraclePrice": "82416.2",
+      "markPrice": "82384.7",
+      "lastTradePrice": "82388.4",
+      "fundingRate": "0.000007703166719716",
+      "nextFundingRate": "0.00001086469778409797",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0037",
+      "volume24h": "986.58",
+      "volume24hNotional": "81257773.82",
+      "high24h": "83046.1",
+      "low24h": "80551.9",
+      "trades24h": 99185,
+      "openInterest": "196.64773921",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 2500,
+      "initialMarginFraction": "0.025",
+      "maintenanceMarginFraction": "0.016667",
+      "offHoursInitialMarginFraction": "0.025",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "1",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "ETH-USD",
+      "fullAssetName": "Ethereum",
+      "marketId": 2,
+      "status": "ONLINE",
+      "baseAsset": "ETH",
+      "quoteAsset": "USD",
+      "tickSize": "0.01",
+      "stepSize": "0.0000001",
+      "tickTiers": [
+       {
+        "upToPrice": "10000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "20000",
+        "tick": "0.02"
+       },
+       {
+        "upToPrice": "50000",
+        "tick": "0.05"
+       },
+       {
+        "upToPrice": "100000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "200000",
+        "tick": "0.2"
+       },
+       {
+        "tick": "0.5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.001",
+      "maxOrderSize": "100000",
+      "oraclePrice": "2425.71",
+      "markPrice": "2425.11",
+      "lastTradePrice": "2425",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0020",
+      "volume24h": "11817.53",
+      "volume24hNotional": "28284148.79",
+      "high24h": "2443.26",
+      "low24h": "2324.89",
+      "trades24h": 46964,
+      "openInterest": "2686.9189104",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 4000,
+      "initialMarginFraction": "0.04",
+      "maintenanceMarginFraction": "0.026667",
+      "offHoursInitialMarginFraction": "0.04",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "2",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "SOL-USD",
+      "fullAssetName": "Solana",
+      "marketId": 3,
+      "status": "ONLINE",
+      "baseAsset": "SOL",
+      "quoteAsset": "USD",
+      "tickSize": "0.001",
+      "stepSize": "0.000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500",
+        "tick": "0.001"
+       },
+       {
+        "upToPrice": "1000",
+        "tick": "0.002"
+       },
+       {
+        "upToPrice": "2000",
+        "tick": "0.005"
+       },
+       {
+        "upToPrice": "5000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "10000",
+        "tick": "0.02"
+       },
+       {
+        "tick": "0.05"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.01",
+      "maxOrderSize": "1000000",
+      "oraclePrice": "104.995",
+      "markPrice": "104.949",
+      "lastTradePrice": "104.981",
+      "fundingRate": "0.000000816727169201",
+      "nextFundingRate": "0.00000133627723331378",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0093",
+      "volume24h": "104324.59",
+      "volume24hNotional": "10735800.21",
+      "high24h": "106.065",
+      "low24h": "100.225",
+      "trades24h": 14833,
+      "openInterest": "22189.581773",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 5000,
+      "initialMarginFraction": "0.05",
+      "maintenanceMarginFraction": "0.033334",
+      "offHoursInitialMarginFraction": "0.05",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "6",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/fundingRates?market=BTC-USD&limit=5",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "fundingRates": [
+     {
+      "marketId": 1,
+      "marketDisplayName": "BTC-USD",
+      "fundingRate": "0.000007703166719716",
+      "time": 1792404000000000
+     },
+     {
+      "marketId": 1,
+      "marketDisplayName": "BTC-USD",
+      "fundingRate": "0.00000927683560256",
+      "time": 1792400400000000
+     },
+     {
+      "marketId": 1,
+      "marketDisplayName": "BTC-USD",
+      "fundingRate": "0.0000125",
+      "time": 1792396800000000
+     },
+     {
+      "marketId": 1,
+      "marketDisplayName": "BTC-USD",
+      "fundingRate": "0.0000125",
+      "time": 1792393200000000
+     },
+     {
+      "marketId": 1,
+      "marketDisplayName": "BTC-USD",
+      "fundingRate": "-0.000001944136349877",
+      "time": 1792389600000000
+     }
+    ],
+    "total": 5
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "markets": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "fullAssetName": "Bitcoin",
+      "marketId": 1,
+      "status": "ONLINE",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD",
+      "tickSize": "0.1",
+      "stepSize": "0.00000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "1000000",
+        "tick": "0.2"
+       },
+       {
+        "upToPrice": "2000000",
+        "tick": "0.5"
+       },
+       {
+        "upToPrice": "5000000",
+        "tick": "1"
+       },
+       {
+        "upToPrice": "10000000",
+        "tick": "2"
+       },
+       {
+        "tick": "5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.0001",
+      "maxOrderSize": "10000",
+      "oraclePrice": "82416",
+      "markPrice": "82384.6",
+      "lastTradePrice": "82388.4",
+      "fundingRate": "0.000007703166719716",
+      "nextFundingRate": "0.00001086469778409797",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0037",
+      "volume24h": "986.58",
+      "volume24hNotional": "81257773.82",
+      "high24h": "83046.1",
+      "low24h": "80551.9",
+      "trades24h": 99185,
+      "openInterest": "196.64773921",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 2500,
+      "initialMarginFraction": "0.025",
+      "maintenanceMarginFraction": "0.016667",
+      "offHoursInitialMarginFraction": "0.025",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "1",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "ETH-USD",
+      "fullAssetName": "Ethereum",
+      "marketId": 2,
+      "status": "ONLINE",
+      "baseAsset": "ETH",
+      "quoteAsset": "USD",
+      "tickSize": "0.01",
+      "stepSize": "0.0000001",
+      "tickTiers": [
+       {
+        "upToPrice": "10000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "20000",
+        "tick": "0.02"
+       },
+       {
+        "upToPrice": "50000",
+        "tick": "0.05"
+       },
+       {
+        "upToPrice": "100000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "200000",
+        "tick": "0.2"
+       },
+       {
+        "tick": "0.5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.001",
+      "maxOrderSize": "100000",
+      "oraclePrice": "2425.68",
+      "markPrice": "2425.1",
+      "lastTradePrice": "2425",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0020",
+      "volume24h": "11817.53",
+      "volume24hNotional": "28284148.79",
+      "high24h": "2443.26",
+      "low24h": "2324.89",
+      "trades24h": 46964,
+      "openInterest": "2686.9189104",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 4000,
+      "initialMarginFraction": "0.04",
+      "maintenanceMarginFraction": "0.026667",
+      "offHoursInitialMarginFraction": "0.04",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "2",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "SOL-USD",
+      "fullAssetName": "Solana",
+      "marketId": 3,
+      "status": "ONLINE",
+      "baseAsset": "SOL",
+      "quoteAsset": "USD",
+      "tickSize": "0.001",
+      "stepSize": "0.000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500",
+        "tick": "0.001"
+       },
+       {
+        "upToPrice": "1000",
+        "tick": "0.002"
+       },
+       {
+        "upToPrice": "2000",
+        "tick": "0.005"
+       },
+       {
+        "upToPrice": "5000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "10000",
+        "tick": "0.02"
+       },
+       {
+        "tick": "0.05"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.01",
+      "maxOrderSize": "1000000",
+      "oraclePrice": "104.995",
+      "markPrice": "104.949",
+      "lastTradePrice": "104.981",
+      "fundingRate": "0.000000816727169201",
+      "nextFundingRate": "0.00000133627723331378",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0093",
+      "volume24h": "104324.59",
+      "volume24hNotional": "10735800.21",
+      "high24h": "106.065",
+      "low24h": "100.225",
+      "trades24h": 14833,
+      "openInterest": "22189.581773",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 5000,
+      "initialMarginFraction": "0.05",
+      "maintenanceMarginFraction": "0.033334",
+      "offHoursInitialMarginFraction": "0.05",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "6",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/l2OrderBook/BTC-USD?nLevels=50",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "bids": [
+     [
+      "82386",
+      "0.00131379"
+     ],
+     [
+      "82385.9",
+      "0.00020032"
+     ],
+     [
+      "82383.9",
+      "0.00287752"
+     ],
+     [
+      "82383.6",
+      "0.25"
+     ],
+     [
+      "82383",
+      "0.0001"
+     ],
+     [
+      "82382.6",
+      "0.16967631"
+     ],
+     [
+      "82359.4",
+      "0.00010033"
+     ],
+     [
+      "82357.9",
+      "0.05415"
+     ],
+     [
+      "82357.7",
+      "1.06243884"
+     ],
+     [
+      "82355.1",
+      "1.51781729"
+     ],
+     [
+      "82354.7",
+      "0.16967631"
+     ],
+     [
+      "82352.7",
+      "0.00052864"
+     ]
+    ],
+    "asks": [
+     [
+      "82386.1",
+      "1.37445915"
+     ],
+     [
+      "82386.3",
+      "0.00018207"
+     ],
+     [
+      "82387.3",
+      "0.60688469"
+     ],
+     [
+      "82387.7",
+      "0.60688695"
+     ],
+     [
+      "82388.2",
+      "0.00100155"
+     ],
+     [
+      "82388.8",
+      "0.0012271"
+     ],
+     [
+      "82412.8",
+      "0.96993613"
+     ],
+     [
+      "82413",
+      "0.16967631"
+     ],
+     [
+      "82414.3",
+      "0.00364014"
+     ],
+     [
+      "82415.3",
+      "0.00052459"
+     ],
+     [
+      "82415.7",
+      "0.01213361"
+     ],
+     [
+      "82416.3",
+      "0.02193616"
+     ]
+    ],
+    "lastSequenceId": 470791788,
+    "globalSequenceId": 4896530046,
+    "timestamp": 1792405430713748
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "markets": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "fullAssetName": "Bitcoin",
+      "marketId": 1,
+      "status": "ONLINE",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD",
+      "tickSize": "0.1",
+      "stepSize": "0.00000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "1000000",
+        "tick": "0.2"
+       },
+       {
+        "upToPrice": "2000000",
+        "tick": "0.5"
+       },
+       {
+        "upToPrice": "5000000",
+        "tick": "1"
+       },
+       {
+        "upToPrice": "10000000",
+        "tick": "2"
+       },
+       {
+        "tick": "5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.0001",
+      "maxOrderSize": "10000",
+      "oraclePrice": "82416",
+      "markPrice": "82384.6",
+      "lastTradePrice": "82388.4",
+      "fundingRate": "0.000007703166719716",
+      "nextFundingRate": "0.00001086469778409797",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0037",
+      "volume24h": "986.53",
+      "volume24hNotional": "81252423.52",
+      "high24h": "83046.1",
+      "low24h": "80551.9",
+      "trades24h": 99161,
+      "openInterest": "196.6557284",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 2500,
+      "initialMarginFraction": "0.025",
+      "maintenanceMarginFraction": "0.016667",
+      "offHoursInitialMarginFraction": "0.025",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "1",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "ETH-USD",
+      "fullAssetName": "Ethereum",
+      "marketId": 2,
+      "status": "ONLINE",
+      "baseAsset": "ETH",
+      "quoteAsset": "USD",
+      "tickSize": "0.01",
+      "stepSize": "0.0000001",
+      "tickTiers": [
+       {
+        "upToPrice": "10000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "20000",
+        "tick": "0.02"
+       },
+       {
+        "upToPrice": "50000",
+        "tick": "0.05"
+       },
+       {
+        "upToPrice": "100000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "200000",
+        "tick": "0.2"
+       },
+       {
+        "tick": "0.5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.001",
+      "maxOrderSize": "100000",
+      "oraclePrice": "2425.67",
+      "markPrice": "2425.08",
+      "lastTradePrice": "2425",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0020",
+      "volume24h": "11817.52",
+      "volume24hNotional": "28284118.02",
+      "high24h": "2443.26",
+      "low24h": "2324.89",
+      "trades24h": 46964,
+      "openInterest": "2713.8788558",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 4000,
+      "initialMarginFraction": "0.04",
+      "maintenanceMarginFraction": "0.026667",
+      "offHoursInitialMarginFraction": "0.04",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "2",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "SOL-USD",
+      "fullAssetName": "Solana",
+      "marketId": 3,
+      "status": "ONLINE",
+      "baseAsset": "SOL",
+      "quoteAsset": "USD",
+      "tickSize": "0.001",
+      "stepSize": "0.000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500",
+        "tick": "0.001"
+       },
+       {
+        "upToPrice": "1000",
+        "tick": "0.002"
+       },
+       {
+        "upToPrice": "2000",
+        "tick": "0.005"
+       },
+       {
+        "upToPrice": "5000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "10000",
+        "tick": "0.02"
+       },
+       {
+        "tick": "0.05"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.01",
+      "maxOrderSize": "1000000",
+      "oraclePrice": "104.995",
+      "markPrice": "104.949",
+      "lastTradePrice": "104.981",
+      "fundingRate": "0.000000816727169201",
+      "nextFundingRate": "0.00000133627723331378",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0093",
+      "volume24h": "104324.59",
+      "volume24hNotional": "10735800.21",
+      "high24h": "106.065",
+      "low24h": "100.225",
+      "trades24h": 14833,
+      "openInterest": "22199.391218",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 5000,
+      "initialMarginFraction": "0.05",
+      "maintenanceMarginFraction": "0.033334",
+      "offHoursInitialMarginFraction": "0.05",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "6",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/trades?market=BTC-USD&limit=5",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "trades": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "side": "SELL",
+      "price": "82389.4",
+      "size": "0.00121405",
+      "tradeId": "20794632",
+      "timestamp": 1792405424584834,
+      "makerOrderId": "3802721aaa1b47c0",
+      "takerOrderId": "136f7b3663de492e",
+      "makerAddress": "0xbdfa4f4492dd7b7cf211209c4791af8d52bf5c50",
+      "takerAddress": "0x00cb7b8d4b50061677c170b8c69a7ea2eb25aad1",
+      "sequenceNumber": 4896521390
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "side": "SELL",
+      "price": "82389.2",
+      "size": "0.00015172",
+      "tradeId": "20794633",
+      "timestamp": 1792405424584834,
+      "makerOrderId": "6828cdd7bc3e4266",
+      "takerOrderId": "136f7b3663de492e",
+      "makerAddress": "0x863d22e9114d7b0fc9998fc8d3091bbac6fd4efa",
+      "takerAddress": "0x00cb7b8d4b50061677c170b8c69a7ea2eb25aad1",
+      "sequenceNumber": 4896521390
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "side": "SELL",
+      "price": "82388.4",
+      "size": "0.0011",
+      "tradeId": "20794634",
+      "timestamp": 1792405424584834,
+      "makerOrderId": "b588236229ff4711",
+      "takerOrderId": "136f7b3663de492e",
+      "makerAddress": "0x5d0d9f350e5162734ac4cd9839458941d3d24f00",
+      "takerAddress": "0x00cb7b8d4b50061677c170b8c69a7ea2eb25aad1",
+      "sequenceNumber": 4896521390
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "side": "SELL",
+      "price": "82397.8",
+      "size": "0.00109197",
+      "tradeId": "20794613",
+      "timestamp": 1792405419998627,
+      "makerOrderId": "524c18699d504cba",
+      "takerOrderId": "8ce5e4de8f074bac",
+      "makerAddress": "0xc2ead026cb1876291c8b0582fc1e72f83103ea16",
+      "takerAddress": "0x3c9baa12789aef156936d20a3d7c861a4dff21dc",
+      "sequenceNumber": 4896512562
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "side": "SELL",
+      "price": "82397.8",
+      "size": "0.00187475",
+      "tradeId": "20794614",
+      "timestamp": 1792405419998627,
+      "makerOrderId": "f747ebd47fd7466e",
+      "takerOrderId": "8ce5e4de8f074bac",
+      "makerAddress": "0xa119dd8285463e176065fefd7e91248ae19caa1f",
+      "takerAddress": "0x3c9baa12789aef156936d20a3d7c861a4dff21dc",
+      "sequenceNumber": 4896512562
+     }
+    ],
+    "total": 5
+   },
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "markets": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "fullAssetName": "Bitcoin",
+      "marketId": 1,
+      "status": "ONLINE",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD",
+      "tickSize": "0.1",
+      "stepSize": "0.00000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "1000000",
+        "tick": "0.2"
+       },
+       {
+        "upToPrice": "2000000",
+        "tick": "0.5"
+       },
+       {
+        "upToPrice": "5000000",
+        "tick": "1"
+       },
+       {
+        "upToPrice": "10000000",
+        "tick": "2"
+       },
+       {
+        "tick": "5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.0001",
+      "maxOrderSize": "10000",
+      "oraclePrice": "82416",
+      "markPrice": "82384.6",
+      "lastTradePrice": "82388.4",
+      "fundingRate": "0.000007703166719716",
+      "nextFundingRate": "0.00001086469778409797",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0037",
+      "volume24h": "986.58",
+      "volume24hNotional": "81258389.44",
+      "high24h": "83046.1",
+      "low24h": "80551.9",
+      "trades24h": 99191,
+      "openInterest": "196.64652516",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 2500,
+      "initialMarginFraction": "0.025",
+      "maintenanceMarginFraction": "0.016667",
+      "offHoursInitialMarginFraction": "0.025",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "1",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "ETH-USD",
+      "fullAssetName": "Ethereum",
+      "marketId": 2,
+      "status": "ONLINE",
+      "baseAsset": "ETH",
+      "quoteAsset": "USD",
+      "tickSize": "0.01",
+      "stepSize": "0.0000001",
+      "tickTiers": [
+       {
+        "upToPrice": "10000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "20000",
+        "tick": "0.02"
+       },
+       {
+        "upToPrice": "50000",
+        "tick": "0.05"
+       },
+       {
+        "upToPrice": "100000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "200000",
+        "tick": "0.2"
+       },
+       {
+        "tick": "0.5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.001",
+      "maxOrderSize": "100000",
+      "oraclePrice": "2425.68",
+      "markPrice": "2425.08",
+      "lastTradePrice": "2425",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0020",
+      "volume24h": "11817.59",
+      "volume24hNotional": "28284314.16",
+      "high24h": "2443.26",
+      "low24h": "2324.89",
+      "trades24h": 46965,
+      "openInterest": "2686.9189104",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 4000,
+      "initialMarginFraction": "0.04",
+      "maintenanceMarginFraction": "0.026667",
+      "offHoursInitialMarginFraction": "0.04",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "2",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "SOL-USD",
+      "fullAssetName": "Solana",
+      "marketId": 3,
+      "status": "ONLINE",
+      "baseAsset": "SOL",
+      "quoteAsset": "USD",
+      "tickSize": "0.001",
+      "stepSize": "0.000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500",
+        "tick": "0.001"
+       },
+       {
+        "upToPrice": "1000",
+        "tick": "0.002"
+       },
+       {
+        "upToPrice": "2000",
+        "tick": "0.005"
+       },
+       {
+        "upToPrice": "5000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "10000",
+        "tick": "0.02"
+       },
+       {
+        "tick": "0.05"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.01",
+      "maxOrderSize": "1000000",
+      "oraclePrice": "104.995",
+      "markPrice": "104.949",
+      "lastTradePrice": "104.981",
+      "fundingRate": "0.000000816727169201",
+      "nextFundingRate": "0.00000133627723331378",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0093",
+      "volume24h": "104323.61",
+      "volume24hNotional": "10735700.4",
+      "high24h": "106.065",
+      "low24h": "100.225",
+      "trades24h": 14832,
+      "openInterest": "22189.581773",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 5000,
+      "initialMarginFraction": "0.05",
+      "maintenanceMarginFraction": "0.033334",
+      "offHoursInitialMarginFraction": "0.05",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "6",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/candles?market=BTC-USD&timeframe=1h&from=1792319031124000&to=1792405431124000",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "candles": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "timeframe": "1h",
+      "openTime": 1792404000000000,
+      "open": "82644.9",
+      "high": "82770.5",
+      "low": "82334",
+      "close": "82386",
+      "volume": "18.55742472",
+      "takerBuyVolume": "8.35581821",
+      "notionalVolume": "1532664.043678645",
+      "takerBuyNotionalVolume": "690190.136931912",
+      "tradeCount": 2209,
+      "isFinal": false
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "timeframe": "1h",
+      "openTime": 1792400400000000,
+      "open": "82694.7",
+      "high": "82972.3",
+      "low": "82624",
+      "close": "82644.9",
+      "volume": "45.32054277",
+      "takerBuyVolume": "22.93241095",
+      "notionalVolume": "3752122.749405955",
+      "takerBuyNotionalVolume": "1899108.107266799",
+      "tradeCount": 4232,
+      "isFinal": true
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "timeframe": "1h",
+      "openTime": 1792396800000000,
+      "open": "82613.7",
+      "high": "82843.8",
+      "low": "82467.3",
+      "close": "82694.7",
+      "volume": "36.11724408",
+      "takerBuyVolume": "18.07575874",
+      "notionalVolume": "2985304.358710039",
+      "takerBuyNotionalVolume": "1493948.652959925",
+      "tradeCount": 4324,
+      "isFinal": true
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "timeframe": "1h",
+      "openTime": 1792393200000000,
+      "open": "82719.6",
+      "high": "83046.1",
+      "low": "82568.2",
+      "close": "82613.7",
+      "volume": "48.55736997",
+      "takerBuyVolume": "26.72511552",
+      "notionalVolume": "4021004.45444643",
+      "takerBuyNotionalVolume": "2213775.40051245",
+      "tradeCount": 4763,
+      "isFinal": true
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "timeframe": "1h",
+      "openTime": 1792389600000000,
+      "open": "82623.8",
+      "high": "82795.9",
+      "low": "82566.7",
+      "close": "82719.6",
+      "volume": "43.13068534",
+      "takerBuyVolume": "30.27242349",
+      "notionalVolume": "3565976.971460994",
+      "takerBuyNotionalVolume": "2502877.326228469",
+      "tradeCount": 5505,
+      "isFinal": true
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "timeframe": "1h",
+      "openTime": 1792386000000000,
+      "open": "82639.1",
+      "high": "82648",
+      "low": "82403.1",
+      "close": "82623.8",
+      "volume": "17.58611673",
+      "takerBuyVolume": "9.79306252",
+      "notionalVolume": "1451674.566357936",
+      "takerBuyNotionalVolume": "808402.473566507",
+      "tradeCount": 3254,
+      "isFinal": true
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "timeframe": "1h",
+      "openTime": 1792335600000000,
+      "open": "80994",
+      "high": "81123.4",
+      "low": "80880.5",
+      "close": "81058.2",
+      "volume": "45.02100416",
+      "takerBuyVolume": "16.27303843",
+      "notionalVolume": "3649270.534109662",
+      "takerBuyNotionalVolume": "1318843.779102726",
+      "tradeCount": 3691,
+      "isFinal": true
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "timeframe": "1h",
+      "openTime": 1792332000000000,
+      "open": "81428.3",
+      "high": "81448.6",
+      "low": "80925.1",
+      "close": "80994",
+      "volume": "126.03657874",
+      "takerBuyVolume": "50.5877084",
+      "notionalVolume": "10227139.988875717",
+      "takerBuyNotionalVolume": "4103823.009434",
+      "tradeCount": 7513,
+      "isFinal": true
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "timeframe": "1h",
+      "openTime": 1792328400000000,
+      "open": "81866.7",
+      "high": "81866.7",
+      "low": "81209.4",
+      "close": "81428.3",
+      "volume": "75.36481115",
+      "takerBuyVolume": "42.92485429",
+      "notionalVolume": "6143496.852493565",
+      "takerBuyNotionalVolume": "3498296.012277696",
+      "tradeCount": 5572,
+      "isFinal": true
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "timeframe": "1h",
+      "openTime": 1792324800000000,
+      "open": "81950.4",
+      "high": "82010",
+      "low": "81795.2",
+      "close": "81866.7",
+      "volume": "35.98123706",
+      "takerBuyVolume": "20.76961566",
+      "notionalVolume": "2948082.189923723",
+      "takerBuyNotionalVolume": "1701596.180206885",
+      "tradeCount": 1876,
+      "isFinal": true
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "timeframe": "1h",
+      "openTime": 1792321200000000,
+      "open": "81969.5",
+      "high": "82025.6",
+      "low": "81875.5",
+      "close": "81950.4",
+      "volume": "13.55661943",
+      "takerBuyVolume": "7.24456165",
+      "notionalVolume": "1111139.825882217",
+      "takerBuyNotionalVolume": "593739.957584756",
+      "tradeCount": 1655,
+      "isFinal": true
+     },
+     {
+      "marketDisplayName": "BTC-USD",
+      "marketId": 1,
+      "timeframe": "1h",
+      "openTime": 1792317600000000,
+      "open": "82026",
+      "high": "82141.3",
+      "low": "81969.5",
+      "close": "81969.5",
+      "volume": "90.88483086",
+      "takerBuyVolume": "33.2570593",
+      "notionalVolume": "7459066.483993257",
+      "takerBuyNotionalVolume": "2729098.33319429",
+      "tradeCount": 2388,
+      "isFinal": true
+     }
+    ],
+    "total": 25
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "markets": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "fullAssetName": "Bitcoin",
+      "marketId": 1,
+      "status": "ONLINE",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD",
+      "tickSize": "0.1",
+      "stepSize": "0.00000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "1000000",
+        "tick": "0.2"
+       },
+       {
+        "upToPrice": "2000000",
+        "tick": "0.5"
+       },
+       {
+        "upToPrice": "5000000",
+        "tick": "1"
+       },
+       {
+        "upToPrice": "10000000",
+        "tick": "2"
+       },
+       {
+        "tick": "5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.0001",
+      "maxOrderSize": "10000",
+      "oraclePrice": "82416",
+      "markPrice": "82384.6",
+      "lastTradePrice": "82388.4",
+      "fundingRate": "0.000007703166719716",
+      "nextFundingRate": "0.00001086469778409797",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0037",
+      "volume24h": "986.58",
+      "volume24hNotional": "81257773.82",
+      "high24h": "83046.1",
+      "low24h": "80551.9",
+      "trades24h": 99185,
+      "openInterest": "196.64773921",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 2500,
+      "initialMarginFraction": "0.025",
+      "maintenanceMarginFraction": "0.016667",
+      "offHoursInitialMarginFraction": "0.025",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "1",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "ETH-USD",
+      "fullAssetName": "Ethereum",
+      "marketId": 2,
+      "status": "ONLINE",
+      "baseAsset": "ETH",
+      "quoteAsset": "USD",
+      "tickSize": "0.01",
+      "stepSize": "0.0000001",
+      "tickTiers": [
+       {
+        "upToPrice": "10000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "20000",
+        "tick": "0.02"
+       },
+       {
+        "upToPrice": "50000",
+        "tick": "0.05"
+       },
+       {
+        "upToPrice": "100000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "200000",
+        "tick": "0.2"
+       },
+       {
+        "tick": "0.5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.001",
+      "maxOrderSize": "100000",
+      "oraclePrice": "2425.67",
+      "markPrice": "2425.04",
+      "lastTradePrice": "2424.94",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0020",
+      "volume24h": "11817.53",
+      "volume24hNotional": "28284148.79",
+      "high24h": "2443.26",
+      "low24h": "2324.89",
+      "trades24h": 46964,
+      "openInterest": "2686.9189104",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 4000,
+      "initialMarginFraction": "0.04",
+      "maintenanceMarginFraction": "0.026667",
+      "offHoursInitialMarginFraction": "0.04",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "2",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "SOL-USD",
+      "fullAssetName": "Solana",
+      "marketId": 3,
+      "status": "ONLINE",
+      "baseAsset": "SOL",
+      "quoteAsset": "USD",
+      "tickSize": "0.001",
+      "stepSize": "0.000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500",
+        "tick": "0.001"
+       },
+       {
+        "upToPrice": "1000",
+        "tick": "0.002"
+       },
+       {
+        "upToPrice": "2000",
+        "tick": "0.005"
+       },
+       {
+        "upToPrice": "5000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "10000",
+        "tick": "0.02"
+       },
+       {
+        "tick": "0.05"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.01",
+      "maxOrderSize": "1000000",
+      "oraclePrice": "104.995",
+      "markPrice": "104.949",
+      "lastTradePrice": "104.981",
+      "fundingRate": "0.000000816727169201",
+      "nextFundingRate": "0.00000133627723331378",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0093",
+      "volume24h": "104324.59",
+      "volume24hNotional": "10735800.21",
+      "high24h": "106.065",
+      "low24h": "100.225",
+      "trades24h": 14833,
+      "openInterest": "22189.581773",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 5000,
+      "initialMarginFraction": "0.05",
+      "maintenanceMarginFraction": "0.033334",
+      "offHoursInitialMarginFraction": "0.05",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "6",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:funding",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "markets": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "fullAssetName": "Bitcoin",
+      "marketId": 1,
+      "status": "ONLINE",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD",
+      "tickSize": "0.1",
+      "stepSize": "0.00000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "1000000",
+        "tick": "0.2"
+       },
+       {
+        "upToPrice": "2000000",
+        "tick": "0.5"
+       },
+       {
+        "upToPrice": "5000000",
+        "tick": "1"
+       },
+       {
+        "upToPrice": "10000000",
+        "tick": "2"
+       },
+       {
+        "tick": "5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.0001",
+      "maxOrderSize": "10000",
+      "oraclePrice": "82416.1",
+      "markPrice": "82384.6",
+      "lastTradePrice": "82388.4",
+      "fundingRate": "0.000007703166719716",
+      "nextFundingRate": "0.00001086469778409797",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0037",
+      "volume24h": "984.73",
+      "volume24hNotional": "81107705.71",
+      "high24h": "83046.1",
+      "low24h": "80551.9",
+      "trades24h": 99134,
+      "openInterest": "196.64773921",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 2500,
+      "initialMarginFraction": "0.025",
+      "maintenanceMarginFraction": "0.016667",
+      "offHoursInitialMarginFraction": "0.025",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "1",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "ETH-USD",
+      "fullAssetName": "Ethereum",
+      "marketId": 2,
+      "status": "ONLINE",
+      "baseAsset": "ETH",
+      "quoteAsset": "USD",
+      "tickSize": "0.01",
+      "stepSize": "0.0000001",
+      "tickTiers": [
+       {
+        "upToPrice": "10000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "20000",
+        "tick": "0.02"
+       },
+       {
+        "upToPrice": "50000",
+        "tick": "0.05"
+       },
+       {
+        "upToPrice": "100000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "200000",
+        "tick": "0.2"
+       },
+       {
+        "tick": "0.5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.001",
+      "maxOrderSize": "100000",
+      "oraclePrice": "2425.68",
+      "markPrice": "2425.07",
+      "lastTradePrice": "2424.94",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0020",
+      "volume24h": "11817.59",
+      "volume24hNotional": "28284304.75",
+      "high24h": "2443.26",
+      "low24h": "2324.89",
+      "trades24h": 46964,
+      "openInterest": "2686.9189104",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 4000,
+      "initialMarginFraction": "0.04",
+      "maintenanceMarginFraction": "0.026667",
+      "offHoursInitialMarginFraction": "0.04",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "2",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "SOL-USD",
+      "fullAssetName": "Solana",
+      "marketId": 3,
+      "status": "ONLINE",
+      "baseAsset": "SOL",
+      "quoteAsset": "USD",
+      "tickSize": "0.001",
+      "stepSize": "0.000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500",
+        "tick": "0.001"
+       },
+       {
+        "upToPrice": "1000",
+        "tick": "0.002"
+       },
+       {
+        "upToPrice": "2000",
+        "tick": "0.005"
+       },
+       {
+        "upToPrice": "5000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "10000",
+        "tick": "0.02"
+       },
+       {
+        "tick": "0.05"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.01",
+      "maxOrderSize": "1000000",
+      "oraclePrice": "104.998",
+      "markPrice": "104.955",
+      "lastTradePrice": "104.981",
+      "fundingRate": "0.000000816727169201",
+      "nextFundingRate": "0.00000133627723331378",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0094",
+      "volume24h": "104324.59",
+      "volume24hNotional": "10735800.21",
+      "high24h": "106.065",
+      "low24h": "100.225",
+      "trades24h": 14833,
+      "openInterest": "22189.581773",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 5000,
+      "initialMarginFraction": "0.05",
+      "maintenanceMarginFraction": "0.033334",
+      "offHoursInitialMarginFraction": "0.05",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "6",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:book",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "markets": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "fullAssetName": "Bitcoin",
+      "marketId": 1,
+      "status": "ONLINE",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD",
+      "tickSize": "0.1",
+      "stepSize": "0.00000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "1000000",
+        "tick": "0.2"
+       },
+       {
+        "upToPrice": "2000000",
+        "tick": "0.5"
+       },
+       {
+        "upToPrice": "5000000",
+        "tick": "1"
+       },
+       {
+        "upToPrice": "10000000",
+        "tick": "2"
+       },
+       {
+        "tick": "5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.0001",
+      "maxOrderSize": "10000",
+      "oraclePrice": "82416.1",
+      "markPrice": "82384.6",
+      "lastTradePrice": "82388.4",
+      "fundingRate": "0.000007703166719716",
+      "nextFundingRate": "0.00001086469778409797",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0037",
+      "volume24h": "986.56",
+      "volume24hNotional": "81257114.78",
+      "high24h": "83046.1",
+      "low24h": "80551.9",
+      "trades24h": 99181,
+      "openInterest": "196.6557284",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 2500,
+      "initialMarginFraction": "0.025",
+      "maintenanceMarginFraction": "0.016667",
+      "offHoursInitialMarginFraction": "0.025",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "1",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "ETH-USD",
+      "fullAssetName": "Ethereum",
+      "marketId": 2,
+      "status": "ONLINE",
+      "baseAsset": "ETH",
+      "quoteAsset": "USD",
+      "tickSize": "0.01",
+      "stepSize": "0.0000001",
+      "tickTiers": [
+       {
+        "upToPrice": "10000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "20000",
+        "tick": "0.02"
+       },
+       {
+        "upToPrice": "50000",
+        "tick": "0.05"
+       },
+       {
+        "upToPrice": "100000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "200000",
+        "tick": "0.2"
+       },
+       {
+        "tick": "0.5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.001",
+      "maxOrderSize": "100000",
+      "oraclePrice": "2425.68",
+      "markPrice": "2425.11",
+      "lastTradePrice": "2424.94",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0020",
+      "volume24h": "11817.68",
+      "volume24hNotional": "28284519.13",
+      "high24h": "2443.26",
+      "low24h": "2324.89",
+      "trades24h": 46967,
+      "openInterest": "2713.8788558",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 4000,
+      "initialMarginFraction": "0.04",
+      "maintenanceMarginFraction": "0.026667",
+      "offHoursInitialMarginFraction": "0.04",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "2",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "SOL-USD",
+      "fullAssetName": "Solana",
+      "marketId": 3,
+      "status": "ONLINE",
+      "baseAsset": "SOL",
+      "quoteAsset": "USD",
+      "tickSize": "0.001",
+      "stepSize": "0.000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500",
+        "tick": "0.001"
+       },
+       {
+        "upToPrice": "1000",
+        "tick": "0.002"
+       },
+       {
+        "upToPrice": "2000",
+        "tick": "0.005"
+       },
+       {
+        "upToPrice": "5000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "10000",
+        "tick": "0.02"
+       },
+       {
+        "tick": "0.05"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.01",
+      "maxOrderSize": "1000000",
+      "oraclePrice": "104.998",
+      "markPrice": "104.955",
+      "lastTradePrice": "104.981",
+      "fundingRate": "0.000000816727169201",
+      "nextFundingRate": "0.00000133627723331378",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0094",
+      "volume24h": "104324.59",
+      "volume24hNotional": "10735800.21",
+      "high24h": "106.065",
+      "low24h": "100.225",
+      "trades24h": 14833,
+      "openInterest": "22199.391218",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 5000,
+      "initialMarginFraction": "0.05",
+      "maintenanceMarginFraction": "0.033334",
+      "offHoursInitialMarginFraction": "0.05",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "6",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:trades",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "markets": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "fullAssetName": "Bitcoin",
+      "marketId": 1,
+      "status": "ONLINE",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD",
+      "tickSize": "0.1",
+      "stepSize": "0.00000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "1000000",
+        "tick": "0.2"
+       },
+       {
+        "upToPrice": "2000000",
+        "tick": "0.5"
+       },
+       {
+        "upToPrice": "5000000",
+        "tick": "1"
+       },
+       {
+        "upToPrice": "10000000",
+        "tick": "2"
+       },
+       {
+        "tick": "5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.0001",
+      "maxOrderSize": "10000",
+      "oraclePrice": "82416.1",
+      "markPrice": "82384.6",
+      "lastTradePrice": "82388.4",
+      "fundingRate": "0.000007703166719716",
+      "nextFundingRate": "0.00001086469778409797",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0037",
+      "volume24h": "986.58",
+      "volume24hNotional": "81258389.44",
+      "high24h": "83046.1",
+      "low24h": "80551.9",
+      "trades24h": 99191,
+      "openInterest": "196.64652516",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 2500,
+      "initialMarginFraction": "0.025",
+      "maintenanceMarginFraction": "0.016667",
+      "offHoursInitialMarginFraction": "0.025",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "1",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "ETH-USD",
+      "fullAssetName": "Ethereum",
+      "marketId": 2,
+      "status": "ONLINE",
+      "baseAsset": "ETH",
+      "quoteAsset": "USD",
+      "tickSize": "0.01",
+      "stepSize": "0.0000001",
+      "tickTiers": [
+       {
+        "upToPrice": "10000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "20000",
+        "tick": "0.02"
+       },
+       {
+        "upToPrice": "50000",
+        "tick": "0.05"
+       },
+       {
+        "upToPrice": "100000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "200000",
+        "tick": "0.2"
+       },
+       {
+        "tick": "0.5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.001",
+      "maxOrderSize": "100000",
+      "oraclePrice": "2425.68",
+      "markPrice": "2425.11",
+      "lastTradePrice": "2424.94",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0020",
+      "volume24h": "11817.59",
+      "volume24hNotional": "28284314.16",
+      "high24h": "2443.26",
+      "low24h": "2324.89",
+      "trades24h": 46965,
+      "openInterest": "2686.9189104",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 4000,
+      "initialMarginFraction": "0.04",
+      "maintenanceMarginFraction": "0.026667",
+      "offHoursInitialMarginFraction": "0.04",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "2",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "SOL-USD",
+      "fullAssetName": "Solana",
+      "marketId": 3,
+      "status": "ONLINE",
+      "baseAsset": "SOL",
+      "quoteAsset": "USD",
+      "tickSize": "0.001",
+      "stepSize": "0.000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500",
+        "tick": "0.001"
+       },
+       {
+        "upToPrice": "1000",
+        "tick": "0.002"
+       },
+       {
+        "upToPrice": "2000",
+        "tick": "0.005"
+       },
+       {
+        "upToPrice": "5000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "10000",
+        "tick": "0.02"
+       },
+       {
+        "tick": "0.05"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.01",
+      "maxOrderSize": "1000000",
+      "oraclePrice": "104.998",
+      "markPrice": "104.955",
+      "lastTradePrice": "104.981",
+      "fundingRate": "0.000000816727169201",
+      "nextFundingRate": "0.00000133627723331378",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0094",
+      "volume24h": "104323.61",
+      "volume24hNotional": "10735700.4",
+      "high24h": "106.065",
+      "low24h": "100.225",
+      "trades24h": 14832,
+      "openInterest": "22189.581773",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 5000,
+      "initialMarginFraction": "0.05",
+      "maintenanceMarginFraction": "0.033334",
+      "offHoursInitialMarginFraction": "0.05",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "6",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:kline",
+   "method": "GET",
+   "url": "https://api.arcus.xyz/v1/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "markets": [
+     {
+      "marketDisplayName": "BTC-USD",
+      "fullAssetName": "Bitcoin",
+      "marketId": 1,
+      "status": "ONLINE",
+      "baseAsset": "BTC",
+      "quoteAsset": "USD",
+      "tickSize": "0.1",
+      "stepSize": "0.00000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "1000000",
+        "tick": "0.2"
+       },
+       {
+        "upToPrice": "2000000",
+        "tick": "0.5"
+       },
+       {
+        "upToPrice": "5000000",
+        "tick": "1"
+       },
+       {
+        "upToPrice": "10000000",
+        "tick": "2"
+       },
+       {
+        "tick": "5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.0001",
+      "maxOrderSize": "10000",
+      "oraclePrice": "82416.6",
+      "markPrice": "82384.9",
+      "lastTradePrice": "82388.4",
+      "fundingRate": "0.000007703166719716",
+      "nextFundingRate": "0.00001086469778409797",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0037",
+      "volume24h": "986.58",
+      "volume24hNotional": "81257773.82",
+      "high24h": "83046.1",
+      "low24h": "80551.9",
+      "trades24h": 99185,
+      "openInterest": "196.64773921",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 2500,
+      "initialMarginFraction": "0.025",
+      "maintenanceMarginFraction": "0.016667",
+      "offHoursInitialMarginFraction": "0.025",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "1",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "ETH-USD",
+      "fullAssetName": "Ethereum",
+      "marketId": 2,
+      "status": "ONLINE",
+      "baseAsset": "ETH",
+      "quoteAsset": "USD",
+      "tickSize": "0.01",
+      "stepSize": "0.0000001",
+      "tickTiers": [
+       {
+        "upToPrice": "10000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "20000",
+        "tick": "0.02"
+       },
+       {
+        "upToPrice": "50000",
+        "tick": "0.05"
+       },
+       {
+        "upToPrice": "100000",
+        "tick": "0.1"
+       },
+       {
+        "upToPrice": "200000",
+        "tick": "0.2"
+       },
+       {
+        "tick": "0.5"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.001",
+      "maxOrderSize": "100000",
+      "oraclePrice": "2425.73",
+      "markPrice": "2425.13",
+      "lastTradePrice": "2424.94",
+      "fundingRate": "0.0000125",
+      "nextFundingRate": "0.0000125",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0020",
+      "volume24h": "11817.53",
+      "volume24hNotional": "28284148.79",
+      "high24h": "2443.26",
+      "low24h": "2324.89",
+      "trades24h": 46964,
+      "openInterest": "2686.9189104",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 4000,
+      "initialMarginFraction": "0.04",
+      "maintenanceMarginFraction": "0.026667",
+      "offHoursInitialMarginFraction": "0.04",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "2",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     },
+     {
+      "marketDisplayName": "SOL-USD",
+      "fullAssetName": "Solana",
+      "marketId": 3,
+      "status": "ONLINE",
+      "baseAsset": "SOL",
+      "quoteAsset": "USD",
+      "tickSize": "0.001",
+      "stepSize": "0.000001",
+      "tickTiers": [
+       {
+        "upToPrice": "500",
+        "tick": "0.001"
+       },
+       {
+        "upToPrice": "1000",
+        "tick": "0.002"
+       },
+       {
+        "upToPrice": "2000",
+        "tick": "0.005"
+       },
+       {
+        "upToPrice": "5000",
+        "tick": "0.01"
+       },
+       {
+        "upToPrice": "10000",
+        "tick": "0.02"
+       },
+       {
+        "tick": "0.05"
+       }
+      ],
+      "minOrderNotional": "5",
+      "minOrderSize": "0.01",
+      "maxOrderSize": "1000000",
+      "oraclePrice": "104.998",
+      "markPrice": "104.955",
+      "lastTradePrice": "104.981",
+      "fundingRate": "0.000000816727169201",
+      "nextFundingRate": "0.00000133627723331378",
+      "nextFundingAt": 1792407600,
+      "priceChange24h": "0.0094",
+      "volume24h": "104324.59",
+      "volume24hNotional": "10735800.21",
+      "high24h": "106.065",
+      "low24h": "100.225",
+      "trades24h": 14833,
+      "openInterest": "22189.581773",
+      "openInterestCapNotional": null,
+      "liquidationFeePpm": 5000,
+      "initialMarginFraction": "0.05",
+      "maintenanceMarginFraction": "0.033334",
+      "offHoursInitialMarginFraction": "0.05",
+      "regularTradingHours": null,
+      "isOutsideRth": false,
+      "currentSettlementPrice": null,
+      "upperTradingBound": null,
+      "lowerTradingBound": null,
+      "nextUpperTradingBound": null,
+      "nextLowerTradingBound": null,
+      "isUpperInExpansionZone": null,
+      "isLowerInExpansionZone": null,
+      "upperZoneEnteredAt": null,
+      "upperExpectedExpansionAt": null,
+      "lowerZoneEnteredAt": null,
+      "lowerExpectedExpansionAt": null,
+      "type": "PERPETUAL",
+      "category": "CRYPTO",
+      "addedTimestamp": 1778786860,
+      "assetResolution": "10000000000",
+      "pythId": "6",
+      "baseMakerFeePpm": 0,
+      "baseTakerFeePpm": 225,
+      "hasCustomFeeSchedule": false,
+      "effectiveMakerFeePpm": 0,
+      "effectiveTakerFeePpm": 225,
+      "feeTiers": [
+       {
+        "level": 0,
+        "makerFeePpm": 0,
+        "takerFeePpm": 225
+       },
+       {
+        "level": 1,
+        "makerFeePpm": 0,
+        "takerFeePpm": 190
+       },
+       {
+        "level": 2,
+        "makerFeePpm": 0,
+        "takerFeePpm": 160
+       },
+       {
+        "level": 3,
+        "makerFeePpm": 0,
+        "takerFeePpm": 135
+       },
+       {
+        "level": 4,
+        "makerFeePpm": 0,
+        "takerFeePpm": 115
+       },
+       {
+        "level": 5,
+        "makerFeePpm": -20,
+        "takerFeePpm": 100
+       },
+       {
+        "level": 6,
+        "makerFeePpm": -30,
+        "takerFeePpm": 95
+       }
+      ]
+     }
+    ]
+   },
+   "text": null
+  }
+ ],
+ "ws": []
+}

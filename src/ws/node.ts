@@ -60,6 +60,9 @@ function loadWs(): WsModule {
  */
 export const DEFAULT_MAX_PAYLOAD = 16 * 1024 * 1024;
 
+/** After a close frame, how long the Node transport waits for the server's answer before destroying the socket. */
+const CLOSE_FLUSH_MS = 250;
+
 export interface NodeTransportOptions {
   /** Max bytes per inbound message (default DEFAULT_MAX_PAYLOAD = 16 MiB). Must be a positive integer. */
   maxPayload?: number;
@@ -76,10 +79,30 @@ export function createNodeTransport(opts: NodeTransportOptions = {}): WsFactory 
     const ws = new WebSocket(url, { maxPayload });
     // `ws` throws on an 'error' event without a listener (e.g. close() while CONNECTING): keep one.
     ws.on("error", () => undefined);
+    let terminateTimer: ReturnType<typeof setTimeout> | null = null;
+    const whenClosed = new Promise<void>((resolve) => {
+      ws.once("close", () => {
+        if (terminateTimer !== null) { clearTimeout(terminateTimer); terminateTimer = null; }
+        resolve();
+      });
+    });
     const like: WsLike = {
+      whenClosed,
       get readyState() { return ws.readyState; },
       send: (data) => ws.send(data),
-      close: (code, reason) => ws.close(code, reason),
+      // The close frame is sent, then the socket is destroyed at once: `ws` would otherwise keep a
+      // 30 s close-handshake timer (and the TCP socket) alive until the server answers, so the
+      // process was not idle after stream.close() (conformance ws:all:close-timers).
+      close: (code, reason) => {
+        ws.close(code, reason);
+        // Give the close frame time to flush (the server sees a clean code, not 1006), then destroy
+        // the socket if the server has not answered: `ws` would otherwise keep its 30 s
+        // close-handshake timer and the TCP socket alive (conformance ws:all:close-timers). The
+        // timer is cleared as soon as the socket closes, so nothing is left behind either way.
+        if (terminateTimer === null && ws.readyState !== ws.CLOSED) {
+          terminateTimer = setTimeout(() => { terminateTimer = null; ws.terminate(); }, CLOSE_FLUSH_MS);
+        }
+      },
       onopen: null,
       onmessage: null,
       onclose: null,
