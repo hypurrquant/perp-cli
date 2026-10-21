@@ -4,7 +4,7 @@
  * dashboard instead of being hidden. fetch is mocked; nothing reaches the network.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { checkDexPositions } from "../commands/portfolio.js";
+import { checkDexPositions, KNOWN_HIP3_DEXES } from "../commands/portfolio.js";
 
 const ADDR = "0x1111111111111111111111111111111111111111";
 
@@ -38,5 +38,13 @@ describe("checkDexPositions", () => {
     await expect(checkDexPositions(ADDR, "flx")).resolves.toBeNull();
     stubFetch(async () => new Response(JSON.stringify({ assetPositions: [{ position: { coin: "flx:X" } }] })));
     await expect(checkDexPositions(ADDR, "flx")).resolves.toBeNull();
+  });
+});
+
+describe("KNOWN_HIP3_DEXES", () => {
+  it("includes every HIP-3 dex in Hyperliquid perpDexs", () => {
+    for (const dex of ["xyz", "flx", "vntl", "hyna", "km", "abcd", "cash", "para", "mkts", "io"]) {
+      expect(KNOWN_HIP3_DEXES).toContain(dex);
+    }
   });
 });

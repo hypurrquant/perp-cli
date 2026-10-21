@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### FIX: `portfolio --serve` HIP-3 auto-detect skipped the abcd, para, mkts and io dexes
+
+- The auto-detect list (`KNOWN_HIP3_DEXES`, `src/commands/portfolio.ts`) held only xyz, flx, hyna, km, cash and vntl, so positions on the newer HIP-3 dexes (for example `para:AVGO`) got no `hl:<dex>` row and no warning unless `--dexes` named the dex. The list now covers every live dex in Hyperliquid `perpDexs` (adds abcd, para, mkts, io).
+
 ## [0.15.0] — 2026-10-19
 
 ### NEW: Extended (formerly X10, Starknet) — read-only market data (`perp -e extended`, aliases `ext` / `x10`)
