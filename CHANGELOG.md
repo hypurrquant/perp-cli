@@ -210,6 +210,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - `account settings -e pacifica`, `account twap-orders -e pacifica` without a configured key: `ok: true` (the throwaway keypair's empty data) → `NO_SIGNER_AVAILABLE`. `account margin <sym>` errors: the standard envelope (now with `remediation`; exit 1).
 - perp-ws `capabilities.notes` text: `book` / `trades` / `user` notes and the Aster `user` note no longer name a version ("Planned, not yet available"); the `CAPABILITY_UNSUPPORTED` remediation of `book` / `trades` likewise.
 
+### FIX: `portfolio --serve` HIP-3 auto-detect skipped the abcd, para, mkts and io dexes
+
+- The auto-detect list (`KNOWN_HIP3_DEXES`, `src/commands/portfolio.ts`) held only xyz, flx, hyna, km, cash and vntl, so positions on the newer HIP-3 dexes (for example `para:AVGO`) got no `hl:<dex>` row and no warning unless `--dexes` named the dex. The list now holds every dex Hyperliquid `perpDexs` returns (adds abcd, para, mkts, io); auto-detect sends 10 `clearinghouseState` reads instead of 6. `KNOWN_HIP3_DEXES` is exported and a test asserts it covers that set.
+- Measured against mainnet `POST /info {"type":"perpDexs"}` + per-dex `meta` on 2026-10-23: `perpDexs` returns exactly these 10 names. Live (non-`isDelisted`) assets per added dex: **para 32** of 39, **io 11** of 15, **mkts 5** of 24, **abcd 0** of 1 (`abcd:USA500` is delisted). `abcd` is therefore a real dex with no tradable asset right now — its read costs one request and can only return positions on a delisted market. It is kept in the list: the list is "what `perpDexs` returns", and dropping a dex because it is empty today would hide positions the day it lists an asset. The list still goes stale whenever Hyperliquid adds a dex.
+
 ### Testing (no runtime change)
 
 - **Testing standard** `docs/TESTING.md`: test layers and when each is required, the universal `--json` output contracts of the read commands, invariants, SSOT rules as testable rules, definition of done for venues / features, forbidden patterns. PR template carries its checklist.

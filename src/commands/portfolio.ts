@@ -748,7 +748,7 @@ async function runWatch(
 
 // ── Serve mode (delegates to dashboard infra) ──────────────────────────────
 
-const KNOWN_HIP3_DEXES = ["xyz", "flx", "hyna", "km", "cash", "vntl"];
+export const KNOWN_HIP3_DEXES = ["xyz", "flx", "hyna", "km", "cash", "vntl", "abcd", "para", "mkts", "io"];
 
 /**
  * Open-position count on a HIP-3 dex; null = the read failed (unknown — NOT "no positions").
