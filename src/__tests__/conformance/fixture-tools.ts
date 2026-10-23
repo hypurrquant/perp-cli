@@ -16,14 +16,18 @@
  *      * objects keyed by symbol keep the keep-symbol keys;
  *  - anonymizes them with the scripts/ws-probe approach, reduced to what PUBLIC data carries:
  *      * secret-looking fields (auth / token / signature / hmac / apiKey / secret) are removed;
- *      * trader identities (EVM addresses, account ids under user / maker / taker / account keys)
- *        are remapped to stable dummies (equality between rows preserved);
+ *      * trader identities (EVM addresses, account ids under user / maker / taker / account keys,
+ *        and the suffixed spellings of those — `makerAddress`, `owner_account_index`,
+ *        `ask_client_id`, `takerOrderId`) are remapped to stable dummies (equality between rows
+ *        preserved);
  *      * transaction hashes are remapped to stable dummies.
  *    Prices, sizes and timestamps of public market data are NOT perturbed: the cross-venue
  *    invariants (price agreement, kline alignment) are checked against them. Private (account)
  *    responses are never recorded by the conformance suite — they go through
  *    scripts/ws-probe/make-fixtures.ts, which also perturbs amounts and shifts timestamps.
- *  - guards the written text: no secret field may remain.
+ *  - guards the written fixture: no secret field may remain (`guardFixtureText`), and no
+ *    real-looking wallet address may remain outside the classified protocol-constant fields
+ *    (`guardFixtureIdentities`).
  */
 
 export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
@@ -33,8 +37,38 @@ const SYMBOL_KEY = /^(symbol|name|coin|s|market|ticker|instrument|instrument_nam
 /** Keys whose value is a venue-internal market id that other endpoints join on. */
 const ID_KEY = /^(id|index|market_id|marketId|market_index|marketIndex|asset_id|assetId|instrument_id|instrumentId|instrument_hash|contract_id|contractId|symbol_id|pair_id|coin)$/;
 const SECRET_KEY = /^(auth|token|authToken|listenKey|signature|sig|hmac|apiKey|api_key|secret|privateKey|private_key)$/i;
-const IDENTITY_KEY = /^(users|user|maker|taker|buyer|seller|trader|owner|account|accountId|account_id|account_index|ask_account_id|bid_account_id|maker_account_id|taker_account_id|address|wallet|wallet_address|liquidator|subaccount|sub_account_id)$/i;
+
+/**
+ * A trader identity is named either by a bare party word (`user`, `maker`, `account`) or by a
+ * party word carrying an identifier suffix (`makerAddress`, `owner_account_index`,
+ * `ask_client_id_str`, `takerOrderId`). Listing only the bare words is what let five real Arcus
+ * counterparty addresses reach `arcus.json`: the venue sends `makerAddress`, and `/^maker$/`
+ * does not match it (HIK-10). Both families are matched now, so a venue that spells the same
+ * thing differently cannot slip through again.
+ */
+const PARTY = "users?|maker|taker|buyer|seller|trader|owner|account|wallet|address|liquidator|sub_?account|counterparty|sender|receiver|recipient";
+const ID_SUFFIX = "address|wallet|id|ids|index|indices|key|account|account_?id|account_?index|order_?id";
+const BARE_PARTY = /^(users?|maker|taker|buyer|seller|trader|owner|account|wallet|address|liquidator|sub_?account)$/i;
+const PARTY_ID = new RegExp(`^(?:${PARTY})[_-]?(?:${ID_SUFFIX})(?:[_-]?str)?$`, "i");
+/**
+ * Side-named account ids. `ask` / `bid` are NOT party words — `ask` and `bid` are price levels,
+ * and `ask_id` / `bid_id` / `ask_client_id` are order ids, deliberately left in the clear like
+ * every other order id the venue prints on a public tape.
+ */
+const SIDE_ACCOUNT_ID = /^(ask|bid)_account_id$/i;
+const isIdentityKey = (k: string): boolean => BARE_PARTY.test(k) || PARTY_ID.test(k) || SIDE_ACCOUNT_ID.test(k);
+
 const HASH_KEY = /^(hash|tx_hash|txHash|transaction_hash|txn_hash)$/i;
+
+const ADDRESS_SHAPED = /^0x[0-9a-fA-F]{40}$/;
+const DUMMY_ADDRESS = /^0x0{32}[0-9a-f]{8}$/;
+/**
+ * Address-shaped values that identify no person and must stay readable: token / market contracts
+ * and the publicly advertised operators of a venue (HIP-3 dex deployers, the CLI prints them).
+ * Every other address-shaped value has to be an anonymized identity — `guardFixtureIdentities`
+ * refuses the write otherwise, so a new venue field is a loud failure, not a silent leak.
+ */
+const PUBLIC_ADDRESS_KEY = /^(quote|base|collateral|contractAddress|contract_address|baseAssetAddress|quoteAssetAddress|tokenAddress|token_address|marketAddress|vaultAddress|deployer|subDeployers|market_deployer|feeRecipient|oracleUpdater|syntheticId)$/i;
 
 const EDGE = 6;
 const MAP_MIN_KEYS = 20;
@@ -160,7 +194,7 @@ export class PublicScrubber {
       }
       return o;
     }
-    if (IDENTITY_KEY.test(key) && (typeof j === "string" || typeof j === "number") && j !== "") return this.next(j);
+    if (isIdentityKey(key) && (typeof j === "string" || typeof j === "number") && j !== "") return this.next(j);
     if (HASH_KEY.test(key) && typeof j === "string" && j !== "") return this.next(j);
     return j;
   }
@@ -170,6 +204,36 @@ export class PublicScrubber {
 export function guardFixtureText(text: string, file: string): void {
   const m = /"(auth|token|authToken|listenKey|signature|hmac|apiKey|api_key|secret|privateKey|private_key)"\s*:/i.exec(text);
   if (m) throw new Error(`refusing to write ${file}: contains secret-looking field "${m[1]}"`);
+}
+
+/** True for a key the scrubber remaps to a dummy (a trader / account identity). */
+export const isTraderIdentityKey = isIdentityKey;
+/** True for an address-shaped field that is a protocol constant, not a person. */
+export const isPublicAddressKey = (k: string): boolean => PUBLIC_ADDRESS_KEY.test(k);
+/** True for a value the scrubber already replaced with a dummy address. */
+export const isDummyAddress = (v: string): boolean => DUMMY_ADDRESS.test(v);
+/** True for a wallet-address-shaped string. */
+export const isAddressShaped = (v: string): boolean => ADDRESS_SHAPED.test(v);
+
+/**
+ * Refuse to write a fixture that still carries a real-looking wallet address. Unlike
+ * `guardFixtureText` this is key-aware: an address survives only under a `PUBLIC_ADDRESS_KEY`
+ * (a token contract, a dex deployer). Anything else means the recording met a venue field the
+ * scrubber does not classify yet, and the fixture must not be committed until it is classified.
+ */
+export function guardFixtureIdentities(body: Json, file: string): void {
+  const walk = (j: Json, key: string): void => {
+    if (Array.isArray(j)) { for (const x of j) walk(x, key); return; }
+    if (isObj(j)) { for (const [k, v] of Object.entries(j)) walk(v, k); return; }
+    if (typeof j !== "string" || !ADDRESS_SHAPED.test(j) || DUMMY_ADDRESS.test(j)) return;
+    if (PUBLIC_ADDRESS_KEY.test(key)) return;
+    throw new Error(
+      `refusing to write ${file}: "${key}" still holds a real-looking wallet address. ` +
+      `Classify it in src/__tests__/conformance/fixture-tools.ts — PARTY/ID_SUFFIX if it names a ` +
+      `trader, PUBLIC_ADDRESS_KEY if it is a protocol constant.`,
+    );
+  };
+  walk(body, "");
 }
 
 /** Registrable domain (last two labels) — ids are collected per venue domain. */
