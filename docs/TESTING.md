@@ -38,12 +38,22 @@ suite (§3) with an id, and the ones still open are listed in `KNOWN_FAILURES` (
 - **Only real responses.** A fixture is a recorded live response, trimmed and anonymized by a
   script. A hand-written JSON shape is a forbidden pattern (§9) — it encodes what the author
   *thinks* the venue sends, which is exactly what drifted in 0.15.0.
+- **Provenance is declared, not remembered.** Every fixture says where its bytes came from: the
+  `recordedWith` header `scripts/conformance/record.ts` writes, a `recordedWith` header on a
+  hand-assembled envelope of live answers, or an entry in `src/__tests__/fixtures/PROVENANCE.json`
+  for a fixture that is a verbatim wire body (adding a key there would make it differ from the
+  real response). A file in none of the three fails `fixture-provenance.test.ts`. Write what you
+  actually did — "provenance unknown" is a usable value, an invented endpoint is not.
 - **Anonymization:** private (account) data goes through `scripts/ws-probe/make-fixtures.ts`
   (addresses / account ids → dummies, ids and hashes remapped, amounts perturbed, timestamps
   shifted, secret fields dropped, a guard refuses to write a real id). Public market data goes
   through the same approach reduced to what public data carries
   (`src/__tests__/conformance/fixture-tools.ts`: secret fields dropped, trader identities and tx
-  hashes remapped; prices and times are kept — the invariants check them).
+  hashes remapped; prices and times are kept — the invariants check them). A trader identity is
+  matched by party word *and* suffix (`maker`, `makerAddress`, `owner_account_index`), because
+  listing bare words alone is what let real Arcus counterparty wallets into `arcus.json` in
+  0.16.0. Any other address-shaped value stops the write (`guardFixtureIdentities`) until it is
+  classified as an identity or as a protocol constant (a token contract, a dex deployer).
 - **Small but real:** lists are trimmed to keep-symbols (BTC / ETH / SOL, …) with the ids they join
   on, positional arrays keep matching indices, long series keep their first and last rows. Cells
   whose point is a full set (CLI ⇄ MCP / WS directory parity, eligibility) or a full server page
@@ -286,9 +296,16 @@ Errors: unknown symbol → `SYMBOL_NOT_FOUND` + remediation; unsupported feature
 
 - [ ] No forbidden pattern (§9) in the diff.
 - [ ] New fixtures are recorded (header `recordedWith`), not hand-written; no secrets / real ids.
+      Both halves are enforced by `pnpm test`, so the review reads the claim instead of hunting for
+      the gap: `src/__tests__/conformance/fixture-provenance.test.ts` fails on a fixture that
+      declares neither an in-file `recordedWith` header nor an entry in
+      `src/__tests__/fixtures/PROVENANCE.json`, and
+      `src/__tests__/conformance/fixture-anonymization.test.ts` fails on a committed fixture that
+      still holds a real-looking wallet outside the classified protocol constants.
 - [ ] No new `KNOWN_FAILURES` entry without a reason and an owner.
 - [ ] Contract change listed in the CHANGELOG.
-- [ ] Release PR: `pnpm release-qa --version <v>` report attached after publishing.
+- [ ] Release PR: `pnpm release-qa --version <v>` report attached after publishing, committed under
+      `docs/qa-reports/` (tracked — the QA history is part of the repo, not of one laptop).
 
 ---
 
