@@ -101,8 +101,18 @@ function fmtPct(v: string | null): string {
   return v === null ? dash : `${(Number(v) * 100).toFixed(1)}%`;
 }
 
-function fmtGreek(v: string | null | undefined): string {
-  return v === null || v === undefined ? dash : Number(v).toFixed(3);
+/**
+ * Greeks by significant figures (3), not fixed decimals: toFixed(3) printed theta / vega of cheap
+ * options as -0.000. Derive publishes greeks at a 1e-5 resolution, so "0" can mean |x| < 0.00001.
+ */
+export function fmtGreek(v: string | null | undefined): string {
+  if (v === null || v === undefined) return dash;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return dash;
+  if (n === 0) return "0";
+  // Fixed notation, 3 significant figures (String() switches to 1.23e-7 below 1e-6).
+  const decimals = Math.max(0, 2 - Math.floor(Math.log10(Math.abs(n))));
+  return n.toFixed(Math.min(decimals, 20)).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
 }
 
 function sideCells(q: OptionQuote | null): string[] {
@@ -142,5 +152,7 @@ function printQuote(q: OptionQuote): void {
     ["rho", fmtGreek(q.greeks?.rho), "OI", q.openInterest],
     ["24h contracts", q.stats24h.contracts, "24h trades", String(q.stats24h.trades)],
   ];
-  console.log(makeTable(["field", "value", "field", "value"], rows) + "\n");
+  console.log(makeTable(["field", "value", "field", "value"], rows));
+  if (q.venue === "derive") console.log(chalk.gray("  Greeks: 3 significant figures; Derive publishes them at a 1e-5 resolution (0 = |value| < 0.00001).\n"));
+  else console.log();
 }

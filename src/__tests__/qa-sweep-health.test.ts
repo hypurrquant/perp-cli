@@ -35,7 +35,7 @@ describe("probeVenueHealth", () => {
     const txflow = listVenues().find((v) => v.id === "txflow")!;
     const fetchMarkets = vi.spyOn(txflow.publicData, "fetchMarkets").mockResolvedValue([]);
     const h = await probeVenueHealth("mainnet", ["txflow", "aster"]);
-    expect(fetchMarkets).toHaveBeenCalledWith("mainnet");
+    expect(fetchMarkets).toHaveBeenCalledWith("mainnet", { funding: false }); // a health probe needs no funding read
     expect(h.probes).toEqual([
       expect.objectContaining({ venue: "txflow", ok: true, probe: "markets", status: null, error: null, apiStatus: "unofficial" }),
       expect.objectContaining({ venue: "aster", ok: true, probe: "ping", status: 200, apiStatus: "official" }),

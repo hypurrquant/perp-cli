@@ -25,6 +25,11 @@ export interface WsLike {
   onmessage: ((ev: { data: unknown }) => void) | null;
   onclose: ((ev: { code: number; reason: string; wasClean?: boolean }) => void) | null;
   onerror: ((ev: unknown) => void) | null;
+  /**
+   * Optional: settles once the underlying socket is fully closed (no timer or socket left). The
+   * Node transport sets it; `stream.close()` awaits it (bounded) so the process is idle afterwards.
+   */
+  readonly whenClosed?: Promise<void>;
 }
 export type WsFactory = (url: string) => WsLike;
 export type FetchLike = (
@@ -225,7 +230,7 @@ export type UserRef =
   | { venue: "hyperliquid"; address: `0x${string}` }
   | { venue: "pacifica"; account: string }
   | { venue: "lighter" | "lighter-rh"; accountIndex: number }
-  /** KNOWN GAP in 0.15.0: Aster user channels are not implemented (CAPABILITY_UNSUPPORTED); 0.15.1. */
+  /** KNOWN GAP: Aster user channels are not implemented (CAPABILITY_UNSUPPORTED; planned, not yet available). */
   | { venue: "aster"; user: `0x${string}`; signer: `0x${string}` }
   /** subaccount null = the venue default account (0). */
   | { venue: "arcus"; address: `0x${string}`; subaccount: number | null }
@@ -338,7 +343,7 @@ export interface VenueStreamOptions {
   canonicalize?: Canonicalize;
   /** Needed for kind:"user". */
   credentials?: CredentialProvider;
-  /** Default false. Required for user channels whose auth needs a signing secret in the page (Aster/Ondo/QFEX, 0.15.1). */
+  /** Default false. Required for user channels whose auth needs a signing secret in the page (Aster / Ondo / QFEX — planned, not yet available). */
   allowInPageSecrets?: boolean;
   /** ≤ venue limits. */
   budget?: { maxSubscriptions?: number; maxSockets?: number; newConnectionsPerMin?: number };

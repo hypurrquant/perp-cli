@@ -73,7 +73,7 @@ interface TokenState { token: string; expiresAt: number; refreshAt: number; time
 
 const USER_CHANNELS: ReadonlyArray<UserChannel> = ["account", "positions", "orders", "fills"];
 const MARKET_CHANNELS: ReadonlyArray<string> = ["market", "bbo", "book", "trades"];
-/** Channels whose decoders ship in 0.15.1 (CAPABILITY_UNSUPPORTED until then). */
+/** Channels with no decoder yet (planned, not yet available): CAPABILITY_UNSUPPORTED. */
 const LATER_CHANNELS: ReadonlyArray<string> = ["book", "trades"];
 const NETWORKS: ReadonlyArray<Network> = ["mainnet", "testnet"];
 /** Oversized-message closes within the window before the subscriptions fail (instead of reconnecting forever). */
@@ -96,6 +96,9 @@ function checkCodec(codec: unknown): asserts codec is VenueCodec {
   }
 }
 
+/** Longest `stream.close()` waits for its sockets to be fully closed. */
+const CLOSE_DRAIN_MS = 2000;
+
 /** "did you mean" canonicals: case-insensitive canonical, or a canonical with that base (e.g. "xyz:TSLA" for "TSLA"). */
 function suggestCanonicals(missing: string, entries: ReadonlyArray<{ canonical: string | null; base: string }>): string[] {
   const m = missing.toUpperCase();
@@ -104,10 +107,14 @@ function suggestCanonicals(missing: string, entries: ReadonlyArray<{ canonical: 
   return Array.from(new Set(out)).slice(0, 5);
 }
 
-/** "did you mean" candidates for an unknown symbol: case-insensitive symbol, or canonical / base match. */
-function suggestSymbols(missing: string, entries: ReadonlyArray<{ symbol: string; canonical: string | null; base: string }>): string[] {
+/**
+ * "did you mean" candidates for an unknown symbol: case-insensitive symbol, or canonical / base
+ * match. A row without a canonical symbol (Aster BTCU / BTCUSD1: a different quote, never matched
+ * across venues) is suggested only for its own symbol, never by base.
+ */
+export function suggestSymbols(missing: string, entries: ReadonlyArray<{ symbol: string; canonical: string | null; base: string }>): string[] {
   const m = missing.toUpperCase();
-  const out = entries.filter(e => e.symbol.toUpperCase() === m || (e.canonical !== null && e.canonical.toUpperCase() === m) || e.base.toUpperCase() === m)
+  const out = entries.filter(e => e.symbol.toUpperCase() === m || (e.canonical !== null && (e.canonical.toUpperCase() === m || e.base.toUpperCase() === m)))
     .map(e => e.symbol);
   return Array.from(new Set(out)).slice(0, 5);
 }
@@ -884,7 +891,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
     }
     if (target.kind === "market") {
       const channels: unknown = target.channels;
-      const valid = `Use channels ${MARKET_CHANNELS.map(c => `"${c}"`).join(" / ")} (book and trades arrive in 0.15.1)`;
+      const valid = `Use channels ${MARKET_CHANNELS.map(c => `"${c}"`).join(" / ")} (book and trades: planned, not yet available)`;
       if (!Array.isArray(channels) || channels.length === 0) {
         throw wsError("INVALID_PARAMS", "kind \"market\" needs at least one channel", valid);
       }
@@ -893,7 +900,7 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
       const later = target.channels.filter(c => LATER_CHANNELS.includes(c));
       if (later.length > 0) {
         throw wsError("CAPABILITY_UNSUPPORTED", `${venue} channel(s) ${later.join(", ")} are not available in this release`,
-          "Use channels \"market\" / \"bbo\" (book and trades arrive in 0.15.1)");
+          "Use channels \"market\" / \"bbo\" (book and trades: planned, not yet available)");
       }
       if (target.channels.includes("bbo") && !codec.capabilities.channels.bbo) {
         throw wsError("CAPABILITY_UNSUPPORTED", `${venue} has no bbo channel`, "Use channel \"market\"");
@@ -1165,6 +1172,14 @@ export function createVenueStream(codec: VenueCodec, opts: VenueStreamOptions = 
         sub.end();
       }
       stateListeners.clear();
+      // Resolve once the sockets are fully closed (Node: `ws` keeps a close-handshake timer and the
+      // TCP socket until then), bounded so a stuck socket never hangs close().
+      let bound: ReturnType<typeof setTimeout> | null = null;
+      await Promise.race([
+        Promise.all(shards.map(sh => sh.conn.drained())),
+        new Promise<void>((resolve) => { bound = setTimeout(resolve, CLOSE_DRAIN_MS); }),
+      ]);
+      if (bound !== null) clearTimeout(bound);
     },
   };
   return stream;

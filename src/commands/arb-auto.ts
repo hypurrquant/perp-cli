@@ -7,17 +7,14 @@ import { invalidateCache } from "../cache.js";
 import { Command } from "commander";
 import { isDryRun, networkOf, supportsDryRun } from "../cli-flags.js";
 import chalk from "chalk";
-import { formatUsd, printJson, jsonOk, jsonError, makeTable, logSettledRejections, symbolMatch } from "../utils.js";
+import { formatUsd, printJson, jsonOk, jsonError, makeTable, symbolMatch } from "../utils.js";
 import type { ExchangeAdapter } from "../exchanges/index.js";
 import { computeExecutableSize } from "../liquidity.js";
 import { computeMatchedSize, computeSpotPerpMatchedSize } from "../arb/index.js";
-import { toHourlyRate } from "../funding.js";
+import { getFundingHours, toHourlyRate } from "../funding.js";
+import { fetchVenuesRates } from "../funding/rates.js";
+import type { FundingRateKind } from "../exchanges/interface.js";
 import { toHourlyRateByBasis } from "../funding/normalize.js";
-import {
-  fetchPacificaPricesRaw, parsePacificaRaw,
-  fetchHyperliquidMetaRaw, parseHyperliquidMetaRaw,
-  fetchLighterOrderBookDetailsRaw, fetchLighterFundingRatesRaw, parseLighterRaw,
-} from "../shared-api.js";
 import { fetchAllDexAssetsDetailed, findDexArbPairs, scanDexArb, type DexArbPair } from "../dex-asset-map.js";
 import { logExecution, readExecutionLog } from "../execution-log.js";
 import { smartOrder } from "../smart-order.js";
@@ -72,6 +69,30 @@ interface FundingSnapshot {
   astMarkPrice: number;
   /** Aster per-symbol funding interval (= basis and settlement interval) from /fapi/v3/fundingInfo; null when Aster has no rate. */
   astHours: number | null;
+  /** Which rate each paired venue's value is (arb scan rateKind): "lastSettled" | "accruing" | "predicted" | null. */
+  rateKinds?: Record<string, FundingRateKind | null>;
+  /**
+   * Each venue's OWN symbol for this canonical row (Hyperliquid kPEPE, Lighter 1000PEPE): orders,
+   * position matching and closes use it, never the canonical key. Absent = the venue trades `symbol`.
+   */
+  venueSymbols?: Record<string, string>;
+}
+
+/** The venue symbol a snapshot / position leg trades on `exchange` (the canonical key when the venue uses it). */
+export function legSymbol(row: { symbol: string; venueSymbols?: Record<string, string> }, exchange: string): string {
+  return row.venueSymbols?.[exchange] ?? row.symbol;
+}
+
+/** longSymbol / shortSymbol of a new position — only when a leg's venue symbol differs from the key. */
+function legSymbolsOf(snap: FundingSnapshot, longExchange: string, shortExchange: string): { longSymbol?: string; shortSymbol?: string } {
+  const l = legSymbol(snap, longExchange), sh = legSymbol(snap, shortExchange);
+  return l === snap.symbol && sh === snap.symbol ? {} : { longSymbol: l, shortSymbol: sh };
+}
+
+/** --symbols matches a row by its canonical key or any venue's own symbol (kPEPE or 1000PEPE). */
+export function matchesSymbolFilter(row: { symbol: string; venueSymbols?: Record<string, string> }, filter: readonly string[]): boolean {
+  const want = new Set(filter.map(s => s.toUpperCase()));
+  return want.has(row.symbol.toUpperCase()) || Object.values(row.venueSymbols ?? {}).some(v => want.has(v.toUpperCase()));
 }
 
 interface ArbPosition {
@@ -84,12 +105,15 @@ interface ArbPosition {
   entryMarkPrice: number | null;
   accumulatedFundingUsd: number;  // estimated funding collected so far
   lastCheckTime: number;          // unix ms of last spread check
+  /** Venue symbols of the legs when they differ from `symbol` (the canonical key). */
+  longSymbol?: string;
+  shortSymbol?: string;
 }
 
 // ── Fee-Adjusted Net Spread Calculation ──
 
 import { getTakerFee } from "../constants.js";
-import { assertFundingArbVenue, getVenue, listVenuesWithRole, networkConfig, resolveVenueId, roleUnsupported, tryResolveVenueId } from "../exchanges/venue.js";
+import { assertFundingArbVenue, getVenue, listVenuesWithRole, resolveVenueId, roleUnsupported, tryResolveVenueId } from "../exchanges/venue.js";
 import { sharedApiNetwork } from "../api/public/urls.js";
 import { findSpotQuoteBalance, readSpotQuoteAvailableFresh, requireBotSpotVenue, requireSpotAdapter, spotNetworkOf, spotPairSymbol, spotSharesPerpMargin, sweepSpotQuoteToPerp, transferQuoteToPerp, transferQuoteToSpot } from "../exchanges/spot-factory.js";
 import { fillSizeString, readSpotBalancesFresh, sizeDecimalsOf, spotLotStepOf, spotMarketFill, type SpotFill } from "../exchanges/spot-result.js";
@@ -536,67 +560,47 @@ export function dexCloseBlockedBy(
 
 const _warnedArbPriceMismatch = new Set<string>();
 
-async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
-  // Selected network (review L7): the Pacifica / HL / Lighter raw fetchers follow -n via
-  // setSharedApiNetwork; Aster's REST base comes from the venue definition for that network.
-  const asterRest = networkConfig(getVenue("aster"), sharedApiNetwork()).restUrl;
-  // SSOT rule #2: each DEX fetch is independent. allSettled lets us keep the
-  // multi-DEX comparison alive when one DEX errors out, while the rejection
-  // reasons get logged to stderr (explicit failure, never silent).
-  const settled = await Promise.allSettled([
-    fetchPacificaPricesRaw(),
-    fetchHyperliquidMetaRaw(),
-    fetchLighterOrderBookDetailsRaw(),
-    fetchLighterFundingRatesRaw(),
-    fetch(`${asterRest}/fapi/v1/premiumIndex`).then(r => r.json()) as Promise<Array<Record<string, unknown>>>,
-    fetch(`${asterRest}/fapi/v3/fundingInfo`).then(r => r.json()) as Promise<Array<Record<string, unknown>>>,
-  ]);
-  logSettledRejections(settled, ["pacifica", "hyperliquid", "lighter:orderbook", "lighter:funding", "aster:premiumIndex", "aster:fundingInfo"], "arb-auto");
-  const pacRes = settled[0].status === "fulfilled" ? settled[0].value : null;
-  const hlRes = settled[1].status === "fulfilled" ? settled[1].value : null;
-  const ltDetailsRes = settled[2].status === "fulfilled" ? settled[2].value : null;
-  const ltFundingRes = settled[3].status === "fulfilled" ? settled[3].value : null;
-  // Both Aster calls are needed: a rate without its per-symbol interval cannot be normalized.
-  const astPremiums = settled[4].status === "fulfilled" && settled[5].status === "fulfilled"
-    ? settled[4].value as Array<Record<string, unknown>>
-    : [];
-  const astFundingInfo = settled[5].status === "fulfilled" ? settled[5].value as Array<Record<string, unknown>> : [];
+/** " (lastSettled)"-style tag of a snapshot leg's rate kind; "" when the venue is not a leg. */
+const kindTag = (s: FundingSnapshot, ex: string) => { const k = s.rateKinds?.[ex]; return k === undefined ? "" : `(${k ?? "?"})`; };
+
+export async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
+  // The SAME rate rows as `arb scan --rates` (fetchVenuesRates over each venue's public directory):
+  // one rate per venue and canonical symbol (unclassified / ambiguous tickers and non-matchable
+  // listings have no canonical and never pair), each with its basis and rateKind. A venue that
+  // fails is reported, never silently treated as "no spread".
+  const venues = ["pacifica", "hyperliquid", "lighter", "aster"].map(id => getVenue(id));
+  const { rates: fetched, exchangeErrors } = await fetchVenuesRates(venues, sharedApiNetwork(), false);
+  // Never a leg on an unverified rate (row label; the venue filter above already drops them).
+  const rates = fetched.filter(r => r.fundingVerified);
+  for (const [ex, msg] of Object.entries(exchangeErrors)) process.stderr.write(`[arb-auto] ${ex}: funding rates unavailable — ${msg}\n`);
+
+  const pacRates = new Map<string, number>(), pacPrices = new Map<string, number>();
+  const hlRates = new Map<string, number>(), hlPrices = new Map<string, number>();
+  const ltRates = new Map<string, number>(), ltPrices = new Map<string, number>();
+  const astRates = new Map<string, number>(), astPrices = new Map<string, number>();
   const astHoursBySym = new Map<string, number>();
-  for (const row of Array.isArray(astFundingInfo) ? astFundingInfo : []) {
-    const rawSym = String(row.symbol ?? "");
-    const hours = Number(row.fundingIntervalHours);
-    if (rawSym.endsWith("USDT") && Number.isFinite(hours) && hours > 0) astHoursBySym.set(rawSym.replace(/USDT$/, ""), hours);
-  }
-
-  const { rates: pacRates, prices: pacPrices } = parsePacificaRaw(pacRes);
-  const { rates: hlRates, prices: hlPrices } = parseHyperliquidMetaRaw(hlRes);
-  const { rates: ltRates, prices: ltPrices } = parseLighterRaw(ltDetailsRes, ltFundingRes);
-
-  // Aster: parse premiumIndex.
-  // SSOT rule #2: never silently coerce missing markPrice/lastFundingRate to 0
-  // — a 0 markPrice corrupts every downstream sizing calculation, and a 0
-  // funding rate flips the symbol off the arb radar without explanation.
-  // Skip the symbol entirely if either field is missing or non-finite.
-  const astRates = new Map<string, number>();
-  const astPrices = new Map<string, number>();
+  const kindsBySym = new Map<string, Record<string, FundingRateKind | null>>();
+  const venueSymbolsBySym = new Map<string, Record<string, string>>();
   const astNoInterval: string[] = [];
-  for (const p of astPremiums ?? []) {
-    const rawSym = String(p.symbol ?? "");
-    if (!rawSym.endsWith("USDT")) continue;
-    const sym = rawSym.replace(/USDT$/, "");
-    const fundingRate = Number(p.lastFundingRate);
-    const markPrice = Number(p.markPrice);
-    if (!Number.isFinite(fundingRate) || !Number.isFinite(markPrice) || markPrice <= 0) {
-      // Aster premiumIndex omitted or returned non-numeric values for this
-      // symbol; skip rather than poison downstream math with a 0.
+  for (const r of rates) {
+    const sym = r.canonical;
+    const kinds = kindsBySym.get(sym) ?? {};
+    kinds[r.exchange] = r.rateKind;
+    kindsBySym.set(sym, kinds);
+    const vs = venueSymbolsBySym.get(sym) ?? {};
+    vs[r.exchange] = r.symbol; // the venue's own symbol (orders use it)
+    venueSymbolsBySym.set(sym, vs);
+    if (r.exchange === "aster") {
+      if (r.basis.kind !== "perHours") { astNoInterval.push(r.symbol); continue; }
+      astRates.set(sym, r.fundingRate); astPrices.set(sym, r.markPrice); astHoursBySym.set(sym, r.basis.hours);
       continue;
     }
-    if (!astHoursBySym.has(sym)) {
-      astNoInterval.push(sym);
-      continue;
-    }
-    astRates.set(sym, fundingRate);
-    astPrices.set(sym, markPrice);
+    // The snapshot keeps each venue's rate in the venue's own basis (snapshotHourly /
+    // computeAnnualSpread normalize with it): convert from the row's hourly rate.
+    const inVenueBasis = r.hourlyRate * getFundingHours(r.exchange);
+    if (r.exchange === "pacifica") { pacRates.set(sym, inVenueBasis); pacPrices.set(sym, r.markPrice); }
+    else if (r.exchange === "hyperliquid") { hlRates.set(sym, inVenueBasis); hlPrices.set(sym, r.markPrice); }
+    else if (r.exchange === "lighter") { ltRates.set(sym, inVenueBasis); ltPrices.set(sym, r.markPrice); }
   }
   if (astNoInterval.length > 0) {
     process.stderr.write(`[arb-auto] aster: ${astNoInterval.length} symbol(s) excluded — no fundingIntervalHours in /fapi/v3/fundingInfo: ${astNoInterval.slice(0, 10).join(", ")}${astNoInterval.length > 10 ? ", …" : ""}\n`);
@@ -684,6 +688,8 @@ async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
       ltMarkPrice: ltPrices.get(sym) ?? 0,
       astMarkPrice: astPrices.get(sym) ?? 0,
       astHours: ast !== undefined ? astHours : null,
+      rateKinds: Object.fromEntries(available.map(r => [r.exchange, kindsBySym.get(sym)?.[r.exchange] ?? null])),
+      venueSymbols: venueSymbolsBySym.get(sym) ?? {},
     });
   }
 
@@ -698,6 +704,45 @@ export let handleSpotClose: ((
   getAdapterForExchange: (exchange: string) => Promise<import("../exchanges/interface.js").ExchangeAdapter>,
   isJson: () => boolean,
 ) => Promise<void>) | undefined;
+
+/**
+ * `arb auto` flag validation: every numeric flag must be a finite number in its range, `--size` a
+ * number or "auto", `--settle-strategy` one of block | aggressive | off. INVALID_PARAMS otherwise.
+ */
+export function assertArbAutoFlags(opts: Record<string, unknown>): void {
+  const num = (flag: string, key: string, min: number, opt: { integer?: boolean; exclusiveMin?: boolean } = {}): void => {
+    const raw = opts[key];
+    if (raw === undefined) return;
+    const text = String(raw).trim();
+    const v = Number(text);
+    const ok = text !== "" && Number.isFinite(v) && (opt.exclusiveMin ? v > min : v >= min) && (!opt.integer || Number.isInteger(v));
+    if (!ok) {
+      throw new PerpError("INVALID_PARAMS", `${flag} must be ${opt.integer ? "a whole number" : "a number"} ${opt.exclusiveMin ? ">" : ">="} ${min}, got "${text}"`, {
+        remediation: `Pass e.g. ${flag} ${opt.exclusiveMin ? min + 1 : Math.max(min, 1)}`,
+      });
+    }
+  };
+  num("--min-spread", "minSpread", 0);
+  num("--close-spread", "closeSpread", 0);
+  if (opts.size !== undefined && String(opts.size).toLowerCase() !== "auto") num("--size", "size", 0, { exclusiveMin: true });
+  num("--min-size", "minSize", 0);
+  num("--max-positions", "maxPositions", 1, { integer: true });
+  num("--interval", "interval", 0, { integer: true });
+  num("--hold-days", "holdDays", 0, { exclusiveMin: true });
+  num("--bridge-cost", "bridgeCost", 0);
+  num("--min-margin", "minMargin", 0);
+  num("--max-basis", "maxBasis", 0, { exclusiveMin: true });
+  num("--cooldown", "cooldown", 0);
+  num("--min-oi", "minOi", 0);
+  const strat = opts.settleStrategy;
+  if (strat !== undefined && !["block", "aggressive", "off"].includes(String(strat))) {
+    throw new PerpError("INVALID_PARAMS", `--settle-strategy must be block, aggressive or off, got "${String(strat)}"`, { remediation: "Pass --settle-strategy block (default)" });
+  }
+  const grade = opts.minGrade;
+  if (grade !== undefined && !["A", "B", "C", "D"].includes(String(grade).toUpperCase())) {
+    throw new PerpError("INVALID_PARAMS", `--min-grade must be A, B, C or D, got "${String(grade)}"`, { remediation: "Pass --min-grade C (default)" });
+  }
+}
 
 export function registerArbAutoCommands(
   program: Command,
@@ -749,6 +794,9 @@ export function registerArbAutoCommands(
       background?: boolean;
       hip3?: boolean; minOi: string; minGrade: string;
     }) => {
+      // Numeric flags are checked up front (also before --background starts a job): a value that is
+      // not a number ("--cooldown abc" → NaN) would otherwise silently disable the check it feeds.
+      assertArbAutoFlags(opts);
       // Route to HIP-3 dex-auto logic if --hip3 flag is set
       if (opts.hip3) {
         return handleDexAuto({
@@ -830,6 +878,8 @@ export function registerArbAutoCommands(
       const marginUnknownNotified = new Set<string>();
       // Track close times per symbol to prevent close→re-entry loops
       const closeCooldowns = new Map<string, number>(); // symbol → close timestamp ms
+      // --symbols entries already reported as resolving to another canonical symbol (logged once).
+      const aliasNoted = new Set<string>();
       // Consecutive definite close failures per symbol (quarantined at MAX_PAIR_CLOSE_FAILURES)
       const closeFailures = new Map<string, number>();
 
@@ -871,7 +921,7 @@ export function registerArbAutoCommands(
             (await getAdapterForExchange(p.shortExchange)).getPositions(),
           ]);
           const has = (list: { symbol: string; side: string; size: string }[], side: "long" | "short") =>
-            list.some(x => symbolMatch(x.symbol, p.symbol) && x.side === side && Math.abs(Number(x.size)) > 0);
+            list.some(x => symbolMatch(x.symbol, (side === "long" ? p.longSymbol : p.shortSymbol) ?? p.symbol) && x.side === side && Math.abs(Number(x.size)) > 0);
           if (has(longs, "long") && has(shorts, "short")) { staleSymbols.delete(p.symbol); return true; }
           if (!staleSymbols.has(p.symbol)) {
             console.log(chalk.yellow(`  ${new Date().toLocaleTimeString()} STALE STATE: ${p.symbol} (long ${p.longExchange} / short ${p.shortExchange}, since ${p.entryTime}) is not on the venues — not counted, not managed; drop it: perp arb close ${p.symbol} --state-only`));
@@ -900,6 +950,7 @@ export function registerArbAutoCommands(
             entryMarkPrice: persisted.entryLongPrice,
             accumulatedFundingUsd: persisted.accumulatedFunding,
             lastCheckTime: new Date(persisted.lastCheckTime).getTime(),
+            longSymbol: persisted.longSymbol, shortSymbol: persisted.shortSymbol,
           });
         }
         daemonState.lastStartTime = new Date().toISOString();
@@ -971,6 +1022,7 @@ export function registerArbAutoCommands(
                 entryMarkPrice: persisted.entryLongPrice,
                 accumulatedFundingUsd: persisted.accumulatedFunding,
                 lastCheckTime: new Date(persisted.lastCheckTime).getTime(),
+                longSymbol: persisted.longSymbol, shortSymbol: persisted.shortSymbol,
               });
             }
           }
@@ -993,7 +1045,7 @@ export function registerArbAutoCommands(
         try {
           const spreads = await fetchFundingSpreads();
           const filtered = filterSymbols
-            ? spreads.filter(s => filterSymbols.includes(s.symbol))
+            ? spreads.filter(s => matchesSymbolFilter(s, filterSymbols))
             : spreads;
 
           const now = new Date().toLocaleTimeString();
@@ -1007,7 +1059,9 @@ export function registerArbAutoCommands(
             // Per-position isolation: one position's failing exit check (e.g. an
             // unknown funding basis in snapshotHourly) must not skip the others.
             try {
-              const current = filtered.find(s => s.symbol === pos.symbol);
+              // By canonical key; a position opened before 0.15.1 is keyed by its (shared) venue symbol.
+              const current = filtered.find(s => s.symbol === pos.symbol
+                || (legSymbol(s, pos.longExchange) === pos.symbol && legSymbol(s, pos.shortExchange) === pos.symbol));
               if (!current) continue;
 
               const currentSpread = Math.abs(current.spread);
@@ -1071,8 +1125,8 @@ export function registerArbAutoCommands(
                     const sizeStr = String(pos.size);
                     const closeRes = await closePerpPairVerified({
                       source: "arb-auto", sym: pos.symbol,
-                      longAdapter, longExch: pos.longExchange, longSym: pos.symbol, longSize: sizeStr,
-                      shortAdapter, shortExch: pos.shortExchange, shortSym: pos.symbol, shortSize: sizeStr, smart: false,
+                      longAdapter, longExch: pos.longExchange, longSym: pos.longSymbol ?? pos.symbol, longSize: sizeStr,
+                      shortAdapter, shortExch: pos.shortExchange, shortSym: pos.shortSymbol ?? pos.symbol, shortSize: sizeStr, smart: false,
                       log: (m) => console.log(chalk.red(m)),
                     });
 
@@ -1272,7 +1326,14 @@ export function registerArbAutoCommands(
             else { const k = reason.replace(/[-\d.]+/g, "#"); skipCounts.set(k, (skipCounts.get(k) ?? 0) + 1); }
           };
           for (const sym of filterSymbols ?? []) {
-            if (!filtered.some(x => x.symbol === sym)) console.log(chalk.gray(`  ${now} SKIP ${sym}: not in this cycle's funding scan (no rate on two compared venues)`));
+            // A --symbols entry may be a venue form (kPEPE): it monitors the canonical row it resolves to.
+            const hit = filtered.find(x => matchesSymbolFilter(x, [sym]));
+            if (hit === undefined) console.log(chalk.gray(`  ${now} SKIP ${sym}: not in this cycle's funding scan (no rate on two compared venues)`));
+            else if (hit.symbol !== sym && !aliasNoted.has(sym)) {
+              aliasNoted.add(sym);
+              const forms = Object.entries(hit.venueSymbols ?? {}).map(([v, vs]) => `${v} ${vs}`).join(" / ");
+              console.log(chalk.gray(`  ${now} MONITOR ${sym} → ${hit.symbol} (canonical${forms !== "" ? `; ${forms}` : ""})`));
+            }
           }
           if (openPositions.length >= maxPositions) {
             console.log(chalk.gray(`  ${now} NO ENTRY: max positions reached (${openPositions.length}/${maxPositions}: ${openPositions.map(p => `${p.symbol} ${p.longExchange}/${p.shortExchange}`).join(", ")})`));
@@ -1370,7 +1431,7 @@ export function registerArbAutoCommands(
                 try {
                   const longAdapter = await getAdapterForExchange(longExchange);
                   const shortAdapter = await getAdapterForExchange(shortExchange);
-                  actualSizeUsd = await computeAutoSize(longAdapter, shortAdapter, snap.symbol, 0.3);
+                  actualSizeUsd = await computeAutoSize(longAdapter, shortAdapter, legSymbol(snap, longExchange), 0.3, legSymbol(snap, shortExchange));
                   if (actualSizeUsd <= 0) {
                     console.log(chalk.gray(`  ${now} SKIP ${snap.symbol}: auto-size returned $0 (insufficient depth/margin)`));
                     continue;
@@ -1415,7 +1476,7 @@ export function registerArbAutoCommands(
                   legsStarted = true;
                   const res = await openPerpPairVerified({
                     source: "arb-auto", sym: snap.symbol,
-                    longAdapter, longExch: longExchange, longSym: snap.symbol, shortAdapter, shortExch: shortExchange, shortSym: snap.symbol,
+                    longAdapter, longExch: longExchange, longSym: legSymbol(snap, longExchange), shortAdapter, shortExch: shortExchange, shortSym: legSymbol(snap, shortExchange),
                     size: sizeInAsset, smart: false, log: (m) => console.log(chalk.red(m)),
                   });
                   legsStarted = false; // outcome known (opened / not opened / quarantined)
@@ -1446,6 +1507,7 @@ export function registerArbAutoCommands(
                         entryShortPrice: snap.markPrice,
                         accumulatedFunding: 0,
                         lastCheckTime: entryTime,
+                        ...legSymbolsOf(snap, longExchange, shortExchange),
                       });
                     } catch (e) {
                       // A hedged pair the state cannot record (write failed / conflicting entry): never
@@ -1470,6 +1532,9 @@ export function registerArbAutoCommands(
                     });
                     console.error(chalk.red(`  ${now} ENTRY FAILED ${snap.symbol}: ${res.reason}${res.rolledBack !== null ? ` — rolled back long ${res.rolledBack}; no open exposure` : " — nothing opened"}`));
                     donePending();
+                    // Cool down like a close: a leg the venue rejects (unknown symbol, lot, margin)
+                    // is not re-sent — with its fees and rollback — every cycle.
+                    closeCooldowns.set(snap.symbol, Date.now());
                     continue;
                   } else {
                     donePending(); // quarantined (persisted) by openPerpPairVerified
@@ -1520,6 +1585,7 @@ export function registerArbAutoCommands(
                 entryMarkPrice: snap.markPrice,
                 accumulatedFundingUsd: 0,
                 lastCheckTime: Date.now(),
+                ...legSymbolsOf(snap, longExchange, shortExchange),
               });
 
               // Dry-run: record the simulated entry in the in-memory state only (never the real file).
@@ -1768,7 +1834,7 @@ export function registerArbAutoCommands(
                 const topCheck = filtered.slice(0, 5);
                 await Promise.allSettled(topCheck.map(async (s) => {
                   try {
-                    const [hlOB, ltOB] = await Promise.all([fetchHLOrderbook(s.symbol), fetchLighterOrderbook(s.symbol)]);
+                    const [hlOB, ltOB] = await Promise.all([fetchHLOrderbook(legSymbol(s, "hyperliquid")), fetchLighterOrderbook(legSymbol(s, "lighter"))]);
                     const hlDepth = hlOB.reduce((sum, l) => sum + l[0] * l[1], 0);
                     const ltDepth = ltOB.reduce((sum, l) => sum + l[0] * l[1], 0);
                     const hlBest = hlOB[0]?.[0] ?? 0;
@@ -1786,9 +1852,10 @@ export function registerArbAutoCommands(
                 const grossColor = grossSpread >= 50 ? chalk.green.bold : grossSpread >= 30 ? chalk.green : chalk.yellow;
                 const netColor = netSpread >= 20 ? chalk.green : netSpread >= 0 ? chalk.yellow : chalk.red;
                 const rates: string[] = [];
-                if (s.pacRate) rates.push(`PAC:${(s.pacRate * 100).toFixed(4)}%`);
-                if (s.hlRate) rates.push(`HL:${(s.hlRate * 100).toFixed(4)}%`);
-                if (s.ltRate) rates.push(`LT:${(s.ltRate * 100).toFixed(4)}%`);
+                // Each leg names which rate it is (lastSettled / accruing / predicted; ? = unverified).
+                if (s.pacRate) rates.push(`PAC:${(s.pacRate * 100).toFixed(4)}%${kindTag(s, "pacifica")}`);
+                if (s.hlRate) rates.push(`HL:${(s.hlRate * 100).toFixed(4)}%${kindTag(s, "hyperliquid")}`);
+                if (s.ltRate) rates.push(`LT:${(s.ltRate * 100).toFixed(4)}%${kindTag(s, "lighter")}`);
                 let liqInfo = "";
                 const ld = liqData.get(s.symbol);
                 if (ld) liqInfo = chalk.gray(` | depth: HL $${ld.hlDepth.toLocaleString()} LT $${ld.ltDepth.toLocaleString()} gap:${ld.gap}%`);
@@ -1848,8 +1915,10 @@ export function registerArbAutoCommands(
             const netSpread = computeNetSpread(s.annualSpreadPct, holdDays, rtCost, effectiveBridgeCost, sizeUsd);
             return {
               mode: "spot-perp" as const, symbol: s.symbol, perpExchange: s.perpExchange,
-              spotExchanges: s.spotExchanges, grossSpreadPct: s.annualSpreadPct,
-              netSpreadPct: netSpread, estFeesPct: rtCost,
+              // grossSpread / netSpread: the names every other arb scan row uses (same % values);
+              // the *Pct names stay for existing consumers.
+              spotExchanges: s.spotExchanges, grossSpreadPct: s.annualSpreadPct, grossSpread: s.annualSpreadPct,
+              netSpreadPct: netSpread, netSpread, estFeesPct: rtCost,
               perpFundingRate: s.perpFundingRate, direction: s.direction,
               markPrice: s.bestMarkPrice, estHourlyIncomeUsd: s.estHourlyIncomeUsd,
               breakEvenDays: rtCost > 0 ? Math.ceil(rtCost / (s.annualSpreadPct / 365)) : 0,
@@ -1912,7 +1981,7 @@ export function registerArbAutoCommands(
           const shortPrice = pFor(s.shortExch);
           const mid = (longPrice + shortPrice) / 2;
           const priceGapPct = mid > 0 ? Math.abs(longPrice - shortPrice) / mid * 100 : 0;
-          return { mode: "perp-perp" as const, symbol: s.symbol, longExch: s.longExch, shortExch: s.shortExch, markPrice: s.markPrice, grossSpread, netSpread: net, estFeesPct: rtCost, priceGapPct: Math.round(priceGapPct * 10000) / 10000 };
+          return { mode: "perp-perp" as const, symbol: s.symbol, longExch: s.longExch, shortExch: s.shortExch, markPrice: s.markPrice, grossSpread, grossSpreadPct: grossSpread, netSpread: net, netSpreadPct: net, estFeesPct: rtCost, priceGapPct: Math.round(priceGapPct * 10000) / 10000 };
         });
         // Merge spot-perp results if "all" mode
         const spotPerp: Record<string, unknown>[] = (opts.mode === "all" && spotSpreads) ? spotSpreads.map(s => {
@@ -1922,8 +1991,8 @@ export function registerArbAutoCommands(
           const net = computeNetSpread(s.annualSpreadPct, holdDays, rtCost, effectiveBridgeCost, sizeUsd);
           return {
             mode: "spot-perp" as const, symbol: s.symbol, perpExchange: s.perpExchange,
-            spotExchanges: s.spotExchanges, grossSpread: s.annualSpreadPct,
-            netSpread: net, estFeesPct: rtCost,
+            spotExchanges: s.spotExchanges, grossSpread: s.annualSpreadPct, grossSpreadPct: s.annualSpreadPct,
+            netSpread: net, netSpreadPct: net, estFeesPct: rtCost,
             perpFundingRate: s.perpFundingRate, direction: s.direction,
             markPrice: s.bestMarkPrice, breakEvenDays: rtCost > 0 ? Math.ceil(rtCost / (s.annualSpreadPct / 365)) : 0,
           };
@@ -1953,10 +2022,11 @@ export function registerArbAutoCommands(
         const priceGapPct = mid > 0 ? Math.abs(longPrice - shortPrice) / mid * 100 : 0;
         const gapColor = priceGapPct >= 0.5 ? chalk.red : priceGapPct >= 0.1 ? chalk.yellow : chalk.gray;
         const rates: string[] = [];
-        if (s.pacRate) rates.push(`PAC:${(s.pacRate * 100).toFixed(4)}%`);
-        if (s.hlRate) rates.push(`HL:${(s.hlRate * 100).toFixed(4)}%`);
-        if (s.ltRate) rates.push(`LT:${(s.ltRate * 100).toFixed(4)}%`);
-        if (s.astRate) rates.push(`AST:${(s.astRate * 100).toFixed(4)}%`);
+        // Each leg names which rate it is (lastSettled / accruing / predicted; ? = unverified).
+        if (s.pacRate) rates.push(`PAC:${(s.pacRate * 100).toFixed(4)}%${kindTag(s, "pacifica")}`);
+        if (s.hlRate) rates.push(`HL:${(s.hlRate * 100).toFixed(4)}%${kindTag(s, "hyperliquid")}`);
+        if (s.ltRate) rates.push(`LT:${(s.ltRate * 100).toFixed(4)}%${kindTag(s, "lighter")}`);
+        if (s.astRate) rates.push(`AST:${(s.astRate * 100).toFixed(4)}%${kindTag(s, "aster")}`);
         return [
           chalk.white.bold(s.symbol),
           grossColor(`${grossSpread.toFixed(1)}%`),

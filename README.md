@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dw/perp-cli.svg)](https://www.npmjs.com/package/perp-cli)
 [![license](https://img.shields.io/npm/l/perp-cli.svg)](https://github.com/hypurrquant/perp-cli/blob/main/LICENSE)
 
-Multi-DEX perpetual futures CLI — **Pacifica** (Solana), **Hyperliquid** (HyperEVM), **Lighter** (Ethereum), **Aster** (BNB Chain), **Lighter RH** (Robinhood chain), **Ondo Perps** (off-chain), **Arcus** (Robinhood chain), **QFEX** (off-chain, TradFi perps), **RISEx** (RISE chain — read-only in 0.15.0, trading in a later release), **TxFlow** (market data only — unofficial API), **Variational Omni** (market data only — official API, RFQ venue), **GRVT** (market data only — official API; trading in a later release), **Extended** (Starknet, market data only — official API; trading in a later release), and **Derive** options data (read-only).
+Multi-DEX perpetual futures CLI — **Pacifica** (Solana), **Hyperliquid** (HyperEVM), **Lighter** (Ethereum), **Aster** (BNB Chain), **Lighter RH** (Robinhood chain), **Ondo Perps** (off-chain), **Arcus** (Robinhood chain), **QFEX** (off-chain, TradFi perps), **RISEx** (RISE chain — read-only; trading planned, not yet available), **TxFlow** (market data only — unofficial API), **Variational Omni** (market data only — official API, RFQ venue), **GRVT** (market data only — official API; trading planned, not yet available), **Extended** (Starknet, market data only — official API; trading planned, not yet available), and **Derive** options data (read-only).
 
 ```bash
 npm install -g perp-cli       # global install
@@ -14,9 +14,17 @@ perp --json portfolio
 npx -y perp-cli --json portfolio
 ```
 
+The package ships **three** executables (`package.json` `bin`):
+
+| Binary | What it is | Docs |
+|---|---|---|
+| `perp` | the CLI | [Command Groups](#command-groups), [Core Commands](#core-commands) |
+| `perp-mcp` | the MCP server (stdio) for Claude Desktop, Cursor and other MCP clients | [MCP Server](#mcp-server) |
+| `perp-guardrail` | the OWS Policy Engine checker that approves or denies an agent key's signature requests | [Signing guardrail](#signing-guardrail-perp-guardrail) |
+
 ## Features
 
-- **13 perp venues** — trade on 8: Pacifica, Hyperliquid, Lighter, Aster, Lighter RH, Ondo Perps, Arcus, QFEX (bridge / perp-perp arb cover the original four); market data on RISEx (read-only in 0.15.0, trading in a later release) TxFlow (unofficial API, read-only), Variational (official API, read-only — no public trading API yet) GRVT (official API, read-only in this version — trading in a later release) and Extended (official API, read-only in this version — trading in a later release); plus **Derive** options data (read-only). See the [support matrix](#support-matrix)
+- **13 perp venues** — trade on 8: Pacifica, Hyperliquid, Lighter, Aster, Lighter RH, Ondo Perps, Arcus, QFEX (bridge / perp-perp arb cover the original four); market data on RISEx (read-only; trading planned, not yet available) TxFlow (unofficial API, read-only), Variational (official API, read-only — no public trading API yet) GRVT (official API, read-only — trading planned, not yet available) and Extended (official API, read-only — trading planned, not yet available); plus **Derive** options data (read-only). See the [support matrix](#support-matrix)
 - **Funding Rate Arb** — perp-perp + spot-perp scan & one-command dual-leg execution
 - **Portfolio** — single call returns balances, positions, risk level across all exchanges
 - **Funds** — deposit, withdraw, transfer, multi-provider bridge (cctp/relay/debridge), inter-exchange rebalance — all in one group
@@ -28,25 +36,26 @@ npx -y perp-cli --json portfolio
 
 What each venue supports in this release, derived from the code (venue definitions in `src/exchanges/venues/*.ts`, `perp-cli/ws` codecs in `src/ws/codecs/`, the `funds deposit|withdraw` commands, the options registry). ✅ = implemented and available; — = not available. This says what perp-cli **offers**, not what was run with real money — for that see [What works — mainnet verification](#what-works--mainnet-verification-2026-10-13).
 
-| Venue | Market data (CLI) | Funding | WS stream (`perp-cli/ws`) | Trading | Deposit via perp-cli | Withdraw via perp-cli | Extras | API |
-|---|---|---|---|---|---|---|---|---|
-| Hyperliquid (incl. HIP-3 via `--dex`) | ✅ | ✅ hourly | ✅ public + user (HIP-3 dexes opt-in) | ✅ | ✅ (USDC from Arbitrum) | ✅ (CCTP) | spot, outcomes (HIP-4), native TWAP | official |
-| Pacifica | ✅ | ✅ hourly | ✅ public + user | ✅ | ✅ | ✅ | spot (unified margin), native TWAP (master-signed only); Print (`perp print`), Vaults (`perp vault`; deposit master-only) and Atomic basket (`trade atomic`) — each not yet verified live; legacy `wallet manage lake`: `create` still works, `deposit` / `withdraw` refuse and point to `perp vault` | official |
-| Lighter | ✅ | ✅ hourly | ✅ public + user | ✅ | ✅ (L1 or CCTP) | ✅ | spot, client-side TWAP | official |
-| Lighter RH | ✅ | ✅ hourly | ✅ public + user (mainnet; testnet WS → HTTP 403) | ✅ | ✅ (USDG, mainnet) | ✅ (`-e lighter-rh funds withdraw lighter`) | spot, client-side TWAP | official |
-| Aster | ✅ | ✅ per symbol | ✅ public only (user channels: known gap) | ✅ | ✅ (USDT / USDC, mainnet) | ✅ (agent with `--can-withdraw --ip-whitelist`) | spot, client-side TWAP | official |
-| Ondo Perps | ✅ | ✅ hourly | — | ✅ | ✅ (USDC, mainnet) | — (the API allows none; web app)⁴ | spot, client-side TWAP | official |
-| Arcus | ✅ | ✅ hourly | ✅ public + user | ✅ | — (web app) | ✅ (to the account owner) | spot (on-chain swaps), client-side TWAP | official |
-| QFEX | ✅ | unverified (display only, `--include-unverified`) | — | ✅ (no resting reduce-only, no automation — see [QFEX](#qfex)) | address only | — (disabled for now; web app)⁵ | — | official |
-| RISEx | ✅ | ✅ hourly | — | — (**read-only in 0.15.0**; trading in a later release) | — (app only) | — (app only) | account reads by address | official |
-| TxFlow | ✅ | unverified (display only, `--include-unverified`) | — | — (market data only) | — | — | — | **unofficial** |
-| Variational | ✅ (`market book` = RFQ quotes, not an order book) | unverified (display only, `--include-unverified`); interval per market (1h / 4h / 8h) | — | — (market data only) | — | — | equities / ETFs / commodities; pre-IPO (not matched) | official |
-| GRVT | ✅ | unverified (display only, `--include-unverified`); interval per market (4h / 8h) | — (per-instrument streams only) | — (market data only in this version; trading in a later release) | — | — | equities / ETFs, commodities; pre-IPO not matched | official |
-| Extended | ✅ (crypto plus equities / ETFs / commodities / indices / FX) | unverified (display only, `--include-unverified`), hourly; `_24_5` equities print 0 off-hours | — (one socket per stream; not supported yet) | — (read-only in 0.15.0) | — | — | asset-class column; pre-IPO and ambiguous tickers not matched | official |
-| Derive | options only (`perp -e derive options …`) | — | — | — (**read-only**; trading in a later release) | — | — | options: underlyings, expiries, chain (IV, greeks), quote | official |
+| Venue | Market data (CLI) | Funding | WS stream (`perp-cli/ws`) | Positions by address (`--address`) | Trading | Deposit via perp-cli | Withdraw via perp-cli | Extras | API |
+|---|---|---|---|---|---|---|---|---|---|
+| Hyperliquid (incl. HIP-3 via `--dex`) | ✅ | ✅ hourly | ✅ public + user (HIP-3 dexes opt-in) | ✅ (native + every HIP-3 dex) | ✅ | ✅ (USDC from Arbitrum) | ✅ (CCTP) | spot, outcomes (HIP-4), native TWAP | official |
+| Pacifica | ✅ | ✅ hourly | ✅ public + user | ✅ (Solana address) | ✅ | ✅ | ✅ | spot (unified margin), native TWAP (master-signed only); Print (`perp print`), Vaults (`perp vault`; deposit master-only) and Atomic basket (`trade atomic`) — each not yet verified live; legacy `wallet manage lake`: `create` still works, `deposit` / `withdraw` refuse and point to `perp vault` | official |
+| Lighter | ✅ | ✅ hourly | ✅ public + user | ✅ (every sub-account) | ✅ | ✅ (L1 or CCTP) | ✅ | spot, client-side TWAP | official |
+| Lighter RH | ✅ | ✅ hourly | ✅ public + user (mainnet; testnet WS → HTTP 403) | ✅ (every sub-account) | ✅ | ✅ (USDG, mainnet) | ✅ (`-e lighter-rh funds withdraw lighter`) | spot, client-side TWAP | official |
+| Aster | ✅ | ✅ per symbol | ✅ public only (user channels: known gap) | — | ✅ | ✅ (USDT / USDC, mainnet) | ✅ (agent with `--can-withdraw --ip-whitelist`) | spot, client-side TWAP | official |
+| Ondo Perps | ✅ | ✅ hourly | — | — | ✅ | ✅ (USDC, mainnet) | — (the API allows none; web app)⁴ | spot, client-side TWAP | official |
+| Arcus | ✅ | ✅ hourly | ✅ public + user | — | ✅ | — (web app) | ✅ (to the account owner) | spot (on-chain swaps), client-side TWAP | official |
+| QFEX | ✅ | unverified (display only, `--include-unverified`) | — | — | ✅ (no resting reduce-only, no automation — see [QFEX](#qfex)) | address only | — (disabled for now; web app)⁵ | — | official |
+| RISEx | ✅ | ✅ hourly | — | ✅ | — (**read-only**; trading planned, not yet available) | — (app only) | — (app only) | account reads by address | official |
+| TxFlow | ✅ | unverified (display only, `--include-unverified`) | — | — | — (market data only) | — | — | — | **unofficial** |
+| Variational | ✅ (`market book` = RFQ quotes, not an order book) | unverified (display only, `--include-unverified`); interval per market (1h / 4h / 8h) | — | — | — (market data only) | — | — | equities / ETFs / commodities; pre-IPO (not matched) | official |
+| GRVT | ✅ | unverified (display only, `--include-unverified`); interval per market (4h / 8h) | — (per-instrument streams only) | — | — (market data only in this version; trading planned, not yet available) | — | — | equities / ETFs, commodities; pre-IPO not matched | official |
+| Extended | ✅ (crypto plus equities / ETFs / commodities / indices / FX) | unverified (display only, `--include-unverified`), hourly; `_24_5` equities print 0 off-hours | — (one socket per stream; not supported yet) | — | — (read-only) | — | — | asset-class column; pre-IPO and ambiguous tickers not matched | official |
+| Derive | options only (`perp -e derive options …`) | — | — | — | — (**read-only**; trading planned, not yet available) | — | — | options: underlyings, expiries, chain (IV, greeks), quote | official |
 
 - **Funding** ✅ = the rate's unit is verified against settled payments (`fundingVerified`), so the venue takes part in `arb scan` and funding strategies; unverified venues are shown only with `--include-unverified`, never ranked or traded.
 - **WS stream** = `perp-cli/ws` / `@hypurrquant/perp-ws` channels: public = all-market / per-market state and `bbo`; user = account, positions, orders, fills. `book` / `trades` channels are not available yet on any venue.
+- **Positions by address** = `perp -e <venue> account positions --address <addr>` (no `-e`: every venue below) and MCP `get_positions_by_address`: the open positions of ANY account from public venue data — keyless, nothing signed. 0x address except Pacifica (base58 Solana); other venues refuse with `CAPABILITY_UNSUPPORTED`.
 - **Client-side TWAP** = `trade twap` / `strategy twap` slicing on venues without a native TWAP (refused on QFEX by its automation gate).
 
 ## Setup
@@ -136,10 +145,10 @@ Secrets are stored once (see `docs/SSOT_RULES.md` Rule #3): Lighter RH → `~/.p
 | Ondo Perps | `ondo` (`ondo-perps`) | yes | Off-chain engine; limit TIF GTC (default) / IOC / ALO; restricted: US, PA |
 | QFEX | `qfex` (`qf`) | yes (see **QFEX** below) | Custodial, off-chain engine; equities / indices / commodities, cross margin, USDC; limit TIF GTC (default) / IOC / FOK / ALO; testnet = QFEX UAT; restricted: US, GB, ES and others |
 | Arcus | `arcus` | yes | Robinhood chain, USDG collateral; limit TIF GTC (default, sent as GTT) / IOC / FOK / ALO; restricted: US, CA, GB; **access whitelist** — unlisted addresses are rejected (request access at arcus.xyz) |
-| RISEx | `risex` (`rise`) | **no — read-only in 0.15.0** (trading in a later release; see **RISEx** below) | Fully on-chain order book on RISE chain, USDC; official API. Market data, funding and account reads by address; every trade / agent / bot path → `CAPABILITY_UNSUPPORTED`; deposits / withdrawals in the RISEx app only |
+| RISEx | `risex` (`rise`) | **no — read-only** (trading planned, not yet available; see **RISEx** below) | Fully on-chain order book on RISE chain, USDC; official API. Market data, funding and account reads by address; every trade / agent / bot path → `CAPABILITY_UNSUPPORTED`; deposits / withdrawals in the RISEx app only |
 | Variational | `variational` (`var`, `omni`) | **no — market data only** (see **Variational** below) | Variational Omni, an RFQ venue (one market maker, no order book); official read-only API, no public trading API yet. Funding is unverified (shown only with `--include-unverified`); restricted: US, CA and others |
-| GRVT | `grvt` (`grv`) | **no — market data only in this version** (trading in a later release; see **GRVT** below) | Hybrid perps exchange, USDT collateral; official Market Data API. Funding is unverified (shown only with `--include-unverified`); testnet = `-n testnet`; trading needs KYC; restricted: US, CA, SG, HK and others |
-| Extended | `extended` (`ext`, `x10`) | **no — market data only in this version** (trading in a later release; see **Extended** below) | Perps order book on Starknet (formerly X10), USD collateral; official public API. Crypto plus RWA (equities, ETFs, indices, commodities, FX). Funding is unverified (shown only with `--include-unverified`); testnet = Sepolia (`-n testnet`); restricted: US, GB, CA, HK and others |
+| GRVT | `grvt` (`grv`) | **no — market data only in this version** (trading planned, not yet available; see **GRVT** below) | Hybrid perps exchange, USDT collateral; official Market Data API. Funding is unverified (shown only with `--include-unverified`); testnet = `-n testnet`; trading needs KYC; restricted: US, CA, SG, HK and others |
+| Extended | `extended` (`ext`, `x10`) | **no — market data only in this version** (trading planned, not yet available; see **Extended** below) | Perps order book on Starknet (formerly X10), USD collateral; official public API. Crypto plus RWA (equities, ETFs, indices, commodities, FX). Funding is unverified (shown only with `--include-unverified`); testnet = Sepolia (`-n testnet`); restricted: US, GB, CA, HK and others |
 | TxFlow | `txflow` (`txf`) | **no — market data only** | **UNOFFICIAL API**: TxFlow has no official API yet; perp-cli reads the undocumented API its web app uses. It may change or break without notice. Funding is unverified (shown only with `--include-unverified`) |
 
 - **Time in force:** `trade limit` defaults to `GTC` on every venue (common names `GTC | IOC | FOK | ALO`; a TIF the venue does not offer → `CAPABILITY_UNSUPPORTED`). Lighter post-only (`ALO`) is disabled until verified on the venue.
@@ -175,7 +184,7 @@ Every mark below comes from a real-money mainnet run, not from code reading — 
 | Deposit via perp-cli | ✅ | (HL) | ✅ | ✅ | ✅ | ✅ | ✅ | — (web app) | — (address only) |
 | Withdraw (to your own address)⁶ | ✅ | (HL) | ✅ | ✅ | ✅ | ✅ (`--asset USDC`) | ⛔⁴ | ✅ | ⛔⁵ |
 
-RISEx, TxFlow, Variational, GRVT and Extended are not in this table: none trades in this release. RISEx trading (shipped but disabled in 0.15.0) was exercised on **testnet** only (2026-10-14); no mainnet RISEx order has been run.
+RISEx, TxFlow, Variational, GRVT and Extended are not in this table: none trades in this release. RISEx trading (shipped but disabled since 0.15.0) was exercised on **testnet** only (2026-10-14); no mainnet RISEx order has been run.
 
 ² perp-cli has no native TWAP for this venue: `trade twap` runs the client-side TWAP (slices) instead. Whether the venue's API offers one is not checked.  
 ³ Verified in the session; no saved log file.  
@@ -237,7 +246,7 @@ Order outcomes are never guessed: an IOC / market order is final only on a venue
 
 **Withdrawals** are disabled in perp-cli for now (`funds withdraw qfex` → `CAPABILITY_UNSUPPORTED`, also under `--dry-run`); withdraw in the QFEX web app. Subaccounts: `perp -e qfex funds transfer <amount> primary --from <account uuid>`.
 
-### RISEx (read-only in 0.15.0 — trading in a later release)
+### RISEx (read-only — trading planned, not yet available)
 
 RISEx is a fully on-chain perps order book on RISE chain (USDC collateral), reached through its **official** API. New venues ship in phases: in this release perp-cli reads RISEx data only; trading comes in a later release.
 
@@ -317,7 +326,7 @@ perp health                                           # probed as an official ve
 
 ### Options market data — Derive (read-only)
 
-Derive (derive.xyz) options through its official public API — keyless; no orders, no account, no signing (trading in a later release). Derive is not a perp venue: `-e derive` works only with `perp options`.
+Derive (derive.xyz) options through its official public API — keyless; no orders, no account, no signing (trading planned, not yet available). Derive is not a perp venue: `-e derive` works only with `perp options`.
 
 ```bash
 perp --json -e derive options underlyings
@@ -562,17 +571,60 @@ For trading and account data, run `perp setup` first: the MCP server reads the s
 }
 ```
 
-**Read-only tools (no keys):** `get_markets`, `get_orderbook`, `get_funding_rates`, `get_prices`, `get_outcome_markets`, `get_outcome_view`, `get_outcome_book`, `get_option_expiries`, `get_option_chain`, `get_option_quote` (Derive options), `pacifica_print_products`, `pacifica_print_quote`, `pacifica_print_positions`, `pacifica_vaults` (Pacifica Print / vaults; writes are CLI-only), `arb_scan`, `health_check`
+**Read-only tools (no keys):** `get_markets`, `get_orderbook`, `get_funding_rates`, `get_prices`, `get_positions_by_address` (any account's open positions by public address — hyperliquid incl. HIP-3, lighter, lighter-rh, pacifica, risex), `get_outcome_markets`, `get_outcome_view`, `get_outcome_book`, `get_option_expiries`, `get_option_chain`, `get_option_quote` (Derive options), `pacifica_print_products`, `pacifica_print_quote`, `pacifica_print_positions`, `pacifica_vaults` (Pacifica Print / vaults; writes are CLI-only), `arb_scan`, `health_check`
 
 **Advisor tools (no keys):** `suggest_command`, `explain_command`
 
 **Account & trading tools (keys required):** `get_balance`, `get_positions`, `get_open_orders`, `get_outcome_positions`, `portfolio`, `trade_preview`, `trade_execute`, `trade_close`, `get_funding_analysis`, `get_pnl_analysis`, `get_arb_compare`
 
-- `get_markets` / `get_orderbook` add `meta.apiStatus` (`"unofficial"` + `apiNote` for TxFlow); `get_prices` lists `meta.unofficialApiVenues`; `health_check` rows carry `apiStatus`. Account / trading tools refuse TxFlow with `CAPABILITY_UNSUPPORTED`; `trade_preview` / `trade_execute` / `trade_close` refuse RISEx (read-only in 0.15.0) before any credential is read.
+- `get_markets` / `get_orderbook` add `meta.apiStatus` (`"unofficial"` + `apiNote` for TxFlow); `get_prices` lists `meta.unofficialApiVenues`; `health_check` rows carry `apiStatus`. Account / trading tools refuse TxFlow with `CAPABILITY_UNSUPPORTED`; `trade_preview` / `trade_execute` / `trade_close` refuse RISEx (read-only) before any credential is read.
 
 **Resources:** `market://prices`, `market://funding-rates`, `perp://schema`
 
 **Prompts:** `trading-guide`, `arb-strategy`
+
+## Signing guardrail (`perp-guardrail`)
+
+The third shipped binary. It is **not** a command you run by hand: it is the custom policy executable
+the [OWS](https://github.com/open-wallet-standard) Policy Engine spawns before an agent API key signs
+anything. OWS writes a `PolicyContext` JSON document to its stdin; it answers one JSON document on
+stdout, `{"allow": true}` or `{"allow": false, "reason": "..."}`. A denied request is never signed.
+
+What it checks, from the `policy_config` the policy carries (`src/guardrail/perp-guardrail.ts`):
+
+- the **chain** and the **destination contract** against the per-chain whitelist (Pacifica programs on
+  Solana mainnet / devnet, the Hyperliquid bridge + CCTP v2 + USDC on Arbitrum / Base / Ethereum, the
+  signing-only chains for Hyperliquid typed data and Lighter — `src/guardrail/contracts.ts`);
+- the **per-transaction** and **daily cumulative** USD amount (`max_tx_usd`, `max_daily_usd`);
+- the **per-withdrawal** and **daily withdrawal** USD amount (`max_withdraw_usd`,
+  `max_daily_withdraw_usd`);
+- **blocked function selectors** (`block_selectors`, e.g. `approve` / `transferFrom`).
+
+`policy_config.allowed_symbols` is accepted by the input type but **no check reads it** — it enforces
+nothing today. `policy_config` is required: a context without it is denied
+("policy_config missing from PolicyContext"), never allowed by baked-in defaults. USD amounts are derived from the transaction's native `value` with
+`eth_price_usd` (default 3500 when the policy states none), so a non-ETH-denominated chain or a token
+transfer whose amount lives in calldata is not amount-checked.
+
+Wire it up through the CLI — the `--perp-defaults` / `wallet setup` paths point the policy at this
+binary inside the installed package and fill the limits in, so you never write the path yourself:
+
+```bash
+# One-click: OWS vault wallet + guardrail policy + agent API key
+perp wallet setup --name perp-trading --max-tx-usd 1000 --max-daily-usd 5000
+
+# Or create the policy explicitly, with perp-cli's chain whitelist and this binary as the executable
+perp wallet policy create --id perp-main --name "perp-cli guardrail" --perp-defaults \
+  --max-tx-usd 1000 --max-daily-usd 5000 --max-withdraw-usd 500 --max-daily-withdraw-usd 2000 \
+  --block-approve
+
+# Point a policy at it by hand instead (any OWS policy executable path)
+perp wallet policy create --id custom --name custom --executable "$(command -v perp-guardrail)"
+```
+
+Defaults when `--perp-defaults` fills them in: `max_tx_usd` 1000, `max_daily_usd` 5000,
+`max_withdraw_usd` 500, `max_daily_withdraw_usd` 2000 (`DEFAULT_LIMITS`). The guardrail is a second
+line of defence on the OWS side; it does not replace perp-cli's own pre-trade risk gate.
 
 ## AI Agent Skill
 

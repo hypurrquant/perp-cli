@@ -32,10 +32,10 @@ async function run(codec: VenueCodec, routes: Record<string, unknown>, frames: u
 const ASTER_FRAMES = [{ id: 1, result: null }, { id: 2, result: null }, ...fixtureFrames("aster", "markPrice-arr"), ...fixtureFrames("aster", "ticker-arr")];
 
 describe("allMarkets canonicals", () => {
-  it("aster: BTC → every quote (BTCUSDT + BTCUSD1), no other market", async () => {
+  it("aster: BTC → the one matchable listing (BTCUSDT); BTCUSD1 is not a second BTC leg (canonical null, the CLI rule)", async () => {
     const r = await run(aster, ASTER_ROUTES, ASTER_FRAMES, { kind: "allMarkets", canonicals: ["BTC"] });
     expect(r.errors).toEqual([]);
-    expect(r.symbols).toEqual(new Set(["BTCUSDT", "BTCUSD1"]));
+    expect(r.symbols).toEqual(new Set(["BTCUSDT"]));
   });
 
   it("arcus: BTC → BTC-USD", async () => {
@@ -183,5 +183,19 @@ describe("allMarkets canonicals: errors", () => {
     expect(err?.structured.code).toBe("INVALID_PARAMS");
     expect(err?.message).toContain(text);
     expect(t.sockets).toHaveLength(0);
+  });
+});
+
+describe("defaultCanonicalize: the CLI's never-match rule (UNCLASSIFIED_TICKERS)", () => {
+  it("ambiguous native tickers are canonical null on their venue; a HIP-3 dex key and other tickers are kept", async () => {
+    const { defaultCanonicalize } = await import("../../ws/canonical.js");
+    const c = (venue: Parameters<typeof defaultCanonicalize>[0], base: string, dex: string | null = null) => defaultCanonicalize(venue, { venueSymbol: base, dex, base, quote: "USDC" });
+    expect(c("hyperliquid", "SPX")).toBeNull();
+    expect(c("lighter", "BB")).toBeNull();
+    expect(c("pacifica", "CHIP")).toBeNull();
+    expect(c("lighter-rh", "USELESS")).toBeNull();
+    expect(c("lighter-rh", "TSLA")).toBe("TSLA");
+    expect(c("hyperliquid", "BTC")).toBe("BTC");
+    expect(c("hyperliquid", "SPX", "xyz")).toBe("xyz:SPX");
   });
 });

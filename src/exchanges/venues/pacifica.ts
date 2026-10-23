@@ -13,6 +13,11 @@ const publicData: VenuePublicData = {
   async fetchMarkets(net) {
     return (await import("../../funding/legacy-public.js")).legacyPublicData("pacifica").fetchMarkets(net);
   },
+  // Keyless positions of any account by public address (account positions --address).
+  addressKind: "solana",
+  async fetchPositionsByAddress(net, address) {
+    return (await import("../public-positions.js")).pacificaPositionsByAddress(net, address);
+  },
 };
 
 /** Pacifica `client_order_id` format: "Full UUID string" (docs.pacifica.fi rest-api orders/create-limit-order). */

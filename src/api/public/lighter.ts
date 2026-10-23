@@ -62,6 +62,11 @@ export function fetchLighterOrderBookDetailsRaw(): Promise<unknown> {
   });
 }
 
+/**
+ * GET /api/v1/funding-rates (Lighter's own rows): the PREDICTED rate × 8 — a fraction per 8 h, NOT
+ * the venue basis (per 1 h, the settled rate of the market rows). Not read by perp-cli's funding
+ * comparisons (they use fetchVenuesRates); kept for API compatibility. Normalize with 8 h.
+ */
 export function fetchLighterFundingRates(): Promise<LighterFundingEntry[]> {
   // SSOT rule #2: error must propagate.
   // Row-level: rate is required (it's the field the endpoint exists for); a

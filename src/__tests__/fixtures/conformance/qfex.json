@@ -1,0 +1,1453 @@
+{
+ "schema": 1,
+ "name": "qfex",
+ "capturedAt": 1792414350541,
+ "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
+ "keep": [
+  "NVDA",
+  "TSLA",
+  "AAPL"
+ ],
+ "full": [],
+ "http": [
+  {
+   "cell": "list",
+   "method": "GET",
+   "url": "https://api.qfex.com/refdata",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "83b84984bd5ff62d"
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "GET",
+   "url": "https://api.qfex.com/md/contracts",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "00eae57ce3270cc5"
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "GET",
+   "url": "https://api.qfex.com/refdata",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "83b84984bd5ff62d"
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "GET",
+   "url": "https://api.qfex.com/md/contracts",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "00eae57ce3270cc5"
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "GET",
+   "url": "https://api.qfex.com/refdata",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "83b84984bd5ff62d"
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "GET",
+   "url": "https://api.qfex.com/md/contracts",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$schema": "https://api.qfex.com/schemas/ContractsResponseBody.json",
+    "data": [
+     {
+      "ticker_id": "AAPL-USD",
+      "base_currency": "AAPL",
+      "target_currency": "USD",
+      "last_price": "341.95",
+      "base_volume": "4840.112999999999",
+      "target_volume": "1665183.61534",
+      "product_type": "Perpetual",
+      "open_interest": "10548.302",
+      "open_interest_usd": "3605673.33115",
+      "long_open_interest": "5274.151",
+      "long_open_interest_usd": "1802836.665575",
+      "short_open_interest": "5274.151",
+      "short_open_interest_usd": "1802836.665575",
+      "index_price": "341.825",
+      "index_currency": "USD",
+      "funding_rate": "-0.00000038",
+      "funding_interval_minutes": 60,
+      "next_funding_rate": "0.00000221",
+      "next_funding_rate_timestamp": 1792414800
+     },
+     {
+      "ticker_id": "NVDA-USD",
+      "base_currency": "NVDA",
+      "target_currency": "USD",
+      "last_price": "218.24",
+      "base_volume": "17973.651",
+      "target_volume": "3895884.25108",
+      "product_type": "Perpetual",
+      "open_interest": "7243.854",
+      "open_interest_usd": "1579993.21521",
+      "long_open_interest": "3621.927",
+      "long_open_interest_usd": "789996.607605",
+      "short_open_interest": "3621.927",
+      "short_open_interest_usd": "789996.607605",
+      "index_price": "218.115",
+      "index_currency": "USD",
+      "funding_rate": "0.00000221",
+      "funding_interval_minutes": 60,
+      "next_funding_rate": "0.00000401",
+      "next_funding_rate_timestamp": 1792414799
+     },
+     {
+      "ticker_id": "TSLA-USD",
+      "base_currency": "TSLA",
+      "target_currency": "USD",
+      "last_price": "355.53",
+      "base_volume": "6188.672",
+      "target_volume": "2207593.3862799997",
+      "product_type": "Perpetual",
+      "open_interest": "4199.874",
+      "open_interest_usd": "1492341.2284199998",
+      "long_open_interest": "2099.937",
+      "long_open_interest_usd": "746170.6142099999",
+      "short_open_interest": "2099.937",
+      "short_open_interest_usd": "746170.6142099999",
+      "index_price": "355.33",
+      "index_currency": "USD",
+      "funding_rate": "0.00000615",
+      "funding_interval_minutes": 60,
+      "next_funding_rate": "0.00000572",
+      "next_funding_rate_timestamp": 1792414799
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "GET",
+   "url": "https://api.qfex.com/refdata",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "83b84984bd5ff62d"
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "GET",
+   "url": "https://api.qfex.com/funding/NVDA-USD?intervalMinutes=60&fromISO=2026-10-19T07%3A52%3A29.473Z&toISO=2026-10-19T12%3A52%3A29.473Z",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$schema": "https://api.qfex.com/schemas/FundingHistoricResponseBody.json",
+    "data": [
+     {
+      "symbol": "NVDA-USD",
+      "intervalMinutes": 60,
+      "windowStart": "2026-10-19T08:00:00Z",
+      "rate": 0.00000233
+     },
+     {
+      "symbol": "NVDA-USD",
+      "intervalMinutes": 60,
+      "windowStart": "2026-10-19T09:00:00Z",
+      "rate": 0.00000513
+     },
+     {
+      "symbol": "NVDA-USD",
+      "intervalMinutes": 60,
+      "windowStart": "2026-10-19T10:00:00Z",
+      "rate": 0.00000655
+     },
+     {
+      "symbol": "NVDA-USD",
+      "intervalMinutes": 60,
+      "windowStart": "2026-10-19T11:00:00Z",
+      "rate": 0.00000376
+     },
+     {
+      "symbol": "NVDA-USD",
+      "intervalMinutes": 60,
+      "windowStart": "2026-10-19T12:00:00Z",
+      "rate": 0.00000221
+     }
+    ],
+    "count": 5
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "GET",
+   "url": "https://api.qfex.com/refdata",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "83b84984bd5ff62d"
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "GET",
+   "url": "https://api.qfex.com/md/orderbook/NVDA-USD",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$schema": "https://api.qfex.com/schemas/OrderBookResponseBody.json",
+    "ticker_id": "NVDA-USD",
+    "timestamp": 1792414348836,
+    "bids": [
+     [
+      "218.23",
+      "3.666"
+     ],
+     [
+      "218.22",
+      "1.833"
+     ],
+     [
+      "218.21",
+      "1.374"
+     ],
+     [
+      "218.2",
+      "0"
+     ],
+     [
+      "218.19",
+      "442.954"
+     ],
+     [
+      "218.18",
+      "2294.546"
+     ],
+     [
+      "206.61",
+      "0"
+     ],
+     [
+      "206.6",
+      "0"
+     ],
+     [
+      "206.59",
+      "0"
+     ],
+     [
+      "206.58",
+      "0"
+     ],
+     [
+      "206.57",
+      "0"
+     ],
+     [
+      "206.56",
+      "9.682"
+     ]
+    ],
+    "asks": [
+     [
+      "218.25",
+      "459.411"
+     ],
+     [
+      "218.26",
+      "1.832"
+     ],
+     [
+      "218.27",
+      "0"
+     ],
+     [
+      "218.28",
+      "1861.214"
+     ],
+     [
+      "218.29",
+      "2466.594"
+     ],
+     [
+      "218.3",
+      "0"
+     ],
+     [
+      "226.85",
+      "0"
+     ],
+     [
+      "226.86",
+      "0"
+     ],
+     [
+      "226.87",
+      "0"
+     ],
+     [
+      "226.88",
+      "0"
+     ],
+     [
+      "226.89",
+      "0"
+     ],
+     [
+      "226.9",
+      "43.587"
+     ]
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "GET",
+   "url": "https://api.qfex.com/refdata",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "83b84984bd5ff62d"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "GET",
+   "url": "https://api.qfex.com/candles/NVDA-USD?resolution=1HOUR&fromISO=2026-10-18T12%3A52%3A29.619Z&toISO=2026-10-19T12%3A52%3A29.619Z",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$schema": "https://api.qfex.com/schemas/CandlesResponseBody.json",
+    "candles": [
+     {
+      "startedAt": "2026-10-19T12:00:00Z",
+      "ticker": "NVDA-USD",
+      "resolution": "1HOUR",
+      "low": "217.56",
+      "high": "218.55",
+      "open": "217.69",
+      "close": "218.24",
+      "baseTokenVolume": "0",
+      "usdVolume": "99983.51831",
+      "startingOpenInterest": "0",
+      "orderbookMidPriceOpen": "0",
+      "orderbookMidPriceClose": "0"
+     },
+     {
+      "startedAt": "2026-10-19T11:00:00Z",
+      "ticker": "NVDA-USD",
+      "resolution": "1HOUR",
+      "low": "217.04",
+      "high": "217.74",
+      "open": "217.69",
+      "close": "217.7",
+      "baseTokenVolume": "0",
+      "usdVolume": "119600.79593",
+      "startingOpenInterest": "0",
+      "orderbookMidPriceOpen": "0",
+      "orderbookMidPriceClose": "0"
+     },
+     {
+      "startedAt": "2026-10-19T10:00:00Z",
+      "ticker": "NVDA-USD",
+      "resolution": "1HOUR",
+      "low": "216.95",
+      "high": "217.88",
+      "open": "216.97",
+      "close": "217.7",
+      "baseTokenVolume": "0",
+      "usdVolume": "65240.48041",
+      "startingOpenInterest": "0",
+      "orderbookMidPriceOpen": "0",
+      "orderbookMidPriceClose": "0"
+     },
+     {
+      "startedAt": "2026-10-19T09:00:00Z",
+      "ticker": "NVDA-USD",
+      "resolution": "1HOUR",
+      "low": "216.38",
+      "high": "217.19",
+      "open": "216.65",
+      "close": "216.97",
+      "baseTokenVolume": "0",
+      "usdVolume": "93116.55005",
+      "startingOpenInterest": "0",
+      "orderbookMidPriceOpen": "0",
+      "orderbookMidPriceClose": "0"
+     },
+     {
+      "startedAt": "2026-10-19T08:00:00Z",
+      "ticker": "NVDA-USD",
+      "resolution": "1HOUR",
+      "low": "216.65",
+      "high": "217.58",
+      "open": "217.55",
+      "close": "216.65",
+      "baseTokenVolume": "0",
+      "usdVolume": "170540.15614",
+      "startingOpenInterest": "0",
+      "orderbookMidPriceOpen": "0",
+      "orderbookMidPriceClose": "0"
+     },
+     {
+      "startedAt": "2026-10-19T07:00:00Z",
+      "ticker": "NVDA-USD",
+      "resolution": "1HOUR",
+      "low": "217.46",
+      "high": "218.08",
+      "open": "217.97",
+      "close": "217.55",
+      "baseTokenVolume": "0",
+      "usdVolume": "224788.78541",
+      "startingOpenInterest": "0",
+      "orderbookMidPriceOpen": "0",
+      "orderbookMidPriceClose": "0"
+     },
+     {
+      "startedAt": "2026-10-18T18:00:00Z",
+      "ticker": "NVDA-USD",
+      "resolution": "1HOUR",
+      "low": "211.99",
+      "high": "212.15",
+      "open": "211.99",
+      "close": "212.07",
+      "baseTokenVolume": "0",
+      "usdVolume": "19956.82716",
+      "startingOpenInterest": "0",
+      "orderbookMidPriceOpen": "0",
+      "orderbookMidPriceClose": "0"
+     },
+     {
+      "startedAt": "2026-10-18T17:00:00Z",
+      "ticker": "NVDA-USD",
+      "resolution": "1HOUR",
+      "low": "211.98",
+      "high": "212.26",
+      "open": "212",
+      "close": "211.99",
+      "baseTokenVolume": "0",
+      "usdVolume": "8034.96268",
+      "startingOpenInterest": "0",
+      "orderbookMidPriceOpen": "0",
+      "orderbookMidPriceClose": "0"
+     },
+     {
+      "startedAt": "2026-10-18T16:00:00Z",
+      "ticker": "NVDA-USD",
+      "resolution": "1HOUR",
+      "low": "211.93",
+      "high": "212.25",
+      "open": "212.25",
+      "close": "212",
+      "baseTokenVolume": "0",
+      "usdVolume": "15617.34783",
+      "startingOpenInterest": "0",
+      "orderbookMidPriceOpen": "0",
+      "orderbookMidPriceClose": "0"
+     },
+     {
+      "startedAt": "2026-10-18T15:00:00Z",
+      "ticker": "NVDA-USD",
+      "resolution": "1HOUR",
+      "low": "212.01",
+      "high": "212.6",
+      "open": "212.36",
+      "close": "212.25",
+      "baseTokenVolume": "0",
+      "usdVolume": "1714.70525",
+      "startingOpenInterest": "0",
+      "orderbookMidPriceOpen": "0",
+      "orderbookMidPriceClose": "0"
+     },
+     {
+      "startedAt": "2026-10-18T14:00:00Z",
+      "ticker": "NVDA-USD",
+      "resolution": "1HOUR",
+      "low": "211.98",
+      "high": "212.76",
+      "open": "212.76",
+      "close": "212.36",
+      "baseTokenVolume": "0",
+      "usdVolume": "168538.25525",
+      "startingOpenInterest": "0",
+      "orderbookMidPriceOpen": "0",
+      "orderbookMidPriceClose": "0"
+     },
+     {
+      "startedAt": "2026-10-18T13:00:00Z",
+      "ticker": "NVDA-USD",
+      "resolution": "1HOUR",
+      "low": "212.67",
+      "high": "213.67",
+      "open": "213.67",
+      "close": "212.76",
+      "baseTokenVolume": "0",
+      "usdVolume": "93386.13031",
+      "startingOpenInterest": "0",
+      "orderbookMidPriceOpen": "0",
+      "orderbookMidPriceClose": "0"
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "GET",
+   "url": "https://api.qfex.com/refdata",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "83b84984bd5ff62d"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:funding",
+   "method": "GET",
+   "url": "https://api.qfex.com/refdata",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "83b84984bd5ff62d"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:book",
+   "method": "GET",
+   "url": "https://api.qfex.com/refdata",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "83b84984bd5ff62d"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:kline",
+   "method": "GET",
+   "url": "https://api.qfex.com/refdata",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "83b84984bd5ff62d"
+   },
+   "text": null
+  }
+ ],
+ "ws": [
+  {
+   "cell": "list",
+   "url": "wss://mds.qfex.com",
+   "sent": [
+    "{\"type\":\"subscribe\",\"channels\":[\"market_stats\"],\"symbols\":[\"*\"]}"
+   ],
+   "frames": [
+    {
+     "type": "subscribed",
+     "channels": [
+      "market_stats"
+     ],
+     "symbols": [
+      "*"
+     ]
+    },
+    {
+     "sequence": 1,
+     "type": "market_stats",
+     "time": "2026-10-19T12:52:28.095108627Z",
+     "symbol": "*",
+     "bbos": [
+      {
+       "time": "2026-10-19T12:52:27.835551092Z",
+       "symbol": "AAPL-USD",
+       "bid": [
+        [
+         "341.95",
+         "1.169"
+        ]
+       ],
+       "ask": [
+        [
+         "342.02",
+         "0.585"
+        ]
+       ]
+      },
+      {
+       "time": "2026-10-19T12:52:27.836831630Z",
+       "symbol": "NVDA-USD",
+       "bid": [
+        [
+         "218.23",
+         "3.666"
+        ]
+       ],
+       "ask": [
+        [
+         "218.25",
+         "459.411"
+        ]
+       ]
+      },
+      {
+       "time": "2026-10-19T12:52:27.838235384Z",
+       "symbol": "TSLA-USD",
+       "bid": [
+        [
+         "355.55",
+         "2.25"
+        ]
+       ],
+       "ask": [
+        [
+         "355.59",
+         "2.248"
+        ]
+       ]
+      }
+     ],
+     "mark_prices": [
+      {
+       "time": "2026-10-19T12:52:27.629009305Z",
+       "symbol": "AAPL-USD",
+       "price": "341.95"
+      },
+      {
+       "time": "2026-10-19T12:52:27.629009305Z",
+       "symbol": "NVDA-USD",
+       "price": "218.24"
+      },
+      {
+       "time": "2026-10-19T12:52:27.629009305Z",
+       "symbol": "TSLA-USD",
+       "price": "355.53"
+      }
+     ],
+     "open_interests": [
+      {
+       "time": "2026-10-19T12:50:41.061797534Z",
+       "symbol": "AAPL-USD",
+       "open_interest": "10548.302"
+      },
+      {
+       "time": "2026-10-19T12:50:41.061797534Z",
+       "symbol": "NVDA-USD",
+       "open_interest": "7243.854"
+      },
+      {
+       "time": "2026-10-19T12:50:41.061797534Z",
+       "symbol": "TSLA-USD",
+       "open_interest": "4200.486"
+      },
+      {
+       "time": "2026-10-19T12:51:50.542557989Z",
+       "symbol": "aapl-usd",
+       "open_interest": "0"
+      }
+     ],
+     "funding_rates": [
+      {
+       "time": "2026-10-19T12:50:53.351649374Z",
+       "symbol": "AAPL-USD",
+       "funding_rate": "0.00000",
+       "annualised_funding_rate": "0.0138",
+       "time_remaining": 547
+      },
+      {
+       "time": "2026-10-19T12:50:35.844013600Z",
+       "symbol": "NVDA-USD",
+       "funding_rate": "0.00000",
+       "annualised_funding_rate": "0.0251",
+       "time_remaining": 564
+      },
+      {
+       "time": "2026-10-19T12:50:59.849223958Z",
+       "symbol": "TSLA-USD",
+       "funding_rate": "0.00001",
+       "annualised_funding_rate": "0.0358",
+       "time_remaining": 540
+      }
+     ],
+     "daily_volumes": [
+      {
+       "symbol": "AAPL-USD",
+       "volume": "4840.113"
+      },
+      {
+       "symbol": "NVDA-USD",
+       "volume": "17973.651"
+      },
+      {
+       "symbol": "TSLA-USD",
+       "volume": "6188.672"
+      }
+     ],
+     "daily_volumes_notional": [
+      {
+       "symbol": "AAPL-USD",
+       "volume": "1665183.61534"
+      },
+      {
+       "symbol": "NVDA-USD",
+       "volume": "3895884.25108"
+      },
+      {
+       "symbol": "TSLA-USD",
+       "volume": "2207593.38628"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "cell": "prices",
+   "url": "wss://mds.qfex.com",
+   "sent": [
+    "{\"type\":\"subscribe\",\"channels\":[\"market_stats\"],\"symbols\":[\"*\"]}"
+   ],
+   "frames": [
+    {
+     "type": "subscribed",
+     "channels": [
+      "market_stats"
+     ],
+     "symbols": [
+      "*"
+     ]
+    },
+    {
+     "sequence": 1,
+     "type": "market_stats",
+     "time": "2026-10-19T12:52:28.694185921Z",
+     "symbol": "*",
+     "bbos": [
+      {
+       "time": "2026-10-19T12:52:28.334998002Z",
+       "symbol": "AAPL-USD",
+       "bid": [
+        [
+         "341.95",
+         "1.169"
+        ]
+       ],
+       "ask": [
+        [
+         "342.02",
+         "0.585"
+        ]
+       ]
+      },
+      {
+       "time": "2026-10-19T12:52:28.336226400Z",
+       "symbol": "NVDA-USD",
+       "bid": [
+        [
+         "218.23",
+         "3.666"
+        ]
+       ],
+       "ask": [
+        [
+         "218.25",
+         "459.411"
+        ]
+       ]
+      },
+      {
+       "time": "2026-10-19T12:52:28.337185288Z",
+       "symbol": "TSLA-USD",
+       "bid": [
+        [
+         "355.55",
+         "2.25"
+        ]
+       ],
+       "ask": [
+        [
+         "355.59",
+         "2.528"
+        ]
+       ]
+      }
+     ],
+     "mark_prices": [
+      {
+       "time": "2026-10-19T12:52:28.629050201Z",
+       "symbol": "AAPL-USD",
+       "price": "341.95"
+      },
+      {
+       "time": "2026-10-19T12:52:28.629050201Z",
+       "symbol": "NVDA-USD",
+       "price": "218.24"
+      },
+      {
+       "time": "2026-10-19T12:52:28.629050201Z",
+       "symbol": "TSLA-USD",
+       "price": "355.53"
+      }
+     ],
+     "open_interests": [
+      {
+       "time": "2026-10-19T12:50:41.061797534Z",
+       "symbol": "AAPL-USD",
+       "open_interest": "10548.302"
+      },
+      {
+       "time": "2026-10-19T12:50:41.061797534Z",
+       "symbol": "NVDA-USD",
+       "open_interest": "7243.854"
+      },
+      {
+       "time": "2026-10-19T12:50:41.061797534Z",
+       "symbol": "TSLA-USD",
+       "open_interest": "4200.486"
+      },
+      {
+       "time": "2026-10-19T12:51:50.542557989Z",
+       "symbol": "aapl-usd",
+       "open_interest": "0"
+      }
+     ],
+     "funding_rates": [
+      {
+       "time": "2026-10-19T12:50:53.351649374Z",
+       "symbol": "AAPL-USD",
+       "funding_rate": "0.00000",
+       "annualised_funding_rate": "0.0138",
+       "time_remaining": 547
+      },
+      {
+       "time": "2026-10-19T12:50:35.844013600Z",
+       "symbol": "NVDA-USD",
+       "funding_rate": "0.00000",
+       "annualised_funding_rate": "0.0251",
+       "time_remaining": 564
+      },
+      {
+       "time": "2026-10-19T12:50:59.849223958Z",
+       "symbol": "TSLA-USD",
+       "funding_rate": "0.00001",
+       "annualised_funding_rate": "0.0358",
+       "time_remaining": 540
+      }
+     ],
+     "daily_volumes": [
+      {
+       "symbol": "AAPL-USD",
+       "volume": "4840.113"
+      },
+      {
+       "symbol": "NVDA-USD",
+       "volume": "17973.651"
+      },
+      {
+       "symbol": "TSLA-USD",
+       "volume": "6188.672"
+      }
+     ],
+     "daily_volumes_notional": [
+      {
+       "symbol": "AAPL-USD",
+       "volume": "1665183.61534"
+      },
+      {
+       "symbol": "NVDA-USD",
+       "volume": "3895884.25108"
+      },
+      {
+       "symbol": "TSLA-USD",
+       "volume": "2207593.38628"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "cell": "info",
+   "url": "wss://mds.qfex.com",
+   "sent": [
+    "{\"type\":\"subscribe\",\"channels\":[\"market_stats\"],\"symbols\":[\"NVDA-USD\"]}"
+   ],
+   "frames": [
+    {
+     "sequence": 1,
+     "type": "market_stats",
+     "time": "2026-10-19T12:52:29.240714688Z",
+     "symbol": "NVDA-USD",
+     "bbos": [
+      {
+       "time": "2026-10-19T12:52:28.836922659Z",
+       "symbol": "NVDA-USD",
+       "bid": [
+        [
+         "3.666"
+        ]
+       ],
+       "ask": [
+        [
+         "459.411"
+        ]
+       ]
+      }
+     ],
+     "mark_prices": [
+      {
+       "time": "2026-10-19T12:52:28.629050201Z",
+       "symbol": "NVDA-USD",
+       "price": "218.24"
+      }
+     ],
+     "open_interests": [
+      {
+       "time": "2026-10-19T12:50:41.061797534Z",
+       "symbol": "NVDA-USD",
+       "open_interest": "7243.854"
+      }
+     ],
+     "funding_rates": [
+      {
+       "time": "2026-10-19T12:50:35.844013600Z",
+       "symbol": "NVDA-USD",
+       "funding_rate": "0.00000",
+       "annualised_funding_rate": "0.0251",
+       "time_remaining": 564
+      }
+     ],
+     "daily_volumes": [
+      {
+       "symbol": "NVDA-USD",
+       "volume": "17973.651"
+      }
+     ],
+     "daily_volumes_notional": [
+      {
+       "symbol": "NVDA-USD",
+       "volume": "3895884.25108"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "bodies": {
+  "83b84984bd5ff62d": {
+   "$schema": "https://api.qfex.com/schemas/RefdataResponse.json",
+   "type": "refdata",
+   "data": [
+    {
+     "clobPairId": "3",
+     "symbol": "NVDA-USD",
+     "underlier_price": "",
+     "price_change_24h": "",
+     "default_max_leverage": 10,
+     "tick_size": "0.01",
+     "lot_size": "0.001",
+     "min_price": "201.802625",
+     "max_price": "234.527375",
+     "min_quantity": "0.1",
+     "max_quantity": "10000000",
+     "base_asset": "NVDA",
+     "quote_asset": "USD",
+     "margin_asset": "USDC",
+     "order_time_in_force": [
+      "GTC",
+      "IOC",
+      "FOK"
+     ],
+     "order_types": [
+      "LIMIT",
+      "MARKET",
+      "ALO"
+     ],
+     "market_hours": {
+      "friday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       },
+       {
+        "session": "weekend",
+        "open": "20:00:00",
+        "close": "23:59:59"
+       }
+      ],
+      "monday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       }
+      ],
+      "saturday": [
+       {
+        "session": "weekend",
+        "open": "00:00:00",
+        "close": "23:59:59"
+       }
+      ],
+      "sunday": [
+       {
+        "session": "weekend",
+        "open": "00:00:00",
+        "close": "19:59:59"
+       }
+      ],
+      "thursday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       }
+      ],
+      "tuesday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       }
+      ],
+      "tz": "America/New_York",
+      "wednesday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       }
+      ]
+     },
+     "status": "ACTIVE",
+     "product_category": "EQUITY"
+    },
+    {
+     "clobPairId": "6",
+     "symbol": "TSLA-USD",
+     "underlier_price": "",
+     "price_change_24h": "",
+     "default_max_leverage": 10,
+     "tick_size": "0.01",
+     "lot_size": "0.001",
+     "min_price": "328.93",
+     "max_price": "382.27",
+     "min_quantity": "0.1",
+     "max_quantity": "10000000",
+     "base_asset": "TSLA",
+     "quote_asset": "USD",
+     "margin_asset": "USDC",
+     "order_time_in_force": [
+      "GTC",
+      "IOC",
+      "FOK"
+     ],
+     "order_types": [
+      "LIMIT",
+      "MARKET",
+      "ALO"
+     ],
+     "market_hours": {
+      "friday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       },
+       {
+        "session": "weekend",
+        "open": "20:00:00",
+        "close": "23:59:59"
+       }
+      ],
+      "monday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       }
+      ],
+      "saturday": [
+       {
+        "session": "weekend",
+        "open": "00:00:00",
+        "close": "23:59:59"
+       }
+      ],
+      "sunday": [
+       {
+        "session": "weekend",
+        "open": "00:00:00",
+        "close": "19:59:59"
+       }
+      ],
+      "thursday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       }
+      ],
+      "tuesday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       }
+      ],
+      "tz": "America/New_York",
+      "wednesday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       }
+      ]
+     },
+     "status": "ACTIVE",
+     "product_category": "EQUITY"
+    },
+    {
+     "clobPairId": "21",
+     "symbol": "AAPL-USD",
+     "underlier_price": "",
+     "price_change_24h": "",
+     "default_max_leverage": 10,
+     "tick_size": "0.01",
+     "lot_size": "0.001",
+     "min_price": "316.19275",
+     "max_price": "367.46725",
+     "min_quantity": "0.01",
+     "max_quantity": "10000000",
+     "base_asset": "AAPL",
+     "quote_asset": "USD",
+     "margin_asset": "USDC",
+     "order_time_in_force": [
+      "GTC",
+      "IOC",
+      "FOK"
+     ],
+     "order_types": [
+      "LIMIT",
+      "MARKET",
+      "ALO"
+     ],
+     "market_hours": {
+      "friday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       },
+       {
+        "session": "weekend",
+        "open": "20:00:00",
+        "close": "23:59:59"
+       }
+      ],
+      "monday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       }
+      ],
+      "saturday": [
+       {
+        "session": "weekend",
+        "open": "00:00:00",
+        "close": "23:59:59"
+       }
+      ],
+      "sunday": [
+       {
+        "session": "weekend",
+        "open": "00:00:00",
+        "close": "19:59:59"
+       }
+      ],
+      "thursday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       }
+      ],
+      "tuesday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       }
+      ],
+      "tz": "America/New_York",
+      "wednesday": [
+       {
+        "session": "pre_market",
+        "open": "04:00:00",
+        "close": "09:30:00"
+       },
+       {
+        "session": "open",
+        "open": "09:30:00",
+        "close": "16:00:00"
+       },
+       {
+        "session": "post_market",
+        "open": "16:00:00",
+        "close": "19:59:59"
+       }
+      ]
+     },
+     "status": "ACTIVE",
+     "product_category": "EQUITY"
+    }
+   ]
+  },
+  "00eae57ce3270cc5": {
+   "$schema": "https://api.qfex.com/schemas/ContractsResponseBody.json",
+   "data": [
+    {
+     "ticker_id": "AAPL-USD",
+     "base_currency": "AAPL",
+     "target_currency": "USD",
+     "last_price": "341.95",
+     "base_volume": "4840.112999999999",
+     "target_volume": "1665183.61534",
+     "product_type": "Perpetual",
+     "open_interest": "10548.302",
+     "open_interest_usd": "3605673.33115",
+     "long_open_interest": "5274.151",
+     "long_open_interest_usd": "1802836.665575",
+     "short_open_interest": "5274.151",
+     "short_open_interest_usd": "1802836.665575",
+     "index_price": "341.825",
+     "index_currency": "USD",
+     "funding_rate": "-0.00000038",
+     "funding_interval_minutes": 60,
+     "next_funding_rate": "0.00000221",
+     "next_funding_rate_timestamp": 1792414800
+    },
+    {
+     "ticker_id": "NVDA-USD",
+     "base_currency": "NVDA",
+     "target_currency": "USD",
+     "last_price": "218.24",
+     "base_volume": "17973.651",
+     "target_volume": "3895884.25108",
+     "product_type": "Perpetual",
+     "open_interest": "7243.854",
+     "open_interest_usd": "1579993.21521",
+     "long_open_interest": "3621.927",
+     "long_open_interest_usd": "789996.607605",
+     "short_open_interest": "3621.927",
+     "short_open_interest_usd": "789996.607605",
+     "index_price": "218.115",
+     "index_currency": "USD",
+     "funding_rate": "0.00000221",
+     "funding_interval_minutes": 60,
+     "next_funding_rate": "0.00000401",
+     "next_funding_rate_timestamp": 1792414799
+    },
+    {
+     "ticker_id": "TSLA-USD",
+     "base_currency": "TSLA",
+     "target_currency": "USD",
+     "last_price": "355.57",
+     "base_volume": "6188.672",
+     "target_volume": "2207593.3862799997",
+     "product_type": "Perpetual",
+     "open_interest": "4199.874",
+     "open_interest_usd": "1492341.2284199998",
+     "long_open_interest": "2099.937",
+     "long_open_interest_usd": "746170.6142099999",
+     "short_open_interest": "2099.937",
+     "short_open_interest_usd": "746170.6142099999",
+     "index_price": "355.33",
+     "index_currency": "USD",
+     "funding_rate": "0.00000615",
+     "funding_interval_minutes": 60,
+     "next_funding_rate": "0.00000572",
+     "next_funding_rate_timestamp": 1792414799
+    }
+   ]
+  }
+ }
+}

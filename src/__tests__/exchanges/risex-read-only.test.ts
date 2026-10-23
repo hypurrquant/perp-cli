@@ -383,7 +383,7 @@ describe("executePlan / runBot refuse a gated venue (dry-run included)", () => {
 describe("funding comparisons label read-only legs (data stays visible)", () => {
   it("pairExecutability", async () => {
     const { pairExecutability } = await import("../../funding/rates.js");
-    expect(pairExecutability("hyperliquid", "risex")).toEqual({ executable: false, readOnlyLegs: ["risex"] });
-    expect(pairExecutability("hyperliquid", "pacifica")).toEqual({ executable: true, readOnlyLegs: [] });
+    expect(pairExecutability("hyperliquid", "risex")).toEqual({ executable: false, readOnlyLegs: ["risex"], unverifiedLegs: [] });
+    expect(pairExecutability("hyperliquid", "pacifica")).toEqual({ executable: true, readOnlyLegs: [], unverifiedLegs: [] });
   });
 });

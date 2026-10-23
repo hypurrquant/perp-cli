@@ -2,21 +2,23 @@
  * Aster public reads (reported from the perp_app port against v0.14.2):
  *  1. exchangeInfo has no maxLeverage → null (was a hard-coded 50 on every market).
  *  2. A symbol missing from premiumIndex is not listed (was listed at last price / "0").
- *  3. USD1 / U quoted perps are not listed (the CLI symbol mapping only addresses USDT).
+ *  3. USD1 / U quoted perps are listed by venue symbol (BTCUSD1), with quoteAsset / venueSymbol — the WS set.
  *  4. klines are paged in 1500-bar requests (was cut to the first 500 bars).
  */
 import { describe, it, expect, vi } from "vitest";
+import { seedAsterDirectory } from "./aster-directory.js";
 
 const SYMBOLS = [
-  { symbol: "BTCUSDT", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USDT", quantityPrecision: 3, filters: [{ filterType: "LOT_SIZE", stepSize: "0.001" }] },
-  { symbol: "ETHUSDT", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USDT", quantityPrecision: 3, filters: [] },
-  { symbol: "BTCUSD1", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USD1", quantityPrecision: 3, filters: [] },
-  { symbol: "ETHU", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "U", quantityPrecision: 3, filters: [] },
+  { symbol: "BTCUSDT", baseAsset: "BTC", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USDT", quantityPrecision: 3, filters: [{ filterType: "LOT_SIZE", stepSize: "0.001" }] },
+  { symbol: "ETHUSDT", baseAsset: "ETH", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USDT", quantityPrecision: 3, filters: [] },
+  { symbol: "BTCUSD1", baseAsset: "BTC", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USD1", quantityPrecision: 3, filters: [] },
+  { symbol: "ETHU", baseAsset: "ETH", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "U", quantityPrecision: 3, filters: [] },
 ];
 
-async function adapter(publicGet: (path: string, params?: Record<string, string>) => unknown) {
+async function adapter(publicGet: (path: string, params?: Record<string, string>) => unknown, opts: { cold?: boolean } = {}) {
   const { AsterAdapter } = await import("../../exchanges/aster.js");
   const a = new AsterAdapter(undefined, false);
+  if (opts.cold !== true) seedAsterDirectory(a);
   const t = a as unknown as Record<string, unknown>;
   t._publicGet = vi.fn(async (path: string, params?: Record<string, string>) => publicGet(path, params));
   t._loadFundingInfo = vi.fn(async () => undefined);
@@ -31,11 +33,83 @@ const marketsRoute = (premiums: unknown) => (path: string) => {
 };
 
 describe("AsterAdapter.getMarkets", () => {
-  it("USDT perps only, mark from premiumIndex, maxLeverage null; a symbol without a mark is not listed at 0", async () => {
-    const a = await adapter(marketsRoute([{ symbol: "BTCUSDT", markPrice: "83010", lastFundingRate: "0.0001" }, { symbol: "BTCUSD1", markPrice: "83000" }]));
+  it("every quote listed (USDT by base, USD1 / U by venue symbol), mark from premiumIndex, maxLeverage null; a symbol without a mark is not listed at 0", async () => {
+    const a = await adapter(marketsRoute([{ symbol: "BTCUSDT", markPrice: "83010", lastFundingRate: "0.0001" }, { symbol: "BTCUSD1", markPrice: "83000" }, { symbol: "ETHU", markPrice: "2500" }]));
     const m = await a.getMarkets();
-    expect(m.map((x) => x.symbol)).toEqual(["BTC"]); // ETHUSDT has no premiumIndex row; USD1 / U not listed
-    expect(m[0]).toMatchObject({ markPrice: "83010", maxLeverage: null, fundingRate: "0.0001" });
+    expect(m.map((x) => x.symbol)).toEqual(["BTC", "BTCUSD1", "ETHU"]); // ETHUSDT has no premiumIndex row
+    expect(m[0]).toMatchObject({ markPrice: "83010", maxLeverage: null, fundingRate: "0.0001", venueSymbol: "BTCUSDT", quoteAsset: "USDT" });
+    expect(m[1]).toMatchObject({ venueSymbol: "BTCUSD1", quoteAsset: "USD1" });
+    expect(m[2]).toMatchObject({ venueSymbol: "ETHU", quoteAsset: "U" });
+  });
+
+  it("cold adapter: every symbol resolves through the directory — exact venue symbol, then <base>USDT, else SYMBOL_NOT_FOUND", async () => {
+    const DIR = [
+      ...SYMBOLS,
+      { symbol: "BTCU", baseAsset: "BTC", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "U", filters: [] },
+      { symbol: "USD1USDT", baseAsset: "USD1", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USDT", filters: [] },
+    ];
+    const calls: Array<[string, Record<string, string> | undefined]> = [];
+    const a = await adapter((path, p) => {
+      calls.push([path, p]);
+      if (path === "/fapi/v3/exchangeInfo") return { symbols: DIR };
+      if (path === "/fapi/v3/depth") return { bids: [["1", "1"]], asks: [["2", "1"]] };
+      if (path === "/fapi/v3/fundingRate") return [{ symbol: p?.symbol, fundingRate: "0.0001", fundingTime: 1_792_000_000_000 }];
+      throw new Error(`unexpected ${path}`);
+    }, { cold: true });
+    const sent: string[] = [];
+    for (const sym of ["USD1", "BTCU", "ETHU", "BTCUSD1", "BTC"]) {
+      await a.getOrderbook(sym);
+      sent.push(String(calls.at(-1)?.[1]?.symbol));
+    }
+    expect(sent).toEqual(["USD1USDT", "BTCU", "ETHU", "BTCUSD1", "BTCUSDT"]);
+    expect(calls.filter(c => c[0] === "/fapi/v3/exchangeInfo")).toHaveLength(1); // loaded once, cached
+    // funding of a listed market reads it; of an unlisted one refuses (never ok with [])
+    expect((await a.getFundingHistory("USD1", 1))).toHaveLength(1);
+    expect(calls.at(-1)?.[1]?.symbol).toBe("USD1USDT");
+    await expect(a.getFundingHistory("NOPE", 1)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "SYMBOL_NOT_FOUND" }) });
+    await expect(a.getRecentTrades("NOPEU")).rejects.toMatchObject({ structured: expect.objectContaining({ code: "SYMBOL_NOT_FOUND" }) });
+  });
+
+  it("the directory load: concurrent first uses share ONE exchangeInfo request; a failed load is retried, not cached", async () => {
+    let calls = 0;
+    let fail = true;
+    const a = await adapter((path) => {
+      if (path === "/fapi/v3/exchangeInfo") {
+        calls++;
+        if (fail) { fail = false; throw new Error("boom"); }
+        return { symbols: SYMBOLS };
+      }
+      if (path === "/fapi/v3/depth") return { bids: [], asks: [] };
+      throw new Error(`unexpected ${path}`);
+    }, { cold: true });
+    await expect(a.getOrderbook("BTC")).rejects.toThrow(/boom/);
+    await Promise.all([a.getOrderbook("BTC"), a.getOrderbook("ETH"), a.getOrderbook("BTCUSD1")]);
+    expect(calls).toBe(2); // the failed load + ONE shared retry
+  });
+
+  it("a bare base names its USDT market even when a non-USDT venue symbol has the same spelling", async () => {
+    const DIR = [
+      { symbol: "XUSDT", baseAsset: "X", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "USDT", filters: [] },
+      { symbol: "X", baseAsset: "X", contractType: "PERPETUAL", status: "TRADING", quoteAsset: "U", filters: [] },
+    ];
+    const sent: string[] = [];
+    const a = await adapter((path, p) => {
+      if (path === "/fapi/v3/exchangeInfo") return { symbols: DIR };
+      sent.push(String(p?.symbol));
+      return { bids: [], asks: [] };
+    }, { cold: true });
+    await a.getOrderbook("X");
+    await a.getOrderbook("XUSDT");
+    expect(sent).toEqual(["XUSDT", "XUSDT"]);
+  });
+
+  it("a non-2xx public read is a structured PerpError (never UNKNOWN)", async () => {
+    const { AsterAdapter } = await import("../../exchanges/aster.js");
+    const a = new AsterAdapter(undefined, false);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>bad gateway</html>", { status: 502 })));
+    try {
+      await expect(a.getOrderbook("BTC")).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_UNREACHABLE" }) });
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it("an unreadable premiumIndex throws (never a last-trade / zero stand-in)", async () => {
@@ -83,7 +157,11 @@ describe("Aster getFundingHistory — no fabricated rows (reported from the Hypu
     await expect((await adapter(() => null)).getFundingHistory("BTC", 5)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
     await expect((await adapter(() => [{ fundingRate: "0.0001" }])).getFundingHistory("BTC", 5)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
     expect(await (await adapter(() => [{ fundingTime: 1700000000000, fundingRate: "0.0001", markPrice: "83000" }])).getFundingHistory("BTC", 5))
-      .toEqual([{ time: 1700000000000, rate: "0.0001", price: "83000" }]);
+      .toEqual([{ time: 1700000000000, rate: "0.0001", price: "83000", intervalHours: null, rateKind: "lastSettled" }]);
+    // The market's interval from /fapi/v3/fundingInfo labels each row.
+    const a = await adapter(() => [{ fundingTime: 1700000000000, fundingRate: "0.0001", markPrice: "83000" }]);
+    (a as unknown as { _fundingHoursCache: Map<string, number> })._fundingHoursCache.set("BTC", 4);
+    expect((await a.getFundingHistory("BTC", 5))[0]).toMatchObject({ intervalHours: 4, rateKind: "lastSettled" });
   });
 });
 
@@ -158,5 +236,32 @@ describe("maxLeverageForNotional — tiers without a headline", () => {
     const m = { maxLeverage: null, marginTiers: [{ lowerBound: 0, maxLeverage: 20 }, { lowerBound: 1e6, maxLeverage: 10 }] } as never;
     expect(maxLeverageForNotional(m, 100)).toBe(20);
     expect(maxLeverageForNotional(m, 2e6)).toBe(10);
+  });
+});
+
+describe("Aster T5 (audit 0.15.0)", () => {
+  it("a validation error inside HTTP 200 (fundingRate limit=1001, live body) → INVALID_PARAMS, not 'not a list'", async () => {
+    const { AsterAdapter } = await import("../../exchanges/aster.js");
+    const a = new AsterAdapter(undefined, false);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "ERROR", type: "VALID", code: "000002", errorData: { limit: "limit can not greater than 1000" } }), { status: 200 })));
+    try {
+      await expect(a.getFundingHistory("BTC", 1001)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "INVALID_PARAMS", message: expect.stringContaining("limit can not greater than 1000") }) });
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("trades echo the normalized symbol (BTC-PERP → BTC); the live tape row has no symbol", async () => {
+    const a = await adapter(() => [{ id: 148953155, price: "82301.7", qty: "0.641", quoteQty: "52755.3", time: 1792407851150, isBuyerMaker: false }]);
+    expect((await a.getRecentTrades("BTC-PERP", 1))[0]).toEqual({ time: 1792407851150, symbol: "BTC", side: "buy", price: "82301.7", size: "0.641", fee: null });
+  });
+});
+
+describe("Aster kline intervals (conformance U4)", () => {
+  it("an interval outside the live-verified set is INVALID_PARAMS before any request", async () => {
+    const get = vi.fn(() => []);
+    const a = await adapter(get);
+    await expect(a.getKlines("BTC", "7m", 0, 60_000)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "INVALID_PARAMS", remediation: expect.stringContaining("1m, 3m, 5m") }) });
+    expect(get).not.toHaveBeenCalled();
+    await a.getKlines("BTC", "1M", 0, 60_000);
+    expect(get).toHaveBeenCalled();
   });
 });

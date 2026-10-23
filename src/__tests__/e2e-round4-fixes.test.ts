@@ -141,7 +141,7 @@ describe("Lighter getOrderbook surfaces failures (round-4 #3)", () => {
     // GET https://api.rh-testnet.lighter.xyz/api/v1/orderBookOrders?market_id=112&limit=50 (2026-10-02)
     const a = await lighterRh(async () => ({ code: 200, total_asks: 0, asks: [], total_bids: 0, bids: [] }));
     await expect(a.getOrderbook("TSLA")).resolves.toEqual({ bids: [], asks: [] });
-    expect((a as unknown as { restGet: ReturnType<typeof vi.fn> }).restGet).toHaveBeenCalledWith("/orderBookOrders", { market_id: "112", limit: "50" });
+    expect((a as unknown as { restGet: ReturnType<typeof vi.fn> }).restGet).toHaveBeenCalledWith("/orderBookOrders", { market_id: "112", limit: "250" });
   });
 
   it("levels map price / remaining_base_amount", async () => {

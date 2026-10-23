@@ -398,6 +398,7 @@ describe("Pacifica market order / amend — post-send unknowns", () => {
     a.client = {
       createMarketOrder: vi.fn().mockResolvedValue({ success: true, data: { order_id: 42 } }),
       getOrderHistoryById: vi.fn().mockResolvedValue({ data: [{ order_id: 42, order_status: "cancelled", created_at: 1 }] }),
+      getInfo: async () => ["BTC", "ETH", "SOL"].map((symbol) => ({ symbol, instrument_type: "perpetual" })),
     };
     const p = a.marketOrder("BTC", "buy", "0.01", { reduceOnly: false, slippage: { bps: 50, source: "default" } }).catch((e: unknown) => e);
     await vi.advanceTimersByTimeAsync(600);

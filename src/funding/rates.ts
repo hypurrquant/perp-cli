@@ -15,10 +15,12 @@ import { annualizeHourlyRate, estimateHourlyFundingFromHourly } from "./normaliz
 import { getHistoricalAverages, type HistoricalAverages } from "./history.js";
 import { SPOT_PERP_TOKEN_MAP, MAX_PRICE_DEVIATION_PCT } from "../exchanges/index.js";
 import { getVenue, listVenuesWithRole, READ_ONLY_CREDENTIALS, type VenueDefinition } from "../exchanges/venue.js";
-import { rateToHourly, type FundingRateBasis, type Network, type VenueFundingRate, type VenueId } from "../exchanges/venue-types.js";
+import type { FundingRateKind } from "../exchanges/interface.js";
+import { fundingRateKindOf, rateToHourly, type FundingRateBasis, type Network, type VenueFundingRate, type VenueId } from "../exchanges/venue-types.js";
 import { ensureVenuesRegistered } from "../exchanges/venues/index.js";
 import { sharedApiNetwork } from "../api/public/urls.js";
 import { PerpError } from "../errors.js";
+import { canonicalQuerySymbol } from "../exchanges/canonical-symbols.js";
 
 // ── Types ──
 
@@ -39,29 +41,63 @@ export interface ExchangeFundingRate {
   fundingVerified: boolean;
   /** How the row was read: "unofficial" = an undocumented venue API (VenueDefinition.apiStatus) — may change without notice. */
   apiStatus: "official" | "unofficial";
+  /**
+   * Which rate `fundingRate` is (the venue market row's rate — arb compares those, never a
+   * predicted next-period rate unless the venue only publishes that): "lastSettled" | "accruing" |
+   * "predicted", null = not verified (fundingRateKindOf).
+   */
+  rateKind: FundingRateKind | null;
 }
 
 export interface SymbolFundingComparison {
   /** Canonical symbol shared by every row. */
   symbol: string;
   rates: ExchangeFundingRate[];
-  maxSpreadAnnual: number;      // annualized spread between extremes
-  longExchange: string;         // go long where funding is lowest (you get paid)
-  shortExchange: string;        // go short where funding is highest (you get paid)
-  bestMarkPrice: number;        // mark price of the most liquid venue present (MARK_PRICE_PREFERENCE)
-  estHourlyIncomeUsd: number;   // estimated hourly income for $1000 notional
+  /**
+   * Ranking is over VERIFIED rows only (VenueDefinition.fundingVerified): an unverified row
+   * (`--include-unverified`) is shown in `rates` but is never the long or short leg nor part of
+   * the spread. Fewer than two verified rows → no ranked pair: longExchange / shortExchange /
+   * maxSpreadAnnual / estHourlyIncomeUsd are null (a display-only row).
+   */
+  maxSpreadAnnual: number | null;      // annualized spread between the verified extremes
+  longExchange: string | null;         // go long where verified funding is lowest (you get paid)
+  shortExchange: string | null;        // go short where verified funding is highest (you get paid)
+  bestMarkPrice: number;               // mark price of the most liquid venue present (MARK_PRICE_PREFERENCE)
+  estHourlyIncomeUsd: number | null;   // estimated hourly income for $1000 notional
   /**
    * false = a leg of the long/short pair sits on a venue without the trading role (RISEx while its
    * trading is gated in this release): the spread is data only — `arb exec` refuses it.
    */
   executable: boolean;
+  /**
+   * true = the row's rates are of different kinds (e.g. Lighter lastSettled vs Hyperliquid
+   * accruing) — the perp-ws comparator's `mixedKinds`: the spread compares unlike quantities.
+   */
+  mixedKinds: boolean;
   /** Venues of the long/short pair that perp-cli cannot trade (read-only); [] when executable. */
   readOnlyLegs: string[];
+  /**
+   * Venues of the long/short pair whose funding is unverified (VenueDefinition.fundingVerified
+   * false, e.g. QFEX — shown only with --include-unverified, display only); such a pair is never
+   * executable. [] when both legs are verified.
+   */
+  unverifiedLegs: string[];
+}
+
+/** A comparison with a ranked pair (≥ 2 verified rows): long / short / spread / income are set. */
+export type RankedFundingComparison = SymbolFundingComparison & { maxSpreadAnnual: number; longExchange: string; shortExchange: string; estHourlyIncomeUsd: number };
+
+export function isRankedComparison(c: SymbolFundingComparison): c is RankedFundingComparison {
+  // estHourlyIncomeUsd is set together with the pair (null exactly when the pair is).
+  return c.longExchange !== null && c.shortExchange !== null && c.maxSpreadAnnual !== null;
 }
 
 export interface FundingRateSnapshot {
   timestamp: string;
   symbols: SymbolFundingComparison[];
+  /** The minSpread applied (annualized %) and how many ranked pairs it hid (spread below it). */
+  minSpread: number;
+  belowMinSpread: number;
   exchangeStatus: Record<string, "ok" | "error">;
   /** Error message per venue whose status is "error". */
   exchangeErrors: Record<string, string>;
@@ -108,10 +144,13 @@ async function fetchVenueRates(def: VenueDefinition, net: Network): Promise<Exch
   const unpriced: string[] = [];
   for (const r of rows) {
     if (r.canonical === null) continue; // not matchable across venues
+    // Outside its funding hours (QFEX market_hours) a market has no rate: never ranked, snapshotted
+    // (saveFundingSnapshot) or averaged as a 0.
+    if (r.rate === null || r.marketClosed === true) continue;
     const markRaw = r.markPrice !== null ? r.markPrice : markBySymbol?.get(r.venueSymbol);
     const markPrice = markRaw === undefined ? NaN : Number(markRaw);
     if (!Number.isFinite(markPrice) || markPrice <= 0) { unpriced.push(r.symbol); continue; }
-    out.push(toExchangeRate(r, r.canonical, markPrice, def.fundingVerified, def.apiStatus.kind));
+    out.push(toExchangeRate({ ...r, rate: r.rate }, r.canonical, markPrice, def.fundingVerified, def.apiStatus.kind));
   }
   if (unpriced.length > 0) {
     console.warn(`[${def.id}] excluded ${unpriced.length} funding row(s) without a mark price: ${unpriced.join(", ")}`);
@@ -119,7 +158,7 @@ async function fetchVenueRates(def: VenueDefinition, net: Network): Promise<Exch
   return out;
 }
 
-function toExchangeRate(r: VenueFundingRate, canonical: string, markPrice: number, fundingVerified: boolean, apiStatus: "official" | "unofficial"): ExchangeFundingRate {
+function toExchangeRate(r: VenueFundingRate & { rate: string }, canonical: string, markPrice: number, fundingVerified: boolean, apiStatus: "official" | "unofficial"): ExchangeFundingRate {
   const fundingRate = Number(r.rate);
   if (!Number.isFinite(fundingRate)) {
     throw new PerpError("EXCHANGE_ERROR", `${r.venue} ${r.symbol}: non-numeric funding rate "${r.rate}"`);
@@ -138,6 +177,7 @@ function toExchangeRate(r: VenueFundingRate, canonical: string, markPrice: numbe
     historicalAvg: null,
     fundingVerified,
     apiStatus,
+    rateKind: fundingRateKindOf(r.venue, r.rate),
   };
 }
 
@@ -179,7 +219,7 @@ const _warnedPriceMismatch = new Set<string>();
  * venue whose mark price deviates more than MAX_PRICE_DEVIATION_PCT from the
  * group median, with a one-time stderr warning per (symbol, venue).
  */
-function dropPriceOutliers<T extends { exchange: VenueId; markPrice: number }>(canonical: string, list: T[], tag = "funding"): T[] {
+export function dropPriceOutliers<T extends { exchange: VenueId; markPrice: number }>(canonical: string, list: T[], tag = "funding"): T[] {
   if (list.length < 2) return list;
   const sorted = list.map(r => r.markPrice).sort((x, y) => x - y);
   const mid = sorted.length % 2 === 1
@@ -242,7 +282,7 @@ export interface PriceGroupSnapshot {
 export async function fetchCanonicalPriceGroups(venues: VenueDefinition[], opts?: { symbols?: string[]; network?: Network; tag?: string }): Promise<PriceGroupSnapshot> {
   ensureVenuesRegistered();
   const net = opts?.network ?? sharedApiNetwork();
-  const settled = await Promise.allSettled(venues.map(v => v.publicData.fetchMarkets(net)));
+  const settled = await Promise.allSettled(venues.map(v => v.publicData.fetchMarkets(net, { funding: false })));
   const exchangeStatus: Record<string, "ok" | "error"> = {};
   const exchangeErrors: Record<string, string> = {};
   const prices: VenuePrice[] = [];
@@ -264,10 +304,15 @@ export async function fetchCanonicalPriceGroups(venues: VenueDefinition[], opts?
   return { groups: groupByCanonical(prices, opts?.symbols, opts?.tag ?? "prices"), exchangeStatus, exchangeErrors };
 }
 
-/** Whether perp-cli can trade both legs of a long/short pair (the trading role), and which it cannot. */
-export function pairExecutability(longExchange: string, shortExchange: string): { executable: boolean; readOnlyLegs: string[] } {
-  const readOnlyLegs = [...new Set([longExchange, shortExchange])].filter(v => !getVenue(v).roles.includes("trading"));
-  return { executable: readOnlyLegs.length === 0, readOnlyLegs };
+/**
+ * Whether a long/short pair can be traded as a funding arb: both legs need the trading role AND
+ * verified funding (an unverified-funding venue is display only — never ranked for trading).
+ */
+export function pairExecutability(longExchange: string, shortExchange: string): { executable: boolean; readOnlyLegs: string[]; unverifiedLegs: string[] } {
+  const legs = [...new Set([longExchange, shortExchange])];
+  const readOnlyLegs = legs.filter(v => !getVenue(v).roles.includes("trading"));
+  const unverifiedLegs = legs.filter(v => !getVenue(v).fundingVerified);
+  return { executable: readOnlyLegs.length === 0 && unverifiedLegs.length === 0, readOnlyLegs, unverifiedLegs };
 }
 
 function bestMarkPrice(rates: ExchangeFundingRate[]): number {
@@ -309,6 +354,7 @@ export async function fetchAllFundingRates(opts?: {
 
   const comparisons: SymbolFundingComparison[] = [];
   const minSpread = opts?.minSpread ?? 0;
+  let belowMinSpread = 0;
 
   for (const [symbol, rates] of rateMap) {
     // Need at least 2 exchanges to compare
@@ -316,8 +362,21 @@ export async function fetchAllFundingRates(opts?: {
 
     // Sort by hourly rate (ascending)
     rates.sort((a, b) => a.hourlyRate - b.hourlyRate);
-    const lowest = rates[0];
-    const highest = rates[rates.length - 1];
+    // The long / short legs and the spread come from verified rows only: an unverified rate is
+    // display data (--include-unverified), never ranked. < 2 verified rows → a display-only row.
+    const ranked = rates.filter(r => r.fundingVerified);
+    if (ranked.length < 2) {
+      const unverifiedLegs = [...new Set(rates.filter(r => !r.fundingVerified).map(r => r.exchange))];
+      comparisons.push({
+        symbol, rates, maxSpreadAnnual: null, longExchange: null, shortExchange: null,
+        bestMarkPrice: bestMarkPrice(rates), estHourlyIncomeUsd: null,
+        executable: false, readOnlyLegs: [], unverifiedLegs,
+        mixedKinds: new Set(rates.map(r => r.rateKind)).size > 1,
+      });
+      continue;
+    }
+    const lowest = ranked[0];
+    const highest = ranked[ranked.length - 1];
     // The median filter alone lets a 2-venue group through at up to 2 × MAX_PRICE_DEVIATION_PCT
     // apart (each side deviates half the gap): the CHOSEN pair must itself agree on price.
     const pairGapPct = Math.abs(lowest.markPrice - highest.markPrice) / ((lowest.markPrice + highest.markPrice) / 2) * 100;
@@ -331,7 +390,7 @@ export async function fetchAllFundingRates(opts?: {
     }
 
     const maxSpreadAnnual = annualizeHourlyRate(highest.hourlyRate - lowest.hourlyRate);
-    if (maxSpreadAnnual < minSpread) continue;
+    if (maxSpreadAnnual < minSpread) { belowMinSpread++; continue; }
 
     // Estimate hourly income for $1000 notional arb
     const notional = 1000;
@@ -348,15 +407,18 @@ export async function fetchAllFundingRates(opts?: {
       bestMarkPrice: bestMarkPrice(rates),
       estHourlyIncomeUsd,
       ...pairExecutability(lowest.exchange, highest.exchange),
+      mixedKinds: new Set(rates.map(r => r.rateKind)).size > 1,
     });
   }
 
-  // Sort by spread descending
-  comparisons.sort((a, b) => b.maxSpreadAnnual - a.maxSpreadAnnual);
+  // Sort by spread descending; display-only rows (no ranked pair) last
+  comparisons.sort((a, b) => (b.maxSpreadAnnual ?? -Infinity) - (a.maxSpreadAnnual ?? -Infinity));
 
   return {
     timestamp: new Date().toISOString(),
     symbols: comparisons,
+    minSpread,
+    belowMinSpread,
     exchangeStatus,
     exchangeErrors,
   };
@@ -366,7 +428,9 @@ export async function fetchAllFundingRates(opts?: {
  * Fetch rates for a single (canonical) symbol across all exchanges.
  */
 export async function fetchSymbolFundingRates(symbol: string, includeUnverified = false): Promise<SymbolFundingComparison | null> {
-  const snapshot = await fetchAllFundingRates({ symbols: [symbol.toUpperCase()], includeUnverified });
+  // The comparison groups by canonical key: a venue ticker / denomination alias (kPEPE) is
+  // looked up under its canonical symbol (1000PEPE), never as-is.
+  const snapshot = await fetchAllFundingRates({ symbols: [canonicalQuerySymbol(symbol)], includeUnverified });
   return snapshot.symbols[0] ?? null;
 }
 

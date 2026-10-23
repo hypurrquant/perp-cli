@@ -4,7 +4,7 @@
  */
 /**
  * Every perp-cli venue id. "ondo" and "qfex" are included for type stability but have no perp-cli/ws
- * codec until 0.15.1 (there is no `ondo` / `qfex` export to pass to createVenueStream yet).
+ * codec (planned, not yet available: there is no `ondo` / `qfex` export to pass to createVenueStream).
  */
 type VenueId = "pacifica" | "hyperliquid" | "lighter" | "aster" | "lighter-rh" | "ondo" | "arcus" | "qfex";
 declare const VENUE_IDS: readonly VenueId[];
@@ -74,6 +74,10 @@ declare class WsError extends Error {
         remediation?: string;
         details?: Record<string, unknown>;
     });
+    /** `structured.code` — the same place as `code` on error events (`e.code`). */
+    get code(): WsErrorCode;
+    /** `structured.remediation` — the same place as `remediation` on error events; null when none. */
+    get remediation(): string | null;
 }
 /** Structural check: a PerpError (CLI) or a WsError — anything carrying `structured.{code,message}`. */
 declare function isPerpError(e: unknown): e is {
@@ -109,6 +113,11 @@ interface WsLike {
         wasClean?: boolean;
     }) => void) | null;
     onerror: ((ev: unknown) => void) | null;
+    /**
+     * Optional: settles once the underlying socket is fully closed (no timer or socket left). The
+     * Node transport sets it; `stream.close()` awaits it (bounded) so the process is idle afterwards.
+     */
+    readonly whenClosed?: Promise<void>;
 }
 type WsFactory = (url: string) => WsLike;
 type FetchLike = (input: string, init?: {
@@ -384,7 +393,7 @@ type UserRef = {
     venue: "lighter" | "lighter-rh";
     accountIndex: number;
 }
-/** KNOWN GAP in 0.15.0: Aster user channels are not implemented (CAPABILITY_UNSUPPORTED); 0.15.1. */
+/** KNOWN GAP: Aster user channels are not implemented (CAPABILITY_UNSUPPORTED; planned, not yet available). */
  | {
     venue: "aster";
     user: `0x${string}`;
@@ -527,7 +536,7 @@ interface VenueStreamOptions {
     canonicalize?: Canonicalize;
     /** Needed for kind:"user". */
     credentials?: CredentialProvider;
-    /** Default false. Required for user channels whose auth needs a signing secret in the page (Aster/Ondo/QFEX, 0.15.1). */
+    /** Default false. Required for user channels whose auth needs a signing secret in the page (Aster / Ondo / QFEX — planned, not yet available). */
     allowInPageSecrets?: boolean;
     /** ≤ venue limits. */
     budget?: {
@@ -807,8 +816,8 @@ declare function createVenueStream(codec: VenueCodec, opts?: VenueStreamOptions)
  */
 declare const USD_LIKE_QUOTES: ReadonlySet<string>;
 /**
- * HIP-3 (dex set) → "<dex>:<BASE>". A USD-like quote → "<BASE>". Any other quote, or an unknown
- * quote (null), → null (not comparable by default).
+ * HIP-3 (dex set) → "<dex>:<BASE>". An ambiguous ticker (isUnclassifiedTicker) → null. A USD-like
+ * quote → "<BASE>". Any other quote, or an unknown quote (null), → null (not comparable by default).
  */
 declare const defaultCanonicalize: Canonicalize;
 
@@ -871,9 +880,17 @@ interface FundingComparator {
     subscribe(cb: (rows: FundingRow[], changed: string[]) => void): () => void;
     close(): void;
 }
-/** @experimental 0.15.x (stable from 0.16.0 after consumer sign-off) */
+/**
+ * Rate per hour as a FRACTION (0.0000125 = 0.00125 %/h): `rate / rateIntervalHours`.
+ * @experimental 0.15.x (stable from 0.16.0 after consumer sign-off)
+ */
 declare function toHourly(rate: Dec | null, rateIntervalHours: number | null): number | null;
-/** @experimental 0.15.x (stable from 0.16.0 after consumer sign-off) */
+/**
+ * Simple annualized rate as a FRACTION, not a percent: `toHourly × 24 × 365` (0.0000125/h → 0.1095,
+ * i.e. 10.95 %). The CLI's `annualizedPct` (`arb scan --rates`, MCP `get_funding_rates`) is the same
+ * quantity in PERCENT (10.95): multiply `toApr` by 100 to compare the two.
+ * @experimental 0.15.x (stable from 0.16.0 after consumer sign-off)
+ */
 declare function toApr(rate: Dec | null, rateIntervalHours: number | null): number | null;
 /** @experimental 0.15.x (stable from 0.16.0 after consumer sign-off) */
 declare function createFundingComparator(opts: FundingComparatorOptions): FundingComparator;
@@ -916,7 +933,11 @@ declare const pacifica: VenueCodec;
  *
  * Units (Phase 0, the key correction): WS `funding_rate` (last settled) and `current_funding_rate`
  * (predicted) are PERCENT per 1 h → converted to a fraction by an exact 2-place decimal shift,
- * rateIntervalHours = settlementIntervalHours = 1. `open_interest` is USD notional (not base).
+ * rateIntervalHours = settlementIntervalHours = 1. `open_interest` is USD notional (not base) and
+ * one side — INFERRED, not documented by the venue: WS open_interest / mark = REST orderBookDetails
+ * `open_interest` (base) (2026-10-19, BTC: 174.88 M USD / 82,387 = 2,122.7 BTC), and the venue's
+ * exchangeMetrics open_interest — a DAILY snapshot, two days old when compared — was ≈ 2× the
+ * current one-side figure (336.6 M USD).
  * Errors arrive as {error:{code,message}} with no channel field (matched by the channel name in
  * the message). Spot markets (market_type "spot" in /api/v1/orderBooks) are not perps and skipped.
  *
@@ -928,7 +949,7 @@ declare const lighter: VenueCodec;
 declare const lighterRh: VenueCodec;
 
 /**
- * Aster codec (§6.1, public only in 0.15.0). One combined-stream socket (`/stream`, frames
+ * Aster codec (§6.1, public channels only). One combined-stream socket (`/stream`, frames
  * {stream, data}) with `!markPrice@arr@1s` (every symbol, 1 s) + `!ticker@arr` (only changed symbols).
  * r = accruing current-period rate (Phase 0: == premiumIndex.lastFundingRate ≠ last settled).
  * The funding interval is per market from the LABELLED REST source `rest:/fapi/v3/fundingInfo`

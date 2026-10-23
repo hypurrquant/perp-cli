@@ -20,8 +20,8 @@ describe("getFundingHours", () => {
     expect(getFundingHours("pacifica")).toBe(1);
   });
 
-  it("returns 8 for lighter", () => {
-    expect(getFundingHours("lighter")).toBe(8);
+  it("returns 1 for lighter (the settled hourly rate of the market rows, since 0.15.1)", () => {
+    expect(getFundingHours("lighter")).toBe(1);
   });
 
   // CHANGELOG (Unreleased): "Funding normalization throws UNKNOWN_VENUE for unknown venue refs
@@ -34,7 +34,7 @@ describe("getFundingHours", () => {
   it("is case-insensitive", () => {
     expect(getFundingHours("Hyperliquid")).toBe(1);
     expect(getFundingHours("PACIFICA")).toBe(1);
-    expect(getFundingHours("Lighter")).toBe(8);
+    expect(getFundingHours("Lighter")).toBe(1);
   });
 });
 
@@ -133,12 +133,10 @@ describe("computeAnnualSpread", () => {
     expect(spread1).toBeGreaterThan(0);
   });
 
-  it("computes spread between pacifica (1h) and lighter (8h)", () => {
-    // pacifica raw 0.000125 → hourly = 0.000125
-    // lighter raw 0.0000625 → hourly = 0.0000625/8 = 0.0000078125
-    // diff: |0.000125 - 0.0000078125| = 0.0001171875/h * 8760 * 100 = 102.66%
+  it("computes spread between pacifica (1h) and lighter (1h)", () => {
+    // |0.000125 - 0.0000625| = 0.0000625/h * 8760 * 100 = 54.75%
     const spread = computeAnnualSpread(0.000125, "pacifica", 0.0000625, "lighter");
-    expect(spread).toBeCloseTo(102.66, 1);
+    expect(spread).toBeCloseTo(54.75, 1);
   });
 
   it("handles zero rates", () => {

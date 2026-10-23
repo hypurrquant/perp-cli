@@ -26,9 +26,11 @@ import { z } from "zod";
 import type { ExchangeAdapter } from "./exchanges/interface.js";
 import { hasCredentials, listConfiguredAccountVenues, resolveCredentials, NO_CLI_CREDENTIAL_OPTS } from "./config.js";
 import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
-import { getVenue, listVenues, listVenuesWithRole, networkConfig, READ_ONLY_CREDENTIALS, requireCapabilities, roleUnsupported, type VenueDefinition } from "./exchanges/venue.js";
+import { getVenue, listPublicPositionVenues, listVenues, listVenuesWithRole, networkConfig, READ_ONLY_CREDENTIALS, requireCapabilities, roleUnsupported, type VenueDefinition } from "./exchanges/venue.js";
 import "./exchanges/venues/index.js";
 import type { OrderRequest, VenueId } from "./exchanges/venue-types.js";
+import { venueMarketRow } from "./exchanges/venue-types.js";
+import { lighterFundingStatsWarning } from "./exchanges/lighter-public.js";
 import { newVenueClientOrderId, placeAndConfirm, validateLegacyTif, validateOrderRequest, type PlacedOrder } from "./exchanges/trading-v2.js";
 import { closePerpVerified, isOutcomeUnknown } from "./bot/perp-order.js";
 import { quarantineSymbol } from "./bot/quarantine.js";
@@ -38,7 +40,8 @@ import { PerpError, classifyError, extractErrorMessage, isDefiniteOrderFailure, 
 import { invalidateCache } from "./cache.js";
 import { probeVenueHealth } from "./venue-health.js";
 import { getOptionsVenue, listOptionsVenueIds } from "./exchanges/options-venues.js";
-import { fetchAllFundingRates } from "./funding-rates.js";
+import { fetchAllFundingRates, isRankedComparison } from "./funding-rates.js";
+import { readPositionsByAddress } from "./positions-by-address.js";
 import { loadArbState } from "./arb/state.js";
 import { validateTrade } from "./trade-validator.js";
 import { orderResultJson, symbolMatch } from "./utils.js";
@@ -138,13 +141,37 @@ async function fetchMarketsPublic(exchange: string) {
 }
 
 /**
+ * meta.warnings when a venue's rows carry fundingRate null for a known reason (Lighter: the
+ * settled-rate snapshot could not be read) — the reason reaches the agent, not only stderr.
+ */
+function fundingWarningMeta(exchange: string, rows: ReadonlyArray<{ fundingRate?: unknown }>): { warnings?: string[] } {
+  const id = getVenue(exchange).id;
+  if (id !== "lighter" && id !== "lighter-rh") return {};
+  // Tied to the rows served: only when they actually carry a null rate (cached rows that have
+  // rates never get a stale warning; null rows always say why when the reason is known).
+  if (!rows.some(r => r.fundingRate === null)) return {};
+  const w = lighterFundingStatsWarning(id, MCP_NETWORK);
+  return w === null ? {} : { warnings: [w] };
+}
+
+/**
+ * Keyless get_markets rows: the public directory's VenueMarket rows in the CLI market-row shape
+ * (venueMarketRow — the mapper the VenueMarket CLI adapters use), the VenueMarket fields kept
+ * (venueSymbol, canonical, assetClass, fundingRateBasis, tickSize, …) and the MCP labels added.
+ */
+async function fetchMarketRowsPublic(exchange: string) {
+  const markets = await getVenue(exchange).publicData.fetchMarkets(MCP_NETWORK);
+  return labelMarketRows(exchange, markets.map(m => ({ ...m, ...venueMarketRow(m) })));
+}
+
+/**
  * The one row label for market rows of any source (public data path or a credentialed adapter):
- * unofficial-API rows carry venueApi + fundingVerified; unverified-funding rows carry fundingVerified false.
+ * every row carries fundingVerified (true or false — as `perp market list`), unofficial-API rows venueApi.
  */
 function labelMarketRows<T extends object>(exchange: string, rows: T[]) {
   const def = getVenue(exchange);
-  if (def.apiStatus.kind === "unofficial") return rows.map(r => ({ ...r, venueApi: "unofficial" as const, fundingVerified: def.fundingVerified }));
-  return def.fundingVerified ? rows : rows.map(r => ({ ...r, fundingVerified: false as const }));
+  const labelled = rows.map(r => ({ ...r, fundingVerified: def.fundingVerified }));
+  return def.apiStatus.kind === "unofficial" ? labelled.map(r => ({ ...r, venueApi: "unofficial" as const })) : labelled;
 }
 
 /**
@@ -289,10 +316,13 @@ server.tool(
       const adapter = await tryGetAdapter(exchange);
       if (adapter) {
         const markets = labelMarketRows(exchange, await adapter.getMarkets());
-        return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, ...apiMeta(exchange) }) }] };
+        return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, ...apiMeta(exchange), ...fundingWarningMeta(exchange, markets) }) }] };
       }
-      const markets = await fetchMarketsPublic(exchange);
-      return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, source: "public", ...apiMeta(exchange) }) }] };
+      // No credentials: the venue's public directory — price-only on GRVT (no 184-request
+      // margin_rules fan-out per call) — in the CLI market-row shape (venueMarketRow), with the
+      // same market set as `perp market list` (the venue's shared eligibility / listing rule).
+      const markets = await fetchMarketRowsPublic(exchange);
+      return { content: [{ type: "text", text: ok(markets, { exchange, count: markets.length, source: "public", ...apiMeta(exchange), ...fundingWarningMeta(exchange, markets) }) }] };
     } catch (e) {
       return { content: [{ type: "text", text: errOf(e, { exchange }) }], isError: true };
     }
@@ -373,6 +403,9 @@ server.tool(
           return;
         }
         for (const m of r.value) {
+          // An ambiguous ticker (SPX6900 vs the S&P 500) names different instruments per venue:
+          // never grouped by symbol across venues.
+          if (m.assetClass === "unclassified") continue;
           const sym = m.symbol.toUpperCase();
           if (filter && !filter.has(sym)) continue;
           if (!priceMap.has(sym)) priceMap.set(sym, {});
@@ -571,6 +604,29 @@ server.tool(
 );
 
 server.tool(
+  "get_positions_by_address",
+  `Open positions of ANY account by its public address — keyless, read-only (public venue data; nothing is signed, no key is needed). Venues: ${listPublicPositionVenues().map(v => `${v.id} (${v.publicData.addressKind === "solana" ? "base58 Solana address" : "0x address"})`).join(", ")}. Hyperliquid reads the native dex and every HIP-3 dex (rows carry dex: null | "<dex>"; a dex that fails is listed in meta.errors / meta.warnings — its rows are missing, not absent); Lighter reads every account of the address (rows carry accountIndex; accountIndex narrows). Other venues: CAPABILITY_UNSUPPORTED; a wrong address format: INVALID_PARAMS. Same rows as \`perp -e <venue> account positions --address <addr>\`.`,
+  {
+    exchange: z.string().describe(`Exchange: ${listPublicPositionVenues().map(v => v.id).join(", ")} (aliases accepted)`),
+    address: z.string().describe("Public account address (0x… for hyperliquid / lighter / lighter-rh; base58 Solana for pacifica)"),
+    symbol: z.string().optional().describe("Only this market (plain asset, e.g. BTC)"),
+    accountIndex: z.number().int().nonnegative().optional().describe("Lighter only: one account (sub-account) of the address"),
+  },
+  async ({ exchange, address, symbol, accountIndex }) => {
+    try {
+      const r = await readPositionsByAddress(exchange, MCP_NETWORK, address, { symbol, accountIndex });
+      return { content: [{ type: "text", text: ok(r.positions, {
+        exchange: r.venue, address, source: "public", count: r.positions.length,
+        ...(r.warnings.length > 0 ? { warnings: r.warnings, errors: r.errors } : {}),
+        ...(r.notes.length > 0 ? { notes: r.notes } : {}),
+      }) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: errOf(e, { exchange }) }], isError: true };
+    }
+  },
+);
+
+server.tool(
   "get_open_orders",
   `Get all open/pending orders on an exchange. ${HL_SCOPE_NOTE}`,
   { exchange: z.string().describe(`Exchange name: ${listVenues().map(v => v.id).join(", ")} (aliases accepted)`) },
@@ -624,6 +680,9 @@ server.tool(
       }),
     );
 
+    // Totals are null (unknown) when no account balance was read — no configured credentials, or
+    // every venue failed — never 0 (QA 0.15.0: totalEquity 0 without credentials).
+    const read = snapshots.filter(s => s.balance !== null);
     let totalEquity = 0;
     let totalAvailable = 0;
     let totalMarginUsed = 0;
@@ -664,16 +723,21 @@ server.tool(
       }))
       .sort((a, b) => b.pct - a.pct);
 
+    const known = read.length > 0;
     const summary = {
-      totalEquity,
-      totalAvailable,
-      totalMarginUsed,
-      totalUnrealizedPnl,
+      /** "noAccount" = no venue has credentials; "unread" = credentials exist but no balance was read. */
+      accountState: EXCHANGES.length === 0 ? "noAccount" : known ? "ok" : "unread",
+      /** Venues whose balances the totals cover. */
+      totalsCover: read.map(s => s.exchange),
+      totalEquity: known ? totalEquity : null,
+      totalAvailable: known ? totalAvailable : null,
+      totalMarginUsed: known ? totalMarginUsed : null,
+      totalUnrealizedPnl: known ? totalUnrealizedPnl : null,
       totalPositions,
       totalOpenOrders,
       exchanges: snapshots,
       positions: allPositions,
-      riskMetrics: { marginUtilization, largestPosition, exchangeConcentration },
+      riskMetrics: { marginUtilization: known ? marginUtilization : null, largestPosition, exchangeConcentration },
     };
 
     return { content: [{ type: "text", text: ok(summary) }] };
@@ -1449,13 +1513,14 @@ server.tool(
         minSpread: minSpread ?? 5,
       });
 
-      const opportunities = snapshot.symbols.map(s => ({
+      const opportunities = snapshot.symbols.filter(isRankedComparison).map(s => ({
         symbol: s.symbol,
         maxSpreadAnnual: `${s.maxSpreadAnnual.toFixed(2)}%`,
         strategy: `Long ${s.longExchange} / Short ${s.shortExchange}`,
         // false = a leg is on a read-only venue (RISEx in this release): data only, not tradable here.
         executable: s.executable,
         readOnlyLegs: s.readOnlyLegs,
+        unverifiedLegs: s.unverifiedLegs,
         estHourlyIncomePerK: `$${s.estHourlyIncomeUsd.toFixed(4)}`,
         rates: s.rates.map(r => ({
           exchange: r.exchange,
@@ -1492,6 +1557,9 @@ server.tool(
       result.covered = health.probes.map(p => p.venue);
       // A venue without an environment on the server's network (TxFlow has no testnet) is not probed.
       result.skipped = health.skipped;
+      // Same two verdicts as `perp health --json`: healthy = every OFFICIAL-API venue is up (an
+      // unofficial API being down does not make perp-cli unhealthy); allHealthy includes them.
+      result.healthy = health.probes.filter(p => p.apiStatus === "official").every(p => p.ok);
       result.allHealthy = health.allHealthy;
 
       return { content: [{ type: "text", text: ok(result) }] };

@@ -62,6 +62,12 @@ export interface ArbPositionState {
   spotExchange?: string;
   /** Spot symbol, e.g. "ETH/USDC" (for spot-perp mode) */
   spotSymbol?: string;
+  /**
+   * The legs' VENUE symbols when they differ from `symbol` (the canonical key): Hyperliquid
+   * kPEPE ↔ Lighter 1000PEPE. Absent = both legs trade as `symbol`.
+   */
+  longSymbol?: string;
+  shortSymbol?: string;
 }
 
 export interface ArbDaemonState {

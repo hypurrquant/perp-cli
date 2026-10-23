@@ -51,14 +51,16 @@ describe("native perps: raw coins on the wire, '-PERP' display names", () => {
     expect(book).toEqual({ bids: [["100", "1"]], asks: [["101", "2"]] });
   });
 
-  it("getMarkets keeps '<COIN>-PERP' symbols from raw metaAndAssetCtxs", async () => {
+  it("getMarkets lists plain coins (venueSymbol = the wire coin) from raw metaAndAssetCtxs", async () => {
     const { hl } = adapterWith({
       meta: () => META,
       metaAndAssetCtxs: () => [{ universe: META.universe, marginTables: [] }, [{ markPx: "50000", funding: "0.0000125" }, { markPx: "3000" }]],
       allMids: () => ({ BTC: "50001", ETH: "3001" }),
     });
     const m = await hl.getMarkets();
-    expect(m.map(x => x.symbol)).toEqual(["BTC-PERP", "ETH-PERP"]);
+    expect(m.map(x => x.symbol)).toEqual(["BTC", "ETH"]);
+    expect(m.map(x => (x as { venueSymbol?: string }).venueSymbol)).toEqual(["BTC", "ETH"]);
+    expect(m.map(x => x.stepSize)).toEqual(["0.00001", "0.0001"]); // 10^-szDecimals
     expect(m[0].markPrice).toBe("50000");
     expect(m[0].fundingRate).toBe("0.0000125");
   });
@@ -85,8 +87,9 @@ describe("native perps: raw coins on the wire, '-PERP' display names", () => {
       candleSnapshot: () => [{ t: 1, o: "1", h: "2", l: "0.5", c: "1.5", v: "10", n: 3 }],
     });
     await hl.init();
-    const k = await hl.getKlines("BTC-PERP", "1h", 0, 10);
-    expect(calls.find(c => c.type === "candleSnapshot")).toEqual({ type: "candleSnapshot", req: { coin: "BTC", interval: "1h", startTime: 0, endTime: 10 } });
+    const start = Date.now() - 3_600_000; // inside HL's 5000-candle window (an older start is refused up front)
+    const k = await hl.getKlines("BTC-PERP", "1h", start, start + 10);
+    expect(calls.find(c => c.type === "candleSnapshot")).toEqual({ type: "candleSnapshot", req: { coin: "BTC", interval: "1h", startTime: start, endTime: start + 10 } });
     expect(k[0]).toMatchObject({ time: 1, close: "1.5", trades: 3 });
   });
 });

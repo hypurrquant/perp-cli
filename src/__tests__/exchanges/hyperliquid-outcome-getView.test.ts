@@ -291,3 +291,20 @@ describe("HyperliquidOutcomeAdapter.getView — integration with mocked SDK", ()
     await expect(adapter.getView(2, 3)).resolves.toBeTruthy();
   });
 });
+
+describe("getView — template binary-price outcome and wide books (QA 0.15.0)", () => {
+  it("live template:binaryPrice: underlying ZEC (was null), class priceBinary, label Yes, wideSpread flagged", async () => {
+    const meta: MockOutcomeMeta = { outcomes: [{ outcome: 13103, name: "template:binaryPrice", description: "perp:ZEC|priceDescription:the Pyth ZEC/USD price|seconds:90|threshold:1057|time:20261023-0800", sideSpecs: [{ name: "template:Yes" }, { name: "template:No" }] }], questions: [] };
+    const wide = { coin: "x", time: 1, levels: [[{ px: "0.0257", sz: "390.0" }], [{ px: "0.9899", sz: "100.0" }]] };
+    const a = makeAdapter({ meta, allMids: { "#131030": "0.5078", "#131031": "0.4922", ZEC: "1100" }, bookFor: () => wide });
+    const v = await a.getView(13103);
+    expect(v.underlying).toMatchObject({ symbol: "ZEC", targetPrice: 1057, inTheMoney: "yes" });
+    expect(v.class).toBe("priceBinary");
+    expect(v.sides[0]).toMatchObject({ name: "template:Yes", label: "Yes", impliedProb: 0.5078, wideSpread: true });
+  });
+
+  it("a tight book is not flagged", async () => {
+    const v = await makeAdapter().getView(2);
+    expect(v.sides[0].wideSpread).toBe(false);
+  });
+});

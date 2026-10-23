@@ -10,7 +10,8 @@
  */
 
 import { PerpError } from "../errors.js";
-import type { ExchangeAdapter } from "./interface.js";
+import type { ExchangeAdapter, ExchangePosition } from "./interface.js";
+import { requireAddressOfKind, type AddressKind } from "./address.js";
 import type { SpotAdapter } from "./spot-interface.js";
 import type {
   FundingRateBasis, LegacyVenueId, Network, TimeInForce, VenueFundingRate, VenueId, VenueMarket,
@@ -133,7 +134,43 @@ export interface RateLimitPolicy {
 
 export interface VenuePublicData {
   fetchFundingRates(net: Network): Promise<VenueFundingRate[]>;
-  fetchMarkets(net: Network): Promise<VenueMarket[]>;
+  /**
+   * `opts.funding: false` = the caller needs marks / precision only: a venue whose funding rate
+   * costs an extra read (Lighter: the WS market_stats snapshot) skips it (rows fundingRate null).
+   */
+  fetchMarkets(net: Network, opts?: { funding?: boolean }): Promise<VenueMarket[]>;
+  /**
+   * Keyless open positions of ANY account by its public address (`account positions --address`,
+   * MCP get_positions_by_address). Present = the venue supports it; `addressKind` is then the
+   * address format it takes (checked before any request). Rows are the keyed `getPositions`
+   * mapping (the same mapper) with plain symbols.
+   */
+  addressKind?: AddressKind;
+  fetchPositionsByAddress?(net: Network, address: string, opts: PublicPositionsOptions): Promise<PublicPositionsResult>;
+}
+
+export interface PublicPositionsOptions {
+  /** Lighter: one account of the address (sub-accounts); default every account. */
+  accountIndex?: number;
+}
+
+/** A position read by public address: the keyed row plus where it lives. */
+export interface PublicPosition extends ExchangePosition {
+  /** Hyperliquid: the HIP-3 dex of the row; null = the native perp dex. */
+  dex?: string | null;
+  /** Lighter: the account (sub-account) index the row belongs to. */
+  accountIndex?: number;
+}
+
+export interface PublicPositionsResult {
+  positions: PublicPosition[];
+  /**
+   * Sub-reads that failed while the others succeeded (Hyperliquid: one HIP-3 dex), keyed by
+   * source ("hip3:xyz"). Their rows are unknown — never silently absent: callers surface them.
+   */
+  errors: Record<string, { code: string; message: string }>;
+  /** Human notes on an empty answer ("no Lighter account for this address"). */
+  notes: string[];
 }
 
 // ── Creation ──
@@ -300,6 +337,37 @@ export function listVenuesWithRole(role: VenueRole): VenueDefinition[] {
   return listVenues().filter(v => v.roles.includes(role));
 }
 
+/** Venues that read positions by public address (VenuePublicData.fetchPositionsByAddress). */
+export function listPublicPositionVenues(): VenueDefinition[] {
+  return listVenues().filter(v => typeof v.publicData.fetchPositionsByAddress === "function" && v.publicData.addressKind !== undefined);
+}
+
+/** CAPABILITY_UNSUPPORTED for a venue without public-address position reads (registry-derived). */
+export function publicPositionsUnsupported(def: VenueDefinition): PerpError {
+  const reason = !def.roles.includes("account")
+    ? `${def.displayName} is available for market data only (no account reads)`
+    : `${def.displayName} publishes positions only to the account itself (signed or API-key reads)`;
+  const supported = listPublicPositionVenues().map(v => v.id).join(", ");
+  return new PerpError("CAPABILITY_UNSUPPORTED", `${def.id} does not support publicPositions — ${reason}`, {
+    venue: def.id, feature: "publicPositions", reason,
+    remediation: `Public-address reads: ${supported}; for your own account: perp -e ${def.id} account positions`,
+  });
+}
+
+/**
+ * Open positions of `address` on `venue`, keyless: unsupported venue → CAPABILITY_UNSUPPORTED,
+ * wrong address format → INVALID_PARAMS, both before any request.
+ */
+export async function fetchPositionsByAddress(venue: string, net: Network, address: string, opts: PublicPositionsOptions = {}): Promise<PublicPositionsResult> {
+  const def = getVenue(venue);
+  const pd = def.publicData;
+  if (pd.fetchPositionsByAddress === undefined || pd.addressKind === undefined) throw publicPositionsUnsupported(def);
+  if (opts.accountIndex !== undefined && def.id !== "lighter" && def.id !== "lighter-rh") {
+    throw new PerpError("INVALID_PARAMS", `--account-index applies to Lighter only (${def.id} has one account per address)`, { exchange: def.id, remediation: "Drop --account-index" });
+  }
+  return pd.fetchPositionsByAddress(net, requireAddressOfKind(def.id, pd.addressKind, address), opts);
+}
+
 export function networkConfig(def: VenueDefinition, net: Network): VenueNetworkConfig {
   const cfg = def.networks[net];
   if (!cfg) {
@@ -415,6 +483,19 @@ export function assertFundingArbVenue(ref: string): void {
     venue: def.id, feature: "fundingArb", reason,
     remediation: `Use venues with verified funding (${listVenues().filter(v => v.fundingVerified && v.roles.includes("trading")).map(v => v.id).join(", ")}). ${def.displayName} rates can still be viewed: perp arb scan --rates --include-unverified`,
   });
+}
+
+/**
+ * Market rows (`market list|prices|info`, MCP get_markets) state whether their venue's funding rate
+ * is verified — on every venue, true or false (VenueDefinition.fundingVerified), so a consumer
+ * never has to read a missing field as "verified". A venue ref ("hip3:xyz" → hyperliquid) is
+ * resolved; an unknown ref leaves the rows as they are.
+ */
+export function withFundingVerified<T extends object>(venue: string, rows: T[]): Array<T & { fundingVerified: boolean }> | T[] {
+  const id = tryResolveVenueId(venue.startsWith("hip3:") ? "hyperliquid" : venue);
+  const def = id === null ? undefined : _venues.get(id);
+  if (def === undefined) return rows;
+  return rows.map(r => ({ ...r, fundingVerified: def.fundingVerified }));
 }
 
 export function isLegacyVenue(def: VenueDefinition): def is VenueDefinition & { id: LegacyVenueId } {

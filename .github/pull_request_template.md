@@ -11,6 +11,20 @@ Related issue: <!-- #issue-number (optional) -->
 - [ ] No secrets, API keys, or private keys included
 - [ ] Breaking change? If yes, described below
 
+### Testing standard ([docs/TESTING.md](../docs/TESTING.md) §7)
+
+- [ ] Tests for the behaviour (one behaviour per test); no `test.skip` / `.only`, no pass-through cache / limiter mocks, no mock of the unit under test
+- [ ] New fixtures are **recorded** (`pnpm conformance:record` / `scripts/ws-probe`), anonymized, never hand-written
+- [ ] Conformance suite green (`pnpm test`); every new `KNOWN_FAILURES` entry has a reason; a fixed known failure is removed
+- [ ] JSON output change is additive, or listed under CHANGELOG **"JSON contract changes"** (and `contracts.ts` / TESTING.md §4 updated)
+- [ ] Read command / MCP read tool changed → CLI ⇄ MCP parity holds; WS change → CLI ⇄ WS parity + `scripts/ws-gate/release-gate.mjs`
+- [ ] Write path → refuses on read-only venues before any I/O or key load, also with `--dry-run`
+- [ ] Row caps / intervals touched → measured live, `SERVER_CAPS` / `KLINE_INTERVALS` updated with the measurement date
+
+**New venue** (TESTING.md §7.1): capability-table entry · `KLINE_INTERVALS` + caps measured or in `UNMEASURED_CAPS` · fixtures recorded (venue, ranges, ws, cross) · `pnpm test:conformance:live` output pasted below · README / skill / CHANGELOG.
+
+**Release PR:** `pnpm release-qa --version <v>` report attached after `npm publish`.
+
 ### If applicable
 
 - [ ] Updated `README.md` (new/changed commands)

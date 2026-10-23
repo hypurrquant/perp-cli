@@ -15,6 +15,7 @@
  * open_short / close_long sell (was every row of both parties → "sell").
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { seedAsterDirectory } from "./aster-directory.js";
 
 vi.mock("../../cache.js", async () => ({
   withCache: async <T>(_key: string, _ttl: number, fn: () => Promise<T>) => fn(),
@@ -59,7 +60,11 @@ describe("nonEmptyOrListed", () => {
     await expect(nonEmptyOrListed(adapter(["BTC"]), "NOPE", [])).rejects.toMatchObject(NOT_FOUND("pacifica"));
   });
   it("empty + listed → the real empty result", async () => {
-    await expect(nonEmptyOrListed(adapter(["BTC"]), "btc", [])).resolves.toEqual([]);
+    await expect(nonEmptyOrListed(adapter(["BTC"]), "BTC", [])).resolves.toEqual([]);
+  });
+  it("a casing miss is SYMBOL_NOT_FOUND, never an empty result (Pacifica KPEPE vs kPEPE)", async () => {
+    await expect(nonEmptyOrListed(adapter(["kPEPE"]), "KPEPE", [])).rejects.toMatchObject(NOT_FOUND("pacifica"));
+    await expect(nonEmptyOrListed(adapter(["BTC"]), "btc", [])).rejects.toMatchObject(NOT_FOUND("pacifica"));
   });
   it("compares the directory form of a venue-form symbol (passed by the adapter)", async () => {
     await expect(nonEmptyOrListed(adapter(["TSLA"]), "TSLA-USD.P", [], "TSLA")).resolves.toEqual([]);
@@ -73,12 +78,17 @@ describe("nonEmptyOrListed", () => {
     const b = { name: "aster", getMarkets: vi.fn(async () => { throw new Error("fetch failed"); }) };
     await expect(nonEmptyOrListed(b, "NOPE", [])).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_UNREACHABLE", retryable: true }) });
   });
-  it("matches case-insensitively, ignoring a -PERP suffix", () => {
-    expect(listsSymbol([{ symbol: "BTC-PERP" }], "btc")).toBe(true);
+  it("matches the exact wire symbol, ignoring a -PERP suffix", () => {
+    expect(listsSymbol([{ symbol: "BTC-PERP" }], "BTC")).toBe(true);
+    expect(listsSymbol([{ symbol: "BTC-PERP" }], "btc")).toBe(false);
+    expect(listsSymbol([{ symbol: "kPEPE" }], "kPEPE-PERP")).toBe(true);
     expect(listsSymbol([{ symbol: "BTC" }], "BTC-PERP")).toBe(true);
     expect(listsSymbol([{ symbol: "BTC" }], "BTCX")).toBe(false);
   });
 });
+
+/** GET /info rows (perps) for the Pacifica symbol resolution. */
+const pacInfo = (listed: string[]) => vi.fn(async () => listed.map((symbol) => ({ symbol, instrument_type: "perpetual" })));
 
 describe("Pacifica", () => {
   const TAPE = [
@@ -91,7 +101,7 @@ describe("Pacifica", () => {
     { event_type: "fulfill_taker", price: "83600", amount: "0.1", side: "open_long", cause: "normal", created_at: 1 },
     { event_type: "fulfill_taker", price: "83500", amount: "0.2", side: "close_long", cause: "normal", created_at: 0 },
   ];
-  const pac = (client: Record<string, unknown>, listed = ["BTC"]) => stubAdapter(PacificaAdapter.prototype, "pacifica", { client }, listed);
+  const pac = (client: Record<string, unknown>, listed = ["BTC"]) => stubAdapter(PacificaAdapter.prototype, "pacifica", { client: { getInfo: pacInfo(listed), ...client } }, listed);
 
   it("tape = taker rows with the taker's direction (open_long / close_short buy, open_short / close_long sell)", async () => {
     const t = await pac({ getTrades: vi.fn(async () => TAPE) }).getRecentTrades("BTC", 20);
@@ -147,7 +157,7 @@ describe("Pacifica", () => {
   });
 
   it("trades / kline / funding: 200 [] for an unlisted symbol → SYMBOL_NOT_FOUND; [] for a listed one stays []", async () => {
-    const client = { getTrades: vi.fn(async () => []), getKline: vi.fn(async () => []), getFundingHistory: vi.fn(async () => []) };
+    const client = { getTrades: vi.fn(async () => []), getKline: vi.fn(async () => []), getEnvelope: vi.fn(async () => ({ success: true, data: [], has_more: false })) };
     const a = pac(client);
     await expect(a.getRecentTrades("NOPE")).rejects.toMatchObject(NOT_FOUND("pacifica"));
     await expect(a.getKlines("NOPE", "1h", 0, 1)).rejects.toMatchObject(NOT_FOUND("pacifica"));
@@ -158,11 +168,13 @@ describe("Pacifica", () => {
 });
 
 describe("Pacifica funding history is strict (review L2)", () => {
-  const pac = (rows: unknown) => stubAdapter(PacificaAdapter.prototype, "pacifica", { client: { getFundingHistory: vi.fn(async () => rows) } }, ["BTC"]);
+  const pac = (rows: unknown) => stubAdapter(PacificaAdapter.prototype, "pacifica", {
+    client: { getInfo: pacInfo(["BTC"]), getEnvelope: vi.fn(async () => ({ success: true, data: rows, has_more: false })) },
+  }, ["BTC"]);
 
   it("maps the live row shape", async () => {
     const r = await pac([{ oracle_price: "83703.548788", funding_rate: "0.0000125", next_funding_rate: "0.0000125", created_at: 1791950402115 }]).getFundingHistory("BTC");
-    expect(r).toEqual([{ time: 1791950402115, rate: "0.0000125", price: "83703.548788" }]);
+    expect(r).toEqual([{ time: 1791950402115, rate: "0.0000125", price: "83703.548788", intervalHours: 1, rateKind: "lastSettled" }]);
   });
   it("a non-list answer is EXCHANGE_ERROR, not []", async () => {
     await expect(pac({ unexpected: true }).getFundingHistory("BTC")).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });
@@ -174,18 +186,21 @@ describe("Pacifica funding history is strict (review L2)", () => {
   });
 });
 
+/** /v1/markets body (read by the disabled-listing check of every Ondo per-symbol read). */
+const ONDO_PAIRS = (listed: string[]) => ({ perps: { tradingPairs: listed.map(s => ({ market: `${s}-USD.P` })) }, spot: { tradingPairs: [] } });
+
 describe("Ondo", () => {
   it("trades / candles: 200 [] for an unlisted market → SYMBOL_NOT_FOUND; a listed market keeps []", async () => {
-    const client = { publicGet: vi.fn(async () => []), get: vi.fn(async () => []) };
-    const a = stubAdapter(OndoAdapter.prototype, "ondo", { client }, ["AAPL"]);
+    const client = { publicGet: vi.fn(async (path: string) => path === "/v1/markets" ? ONDO_PAIRS(["AAPL"]) : []), get: vi.fn(async () => []) };
+    const a = stubAdapter(OndoAdapter.prototype, "ondo", { client, pairsCache: null, contractsCache: null }, ["AAPL"]);
     await expect(a.getRecentTrades("NOPE")).rejects.toMatchObject(NOT_FOUND("ondo"));
     await expect(a.getKlines("NOPE", "1h", 0, 3_600_000)).rejects.toMatchObject(NOT_FOUND("ondo"));
     await expect(a.getRecentTrades("AAPL")).resolves.toEqual([]);
   });
 
   it("a venue-form symbol (TSLA-USD.P) of a listed market with an empty window stays []", async () => {
-    const client = { publicGet: vi.fn(async () => []), get: vi.fn(async () => []) };
-    const a = stubAdapter(OndoAdapter.prototype, "ondo", { client }, ["TSLA"]);
+    const client = { publicGet: vi.fn(async (path: string) => path === "/v1/markets" ? ONDO_PAIRS(["TSLA"]) : []), get: vi.fn(async () => []) };
+    const a = stubAdapter(OndoAdapter.prototype, "ondo", { client, pairsCache: null, contractsCache: null }, ["TSLA"]);
     await expect(a.getRecentTrades("TSLA-USD.P")).resolves.toEqual([]);
     await expect(a.getKlines("tsla-usd.p", "1h", 0, 3_600_000)).resolves.toEqual([]);
   });
@@ -195,6 +210,7 @@ describe("funding history of an unknown symbol", () => {
   it("Aster: 200 [] → SYMBOL_NOT_FOUND", async () => {
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const a = new AsterAdapter(undefined, false);
+    seedAsterDirectory(a);
     (a as unknown as Record<string, unknown>)._publicGet = vi.fn(async () => []);
     (a as unknown as Record<string, unknown>).getMarkets = vi.fn(async () => [{ symbol: "BTC" }]);
     await expect(a.getFundingHistory("NOPE")).rejects.toMatchObject(NOT_FOUND("aster"));
@@ -203,6 +219,7 @@ describe("funding history of an unknown symbol", () => {
   it("Aster: a venue-form symbol (BTCUSDT) of a listed market with no rows stays []", async () => {
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const a = new AsterAdapter(undefined, false);
+    seedAsterDirectory(a);
     (a as unknown as Record<string, unknown>)._publicGet = vi.fn(async () => []);
     (a as unknown as Record<string, unknown>).getMarkets = vi.fn(async () => [{ symbol: "BTC" }]);
     await expect(a.getFundingHistory("BTCUSDT")).resolves.toEqual([]);

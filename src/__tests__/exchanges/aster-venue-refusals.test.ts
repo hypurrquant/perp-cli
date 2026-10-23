@@ -13,12 +13,14 @@ import { AsterSpotAdapter } from "../../exchanges/aster-spot.js";
 import { toTradingV2 } from "../../exchanges/legacy-trading-v2.js";
 import { PerpError } from "../../errors.js";
 import type { ExchangeAdapter } from "../../exchanges/interface.js";
+import { seedAsterDirectory } from "./aster-directory.js";
 
 type Sent = { method: string; path: string; params: URLSearchParams };
 
 /** A real adapter whose signing is stubbed; every venue request is answered by `answer` and recorded. */
 function build(answer: (s: Sent) => { status: number; body: unknown }) {
   const a = new AsterAdapter(undefined, false);
+  seedAsterDirectory(a, ["BTCUSD1"]);
   const h = a as unknown as Record<string, unknown>;
   h._resolveSigner = vi.fn().mockReturnValue({ tier: "agent", signer: {}, signerAddress: "0xagent", userAddress: "0xuser" });
   h._buildSignedQueryString = vi.fn(async (params: Record<string, string>) => new URLSearchParams(params).toString());
@@ -64,6 +66,19 @@ describe("Aster cancel: -2011 CANCEL_REJECTED is a definite ORDER_REJECTED", () 
     const e = await spot.spotCancelOrder("ASTER/USDT", "42").catch((x: unknown) => x) as PerpError;
     expect(e.structured).toMatchObject({ code: "ORDER_REJECTED", retryable: false, details: { venueCode: -2011, orderId: "42" } });
     expect(sent[0]).toMatchObject({ method: "DELETE", path: "/api/v3/order" });
+  });
+});
+
+describe("Aster order paths resolve USD1 (the base) to USD1USDT — never the USD1 quote suffix", () => {
+  const ok = () => ({ status: 200, body: { code: 200, msg: "success", orderId: 1, status: "CANCELED" } });
+  it("cancel / cancel-all send USD1USDT; a position row's symbol round-trips to the same venue symbol", async () => {
+    const { a, sent } = build(ok);
+    await a.cancelOrder("USD1", "1").catch(() => undefined);
+    await a.cancelAllOrders("USD1").catch(() => undefined);
+    expect(sent.map(x => x.params.get("symbol"))).toEqual(["USD1USDT", "USD1USDT"]);
+    const h = a as unknown as { _fromApi(s: string): string; _apiSymbol(s: string): Promise<string> };
+    expect(await h._apiSymbol(h._fromApi("USD1USDT"))).toBe("USD1USDT"); // close of a USD1 position
+    expect(await h._apiSymbol(h._fromApi("BTCUSD1"))).toBe("BTCUSD1");
   });
 });
 

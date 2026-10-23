@@ -994,7 +994,7 @@ describe("account reads and funding", () => {
   it("orderbook drops the venue's empty (quantity 0) levels; recent trades / funding payments are uniform unsupported", async () => {
     routes["GET /md/orderbook/AAPL-USD"] = () => reply(200, { ticker_id: "AAPL-USD", bids: [["333.37", "304.348"], ["333.36", "0"]], asks: [["333.47", "312.5"], ["333.48", "0"]] });
     const a = adapter({ readOnly: true, credentials: READ_ONLY_CREDENTIALS });
-    expect(await a.getOrderbook("AAPL")).toEqual({ bids: [["333.37", "304.348"]], asks: [["333.47", "312.5"]] });
+    expect(await a.getOrderbook("AAPL")).toEqual({ bids: [["333.37", "304.348"]], asks: [["333.47", "312.5"]], quoteAsset: "USD" });
     expect((await rejection(a.getRecentTrades())).structured.details).toMatchObject({ feature: "recentTrades" });
     expect((await rejection(a.getFundingPayments())).structured.details).toMatchObject({ feature: "fundingPayments" });
   });
@@ -1007,8 +1007,8 @@ describe("account reads and funding", () => {
     ] });
     const h = await adapter({ readOnly: true, credentials: READ_ONLY_CREDENTIALS }).getFundingHistory("AAPL", 3);
     expect(h).toEqual([
-      { time: Date.parse("2026-10-02T00:00:00Z"), rate: "0.00000149", price: null },
-      { time: Date.parse("2026-10-02T01:00:00Z"), rate: "0.0000001", price: null },
+      { time: Date.parse("2026-10-02T00:00:00Z"), rate: "0.00000149", price: null, intervalHours: 1, rateKind: "lastSettled", marketClosed: false },
+      { time: Date.parse("2026-10-02T01:00:00Z"), rate: "0.0000001", price: null, intervalHours: 1, rateKind: "lastSettled", marketClosed: false },
     ]);
   });
 });

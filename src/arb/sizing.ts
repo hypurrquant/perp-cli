@@ -19,7 +19,8 @@ export function computeMatchedSize(
     minNotional?: number;
   },
 ): { size: string; notional: number } | null {
-  if (price <= 0) return null;
+  // NaN / Infinity (e.g. a "-" mark parsed as a number) would size to "NaN": no size.
+  if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(sizeUsd)) return null;
 
   const rawSize = sizeUsd / price;
 
@@ -134,7 +135,8 @@ export function computeSpotPerpMatchedSize(
   spotSizeDecimals?: number,
   perpSizeDecimals?: number,
 ): { size: string; notional: number } | null {
-  if (price <= 0) return null;
+  // NaN / Infinity (e.g. a "-" mark parsed as a number) would size to "NaN": no size.
+  if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(sizeUsd)) return null;
 
   // If explicit decimals provided, use them; otherwise derive from exchange
   const spotDec = spotSizeDecimals ?? getSizeDecimals(`spot:${spotExchange}`);

@@ -52,7 +52,8 @@ describe("hyperliquid user channels", () => {
     await expect(r.sub.ready).resolves.toBeUndefined();
     expect(r.of("error")).toEqual([]);
     expect(r.of("account").map(a => a.dex)).toEqual([null, "xyz"]);
-    expect(r.of("account")[0]).toMatchObject({ equity: "0.0", available: "0.0", marginUsed: "0.0", unrealizedPnl: null, venueTs: 1791035142454 });
+    // No open position: the account's unrealized PnL is a real zero (sum of no positions), not unknown.
+    expect(r.of("account")[0]).toMatchObject({ equity: "0.0", available: "0.0", marginUsed: "0.0", unrealizedPnl: "0", venueTs: 1791035142454 });
     expect(r.of("positions").at(-1)).toMatchObject({ snapshot: true, positions: [] });
     expect(r.of("orders").at(-1)).toMatchObject({ snapshot: true, complete: true, orders: [] }); // every selected dex snapshotted
     // snapshot = ONE `fills` event; the identical 2nd snapshot frame adds nothing (and is no gap: it overlaps)
@@ -64,6 +65,18 @@ describe("hyperliquid user channels", () => {
     expect(batches[0].fills[0]).toMatchObject({ symbol: "xyz:GOLD", dex: "xyz", side: "buy", price: "4468.3", size: "0.00537", fee: "0.019303", feeToken: "USDC", liquidity: "taker", orderId: "900002" });
     expect(r.of("gap")).toEqual([]);
     expect(r.of("account")[0].source).toBe("snapshot");
+  });
+
+  it("account unrealizedPnl = exact sum of the frame's position unrealizedPnl (QA 0.15.0: always null)", async () => {
+    const r = await userStream(hyperliquid, HL_ROUTES, hlUser, ["account"]);
+    r.t.last().open();
+    for (const f of fixtureFrames("hyperliquid", "private-control")) r.t.last().message(f);
+    const pos = (coin: string, szi: string, upnl: string | null) => ({ type: "oneWay", position: { coin, szi, entryPx: "100", positionValue: "10", unrealizedPnl: upnl, liquidationPx: null, marginUsed: "1", leverage: { type: "cross", value: 10 } } });
+    const frame = (positions: unknown[]) => ({ channel: "clearinghouseState", data: { dex: "", user: EVM, clearinghouseState: { marginSummary: { accountValue: "100.0", totalMarginUsed: "2.0" }, withdrawable: "90.0", assetPositions: positions, time: 1791035142454 } } });
+    r.t.last().message(frame([pos("BTC", "0.01", "1.25"), pos("ETH", "-0.1", "-0.3")]));
+    expect(r.of("account").at(-1)?.unrealizedPnl).toBe("0.95");
+    r.t.last().message(frame([pos("BTC", "0.01", "1.25"), pos("ETH", "-0.1", null)]));
+    expect(r.of("account").at(-1)?.unrealizedPnl).toBeNull(); // one unknown → the sum is unknown
   });
 
   it("merges orderUpdates deltas and positions; a reconnect replay adds no duplicate fill, a new fill arrives once", async () => {

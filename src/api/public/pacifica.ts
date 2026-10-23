@@ -93,7 +93,7 @@ export function fetchPacificaPrices(): Promise<PacificaAsset[]> {
     const out: PacificaAsset[] = [];
     for (const p of data) {
       const symbol = String(p.symbol ?? "");
-      const fundingRaw = p.next_funding ?? p.funding;
+      const fundingRaw = p.funding; // last settled hourly rate (the market row / WS `funding`), not next_funding
       const funding = Number(fundingRaw);
       const mark = Number(p.mark);
       if (!symbol || fundingRaw === undefined || !Number.isFinite(funding) || !Number.isFinite(mark) || mark <= 0) {
@@ -124,7 +124,7 @@ export function parsePacificaRaw(raw: unknown): { rates: Map<string, number>; pr
     const sym = String(p.symbol ?? "");
     if (!sym) continue;
     // SSOT rule #2: skip rows missing real funding/mark; never publish 0.
-    const fundingRaw = p.next_funding ?? p.funding;
+    const fundingRaw = p.funding; // last settled hourly rate (the market row / WS `funding`), not next_funding
     const fundingNumber = Number(fundingRaw);
     if (fundingRaw !== undefined && Number.isFinite(fundingNumber)) {
       rates.set(sym, fundingNumber);

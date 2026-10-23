@@ -8,15 +8,18 @@ import type {
   ExchangePublicTrade,
   ExchangeFundingPayment,
   ExchangeKline,
+  FundingHistoryRow,
 } from "./interface.js";
+import { assertCandleInterval } from "./interface.js";
 import type { ResolvedSlippage } from "./slippage.js";
+import { isLighterMarketLive } from "../ws/lighter-market.js";
 import { alignProtectionPrice, floorSize, formatComputedPrice, mulDecimal, slippagePrice, toUnitsExact, unitsToString } from "./precision.js";
 import { unsupported } from "./trading-v2.js";
 import type { EvmSigner } from "../signer/index.js";
 import { LocalEvmSigner } from "../signer/index.js";
 import type { AgentMeta } from "../settings.js";
 import { isExpired } from "../agent-wallet/expiry.js";
-import { PerpError, classifyError, extractErrorMessage, orderNotSent, orderOutcomeUnknown, sendFailure, unknownActionRemediation, parsePositiveDecimal, DEFINITE_ORDER_FAILURE_CODES, type ErrorCode } from "../errors.js";
+import { PerpError, classifyError, extractErrorMessage, orderNotSent, orderOutcomeUnknown, sendFailure, unknownActionRemediation, parsePositiveDecimal, DEFINITE_ORDER_FAILURE_CODES, type ErrorCode, noAccountKeyError } from "../errors.js";
 import { parseFiniteVenueNumber, venueRateField } from "../utils/numeric.js";
 import type { Network, VenueNetworkConfig } from "./venue.js";
 import {
@@ -24,7 +27,7 @@ import {
   LIGHTER_GTT_EXPIRY_MS, LIGHTER_CLIENT_ORDER_INDEX_MAX, LIGHTER_REFERENCE_PRICE_SOURCE,
 } from "./venues/lighter-family.js";
 import { acquireRate, rateLimitedError } from "./rate-limiter.js";
-import { lighterWafChallenge } from "./lighter-public.js";
+import { fetchLighterFundingStats, lighterFundingStatsWarning, LIGHTER_BOOK_ORDERS_LIMIT, lighterBook, lighterWafChallenge, type LighterFundingStat } from "./lighter-public.js";
 import { fetchAndCache, invalidateCache, setCached, withCache, TTL_ACCOUNT } from "../cache.js";
 import type { LighterVenueId } from "./venues/lighter-family.js";
 
@@ -70,6 +73,30 @@ export function classifyTriggerOrderType(
 
 /** Lighter order time-in-force enum (lighter-go / SDK `TimeInForce`): 0 IOC, 1 GTT, 2 post-only. */
 export const LIGHTER_TIF = { IOC: 0, GTT: 1, POST_ONLY: 2 } as const;
+
+/**
+ * One GET /api/v1/fundings row → a funding history row (fraction per 1 h, signed).
+ * `rate` is percent per hour, unsigned; `direction` "long" = longs pay (positive), "short" = shorts pay.
+ */
+export function lighterFundingRow(venue: string, f: unknown): FundingHistoryRow {
+  const x = f as { timestamp?: unknown; rate?: unknown; direction?: unknown };
+  if (typeof x.timestamp !== "number" || !Number.isFinite(x.timestamp) || x.timestamp <= 0) {
+    throw new PerpError("EXCHANGE_ERROR", `${venue} /fundings: row without a numeric timestamp: ${JSON.stringify(f).slice(0, 160)}`, { exchange: venue });
+  }
+  if (typeof x.rate !== "string" || !/^\d+(\.\d+)?$/.test(x.rate)) {
+    throw new PerpError("EXCHANGE_ERROR", `${venue} /fundings: row without an unsigned decimal rate: ${JSON.stringify(f).slice(0, 160)}`, { exchange: venue });
+  }
+  if (x.direction !== "long" && x.direction !== "short") {
+    throw new PerpError("EXCHANGE_ERROR", `${venue} /fundings: unknown direction ${JSON.stringify(x.direction)}`, { exchange: venue });
+  }
+  return {
+    time: x.timestamp * 1000,
+    rate: mulDecimal(x.rate, x.direction === "long" ? "0.01" : "-0.01"),
+    price: null,
+    intervalHours: 1,
+    rateKind: "lastSettled",
+  };
+}
 
 /** Decimal step for `decimals` digits ("1" for 0, "0.01" for 2). */
 function lighterStep(decimals: number): string {
@@ -456,6 +483,39 @@ export function lighterRowCreatedMs(row: Record<string, unknown>): number | null
  * leverage = floor(10000 / bps), which returns the integer leverage that was set. margin_mode:
  * 0 cross, 1 isolated (the values updateLeverage signs). Anything else throws — never a guess.
  */
+/**
+ * Open positions of one Lighter account (`GET /account` `accounts[].positions[]`): the venue lists
+ * every market the account ever traded or configured, so rows with `position` 0 are dropped. The
+ * ONE mapper of the keyed `getPositions` and the public-address read; `priceDecimalsOf` formats
+ * the computed mark (position_value / size) to the market's price decimals when known.
+ */
+export function lighterPositionRows(positions: unknown, venue: string, priceDecimalsOf: (symbol: string) => number | undefined): ExchangePosition[] {
+  return ((positions as Record<string, unknown>[] | undefined) ?? [])
+    .filter((p: Record<string, unknown>) => parseFiniteVenueNumber(p.position, "position", "lighter") !== 0)
+    .map((p: Record<string, unknown>) => {
+      const posSize = parseFiniteVenueNumber(p.position, "position", "lighter");
+      const positionValue = parseFiniteVenueNumber(p.position_value, "position_value", "lighter");
+      return {
+        symbol: String(p.symbol || `Market-${p.market_id}`),
+        side: (Number(p.sign) > 0 ? "long" : "short") as "long" | "short",
+        size: String(Math.abs(posSize)),
+        entryPrice: String(p.avg_entry_price || "0"),
+        markPrice: (() => {
+          if (posSize === 0) return "0";
+          const rawMark = positionValue / Math.abs(posSize);
+          const priceDec = priceDecimalsOf(String(p.symbol || ""));
+          return priceDec !== undefined ? rawMark.toFixed(priceDec) : formatComputedPrice(rawMark);
+        })(),
+        // The venue reports "0" when the position has no liquidation price (e.g. cross margin
+        // well covered): that is "none", not a price.
+        liquidationPrice: Number(p.liquidation_price) > 0 ? String(p.liquidation_price) : null,
+        unrealizedPnl: String(p.unrealized_pnl || "0"),
+        // The leverage CONFIGURED for the market (what `trade leverage` set) — not notional / equity.
+        ...lighterPositionSettings(p, venue),
+      };
+    });
+}
+
 export function lighterPositionSettings(p: Record<string, unknown>, venue: string): { leverage: number; marginMode: "cross" | "isolated" } {
   const pct = typeof p.initial_margin_fraction === "string" && /^\d+(\.\d+)?$/.test(p.initial_margin_fraction) ? Number(p.initial_margin_fraction) : NaN;
   const bps = Math.round(pct * 100);
@@ -497,6 +557,18 @@ export function lighterSelectAccount(accounts: Array<Record<string, unknown>> | 
  */
 export const LIGHTER_MARKET_LIST_TTL_MS = 5 * 60_000;
 
+/** GET /api/v1/candles resolutions, live-verified 2026-10-19 on lighter + lighter-rh mainnet and lighter testnet (3m / 2h / 6h / 8h / 1w / 1M / 2m: code 20001 "invalid param"). */
+export const LIGHTER_CANDLE_INTERVALS: Readonly<Record<string, number>> = {
+  "1m": 60_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
+  "1h": 3_600_000, "4h": 14_400_000, "12h": 43_200_000, "1d": 86_400_000,
+};
+/** "Returns at most 500 candles per call" (apidocs.lighter.xyz/reference/candles). */
+export const LIGHTER_CANDLES_PER_CALL = 500;
+/** Max `limit` of GET /api/v1/recentTrades. */
+export const LIGHTER_RECENT_TRADES_MAX = 100;
+/** Requests one `market kline` may send (the venue allows 60 / minute on standard accounts). */
+export const LIGHTER_KLINE_MAX_PAGES = 10;
+
 export interface LighterAdapterOpts {
   apiKey?: string;
   accountIndex?: number;
@@ -535,6 +607,8 @@ export class LighterAdapter implements ExchangeAdapter {
   private _address: string;
   private _marketMap = new Map<string, number>(); // symbol → marketIndex
   private _marketDecimals = new Map<string, { size: number; price: number }>(); // symbol → decimals
+  /** symbol → live (isLighterMarketLive). Inactive markets stay in _marketMap for reads and closes. */
+  private _marketLive = new Map<string, boolean>();
   private _evmKey: string;
   private _apiKey: string;
   private _accountIndexInit: number;
@@ -943,14 +1017,15 @@ export class LighterAdapter implements ExchangeAdapter {
    * the 60 / minute budget.
    */
   private async _refreshMarketMap(): Promise<void> {
-    const perps = await withCache(`mkt:${this.venueId}:${this.networkName}:orderBooks`, LIGHTER_MARKET_LIST_TTL_MS, async () => {
+    // v2: rows carry `live` (entries cached before it lack the field).
+    const perps = await withCache(`mkt:${this.venueId}:${this.networkName}:orderBooks:v2`, LIGHTER_MARKET_LIST_TTL_MS, async () => {
       const res = await this.restGet("/orderBooks", {}) as { order_books?: unknown };
       if (!Array.isArray(res.order_books) || res.order_books.length === 0) {
         throw new PerpError("EXCHANGE_ERROR", `${this.name} orderBooks returned no order_books list — the market list is unknown`, {
           exchange: this.name, remediation: `Retry; check the venue status: perp -e ${this.name} market list`,
         });
       }
-      const rows: Array<{ symbol: string; marketId: number; size: number; price: number }> = [];
+      const rows: Array<{ symbol: string; marketId: number; size: number; price: number; live: boolean }> = [];
       for (const d of res.order_books as Array<Record<string, unknown>>) {
         // Perps only, by the venue's own market_type (spot markets are handled by
         // lighter-spot.ts). Market ids are not a type: testnet perps are 4095–4097 and
@@ -959,14 +1034,28 @@ export class LighterAdapter implements ExchangeAdapter {
         if (typeof d.symbol !== "string" || !Number.isInteger(d.market_id) || !Number.isInteger(d.supported_size_decimals) || !Number.isInteger(d.supported_price_decimals)) {
           throw new PerpError("EXCHANGE_ERROR", `${this.name} orderBooks: perp market row without symbol / market_id / decimals: ${JSON.stringify(d).slice(0, 160)}`, { exchange: this.name });
         }
-        rows.push({ symbol: d.symbol.toUpperCase(), marketId: d.market_id as number, size: d.supported_size_decimals as number, price: d.supported_price_decimals as number });
+        rows.push({ symbol: d.symbol.toUpperCase(), marketId: d.market_id as number, size: d.supported_size_decimals as number, price: d.supported_price_decimals as number, live: isLighterMarketLive(d) });
       }
       return rows;
     });
     for (const m of perps) {
       this._marketMap.set(m.symbol, m.marketId);
       this._marketDecimals.set(m.symbol, { size: m.size, price: m.price });
+      (this._marketLive ??= new Map()).set(m.symbol, m.live);
     }
+  }
+
+  /**
+   * An order that can open or add exposure (not reduce-only) on a market that is not live
+   * (`status` inactive / `is_frozen`) is refused before signing. Reduce-only orders and closes are
+   * still sent, so a position on a market that went inactive can be closed.
+   */
+  private assertOpenable(symbol: string, reduceOnly: boolean): void {
+    if (reduceOnly || this._marketLive?.get(symbol.toUpperCase()) !== false) return;
+    throw new PerpError("ORDER_REJECTED", `${this.name} market ${symbol.toUpperCase()} is inactive (status not "active" or frozen) — only reduce-only orders and closes are sent; nothing was signed`, {
+      exchange: this.name, marketInactive: true,
+      remediation: `Close or reduce with --reduce-only; list live markets: perp -e ${this.name} market list`,
+    });
   }
 
   getMarketIndex(symbol: string): number {
@@ -1311,8 +1400,19 @@ export class LighterAdapter implements ExchangeAdapter {
     return { baseAmount, priceTicks };
   }
 
-  async getMarkets(): Promise<ExchangeMarketInfo[]> {
+  /** Settled / predicted hourly funding per market_id (WS market_stats snapshot, shared with the public directory). */
+  protected fundingStats(): Promise<Map<number, LighterFundingStat>> {
+    return fetchLighterFundingStats(this.venueId, this.networkName);
+  }
+
+  /** Why the last listing's fundingRate is null (the settled-rate snapshot failed), else null. */
+  fundingWarning(): string | null {
+    return lighterFundingStatsWarning(this.venueId, this.networkName);
+  }
+
+  async getMarkets(opts?: { funding?: boolean }): Promise<ExchangeMarketInfo[]> {
     if (this._marketsCache && Date.now() - this._marketsCacheTime < LighterAdapter.CACHE_TTL) return this._marketsCache;
+    const withFunding = opts?.funding !== false;
     const markets: ExchangeMarketInfo[] = [];
 
     // Ensure _marketDecimals is populated (has supported_size_decimals per symbol)
@@ -1332,9 +1432,16 @@ export class LighterAdapter implements ExchangeAdapter {
           default_initial_margin_fraction?: number;
           min_initial_margin_fraction?: number;
           market_type?: string;
+          status?: string;
+          is_frozen?: boolean;
         }>;
       }>,
-      this.getFundingRates(),
+      // Settled + predicted hourly rates (WS market_stats snapshot — the public directory and
+      // perp-ws read the same source). Unreadable → fundingRate null (unknown), reason printed.
+      !withFunding ? Promise.resolve(new Map<number, LighterFundingStat>()) : this.fundingStats().catch((e: unknown) => {
+        console.error(`[${this.name}] settled funding rate unavailable (fundingRate null): ${e instanceof Error ? e.message : String(e)}`);
+        return new Map<number, LighterFundingStat>();
+      }),
     ]);
 
     // An absent list is a failed fetch, never "no markets" (SSOT Rule #2).
@@ -1342,12 +1449,14 @@ export class LighterAdapter implements ExchangeAdapter {
       throw new PerpError("EXCHANGE_ERROR", `${this.name} orderBookDetails: missing order_book_details array`, { exchange: this.name });
     }
     const isPriceStr = (v: unknown): v is string => typeof v === "string" && v.length > 0 && Number(v) > 0;
-    const perps = obRes.order_book_details.filter(d => d.market_type === "perp");
+    // Live perps only (status "active", not frozen): the one rule shared with the WS directory and
+    // lighter-public.ts. Inactive markets (26 on mainnet, 2026-10-19) were listed as live.
+    const perps = obRes.order_book_details.filter(d => d.market_type === "perp" && isLighterMarketLive(d));
     const unpriced: string[] = [];
     for (const d of perps) {
       const imf = d.min_initial_margin_fraction ?? d.default_initial_margin_fraction ?? 500;
       const maxLev = imf > 0 ? Math.floor(10000 / imf) : 50;
-      const fr = fundingRates.get(d.symbol);
+      const fr = fundingRates.get(d.market_id);
       const dec = this._marketDecimals.get(d.symbol.toUpperCase());
       // markPrice = the venue's MARK price: orderBookDetails `mark_price` (the source the public
       // data path lighter-public.ts uses; /funding-rates carries no mark price). last_trade_price
@@ -1357,13 +1466,20 @@ export class LighterAdapter implements ExchangeAdapter {
         symbol: d.symbol,
         markPrice: d.mark_price,
         indexPrice: isPriceStr(d.index_price) ? d.index_price : null,
+        // Last settled hourly rate (market_stats funding_rate, = the newest /fundings print, = the
+        // perp-ws `rate`), a fraction per 1 h; the running hour's predicted rate is additive.
         fundingRate: fr?.rate ?? null,
+        fundingRateKind: fr?.rate != null ? "lastSettled" as const : null,
+        predictedFundingRate: fr?.predictedRate ?? null,
         volume24h: d.daily_quote_token_volume != null ? String(d.daily_quote_token_volume) : null,
+        // BASE units, one side (WS market_stats open_interest is the same quantity in USD).
         openInterest: d.open_interest != null ? String(d.open_interest) : null,
         maxLeverage: maxLev,
         sizeDecimals: dec ? dec.size : null,
-        stepSize: null,
-        fundingHours: null,
+        // The lot grid of the size decimals (the public directory's stepSize, lighter-public.ts).
+        stepSize: dec ? (dec.size === 0 ? "1" : `0.${"0".repeat(dec.size - 1)}1`) : null,
+        // `fundingRate` is per 1 h (hourly settlement).
+        fundingHours: 1,
         marginTiers: null,
       });
     }
@@ -1376,7 +1492,9 @@ export class LighterAdapter implements ExchangeAdapter {
       });
     }
 
-    this._marketsCache = markets; this._marketsCacheTime = Date.now(); return markets;
+    // A marks-only listing (no funding read) is not cached as the full one.
+    if (withFunding) { this._marketsCache = markets; this._marketsCacheTime = Date.now(); }
+    return markets;
   }
 
   private get accountCacheKey(): string {
@@ -1410,27 +1528,22 @@ export class LighterAdapter implements ExchangeAdapter {
    * Book from GET /orderBookOrders?market_id=<id> on this venue's host (Lighter RH: its own host
    * and market ids, e.g. RH testnet TSLA = 112). Rule #2: an unknown symbol (SYMBOL_NOT_FOUND) or
    * a failed read throws — it is never reported as an empty book. An empty `bids`/`asks` is the
-   * venue's real answer (no liquidity).
+   * venue's real answer (no liquidity). The endpoint lists individual ORDERS (up to 250 per side,
+   * the documented max); they are aggregated into price levels (lighterBookLevels), as the WS
+   * `order_book` channel publishes them.
    */
-  async getOrderbook(symbol: string) {
+  async getOrderbook(symbol: string, depth?: number) {
     await this.ensureMarketMap();
     const marketId = this.getMarketIndex(symbol);
     const res = await this.restGet("/orderBookOrders", {
       market_id: String(marketId),
-      limit: "50",
-    }) as { asks?: Record<string, string>[]; bids?: Record<string, string>[] };
-    const level = (l: Record<string, string>): [string, string] => {
-      const size = l.remaining_base_amount ?? l.size;
-      if (typeof l.price !== "string" || typeof size !== "string") {
-        throw new PerpError("EXCHANGE_ERROR", `${this.name} orderBookOrders ${symbol}: level without price / size`, { exchange: this.name });
-      }
-      return [l.price, size];
-    };
-    return { bids: (res.bids ?? []).map(level), asks: (res.asks ?? []).map(level) };
+      limit: String(LIGHTER_BOOK_ORDERS_LIMIT),
+    }) as { asks?: unknown; bids?: unknown };
+    return lighterBook(this.name, res, symbol, depth);
   }
 
   async getBalance(): Promise<ExchangeBalance> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     const acct = await this.fetchAccount();
     // Rule #2: no account is not a zero balance — say so (like getMarketSettings).
     if (!acct) {
@@ -1468,34 +1581,11 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getPositions(): Promise<ExchangePosition[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     const acct = await this.fetchAccount();
     if (!acct) return [];
 
-    return ((acct.positions as unknown as Record<string, unknown>[]) ?? [])
-      .filter((p: Record<string, unknown>) => parseFiniteVenueNumber(p.position, "position", "lighter") !== 0)
-      .map((p: Record<string, unknown>) => {
-        const posSize = parseFiniteVenueNumber(p.position, "position", "lighter");
-        const positionValue = parseFiniteVenueNumber(p.position_value, "position_value", "lighter");
-        return {
-          symbol: String(p.symbol || `Market-${p.market_id}`),
-          side: (Number(p.sign) > 0 ? "long" : "short") as "long" | "short",
-          size: String(Math.abs(posSize)),
-          entryPrice: String(p.avg_entry_price || "0"),
-          markPrice: (() => {
-            if (posSize === 0) return "0";
-            const rawMark = positionValue / Math.abs(posSize);
-            const priceDec = this._marketDecimals.get(String(p.symbol || "").toUpperCase())?.price;
-            return priceDec !== undefined ? rawMark.toFixed(priceDec) : formatComputedPrice(rawMark);
-          })(),
-          // The venue reports "0" when the position has no liquidation price (e.g. cross margin
-          // well covered): that is "none", not a price.
-          liquidationPrice: Number(p.liquidation_price) > 0 ? String(p.liquidation_price) : null,
-          unrealizedPnl: String(p.unrealized_pnl || "0"),
-          // The leverage CONFIGURED for the market (what `trade leverage` set) — not notional / equity.
-          ...lighterPositionSettings(p, this.name),
-        };
-      });
+    return lighterPositionRows(acct.positions, this.name, (sym) => this._marketDecimals.get(sym.toUpperCase())?.price);
   }
 
   /**
@@ -1504,7 +1594,7 @@ export class LighterAdapter implements ExchangeAdapter {
    * position or not).
    */
   async getMarketSettings(): Promise<Array<{ symbol: string; leverage: number; marginMode: "cross" | "isolated" }>> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     const acct = await this.fetchAccount();
     if (acct === null) throw new PerpError("EXCHANGE_ERROR", `${this.name}: no account found for ${this._address}`, { exchange: this.name });
     if (!Array.isArray(acct.positions)) {
@@ -1526,7 +1616,7 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getOpenOrders(): Promise<ExchangeOrder[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     if (this._accountIndex < 0 || this._readOnly) return [];
     // ONE request for every perp market. Docs (apidocs.lighter.xyz/reference/accountactiveorders):
     // market_id — "If not specified, returns active orders for all markets."; market_type —
@@ -1599,8 +1689,9 @@ export class LighterAdapter implements ExchangeAdapter {
       this.ensureSigner();
       await this.ensureMarketMap();
 
-      const nonce = await this.getNextNonce();
       const marketIndex = this.getMarketIndex(symbol);
+      this.assertOpenable(symbol, opts.reduceOnly);
+      const nonce = await this.getNextNonce();
       ({ baseAmount } = this.toTicks(symbol, size, "0"));
       const reference = await this.getReferencePrice(symbol);
       const p = this.protectionFor(symbol, side, reference, opts.slippage, LIGHTER_REFERENCE_PRICE_SOURCE);
@@ -1659,8 +1750,9 @@ export class LighterAdapter implements ExchangeAdapter {
       else throw unsupported(this.name, tif === "FOK" ? "fok" : "timeInForce", `time-in-force ${opts?.tif} is not offered`, "Use --tif GTC or IOC");
       this.ensureSigner();
       await this.ensureMarketMap();
-      const nonce = await this.getNextNonce();
       const marketIndex = this.getMarketIndex(symbol);
+      this.assertOpenable(symbol, opts?.reduceOnly === true);
+      const nonce = await this.getNextNonce();
       const ticks = this.toTicks(symbol, size, price);
       sentBase = ticks.baseAmount;
       isIoc = timeInForce === LIGHTER_TIF.IOC;
@@ -1821,6 +1913,7 @@ export class LighterAdapter implements ExchangeAdapter {
       // The order must be an open order of this market, and not a trigger order: a modify is
       // signed with triggerPrice 0, which would turn a stop / take-profit into a plain limit.
       existing = await this.activeOrderRow(symbol, marketIndex, orderId, "modified");
+      this.assertOpenable(symbol, existing.reduce_only === true || existing.reduce_only === 1);
       const type = String(existing.type ?? "").toLowerCase();
       if (/stop|take|trigger/.test(type) || Number(existing.trigger_price ?? 0) > 0) {
         throw unsupported(this.name, "amend", "trigger orders cannot be modified", "cancel and re-place");
@@ -1986,8 +2079,9 @@ export class LighterAdapter implements ExchangeAdapter {
       }
       this.ensureSigner();
       await this.ensureMarketMap();
-      const nonce = await this.getNextNonce();
       const marketIndex = this.getMarketIndex(symbol);
+      this.assertOpenable(symbol, opts?.reduceOnly === true);
+      const nonce = await this.getNextNonce();
       const { baseAmount } = this.toTicks(symbol, size, "0");
       const { priceTicks: triggerTicks } = this.toTicks(symbol, "0", triggerPrice);
 
@@ -2133,6 +2227,12 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   async getRecentTrades(symbol: string, limit = 20): Promise<ExchangePublicTrade[]> {
+    // /recentTrades `limit`: 1..100 (apidocs.lighter.xyz/reference/recenttrades; 101 → code 20001).
+    if (!Number.isInteger(limit) || limit < 1 || limit > LIGHTER_RECENT_TRADES_MAX) {
+      throw new PerpError("INVALID_PARAMS", `${this.name} trades limit must be 1..${LIGHTER_RECENT_TRADES_MAX} (got ${limit})`, {
+        exchange: this.name, remediation: `${this.name} serves at most the last ${LIGHTER_RECENT_TRADES_MAX} trades`,
+      });
+    }
     await this.ensureMarketMap();
     const marketId = this.getMarketIndex(symbol);
     const res = await this.restGet("/recentTrades", { market_id: String(marketId), limit: String(limit) }) as Record<string, unknown>;
@@ -2151,23 +2251,107 @@ export class LighterAdapter implements ExchangeAdapter {
     }));
   }
 
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
+  /**
+   * Settled funding prints: GET /api/v1/fundings (apidocs.lighter.xyz/reference/fundings;
+   * `count_back` rows from `start_timestamp`, max 750). Each row is one hourly settlement:
+   * `rate` is PERCENT per 1 h, unsigned, with `direction` "long" (longs pay → positive) or
+   * "short" (shorts pay → negative). Live 2026-10-19 BTC: rate "0.0012", value "0.99315" =
+   * mark 82,763 × 0.000012, i.e. value / mark = rate / 100. NOT the /funding-rates unit (8 h).
+   */
+  async getFundingHistory(symbol: string, limit = 10): Promise<FundingHistoryRow[]> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 750) {
+      throw new PerpError("INVALID_PARAMS", `${this.name} funding history limit must be 1..750 (got ${limit})`, { exchange: this.name });
+    }
     await this.ensureMarketMap();
-    this.getMarketIndex(symbol); // unlisted market: SYMBOL_NOT_FOUND, not an empty history
-    const rates = await this.getFundingRates();
-    const r = rates.get(symbol.toUpperCase());
-    if (!r) return [];
-    // Lighter funding-rates is current only, not historical
-    return [{ time: Date.now(), rate: r.rate, price: r.markPrice }];
+    const marketId = this.getMarketIndex(symbol); // unlisted market: SYMBOL_NOT_FOUND, not an empty history
+    const end = Math.floor(Date.now() / 1000);
+    const res = await this.restGet("/fundings", {
+      market_id: String(marketId),
+      resolution: "1h",
+      // One spare hour covers the settlement in progress.
+      start_timestamp: String(end - (limit + 1) * 3600),
+      end_timestamp: String(end),
+      count_back: String(limit),
+    }) as { fundings?: unknown };
+    if (!Array.isArray(res.fundings)) {
+      throw new PerpError("EXCHANGE_ERROR", `${this.name} /fundings: missing fundings array (${JSON.stringify(res).slice(0, 120)})`, { exchange: this.name });
+    }
+    return res.fundings.map((f) => lighterFundingRow(this.name, f)).sort((a, b) => a.time - b.time).slice(-limit);
   }
 
+  /**
+   * Candles opening in [startTime, endTime] (ms). GET /api/v1/candles answers the
+   * max(count_back, bars in the window) newest bars ending at `end_timestamp`, at most 500
+   * (live 2026-10-19, BTC 1h: a 96-bar window with count_back 1 / 96 → those 96 bars; with
+   * count_back 500 → 500 bars, 404 of them before start_timestamp; a future window → past bars).
+   * So count_back is the window's bar count (≤ 500), rows outside the window are dropped, and a
+   * longer window is paged backwards in 500-bar chunks by moving end_timestamp. `end_timestamp` is
+   * exclusive at second resolution (live: end = a bar's open excludes it, open + 1 s includes it),
+   * so end + 1 s is sent for an inclusive --end. Each answer's `r`
+   * must be the requested resolution. Intervals outside LIGHTER_CANDLE_INTERVALS and windows over
+   * LIGHTER_KLINE_MAX_PAGES pages are refused with INVALID_PARAMS before any request.
+   */
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
-    const res = await this.getCandles(symbol, interval, startTime, endTime) as Record<string, unknown>;
-    // /candles returns the array under key `c` (top keys: code, r, c) — `res.candles`
-    // is always undefined, which silently rendered every Lighter kline set empty.
-    const candles = (res.c ?? res.candles ?? []) as Record<string, unknown>[];
+    const ivMs = LIGHTER_CANDLE_INTERVALS[interval];
+    if (ivMs === undefined) {
+      throw new PerpError("INVALID_PARAMS", `${this.name} kline interval ${JSON.stringify(interval)} is not served (supported: ${Object.keys(LIGHTER_CANDLE_INTERVALS).join(", ")})`, {
+        exchange: this.name, remediation: `Use one of: ${Object.keys(LIGHTER_CANDLE_INTERVALS).join(", ")}`,
+      });
+    }
+    if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || startTime > endTime) {
+      throw new PerpError("INVALID_PARAMS", `${this.name} kline window must be start ≤ end (unix ms; got ${startTime}..${endTime})`, { exchange: this.name });
+    }
+    // Bar opens in [start, end] (bars open on multiples of the interval since the epoch).
+    const barsIn = (from: number, to: number) => Math.floor(to / ivMs) - Math.ceil(from / ivMs) + 1;
+    const bars = barsIn(startTime, endTime);
+    if (bars > LIGHTER_CANDLES_PER_CALL * LIGHTER_KLINE_MAX_PAGES) {
+      throw new PerpError("INVALID_PARAMS", `${this.name} kline window spans ${bars} ${interval} bars; at most ${LIGHTER_CANDLES_PER_CALL * LIGHTER_KLINE_MAX_PAGES} are read (${LIGHTER_KLINE_MAX_PAGES} requests of ${LIGHTER_CANDLES_PER_CALL})`, {
+        exchange: this.name, remediation: "Narrow --start / --end or use a longer interval",
+      });
+    }
+    if (bars <= 0) {
+      // No bar opens in the window: nothing to ask for (count_back 0 is never sent); the symbol is still checked.
+      await this.ensureMarketMap();
+      this.getMarketIndex(symbol);
+      return [];
+    }
+    const byTime = new Map<number, Record<string, unknown>>();
+    let cursorEnd = endTime;
+    let prevEarliest = Infinity;
+    let covered = false;
+    for (let page = 0; page < LIGHTER_KLINE_MAX_PAGES; page++) {
+      const left = barsIn(startTime, cursorEnd);
+      if (left <= 0) { covered = true; break; } // every bar open in the window is read
+      const want = Math.min(LIGHTER_CANDLES_PER_CALL, left);
+      const res = await this.getCandles(symbol, interval, startTime, cursorEnd + 1000, want) as Record<string, unknown>;
+      assertCandleInterval(this.name, interval, res.r);
+      // /candles returns the array under key `c` (top keys: code, r, c).
+      if (!Array.isArray(res.c)) {
+        throw new PerpError("EXCHANGE_ERROR", `${this.name} /candles: no candle list (${JSON.stringify(res).slice(0, 120)})`, { exchange: this.name });
+      }
+      const rows = res.c as Record<string, unknown>[];
+      let earliest = Infinity;
+      for (const c of rows) {
+        const t = Number(c.t);
+        if (!Number.isFinite(t)) throw new PerpError("EXCHANGE_ERROR", `${this.name} /candles: row without an open time: ${JSON.stringify(c).slice(0, 120)}`, { exchange: this.name });
+        if (t < earliest) earliest = t;
+        if (t >= startTime && t <= endTime) byTime.set(t, c);
+      }
+      // Done: the window start is covered, or the venue has no older bars (a short answer).
+      if (rows.length === 0 || earliest <= startTime || rows.length < want) { covered = true; break; }
+      if (earliest >= prevEarliest) {
+        throw new PerpError("EXCHANGE_ERROR", `${this.name} /candles: paging made no progress (oldest bar ${earliest} not before the previous page's ${prevEarliest})`, { exchange: this.name });
+      }
+      prevEarliest = earliest;
+      cursorEnd = earliest - 1000; // sent as `earliest`: the bars strictly before the oldest one read
+    }
+    if (!covered) {
+      // Every page was full and the window start is still not reached: never a silently short window.
+      throw new PerpError("EXCHANGE_ERROR", `${this.name} /candles: ${LIGHTER_KLINE_MAX_PAGES} full pages did not reach the window start ${startTime} (oldest ${prevEarliest})`, { exchange: this.name });
+    }
+    const candles = [...byTime.values()].sort((a, b) => Number(a.t) - Number(b.t));
     return candles.map((c) => ({
-      time: Number(c.start_timestamp ?? c.t ?? 0),
+      time: Number(c.t),
       open: String(c.open ?? c.o ?? "0"),
       high: String(c.high ?? c.h ?? "0"),
       low: String(c.low ?? c.l ?? "0"),
@@ -2232,7 +2416,7 @@ export class LighterAdapter implements ExchangeAdapter {
    * is optional ("default": "255"), market_type is "all" | "spot" | "perp".
    */
   async getOrderHistory(limit = 30): Promise<ExchangeOrder[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     const orders = await this.historyRows("/accountInactiveOrders", "orders", { market_type: "perp" }, limit, true);
     // Every field is required: a missing price / size / status / type is an unreadable row, never "0" / "done" / "limit".
     const req = (o: Record<string, unknown>, k: string): string => lighterRowField(o, k, this.name, "order history");
@@ -2262,7 +2446,7 @@ export class LighterAdapter implements ExchangeAdapter {
    * so the fee is usd_amount × fee / 1e6 for the side this account took.
    */
   async getTradeHistory(limit = 30): Promise<ExchangeTrade[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     const trades = await this.historyRows("/trades", "trades", { sort_by: "timestamp", market_type: "perp" }, limit, false);
     return trades.map((t) => {
       const sold = t.ask_account_id === this._accountIndex;
@@ -2297,7 +2481,7 @@ export class LighterAdapter implements ExchangeAdapter {
    * quote amount: a short at a positive rate has a positive change).
    */
   async getFundingPayments(limit = 200): Promise<ExchangeFundingPayment[]> {
-    if (!this._address) throw new Error("No private key configured — account data unavailable. Run: perp setup");
+    if (!this._address) throw noAccountKeyError(this.name);
     const items = await this.historyRows("/positionFunding", "position_fundings", { side: "all" }, limit, true);
     return items.map((f) => {
       if (typeof f.timestamp !== "number" || typeof f.change !== "string") {
@@ -2308,8 +2492,9 @@ export class LighterAdapter implements ExchangeAdapter {
   }
 
   /**
-   * Get funding rates for all markets.
-   * API: GET /api/v1/funding-rates
+   * GET /api/v1/funding-rates: the venue's PREDICTED rate × 8, a fraction per 8 h — not the venue
+   * basis (1 h; market rows carry the settled hourly rate, fundingStats). Not used for funding
+   * comparisons; normalize with 8 h if read.
    */
   async getFundingRates(): Promise<Map<string, { rate: string; markPrice: string | null }>> {
     const map = new Map<string, { rate: string; markPrice: string | null }>();

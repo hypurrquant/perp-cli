@@ -1110,9 +1110,15 @@ export class FundingArbStrategy implements Strategy {
       }
 
       const perpSymbol = getPerpSymbol(opp.symbol, opp.shortExchange);
-      const priceEstimate = await getPriceEstimate(perpAdapter, perpSymbol, opp.symbol);
-      if (priceEstimate <= 0) {
-        ctx.log(`  [ARB] Skip spot-perp ${opp.symbol}: can't determine price`);
+      let priceEstimate: number | null;
+      try {
+        priceEstimate = await getPriceEstimate(perpAdapter, perpSymbol, opp.symbol);
+      } catch (err) {
+        ctx.log(`  [ARB] Skip spot-perp ${opp.symbol}: market read failed: ${err instanceof Error ? err.message : String(err)}`);
+        return false;
+      }
+      if (priceEstimate === null) {
+        ctx.log(`  [ARB] Skip spot-perp ${opp.symbol}: no positive mark price on ${opp.shortExchange}`);
         return false;
       }
 

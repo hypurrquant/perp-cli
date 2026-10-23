@@ -141,7 +141,7 @@ describe("5. HIP-3 dex symbol display", () => {
     const getOrderbook = vi.fn(async () => ({ bids: [["99", "1"]] as [string, string][], asks: [["101", "1"]] as [string, string][] }));
     const { text } = await run({ getOrderbook }, ["market", "book", "xyz:XYZ100"]);
     expect(text).toContain("Orderbook: xyz:XYZ100 (hyperliquid)");
-    expect(getOrderbook).toHaveBeenCalledWith("xyz:XYZ100");
+    expect(getOrderbook).toHaveBeenCalledWith("xyz:XYZ100", 10); // --depth (default 10) reaches the adapter
   });
 
   it("trade market --dry-run echoes xyz:XYZ100", async () => {
@@ -154,5 +154,58 @@ describe("5. HIP-3 dex symbol display", () => {
     await program.parseAsync(["node", "perp", "--dry-run", "--json", "trade", "market", "xyz:XYZ100", "buy", "0.001"]);
     const env = JSON.parse(out.find((l) => l.includes("dryRun"))!);
     expect(env.data.symbol).toBe("xyz:XYZ100");
+  });
+});
+
+describe("market prices: Pacifica returns the normalized market rows (QA 0.15.0)", () => {
+  it("JSON is getMarkets(), never the raw /info/prices fields (funding / mark / mid / oracle / next_funding)", async () => {
+    // Raw row as the 0.15.0 output printed it (QA prices_pacifica.json).
+    const raw = { funding: "0.0000125", mark: "152.32", mid: "152.265", next_funding: "0.00001077", open_interest: "1269.17", oracle: "152.401133", symbol: "AAVE", timestamp: 1792404059021, volume_24h: "62980.0938", yesterday_price: "154.11" };
+    const AAVE: ExchangeMarketInfo = { ...BTC, symbol: "AAVE", markPrice: "152.32", indexPrice: "152.401133", fundingRate: "0.00001077", volume24h: "62980.0938", openInterest: "1269.17", fundingHours: 1 };
+    const out: string[] = [];
+    const program = new Command();
+    program.exitOverride();
+    program.option("-e, --exchange <exchange>", "", "pacifica");
+    registerMarketCommands(program, async () => ({ name: "pacifica", publicKey: "PacPubKey1111", sdk: { getPrices: async () => [raw] }, getMarkets: async () => [AAVE] } as unknown as ExchangeAdapter), () => true);
+    vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { out.push(a.map(String).join(" ")); });
+    await program.parseAsync(["node", "perp", "-e", "pacifica", "market", "prices"]);
+    const j = JSON.parse(out.join("\n"));
+    expect(j.data).toEqual([{ ...AAVE, fundingVerified: true }]);
+    expect(Object.keys(j.data[0])).toEqual(expect.arrayContaining(["markPrice", "indexPrice", "fundingRate"]));
+    expect(j.data[0]).not.toHaveProperty("mid");
+  });
+});
+
+describe("market list|prices without -e covers every market-data venue (QA 0.15.0)", () => {
+  it("txflow, variational, grvt and extended are fanned out, not only the account-role venues", async () => {
+    await import("../../exchanges/venues/index.js");
+    const { MARKET_DATA_VENUES } = await import("../../commands/market.js");
+    expect(MARKET_DATA_VENUES).toEqual(expect.arrayContaining(["txflow", "variational", "grvt", "extended", "hyperliquid", "pacifica", "lighter", "lighter-rh", "aster", "ondo", "arcus", "qfex", "risex"]));
+    const asked: string[] = [];
+    const program = new Command();
+    program.exitOverride();
+    program.option("-e, --exchange <exchange>", "", "hyperliquid");
+    registerMarketCommands(program, async () => { throw new Error("single-venue path"); }, () => true,
+      async (ex: string) => { asked.push(ex); return { name: ex, getMarkets: async () => [] } as unknown as ExchangeAdapter; });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    await program.parseAsync(["node", "perp", "market", "list"]);
+    expect(asked).toEqual(expect.arrayContaining(["txflow", "variational", "grvt", "extended"]));
+  });
+});
+
+describe("meta.warnings: why a fundingRate is null reaches --json", () => {
+  it("market list -e <venue> --json carries the adapter's funding warning", async () => {
+    const warning = "lighter: fundingRate null — settled funding rate unavailable (closed)";
+    const { out } = await run({ getMarkets: async () => [{ ...BTC, fundingRate: null }], fundingWarning: () => warning } as Partial<ExchangeAdapter>, ["-e", "lighter", "market", "list"], true);
+    const env = JSON.parse(out.at(-1)!) as { meta: { warnings?: string[] } };
+    expect(env.meta.warnings).toEqual([warning]);
+  });
+});
+
+describe("meta.warnings is tied to the rows served", () => {
+  it("no warning next to rows that all carry a rate (a cached listing)", async () => {
+    const { out } = await run({ getMarkets: async () => [{ ...BTC, fundingRate: "0.00001" }], fundingWarning: () => "lighter: fundingRate null — …" } as Partial<ExchangeAdapter>, ["-e", "lighter", "market", "list"], true);
+    const env = JSON.parse(out.at(-1)!) as { meta: { warnings?: string[] } };
+    expect(env.meta.warnings).toBeUndefined();
   });
 });

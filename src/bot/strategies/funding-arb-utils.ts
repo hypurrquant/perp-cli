@@ -165,19 +165,21 @@ export function matchSymbol(s: string, target: string): boolean {
   return u === t || u === t + "-PERP" || u.replace(/-PERP$/, "") === t;
 }
 
-/** Get a price estimate for a symbol from the perp adapter. */
-export async function getPriceEstimate(perpAdapter: ExchangeAdapter, perpSymbol: string, fallbackSymbol: string): Promise<number> {
-  try {
-    const markets = await perpAdapter.getMarkets();
-    const market = markets.find(m =>
-      m.symbol.toUpperCase() === perpSymbol.toUpperCase() ||
-      m.symbol.toUpperCase() === fallbackSymbol.toUpperCase() ||
-      m.symbol.toUpperCase() === `${fallbackSymbol.toUpperCase()}-PERP`,
-    );
-    return market ? parseFloat(market.markPrice) : 0;
-  } catch {
-    return 0;
-  }
+/**
+ * The perp venue's mark price for a symbol. null = the market is not listed or its mark is not a
+ * positive finite number (Pacifica rows carry markPrice "-" when /info/prices has none). A failed
+ * market read throws (never a 0 that callers would size against).
+ */
+export async function getPriceEstimate(perpAdapter: ExchangeAdapter, perpSymbol: string, fallbackSymbol: string): Promise<number | null> {
+  const markets = await perpAdapter.getMarkets();
+  const market = markets.find(m =>
+    m.symbol.toUpperCase() === perpSymbol.toUpperCase() ||
+    m.symbol.toUpperCase() === fallbackSymbol.toUpperCase() ||
+    m.symbol.toUpperCase() === `${fallbackSymbol.toUpperCase()}-PERP`,
+  );
+  if (market === undefined) return null;
+  const px = Number(market.markPrice);
+  return Number.isFinite(px) && px > 0 ? px : null;
 }
 
 // ── Shared scoring types & helpers ──
@@ -238,6 +240,31 @@ async function marketFundingHours(adapter: ExchangeAdapter, exchangeName: string
  * points, or the per-symbol funding basis is unknown). A failed read THROWS — callers must not
  * mistake a 429 / timeout for "history too thin".
  */
+/**
+ * Funding-history rows one request (or the adapter's paging) can serve per venue — a
+ * `history_periods` above it fails every scoring call, so strategies validate it at config time.
+ * Venues without an entry page without a limit. Measured / documented in docs/VENUE_READ_CAPS.md.
+ */
+export const FUNDING_HISTORY_CAP: Readonly<Record<string, number>> = {
+  // hyperliquid: fundingHistory pages forward, but `-l` above 5000 is refused (HL_FUNDING_HISTORY_MAX_LIMIT).
+  // pacifica: cursor paging, 4000 per page × 10 pages (PACIFICA_FUNDING_PAGE × PACIFICA_MAX_PAGES).
+  hyperliquid: 5000, pacifica: 40_000, lighter: 750, "lighter-rh": 750, arcus: 1000, aster: 1000, grvt: 10_000, extended: 10_000,
+};
+
+/** Throws INVALID_PARAMS when `periods` is not a positive integer or exceeds a leg venue's cap. */
+export function assertFundingHistoryPeriods(periods: unknown, venues: readonly string[], param = "history_periods"): void {
+  if (typeof periods !== "number" || !Number.isInteger(periods) || periods < 1) {
+    throw new PerpError("INVALID_PARAMS", `${param} must be a positive integer (got ${String(periods)})`, { remediation: `Set ${param} to e.g. 6` });
+  }
+  const over = venues.map(v => v.toLowerCase()).filter(v => FUNDING_HISTORY_CAP[v] !== undefined && periods > FUNDING_HISTORY_CAP[v]);
+  if (over.length > 0) {
+    const caps = over.map(v => `${v} ${FUNDING_HISTORY_CAP[v]}`).join(", ");
+    throw new PerpError("INVALID_PARAMS", `${param} ${periods} exceeds the funding-history cap of ${caps}`, {
+      remediation: `Set ${param} to at most ${Math.min(...over.map(v => FUNDING_HISTORY_CAP[v]))}`,
+    });
+  }
+}
+
 export async function scoreFunding(
   adapter: ExchangeAdapter,
   symbol: string,
@@ -252,14 +279,22 @@ export async function scoreFunding(
   const fH = venueHours !== null ? venueHours : await marketFundingHours(adapter, exchangeName, symbol);
   if (fH === null) return null; // per-symbol basis unknown — the hourly rate would be a guess
   const history = await adapter.getFundingHistory(symbol, periods);
-  if (history.length < 2) return null;
-  const rates = history.map(h => parseFloat(h.rate));
+  // A print without a rate is unknown, not 0, and a closed-market window (QFEX outside
+  // market_hours: rate null, marketClosed) carries no funding: both left out of the average.
+  const known = history.filter((h): h is typeof h & { rate: string } => h.rate !== null && h.marketClosed !== true);
+  if (known.length < 2) return null;
+  const rates = known.map(h => parseFloat(h.rate));
   if (rates.some(r => !Number.isFinite(r))) {
     throw new PerpError("EXCHANGE_ERROR", `${exchangeName} ${symbol}: funding history has a non-numeric rate`, { exchange: exchangeName });
   }
-  const avgRate = rates.reduce((s, r) => s + r, 0) / rates.length;
+  // Every print normalized by its own interval (Lighter /fundings prints are per 1 h while the
+  // venue's quoted rate is per 8 h); intervalHours null → the market basis fH.
+  const hourly = known.map((h, i) => rates[i] / (typeof h.intervalHours === "number" ? h.intervalHours : fH));
+  const avgHourly = hourly.reduce((s, r) => s + r, 0) / hourly.length;
+  /** Average rate per the market's own interval (fH), from interval-normalized prints. */
+  const avgRate = avgHourly * fH;
   const consistency = rates.filter(r => r > 0).length / rates.length;
-  const annualized = annualizeHourlyRate(avgRate / fH);
+  const annualized = annualizeHourlyRate(avgHourly);
   const score: FundingScore = { symbol, exchange: exchangeName, avgRate, consistency, annualized, payments: rates.length };
   cache?.set(key, { score, ts: Date.now() });
   return score;

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { HyperliquidOutcomeAdapter } from "../../exchanges/hyperliquid-outcome.js";
 import { PerpError } from "../../errors.js";
 
@@ -454,5 +454,27 @@ describe("HyperliquidOutcomeAdapter — per-outcome quote token", () => {
   it("minimum order value is 10 of the quote token", async () => {
     await expect(adapter(meta("USDC"), []).placeOrder({ outcome: 1488, side: 0, isBuy: false, price: "0.5", size: "10" }))
       .rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" }, message: expect.stringContaining("10 USDC") });
+  });
+});
+
+describe("HIP-4 template outcomes (QA 0.15.0)", () => {
+  it("a template:binaryPrice description (live) yields underlying, threshold and time", async () => {
+    const { HyperliquidOutcomeAdapter } = await import("../../exchanges/hyperliquid-outcome.js");
+    const p = HyperliquidOutcomeAdapter.parseDescription("perp:ZEC|priceDescription:the Pyth ZEC/USD price|seconds:90|threshold:1057|time:20261023-0800");
+    expect(p).toEqual({ underlying: "ZEC", targetPrice: 1057, expiryMs: Date.UTC(2026, 9, 23, 8, 0) });
+    const u = HyperliquidOutcomeAdapter._computeUnderlying({ ...p, class: "priceBinary" }, { ZEC: "1100" });
+    expect(u).toMatchObject({ symbol: "ZEC", markPrice: "1100", targetPrice: 1057, inTheMoney: "yes" });
+  });
+});
+
+describe("HIP-4 malformed template number (review)", () => {
+  it("a non-numeric threshold leaves targetPrice unset with a warning (never NaN)", async () => {
+    const { HyperliquidOutcomeAdapter } = await import("../../exchanges/hyperliquid-outcome.js");
+    const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const p = HyperliquidOutcomeAdapter.parseDescription("perp:ZEC|threshold:abc|time:20261023-0800");
+    expect(p.targetPrice).toBeUndefined();
+    expect(p.underlying).toBe("ZEC");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("threshold \"abc\" is not a number"));
+    warn.mockRestore();
   });
 });

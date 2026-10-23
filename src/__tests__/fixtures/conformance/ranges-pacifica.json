@@ -1,0 +1,1476 @@
+{
+ "schema": 1,
+ "name": "ranges-pacifica",
+ "capturedAt": 1792415909995,
+ "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
+ "keep": [
+  "BTC",
+  "ETH",
+  "SOL"
+ ],
+ "full": [],
+ "http": [
+  {
+   "cell": "warm",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "warm",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info/prices",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "funding": "0.0000125",
+      "mark": "2421.612",
+      "mid": "2421.45",
+      "next_funding": "0.0000125",
+      "open_interest": "14102.4402",
+      "oracle": "2422.614544",
+      "symbol": "ETH",
+      "timestamp": 1792415909023,
+      "volume_24h": "248969774.50294",
+      "yesterday_price": "2414.3"
+     },
+     {
+      "funding": "0.0000125",
+      "mark": "105.34",
+      "mid": "105.335",
+      "next_funding": "0.0000125",
+      "open_interest": "152103.74",
+      "oracle": "105.343011",
+      "symbol": "SOL",
+      "timestamp": 1792415909023,
+      "volume_24h": "54158301.6752",
+      "yesterday_price": "103.9"
+     },
+     {
+      "funding": "0.0000125",
+      "mark": "82539",
+      "mid": "82539.5",
+      "next_funding": "0.0000125",
+      "open_interest": "470.43027",
+      "oracle": "82571.126965",
+      "symbol": "BTC",
+      "timestamp": 1792415909023,
+      "volume_24h": "350125050.51744",
+      "yesterday_price": "81906"
+     },
+     {
+      "funding": "0",
+      "mark": "105.343011",
+      "mid": "105.335",
+      "next_funding": "0",
+      "open_interest": "0",
+      "oracle": "105.343011",
+      "symbol": "SOL-USDC",
+      "timestamp": 1792415909023,
+      "volume_24h": "120661.47768",
+      "yesterday_price": "104"
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1m",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1m",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=1m&start_time=1792415549147&end_time=1792415909147",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1792415580000,
+      "T": 1792415640000,
+      "s": "BTC",
+      "i": "1m",
+      "o": "82524",
+      "c": "82523",
+      "h": "82524",
+      "l": "82523",
+      "v": "0.05806",
+      "n": 15
+     },
+     {
+      "t": 1792415640000,
+      "T": 1792415700000,
+      "s": "BTC",
+      "i": "1m",
+      "o": "82524",
+      "c": "82517",
+      "h": "82524",
+      "l": "82517",
+      "v": "1.1991",
+      "n": 24
+     },
+     {
+      "t": 1792415700000,
+      "T": 1792415760000,
+      "s": "BTC",
+      "i": "1m",
+      "o": "82517",
+      "c": "82494",
+      "h": "82517",
+      "l": "82494",
+      "v": "1.1466",
+      "n": 16
+     },
+     {
+      "t": 1792415760000,
+      "T": 1792415820000,
+      "s": "BTC",
+      "i": "1m",
+      "o": "82469",
+      "c": "82470",
+      "h": "82470",
+      "l": "82469",
+      "v": "0.05692",
+      "n": 15
+     },
+     {
+      "t": 1792415820000,
+      "T": 1792415880000,
+      "s": "BTC",
+      "i": "1m",
+      "o": "82470",
+      "c": "82503",
+      "h": "82503",
+      "l": "82470",
+      "v": "13.28532",
+      "n": 33
+     },
+     {
+      "t": 1792415880000,
+      "T": 1792415940000,
+      "s": "BTC",
+      "i": "1m",
+      "o": "82510",
+      "c": "82510",
+      "h": "82510",
+      "l": "82510",
+      "v": "0.06504",
+      "n": 4
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:3m",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:3m",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=3m&start_time=1792414829219&end_time=1792415909219",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1792414980000,
+      "T": 1792415160000,
+      "s": "BTC",
+      "i": "3m",
+      "o": "82645",
+      "c": "82716",
+      "h": "82718",
+      "l": "82645",
+      "v": "17.58496",
+      "n": 74
+     },
+     {
+      "t": 1792415160000,
+      "T": 1792415340000,
+      "s": "BTC",
+      "i": "3m",
+      "o": "82700",
+      "c": "82577",
+      "h": "82700",
+      "l": "82577",
+      "v": "18.50284",
+      "n": 86
+     },
+     {
+      "t": 1792415340000,
+      "T": 1792415520000,
+      "s": "BTC",
+      "i": "3m",
+      "o": "82577",
+      "c": "82549",
+      "h": "82577",
+      "l": "82529",
+      "v": "5.72978",
+      "n": 51
+     },
+     {
+      "t": 1792415520000,
+      "T": 1792415700000,
+      "s": "BTC",
+      "i": "3m",
+      "o": "82524",
+      "c": "82517",
+      "h": "82524",
+      "l": "82517",
+      "v": "1.25716",
+      "n": 39
+     },
+     {
+      "t": 1792415700000,
+      "T": 1792415880000,
+      "s": "BTC",
+      "i": "3m",
+      "o": "82517",
+      "c": "82503",
+      "h": "82517",
+      "l": "82469",
+      "v": "14.48884",
+      "n": 64
+     },
+     {
+      "t": 1792415880000,
+      "T": 1792416060000,
+      "s": "BTC",
+      "i": "3m",
+      "o": "82510",
+      "c": "82510",
+      "h": "82510",
+      "l": "82510",
+      "v": "0.06504",
+      "n": 4
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:5m",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:5m",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=5m&start_time=1792414109290&end_time=1792415909290",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1792414200000,
+      "T": 1792414500000,
+      "s": "BTC",
+      "i": "5m",
+      "o": "82533",
+      "c": "82550",
+      "h": "82574",
+      "l": "82455",
+      "v": "32.12442",
+      "n": 103
+     },
+     {
+      "t": 1792414500000,
+      "T": 1792414800000,
+      "s": "BTC",
+      "i": "5m",
+      "o": "82549",
+      "c": "82573",
+      "h": "82573",
+      "l": "82534",
+      "v": "11.77636",
+      "n": 60
+     },
+     {
+      "t": 1792414800000,
+      "T": 1792415100000,
+      "s": "BTC",
+      "i": "5m",
+      "o": "82573",
+      "c": "82718",
+      "h": "82718",
+      "l": "82555",
+      "v": "33.90384",
+      "n": 144
+     },
+     {
+      "t": 1792415100000,
+      "T": 1792415400000,
+      "s": "BTC",
+      "i": "5m",
+      "o": "82717",
+      "c": "82575",
+      "h": "82717",
+      "l": "82575",
+      "v": "24.18742",
+      "n": 106
+     },
+     {
+      "t": 1792415400000,
+      "T": 1792415700000,
+      "s": "BTC",
+      "i": "5m",
+      "o": "82566",
+      "c": "82517",
+      "h": "82570",
+      "l": "82517",
+      "v": "1.31106",
+      "n": 78
+     },
+     {
+      "t": 1792415700000,
+      "T": 1792416000000,
+      "s": "BTC",
+      "i": "5m",
+      "o": "82517",
+      "c": "82510",
+      "h": "82517",
+      "l": "82469",
+      "v": "14.55388",
+      "n": 68
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:15m",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:15m",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=15m&start_time=1792410509353&end_time=1792415909353",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1792411200000,
+      "T": 1792412100000,
+      "s": "BTC",
+      "i": "15m",
+      "o": "82320",
+      "c": "82457",
+      "h": "82457",
+      "l": "82292",
+      "v": "55.72156",
+      "n": 302
+     },
+     {
+      "t": 1792412100000,
+      "T": 1792413000000,
+      "s": "BTC",
+      "i": "15m",
+      "o": "82479",
+      "c": "82517",
+      "h": "82588",
+      "l": "82431",
+      "v": "24.83882",
+      "n": 237
+     },
+     {
+      "t": 1792413000000,
+      "T": 1792413900000,
+      "s": "BTC",
+      "i": "15m",
+      "o": "82517",
+      "c": "82564",
+      "h": "82656",
+      "l": "82517",
+      "v": "52.03084",
+      "n": 289
+     },
+     {
+      "t": 1792413900000,
+      "T": 1792414800000,
+      "s": "BTC",
+      "i": "15m",
+      "o": "82548",
+      "c": "82573",
+      "h": "82574",
+      "l": "82455",
+      "v": "57.44668",
+      "n": 213
+     },
+     {
+      "t": 1792414800000,
+      "T": 1792415700000,
+      "s": "BTC",
+      "i": "15m",
+      "o": "82573",
+      "c": "82517",
+      "h": "82718",
+      "l": "82517",
+      "v": "59.40232",
+      "n": 328
+     },
+     {
+      "t": 1792415700000,
+      "T": 1792416600000,
+      "s": "BTC",
+      "i": "15m",
+      "o": "82517",
+      "c": "82510",
+      "h": "82517",
+      "l": "82469",
+      "v": "14.55388",
+      "n": 68
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:30m",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:30m",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=30m&start_time=1792405109414&end_time=1792415909414",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1792405800000,
+      "T": 1792407600000,
+      "s": "BTC",
+      "i": "30m",
+      "o": "82266",
+      "c": "82375",
+      "h": "82444",
+      "l": "82083",
+      "v": "103.7403",
+      "n": 632
+     },
+     {
+      "t": 1792407600000,
+      "T": 1792409400000,
+      "s": "BTC",
+      "i": "30m",
+      "o": "82375",
+      "c": "82211",
+      "h": "82375",
+      "l": "82150",
+      "v": "98.55196",
+      "n": 463
+     },
+     {
+      "t": 1792409400000,
+      "T": 1792411200000,
+      "s": "BTC",
+      "i": "30m",
+      "o": "82210",
+      "c": "82320",
+      "h": "82372",
+      "l": "82118",
+      "v": "106.44712",
+      "n": 433
+     },
+     {
+      "t": 1792411200000,
+      "T": 1792413000000,
+      "s": "BTC",
+      "i": "30m",
+      "o": "82320",
+      "c": "82517",
+      "h": "82588",
+      "l": "82292",
+      "v": "80.56038",
+      "n": 539
+     },
+     {
+      "t": 1792413000000,
+      "T": 1792414800000,
+      "s": "BTC",
+      "i": "30m",
+      "o": "82517",
+      "c": "82573",
+      "h": "82656",
+      "l": "82455",
+      "v": "109.47752",
+      "n": 502
+     },
+     {
+      "t": 1792414800000,
+      "T": 1792416600000,
+      "s": "BTC",
+      "i": "30m",
+      "o": "82573",
+      "c": "82510",
+      "h": "82718",
+      "l": "82469",
+      "v": "73.9562",
+      "n": 396
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1h",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1h",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=1h&start_time=1792394309472&end_time=1792415909472",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1792396800000,
+      "T": 1792400400000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "82695",
+      "c": "82794",
+      "h": "82938",
+      "l": "82560",
+      "v": "220.52032",
+      "n": 1039
+     },
+     {
+      "t": 1792400400000,
+      "T": 1792404000000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "82794",
+      "c": "82758",
+      "h": "83065",
+      "l": "82723",
+      "v": "188.75248",
+      "n": 855
+     },
+     {
+      "t": 1792404000000,
+      "T": 1792407600000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "82723",
+      "c": "82375",
+      "h": "82848",
+      "l": "82083",
+      "v": "231.08806",
+      "n": 1428
+     },
+     {
+      "t": 1792407600000,
+      "T": 1792411200000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "82375",
+      "c": "82320",
+      "h": "82375",
+      "l": "82118",
+      "v": "204.99908",
+      "n": 896
+     },
+     {
+      "t": 1792411200000,
+      "T": 1792414800000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "82320",
+      "c": "82573",
+      "h": "82656",
+      "l": "82292",
+      "v": "190.0379",
+      "n": 1041
+     },
+     {
+      "t": 1792414800000,
+      "T": 1792418400000,
+      "s": "BTC",
+      "i": "1h",
+      "o": "82573",
+      "c": "82510",
+      "h": "82718",
+      "l": "82469",
+      "v": "73.9562",
+      "n": 396
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:2h",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:2h",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=2h&start_time=1792372709534&end_time=1792415909534",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1792375200000,
+      "T": 1792382400000,
+      "s": "BTC",
+      "i": "2h",
+      "o": "82401",
+      "c": "82493",
+      "h": "82782",
+      "l": "82331",
+      "v": "453.73394",
+      "n": 1858
+     },
+     {
+      "t": 1792382400000,
+      "T": 1792389600000,
+      "s": "BTC",
+      "i": "2h",
+      "o": "82497",
+      "c": "82734",
+      "h": "82842",
+      "l": "82456",
+      "v": "352.62166",
+      "n": 1798
+     },
+     {
+      "t": 1792389600000,
+      "T": 1792396800000,
+      "s": "BTC",
+      "i": "2h",
+      "o": "82734",
+      "c": "82696",
+      "h": "83111",
+      "l": "82656",
+      "v": "388.49528",
+      "n": 2460
+     },
+     {
+      "t": 1792396800000,
+      "T": 1792404000000,
+      "s": "BTC",
+      "i": "2h",
+      "o": "82695",
+      "c": "82758",
+      "h": "83065",
+      "l": "82560",
+      "v": "409.2728",
+      "n": 1894
+     },
+     {
+      "t": 1792404000000,
+      "T": 1792411200000,
+      "s": "BTC",
+      "i": "2h",
+      "o": "82723",
+      "c": "82320",
+      "h": "82848",
+      "l": "82083",
+      "v": "436.08714",
+      "n": 2324
+     },
+     {
+      "t": 1792411200000,
+      "T": 1792418400000,
+      "s": "BTC",
+      "i": "2h",
+      "o": "82320",
+      "c": "82510",
+      "h": "82718",
+      "l": "82292",
+      "v": "263.9941",
+      "n": 1437
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:4h",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:4h",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=4h&start_time=1792329509598&end_time=1792415909598",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1792339200000,
+      "T": 1792353600000,
+      "s": "BTC",
+      "i": "4h",
+      "o": "81159",
+      "c": "80889",
+      "h": "81263",
+      "l": "80788",
+      "v": "486.89294",
+      "n": 3045
+     },
+     {
+      "t": 1792353600000,
+      "T": 1792368000000,
+      "s": "BTC",
+      "i": "4h",
+      "o": "80880",
+      "c": "82119",
+      "h": "82174",
+      "l": "80686",
+      "v": "574.18834",
+      "n": 3867
+     },
+     {
+      "t": 1792368000000,
+      "T": 1792382400000,
+      "s": "BTC",
+      "i": "4h",
+      "o": "82112",
+      "c": "82493",
+      "h": "82782",
+      "l": "82020",
+      "v": "957.44628",
+      "n": 4316
+     },
+     {
+      "t": 1792382400000,
+      "T": 1792396800000,
+      "s": "BTC",
+      "i": "4h",
+      "o": "82497",
+      "c": "82696",
+      "h": "83111",
+      "l": "82456",
+      "v": "741.11694",
+      "n": 4258
+     },
+     {
+      "t": 1792396800000,
+      "T": 1792411200000,
+      "s": "BTC",
+      "i": "4h",
+      "o": "82695",
+      "c": "82320",
+      "h": "83065",
+      "l": "82083",
+      "v": "845.35994",
+      "n": 4218
+     },
+     {
+      "t": 1792411200000,
+      "T": 1792425600000,
+      "s": "BTC",
+      "i": "4h",
+      "o": "82320",
+      "c": "82510",
+      "h": "82718",
+      "l": "82292",
+      "v": "263.9941",
+      "n": 1437
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:8h",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:8h",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=8h&start_time=1792243109663&end_time=1792415909663",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1792252800000,
+      "T": 1792281600000,
+      "s": "BTC",
+      "i": "8h",
+      "o": "81330",
+      "c": "81448",
+      "h": "81659",
+      "l": "80802",
+      "v": "805.15686",
+      "n": 4206
+     },
+     {
+      "t": 1792281600000,
+      "T": 1792310400000,
+      "s": "BTC",
+      "i": "8h",
+      "o": "81448",
+      "c": "81678",
+      "h": "82050",
+      "l": "81387",
+      "v": "807.14948",
+      "n": 3667
+     },
+     {
+      "t": 1792310400000,
+      "T": 1792339200000,
+      "s": "BTC",
+      "i": "8h",
+      "o": "81678",
+      "c": "81164",
+      "h": "82277",
+      "l": "80985",
+      "v": "1026.45046",
+      "n": 5693
+     },
+     {
+      "t": 1792339200000,
+      "T": 1792368000000,
+      "s": "BTC",
+      "i": "8h",
+      "o": "81159",
+      "c": "82119",
+      "h": "82174",
+      "l": "80686",
+      "v": "1061.08128",
+      "n": 6912
+     },
+     {
+      "t": 1792368000000,
+      "T": 1792396800000,
+      "s": "BTC",
+      "i": "8h",
+      "o": "82112",
+      "c": "82696",
+      "h": "83111",
+      "l": "82020",
+      "v": "1698.56322",
+      "n": 8574
+     },
+     {
+      "t": 1792396800000,
+      "T": 1792425600000,
+      "s": "BTC",
+      "i": "8h",
+      "o": "82695",
+      "c": "82510",
+      "h": "83065",
+      "l": "82083",
+      "v": "1109.35404",
+      "n": 5655
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:12h",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:12h",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=12h&start_time=1792156709723&end_time=1792415909723",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1792195200000,
+      "T": 1792238400000,
+      "s": "BTC",
+      "i": "12h",
+      "o": "81600",
+      "c": "81551",
+      "h": "81740",
+      "l": "81420",
+      "v": "962.21434",
+      "n": 5857
+     },
+     {
+      "t": 1792238400000,
+      "T": 1792281600000,
+      "s": "BTC",
+      "i": "12h",
+      "o": "81550",
+      "c": "81448",
+      "h": "81659",
+      "l": "80802",
+      "v": "1126.65662",
+      "n": 6654
+     },
+     {
+      "t": 1792281600000,
+      "T": 1792324800000,
+      "s": "BTC",
+      "i": "12h",
+      "o": "81448",
+      "c": "82042",
+      "h": "82277",
+      "l": "81387",
+      "v": "1277.11902",
+      "n": 5930
+     },
+     {
+      "t": 1792324800000,
+      "T": 1792368000000,
+      "s": "BTC",
+      "i": "12h",
+      "o": "82041",
+      "c": "82119",
+      "h": "82174",
+      "l": "80686",
+      "v": "1617.5622",
+      "n": 10342
+     },
+     {
+      "t": 1792368000000,
+      "T": 1792411200000,
+      "s": "BTC",
+      "i": "12h",
+      "o": "82112",
+      "c": "82320",
+      "h": "83111",
+      "l": "82020",
+      "v": "2543.92316",
+      "n": 12792
+     },
+     {
+      "t": 1792411200000,
+      "T": 1792454400000,
+      "s": "BTC",
+      "i": "12h",
+      "o": "82320",
+      "c": "82510",
+      "h": "82718",
+      "l": "82292",
+      "v": "263.9941",
+      "n": 1437
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1d",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1d",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=1d&start_time=1791897509784&end_time=1792415909784",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1791936000000,
+      "T": 1792022400000,
+      "s": "BTC",
+      "i": "1d",
+      "o": "83152",
+      "c": "81654",
+      "h": "84110",
+      "l": "81422",
+      "v": "6654.34588",
+      "n": 24521
+     },
+     {
+      "t": 1792022400000,
+      "T": 1792108800000,
+      "s": "BTC",
+      "i": "1d",
+      "o": "81659",
+      "c": "82211",
+      "h": "82595",
+      "l": "79696",
+      "v": "6221.83228",
+      "n": 31571
+     },
+     {
+      "t": 1792108800000,
+      "T": 1792195200000,
+      "s": "BTC",
+      "i": "1d",
+      "o": "82211",
+      "c": "81600",
+      "h": "82883",
+      "l": "80818",
+      "v": "4713.23608",
+      "n": 26333
+     },
+     {
+      "t": 1792195200000,
+      "T": 1792281600000,
+      "s": "BTC",
+      "i": "1d",
+      "o": "81600",
+      "c": "81448",
+      "h": "81740",
+      "l": "80802",
+      "v": "2088.87096",
+      "n": 12511
+     },
+     {
+      "t": 1792281600000,
+      "T": 1792368000000,
+      "s": "BTC",
+      "i": "1d",
+      "o": "81448",
+      "c": "82119",
+      "h": "82277",
+      "l": "80686",
+      "v": "2894.68122",
+      "n": 16272
+     },
+     {
+      "t": 1792368000000,
+      "T": 1792454400000,
+      "s": "BTC",
+      "i": "1d",
+      "o": "82112",
+      "c": "82510",
+      "h": "83111",
+      "l": "82020",
+      "v": "2807.91726",
+      "n": 14229
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1w",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1w",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=1w&start_time=1788787109844&end_time=1792415909844",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1789344000000,
+      "T": 1789948800000,
+      "s": "BTC",
+      "i": "1w",
+      "o": "76796",
+      "c": "81178",
+      "h": "81927",
+      "l": "74905",
+      "v": "32462.78164",
+      "n": 195690
+     },
+     {
+      "t": 1789948800000,
+      "T": 1790553600000,
+      "s": "BTC",
+      "i": "1w",
+      "o": "81181",
+      "c": "84432",
+      "h": "87375",
+      "l": "80921",
+      "v": "32632.4109",
+      "n": 173261
+     },
+     {
+      "t": 1790553600000,
+      "T": 1791158400000,
+      "s": "BTC",
+      "i": "1w",
+      "o": "84443",
+      "c": "86482",
+      "h": "87185",
+      "l": "82551",
+      "v": "31591.74794",
+      "n": 169892
+     },
+     {
+      "t": 1791158400000,
+      "T": 1791763200000,
+      "s": "BTC",
+      "i": "1w",
+      "o": "86473",
+      "c": "83741",
+      "h": "86919",
+      "l": "80409",
+      "v": "30191.01306",
+      "n": 157767
+     },
+     {
+      "t": 1791763200000,
+      "T": 1792368000000,
+      "s": "BTC",
+      "i": "1w",
+      "o": "83741",
+      "c": "82119",
+      "h": "84340",
+      "l": "79696",
+      "v": "32856.5252",
+      "n": 162544
+     },
+     {
+      "t": 1792368000000,
+      "T": 1792972800000,
+      "s": "BTC",
+      "i": "1w",
+      "o": "82112",
+      "c": "82510",
+      "h": "83111",
+      "l": "82020",
+      "v": "2807.91726",
+      "n": 14229
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1M",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/info",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "a1ec1b6cf95ffea2"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline:1M",
+   "method": "GET",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=1M&start_time=1776863909908&end_time=1792415909908",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "data": [
+     {
+      "t": 1777593600000,
+      "T": 1780272000000,
+      "s": "BTC",
+      "i": "1M",
+      "o": "76278",
+      "c": "73647",
+      "h": "82759",
+      "l": "72505",
+      "v": "167935.73862",
+      "n": 1044137
+     },
+     {
+      "t": 1780272000000,
+      "T": 1782864000000,
+      "s": "BTC",
+      "i": "1M",
+      "o": "73630",
+      "c": "58598",
+      "h": "74069",
+      "l": "58106",
+      "v": "248061.83326",
+      "n": 1195135
+     },
+     {
+      "t": 1782864000000,
+      "T": 1785542400000,
+      "s": "BTC",
+      "i": "1M",
+      "o": "58605",
+      "c": "62886",
+      "h": "66913",
+      "l": "57782",
+      "v": "205899.60559",
+      "n": 1002122
+     },
+     {
+      "t": 1785542400000,
+      "T": 1788220800000,
+      "s": "BTC",
+      "i": "1M",
+      "o": "62886",
+      "c": "78542",
+      "h": "81423",
+      "l": "62274",
+      "v": "164356.51642",
+      "n": 825024
+     },
+     {
+      "t": 1788220800000,
+      "T": 1790812800000,
+      "s": "BTC",
+      "i": "1M",
+      "o": "78541",
+      "c": "83642",
+      "h": "87375",
+      "l": "74905",
+      "v": "142802.49176",
+      "n": 774646
+     },
+     {
+      "t": 1790812800000,
+      "T": 1793491200000,
+      "s": "BTC",
+      "i": "1M",
+      "o": "83636",
+      "c": "82510",
+      "h": "87185",
+      "l": "79696",
+      "v": "82370.20334",
+      "n": 415646
+     }
+    ],
+    "error": null,
+    "code": null
+   },
+   "text": null
+  }
+ ],
+ "ws": [],
+ "bodies": {
+  "a1ec1b6cf95ffea2": {
+   "success": true,
+   "data": [
+    {
+     "symbol": "BTC",
+     "tick_size": "1",
+     "min_tick": "0",
+     "max_tick": "1000000",
+     "lot_size": "0.00001",
+     "max_leverage": 50,
+     "isolated_only": false,
+     "min_order_size": "10",
+     "max_order_size": "5000000",
+     "funding_rate": "0.0000125",
+     "next_funding_rate": "0.0000125",
+     "created_at": 1748881333944,
+     "instrument_type": "perpetual",
+     "base_asset": "BTC",
+     "execution_modes": [
+      "orderbook"
+     ]
+    },
+    {
+     "symbol": "ETH",
+     "tick_size": "0.1",
+     "min_tick": "0",
+     "max_tick": "1000000",
+     "lot_size": "0.0001",
+     "max_leverage": 50,
+     "isolated_only": false,
+     "min_order_size": "10",
+     "max_order_size": "5000000",
+     "funding_rate": "0.0000125",
+     "next_funding_rate": "0.0000124",
+     "created_at": 1748881333944,
+     "instrument_type": "perpetual",
+     "base_asset": "ETH",
+     "execution_modes": [
+      "orderbook"
+     ]
+    },
+    {
+     "symbol": "SOL",
+     "tick_size": "0.01",
+     "min_tick": "0",
+     "max_tick": "1000000",
+     "lot_size": "0.01",
+     "max_leverage": 20,
+     "isolated_only": false,
+     "min_order_size": "10",
+     "max_order_size": "1000000",
+     "funding_rate": "0.0000125",
+     "next_funding_rate": "0.0000125",
+     "created_at": 1748881333944,
+     "instrument_type": "perpetual",
+     "base_asset": "SOL",
+     "execution_modes": [
+      "orderbook"
+     ]
+    },
+    {
+     "symbol": "SOL-USDC",
+     "tick_size": "0.01",
+     "min_tick": "0",
+     "max_tick": "1000000",
+     "lot_size": "0.001",
+     "max_leverage": 1,
+     "isolated_only": false,
+     "min_order_size": "10",
+     "max_order_size": "1000000",
+     "funding_rate": "0",
+     "next_funding_rate": "0",
+     "created_at": 1776615970246,
+     "instrument_type": "spot",
+     "base_asset": "SOL",
+     "execution_modes": [
+      "orderbook"
+     ]
+    }
+   ],
+   "error": null,
+   "code": null
+  }
+ }
+}

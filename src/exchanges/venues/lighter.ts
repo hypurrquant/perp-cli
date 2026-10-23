@@ -11,8 +11,13 @@ const publicData: VenuePublicData = {
   async fetchFundingRates(net) {
     return (await import("../lighter-public.js")).lighterPublicData("lighter").fetchFundingRates(net);
   },
-  async fetchMarkets(net) {
-    return (await import("../lighter-public.js")).lighterPublicData("lighter").fetchMarkets(net);
+  async fetchMarkets(net, opts) {
+    return (await import("../lighter-public.js")).lighterPublicData("lighter").fetchMarkets(net, opts);
+  },
+  // Keyless positions of any account by public address (account positions --address).
+  addressKind: "evm",
+  async fetchPositionsByAddress(net, address, opts) {
+    return (await import("../public-positions.js")).lighterPositionsByAddress("lighter", net, address, opts);
   },
 };
 
@@ -25,7 +30,8 @@ export const lighterVenue: VenueDefinition = {
   agentKeyKind: "lighter-l2",
   secretStorage: { kind: "perp-keystore", dir: "lighter-agents" },
   networks: LIGHTER_NETWORKS,
-  fundingRateBasis: { kind: "perHours", hours: 8 },
+  // The market rows' fundingRate is the settled hourly rate (WS market_stats, lighter-public.ts).
+  fundingRateBasis: { kind: "perHours", hours: 1 },
   settlementIntervalHours: 1,
   fundingVerified: true,
   roles: ["marketData", "account", "trading"],

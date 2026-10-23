@@ -95,18 +95,18 @@ describe("market channels", () => {
     expect(t.sockets).toHaveLength(0);
   });
 
-  it("book / trades keep CAPABILITY_UNSUPPORTED until 0.15.1", async () => {
+  it("book / trades are CAPABILITY_UNSUPPORTED (planned, no version promised)", async () => {
     const { s } = stream(pacifica, PACIFICA_ROUTES);
     const err = await s.subscribe({ kind: "market", symbol: "BTC", channels: ["trades"] }).ready.then(() => null, (e: unknown) => e as WsError);
     expect(err?.structured.code).toBe("CAPABILITY_UNSUPPORTED");
-    expect(err?.structured.remediation).toContain("0.15.1");
+    expect(err?.structured.remediation).toContain("planned, not yet available");
   });
 });
 
 describe("unknown symbol hints", () => {
   it.each([
     ["arcus", arcus, ARCUS_ROUTES, "BTC", ["BTC-USD"]],
-    ["aster", aster, ASTER_ROUTES, "BTC", ["BTCUSDT", "BTCUSD1"]],
+    ["aster", aster, ASTER_ROUTES, "BTC", ["BTCUSDT"]], // BTCUSD1 is canonical null (not a second BTC): no base hint
     ["aster (case)", aster, ASTER_ROUTES, "btcusdt", ["BTCUSDT"]],
     ["pacifica (case)", pacifica, PACIFICA_ROUTES, "btc", ["BTC"]],
   ] as const)("%s → a did-you-mean hint from the directory", async (_n, codec, routes, symbol, want) => {

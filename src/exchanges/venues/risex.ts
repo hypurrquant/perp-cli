@@ -41,6 +41,14 @@ const publicData: VenuePublicData = {
   async fetchMarkets(net) {
     return (await import("../risex/public.js")).risexPublicData.fetchMarkets(net);
   },
+  // Keyless positions of any account by public address (account positions --address): the
+  // adapter's own public-by-address read (/v1/portfolio/details), no signer.
+  addressKind: "evm",
+  async fetchPositionsByAddress(net, address) {
+    const { RisexAdapter } = await import("../risex/adapter.js");
+    const adapter = new RisexAdapter(risexVenue, net, { account: address, signer: null, meta: null, noSignerReason: null });
+    return { positions: await adapter.getPositions(), errors: {}, notes: [] };
+  },
 };
 
 export const risexVenue: VenueDefinition = {

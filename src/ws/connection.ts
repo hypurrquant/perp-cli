@@ -70,6 +70,7 @@ export class Connection {
   private sendQueue: string[] = [];
   private sendTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly closing = new Set<Promise<void>>();
   private staleTimer: ReturnType<typeof setInterval> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private awaitingPongSince: number | null = null;
@@ -397,7 +398,17 @@ export class Connection {
     this.detach();
     if (ws !== null) {
       try { ws.close(code, reason); } catch { /* already closing; handlers are detached */ }
+      if (ws.whenClosed !== undefined) {
+        const p = ws.whenClosed;
+        this.closing.add(p);
+        void p.then(() => { this.closing.delete(p); });
+      }
     }
+  }
+
+  /** Settles when every socket this connection closed is fully gone (transports that report it). */
+  drained(): Promise<void> {
+    return Promise.all(Array.from(this.closing)).then(() => undefined);
   }
 }
 
@@ -406,7 +417,11 @@ function stateDetails(s: ConnectionState): Record<string, unknown> {
   return rest;
 }
 
-/** Thrown into ready when the stream is closed. */
+/**
+ * Thrown into ready when the client closed the stream (`close()`). The close reason CLIENT_CLOSE is
+ * not an error code (WsErrorCode ⊂ the CLI's ErrorCode), so the rejection is INVALID_PARAMS — a
+ * use-after-close — and carries the reason in `details.closeReason`.
+ */
 export function closedError(venue: VenueId): WsError {
-  return new WsError("INVALID_PARAMS", `${venue} stream is closed`, { exchange: venue, remediation: "Create a new stream" });
+  return new WsError("INVALID_PARAMS", `${venue} stream is closed`, { exchange: venue, remediation: "Create a new stream", details: { closeReason: "CLIENT_CLOSE" } });
 }
