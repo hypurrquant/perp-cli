@@ -89,6 +89,15 @@
     "ethereum"
   ],
   "license": "MIT",
+  "author": "HypurrQuant",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hypurrquant/perp-cli.git"
+  },
+  "homepage": "https://github.com/hypurrquant/perp-cli#readme",
+  "bugs": {
+    "url": "https://github.com/hypurrquant/perp-cli/issues"
+  },
   "engines": {
     "node": "^20.0.0 || ^22.0.0 || ^24.0.0"
   },
