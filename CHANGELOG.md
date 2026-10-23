@@ -19,8 +19,17 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
   recording in which any address-shaped value survives outside the classified protocol constants
   (token contracts, HIP-3 dex deployers), so the next venue that spells an identity field its own
   way stops the recorder instead of reaching a fixture. Pinned by
-  `src/__tests__/conformance/fixture-anonymization.test.ts`, which also scans every committed
-  conformance fixture.
+  `src/__tests__/conformance/fixture-anonymization.test.ts`, which also sweeps every committed
+  fixture in `src/__tests__/fixtures/`.
+- **The same leak outside the conformance directory.**
+  `src/__tests__/fixtures/hyperliquid/read-path-2026-10-19.json` was recorded ad hoc and never
+  went through the scrubber, so 23 real counterparty wallets (`recentTrades[].users`, which
+  Hyperliquid serves as `[maker, taker]`) and 22 real transaction hashes were committed with it.
+  Re-anonymized with the same dummy scheme — injective, so row equality is preserved — leaving
+  the market-data columns byte-identical. The adapter reads only `time` / `coin` / `side` / `px` /
+  `sz`, so nothing downstream changes. Found because the anonymization sweep was scoped to
+  `fixtures/conformance/` while the leak sat one directory over; the sweep now walks the whole
+  tree, with the three pre-existing exceptions named and frozen in `LEGACY_UNCLASSIFIED`.
 - **Fixture provenance is declared and enforced.** 23 of the 56 fixtures added for 0.16.0 stated
   nothing about where their bytes came from, so §9's ban on hand-written shapes could not be
   checked. Nine hand-assembled envelopes gained a `recordedWith` header; the 14 that are verbatim

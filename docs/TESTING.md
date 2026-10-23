@@ -296,12 +296,21 @@ Errors: unknown symbol → `SYMBOL_NOT_FOUND` + remediation; unsupported feature
 
 - [ ] No forbidden pattern (§9) in the diff.
 - [ ] New fixtures are recorded (header `recordedWith`), not hand-written; no secrets / real ids.
-      Both halves are enforced by `pnpm test`, so the review reads the claim instead of hunting for
-      the gap: `src/__tests__/conformance/fixture-provenance.test.ts` fails on a fixture that
-      declares neither an in-file `recordedWith` header nor an entry in
+      Both halves are enforced by `pnpm test` over the whole `src/__tests__/fixtures/` tree:
+      `src/__tests__/conformance/fixture-provenance.test.ts` fails on a fixture that declares
+      neither an in-file `recordedWith` header nor an entry in
       `src/__tests__/fixtures/PROVENANCE.json`, and
-      `src/__tests__/conformance/fixture-anonymization.test.ts` fails on a committed fixture that
-      still holds a real-looking wallet outside the classified protocol constants.
+      `src/__tests__/conformance/fixture-anonymization.test.ts` fails on a fixture that holds a
+      real-looking wallet under a key the scrubber does not classify as a protocol constant.
+      **What the green gate does and does not mean.** Each test carries a frozen grandfather list
+      of files that predate it — `legacyUnverified` (provenance, 70 files) and
+      `LEGACY_UNCLASSIFIED` (anonymization, 3 files, each key and reason spelled out). Those lists
+      may shrink, never grow, so the gate is conclusive for everything you are about to add and
+      silent only about those named files. Read the two lists before trusting a green run on a
+      diff that touches them; for every other fixture the claim stands on its own.
+      Anonymization is also not unlinkability: `coin` / `px` / `sz` / `time` are preserved on
+      purpose (the cross-venue invariants check them) and still pin a row on the venue's public
+      tape. It guarantees the repo does not itself publish a list of third-party wallets.
 - [ ] No new `KNOWN_FAILURES` entry without a reason and an owner.
 - [ ] Contract change listed in the CHANGELOG.
 - [ ] Release PR: `pnpm release-qa --version <v>` report attached after publishing, committed under

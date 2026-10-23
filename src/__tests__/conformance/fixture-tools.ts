@@ -18,8 +18,9 @@
  *      * secret-looking fields (auth / token / signature / hmac / apiKey / secret) are removed;
  *      * trader identities (EVM addresses, account ids under user / maker / taker / account keys,
  *        and the suffixed spellings of those — `makerAddress`, `owner_account_index`,
- *        `ask_client_id`, `takerOrderId`) are remapped to stable dummies (equality between rows
- *        preserved);
+ *        `ask_account_id`, `takerOrderId`) are remapped to stable dummies (equality between rows
+ *        preserved). A public tape's own row ids (`tid`, `ask_id`) are not — see the criterion
+ *        stated at `SIDE_ACCOUNT_ID` below;
  *      * transaction hashes are remapped to stable dummies.
  *    Prices, sizes and timestamps of public market data are NOT perturbed: the cross-venue
  *    invariants (price agreement, kline alignment) are checked against them. Private (account)
@@ -41,7 +42,7 @@ const SECRET_KEY = /^(auth|token|authToken|listenKey|signature|sig|hmac|apiKey|a
 /**
  * A trader identity is named either by a bare party word (`user`, `maker`, `account`) or by a
  * party word carrying an identifier suffix (`makerAddress`, `owner_account_index`,
- * `ask_client_id_str`, `takerOrderId`). Listing only the bare words is what let five real Arcus
+ * `sub_account_id_str`, `takerOrderId`). Listing only the bare words is what let 7 real Arcus
  * counterparty addresses reach `arcus.json`: the venue sends `makerAddress`, and `/^maker$/`
  * does not match it (HIK-10). Both families are matched now, so a venue that spells the same
  * thing differently cannot slip through again.
@@ -51,9 +52,25 @@ const ID_SUFFIX = "address|wallet|id|ids|index|indices|key|account|account_?id|a
 const BARE_PARTY = /^(users?|maker|taker|buyer|seller|trader|owner|account|wallet|address|liquidator|sub_?account)$/i;
 const PARTY_ID = new RegExp(`^(?:${PARTY})[_-]?(?:${ID_SUFFIX})(?:[_-]?str)?$`, "i");
 /**
- * Side-named account ids. `ask` / `bid` are NOT party words — `ask` and `bid` are price levels,
- * and `ask_id` / `bid_id` / `ask_client_id` are order ids, deliberately left in the clear like
- * every other order id the venue prints on a public tape.
+ * Side-named account ids. `ask` / `bid` are NOT party words (they are price levels), so the
+ * `PARTY` families above miss `ask_account_id` — which still names an account, hence this entry.
+ *
+ * The criterion for the whole scrubber, since the lines above cut across it: **a field is
+ * remapped when its value names a party** (a wallet, or an account the venue assigns to one).
+ * A public tape's own row ids — `tid`, `trade_id`, `ask_id` / `bid_id`, `ask_client_id` — are
+ * NOT remapped: they name the trade or the order, not the person behind it, and the venue
+ * publishes them to everyone.
+ *
+ * Two consequences worth stating plainly, so the next reader does not mistake this for more
+ * than it is:
+ *  - `makerOrderId` / `takerOrderId` ARE remapped, which looks inconsistent with `ask_id`. It is
+ *    a naming artifact: those keys begin with a party word, so `PARTY_ID` catches them. Harmless
+ *    either way (an order id identifies nobody on its own), so it is left as the regex falls.
+ *  - None of this is an unlinkability guarantee. The market-data columns (`coin`, `px`, `sz`,
+ *    `time`) are preserved ON PURPOSE — the cross-venue invariants are checked against them —
+ *    and they already pin the row on the venue's public tape. What anonymization buys is that
+ *    the repo does not itself publish a list of third-party wallets; it does not, and cannot,
+ *    make a recorded public trade unfindable.
  */
 const SIDE_ACCOUNT_ID = /^(ask|bid)_account_id$/i;
 const isIdentityKey = (k: string): boolean => BARE_PARTY.test(k) || PARTY_ID.test(k) || SIDE_ACCOUNT_ID.test(k);
@@ -63,12 +80,22 @@ const HASH_KEY = /^(hash|tx_hash|txHash|transaction_hash|txn_hash)$/i;
 const ADDRESS_SHAPED = /^0x[0-9a-fA-F]{40}$/;
 const DUMMY_ADDRESS = /^0x0{32}[0-9a-f]{8}$/;
 /**
+ * The hand-picked placeholder wallets of the OTHER fixture recorder,
+ * `scripts/ws-probe/make-fixtures.ts:22-23` (`evm` / `evmOther`): the burn address and `…bEEF`.
+ * They are not `DUMMY_ADDRESS` (that shape is this scrubber's own output), but they name no
+ * person either, so the tree-wide sweep in `fixture-anonymization.test.ts` must not read the
+ * `ws/**` fixtures as leaks. Deliberately NOT accepted by `guardFixtureIdentities`: a conformance
+ * recording has to produce scrubber-shaped dummies, and a burn address appearing in one would
+ * mean the venue sent it, which is worth a failure.
+ */
+const PLACEHOLDER_ADDRESS = /^0x0{36}(?:dEaD|bEEF)$/;
+/**
  * Address-shaped values that identify no person and must stay readable: token / market contracts
  * and the publicly advertised operators of a venue (HIP-3 dex deployers, the CLI prints them).
  * Every other address-shaped value has to be an anonymized identity — `guardFixtureIdentities`
  * refuses the write otherwise, so a new venue field is a loud failure, not a silent leak.
  */
-const PUBLIC_ADDRESS_KEY = /^(quote|base|collateral|contractAddress|contract_address|baseAssetAddress|quoteAssetAddress|tokenAddress|token_address|marketAddress|vaultAddress|deployer|subDeployers|market_deployer|feeRecipient|oracleUpdater|syntheticId)$/i;
+const PUBLIC_ADDRESS_KEY = /^(quote|base|collateral|contractAddress|contract_address|baseAssetAddress|base_asset_address|quoteAssetAddress|quote_asset_address|tokenAddress|token_address|marketAddress|vaultAddress|deployer|subDeployers|market_deployer|feeRecipient|oracleUpdater|syntheticId)$/i;
 
 const EDGE = 6;
 const MAP_MIN_KEYS = 20;
@@ -212,6 +239,8 @@ export const isTraderIdentityKey = isIdentityKey;
 export const isPublicAddressKey = (k: string): boolean => PUBLIC_ADDRESS_KEY.test(k);
 /** True for a value the scrubber already replaced with a dummy address. */
 export const isDummyAddress = (v: string): boolean => DUMMY_ADDRESS.test(v);
+/** True for a placeholder wallet written by scripts/ws-probe/make-fixtures.ts (see above). */
+export const isPlaceholderAddress = (v: string): boolean => PLACEHOLDER_ADDRESS.test(v);
 /** True for a wallet-address-shaped string. */
 export const isAddressShaped = (v: string): boolean => ADDRESS_SHAPED.test(v);
 

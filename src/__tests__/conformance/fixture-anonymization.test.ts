@@ -1,22 +1,28 @@
 /**
  * Anonymization of recorded fixtures (docs/TESTING.md §7.3: "no secrets / real ids").
  *
- * 0.16.0 shipped five real Arcus counterparty wallets in `arcus.json`: the scrubber listed the
+ * 0.16.0 shipped 7 real Arcus counterparty wallets in `arcus.json`: the scrubber listed the
  * bare key `maker`, the venue sends `makerAddress`, and the anchored regex did not match it
  * (HIK-10). These tests pin both halves of the fix — the scrubber covers the suffixed spellings,
  * and the committed fixtures carry no real-looking wallet outside the classified protocol
  * constants — so the same shape of hole fails here instead of reaching a release.
+ *
+ * The sweep walks the WHOLE `src/__tests__/fixtures/` tree, not just `conformance/`. Scoping it
+ * to one directory is what let `hyperliquid/read-path-2026-10-19.json` keep 23 real counterparty
+ * wallets while this suite was green (HIK-10 review). The pre-existing exceptions are named one
+ * by one in `LEGACY_UNCLASSIFIED` below and frozen there, so "the gate is green" means every
+ * other fixture in the tree is actually clean.
  */
 import { describe, it, expect } from "vitest";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import {
-  PublicScrubber, guardFixtureIdentities, isAddressShaped, isDummyAddress, isPublicAddressKey,
-  type Json,
+  PublicScrubber, guardFixtureIdentities, isAddressShaped, isDummyAddress, isPlaceholderAddress,
+  isPublicAddressKey, type Json,
 } from "./fixture-tools.js";
 
-const FIXTURE_DIR = join(import.meta.dirname, "../fixtures/conformance");
+const FIXTURE_ROOT = join(import.meta.dirname, "../fixtures");
 /**
  * Address-shaped inputs, invented here on purpose: a test about not committing real wallets may
  * not carry one. They are not the dummy shape either, so the guard must treat them as real.
@@ -26,9 +32,9 @@ const WALLET_B = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2";
 
 const scrubbed = (body: Json): Json => new PublicScrubber().walk(body) as Json;
 
-/** Every (key, string value) pair in a fixture, with `.gz` fixtures expanded. */
+/** Every (key, address-shaped string value) pair in a fixture, with `.gz` fixtures expanded. */
 function* addressValues(file: string): Generator<{ key: string; value: string }> {
-  const path = join(FIXTURE_DIR, file);
+  const path = join(FIXTURE_ROOT, file);
   const raw = file.endsWith(".gz") ? gunzipSync(readFileSync(path)).toString("utf8") : readFileSync(path, "utf8");
   const stack: Array<{ key: string; node: Json }> = [{ key: "", node: JSON.parse(raw) as Json }];
   while (stack.length > 0) {
@@ -101,17 +107,89 @@ describe("guardFixtureIdentities refuses to write a leaking fixture", () => {
   });
 });
 
-describe("the committed conformance fixtures carry no real wallet", () => {
-  const files = readdirSync(FIXTURE_DIR).filter(f => f.endsWith(".json") || f.endsWith(".json.gz"));
+/**
+ * Fixtures that predate this gate and still hold address-shaped values under a key the scrubber
+ * does not classify. Every entry is a pre-0.16.0 file; HIK-10's scope was the 0.16.0 additions,
+ * and the honest record of a legacy unknown is an entry here, not a guessed classification.
+ *
+ * This list may SHRINK, never grow (`LEGACY_CAP`). A new fixture cannot be parked here without
+ * failing the freeze test, which is the whole point of sweeping the tree.
+ */
+const LEGACY_UNCLASSIFIED: Record<string, { keys: string[]; reason: string }> = {
+  "derive/get_all_currencies.json": {
+    keys: ["address"],
+    reason:
+      "Token contracts of Derive's currency list. Cannot be classified by key name: bare `address` " +
+      "is also a party key (BARE_PARTY), so adding it to PUBLIC_ADDRESS_KEY would un-anonymize " +
+      "every venue that names a wallet `address`. Needs a per-venue rule, not a global one.",
+  },
+  "relay-quotes.json": {
+    keys: ["from", "to", "sender", "recipient", "solver", "depository", "address", "currency"],
+    reason:
+      "A recorded Relay quote. `solver` / `depository` / `currency` / `to` are Relay contracts, but " +
+      "`from` / `sender` / `recipient` are one repeated wallet that is ALSO hardcoded as the test " +
+      "SENDER / USER / depositor in 5 test files (src/__tests__/relay-swap.test.ts:55 and others). " +
+      "Whose wallet it is was NOT determined — it is plausibly ours. Reported in HIK-10 for a " +
+      "separate decision rather than silently remapped or silently blessed here.",
+  },
+  "risex/permissions-evidence.json": {
+    keys: ["proxy", "implementation", "router", "accountRegistry", "mainnet", "testnet", "auth"],
+    reason:
+      "Contract permission evidence for RiseX — the deployed proxy / implementation / registry " +
+      "addresses ARE the subject of the document, so remapping them would delete its value. Left " +
+      "readable deliberately; not added to PUBLIC_ADDRESS_KEY because `auth` collides with " +
+      "SECRET_KEY and `mainnet` / `testnet` are too generic to classify globally.",
+  },
+};
+/** 3 legacy files predate the sweep. Raising this means a leak was parked instead of fixed. */
+const LEGACY_CAP = 3;
 
-  it("finds fixtures to check", () => {
-    expect(files.length).toBeGreaterThan(20);
+/** Repo-relative (posix) paths of every fixture, the provenance manifest aside. */
+function fixtureFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap(d => {
+    const p = join(dir, d.name);
+    if (d.isDirectory()) return fixtureFiles(p);
+    if (!statSync(p).isFile() || !/\.json(\.gz)?$/.test(d.name)) return [];
+    const rel = relative(FIXTURE_ROOT, p).split(sep).join("/");
+    return rel === "PROVENANCE.json" ? [] : [rel];
+  });
+}
+
+describe("no committed fixture in the tree carries a real wallet", () => {
+  const files = fixtureFiles(FIXTURE_ROOT);
+
+  it("sweeps the whole fixture tree, not one directory", () => {
+    expect(files.length).toBeGreaterThan(100);
+    expect(files.some(f => f.startsWith("conformance/"))).toBe(true);
+    expect(files.some(f => f.startsWith("hyperliquid/"))).toBe(true);
+    expect(files.some(f => f.startsWith("ws/"))).toBe(true);
   });
 
   it.each(files)("%s", file => {
+    const allowed = LEGACY_UNCLASSIFIED[file]?.keys ?? [];
     const leaked = [...addressValues(file)]
-      .filter(({ key, value }) => !isDummyAddress(value) && !isPublicAddressKey(key))
+      .filter(({ key, value }) =>
+        !isDummyAddress(value) && !isPlaceholderAddress(value) && !isPublicAddressKey(key) && !allowed.includes(key))
       .map(({ key }) => key);
     expect([...new Set(leaked)]).toEqual([]);
+  });
+
+  it("the legacy exception list stays frozen — it may shrink, never grow", () => {
+    expect(Object.keys(LEGACY_UNCLASSIFIED).length).toBeLessThanOrEqual(LEGACY_CAP);
+  });
+
+  it("the legacy exception list does not rot: every path it names still exists", () => {
+    expect(Object.keys(LEGACY_UNCLASSIFIED).filter(f => !files.includes(f))).toEqual([]);
+  });
+
+  it("every legacy exception is still needed, and says why it is there", () => {
+    for (const [file, { keys, reason }] of Object.entries(LEGACY_UNCLASSIFIED)) {
+      expect(reason.length, `${file} must state why`).toBeGreaterThan(80);
+      // an exception that no longer matches anything is dead weight hiding the next real one
+      const present = new Set([...addressValues(file)]
+        .filter(({ value }) => !isDummyAddress(value) && !isPlaceholderAddress(value))
+        .map(({ key }) => key));
+      expect(keys.filter(k => !present.has(k)), `${file} lists keys it no longer holds`).toEqual([]);
+    }
   });
 });
