@@ -4,6 +4,34 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — test fixture hygiene (no runtime change)
+
+- **Recorded fixtures carried real third-party wallets.** `src/__tests__/conformance/fixture-tools.ts`
+  matched a trader identity by bare key name (`maker`, `taker`, `account`), so Arcus's
+  `makerAddress` / `takerAddress` walked past the scrubber and seven real counterparty wallets were
+  committed in `src/__tests__/fixtures/conformance/arcus.json` — a `docs/TESTING.md` §7.3-2
+  violation ("no secrets / real ids"). The scrubber now matches a party word with or without an
+  identifier suffix, which also closes `makerOrderId` / `takerOrderId` (Arcus) and
+  `owner_account_index` (Lighter: 24 real account ids in `lighter.json`, 23 in `lighter-rh.json`,
+  15 in `cross.json`). The affected fixtures were re-anonymized with the same dummy scheme, so row
+  equality and the joins between endpoints are preserved.
+- **The hole is now fail-closed, not fail-silent.** `guardFixtureIdentities` refuses to write a
+  recording in which any address-shaped value survives outside the classified protocol constants
+  (token contracts, HIP-3 dex deployers), so the next venue that spells an identity field its own
+  way stops the recorder instead of reaching a fixture. Pinned by
+  `src/__tests__/conformance/fixture-anonymization.test.ts`, which also scans every committed
+  conformance fixture.
+- **Fixture provenance is declared and enforced.** 23 of the 56 fixtures added for 0.16.0 stated
+  nothing about where their bytes came from, so §9's ban on hand-written shapes could not be
+  checked. Nine hand-assembled envelopes gained a `recordedWith` header; the 14 that are verbatim
+  wire bodies are described in the new `src/__tests__/fixtures/PROVENANCE.json` (adding a key to
+  those would make them differ from the real response). Every statement there cites the
+  contemporaneous evidence it came from. `fixture-provenance.test.ts` fails on a fixture that
+  declares neither, and holds the 70 pre-0.16.0 fixtures — whose provenance is unknown, not
+  assumed — as a list that may shrink and not grow.
+- **`docs/qa-reports/` is tracked.** The QA history lived on one laptop, which made §7.3's
+  "release PR: report attached" uncheckable by a reviewer.
+
 ## [0.16.0] — 2026-10-23
 
 > **Renumbered from 0.15.1, which was never released** (npm's latest is 0.15.0; there is no `v0.15.1`
