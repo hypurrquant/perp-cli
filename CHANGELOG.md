@@ -4,7 +4,14 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
-## [0.15.1] — 2026-10-20
+## [0.16.0] — 2026-10-23
+
+> **Renumbered from 0.15.1, which was never released** (npm's latest is 0.15.0; there is no `v0.15.1`
+> tag). This section carries the whole 0.15.1 work, unchanged, including every entry of
+> **"JSON contract changes"** below. The bump is a **minor** one because that list removes, renames
+> and retypes documented `--json` / MCP fields — `docs/TESTING.md` §5 invariant 12 requires those to
+> be listed here, and SemVer requires at least a minor bump off the published 0.15.0. Both packages
+> move together (`RELEASING.md`:3-4, lockstep).
 
 ### NEW: positions of any account by public address (`account positions --address`, MCP `get_positions_by_address`)
 
