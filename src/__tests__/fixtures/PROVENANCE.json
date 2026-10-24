@@ -1,0 +1,140 @@
+{
+  "$comment": [
+    "Provenance of the recorded test fixtures (docs/TESTING.md §7.3-2: new fixtures are recorded, not hand-written).",
+    "A fixture proves its provenance in one of two ways, and `fixture-provenance.test.ts` enforces that every file does one of them:",
+    "  1. an in-file `recordedWith` header — what scripts/conformance/record.ts writes, and what the hand-assembled envelope fixtures carry;",
+    "  2. an entry in `recorded` below — for fixtures that are a verbatim wire body, where adding a key would make the fixture differ from the real response (§9 forbids hand-edited shapes).",
+    "`recordedWith` states how the bytes were obtained. `evidence` cites where that was recorded at capture time (a test header, a commit) — it is never inferred.",
+    "`legacyUnverified` lists fixtures that predate this manifest. HIK-10 established provenance for the fixtures new in 0.16.0 only; these were not investigated and their provenance is UNKNOWN, not assumed. It is a frozen grandfather list, not a parking place: a fixture added from now on fails the test unless it carries a header or a `recorded` entry."
+  ],
+  "recorded": {
+    "src/__tests__/fixtures/lighter/fundings-btc-live.json": {
+      "recordedWith": "ad-hoc live read of GET https://mainnet.zklighter.elliot.ai/api/v1/fundings (market_id=1 BTC, resolution=1h), 11 settled rows, 2026-10-19 (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/lighter-funding-history.test.ts header: \"Fixtures: live mainnet responses (BTC, market_id 1, 2026-10-19)\"; added in commit 7614981"
+    },
+    "src/__tests__/fixtures/lighter/fundings-btc-short-live.json": {
+      "recordedWith": "ad-hoc live read of GET https://mainnet.zklighter.elliot.ai/api/v1/fundings (market_id=1 BTC, resolution=1h), one kept row with direction short, 2026-10-19 (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/lighter-funding-history.test.ts header (same capture as fundings-btc-live.json); added in commit 7614981"
+    },
+    "src/__tests__/fixtures/ondo/markets-2026-10-19.json": {
+      "recordedWith": "ad-hoc live read of GET https://api.ondoperps.xyz/v1/markets, 2026-10-19 (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/ondo-read-path.test.ts header (\"real mainnet responses recorded 2026-10-19 … trimmed to BTC / AAPL / OPENAI / CXMT\") and its fetch router (url.pathname \"/v1/markets\"); added in commit f8a2a56"
+    },
+    "src/__tests__/fixtures/ondo/contracts-2026-10-19.json": {
+      "recordedWith": "ad-hoc live read of GET https://api.ondoperps.xyz/v1/perps/contracts, 2026-10-19 (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/ondo-read-path.test.ts header and fetch router (\"/v1/perps/contracts\"); added in commit f8a2a56"
+    },
+    "src/__tests__/fixtures/ondo/mark-prices-2026-10-19.json": {
+      "recordedWith": "ad-hoc live read of GET https://api.ondoperps.xyz/v1/perps/mark_prices, 2026-10-19 (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/ondo-read-path.test.ts header and fetch router (\"/v1/perps/mark_prices\"); added in commit f8a2a56"
+    },
+    "src/__tests__/fixtures/ondo/funding-aapl-2026-10-19.json": {
+      "recordedWith": "ad-hoc live read of GET https://api.ondoperps.xyz/v1/perps/funding_rate_history?market=AAPL-USD.P, 2026-10-19 (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/ondo-read-path.test.ts header and its assertion on the \"/v1/perps/funding_rate_history\" request; added in commit f8a2a56"
+    },
+    "src/__tests__/fixtures/qfex/refdata-status-2026-10-19.json": {
+      "recordedWith": "ad-hoc live read of GET https://api.qfex.com/refdata, 2026-10-19 (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/qfex-read-path.test.ts header (\"real mainnet responses recorded 2026-10-16..19\") and its route table (\"/refdata\"); added in commit 96bcb1a"
+    },
+    "src/__tests__/fixtures/qfex/contracts-status-2026-10-19.json": {
+      "recordedWith": "ad-hoc live read of GET https://api.qfex.com/md/contracts, 2026-10-19 (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/qfex-read-path.test.ts header and its route table (\"/md/contracts\"); added in commit 96bcb1a"
+    },
+    "src/__tests__/fixtures/qfex/mds-market-stats-status-2026-10-19.json": {
+      "recordedWith": "ad-hoc live read of a QFEX MDS WebSocket market_stats frame (wss://mds.qfex.com, fetchQfexMarketStats in src/exchanges/qfex/ws-transport.ts), 2026-10-19 (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/qfex-read-path.test.ts header and its parseMarketStats(MDS) stub of fetchQfexMarketStats; added in commit 96bcb1a"
+    },
+    "src/__tests__/fixtures/qfex/funding-aapl-weekend-2026-10-19.json": {
+      "recordedWith": "ad-hoc live read of GET https://api.qfex.com/funding/AAPL-USD over the weekend window Fri 2026-10-16 18:00Z to Mon 10:00Z, 2026-10-19 (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/qfex-read-path.test.ts:42 (\"// Fri 2026-10-16 18:00Z → Mon 10:00Z\"); added in commit 96bcb1a"
+    },
+    "src/__tests__/fixtures/qfex/funding-samsung-2026-10-16.json": {
+      "recordedWith": "ad-hoc live read of GET https://api.qfex.com/funding/SAMSUNG-KRW over Fri 2026-10-16 00:00Z to 22:00Z, 2026-10-16 (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/qfex-read-path.test.ts:43 (\"// Fri 2026-10-16 00:00Z → 22:00Z\"); added in commit 96bcb1a"
+    },
+    "src/__tests__/fixtures/qfex/orderbook-samsung-krw-2026-10-19.json": {
+      "recordedWith": "ad-hoc live read of GET https://api.qfex.com/md/orderbook/SAMSUNG-KRW, top 4 levels kept (empty levels dropped), 2026-10-19 ~11:44Z (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/qfex-book-quote.test.ts header (\"Real GET /md/orderbook/SAMSUNG-KRW of 2026-10-19 ~11:44Z (top 4 levels; empty levels dropped)\"); added in commit 3dc884d"
+    },
+    "src/__tests__/fixtures/risex/trading-view-1h.json": {
+      "recordedWith": "ad-hoc live read of GET https://api.rise.trade/v1/markets/id/<market_id>/trading-view-data at interval 1h, 2026-10-19 (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/risex-klines.test.ts header (\"Verified live 2026-10-19 … Fixtures: live answers for 30m (rows labelled \\\"1m\\\") and 1h\"); added in commit 8bfbf00"
+    },
+    "src/__tests__/fixtures/risex/trading-view-30m-returns-1m.json": {
+      "recordedWith": "ad-hoc live read of GET https://api.rise.trade/v1/markets/id/<market_id>/trading-view-data at interval 30m (the venue answered 1m rows), 2026-10-19 (public mainnet, read-only; no repo recorder ran — these predate scripts/conformance/record.ts covering the venue)",
+      "evidence": "src/__tests__/exchanges/risex-klines.test.ts header (same capture as trading-view-1h.json); added in commit 8bfbf00"
+    }
+  },
+  "legacyUnverified": [
+    "src/__tests__/fixtures/derive/error.expiry_required.json",
+    "src/__tests__/fixtures/derive/error.instrument_not_found.json",
+    "src/__tests__/fixtures/derive/error.ticker_not_found.json",
+    "src/__tests__/fixtures/derive/error.unknown_currency.json",
+    "src/__tests__/fixtures/derive/get_all_currencies.json",
+    "src/__tests__/fixtures/derive/get_all_instruments.ETH.json",
+    "src/__tests__/fixtures/derive/get_instrument.ETH-20261225-3500-P.json",
+    "src/__tests__/fixtures/derive/get_instrument.ETH-PERP.json",
+    "src/__tests__/fixtures/derive/get_ticker.ETH-20261225-3500-P.json",
+    "src/__tests__/fixtures/derive/get_tickers.ETH.20261019.json",
+    "src/__tests__/fixtures/extended/candles-btc-1h.json",
+    "src/__tests__/fixtures/extended/funding-history-btc.json",
+    "src/__tests__/fixtures/extended/funding-settlement-evidence.json",
+    "src/__tests__/fixtures/extended/markets.json",
+    "src/__tests__/fixtures/extended/orderbook-btc.json",
+    "src/__tests__/fixtures/extended/trades-btc.json",
+    "src/__tests__/fixtures/grvt/book-btc.json",
+    "src/__tests__/fixtures/grvt/funding-btc.json",
+    "src/__tests__/fixtures/grvt/funding-samsung.json",
+    "src/__tests__/fixtures/grvt/instruments-all.json",
+    "src/__tests__/fixtures/grvt/instruments.json",
+    "src/__tests__/fixtures/grvt/kline-btc-1h.json",
+    "src/__tests__/fixtures/grvt/margin-rules-btc.json",
+    "src/__tests__/fixtures/grvt/tickers.json",
+    "src/__tests__/fixtures/grvt/trades-btc.json",
+    "src/__tests__/fixtures/pacifica-earn/app-unofficial-requests.json",
+    "src/__tests__/fixtures/pacifica-earn/game-accounts-ended-no-reason.json",
+    "src/__tests__/fixtures/pacifica-earn/game-accounts.json",
+    "src/__tests__/fixtures/pacifica-earn/game-config.json",
+    "src/__tests__/fixtures/pacifica-earn/game-history-filled.json",
+    "src/__tests__/fixtures/pacifica-earn/game-history-liquidated.json",
+    "src/__tests__/fixtures/pacifica-earn/game-history-summary-page.json",
+    "src/__tests__/fixtures/pacifica-earn/game-history-summary.json",
+    "src/__tests__/fixtures/pacifica-earn/lake-deposit-whitelist.json",
+    "src/__tests__/fixtures/pacifica-earn/lake-list.json",
+    "src/__tests__/fixtures/qfex/contracts.json",
+    "src/__tests__/fixtures/qfex/mds-market-stats.json",
+    "src/__tests__/fixtures/qfex/refdata.json",
+    "src/__tests__/fixtures/relay-quotes.json",
+    "src/__tests__/fixtures/risex/funding-payments-evidence.json",
+    "src/__tests__/fixtures/risex/permissions-evidence.json",
+    "src/__tests__/fixtures/variational/stats-v2.json",
+    "src/__tests__/fixtures/ws/arcus/bbo.json",
+    "src/__tests__/fixtures/ws/arcus/control.json",
+    "src/__tests__/fixtures/ws/arcus/markets.json",
+    "src/__tests__/fixtures/ws/arcus/predictedFunding.json",
+    "src/__tests__/fixtures/ws/arcus/private-account.json",
+    "src/__tests__/fixtures/ws/aster/bookTicker.json",
+    "src/__tests__/fixtures/ws/aster/control.json",
+    "src/__tests__/fixtures/ws/aster/markPrice-arr.json",
+    "src/__tests__/fixtures/ws/aster/ticker-arr.json",
+    "src/__tests__/fixtures/ws/hyperliquid/activeAssetCtx.json",
+    "src/__tests__/fixtures/ws/hyperliquid/allDexsAssetCtxs.json",
+    "src/__tests__/fixtures/ws/hyperliquid/bbo.json",
+    "src/__tests__/fixtures/ws/hyperliquid/control.json",
+    "src/__tests__/fixtures/ws/hyperliquid/private-clearinghouseState.json",
+    "src/__tests__/fixtures/ws/hyperliquid/private-control.json",
+    "src/__tests__/fixtures/ws/hyperliquid/private-openOrders.json",
+    "src/__tests__/fixtures/ws/hyperliquid/private-userFills.json",
+    "src/__tests__/fixtures/ws/lighter-rh/market_stats-all.json",
+    "src/__tests__/fixtures/ws/lighter-rh/private-account.json",
+    "src/__tests__/fixtures/ws/lighter-rh/ticker.json",
+    "src/__tests__/fixtures/ws/lighter/control.json",
+    "src/__tests__/fixtures/ws/lighter/market_stats-all.json",
+    "src/__tests__/fixtures/ws/lighter/private-account.json",
+    "src/__tests__/fixtures/ws/lighter/ticker.json",
+    "src/__tests__/fixtures/ws/pacifica/bbo.json",
+    "src/__tests__/fixtures/ws/pacifica/control.json",
+    "src/__tests__/fixtures/ws/pacifica/prices.json",
+    "src/__tests__/fixtures/ws/pacifica/private-account.json"
+  ]
+}

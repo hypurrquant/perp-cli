@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { vi } from "vitest";
-import { collectIds, domainOf, guardFixtureText, PublicScrubber, symbolMatcher, trimResponse, type Json } from "./fixture-tools.js";
+import { collectIds, domainOf, guardFixtureIdentities, guardFixtureText, PublicScrubber, symbolMatcher, trimResponse, type Json } from "./fixture-tools.js";
 
 export type Mode = "replay" | "live" | "record" | "prune";
 export const MODE: Mode = process.env.PERP_RECORD === "1" ? "record"
@@ -394,8 +394,10 @@ export class Session {
     const whole = !this.trim || (f.full ?? []).length > 0;
     const plain = join(FIXTURE_DIR, `${this.name}.json`);
     const file = whole ? `${plain}.gz` : plain;
-    const text = JSON.stringify(dedupe(f), null, whole ? undefined : 1) + "\n";
+    const deduped = dedupe(f);
+    const text = JSON.stringify(deduped, null, whole ? undefined : 1) + "\n";
     guardFixtureText(text, file);
+    guardFixtureIdentities(deduped as unknown as Json, file);
     mkdirSync(FIXTURE_DIR, { recursive: true });
     rmSync(whole ? plain : `${plain}.gz`, { force: true });
     writeFileSync(file, whole ? gzipSync(text, { level: 9 }) : text);

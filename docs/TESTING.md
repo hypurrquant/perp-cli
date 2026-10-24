@@ -38,12 +38,22 @@ suite (§3) with an id, and the ones still open are listed in `KNOWN_FAILURES` (
 - **Only real responses.** A fixture is a recorded live response, trimmed and anonymized by a
   script. A hand-written JSON shape is a forbidden pattern (§9) — it encodes what the author
   *thinks* the venue sends, which is exactly what drifted in 0.15.0.
+- **Provenance is declared, not remembered.** Every fixture says where its bytes came from: the
+  `recordedWith` header `scripts/conformance/record.ts` writes, a `recordedWith` header on a
+  hand-assembled envelope of live answers, or an entry in `src/__tests__/fixtures/PROVENANCE.json`
+  for a fixture that is a verbatim wire body (adding a key there would make it differ from the
+  real response). A file in none of the three fails `fixture-provenance.test.ts`. Write what you
+  actually did — "provenance unknown" is a usable value, an invented endpoint is not.
 - **Anonymization:** private (account) data goes through `scripts/ws-probe/make-fixtures.ts`
   (addresses / account ids → dummies, ids and hashes remapped, amounts perturbed, timestamps
   shifted, secret fields dropped, a guard refuses to write a real id). Public market data goes
   through the same approach reduced to what public data carries
   (`src/__tests__/conformance/fixture-tools.ts`: secret fields dropped, trader identities and tx
-  hashes remapped; prices and times are kept — the invariants check them).
+  hashes remapped; prices and times are kept — the invariants check them). A trader identity is
+  matched by party word *and* suffix (`maker`, `makerAddress`, `owner_account_index`), because
+  listing bare words alone is what let real Arcus counterparty wallets into `arcus.json` in
+  0.16.0. Any other address-shaped value stops the write (`guardFixtureIdentities`) until it is
+  classified as an identity or as a protocol constant (a token contract, a dex deployer).
 - **Small but real:** lists are trimmed to keep-symbols (BTC / ETH / SOL, …) with the ids they join
   on, positional arrays keep matching indices, long series keep their first and last rows. Cells
   whose point is a full set (CLI ⇄ MCP / WS directory parity, eligibility) or a full server page
@@ -286,9 +296,40 @@ Errors: unknown symbol → `SYMBOL_NOT_FOUND` + remediation; unsupported feature
 
 - [ ] No forbidden pattern (§9) in the diff.
 - [ ] New fixtures are recorded (header `recordedWith`), not hand-written; no secrets / real ids.
+      Both halves are enforced by `pnpm test` over the whole `src/__tests__/fixtures/` tree:
+      `src/__tests__/conformance/fixture-provenance.test.ts` fails on a fixture that declares
+      neither an in-file `recordedWith` header nor an entry in
+      `src/__tests__/fixtures/PROVENANCE.json`, and
+      `src/__tests__/conformance/fixture-anonymization.test.ts` fails on a fixture that holds a
+      real trader identity — a wallet or a numeric account id — under a key the scrubber does not
+      classify as a protocol constant.
+      **What the green gate does and does not mean.** The identity sweep has two halves, and they
+      are not equally strong, because the two kinds of identity are found two different ways:
+      - *wallets* are found by VALUE shape (`0x` + 40 hex) under any key, so a leak under a key
+        nobody has classified yet is still caught. This half is conclusive.
+      - *account ids* (Lighter's `owner_account_index`, Arcus's `accountIndex`) are integers with
+        no shape to match — `726714` could be a price — so they are found by KEY, and the sweep is
+        only as wide as `isAccountIdKey`: an account word (`user`/`owner`/`maker`/`account`/…)
+        plus an id-ish suffix. A venue that names an account with none of those words is invisible
+        to it. The recognized dummy space is also a band, `900_000 < n < 1_000_000`, so a real
+        index that fell inside the band would read as a dummy; Lighter's live space is six digits
+        (highest real value seen in a fixture: 762067), which is where the margin comes from.
+      These are not hypotheticals: the string-only sweep could not see any identity in any Lighter
+      fixture, and that is how `lighter/book-live.json` held 555 real account indices through a
+      green 7166-test run (HIK-10).
+      Each test also carries a frozen grandfather list of files that predate it —
+      `legacyUnverified` (provenance, 70 files) and `LEGACY_UNCLASSIFIED` (anonymization, 3 files,
+      each key and reason spelled out). Those lists may shrink, never grow. So a green run means:
+      no wallet-shaped leak anywhere in the tree outside those 3 files, and no account id under a
+      recognized account key outside the dummy band. It does not mean a human need not look at a
+      new venue's identity fields.
+      Anonymization is also not unlinkability: `coin` / `px` / `sz` / `time` are preserved on
+      purpose (the cross-venue invariants check them) and still pin a row on the venue's public
+      tape. It guarantees the repo does not itself publish a list of third-party wallets.
 - [ ] No new `KNOWN_FAILURES` entry without a reason and an owner.
 - [ ] Contract change listed in the CHANGELOG.
-- [ ] Release PR: `pnpm release-qa --version <v>` report attached after publishing.
+- [ ] Release PR: `pnpm release-qa --version <v>` report attached after publishing, committed under
+      `docs/qa-reports/` (tracked — the QA history is part of the repo, not of one laptop).
 
 ---
 
