@@ -30,6 +30,20 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
   `sz`, so nothing downstream changes. Found because the anonymization sweep was scoped to
   `fixtures/conformance/` while the leak sat one directory over; the sweep now walks the whole
   tree, with the three pre-existing exceptions named and frozen in `LEGACY_UNCLASSIFIED`.
+- **The same leak again, in the half of the identity space no gate could see.**
+  `src/__tests__/fixtures/lighter/book-live.json` held 555 real Lighter `owner_account_index`
+  values (76 distinct accounts, one per resting order) — the same key, and the same data, that was
+  re-anonymized in `lighter.json` / `lighter-rh.json` / `cross.json` above. Both gates were blind
+  to it by construction: each tested only address-shaped STRINGS, and a venue that numbers its
+  accounts has no address to match. Since Arcus and Hyperliquid identify a trader by wallet while
+  Lighter does so by account index, that made the sweep unable to see any identity in any Lighter
+  fixture, and `pnpm test` stayed green over 7166 tests with the file committed. The sweep and
+  `guardFixtureIdentities` now both examine integers under an account-naming key
+  (`isAccountIdKey`), with the venue's own published accounts (`operator_account_index`,
+  `insurance_fund_account_index`, `integrator_*_fee_collector_index`) classified explicitly rather
+  than excused by a regex miss. `book-live.json` was re-anonymized with the same dummy scheme,
+  leaving every other byte — prices, sizes, `order_id`, `order_index`, timestamps — identical.
+  `docs/TESTING.md` §7.3 now states what each half of the sweep can and cannot conclude.
 - **Fixture provenance is declared and enforced.** 23 of the 56 fixtures added for 0.16.0 stated
   nothing about where their bytes came from, so §9's ban on hand-written shapes could not be
   checked. Nine hand-assembled envelopes gained a `recordedWith` header; the 14 that are verbatim

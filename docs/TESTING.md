@@ -301,13 +301,28 @@ Errors: unknown symbol → `SYMBOL_NOT_FOUND` + remediation; unsupported feature
       neither an in-file `recordedWith` header nor an entry in
       `src/__tests__/fixtures/PROVENANCE.json`, and
       `src/__tests__/conformance/fixture-anonymization.test.ts` fails on a fixture that holds a
-      real-looking wallet under a key the scrubber does not classify as a protocol constant.
-      **What the green gate does and does not mean.** Each test carries a frozen grandfather list
-      of files that predate it — `legacyUnverified` (provenance, 70 files) and
-      `LEGACY_UNCLASSIFIED` (anonymization, 3 files, each key and reason spelled out). Those lists
-      may shrink, never grow, so the gate is conclusive for everything you are about to add and
-      silent only about those named files. Read the two lists before trusting a green run on a
-      diff that touches them; for every other fixture the claim stands on its own.
+      real trader identity — a wallet or a numeric account id — under a key the scrubber does not
+      classify as a protocol constant.
+      **What the green gate does and does not mean.** The identity sweep has two halves, and they
+      are not equally strong, because the two kinds of identity are found two different ways:
+      - *wallets* are found by VALUE shape (`0x` + 40 hex) under any key, so a leak under a key
+        nobody has classified yet is still caught. This half is conclusive.
+      - *account ids* (Lighter's `owner_account_index`, Arcus's `accountIndex`) are integers with
+        no shape to match — `726714` could be a price — so they are found by KEY, and the sweep is
+        only as wide as `isAccountIdKey`: an account word (`user`/`owner`/`maker`/`account`/…)
+        plus an id-ish suffix. A venue that names an account with none of those words is invisible
+        to it. The recognized dummy space is also a band, `900_000 < n < 1_000_000`, so a real
+        index that fell inside the band would read as a dummy; Lighter's live space is six digits
+        (highest real value seen in a fixture: 762067), which is where the margin comes from.
+      These are not hypotheticals: the string-only sweep could not see any identity in any Lighter
+      fixture, and that is how `lighter/book-live.json` held 555 real account indices through a
+      green 7166-test run (HIK-10).
+      Each test also carries a frozen grandfather list of files that predate it —
+      `legacyUnverified` (provenance, 70 files) and `LEGACY_UNCLASSIFIED` (anonymization, 3 files,
+      each key and reason spelled out). Those lists may shrink, never grow. So a green run means:
+      no wallet-shaped leak anywhere in the tree outside those 3 files, and no account id under a
+      recognized account key outside the dummy band. It does not mean a human need not look at a
+      new venue's identity fields.
       Anonymization is also not unlinkability: `coin` / `px` / `sz` / `time` are preserved on
       purpose (the cross-venue invariants check them) and still pin a row on the venue's public
       tape. It guarantees the repo does not itself publish a list of third-party wallets.

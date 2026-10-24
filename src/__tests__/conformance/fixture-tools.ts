@@ -26,9 +26,9 @@
  *    invariants (price agreement, kline alignment) are checked against them. Private (account)
  *    responses are never recorded by the conformance suite — they go through
  *    scripts/ws-probe/make-fixtures.ts, which also perturbs amounts and shifts timestamps.
- *  - guards the written fixture: no secret field may remain (`guardFixtureText`), and no
- *    real-looking wallet address may remain outside the classified protocol-constant fields
- *    (`guardFixtureIdentities`).
+ *  - guards the written fixture: no secret field may remain (`guardFixtureText`), and no real
+ *    trader identity may remain outside the classified fields — neither a wallet address nor a
+ *    numeric account id (`guardFixtureIdentities`).
  */
 
 export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
@@ -74,6 +74,51 @@ const PARTY_ID = new RegExp(`^(?:${PARTY})[_-]?(?:${ID_SUFFIX})(?:[_-]?str)?$`, 
  */
 const SIDE_ACCOUNT_ID = /^(ask|bid)_account_id$/i;
 const isIdentityKey = (k: string): boolean => BARE_PARTY.test(k) || PARTY_ID.test(k) || SIDE_ACCOUNT_ID.test(k);
+
+/**
+ * Keys whose value is a party's venue-assigned ACCOUNT NUMBER (Lighter's `owner_account_index`,
+ * Arcus's `accountIndex`). These need their own family because the value-shape test that finds a
+ * leaked wallet (`ADDRESS_SHAPED`) is blind to them: any integer could be a price, a sequence
+ * number or a timestamp, so there is no shape to match. The only workable test is the KEY.
+ *
+ * It is therefore deliberately WIDER than `isIdentityKey`: `operator_account_index` and
+ * `insurance_fund_account_index` match here and are then excused by `PUBLIC_ACCOUNT_KEY` below.
+ * A venue-owned account stays readable because it is listed, not because a regex happened to miss
+ * it — which is the mistake that let `makerAddress` through in the first place (HIK-10).
+ */
+const ACCOUNT_WORD = /(users?|owner|trader|maker|taker|buyer|seller|wallet|account|liquidator|counterparty|sender|receiver|recipient)/i;
+const ACCOUNT_NUMBER_SUFFIX = /(index|indices|id|ids|no|num|number)$/i;
+const isAccountNumberKey = (k: string): boolean => ACCOUNT_WORD.test(k) && ACCOUNT_NUMBER_SUFFIX.test(k);
+/**
+ * Account numbers the VENUE owns and publishes to everyone in its market config: the matching
+ * engine operator, the insurance fund, and the fee collectors of a registered integrator. They
+ * name no trader, and the CLI prints market config, so they stay readable. A venue-owned account
+ * under a new key name is a failure until it is added here.
+ */
+const PUBLIC_ACCOUNT_KEY = /^(operator_account_index|insurance_fund_account_index|integrator_(?:maker|taker)_fee_collector_index)$/i;
+/**
+ * `PublicScrubber.next` maps a numeric identity to `900_000 + k`, with k counting from 1 within
+ * one fixture (the widest, conformance/cross.json, reaches k ≈ 34_000). That band is the dummy
+ * space for account numbers.
+ *
+ * Unlike a wallet dummy, this is a BAND test and not a shape guarantee, so state its one blind
+ * spot plainly (docs/TESTING.md §7.3 repeats it): a real venue account index that falls inside
+ * (900_000, 1_000_000) would be read here as a dummy. Lighter hands out six-digit indices — the
+ * highest real one in any committed fixture was 762_067 — so the band sits above the live space
+ * today, and it has to move before the venue's space grows into it.
+ */
+const isDummyAccountId = (n: number): boolean => Number.isInteger(n) && n > 900_000 && n < 1_000_000;
+/**
+ * Numeric account placeholders written by the OTHER recorder and by the protocol itself, so the
+ * tree-wide sweep does not read the `ws/**` fixtures as leaks:
+ *  - `scripts/ws-probe/make-fixtures.ts:25-26` substitutes the real Lighter account indices with
+ *    1_000_001 / 1_000_002;
+ *  - Arcus subscribes by address and `accountIndex` defaults to 0 for every address
+ *    (`make-fixtures.ts:335` writes the literal), so 0 names nobody.
+ * As with `PLACEHOLDER_ADDRESS`, these are NOT accepted by `guardFixtureIdentities`: a conformance
+ * recording has to produce scrubber-shaped dummies.
+ */
+const PLACEHOLDER_ACCOUNT_IDS: ReadonlySet<number> = new Set([0, 1_000_001, 1_000_002]);
 
 const HASH_KEY = /^(hash|tx_hash|txHash|transaction_hash|txn_hash)$/i;
 
@@ -243,24 +288,42 @@ export const isDummyAddress = (v: string): boolean => DUMMY_ADDRESS.test(v);
 export const isPlaceholderAddress = (v: string): boolean => PLACEHOLDER_ADDRESS.test(v);
 /** True for a wallet-address-shaped string. */
 export const isAddressShaped = (v: string): boolean => ADDRESS_SHAPED.test(v);
+/** True for a key whose value is a party's numeric account id (see `ACCOUNT_WORD`). */
+export const isAccountIdKey = isAccountNumberKey;
+/** True for a numeric account id the venue owns and publishes (operator, insurance fund, …). */
+export const isPublicAccountKey = (k: string): boolean => PUBLIC_ACCOUNT_KEY.test(k);
+/** True for a numeric account id already inside the scrubber's dummy band (see above). */
+export const isDummyAccountNumber = isDummyAccountId;
+/** True for a numeric account placeholder of scripts/ws-probe/make-fixtures.ts (see above). */
+export const isPlaceholderAccountNumber = (n: number): boolean => PLACEHOLDER_ACCOUNT_IDS.has(n);
 
 /**
- * Refuse to write a fixture that still carries a real-looking wallet address. Unlike
- * `guardFixtureText` this is key-aware: an address survives only under a `PUBLIC_ADDRESS_KEY`
- * (a token contract, a dex deployer). Anything else means the recording met a venue field the
- * scrubber does not classify yet, and the fixture must not be committed until it is classified.
+ * Refuse to write a fixture that still carries a real trader identity. Unlike `guardFixtureText`
+ * this is key-aware, and it checks both kinds of identity a public response carries:
+ *  - a wallet-shaped string survives only under a `PUBLIC_ADDRESS_KEY` (token contract, dex
+ *    deployer);
+ *  - an integer under an `isAccountNumberKey` key survives only inside the scrubber's dummy band
+ *    or under a `PUBLIC_ACCOUNT_KEY` (the venue's own operator / insurance / integrator accounts).
+ * Anything else means the recording met a venue field the scrubber does not classify yet, and the
+ * fixture must not be committed until it is classified.
  */
 export function guardFixtureIdentities(body: Json, file: string): void {
+  const refuse = (key: string, what: string, how: string): never => {
+    throw new Error(
+      `refusing to write ${file}: "${key}" still holds ${what}. ` +
+      `Classify it in src/__tests__/conformance/fixture-tools.ts — ${how}`,
+    );
+  };
   const walk = (j: Json, key: string): void => {
     if (Array.isArray(j)) { for (const x of j) walk(x, key); return; }
     if (isObj(j)) { for (const [k, v] of Object.entries(j)) walk(v, k); return; }
+    if (typeof j === "number") {
+      if (!isAccountNumberKey(key) || isDummyAccountId(j) || PUBLIC_ACCOUNT_KEY.test(key)) return;
+      refuse(key, "a real-looking account number", "PARTY/ID_SUFFIX if it names a trader, PUBLIC_ACCOUNT_KEY if the venue owns it.");
+    }
     if (typeof j !== "string" || !ADDRESS_SHAPED.test(j) || DUMMY_ADDRESS.test(j)) return;
     if (PUBLIC_ADDRESS_KEY.test(key)) return;
-    throw new Error(
-      `refusing to write ${file}: "${key}" still holds a real-looking wallet address. ` +
-      `Classify it in src/__tests__/conformance/fixture-tools.ts — PARTY/ID_SUFFIX if it names a ` +
-      `trader, PUBLIC_ADDRESS_KEY if it is a protocol constant.`,
-    );
+    refuse(key, "a real-looking wallet address", "PARTY/ID_SUFFIX if it names a trader, PUBLIC_ADDRESS_KEY if it is a protocol constant.");
   };
   walk(body, "");
 }
