@@ -6,10 +6,10 @@
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { PacificaClient } from "./pacifica/client.js";
+import { PacificaClient, requireSolanaAddress } from "./pacifica/client.js";
 import type { Network } from "./exchanges/venue-types.js";
 import { fetchPrintGames, fetchPrintHistory, fetchPrintMarket, fetchPrintPositions, findPrintGame, quotePrintOrder } from "./exchanges/pacifica-print.js";
-import { DEPOSIT_WHITELIST_API_STATUS, fetchDepositWhitelist, fetchVaults, findVault, heldShares, withdrawWindowAt } from "./exchanges/pacifica-vaults.js";
+import { DEPOSIT_WHITELIST_API_STATUS, readDepositWhitelist, fetchVaults, findVault, heldShares, withdrawWindowAt } from "./exchanges/pacifica-vaults.js";
 
 type Text = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -27,7 +27,7 @@ export function registerPacificaEarnMcpTools(
       return { content: [{ type: "text", text: errOf(e, meta) }], isError: true };
     }
   };
-  const address = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "base58 Solana address");
+  const address = z.string().refine((v) => { try { requireSolanaAddress(v); return true; } catch { return false; } }, "base58 Solana address (32-byte public key; not an EVM address)");
 
   server.tool(
     "pacifica_print_products",
@@ -82,12 +82,12 @@ export function registerPacificaEarnMcpTools(
       const vaults = await fetchVaults(c, account ?? null);
       if (vault === undefined) return vaults;
       const v = findVault(vaults, vault);
-      const [acct, positions, whitelist] = await Promise.all([c.getAccount(v.address), c.getPositions(v.address), fetchDepositWhitelist(c, v.address).catch(() => null)]);
+      const [acct, positions, whitelist] = await Promise.all([c.getAccount(v.address), c.getPositions(v.address), readDepositWhitelist(c, v.address)]);
       return {
         ...v,
         ...(account !== undefined ? { holding: heldShares(v, account) } : {}),
         live: { accountEquity: acct.account_equity ?? null, availableToWithdraw: acct.available_to_withdraw ?? null, positions: positions.map((p) => ({ symbol: p.symbol, side: p.side, amount: p.amount, entryPrice: p.entry_price })) },
-        depositWhitelist: { apiStatus: DEPOSIT_WHITELIST_API_STATUS, addresses: whitelist },
+        depositWhitelist: { apiStatus: DEPOSIT_WHITELIST_API_STATUS, addresses: whitelist.addresses, error: whitelist.error },
         withdrawWindow: withdrawWindowAt(v.config, Date.now()),
       };
     }),

@@ -1,0 +1,1 @@
+{"$schema": "https://api.qfex.com/schemas/OrderBookResponseBody.json", "ticker_id": "SAMSUNG-KRW", "timestamp": 1792410276334, "bids": [["219690", "0.00364"], ["219680", "0.00091"], ["219670", "0"], ["219660", "0"]], "asks": [["219770", "0.39244"], ["219780", "0"], ["219790", "0"], ["219800", "0"]]}

@@ -1,0 +1,1318 @@
+{
+ "schema": 1,
+ "name": "extended",
+ "capturedAt": 1792414401690,
+ "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
+ "keep": [
+  "BTC",
+  "ETH",
+  "SOL"
+ ],
+ "full": [],
+ "http": [
+  {
+   "cell": "list",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "07c2d5ee69a9fd1d"
+   },
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "07c2d5ee69a9fd1d"
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "07c2d5ee69a9fd1d"
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=BTC-USD",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "ab9f0cf5a3ef4b1e"
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=BTC_24_5-USD",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "status": "ERROR",
+    "error": {
+     "code": 1001,
+     "message": "Market not found"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/BTC-USD/funding?startTime=1792389200353&endTime=1792414400353&limit=5",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "status": "OK",
+    "data": [
+     {
+      "m": "BTC-USD",
+      "f": "0.000009",
+      "T": 1792411200849
+     },
+     {
+      "m": "BTC-USD",
+      "f": "0.000006",
+      "T": 1792407601199
+     },
+     {
+      "m": "BTC-USD",
+      "f": "0.000009",
+      "T": 1792404001769
+     },
+     {
+      "m": "BTC-USD",
+      "f": "0.000012",
+      "T": 1792400400849
+     },
+     {
+      "m": "BTC-USD",
+      "f": "0.000013",
+      "T": 1792396801358
+     },
+     {
+      "m": "BTC-USD",
+      "f": "0.000013",
+      "T": 1792393200849
+     },
+     {
+      "m": "BTC-USD",
+      "f": "0.000013",
+      "T": 1792389600849
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=BTC-USD",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "ab9f0cf5a3ef4b1e"
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=BTC_24_5-USD",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "status": "ERROR",
+    "error": {
+     "code": 1001,
+     "message": "Market not found"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets/BTC-USD/orderbook",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "status": "OK",
+    "data": {
+     "market": "BTC-USD",
+     "bid": [
+      {
+       "qty": "9.96534",
+       "price": "82372"
+      },
+      {
+       "qty": "2.19823",
+       "price": "82371"
+      },
+      {
+       "qty": "2.09643",
+       "price": "82370"
+      },
+      {
+       "qty": "0.79585",
+       "price": "82369"
+      },
+      {
+       "qty": "0.83174",
+       "price": "82368"
+      },
+      {
+       "qty": "0.00680",
+       "price": "82367"
+      },
+      {
+       "qty": "0.00490",
+       "price": "51000"
+      },
+      {
+       "qty": "0.25",
+       "price": "50768"
+      },
+      {
+       "qty": "1",
+       "price": "48981"
+      },
+      {
+       "qty": "0.05307",
+       "price": "47100"
+      },
+      {
+       "qty": "0.04768",
+       "price": "8207"
+      },
+      {
+       "qty": "0.0074",
+       "price": "6400"
+      }
+     ],
+     "ask": [
+      {
+       "qty": "0.74977",
+       "price": "82373"
+      },
+      {
+       "qty": "0.00011",
+       "price": "82374"
+      },
+      {
+       "qty": "0.1393",
+       "price": "82381"
+      },
+      {
+       "qty": "0.73918",
+       "price": "82382"
+      },
+      {
+       "qty": "0.1393",
+       "price": "82383"
+      },
+      {
+       "qty": "0.08307",
+       "price": "82385"
+      },
+      {
+       "qty": "0.00047",
+       "price": "103596"
+      },
+      {
+       "qty": "0.00046",
+       "price": "104828"
+      },
+      {
+       "qty": "0.00046",
+       "price": "106067"
+      },
+      {
+       "qty": "0.00045",
+       "price": "107314"
+      },
+      {
+       "qty": "0.00044",
+       "price": "108568"
+      },
+      {
+       "qty": "0.00044",
+       "price": "109829"
+      }
+     ]
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=BTC-USD",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "ab9f0cf5a3ef4b1e"
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=BTC_24_5-USD",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "status": "ERROR",
+    "error": {
+     "code": 1001,
+     "message": "Market not found"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets/BTC-USD/trades",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "status": "OK",
+    "data": [
+     {
+      "i": 2112164808081019000,
+      "m": "BTC-USD",
+      "S": "SELL",
+      "tT": "TRADE",
+      "T": 1792414307028,
+      "p": "82385",
+      "q": "0.00035"
+     },
+     {
+      "i": 2112164808081019000,
+      "m": "BTC-USD",
+      "S": "SELL",
+      "tT": "TRADE",
+      "T": 1792414307028,
+      "p": "82385",
+      "q": "0.00011"
+     },
+     {
+      "i": 2112164808085213200,
+      "m": "BTC-USD",
+      "S": "SELL",
+      "tT": "TRADE",
+      "T": 1792414307029,
+      "p": "82384",
+      "q": "0.00030"
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=BTC-USD",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "ab9f0cf5a3ef4b1e"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=BTC_24_5-USD",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "status": "ERROR",
+    "error": {
+     "code": 1001,
+     "message": "Market not found"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/candles/BTC-USD/trades?interval=PT1H&limit=26&endTime=1792414400642",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "status": "OK",
+    "data": [
+     {
+      "o": "82228.5",
+      "l": "82210.5",
+      "h": "82556.5",
+      "c": "82454.5",
+      "v": "45.39988",
+      "T": 1792411200000
+     },
+     {
+      "o": "82289.5",
+      "l": "82018",
+      "h": "82289.5",
+      "c": "82228.5",
+      "v": "50.38022",
+      "T": 1792407600000
+     },
+     {
+      "o": "82651.5",
+      "l": "81992",
+      "h": "82758.5",
+      "c": "82289.5",
+      "v": "135.14312",
+      "T": 1792404000000
+     },
+     {
+      "o": "82710.5",
+      "l": "82625",
+      "h": "82962",
+      "c": "82651.5",
+      "v": "135.60208",
+      "T": 1792400400000
+     },
+     {
+      "o": "82614.5",
+      "l": "82474",
+      "h": "82832",
+      "c": "82710.5",
+      "v": "45.54618",
+      "T": 1792396800000
+     },
+     {
+      "o": "82723.5",
+      "l": "82573",
+      "h": "83037",
+      "c": "82614.5",
+      "v": "52.92406",
+      "T": 1792393200000
+     },
+     {
+      "o": "81045.5",
+      "l": "80919",
+      "h": "81119.5",
+      "c": "80956.5",
+      "v": "38.9859",
+      "T": 1792339200000
+     },
+     {
+      "o": "80974",
+      "l": "80889.5",
+      "h": "81106.5",
+      "c": "81045.5",
+      "v": "15.88212",
+      "T": 1792335600000
+     },
+     {
+      "o": "81414.5",
+      "l": "80909",
+      "h": "81426",
+      "c": "80974",
+      "v": "133.23568",
+      "T": 1792332000000
+     },
+     {
+      "o": "81846.5",
+      "l": "81199.5",
+      "h": "81846.5",
+      "c": "81414.5",
+      "v": "194.86242",
+      "T": 1792328400000
+     },
+     {
+      "o": "81908.5",
+      "l": "81789",
+      "h": "81973",
+      "c": "81846.5",
+      "v": "42.6314",
+      "T": 1792324800000
+     },
+     {
+      "o": "81958.5",
+      "l": "81876",
+      "h": "81999",
+      "c": "81908.5",
+      "v": "47.07402",
+      "T": 1792321200000
+     }
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "07c2d5ee69a9fd1d"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:funding",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=NOPEXYZ-USD",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "status": "ERROR",
+    "error": {
+     "code": 1001,
+     "message": "Market not found"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:funding",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=NOPEXYZ_24_5-USD",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "status": "ERROR",
+    "error": {
+     "code": 1001,
+     "message": "Market not found"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:funding",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "07c2d5ee69a9fd1d"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:book",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=NOPEXYZ-USD",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "status": "ERROR",
+    "error": {
+     "code": 1001,
+     "message": "Market not found"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:book",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=NOPEXYZ_24_5-USD",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "status": "ERROR",
+    "error": {
+     "code": 1001,
+     "message": "Market not found"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:book",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "07c2d5ee69a9fd1d"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:trades",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=NOPEXYZ-USD",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "status": "ERROR",
+    "error": {
+     "code": 1001,
+     "message": "Market not found"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:trades",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=NOPEXYZ_24_5-USD",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "status": "ERROR",
+    "error": {
+     "code": 1001,
+     "message": "Market not found"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:trades",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "07c2d5ee69a9fd1d"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:kline",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=NOPEXYZ-USD",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "status": "ERROR",
+    "error": {
+     "code": 1001,
+     "message": "Market not found"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:kline",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets?market=NOPEXYZ_24_5-USD",
+   "body": null,
+   "status": 400,
+   "contentType": "application/json",
+   "response": {
+    "status": "ERROR",
+    "error": {
+     "code": 1001,
+     "message": "Market not found"
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:kline",
+   "method": "GET",
+   "url": "https://api.starknet.extended.exchange/api/v1/info/markets",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "07c2d5ee69a9fd1d"
+   },
+   "text": null
+  }
+ ],
+ "ws": [],
+ "bodies": {
+  "07c2d5ee69a9fd1d": {
+   "status": "OK",
+   "data": [
+    {
+     "name": "BTC-USD",
+     "type": "PERPETUAL",
+     "uiName": "BTC-USD",
+     "category": "Crypto",
+     "subCategory": "L1",
+     "assetName": "BTC",
+     "assetPrecision": 5,
+     "collateralAssetName": "USD",
+     "collateralAssetPrecision": 6,
+     "description": "Bitcoin",
+     "active": true,
+     "isRfq": false,
+     "isOffHours": false,
+     "status": "ACTIVE",
+     "tradingHours": "CONTINUOUS",
+     "marketStats": {
+      "dailyVolume": "109039296.180520",
+      "dailyVolumeBase": "1331.80180",
+      "dailyPriceChange": "625",
+      "dailyPriceChangePercentage": "0.0076",
+      "dailyLow": "80568",
+      "dailyHigh": "83037",
+      "lastPrice": "82450",
+      "askPrice": "82455.0",
+      "bidPrice": "82454",
+      "markPrice": "82444.248327749999",
+      "indexPrice": "82480.620591937506",
+      "fundingRate": "0.000013",
+      "nextFundingRate": 1792414800000,
+      "openInterest": "47555596.346349",
+      "openInterestBase": "578.12806",
+      "deleverageLevels": {
+       "shortPositions": [
+        {
+         "level": 1,
+         "rankingLowerBound": "-235.6689"
+        },
+        {
+         "level": 2,
+         "rankingLowerBound": "-1.5894"
+        },
+        {
+         "level": 3,
+         "rankingLowerBound": "-0.0097"
+        },
+        {
+         "level": 4,
+         "rankingLowerBound": "0.0001"
+        }
+       ],
+       "longPositions": [
+        {
+         "level": 1,
+         "rankingLowerBound": "-30556.6410"
+        },
+        {
+         "level": 2,
+         "rankingLowerBound": "-0.0451"
+        },
+        {
+         "level": 3,
+         "rankingLowerBound": "0.0001"
+        },
+        {
+         "level": 4,
+         "rankingLowerBound": "0.0042"
+        }
+       ]
+      }
+     },
+     "tradingConfig": {
+      "minOrderSize": "0.0001",
+      "minOrderSizeChange": "0.00001",
+      "minPriceChange": "1",
+      "maxMarketOrderValue": "3000000",
+      "maxLimitOrderValue": "15000000",
+      "maxPositionValue": "60000000",
+      "maxLeverage": "50.00",
+      "hourlyFundingRateCap": "0.25",
+      "openInterestLimit": "0",
+      "maxNumOrders": "200",
+      "limitPriceCap": "0.05",
+      "limitPriceFloor": "0.05",
+      "riskFactorConfig": [
+       {
+        "upperBound": "4000000",
+        "riskFactor": "0.02",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "8000000",
+        "riskFactor": "0.04",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "12000000",
+        "riskFactor": "0.06",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "16000000",
+        "riskFactor": "0.08",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "20000000",
+        "riskFactor": "0.1",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "24000000",
+        "riskFactor": "0.12",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "184000000",
+        "riskFactor": "0.92",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "188000000",
+        "riskFactor": "0.94",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "192000000",
+        "riskFactor": "0.96",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "196000000",
+        "riskFactor": "0.98",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "200000000",
+        "riskFactor": "1",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "1000000000",
+        "riskFactor": "1",
+        "isAvailableForUsers": false
+       }
+      ],
+      "uPnlWithdrawable": true,
+      "postWithdrawalMarginFactor": "0.1"
+     },
+     "l2Config": {
+      "type": "STARKX",
+      "collateralId": "0x1",
+      "syntheticId": "0x4254432d3600000000000000000000",
+      "syntheticResolution": 1000000,
+      "collateralResolution": 1000000
+     },
+     "visibleOnUi": true,
+     "referenceMarket": "null",
+     "createdAt": 1752829532673
+    },
+    {
+     "name": "SOL-USD",
+     "type": "PERPETUAL",
+     "uiName": "SOL-USD",
+     "category": "Crypto",
+     "subCategory": "L1",
+     "assetName": "SOL",
+     "assetPrecision": 2,
+     "collateralAssetName": "USD",
+     "collateralAssetPrecision": 6,
+     "description": "Solana",
+     "active": true,
+     "isRfq": false,
+     "isOffHours": false,
+     "status": "ACTIVE",
+     "tradingHours": "CONTINUOUS",
+     "marketStats": {
+      "dailyVolume": "5093030.150400",
+      "dailyVolumeBase": "49175.18",
+      "dailyPriceChange": "1.19",
+      "dailyPriceChangePercentage": "0.0115",
+      "dailyLow": "100.25",
+      "dailyHigh": "106.02",
+      "lastPrice": "105.00",
+      "askPrice": "105.070000",
+      "bidPrice": "105.06",
+      "markPrice": "105.0637761",
+      "indexPrice": "105.118715324999",
+      "fundingRate": "0.000005",
+      "nextFundingRate": 1792414800000,
+      "openInterest": "7352989.417868",
+      "openInterestBase": "69804.32",
+      "deleverageLevels": {
+       "shortPositions": [
+        {
+         "level": 1,
+         "rankingLowerBound": "-4726.5682"
+        },
+        {
+         "level": 2,
+         "rankingLowerBound": "-0.5608"
+        },
+        {
+         "level": 3,
+         "rankingLowerBound": "-0.0048"
+        },
+        {
+         "level": 4,
+         "rankingLowerBound": "0.0001"
+        }
+       ],
+       "longPositions": [
+        {
+         "level": 1,
+         "rankingLowerBound": "-15502.5326"
+        },
+        {
+         "level": 2,
+         "rankingLowerBound": "-1.9637"
+        },
+        {
+         "level": 3,
+         "rankingLowerBound": "0.0000"
+        },
+        {
+         "level": 4,
+         "rankingLowerBound": "0.0022"
+        }
+       ]
+      }
+     },
+     "tradingConfig": {
+      "minOrderSize": "0.1",
+      "minOrderSizeChange": "0.01",
+      "minPriceChange": "0.01",
+      "maxMarketOrderValue": "1500000",
+      "maxLimitOrderValue": "7500000",
+      "maxPositionValue": "15000000",
+      "maxLeverage": "50.00",
+      "hourlyFundingRateCap": "0.25",
+      "openInterestLimit": "0",
+      "maxNumOrders": "200",
+      "limitPriceCap": "0.05",
+      "limitPriceFloor": "0.05",
+      "riskFactorConfig": [
+       {
+        "upperBound": "1000000",
+        "riskFactor": "0.02",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "2000000",
+        "riskFactor": "0.04",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "3000000",
+        "riskFactor": "0.06",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "4000000",
+        "riskFactor": "0.08",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "5000000",
+        "riskFactor": "0.1",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "6000000",
+        "riskFactor": "0.12",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "46000000",
+        "riskFactor": "0.92",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "47000000",
+        "riskFactor": "0.94",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "48000000",
+        "riskFactor": "0.96",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "49000000",
+        "riskFactor": "0.98",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "50000000",
+        "riskFactor": "1",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "1000000000",
+        "riskFactor": "1",
+        "isAvailableForUsers": false
+       }
+      ],
+      "uPnlWithdrawable": false,
+      "postWithdrawalMarginFactor": "0"
+     },
+     "l2Config": {
+      "type": "STARKX",
+      "collateralId": "0x1",
+      "syntheticId": "0x534f4c2d3300000000000000000000",
+      "syntheticResolution": 1000,
+      "collateralResolution": 1000000
+     },
+     "visibleOnUi": true,
+     "referenceMarket": "null",
+     "createdAt": 1752829532673
+    },
+    {
+     "name": "ETH-USD",
+     "type": "PERPETUAL",
+     "uiName": "ETH-USD",
+     "category": "Crypto",
+     "subCategory": "L1",
+     "assetName": "ETH",
+     "assetPrecision": 3,
+     "collateralAssetName": "USD",
+     "collateralAssetPrecision": 6,
+     "description": "Ethereum",
+     "active": true,
+     "isRfq": false,
+     "isOffHours": false,
+     "status": "ACTIVE",
+     "tradingHours": "CONTINUOUS",
+     "marketStats": {
+      "dailyVolume": "21053387.887400",
+      "dailyVolumeBase": "8808.158",
+      "dailyPriceChange": "7.4",
+      "dailyPriceChangePercentage": "0.0031",
+      "dailyLow": "2325.6",
+      "dailyHigh": "2442.4",
+      "lastPrice": "2419.8",
+      "askPrice": "2420.5",
+      "bidPrice": "2420.4",
+      "markPrice": "2420.472419249999",
+      "indexPrice": "2421.5811927",
+      "fundingRate": "0.000012",
+      "nextFundingRate": 1792414800000,
+      "openInterest": "27232935.699656",
+      "openInterestBase": "11227.244",
+      "deleverageLevels": {
+       "shortPositions": [
+        {
+         "level": 1,
+         "rankingLowerBound": "-5446.8182"
+        },
+        {
+         "level": 2,
+         "rankingLowerBound": "-1.8009"
+        },
+        {
+         "level": 3,
+         "rankingLowerBound": "-0.0030"
+        },
+        {
+         "level": 4,
+         "rankingLowerBound": "0.0013"
+        }
+       ],
+       "longPositions": [
+        {
+         "level": 1,
+         "rankingLowerBound": "-444.2004"
+        },
+        {
+         "level": 2,
+         "rankingLowerBound": "-1.7416"
+        },
+        {
+         "level": 3,
+         "rankingLowerBound": "0.0000"
+        },
+        {
+         "level": 4,
+         "rankingLowerBound": "0.0010"
+        }
+       ]
+      }
+     },
+     "tradingConfig": {
+      "minOrderSize": "0.01",
+      "minOrderSizeChange": "0.001",
+      "minPriceChange": "0.1",
+      "maxMarketOrderValue": "3000000",
+      "maxLimitOrderValue": "15000000",
+      "maxPositionValue": "60000000",
+      "maxLeverage": "50.00",
+      "hourlyFundingRateCap": "0.25",
+      "openInterestLimit": "0",
+      "maxNumOrders": "200",
+      "limitPriceCap": "0.05",
+      "limitPriceFloor": "0.05",
+      "riskFactorConfig": [
+       {
+        "upperBound": "4000000",
+        "riskFactor": "0.02",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "8000000",
+        "riskFactor": "0.04",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "12000000",
+        "riskFactor": "0.06",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "16000000",
+        "riskFactor": "0.08",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "20000000",
+        "riskFactor": "0.1",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "24000000",
+        "riskFactor": "0.12",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "184000000",
+        "riskFactor": "0.92",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "188000000",
+        "riskFactor": "0.94",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "192000000",
+        "riskFactor": "0.96",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "196000000",
+        "riskFactor": "0.98",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "200000000",
+        "riskFactor": "1",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "1000000000",
+        "riskFactor": "1",
+        "isAvailableForUsers": false
+       }
+      ],
+      "uPnlWithdrawable": true,
+      "postWithdrawalMarginFactor": "0.1"
+     },
+     "l2Config": {
+      "type": "STARKX",
+      "collateralId": "0x1",
+      "syntheticId": "0x4554482d3400000000000000000000",
+      "syntheticResolution": 10000,
+      "collateralResolution": 1000000
+     },
+     "visibleOnUi": true,
+     "referenceMarket": "null",
+     "createdAt": 1752829532673
+    }
+   ]
+  },
+  "ab9f0cf5a3ef4b1e": {
+   "status": "OK",
+   "data": [
+    {
+     "name": "BTC-USD",
+     "type": "PERPETUAL",
+     "uiName": "BTC-USD",
+     "category": "Crypto",
+     "subCategory": "L1",
+     "assetName": "BTC",
+     "assetPrecision": 5,
+     "collateralAssetName": "USD",
+     "collateralAssetPrecision": 6,
+     "description": "Bitcoin",
+     "active": true,
+     "isRfq": false,
+     "isOffHours": false,
+     "status": "ACTIVE",
+     "tradingHours": "CONTINUOUS",
+     "marketStats": {
+      "dailyVolume": "109039296.180520",
+      "dailyVolumeBase": "1331.80180",
+      "dailyPriceChange": "625",
+      "dailyPriceChangePercentage": "0.0076",
+      "dailyLow": "80568",
+      "dailyHigh": "83037",
+      "lastPrice": "82450",
+      "askPrice": "82455.0",
+      "bidPrice": "82454",
+      "markPrice": "82444.248327749999",
+      "indexPrice": "82480.620591937506",
+      "fundingRate": "0.000013",
+      "nextFundingRate": 1792414800000,
+      "openInterest": "47555596.346349",
+      "openInterestBase": "578.12806",
+      "deleverageLevels": {
+       "shortPositions": [
+        {
+         "level": 1,
+         "rankingLowerBound": "-235.6689"
+        },
+        {
+         "level": 2,
+         "rankingLowerBound": "-1.5894"
+        },
+        {
+         "level": 3,
+         "rankingLowerBound": "-0.0097"
+        },
+        {
+         "level": 4,
+         "rankingLowerBound": "0.0001"
+        }
+       ],
+       "longPositions": [
+        {
+         "level": 1,
+         "rankingLowerBound": "-30556.6410"
+        },
+        {
+         "level": 2,
+         "rankingLowerBound": "-0.0451"
+        },
+        {
+         "level": 3,
+         "rankingLowerBound": "0.0001"
+        },
+        {
+         "level": 4,
+         "rankingLowerBound": "0.0042"
+        }
+       ]
+      }
+     },
+     "tradingConfig": {
+      "minOrderSize": "0.0001",
+      "minOrderSizeChange": "0.00001",
+      "minPriceChange": "1",
+      "maxMarketOrderValue": "3000000",
+      "maxLimitOrderValue": "15000000",
+      "maxPositionValue": "60000000",
+      "maxLeverage": "50.00",
+      "hourlyFundingRateCap": "0.25",
+      "openInterestLimit": "0",
+      "maxNumOrders": "200",
+      "limitPriceCap": "0.05",
+      "limitPriceFloor": "0.05",
+      "riskFactorConfig": [
+       {
+        "upperBound": "4000000",
+        "riskFactor": "0.02",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "8000000",
+        "riskFactor": "0.04",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "12000000",
+        "riskFactor": "0.06",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "16000000",
+        "riskFactor": "0.08",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "20000000",
+        "riskFactor": "0.1",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "24000000",
+        "riskFactor": "0.12",
+        "isAvailableForUsers": true
+       },
+       {
+        "upperBound": "184000000",
+        "riskFactor": "0.92",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "188000000",
+        "riskFactor": "0.94",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "192000000",
+        "riskFactor": "0.96",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "196000000",
+        "riskFactor": "0.98",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "200000000",
+        "riskFactor": "1",
+        "isAvailableForUsers": false
+       },
+       {
+        "upperBound": "1000000000",
+        "riskFactor": "1",
+        "isAvailableForUsers": false
+       }
+      ],
+      "uPnlWithdrawable": true,
+      "postWithdrawalMarginFactor": "0.1"
+     },
+     "l2Config": {
+      "type": "STARKX",
+      "collateralId": "0x1",
+      "syntheticId": "0x4254432d3600000000000000000000",
+      "syntheticResolution": 1000000,
+      "collateralResolution": 1000000
+     },
+     "visibleOnUi": true,
+     "referenceMarket": "null",
+     "createdAt": 1752829532673
+    }
+   ]
+  }
+ }
+}

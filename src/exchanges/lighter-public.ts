@@ -6,61 +6,47 @@
  *       amounts, status, mark/index price, IMF, OI, volume). It carries every
  *       field /orderBooks has, so /orderBooks is not fetched (one fewer call
  *       under the 60 req/min standard limit).
- *   GET /api/v1/funding-rates     → MULTI-EXCHANGE aggregate (binance/bybit/
- *       hyperliquid/lighter). Only rows with exchange === "lighter" are the
- *       venue's own; the RH host labels its own rows "lighter" too (live
- *       2026-09-30: 57 "lighter" rows = RH's 57 perps, matched by market_id).
+ *   WS market_stats/all (first frame) → per market `funding_rate` (LAST SETTLED, percent per
+ *       1 h; = the newest GET /fundings print) and `current_funding_rate` (predicted). REST
+ *       /funding-rates is the predicted rate × 8 and is not read here (fetchLighterFundingStats).
  *
- * FUNDING: basis 8h per quoted rate, hourly settlement (Lighter
- * and Lighter RH identical).
+ * FUNDING: market / funding rows carry the settled rate per 1 h (hourly settlement; Lighter and
+ * Lighter RH identical).
  *
  * ASSET CLASS: the API has no asset-class field (the undocumented
  * `strategy_index` groups markets on Lighter main but is 0 for every RH market),
  * so classification is an explicit per-venue table built from live listings on
  * 2026-09-30:
- *   - lighter-rh: every listed perp is in RH_CLASS. An unlisted symbol is
- *     excluded with a warning until it is classified (RH lists mostly equities,
- *     so no class can be assumed).
+ *   - lighter-rh: every listed perp is in LIGHTER_RH_CLASS (src/ws/unclassified.ts). An unlisted symbol is
+ *     "unclassified" (listed, canonical null) until it is classified (RH lists
+ *     mostly equities, so no class can be assumed).
  *   - lighter: crypto-centric venue. LIGHTER_NON_CRYPTO lists every non-crypto
  *     perp; any other symbol is crypto by this venue's definition.
- *     LIGHTER_AMBIGUOUS tickers are excluded with a warning so they cannot
- *     produce a false cross-venue match.
+ *     UNCLASSIFIED_TICKERS.lighter (src/ws/unclassified.ts) are "unclassified" (listed, canonical null) so
+ *     they cannot produce a false cross-venue match.
  *
  * OPEN INTEREST: `open_interest` in base units (same value legacy getMarkets reports).
  */
 
 import { PerpError } from "../errors.js";
-import { venueRateField } from "../utils/numeric.js";
 import { acquireRate, rateLimitedError } from "./rate-limiter.js";
 import { canonicalFor } from "./canonical-symbols.js";
+import { isLighterMarketLive } from "../ws/lighter-market.js";
+import { isUnclassifiedTicker, LIGHTER_RH_CLASS } from "../ws/unclassified.js";
+import { addDecimal, mulDecimal } from "./precision.js";
 import type { AssetClass, FundingRateBasis, Network, VenueFundingRate, VenueMarket } from "./venue-types.js";
+import { nextTopOfHourMs } from "./venue-types.js";
 import type { VenuePublicData } from "./venue.js";
 import { lighterFamilyNetworks, lighterFamilyRateLimit } from "./venues/lighter-family.js";
 import type { LighterVenueId } from "./venues/lighter-family.js";
 
-const BASIS_8H: FundingRateBasis = { kind: "perHours", hours: 8 };
+/** Market rows / funding rows carry the settled HOURLY rate (market_stats funding_rate): per 1 h. */
+const BASIS_1H: FundingRateBasis = { kind: "perHours", hours: 1 };
 const SETTLEMENT_INTERVAL_HOURS = 1;
 
 // ── Classification tables (live listings 2026-09-30) ──
 
-const RH_CLASS: Readonly<Record<string, AssetClass>> = {
-  // crypto
-  BTC: "crypto", ETH: "crypto", SOL: "crypto", HYPE: "crypto", ZEC: "crypto", LIT: "crypto",
-  VVV: "crypto", SUI: "crypto", NEAR: "crypto", XRP: "crypto", CASHCAT: "crypto", PONS: "crypto",
-  // commodity (canonical via EXPLICIT_CANONICAL: XAU → GOLD, XAG → SILVER)
-  XAU: "commodity", XAG: "commodity",
-  // etf
-  SPY: "etf", QQQ: "etf", SOXL: "etf", SLV: "etf", USO: "etf", SGOV: "etf",
-  // equity
-  AAPL: "equity", AMZN: "equity", GOOGL: "equity", META: "equity", MSFT: "equity", NVDA: "equity",
-  TSLA: "equity", AMD: "equity", INTC: "equity", MU: "equity", TSM: "equity", ORCL: "equity",
-  PLTR: "equity", COIN: "equity", CRCL: "equity", CRWV: "equity", BABA: "equity", SNDK: "equity",
-  SMCI: "equity", SOFI: "equity", AMC: "equity", RGTI: "equity", QBTS: "equity", CLSK: "equity",
-  IREN: "equity", WULF: "equity", LUNR: "equity", ASTS: "equity", BE: "equity", USAR: "equity",
-  SPCX: "equity", SKHY: "equity",
-  // pre-IPO / private (explicit-only canonical → null unless mapped)
-  OPENAI: "preIpo", ANTHROPIC: "preIpo", SHEIN: "preIpo", ANSEM: "preIpo", AI: "preIpo",
-};
+// RH_CLASS (Lighter RH listing classification) lives in src/ws/unclassified.ts, shared with the WS directory.
 
 const LIGHTER_NON_CRYPTO: Readonly<Record<string, AssetClass>> = {
   // commodity
@@ -94,21 +80,19 @@ const LIGHTER_NON_CRYPTO: Readonly<Record<string, AssetClass>> = {
   STABLECOINX: "preIpo", OURA: "preIpo", PRL: "preIpo", ADI: "preIpo",
 };
 
-/**
- * Excluded from cross-venue data until mapped explicitly:
- * - BB, BOT, WEN, QNT: Lighter groups them with US equities, but each is also a live crypto ticker elsewhere.
- * - SPX: the SPX6900 token on Lighter; its ticker equals the canonical key of the S&P 500 index ("SPX").
- */
-const LIGHTER_AMBIGUOUS: ReadonlySet<string> = new Set(["BB", "BOT", "WEN", "QNT", "SPX"]);
+// Ambiguous Lighter tickers (BB, BOT, WEN, QNT, SPX): UNCLASSIFIED_TICKERS in src/ws/unclassified.ts.
 
-/** Asset class for a venue symbol, or null when it must be excluded (unclassified / ambiguous). */
-function classify(venue: LighterVenueId, symbol: string): AssetClass | null {
+/**
+ * Asset class for a venue symbol; "unclassified" (canonical null — listed, never matched across
+ * venues) when it is ambiguous or not mapped.
+ */
+function classify(venue: LighterVenueId, symbol: string): AssetClass {
   const up = symbol.toUpperCase();
   switch (venue) {
     case "lighter-rh":
-      return RH_CLASS[up] ?? null;
+      return LIGHTER_RH_CLASS[up] ?? "unclassified";
     case "lighter":
-      if (LIGHTER_AMBIGUOUS.has(up)) return null;
+      if (isUnclassifiedTicker("lighter", up)) return "unclassified";
       return LIGHTER_NON_CRYPTO[up] ?? "crypto"; // crypto-centric venue: non-crypto is listed explicitly
   }
 }
@@ -138,8 +122,55 @@ export function lighterWafChallenge(venue: string, status: number, body: string)
   });
 }
 
+/** `limit` of GET /api/v1/orderBookOrders: the documented maximum (apidocs.lighter.xyz/reference/orderbookorders, 1..250). */
+export const LIGHTER_BOOK_ORDERS_LIMIT = 250;
 
-async function getJson(venue: LighterVenueId, net: Network, path: string, endpoint: string): Promise<unknown> {
+/**
+ * One side of GET /api/v1/orderBookOrders (individual resting ORDERS, best price first) → price
+ * levels: `remaining_base_amount` summed per price, in the venue's order — the shape of the WS
+ * `order_book/{id}` channel (levels). A side of exactly `limit` orders may have more orders at its
+ * last price beyond the page, so that (possibly partial) level is dropped. A row without a price /
+ * remaining amount is a payload error (never skipped, never "0").
+ */
+export function lighterBookLevels(venue: string, rows: unknown, what: string, limit = LIGHTER_BOOK_ORDERS_LIMIT): [string, string][] {
+  if (rows === undefined || rows === null) return [];
+  if (!Array.isArray(rows)) throw new PerpError("EXCHANGE_ERROR", `${venue} orderBookOrders ${what}: side is not a list`, { exchange: venue });
+  const levels = new Map<string, string>();
+  for (const r of rows as Array<Record<string, unknown>>) {
+    const price = r?.price;
+    const size = r?.remaining_base_amount ?? r?.size;
+    if (typeof price !== "string" || typeof size !== "string" || !Number.isFinite(Number(price)) || !Number.isFinite(Number(size))) {
+      throw new PerpError("EXCHANGE_ERROR", `${venue} orderBookOrders ${what}: order without price / remaining size: ${JSON.stringify(r).slice(0, 160)}`, { exchange: venue });
+    }
+    const prev = levels.get(price);
+    levels.set(price, prev === undefined ? size : addDecimal(prev, size));
+  }
+  const out = Array.from(levels);
+  if (rows.length >= limit && out.length > 1) out.pop();
+  return out;
+}
+
+/**
+ * A GET /orderBookOrders answer → price levels per side, cut to `depth`. A side whose page is full
+ * (LIGHTER_BOOK_ORDERS_LIMIT orders, the endpoint max) but aggregates to fewer than `depth` levels
+ * cannot be paged: INVALID_PARAMS naming the 250-order cap, never a silently shallower book.
+ */
+export function lighterBook(venue: string, res: { asks?: unknown; bids?: unknown }, what: string, depth?: number): { bids: [string, string][]; asks: [string, string][] } {
+  const bids = lighterBookLevels(venue, res.bids, `${what} bids`);
+  const asks = lighterBookLevels(venue, res.asks, `${what} asks`);
+  if (depth === undefined) return { bids, asks };
+  const full = (rows: unknown) => Array.isArray(rows) && rows.length >= LIGHTER_BOOK_ORDERS_LIMIT;
+  for (const [side, rows, levels] of [["bids", res.bids, bids], ["asks", res.asks, asks]] as const) {
+    if (full(rows) && levels.length < depth) {
+      throw new PerpError("INVALID_PARAMS", `${venue} order book: ${what} ${side} — ${LIGHTER_BOOK_ORDERS_LIMIT} orders (the endpoint max, no paging) make only ${levels.length} price levels; --depth ${depth} cannot be served`, {
+        exchange: venue, remediation: `Use --depth ${levels.length} or less`,
+      });
+    }
+  }
+  return { bids: bids.slice(0, depth), asks: asks.slice(0, depth) };
+}
+
+async function getJson(venue: LighterVenueId, net: Network, path: string, endpoint: string, notFound?: (status: number, text: string) => boolean): Promise<unknown> {
   await acquireRate(`${venue}:${net}`, lighterFamilyRateLimit(venue), endpoint);
   const base = lighterFamilyNetworks(venue)[net].restUrl;
   const res = await fetch(`${base}/api/v1${path}`, { signal: AbortSignal.timeout(15_000) });
@@ -147,6 +178,7 @@ async function getJson(venue: LighterVenueId, net: Network, path: string, endpoi
   if (res.status === 429) throw rateLimitedError(venue, res.headers.get("retry-after"), text);
   const waf = lighterWafChallenge(venue, res.status, text);
   if (waf !== null) throw waf;
+  if (notFound !== undefined && notFound(res.status, text)) return null;
   if (!res.ok) {
     throw new PerpError("EXCHANGE_ERROR", `${venue} GET ${path} HTTP ${res.status}`, { body: text.slice(0, 500) });
   }
@@ -172,13 +204,6 @@ interface RawDetail {
   index_price?: string;
   open_interest?: number;
   daily_quote_token_volume?: number;
-}
-
-interface RawFunding {
-  market_id: number;
-  exchange: string;
-  symbol: string;
-  rate: number;
 }
 
 function isNumStr(v: unknown): v is string {
@@ -211,29 +236,148 @@ async function fetchPerpDetails(venue: LighterVenueId, net: Network): Promise<Ra
   return out;
 }
 
-/** The venue's own funding rows, keyed by market_id. */
-async function fetchOwnFunding(venue: LighterVenueId, net: Network): Promise<Map<number, RawFunding>> {
-  const json = await getJson(venue, net, "/funding-rates", "funding-rates");
-  const list = (json as { funding_rates?: unknown }).funding_rates;
-  if (!Array.isArray(list)) {
-    throw new PerpError("EXCHANGE_ERROR", `${venue} funding-rates: missing funding_rates array`);
+/**
+ * Every account of an L1 (EVM) address — `GET /account?by=l1_address&value=` (public). One
+ * address can own several accounts (sub-accounts). An address without a Lighter account answers
+ * HTTP 400 `{"code":21100,"message":"account not found"}` (live 2026-10-19) → null, not an error.
+ */
+export async function fetchLighterAccountsByL1(venue: LighterVenueId, net: Network, address: string): Promise<Array<Record<string, unknown>> | null> {
+  const json = await getJson(venue, net, `/account?by=l1_address&value=${encodeURIComponent(address)}`, "account",
+    (status, text) => status === 400 && /"code"\s*:\s*21100\b/.test(text));
+  if (json === null) return null;
+  const list = (json as { accounts?: unknown }).accounts;
+  if (!Array.isArray(list)) throw new PerpError("EXCHANGE_ERROR", `${venue} account: missing accounts array`, { exchange: venue });
+  return list as Array<Record<string, unknown>>;
+}
+
+/** Perp price decimals by symbol (upper case) — `GET /orderBooks` `supported_price_decimals`, as the adapter's market map. */
+export async function fetchLighterPriceDecimals(venue: LighterVenueId, net: Network): Promise<Map<string, number>> {
+  const json = await getJson(venue, net, "/orderBooks", "orderBooks");
+  const list = (json as { order_books?: unknown }).order_books;
+  if (!Array.isArray(list)) throw new PerpError("EXCHANGE_ERROR", `${venue} orderBooks: missing order_books array`, { exchange: venue });
+  const out = new Map<string, number>();
+  for (const d of list as Array<Record<string, unknown>>) {
+    if (d.market_type === "perp" && typeof d.symbol === "string" && Number.isInteger(d.supported_price_decimals)) out.set(d.symbol.toUpperCase(), d.supported_price_decimals as number);
   }
-  const map = new Map<number, RawFunding>();
-  for (const r of list as RawFunding[]) {
-    if (r.exchange !== "lighter") continue; // other exchanges' rates in the aggregate
-    if (!Number.isInteger(r.market_id) || typeof r.symbol !== "string" || typeof r.rate !== "number" || !Number.isFinite(r.rate)) {
-      throw new PerpError("EXCHANGE_ERROR", `${venue} funding-rates: malformed own row ${JSON.stringify(r).slice(0, 200)}`);
-    }
-    map.set(r.market_id, r);
+  return out;
+}
+
+/** One market's funding from the WS `market_stats/all` snapshot, fractions per 1 h. */
+export interface LighterFundingStat {
+  /** Last settled hourly rate (market_stats funding_rate; = the newest GET /fundings print). */
+  rate: string | null;
+  /** Predicted rate of the running hour (market_stats current_funding_rate). */
+  predictedRate: string | null;
+}
+
+/** market_stats rates are PERCENT per 1 h (codec notes): exact × 0.01. undefined = malformed. */
+function percentToFraction(v: unknown): string | null | undefined {
+  if (v === undefined || v === null) return null;
+  const s = typeof v === "string" ? v.trim() : typeof v === "number" && Number.isFinite(v) ? String(v) : null;
+  if (s === null || !/^-?\d+(\.\d+)?$/.test(s)) return undefined;
+  return mulDecimal(s, "0.01"); // exact (no float)
+}
+
+const STATS_TTL_MS = 10_000;
+/** A failed read is remembered this long (one stderr line / meta warning, not a socket per call). */
+const STATS_FAILURE_TTL_MS = 60_000;
+const STATS_TIMEOUT_MS = 4_000;
+const statsCache = new Map<string, { at: number; value: Promise<Map<number, LighterFundingStat>>; failure: string | null }>();
+
+/** Drop the shared market_stats snapshots and remembered failures (tests; a network switch). */
+export function clearLighterFundingStatsCache(): void {
+  statsCache.clear();
+}
+
+/**
+ * Why the settled rate of `venue` / `net` is unavailable right now (the remembered failure of the
+ * last snapshot read), null when it was read or not tried. Callers put it in `meta.warnings`
+ * (CLI --json, MCP) next to the rows whose fundingRate is null.
+ */
+export function lighterFundingStatsWarning(venue: LighterVenueId, net: Network): string | null {
+  const hit = statsCache.get(`${venue}:${net}`);
+  return hit !== undefined && hit.failure !== null && Date.now() - hit.at < STATS_FAILURE_TTL_MS
+    ? `${venue}: fundingRate null — settled funding rate unavailable (${hit.failure})` : null;
+}
+
+/**
+ * Settled + predicted hourly funding of every market, keyed by market_id: the SNAPSHOT frame
+ * (`subscribed/market_stats`, channel `market_stats:all` — later `update/…` frames carry only the
+ * markets that changed) of the WS `market_stats/all` channel, the source of the perp-ws `rate` /
+ * `predictedRate`. REST has no bulk settled source: /funding-rates is the PREDICTED rate × 8 (live
+ * 2026-10-19: ETH 0.0009 % /h predicted → 0.000072; settled 0.0012 % /h), and /fundings is one
+ * market per request. One snapshot per venue / network is shared STATS_TTL_MS; a failure is
+ * remembered STATS_FAILURE_TTL_MS (lighterFundingStatsWarning).
+ */
+export function fetchLighterFundingStats(venue: LighterVenueId, net: Network): Promise<Map<number, LighterFundingStat>> {
+  const key = `${venue}:${net}`;
+  const hit = statsCache.get(key);
+  if (hit !== undefined && Date.now() - hit.at < (hit.failure === null ? STATS_TTL_MS : STATS_FAILURE_TTL_MS)) return hit.value;
+  const value = readFundingStats(venue, net);
+  const entry = { at: Date.now(), value, failure: null as string | null };
+  statsCache.set(key, entry);
+  value.catch((e: unknown) => {
+    const code = e instanceof PerpError ? `${e.structured.code}: ` : "";
+    entry.failure = `${code}${e instanceof Error ? e.message : String(e)}`;
+    entry.at = Date.now();
+  });
+  return value;
+}
+
+async function readFundingStats(venue: LighterVenueId, net: Network): Promise<Map<number, LighterFundingStat>> {
+  const url = lighterFamilyNetworks(venue)[net].wsUrl;
+  if (url === null) {
+    throw new PerpError("CAPABILITY_UNSUPPORTED", `${venue} ${net} publishes no WebSocket endpoint, so its settled funding rate (market_stats) cannot be read`, { exchange: venue });
   }
-  return map;
+  const { default: WebSocket } = await import("ws");
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url);
+    let settled = false;
+    const done = (err: unknown, value?: Map<number, LighterFundingStat>) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch { /* already closed */ }
+      if (err !== null) reject(err); else resolve(value!);
+    };
+    const timer = setTimeout(() => done(new PerpError("EXCHANGE_UNREACHABLE", `${venue} market_stats: no snapshot within ${STATS_TIMEOUT_MS / 1000} s`, { exchange: venue })), STATS_TIMEOUT_MS);
+    ws.on("open", () => ws.send(JSON.stringify({ type: "subscribe", channel: "market_stats/all" })));
+    ws.on("error", (e: Error) => done(new PerpError("EXCHANGE_UNREACHABLE", `${venue} market_stats: ${e.message}`, { exchange: venue })));
+    ws.on("close", (code: number) => done(new PerpError("EXCHANGE_UNREACHABLE", `${venue} market_stats: socket closed (code ${code}) before the snapshot`, { exchange: venue })));
+    ws.on("message", (data: unknown) => {
+      let f: Record<string, unknown>;
+      try { f = JSON.parse(String(data)) as Record<string, unknown>; } catch { return; }
+      if (f.error !== undefined) {
+        done(new PerpError("EXCHANGE_ERROR", `${venue} market_stats: ${JSON.stringify(f.error).slice(0, 200)}`, { exchange: venue }));
+        return;
+      }
+      // Only the snapshot frame has every market ("connected" and update frames are skipped).
+      if (f.type !== "subscribed/market_stats" || f.channel !== "market_stats:all") return;
+      const stats = f.market_stats;
+      if (stats === null || typeof stats !== "object") {
+        done(new PerpError("EXCHANGE_ERROR", `${venue} market_stats snapshot without market_stats`, { exchange: venue }));
+        return;
+      }
+      const out = new Map<number, LighterFundingStat>();
+      const malformed: string[] = [];
+      for (const [id, r] of Object.entries(stats as Record<string, Record<string, unknown>>)) {
+        if (r === null || typeof r !== "object") { malformed.push(`#${id}`); continue; }
+        const rate = percentToFraction(r.funding_rate);
+        const predictedRate = percentToFraction(r.current_funding_rate);
+        if (rate === undefined || predictedRate === undefined) malformed.push(typeof r.symbol === "string" ? r.symbol : `#${id}`);
+        out.set(Number(id), { rate: rate ?? null, predictedRate: predictedRate ?? null });
+      }
+      if (malformed.length > 0) console.warn(`[${venue}] market_stats: ${malformed.length} market(s) with a malformed funding value (rate null): ${malformed.slice(0, 10).join(", ")}`);
+      done(null, out);
+    });
+  });
 }
 
 function stepFromDecimals(d: number): string {
   return d === 0 ? "1" : `0.${"0".repeat(d - 1)}1`;
 }
 
-function toMarket(venue: LighterVenueId, net: Network, d: RawDetail, assetClass: AssetClass, fr: RawFunding | undefined): VenueMarket {
+function toMarket(venue: LighterVenueId, net: Network, d: RawDetail, assetClass: AssetClass, fr: LighterFundingStat | undefined): VenueMarket {
   const settle = lighterFamilyNetworks(venue)[net].collateral[0];
   if (!settle) throw new PerpError("INVALID_PARAMS", `${venue} ${net} network config has no collateral`);
   return {
@@ -246,8 +390,9 @@ function toMarket(venue: LighterVenueId, net: Network, d: RawDetail, assetClass:
     quoteAsset: null,
     markPrice: d.mark_price,
     indexPrice: isNumStr(d.index_price) ? d.index_price : null,
-    fundingRate: fr ? venueRateField(fr.rate, "funding-rates rate", venue) : null,
-    fundingRateBasis: BASIS_8H,
+    // Last settled hourly rate (market_stats funding_rate), per 1 h — the perp-ws `rate`.
+    fundingRate: fr?.rate ?? null,
+    fundingRateBasis: BASIS_1H,
     settlementIntervalHours: SETTLEMENT_INTERVAL_HOURS,
     openInterest: typeof d.open_interest === "number" ? String(d.open_interest) : null,
     volume24h: typeof d.daily_quote_token_volume === "number" ? String(d.daily_quote_token_volume) : null,
@@ -258,44 +403,52 @@ function toMarket(venue: LighterVenueId, net: Network, d: RawDetail, assetClass:
     maxLeverage: Math.floor(10000 / d.min_initial_margin_fraction),
     marginTiers: null,
     session: null, // RH: 24/7, no session info published
-    tradable: d.status === "active" && d.is_frozen !== true,
+    tradable: isLighterMarketLive(d),
   };
 }
 
 export function lighterPublicData(venue: LighterVenueId): VenuePublicData {
   return {
-    async fetchMarkets(net) {
-      const [details, funding] = await Promise.all([fetchPerpDetails(venue, net), fetchOwnFunding(venue, net)]);
+    async fetchMarkets(net, opts) {
+      // The settled rate is the WS snapshot: unreadable → the rows are listed with fundingRate null
+      // (unknown, never 0), and the reason is printed.
+      const [details, funding] = await Promise.all([
+        fetchPerpDetails(venue, net),
+        opts?.funding === false ? Promise.resolve(new Map<number, LighterFundingStat>()) : fetchLighterFundingStats(venue, net).catch((e: unknown) => {
+          console.warn(`[${venue}] settled funding rate unavailable (fundingRate null): ${e instanceof Error ? e.message : String(e)}`);
+          return new Map<number, LighterFundingStat>();
+        }),
+      ]);
       const out: VenueMarket[] = [];
-      const unclassified: string[] = [];
       for (const d of details) {
+        // Live markets only (the rule of market list / the WS directory); inactive ones are not listed.
+        if (!isLighterMarketLive(d)) continue;
         const cls = classify(venue, d.symbol);
-        if (cls === null) { unclassified.push(d.symbol); continue; }
         out.push(toMarket(venue, net, d, cls, funding.get(d.market_id)));
       }
-      warnExcluded(venue, "unclassified/ambiguous market(s)", unclassified);
       return out;
     },
 
     async fetchFundingRates(net) {
-      const funding = await fetchOwnFunding(venue, net);
+      // Settled hourly rates of the live markets (the market rows' fundingRate). A failed snapshot
+      // propagates: the venue is reported as failed, never a list without Lighter rates.
+      const [details, funding] = await Promise.all([fetchPerpDetails(venue, net), fetchLighterFundingStats(venue, net)]);
       const out: VenueFundingRate[] = [];
-      const unclassified: string[] = [];
-      for (const r of funding.values()) {
-        const cls = classify(venue, r.symbol);
-        if (cls === null) { unclassified.push(r.symbol); continue; }
+      for (const d of details) {
+        if (!isLighterMarketLive(d)) continue;
+        const rate = funding.get(d.market_id)?.rate ?? null;
+        if (rate === null) continue; // no settled print yet: unknown, not 0
         out.push({
           venue,
-          venueSymbol: String(r.market_id),
-          symbol: r.symbol,
-          canonical: canonicalFor(venue, r.symbol, cls),
-          rate: venueRateField(r.rate, "funding-rates rate", venue),
-          basis: BASIS_8H,
-          markPrice: null, // /funding-rates carries no mark price
-          nextFundingTime: null, // not published
+          venueSymbol: String(d.market_id),
+          symbol: d.symbol,
+          canonical: canonicalFor(venue, d.symbol, classify(venue, d.symbol)),
+          rate,
+          basis: BASIS_1H,
+          markPrice: d.mark_price,
+          nextFundingTime: nextTopOfHourMs(), // not published; docs: "Funding payments occur at each hour mark"
         });
       }
-      warnExcluded(venue, "unclassified/ambiguous market(s)", unclassified);
       return out;
     },
   };

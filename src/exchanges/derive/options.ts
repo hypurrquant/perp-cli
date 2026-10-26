@@ -107,6 +107,16 @@ export function normalizeUnderlying(input: string): string {
   return u;
 }
 
+/**
+ * CLI option name → Derive wire name: upper-cased, and a decimal point in the strike written as
+ * the venue's underscore (`PUMP-20261023-0.0045-C` → `PUMP-20261023-0_0045-C`).
+ */
+export function deriveInstrumentName(input: string): string {
+  const parts = input.trim().toUpperCase().split("-");
+  if (parts.length === 4) parts[2] = parts[2].replace(/\./g, "_");
+  return parts.join("-");
+}
+
 // ── parsing ──
 
 export function parseDeriveInstrument(raw: unknown): DeriveOptionInstrument {
@@ -356,7 +366,7 @@ export class DeriveOptionsVenue implements OptionsVenue {
   }
 
   async getQuote(instrumentInput: string): Promise<OptionQuote> {
-    const name = instrumentInput.trim().toUpperCase();
+    const name = deriveInstrumentName(instrumentInput);
     // Both reads are needed (instrument facts + live ticker); issued together, judged instrument first.
     const [instR, tickR] = await Promise.allSettled([
       this.client.call<unknown>("get_instrument", { instrument_name: name }),
@@ -377,6 +387,15 @@ export class DeriveOptionsVenue implements OptionsVenue {
       });
     }
     const inst = parseDeriveInstrument(o);
+    if (!inst.isActive && inst.expiryMs <= Date.now()) {
+      // Expired (live: ETH-20261019-2400-C, is_active false after expiry, option_details.settlement_price set).
+      const sp = (o.option_details as { settlement_price?: unknown } | null)?.settlement_price;
+      const settled = typeof sp === "string" && sp !== "" ? `, settled at ${sp}` : " (settlement price not published yet)";
+      throw new PerpError("SYMBOL_NOT_FOUND", `Derive option ${name} expired at ${new Date(inst.expiryMs).toISOString()}${settled}`, {
+        exchange: VENUE, expired: true, settlementPrice: typeof sp === "string" && sp !== "" ? sp : null,
+        remediation: `Active expiries: perp -e ${VENUE} options expiries ${inst.underlying}`,
+      });
+    }
     if (!inst.isActive) {
       throw new PerpError("SYMBOL_NOT_FOUND", `Derive option ${name} is listed but not active (activation ${new Date(inst.activationMs).toISOString()})`, {
         exchange: VENUE, remediation: `Active expiries: perp -e ${VENUE} options expiries ${inst.underlying}`,

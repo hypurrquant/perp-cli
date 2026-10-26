@@ -27,6 +27,8 @@ export interface TriggerOrderCapable {
 export interface DexCapable {
   readonly dex: string;
   setDex(dex: string): void;
+  /** An independent adapter for `dex` with this account configuration and its own market state (never mutates this one). */
+  forDex(dex: string): ExchangeAdapter & DexCapable;
   listDeployedDexes(): Promise<{ name: string; deployer: string; assets: string[] }[]>;
 }
 
@@ -81,7 +83,8 @@ export function isTriggerOrderCapable(adapter: ExchangeAdapter): adapter is Exch
 
 export function isDexCapable(adapter: ExchangeAdapter): adapter is ExchangeAdapter & DexCapable {
   return typeof (adapter as unknown as Record<string, unknown>).setDex === "function"
-    && typeof (adapter as unknown as Record<string, unknown>).listDeployedDexes === "function";
+    && typeof (adapter as unknown as Record<string, unknown>).listDeployedDexes === "function"
+    && typeof (adapter as unknown as Record<string, unknown>).forDex === "function";
 }
 
 export function isSubAccountCapable(adapter: ExchangeAdapter): adapter is ExchangeAdapter & SubAccountCapable {

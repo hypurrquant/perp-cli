@@ -149,3 +149,41 @@ describe("stream over a capped node transport", () => {
     await stream.close();
   });
 });
+
+describe("stream.close() leaves the process idle (conformance ws:all:close-timers)", () => {
+  it("no Timeout / TCP handle of the socket remains once close() resolves", async () => {
+    // A server that never answers the close frame: `ws` would keep its 30 s close-handshake timer.
+    const s = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+    server = s;
+    s.on("connection", (sock) => { (sock as unknown as { _socket: { pause(): void } })._socket.pause(); });
+    await new Promise<void>((r) => s.once("listening", () => r()));
+    const url = `ws://127.0.0.1:${(s.address() as AddressInfo).port}`;
+    const before = process.getActiveResourcesInfo().filter(h => h === "Timeout").length;
+    const stream = createVenueStream({ ...pacifica, url: () => url }, { transport: createNodeTransport(), fetch: fakeFetch(PACIFICA_ROUTES), visibility: null });
+    const sub = stream.subscribe({ kind: "allMarkets" });
+    sub.on(() => {});
+    await new Promise<void>((r) => { const off = stream.onState(st => { if (st.status === "live" || st.status === "connecting") { off(); r(); } }); });
+    await new Promise((r) => setTimeout(r, 50));
+    await stream.close();
+    const timers = process.getActiveResourcesInfo().filter(h => h === "Timeout").length;
+    expect(timers).toBeLessThanOrEqual(before);
+  });
+});
+
+describe("close() sends a clean close frame (review)", () => {
+  it("the server sees close 1000, not 1006, and no timer is left", async () => {
+    const s = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+    server = s;
+    const code = new Promise<number>((r) => s.on("connection", (sock) => sock.on("close", (c) => r(c))));
+    await new Promise<void>((r) => s.once("listening", () => r()));
+    const url = `ws://127.0.0.1:${(s.address() as AddressInfo).port}`;
+    const before = process.getActiveResourcesInfo().filter(h => h === "Timeout").length;
+    const stream = createVenueStream({ ...pacifica, url: () => url }, { transport: createNodeTransport(), fetch: fakeFetch(PACIFICA_ROUTES), visibility: null });
+    stream.subscribe({ kind: "allMarkets" }).on(() => {});
+    await new Promise<void>((r) => { const off = stream.onState(st => { if (st.status === "live" || st.status === "connecting") { off(); r(); } }); });
+    await new Promise((r) => setTimeout(r, 50));
+    await stream.close();
+    expect(await code).toBe(1000);
+    expect(process.getActiveResourcesInfo().filter(h => h === "Timeout").length).toBeLessThanOrEqual(before);
+  });
+});

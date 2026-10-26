@@ -2,6 +2,7 @@ import { MAINNET_REST, type Network, getNetworkConfig } from "./constants.js";
 import { buildSignedRequest, buildAgentSignedRequest, signWithWallet } from "./signing.js";
 import { PerpError, extractErrorMessage, orderNotSent, orderOutcomeUnknown, sendFailure } from "../errors.js";
 import { invalidateCache } from "../cache.js";
+import { requireSolanaAddress } from "../exchanges/address.js";
 import {
   PACIFICA_COST_CANCEL, PACIFICA_COST_STANDARD, PACIFICA_MAX_THROTTLE_WAIT_MS, PACIFICA_READ_NEED, PACIFICA_SIGNED_MAX_WAIT_MS,
   pacificaRateLimiter, type PacificaRateLimiter, type RateNeed, type RateTicket,
@@ -87,6 +88,15 @@ export interface PacificaClientConfig {
   apiKey?: string;
 }
 
+/** Query parameters that carry a Solana address (account reads, Print orders, vaults). */
+const ADDRESS_PARAMS: ReadonlySet<string> = new Set(["account", "game_account", "lake"]);
+
+export { requireSolanaAddress };
+
+function checkAddressParams(params: Record<string, string> | undefined): void {
+  for (const [k, v] of Object.entries(params ?? {})) if (ADDRESS_PARAMS.has(k) && v !== undefined && v !== null) requireSolanaAddress(v, k);
+}
+
 export class PacificaClient {
   private baseUrl: string;
   private apiKey?: string;
@@ -144,6 +154,7 @@ export class PacificaClient {
   }
 
   private async get<T>(path: string, params?: Record<string, string>): Promise<T> {
+    checkAddressParams(params);
     const url = new URL(`${this.baseUrl}${path}`);
     if (params) {
       Object.entries(params).forEach(([k, v]) => {
@@ -660,6 +671,7 @@ export class PacificaClient {
    * non-JSON / non-object body → EXCHANGE_ERROR (a read: nothing can have changed).
    */
   async getEnvelope(path: string, params: Record<string, string> = {}): Promise<Record<string, unknown>> {
+    checkAddressParams(params);
     const url = new URL(`${this.baseUrl}${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     const what = `GET ${path}`;

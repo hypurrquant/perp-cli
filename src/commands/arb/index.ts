@@ -5,10 +5,8 @@ import { makeTable, formatUsd, formatPnl, printJson, jsonOk, logSettledRejection
 import { SPOT_PERP_TOKEN_MAP, type ExchangeAdapter, type ExchangePosition, type SpotBalance } from "../../exchanges/index.js";
 import { readExecutionLog, logExecution, type ExecutionRecord } from "../../execution-log.js";
 import { toHourlyRate } from "../../funding.js";
-import {
-  fetchPacificaPrices, fetchHyperliquidMeta,
-  fetchLighterOrderBookDetails, fetchLighterFundingRates,
-} from "../../shared-api.js";
+import { fetchVenuesRates } from "../../funding/rates.js";
+import { sharedApiNetwork } from "../../api/public/urls.js";
 import { computeBasisRisk } from "../../arb-utils.js";
 import { removePosition as persistRemovePosition, getPositions as getArbStatePositions, loadArbState } from "../../arb-state.js";
 import { fetchBalancesWithFailures, computeRebalancePlan } from "../../rebalance.js";
@@ -19,7 +17,7 @@ import { listConfiguredAccountVenues } from "../../config.js";
 import { closePerpPairVerified, handleSpotClose } from "../arb-auto.js";
 import { quarantineEntryFor } from "../../bot/quarantine.js";
 import { PerpError, classifyError, parsePositiveDecimal } from "../../errors.js";
-import { listVenuesWithRole, resolveVenueId } from "../../exchanges/venue.js";
+import { getVenue, listVenuesWithRole, resolveVenueId } from "../../exchanges/venue.js";
 
 // ── Types ──
 
@@ -234,77 +232,20 @@ function entryHourly(e: { exchange: string; rate: number; fundingHours: number |
 }
 
 async function fetchFundingRatesMap(): Promise<Map<string, { exchange: string; rate: number; markPrice: number; fundingHours: number | null }[]>> {
+  // The SAME rate rows as `arb scan --rates` (fetchVenuesRates): canonical-keyed (unclassified /
+  // ambiguous tickers have no row), each with its own basis (fundingHours) and rateKind. A failed
+  // venue is reported on stderr (explicit, never silent).
+  const venues = ["pacifica", "hyperliquid", "lighter", "aster"].map(id => getVenue(id));
+  const { rates: fetched, exchangeErrors } = await fetchVenuesRates(venues, sharedApiNetwork(), false);
+  // Never a leg on an unverified rate (row label; the venue filter already drops them).
+  const rates = fetched.filter(r => r.fundingVerified);
+  for (const [ex, msg] of Object.entries(exchangeErrors)) process.stderr.write(`[arb] ${ex}: funding rates unavailable — ${msg}\n`);
   const rateMap = new Map<string, { exchange: string; rate: number; markPrice: number; fundingHours: number | null }[]>();
-
-  // SSOT rule #2: each DEX is independent. allSettled keeps the comparison
-  // alive when one DEX errors out, while rejection reasons get logged to
-  // stderr (explicit failure, never silent .catch(() => [])).
-  const settled = await Promise.allSettled([
-    fetchPacificaPrices(),
-    fetchHyperliquidMeta(),
-    fetchLighterOrderBookDetails(),
-    fetchLighterFundingRates(),
-    fetch("https://fapi.asterdex.com/fapi/v1/premiumIndex").then(r => r.json()) as Promise<Array<Record<string, unknown>>>,
-    fetch("https://fapi.asterdex.com/fapi/v3/fundingInfo").then(r => r.json()) as Promise<Array<Record<string, unknown>>>,
-  ]);
-  logSettledRejections(settled, ["pacifica", "hyperliquid", "lighter:orderbook", "lighter:funding", "aster:premiumIndex", "aster:fundingInfo"], "arb");
-  const pacAssets = settled[0].status === "fulfilled" ? settled[0].value : [];
-  const hlAssets = settled[1].status === "fulfilled" ? settled[1].value : [];
-  const ltDetails = settled[2].status === "fulfilled" ? settled[2].value : [];
-  const ltFunding = settled[3].status === "fulfilled" ? settled[3].value : [];
-  // Aster funding basis is per symbol: a rate is usable only with its fundingInfo interval.
-  const asterPremiums = settled[4].status === "fulfilled" && settled[5].status === "fulfilled" ? settled[4].value : [];
-  const asterInfo = settled[5].status === "fulfilled" ? settled[5].value : [];
-  const asterHours = new Map<string, number>();
-  for (const row of Array.isArray(asterInfo) ? asterInfo : []) {
-    const h = Number(row.fundingIntervalHours);
-    if (typeof row.symbol === "string" && Number.isFinite(h) && h > 0) asterHours.set(row.symbol, h);
+  for (const r of rates) {
+    if (r.basis.kind !== "perHours") continue; // these four venues quote per hours
+    if (!rateMap.has(r.canonical)) rateMap.set(r.canonical, []);
+    rateMap.get(r.canonical)!.push({ exchange: r.exchange, rate: r.fundingRate, markPrice: r.markPrice, fundingHours: r.basis.hours });
   }
-
-  const addRate = (sym: string, exchange: string, rate: number, markPrice: number, fundingHours: number | null = null) => {
-    if (!sym) return;
-    if (!rateMap.has(sym)) rateMap.set(sym, []);
-    rateMap.get(sym)!.push({ exchange, rate, markPrice, fundingHours });
-  };
-
-  for (const p of pacAssets) addRate(p.symbol, "pacifica", p.funding, p.mark);
-  for (const h of hlAssets) addRate(h.symbol, "hyperliquid", h.funding, h.markPx);
-
-  // Lighter: join details + funding by marketId
-  // SSOT rule #2: skip rows whose mark price cannot be resolved (no 0 fallback).
-  // Prefer fr.markPrice; fall back to orderBook last-trade as documented
-  // price-source preference (NOT error fallback).
-  const ltPriceMap = new Map(ltDetails.map(d => [d.marketId, d.lastTradePrice]));
-  const ltSymMap = new Map(ltDetails.map(d => [d.marketId, d.symbol]));
-  for (const fr of ltFunding) {
-    const sym = fr.symbol || ltSymMap.get(fr.marketId) || "";
-    if (!sym) continue;
-    const directMark = fr.markPrice;
-    const fallbackMark = ltPriceMap.get(fr.marketId);
-    let mp: number | undefined;
-    if (directMark !== null && Number.isFinite(directMark) && directMark > 0) {
-      mp = directMark;
-    } else if (fallbackMark !== undefined && Number.isFinite(fallbackMark) && fallbackMark > 0) {
-      mp = fallbackMark;
-    }
-    if (mp === undefined || !Number.isFinite(fr.rate)) continue;
-    addRate(sym, "lighter", fr.rate, mp);
-  }
-
-  // Aster: premiumIndex
-  // SSOT rule #2: skip rows missing markPrice / lastFundingRate instead of
-  // 0-coercing — a 0 markPrice would corrupt downstream sizing.
-  for (const p of asterPremiums) {
-    const rawSym = String(p.symbol ?? "");
-    if (!rawSym.endsWith("USDT")) continue;
-    const fundingRate = Number(p.lastFundingRate);
-    const markPrice = Number(p.markPrice);
-    if (!Number.isFinite(fundingRate) || !Number.isFinite(markPrice) || markPrice <= 0) continue;
-    const hours = asterHours.get(rawSym);
-    if (hours === undefined) continue; // not in /fapi/v3/fundingInfo → cannot normalize
-    addRate(rawSym.replace(/USDT$/, ""), "aster", fundingRate, markPrice, hours);
-  }
-
   return rateMap;
 }
 

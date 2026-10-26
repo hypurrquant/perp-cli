@@ -5,7 +5,9 @@ import { annualizeRate, computeAnnualSpread, toHourlyRate, estimateHourlyFunding
 import {
   fetchAllFundingRates,
   fetchCanonicalPriceGroups,
+  dropPriceOutliers,
   fetchSymbolFundingRates,
+  isRankedComparison,
   TOP_SYMBOLS,
   type FundingRateSnapshot,
   type SymbolFundingComparison,
@@ -89,22 +91,33 @@ export async function fetchAllPrices(): Promise<PriceSnapshot[]> {
     }
   }
 
+  return buildGapSnapshots(pacPrices, hlPrices, ltPrices);
+}
+
+/**
+ * Cross-venue price gaps by venue symbol. The same ticker on two venues is not proof of the same
+ * instrument (Pacifica SAMSUNG 165.8 USD vs Lighter SAMSUNG 220,597 — a KRW-quoted listing): each
+ * symbol's prices go through the funding scan's median price-outlier guard (dropPriceOutliers,
+ * MAX_PRICE_DEVIATION_PCT, one warning per symbol / venue) before a gap is computed, so a gap is
+ * only reported between prices that agree within the guard.
+ */
+export function buildGapSnapshots(pacPrices: Map<string, number>, hlPrices: Map<string, number>, ltPrices: Map<string, number>): PriceSnapshot[] {
   const allSymbols = new Set([...pacPrices.keys(), ...hlPrices.keys(), ...ltPrices.keys()]);
   const snapshots: PriceSnapshot[] = [];
+  const LABEL: Record<"pacifica" | "hyperliquid" | "lighter", string> = { pacifica: "PAC", hyperliquid: "HL", lighter: "LT" };
 
   for (const sym of allSymbols) {
-    const pac = pacPrices.get(sym) ?? null;
-    const hl = hlPrices.get(sym) ?? null;
-    const lt = ltPrices.get(sym) ?? null;
-
-    // Need at least 2 exchanges
-    const available: { ex: string; price: number }[] = [];
-    if (pac !== null) available.push({ ex: "PAC", price: pac });
-    if (hl !== null) available.push({ ex: "HL", price: hl });
-    if (lt !== null) available.push({ ex: "LT", price: lt });
-    if (available.length < 2) continue;
-
-    available.sort((a, b) => a.price - b.price);
+    const listed: { exchange: "pacifica" | "hyperliquid" | "lighter"; markPrice: number }[] = [];
+    for (const [exchange, map] of [["pacifica", pacPrices], ["hyperliquid", hlPrices], ["lighter", ltPrices]] as const) {
+      const p = map.get(sym);
+      if (p !== undefined) listed.push({ exchange, markPrice: p });
+    }
+    if (listed.length < 2) continue;
+    const kept = dropPriceOutliers(sym, listed, "gaps");
+    // Need at least 2 exchanges whose prices agree
+    if (kept.length < 2) continue;
+    const priceOf = (ex: "pacifica" | "hyperliquid" | "lighter") => kept.find(k => k.exchange === ex)?.markPrice ?? null;
+    const available = kept.map(k => ({ ex: LABEL[k.exchange], price: k.markPrice })).sort((a, b) => a.price - b.price);
     const cheapest = available[0];
     const expensive = available[available.length - 1];
     const maxGap = expensive.price - cheapest.price;
@@ -113,9 +126,9 @@ export async function fetchAllPrices(): Promise<PriceSnapshot[]> {
 
     snapshots.push({
       symbol: sym,
-      pacPrice: pac,
-      hlPrice: hl,
-      ltPrice: lt,
+      pacPrice: priceOf("pacifica"),
+      hlPrice: priceOf("hyperliquid"),
+      ltPrice: priceOf("lighter"),
       maxGap,
       maxGapPct,
       cheapest: cheapest.ex,
@@ -261,7 +274,8 @@ function printSnapshotTable(snapshot: FundingRateSnapshot): void {
 
   const rows = snapshot.symbols.map(s => {
     const rateOf = (id: string) => s.rates.find(r => r.exchange === id);
-    const spreadColor = s.maxSpreadAnnual >= 30 ? chalk.green : s.maxSpreadAnnual >= 10 ? chalk.yellow : chalk.white;
+    const spread = s.maxSpreadAnnual;
+    const spreadColor = spread === null ? chalk.gray : spread >= 30 ? chalk.green : spread >= 10 ? chalk.yellow : chalk.white;
     // Historical-average source preference: HL, PAC, LT, AST, then whichever venue quoted.
     const bestRate = rateOf("hyperliquid") ?? rateOf("pacifica") ?? rateOf("lighter") ?? rateOf("aster") ?? s.rates[0];
     const trend = trendMap.get(s.symbol) ?? chalk.gray("-");
@@ -271,8 +285,10 @@ function printSnapshotTable(snapshot: FundingRateSnapshot): void {
         const r = rateOf(v.id);
         return r ? formatPercent(r.fundingRate) : chalk.gray("-");
       }),
-      spreadColor(`${s.maxSpreadAnnual.toFixed(1)}%`), trend,
-      s.maxSpreadAnnual >= 5 ? `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}${s.executable ? "" : chalk.gray(" (read-only)")}` : chalk.gray("-"),
+      // No ranked pair (< 2 verified rows): unverified rates are shown, never ranked.
+      spread === null ? chalk.gray("n/a") : spreadColor(`${spread.toFixed(1)}%`), trend,
+      spread === null || s.longExchange === null || s.shortExchange === null ? chalk.gray("unranked (unverified)")
+        : spread >= 5 ? `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}${s.executable ? "" : chalk.gray(s.readOnlyLegs.length > 0 ? " (read-only)" : " (unverified)")}` : chalk.gray("-"),
       formatAvgRate(bestRate?.historicalAvg?.avg8h), formatAvgRate(bestRate?.historicalAvg?.avg24h), formatAvgRate(bestRate?.historicalAvg?.avg7d),
     ];
   });
@@ -300,9 +316,16 @@ function printDetailedComparison(comparison: SymbolFundingComparison): void {
     const color = r.fundingRate > 0 ? chalk.red : r.fundingRate < 0 ? chalk.green : chalk.white;
     console.log(`  ${chalk.white.bold(exAbbr(r.exchange).padEnd(4))} Raw: ${color(formatPercent(r.fundingRate).padEnd(14))} Hourly: ${(r.hourlyRate * 100).toFixed(6)}%  Annual: ${r.annualizedPct.toFixed(2)}%  APY: ${(compoundedReturn * 100).toFixed(2)}%`);
   }
+  if (!isRankedComparison(comparison)) {
+    console.log(chalk.yellow(`\n  No ranked pair: fewer than two venues with verified funding (${comparison.unverifiedLegs.join(", ")} unverified — display only, never a long / short leg).\n`));
+    return;
+  }
   const spreadColor = comparison.maxSpreadAnnual >= 30 ? chalk.green.bold : comparison.maxSpreadAnnual >= 10 ? chalk.yellow : chalk.white;
   console.log(`\n  Max Spread:     ${spreadColor(`${comparison.maxSpreadAnnual.toFixed(1)}%`)} annual`);
-  console.log(`  Direction:      Long ${exAbbr(comparison.longExchange)} / Short ${exAbbr(comparison.shortExchange)}${comparison.executable ? "" : chalk.yellow(`  — not executable: ${comparison.readOnlyLegs.join(", ")} is read-only in perp-cli`)}`);
+  console.log(`  Direction:      Long ${exAbbr(comparison.longExchange)} / Short ${exAbbr(comparison.shortExchange)}${comparison.executable ? "" : chalk.yellow(`  — not executable: ${[
+    ...comparison.readOnlyLegs.map(v => `${v} is read-only in perp-cli`),
+    ...comparison.unverifiedLegs.map(v => `${v} funding is unverified (display only)`),
+  ].join("; ")}`)}`);
   console.log(`  Est. Income:    $${comparison.estHourlyIncomeUsd.toFixed(4)}/hr per $1K notional\n`);
 }
 
@@ -349,10 +372,15 @@ export async function handleRates(isJson: () => boolean, opts: { symbol?: string
       const history = getHistoricalRates(s.symbol, bestEx, h24ago, now);
       return { ...s, rateHistory: history.map(h => ({ ts: h.ts, hourlyRate: h.hourlyRate })) };
     });
-    if (process.argv.includes("--ndjson") || process.argv.includes("--fields")) return printJson(jsonOk(enriched));
-    return printJson(jsonOk({ ...snapshot, symbols: enriched }));
+    // --min never hides rows silently: the threshold and the hidden count are in meta (and data).
+    const minMeta = { minSpread: snapshot.minSpread, belowMinSpread: snapshot.belowMinSpread };
+    if (process.argv.includes("--ndjson") || process.argv.includes("--fields")) return printJson(jsonOk(enriched, minMeta));
+    return printJson(jsonOk({ ...snapshot, symbols: enriched }, minMeta));
   }
   printSnapshotTable(snapshot); printFundingExchangeStatus(snapshot);
+  if (snapshot.belowMinSpread > 0) {
+    console.log(chalk.gray(`  ${snapshot.belowMinSpread} pair${snapshot.belowMinSpread === 1 ? "" : "s"} below --min ${snapshot.minSpread}% hidden (show them: --min 0)\n`));
+  }
 }
 
 /**

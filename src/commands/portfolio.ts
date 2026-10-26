@@ -499,7 +499,7 @@ async function runHealth(exchangeList: string[], network: Network): Promise<Heal
 // ── Arb top-5 ──────────────────────────────────────────────────────────────
 
 async function fetchArbTop(): Promise<ArbOpportunityOut[]> {
-  const { fetchAllFundingRates, TOP_SYMBOLS } = await import("../funding-rates.js");
+  const { fetchAllFundingRates, isRankedComparison, TOP_SYMBOLS } = await import("../funding-rates.js");
   const { saveFundingSnapshot, getHistoricalAverages } = await import("../funding-history.js");
 
   let snapshot: Awaited<ReturnType<typeof fetchAllFundingRates>> | null;
@@ -517,6 +517,7 @@ async function fetchArbTop(): Promise<ArbOpportunityOut[]> {
   } catch { /* ignore */ }
 
   const top = snapshot.symbols
+    .filter(isRankedComparison)
     .filter(s => s.maxSpreadAnnual >= 5)
     .sort((a, b) => b.maxSpreadAnnual - a.maxSpreadAnnual)
     .slice(0, 5);
@@ -747,7 +748,27 @@ async function runWatch(
 
 // ── Serve mode (delegates to dashboard infra) ──────────────────────────────
 
-const KNOWN_HIP3_DEXES = ["xyz", "flx", "hyna", "km", "cash", "vntl"];
+/**
+ * HIP-3 dex names, read live from info `perpDexs` on the selected network (index 0 = the native
+ * dex, null). Throws on a failed or malformed read — never substitutes a fixed list (Rule #2):
+ * a stale list hides positions on any dex Hyperliquid adds later.
+ */
+export async function fetchHip3DexNames(): Promise<string[]> {
+  const res = await fetch(HYPERLIQUID_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "perpDexs" }),
+  });
+  if (!res.ok) throw new Error(`info perpDexs HTTP ${res.status}`);
+  const list = await res.json() as unknown;
+  if (!Array.isArray(list)) throw new Error("info perpDexs: expected an array");
+  return list.flatMap((d, i) => {
+    if (d === null) return [];
+    const name = (d as { name?: unknown } | null)?.name;
+    if (typeof name !== "string" || name === "") throw new Error(`info perpDexs: entry ${i} has no dex name`);
+    return [name];
+  });
+}
 
 /**
  * Open-position count on a HIP-3 dex; null = the read failed (unknown — NOT "no positions").
@@ -776,13 +797,26 @@ export async function checkDexPositions(address: string, dex: string): Promise<n
   }
 }
 
-async function autoDetectHip3Dexes(
+/**
+ * HIP-3 dexes holding positions (or whose read failed) for `address`, scanning every dex of the
+ * live `perpDexs` list. `error` is set when the dex list itself could not be read: no dex is
+ * scanned and the caller must surface it (positions on HIP-3 dexes are unknown, not absent).
+ */
+export async function autoDetectHip3Dexes(
   address: string,
   getHLAdapterForDex: (dex: string) => Promise<ExchangeAdapter>,
   verbose: boolean,
-): Promise<DashboardExchange[]> {
+): Promise<{ exchanges: DashboardExchange[]; error: string | null }> {
+  let dexes: string[];
+  try {
+    dexes = await fetchHip3DexNames();
+  } catch (e) {
+    const error = `HIP-3 dex list unavailable — HIP-3 positions unknown, pass --dexes to monitor specific dexes: ${e instanceof Error ? e.message : String(e)}`;
+    process.stderr.write(`[warn] hl:hip3 ${error}\n`);
+    return { exchanges: [], error };
+  }
   const checks = await Promise.all(
-    KNOWN_HIP3_DEXES.map(async (dex) => ({
+    dexes.map(async (dex) => ({
       dex,
       count: await checkDexPositions(address, dex),
     })),
@@ -803,7 +837,7 @@ async function autoDetectHip3Dexes(
       process.stderr.write(`[warn] hl:${dex} left out of the dashboard (adapter unavailable${count === null ? ", positions unknown" : `, ${count} position(s)`}): ${e instanceof Error ? e.message : String(e)}\n`);
     }
   }
-  return results;
+  return { exchanges: results, error: null };
 }
 
 async function runServe(
@@ -840,7 +874,8 @@ async function runServe(
         const hlAddr = hlEx ? (hlEx.adapter as { address?: string }).address ?? "" : "";
         if (hlAddr) {
           const detected = await autoDetectHip3Dexes(hlAddr, getHLAdapterForDex, false);
-          exchanges.push(...detected);
+          exchanges.push(...detected.exchanges);
+          if (detected.error !== null) errors["hl:hip3"] = detected.error;
         }
       }
     }
@@ -900,8 +935,9 @@ async function runServe(
       if (hlAddr) {
         console.log(chalk.gray("  Scanning HIP-3 dexes for active positions..."));
         const detected = await autoDetectHip3Dexes(hlAddr, getHLAdapterForDex, true);
-        exchanges.push(...detected);
-        if (!detected.length) console.log(chalk.gray("  No active HIP-3 dex positions found"));
+        exchanges.push(...detected.exchanges);
+        if (detected.error !== null) console.log(chalk.yellow(`  ✗ hl:hip3: ${detected.error.slice(0, 120)}`));
+        else if (!detected.exchanges.length) console.log(chalk.gray("  No active HIP-3 dex positions found"));
       }
     }
   }

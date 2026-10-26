@@ -23,6 +23,7 @@
  */
 
 import { PerpError } from "../../errors.js";
+import { isArcusOnlineMarket } from "../../ws/arcus-market.js";
 import type { ArcusAgentMeta } from "../../settings.js";
 import type { EvmSigner } from "../../signer/interface.js";
 import { OwsEvmSigner } from "../../signer/ows-evm.js";
@@ -30,6 +31,7 @@ import { OwsSolanaSigner } from "../../signer/ows-solana.js";
 import type {
   ExchangeAdapter, ExchangeBalance, ExchangeFundingPayment, ExchangeKline, ExchangeMarketInfo,
   ExchangeOrder, ExchangePosition, ExchangeTrade, ExchangePublicTrade,
+  FundingHistoryRow
 } from "../interface.js";
 import type { ResolvedSlippage } from "../slippage.js";
 import { alignProtectionPrice, floorSize, mulDecimal, requirePositive, slippagePrice, subDecimal, toUnitsExact, unitsToString } from "../precision.js";
@@ -191,6 +193,16 @@ function finalityOf(s: OrderStatus): "final" | "pending" {
 }
 
 const usToMs = (us: number): number => Math.floor(us / 1000);
+
+/** /v1/trades and /v1/fundingRates take `limit` ≤ 1000 (docs; the venue answered 1000 rows for more). */
+export const ARCUS_HISTORY_CAP = 1000;
+function arcusLimit(what: string, limit: number): void {
+  if (!Number.isInteger(limit) || limit < 1 || limit > ARCUS_HISTORY_CAP) {
+    throw new PerpError("INVALID_PARAMS", `Arcus: ${what} limit must be 1..${ARCUS_HISTORY_CAP} (got ${limit})`, {
+      remediation: `Arcus serves at most ${ARCUS_HISTORY_CAP} rows per request`,
+    });
+  }
+}
 
 function sideLower(s: "BUY" | "SELL"): "buy" | "sell" { return s === "BUY" ? "buy" : "sell"; }
 
@@ -406,6 +418,22 @@ export class ArcusAdapter implements ExchangeAdapter, TradingV2 {
     if (!m) {
       throw new PerpError("SYMBOL_NOT_FOUND", `Arcus: unknown market "${symbol}"`, {
         remediation: "List markets with: perp market list -e arcus",
+      });
+    }
+    return m;
+  }
+
+  /**
+   * A market-data read (book / trades / funding / candles) of a listed market that is not ONLINE
+   * is refused like `market info` / `market list` treat it (not listed): SYMBOL_NOT_FOUND naming
+   * the venue status — the venue answered `[]` or HTTP 404 ORDER_NOT_FOUND for it before.
+   */
+  private async onlineMarket(symbol: string): Promise<ArcusRawMarket> {
+    const m = await this.market(symbol);
+    if (!isArcusOnlineMarket(m)) {
+      throw new PerpError("SYMBOL_NOT_FOUND", `Arcus: market ${m.marketDisplayName} is ${m.status} (not tradable; no live market data)`, {
+        exchange: "arcus", status: m.status, tradable: false,
+        remediation: "List live markets with: perp market list -e arcus",
       });
     }
     return m;
@@ -1020,25 +1048,27 @@ export class ArcusAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
-    const m = await this.market(symbol);
+    const m = await this.onlineMarket(symbol);
     const ob = await this.client.get<{ bids: [string, string][]; asks: [string, string][] }>(
       `/v1/l2OrderBook/${encodeURIComponent(m.marketDisplayName)}`, "l2OrderBook", { nLevels: ORDERBOOK_LEVELS });
     return { bids: ob.bids, asks: ob.asks };
   }
 
   async getRecentTrades(symbol: string, limit = 50): Promise<ExchangePublicTrade[]> {
-    const m = await this.market(symbol);
+    arcusLimit("trades", limit);
+    const m = await this.onlineMarket(symbol);
     const res = await this.client.get<{ trades: Array<{ side: "BUY" | "SELL"; price: string; size: string; timestamp: number }> }>(
       "/v1/trades", "trades", { market: m.marketDisplayName, limit });
-    // Public tape carries no fee; "0" follows the legacy ExchangeTrade convention for public trades.
+    // Public tape: no fee applies to the viewer → null, never "0".
     return res.trades.map(t => ({ time: usToMs(t.timestamp), symbol: m.baseAsset, side: sideLower(t.side), price: t.price, size: t.size, fee: null }));
   }
 
-  async getFundingHistory(symbol: string, limit = 100): Promise<{ time: number; rate: string; price: string | null }[]> {
-    const m = await this.market(symbol);
+  async getFundingHistory(symbol: string, limit = 100): Promise<FundingHistoryRow[]> {
+    arcusLimit("funding history", limit);
+    const m = await this.onlineMarket(symbol);
     const res = await this.client.get<{ fundingRates: Array<{ fundingRate: string; time: number }> }>(
       "/v1/fundingRates", "fundingRates", { market: m.marketDisplayName, limit });
-    return res.fundingRates.map(f => ({ time: usToMs(f.time), rate: f.fundingRate, price: null }));
+    return res.fundingRates.map(f => ({ time: usToMs(f.time), rate: f.fundingRate, price: null, intervalHours: 1, rateKind: "lastSettled" as const }));
   }
 
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
@@ -1047,7 +1077,7 @@ export class ArcusAdapter implements ExchangeAdapter, TradingV2 {
         remediation: `Use one of: ${[...CANDLE_TIMEFRAMES].join(", ")}`,
       });
     }
-    const m = await this.market(symbol);
+    const m = await this.onlineMarket(symbol);
     const span = CANDLE_WINDOW_BARS * CANDLE_MS[interval];
     const windows = Math.max(1, Math.ceil((endTime - startTime) / span));
     if (windows > CANDLE_MAX_WINDOWS) {

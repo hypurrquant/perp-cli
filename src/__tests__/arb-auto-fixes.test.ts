@@ -146,65 +146,25 @@ describe("Fix 1-1/1-2: State persistence after entry and close", () => {
 // Fix 2-1: Funding rate normalization
 // ────────────────────────────────────────────
 
-describe("Fix 2-1: Funding rate normalization (Lighter 8h)", () => {
-  it("toHourlyRate divides Lighter rate by 8", () => {
-    const lighterRawRate = 0.0008; // 8h rate
-    const hourly = toHourlyRate(lighterRawRate, "lighter");
-    expect(hourly).toBe(0.0001); // 0.0008 / 8
+describe("Fix 2-1: Funding rate normalization (venue basis: every venue here quotes per 1 h)", () => {
+  it("Lighter's venue basis is 1 h since 0.15.1 (market rows carry the settled hourly rate): toHourlyRate keeps it", () => {
+    expect(toHourlyRate(0.000012, "lighter")).toBe(0.000012);
   });
 
   it("toHourlyRate keeps HL rate as-is", () => {
-    const hlRate = 0.0003;
-    const hourly = toHourlyRate(hlRate, "hyperliquid");
-    expect(hourly).toBe(0.0003);
+    expect(toHourlyRate(0.0003, "hyperliquid")).toBe(0.0003);
   });
 
   it("toHourlyRate keeps PAC rate as-is", () => {
-    const pacRate = 0.0005;
-    const hourly = toHourlyRate(pacRate, "pacifica");
-    expect(hourly).toBe(0.0005);
+    expect(toHourlyRate(0.0005, "pacifica")).toBe(0.0005);
   });
 
-  it("normalized funding income uses correct rates for cross-exchange comparison", () => {
-    // Simulate: Lighter raw rate 0.0008 (8h) vs HL raw rate 0.0001 (1h)
-    // Without normalization: spread = 0.0008 - 0.0001 = 0.0007 (WRONG — 8x overestimate)
-    // With normalization: spread = 0.0001 - 0.0001 = 0 (CORRECT — same actual hourly rate)
-    const ltRaw = 0.0008;
-    const hlRaw = 0.0001;
-
-    const ltHourly = toHourlyRate(ltRaw, "lighter");
-    const hlHourly = toHourlyRate(hlRaw, "hyperliquid");
-
-    expect(ltHourly).toBe(0.0001);
-    expect(hlHourly).toBe(0.0001);
-    expect(ltHourly - hlHourly).toBeCloseTo(0, 10);
-  });
-
-  it("funding income calculation is correct when Lighter has higher 8h rate", () => {
-    // Lighter 8h rate = 0.0016, hourly = 0.0002
-    // HL 1h rate = 0.0001
-    // Short Lighter (get 0.0002/hr), Long HL (pay 0.0001/hr)
-    // Net hourly income = (0.0002 - 0.0001) * notional
-    const ltRaw = 0.0016;
-    const hlRaw = 0.0001;
-    const notional = 10000; // $10k per leg
-    const elapsedHours = 1;
-
-    const shortHourly = toHourlyRate(ltRaw, "lighter");
-    const longHourly = toHourlyRate(hlRaw, "hyperliquid");
-    const hourlyIncome = (shortHourly - longHourly) * notional;
-    const income = hourlyIncome * elapsedHours;
-
-    expect(shortHourly).toBe(0.0002);
-    expect(longHourly).toBe(0.0001);
-    expect(income).toBeCloseTo(1.0, 5); // $1/hr on $10k
-
-    // OLD bug: without normalization
-    const oldIncome = (ltRaw - hlRaw) * notional * elapsedHours;
-    expect(oldIncome).toBeCloseTo(15.0, 5); // $15/hr — 15x overestimate!
-    expect(oldIncome).toBeGreaterThan(income * 10); // confirms bug was significant
+  it("funding income: short Lighter at 0.0002 / h, long HL at 0.0001 / h → $1/h on $10k", () => {
+    const income = (toHourlyRate(0.0002, "lighter") - toHourlyRate(0.0001, "hyperliquid")) * 10_000;
+    expect(income).toBeCloseTo(1.0, 5);
   });
 });
+
 
 // ────────────────────────────────────────────
 // Fix 2-2: Daemon↔CLI state sync

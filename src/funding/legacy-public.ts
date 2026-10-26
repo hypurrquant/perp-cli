@@ -19,9 +19,9 @@
  *   pacifica: crypto-centric; PACIFICA_NON_CRYPTO lists every non-crypto perp
  *     listed on 2026-09-30.
  *   aster: exchangeInfo `underlyingSubType` (STOCK / ETF / Commodities / pre-launch).
- *   AMBIGUOUS tickers are excluded with a warning so they cannot produce a false
- *   cross-venue match (SPX = the SPX6900 token, whose ticker equals the S&P 500
- *   canonical key).
+ *   Ambiguous tickers (UNCLASSIFIED_TICKERS, src/ws/unclassified.ts — SPX = the SPX6900
+ *   token, whose ticker equals the S&P 500 canonical key) are listed as "unclassified"
+ *   (canonical null) so they cannot produce a false cross-venue match.
  *
  * Fields a venue does not publish on this path are null (HL has no fixed tick
  * size; Aster leverage brackets need a signed call; Aster OI is per-symbol only).
@@ -29,6 +29,8 @@
 
 import { HL_MIN_ORDER_VALUE_USD } from "../constants.js";
 import { isPacificaPerpetual } from "../ws/pacifica-instrument.js";
+import { asterCliSymbol, asterMatchable, isAsterListedPerpetual } from "../ws/aster-market.js";
+import { isUnclassifiedTicker } from "../ws/unclassified.js";
 import { PerpError } from "../errors.js";
 import { venueRateString } from "../utils/numeric.js";
 import { assertOk } from "../api/public/_http.js";
@@ -37,6 +39,7 @@ import { canonicalFor } from "../exchanges/canonical-symbols.js";
 import { fundingBasisOf, settlementIntervalOf } from "../exchanges/venue.js";
 import type { VenuePublicData } from "../exchanges/venue.js";
 import type { AssetClass, Network, VenueFundingRate, VenueMarket } from "../exchanges/venue-types.js";
+import { nextTopOfHourMs } from "../exchanges/venue-types.js";
 
 export type LegacyPublicVenue = "pacifica" | "hyperliquid" | "aster";
 
@@ -47,9 +50,8 @@ interface Row {
 
 // ── Classification ──
 
-const AMBIGUOUS: ReadonlySet<string> = new Set(["SPX"]);
 
-/** Pacifica non-crypto perps (live /info 2026-09-30). BP / CHIP: ticker collides with a listed equity/ETF. */
+/** Pacifica non-crypto perps (live /info 2026-09-30). Ambiguous BP / CHIP / SPX: UNCLASSIFIED_TICKERS. */
 const PACIFICA_NON_CRYPTO: Readonly<Record<string, AssetClass>> = {
   NVDA: "equity", TSLA: "equity", GOOGL: "equity", PLTR: "equity", HOOD: "equity", CRCL: "equity",
   SPCX: "equity", SKHYNIX: "equity", SAMSUNG: "equity", MSTR: "equity", MU: "equity", SNDK: "equity",
@@ -60,20 +62,21 @@ const PACIFICA_NON_CRYPTO: Readonly<Record<string, AssetClass>> = {
   USDJPY: "fx", EURUSD: "fx",
   SP500: "index",
 };
-const PACIFICA_AMBIGUOUS: ReadonlySet<string> = new Set(["BP", "CHIP"]);
 
-function classifyPacifica(symbol: string): AssetClass | null {
+// Ambiguous tickers are listed as "unclassified" (canonical null: never matched across venues),
+// so every listing path (CLI, MCP, public directory) shows the same market set.
+function classifyPacifica(symbol: string): AssetClass {
   const up = symbol.toUpperCase();
-  if (AMBIGUOUS.has(up) || PACIFICA_AMBIGUOUS.has(up)) return null;
+  if (isUnclassifiedTicker("pacifica", up)) return "unclassified";
   return PACIFICA_NON_CRYPTO[up] ?? "crypto"; // crypto-centric venue: non-crypto is listed explicitly
 }
 
-function classifyHyperliquid(symbol: string): AssetClass | null {
-  return AMBIGUOUS.has(symbol.toUpperCase()) ? null : "crypto";
+function classifyHyperliquid(symbol: string): AssetClass {
+  return isUnclassifiedTicker("hyperliquid", symbol) ? "unclassified" : "crypto";
 }
 
-function classifyAster(symbol: string, subTypes: readonly string[]): AssetClass | null {
-  if (AMBIGUOUS.has(symbol.toUpperCase())) return null;
+function classifyAster(symbol: string, subTypes: readonly string[]): AssetClass {
+  if (isUnclassifiedTicker("aster", symbol)) return "unclassified";
   if (subTypes.includes("pre-launch")) return "preIpo";
   if (subTypes.includes("ETF")) return "etf";
   if (subTypes.includes("STOCK")) return "equity";
@@ -88,6 +91,11 @@ function warnExcluded(venue: LegacyPublicVenue, what: string, symbols: string[])
 }
 
 // ── HTTP ──
+
+/** One public JSON read with the venue error mapping (rate limits, HTTP status, invalid JSON). */
+export async function legacyPublicJson(venue: LegacyPublicVenue, url: string, label: string, init?: RequestInit): Promise<unknown> {
+  return getJson(venue, url, label, init);
+}
 
 async function getJson(venue: LegacyPublicVenue, url: string, label: string, init?: RequestInit): Promise<unknown> {
   const res = await fetch(url, { ...init, signal: AbortSignal.timeout(15_000) });
@@ -141,7 +149,6 @@ async function pacificaRows(net: Network): Promise<Row[]> {
   const settlement = settlementIntervalOf("pacifica");
 
   const out: Row[] = [];
-  const unclassified: string[] = [];
   const unpriced: string[] = [];
   for (const m of info) {
     // /info lists spot markets too (e.g. SOL-USDC): perps only. A row without the field cannot be classified.
@@ -151,7 +158,6 @@ async function pacificaRows(net: Network): Promise<Row[]> {
     if (!isPacificaPerpetual(m)) continue;
     const symbol = String(m.symbol ?? "");
     const assetClass = classifyPacifica(symbol);
-    if (assetClass === null) { unclassified.push(symbol); continue; }
     const p = priceBySymbol.get(symbol);
     const mark = p ? positiveNumStr(p.mark) : null;
     if (!p || mark === null) { unpriced.push(symbol); continue; }
@@ -167,7 +173,9 @@ async function pacificaRows(net: Network): Promise<Row[]> {
         quoteAsset: null,
         markPrice: mark,
         indexPrice: positiveNumStr(p.oracle),
-        fundingRate: rateStr(p.next_funding),
+        // Last settled hourly rate (WS prices `funding`, the CLI row's fundingRate); next_funding
+        // is the predicted one.
+        fundingRate: rateStr(p.funding),
         fundingRateBasis: basis,
         settlementIntervalHours: settlement,
         openInterest: numStr(p.open_interest),
@@ -181,10 +189,9 @@ async function pacificaRows(net: Network): Promise<Row[]> {
         session: null,
         tradable: true,
       },
-      nextFundingTime: null, // Pacifica publishes no next-funding timestamp
+      nextFundingTime: nextTopOfHourMs(), // not published; docs: settled at the end of each 1 h interval (on the hour)
     });
   }
-  warnExcluded("pacifica", "unclassified/ambiguous market(s)", unclassified);
   warnExcluded("pacifica", "market(s) without a mark price", unpriced);
   return out;
 }
@@ -210,7 +217,6 @@ async function hyperliquidRows(net: Network): Promise<Row[]> {
   const settlement = settlementIntervalOf("hyperliquid");
 
   const out: Row[] = [];
-  const unclassified: string[] = [];
   const unpriced: string[] = [];
   universe.forEach((a, i) => {
     // Delisted assets stay in meta (isDelisted: true) with zeroed funding / volume / OI
@@ -219,7 +225,6 @@ async function hyperliquidRows(net: Network): Promise<Row[]> {
     const ctx = ctxs[i];
     const symbol = String(a.name ?? "");
     const assetClass = classifyHyperliquid(symbol);
-    if (assetClass === null) { unclassified.push(symbol); return; }
     const mark = positiveNumStr(ctx.markPx);
     if (mark === null) { unpriced.push(symbol); return; }
     const szDecimals = Number(a.szDecimals);
@@ -249,10 +254,9 @@ async function hyperliquidRows(net: Network): Promise<Row[]> {
         session: null,
         tradable: true, // delisted assets are skipped above
       },
-      nextFundingTime: null, // not published in metaAndAssetCtxs
+      nextFundingTime: nextTopOfHourMs(), // not in metaAndAssetCtxs; docs: paid every hour (on the hour)
     });
   });
-  warnExcluded("hyperliquid", "unclassified/ambiguous market(s)", unclassified);
   warnExcluded("hyperliquid", "market(s) without a mark price", unpriced);
   return out;
 }
@@ -283,16 +287,19 @@ async function asterRows(net: Network): Promise<Row[]> {
   }
 
   const out: Row[] = [];
-  const unclassified: string[] = [];
   const unpriced: string[] = [];
   const noInterval: string[] = [];
   for (const s of symbols) {
-    if (s.contractType !== "PERPETUAL" || s.quoteAsset !== "USDT") continue;
+    // Shared eligibility (SETTLING / PENDING_TRADING rows were listed with tradable false); every
+    // quote, like the CLI adapter and the WS directory.
+    if (!isAsterListedPerpetual(s)) continue;
     const venueSymbol = String(s.symbol);
-    const symbol = String(s.baseAsset);
+    const symbol = asterCliSymbol({ symbol: venueSymbol, baseAsset: String(s.baseAsset), quoteAsset: s.quoteAsset });
+    const base = String(s.baseAsset);
     const subTypes = Array.isArray(s.underlyingSubType) ? (s.underlyingSubType as unknown[]).map(String) : [];
-    const assetClass = classifyAster(symbol, subTypes);
-    if (assetClass === null) { unclassified.push(venueSymbol); continue; }
+    const assetClass = classifyAster(base, subTypes);
+    // A second listing of a base (BTCUSD1 beside BTCUSDT) or a non-USD quote (U): canonical null.
+    const matchable = asterMatchable(s);
     const p = premiumBySymbol.get(venueSymbol);
     const mark = p ? positiveNumStr(p.markPrice) : null;
     if (!p || mark === null) { unpriced.push(venueSymbol); continue; }
@@ -308,10 +315,10 @@ async function asterRows(net: Network): Promise<Row[]> {
         venue: "aster",
         venueSymbol,
         symbol,
-        canonical: canonicalFor("aster", symbol, assetClass),
+        canonical: matchable ? canonicalFor("aster", base, assetClass) : null,
         assetClass,
         settle: s.marginAsset,
-        quoteAsset: s.quoteAsset,
+        quoteAsset: typeof s.quoteAsset === "string" && s.quoteAsset !== "" ? s.quoteAsset : null,
         markPrice: mark,
         indexPrice: positiveNumStr(p.indexPrice),
         fundingRate: rateStr(p.lastFundingRate),
@@ -331,7 +338,6 @@ async function asterRows(net: Network): Promise<Row[]> {
       nextFundingTime: Number.isFinite(next) && next > 0 ? next : null,
     });
   }
-  warnExcluded("aster", "unclassified/ambiguous market(s)", unclassified);
   warnExcluded("aster", "market(s) without a mark price", unpriced);
   warnExcluded("aster", "market(s) missing from fundingInfo", noInterval);
   return out;

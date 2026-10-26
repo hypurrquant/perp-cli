@@ -25,7 +25,7 @@ const UUID = "f47ac10b-58cc-4372-a567-0e02b2c3d479";
 function pacifica(client: PacificaTestAdapter["client"]) {
   const a = Object.create(PacificaAdapter.prototype) as PacificaTestAdapter;
   a.ensureSigner = vi.fn();
-  a.client = client;
+  a.client = { getInfo: async () => ["BTC", "ETH", "SOL"].map((symbol) => ({ symbol, instrument_type: "perpetual" })), ...client };
   a.account = "acct";
   a.signMessage = vi.fn();
   a._hasRealKey = true;

@@ -38,6 +38,9 @@ pnpm test
 pnpm run test:integration
 ```
 
+The testing standard — test layers, output contracts, invariants, the conformance suite and the
+definition of done for a venue / feature — is [`docs/TESTING.md`](docs/TESTING.md).
+
 ## How to Contribute
 
 ### Before you start

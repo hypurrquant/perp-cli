@@ -1,0 +1,1439 @@
+{
+ "schema": 1,
+ "name": "txflow",
+ "capturedAt": 1792414362614,
+ "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
+ "keep": [
+  "BTC",
+  "ETH",
+  "SOL"
+ ],
+ "full": [],
+ "http": [
+  {
+   "cell": "list",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "c27b267ef2d37062"
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"allMarketTickers\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "coin": "BTC/USDC",
+     "instrumentId": 10000,
+     "lastPrice": "82414.42",
+     "markPx": "",
+     "oraclePx": "",
+     "openInterest": "",
+     "fundingRate": "",
+     "nextFundingTime": 0,
+     "blockTime": 0,
+     "dayNtlVlm": "571541.9973228",
+     "prevDayPx": "81869.5",
+     "change24h": "544.92",
+     "change24hPct": "0.67"
+    },
+    {
+     "coin": "ETH/USDC",
+     "instrumentId": 10001,
+     "lastPrice": "2423.13",
+     "markPx": "",
+     "oraclePx": "",
+     "openInterest": "",
+     "fundingRate": "",
+     "nextFundingTime": 0,
+     "blockTime": 0,
+     "dayNtlVlm": "109354.400279",
+     "prevDayPx": "2414.86",
+     "change24h": "8.27",
+     "change24hPct": "0.34"
+    },
+    {
+     "coin": "SOL/USDC",
+     "instrumentId": 10002,
+     "lastPrice": "105.07",
+     "markPx": "",
+     "oraclePx": "",
+     "openInterest": "",
+     "fundingRate": "",
+     "nextFundingTime": 0,
+     "blockTime": 0,
+     "dayNtlVlm": "88508.2769",
+     "prevDayPx": "103.99",
+     "change24h": "1.08",
+     "change24hPct": "1.04"
+    },
+    {
+     "coin": "BTC",
+     "instrumentId": 1,
+     "lastPrice": "82390.1",
+     "markPx": "82389.8",
+     "oraclePx": "82427.6",
+     "openInterest": "184.0698",
+     "fundingRate": "0.00040322",
+     "nextFundingTime": 1792414800000,
+     "blockTime": 1792414354494,
+     "dayNtlVlm": "69755281.5444109",
+     "prevDayPx": "81830",
+     "change24h": "560.1",
+     "change24hPct": "0.68"
+    },
+    {
+     "coin": "ETH",
+     "instrumentId": 2,
+     "lastPrice": "2420.39",
+     "markPx": "2420.31",
+     "oraclePx": "2421.40",
+     "openInterest": "4027.466",
+     "fundingRate": "0.00110204",
+     "nextFundingTime": 1792414800000,
+     "blockTime": 1792414354494,
+     "dayNtlVlm": "16383097.381244157",
+     "prevDayPx": "2412.43",
+     "change24h": "7.96",
+     "change24hPct": "0.33"
+    },
+    {
+     "coin": "SOL",
+     "instrumentId": 13,
+     "lastPrice": "105.08",
+     "markPx": "105.01",
+     "oraclePx": "105.06",
+     "openInterest": "13653.56",
+     "fundingRate": "-0.00010908",
+     "nextFundingTime": 1792414800000,
+     "blockTime": 1792414354494,
+     "dayNtlVlm": "3721178.8709134646",
+     "prevDayPx": "103.88",
+     "change24h": "1.20",
+     "change24hPct": "1.16"
+    }
+   ],
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"allMarketTickers\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "coin": "BTC/USDC",
+     "instrumentId": 10000,
+     "lastPrice": "82414.42",
+     "markPx": "",
+     "oraclePx": "",
+     "openInterest": "",
+     "fundingRate": "",
+     "nextFundingTime": 0,
+     "blockTime": 0,
+     "dayNtlVlm": "571541.9973228",
+     "prevDayPx": "81869.5",
+     "change24h": "544.92",
+     "change24hPct": "0.67"
+    },
+    {
+     "coin": "ETH/USDC",
+     "instrumentId": 10001,
+     "lastPrice": "2423.13",
+     "markPx": "",
+     "oraclePx": "",
+     "openInterest": "",
+     "fundingRate": "",
+     "nextFundingTime": 0,
+     "blockTime": 0,
+     "dayNtlVlm": "109354.400279",
+     "prevDayPx": "2414.86",
+     "change24h": "8.27",
+     "change24hPct": "0.34"
+    },
+    {
+     "coin": "SOL/USDC",
+     "instrumentId": 10002,
+     "lastPrice": "105.07",
+     "markPx": "",
+     "oraclePx": "",
+     "openInterest": "",
+     "fundingRate": "",
+     "nextFundingTime": 0,
+     "blockTime": 0,
+     "dayNtlVlm": "88508.2769",
+     "prevDayPx": "103.99",
+     "change24h": "1.08",
+     "change24hPct": "1.04"
+    },
+    {
+     "coin": "BTC",
+     "instrumentId": 1,
+     "lastPrice": "82390.1",
+     "markPx": "82389.8",
+     "oraclePx": "82427.8",
+     "openInterest": "184.0698",
+     "fundingRate": "0.00040330",
+     "nextFundingTime": 1792414800000,
+     "blockTime": 1792414356216,
+     "dayNtlVlm": "69755281.5444109",
+     "prevDayPx": "81830",
+     "change24h": "560.1",
+     "change24hPct": "0.68"
+    },
+    {
+     "coin": "ETH",
+     "instrumentId": 2,
+     "lastPrice": "2420.39",
+     "markPx": "2420.32",
+     "oraclePx": "2421.41",
+     "openInterest": "4027.466",
+     "fundingRate": "0.00110175",
+     "nextFundingTime": 1792414800000,
+     "blockTime": 1792414356216,
+     "dayNtlVlm": "16383097.381244157",
+     "prevDayPx": "2412.43",
+     "change24h": "7.96",
+     "change24hPct": "0.33"
+    },
+    {
+     "coin": "SOL",
+     "instrumentId": 13,
+     "lastPrice": "105.08",
+     "markPx": "105.01",
+     "oraclePx": "105.06",
+     "openInterest": "13653.56",
+     "fundingRate": "-0.00010865",
+     "nextFundingTime": 1792414800000,
+     "blockTime": 1792414356216,
+     "dayNtlVlm": "3721178.8709134646",
+     "prevDayPx": "103.88",
+     "change24h": "1.20",
+     "change24hPct": "1.16"
+    }
+   ],
+   "text": null
+  },
+  {
+   "cell": "prices",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "c27b267ef2d37062"
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "c27b267ef2d37062"
+   },
+   "text": null
+  },
+  {
+   "cell": "info",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"allMarketTickers\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "coin": "BTC/USDC",
+     "instrumentId": 10000,
+     "lastPrice": "82414.42",
+     "markPx": "",
+     "oraclePx": "",
+     "openInterest": "",
+     "fundingRate": "",
+     "nextFundingTime": 0,
+     "blockTime": 0,
+     "dayNtlVlm": "571541.9973228",
+     "prevDayPx": "81869.5",
+     "change24h": "544.92",
+     "change24hPct": "0.67"
+    },
+    {
+     "coin": "ETH/USDC",
+     "instrumentId": 10001,
+     "lastPrice": "2423.13",
+     "markPx": "",
+     "oraclePx": "",
+     "openInterest": "",
+     "fundingRate": "",
+     "nextFundingTime": 0,
+     "blockTime": 0,
+     "dayNtlVlm": "109354.400279",
+     "prevDayPx": "2414.86",
+     "change24h": "8.27",
+     "change24hPct": "0.34"
+    },
+    {
+     "coin": "SOL/USDC",
+     "instrumentId": 10002,
+     "lastPrice": "105.07",
+     "markPx": "",
+     "oraclePx": "",
+     "openInterest": "",
+     "fundingRate": "",
+     "nextFundingTime": 0,
+     "blockTime": 0,
+     "dayNtlVlm": "88508.2769",
+     "prevDayPx": "103.99",
+     "change24h": "1.08",
+     "change24hPct": "1.04"
+    },
+    {
+     "coin": "BTC",
+     "instrumentId": 1,
+     "lastPrice": "82390.1",
+     "markPx": "82389.8",
+     "oraclePx": "82427.8",
+     "openInterest": "184.0698",
+     "fundingRate": "0.00040330",
+     "nextFundingTime": 1792414800000,
+     "blockTime": 1792414356591,
+     "dayNtlVlm": "69755281.5444109",
+     "prevDayPx": "81830",
+     "change24h": "560.1",
+     "change24hPct": "0.68"
+    },
+    {
+     "coin": "ETH",
+     "instrumentId": 2,
+     "lastPrice": "2420.31",
+     "markPx": "2420.32",
+     "oraclePx": "2421.41",
+     "openInterest": "4027.466",
+     "fundingRate": "0.00110175",
+     "nextFundingTime": 1792414800000,
+     "blockTime": 1792414356591,
+     "dayNtlVlm": "16383097.381244157",
+     "prevDayPx": "2412.43",
+     "change24h": "7.88",
+     "change24hPct": "0.33"
+    },
+    {
+     "coin": "SOL",
+     "instrumentId": 13,
+     "lastPrice": "105.08",
+     "markPx": "105.01",
+     "oraclePx": "105.06",
+     "openInterest": "13653.56",
+     "fundingRate": "-0.00010865",
+     "nextFundingTime": 1792414800000,
+     "blockTime": 1792414356591,
+     "dayNtlVlm": "3721178.8709134646",
+     "prevDayPx": "103.88",
+     "change24h": "1.20",
+     "change24hPct": "1.16"
+    }
+   ],
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "c27b267ef2d37062"
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"l2Book\",\"coin\":\"1\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "coin": "BTC-USDC",
+    "time": 1792414358219,
+    "levels": [
+     [
+      {
+       "px": "82383.0",
+       "sz": "3.2513",
+       "n": 1
+      },
+      {
+       "px": "82382.9",
+       "sz": "0.0006",
+       "n": 1
+      },
+      {
+       "px": "82382.8",
+       "sz": "0.0006",
+       "n": 1
+      },
+      {
+       "px": "82382.7",
+       "sz": "0.0006",
+       "n": 1
+      },
+      {
+       "px": "82382.6",
+       "sz": "0.0007",
+       "n": 1
+      },
+      {
+       "px": "82382.5",
+       "sz": "0.0009",
+       "n": 1
+      },
+      {
+       "px": "82381.6",
+       "sz": "0.0009",
+       "n": 1
+      },
+      {
+       "px": "82381.5",
+       "sz": "1.2888",
+       "n": 2
+      },
+      {
+       "px": "82381.4",
+       "sz": "0.0010",
+       "n": 1
+      },
+      {
+       "px": "82381.3",
+       "sz": "1.2782",
+       "n": 2
+      },
+      {
+       "px": "82381.2",
+       "sz": "0.0010",
+       "n": 1
+      },
+      {
+       "px": "82381.1",
+       "sz": "1.4664",
+       "n": 2
+      }
+     ],
+     [
+      {
+       "px": "82383.1",
+       "sz": "13.7598",
+       "n": 1
+      },
+      {
+       "px": "82383.2",
+       "sz": "0.0900",
+       "n": 1
+      },
+      {
+       "px": "82383.3",
+       "sz": "0.2550",
+       "n": 1
+      },
+      {
+       "px": "82383.4",
+       "sz": "0.3241",
+       "n": 1
+      },
+      {
+       "px": "82383.5",
+       "sz": "0.2789",
+       "n": 1
+      },
+      {
+       "px": "82383.6",
+       "sz": "0.2986",
+       "n": 1
+      },
+      {
+       "px": "82384.5",
+       "sz": "0.3244",
+       "n": 1
+      },
+      {
+       "px": "82384.6",
+       "sz": "0.2631",
+       "n": 1
+      },
+      {
+       "px": "82384.7",
+       "sz": "0.1925",
+       "n": 1
+      },
+      {
+       "px": "82384.8",
+       "sz": "0.3331",
+       "n": 1
+      },
+      {
+       "px": "82384.9",
+       "sz": "0.2755",
+       "n": 1
+      },
+      {
+       "px": "82385.0",
+       "sz": "0.2885",
+       "n": 1
+      }
+     ]
+    ]
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "c27b267ef2d37062"
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"trades\",\"coin\":\"1\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "coin": "BTC",
+     "symbol": "BTC-USDC",
+     "side": "B",
+     "px": "82383.1",
+     "sz": "0.0025",
+     "time": 1792414357728,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000001",
+     "tid": 335119756000012,
+     "users": [
+      "0x0000000000000000000000000000000000000002",
+      "0x0000000000000000000000000000000000000003"
+     ],
+     "instrumentId": 1,
+     "instrumentType": "perps",
+     "marketType": "perps"
+    },
+    {
+     "coin": "BTC",
+     "symbol": "BTC-USDC",
+     "side": "B",
+     "px": "82390.1",
+     "sz": "0.0293",
+     "time": 1792414357728,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000004",
+     "tid": 335119756000007,
+     "users": [
+      "0x0000000000000000000000000000000000000005",
+      "0x0000000000000000000000000000000000000006"
+     ],
+     "instrumentId": 1,
+     "instrumentType": "perps",
+     "marketType": "perps"
+    },
+    {
+     "coin": "BTC",
+     "symbol": "BTC-USDC",
+     "side": "B",
+     "px": "82390.1",
+     "sz": "0.0006",
+     "time": 1792414353523,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000007",
+     "tid": 335119678000002,
+     "users": [
+      "0x0000000000000000000000000000000000000008",
+      "0x0000000000000000000000000000000000000006"
+     ],
+     "instrumentId": 1,
+     "instrumentType": "perps",
+     "marketType": "perps"
+    },
+    {
+     "coin": "BTC",
+     "symbol": "BTC-USDC",
+     "side": "B",
+     "px": "82390.1",
+     "sz": "0.0344",
+     "time": 1792414352875,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000009",
+     "tid": 335119666000002,
+     "users": [
+      "0x000000000000000000000000000000000000000a",
+      "0x0000000000000000000000000000000000000006"
+     ],
+     "instrumentId": 1,
+     "instrumentType": "perps",
+     "marketType": "perps"
+    },
+    {
+     "coin": "BTC",
+     "symbol": "BTC-USDC",
+     "side": "B",
+     "px": "82392.5",
+     "sz": "0.0003",
+     "time": 1792414352603,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d00000000b",
+     "tid": 335119661000002,
+     "users": [
+      "0x000000000000000000000000000000000000000c",
+      "0x0000000000000000000000000000000000000003"
+     ],
+     "instrumentId": 1,
+     "instrumentType": "perps",
+     "marketType": "perps"
+    },
+    {
+     "coin": "BTC",
+     "symbol": "BTC-USDC",
+     "side": "B",
+     "px": "82391.4",
+     "sz": "0.0001",
+     "time": 1792414347589,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d00000000d",
+     "tid": 335119568000007,
+     "users": [
+      "0x000000000000000000000000000000000000000e",
+      "0x0000000000000000000000000000000000000003"
+     ],
+     "instrumentId": 1,
+     "instrumentType": "perps",
+     "marketType": "perps"
+    },
+    {
+     "coin": "BTC",
+     "symbol": "BTC-USDC",
+     "side": "B",
+     "px": "82430.6",
+     "sz": "0.0558",
+     "time": 1792412641574,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d00000000f",
+     "tid": 335088041000008,
+     "users": [
+      "0x0000000000000000000000000000000000000010",
+      "0x0000000000000000000000000000000000000011"
+     ],
+     "instrumentId": 1,
+     "instrumentType": "perps",
+     "marketType": "perps"
+    },
+    {
+     "coin": "BTC",
+     "symbol": "BTC-USDC",
+     "side": "B",
+     "px": "82430.6",
+     "sz": "0.0003",
+     "time": 1792412641354,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000012",
+     "tid": 335088037000012,
+     "users": [
+      "0x000000000000000000000000000000000000000c",
+      "0x0000000000000000000000000000000000000011"
+     ],
+     "instrumentId": 1,
+     "instrumentType": "perps",
+     "marketType": "perps"
+    },
+    {
+     "coin": "BTC",
+     "symbol": "BTC-USDC",
+     "side": "B",
+     "px": "82444.7",
+     "sz": "0.0006",
+     "time": 1792412611700,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000007",
+     "tid": 335087490000002,
+     "users": [
+      "0x0000000000000000000000000000000000000008",
+      "0x0000000000000000000000000000000000000003"
+     ],
+     "instrumentId": 1,
+     "instrumentType": "perps",
+     "marketType": "perps"
+    },
+    {
+     "coin": "BTC",
+     "symbol": "BTC-USDC",
+     "side": "A",
+     "px": "82452.9",
+     "sz": "0.03",
+     "time": 1792412609805,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000013",
+     "tid": 335087455000002,
+     "users": [
+      "0x0000000000000000000000000000000000000006",
+      "0x0000000000000000000000000000000000000014"
+     ],
+     "instrumentId": 1,
+     "instrumentType": "perps",
+     "marketType": "perps"
+    },
+    {
+     "coin": "BTC",
+     "symbol": "BTC-USDC",
+     "side": "A",
+     "px": "82457.6",
+     "sz": "0.0004",
+     "time": 1792412584648,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000015",
+     "tid": 335086992000007,
+     "users": [
+      "0x000000000000000000000000000000000000000c",
+      "0x0000000000000000000000000000000000000006"
+     ],
+     "instrumentId": 1,
+     "instrumentType": "perps",
+     "marketType": "perps"
+    },
+    {
+     "coin": "BTC",
+     "symbol": "BTC-USDC",
+     "side": "B",
+     "px": "82446.7",
+     "sz": "0.0006",
+     "time": 1792412581660,
+     "hash": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d000000007",
+     "tid": 335086937000002,
+     "users": [
+      "0x0000000000000000000000000000000000000008",
+      "0x0000000000000000000000000000000000000003"
+     ],
+     "instrumentId": 1,
+     "instrumentType": "perps",
+     "marketType": "perps"
+    }
+   ],
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "c27b267ef2d37062"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"candleSnapshot\",\"req\":{\"coin\":\"1\",\"interval\":\"1h\",\"startTime\":1792327960210,\"endTime\":1792414360210}}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "t": 1792328400000,
+     "o": "81852.4",
+     "h": "81852.4",
+     "l": "81175.7",
+     "c": "81401.4",
+     "v": "128.6134",
+     "n": 935,
+     "s": "1",
+     "i": "1h",
+     "T": 1792331999999
+    },
+    {
+     "t": 1792332000000,
+     "o": "81401.4",
+     "h": "81420.4",
+     "l": "80891",
+     "c": "80965.8",
+     "v": "59.8177",
+     "n": 969,
+     "s": "1",
+     "i": "1h",
+     "T": 1792335599999
+    },
+    {
+     "t": 1792335600000,
+     "o": "80966.3",
+     "h": "81106",
+     "l": "80867",
+     "c": "81045.8",
+     "v": "54.8597",
+     "n": 614,
+     "s": "1",
+     "i": "1h",
+     "T": 1792339199999
+    },
+    {
+     "t": 1792339200000,
+     "o": "81032.2",
+     "h": "81120.3",
+     "l": "80900",
+     "c": "80948.7",
+     "v": "61.6344",
+     "n": 676,
+     "s": "1",
+     "i": "1h",
+     "T": 1792342799999
+    },
+    {
+     "t": 1792342800000,
+     "o": "80946",
+     "h": "81095.6",
+     "l": "80946",
+     "c": "81058.2",
+     "v": "16.7261",
+     "n": 370,
+     "s": "1",
+     "i": "1h",
+     "T": 1792346399999
+    },
+    {
+     "t": 1792346400000,
+     "o": "81065.4",
+     "h": "81147.6",
+     "l": "80946.9",
+     "c": "81083.8",
+     "v": "18.1178",
+     "n": 476,
+     "s": "1",
+     "i": "1h",
+     "T": 1792349999999
+    },
+    {
+     "t": 1792393200000,
+     "o": "82741.1",
+     "h": "83054.4",
+     "l": "82577.2",
+     "c": "82620.5",
+     "v": "30.4012",
+     "n": 977,
+     "s": "1",
+     "i": "1h",
+     "T": 1792396799999
+    },
+    {
+     "t": 1792396800000,
+     "o": "82616.6",
+     "h": "82855.6",
+     "l": "82482.7",
+     "c": "82708.8",
+     "v": "31.0067",
+     "n": 958,
+     "s": "1",
+     "i": "1h",
+     "T": 1792400399999
+    },
+    {
+     "t": 1792400400000,
+     "o": "82707.4",
+     "h": "82988",
+     "l": "82621.7",
+     "c": "82650",
+     "v": "25.2125",
+     "n": 883,
+     "s": "1",
+     "i": "1h",
+     "T": 1792403999999
+    },
+    {
+     "t": 1792404000000,
+     "o": "82655.2",
+     "h": "82767.4",
+     "l": "81994.5",
+     "c": "82303.9",
+     "v": "44.1654",
+     "n": 1295,
+     "s": "1",
+     "i": "1h",
+     "T": 1792407599999
+    },
+    {
+     "t": 1792407600000,
+     "o": "82303.8",
+     "h": "82303.8",
+     "l": "82013.7",
+     "c": "82244.3",
+     "v": "11.5366",
+     "n": 865,
+     "s": "1",
+     "i": "1h",
+     "T": 1792411199999
+    },
+    {
+     "t": 1792411200000,
+     "o": "82244.2",
+     "h": "82572.5",
+     "l": "82206.4",
+     "c": "82383.1",
+     "v": "24.0636",
+     "n": 699,
+     "s": "1",
+     "i": "1h",
+     "T": 1792414799999
+    }
+   ],
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "c27b267ef2d37062"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"allMarketTickers\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": [
+    {
+     "coin": "BTC/USDC",
+     "instrumentId": 10000,
+     "lastPrice": "82414.42",
+     "markPx": "",
+     "oraclePx": "",
+     "openInterest": "",
+     "fundingRate": "",
+     "nextFundingTime": 0,
+     "blockTime": 0,
+     "dayNtlVlm": "571541.9973228",
+     "prevDayPx": "81869.5",
+     "change24h": "544.92",
+     "change24hPct": "0.67"
+    },
+    {
+     "coin": "ETH/USDC",
+     "instrumentId": 10001,
+     "lastPrice": "2423.13",
+     "markPx": "",
+     "oraclePx": "",
+     "openInterest": "",
+     "fundingRate": "",
+     "nextFundingTime": 0,
+     "blockTime": 0,
+     "dayNtlVlm": "109354.400279",
+     "prevDayPx": "2414.86",
+     "change24h": "8.27",
+     "change24hPct": "0.34"
+    },
+    {
+     "coin": "SOL/USDC",
+     "instrumentId": 10002,
+     "lastPrice": "105.07",
+     "markPx": "",
+     "oraclePx": "",
+     "openInterest": "",
+     "fundingRate": "",
+     "nextFundingTime": 0,
+     "blockTime": 0,
+     "dayNtlVlm": "88508.2769",
+     "prevDayPx": "103.99",
+     "change24h": "1.08",
+     "change24hPct": "1.04"
+    },
+    {
+     "coin": "BTC",
+     "instrumentId": 1,
+     "lastPrice": "82383.1",
+     "markPx": "82386.8",
+     "oraclePx": "82425.1",
+     "openInterest": "184.0698",
+     "fundingRate": "0.00040363",
+     "nextFundingTime": 1792414800000,
+     "blockTime": 1792414360214,
+     "dayNtlVlm": "69758189.9156609",
+     "prevDayPx": "81830",
+     "change24h": "553.1",
+     "change24hPct": "0.68"
+    },
+    {
+     "coin": "ETH",
+     "instrumentId": 2,
+     "lastPrice": "2419.99",
+     "markPx": "2420.07",
+     "oraclePx": "2421.16",
+     "openInterest": "4025.138",
+     "fundingRate": "0.00110066",
+     "nextFundingTime": 1792414800000,
+     "blockTime": 1792414360214,
+     "dayNtlVlm": "16381707.999274155",
+     "prevDayPx": "2412.54",
+     "change24h": "7.45",
+     "change24hPct": "0.31"
+    },
+    {
+     "coin": "SOL",
+     "instrumentId": 13,
+     "lastPrice": "105.08",
+     "markPx": "105.01",
+     "oraclePx": "105.06",
+     "openInterest": "13653.56",
+     "fundingRate": "-0.00010782",
+     "nextFundingTime": 1792414800000,
+     "blockTime": 1792414360214,
+     "dayNtlVlm": "3721178.8709134646",
+     "prevDayPx": "103.88",
+     "change24h": "1.20",
+     "change24hPct": "1.16"
+    }
+   ],
+   "text": null
+  },
+  {
+   "cell": "unknown:book",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "c27b267ef2d37062"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:trades",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "c27b267ef2d37062"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:kline",
+   "method": "POST",
+   "url": "https://api.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "c27b267ef2d37062"
+   },
+   "text": null
+  }
+ ],
+ "ws": [
+  {
+   "cell": "list",
+   "url": "wss://api.txflow.com/ws",
+   "sent": [
+    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
+   ],
+   "frames": [
+    {
+     "channel": "allAssetCtxs",
+     "data": {
+      "ctxs": [
+       {
+        "coin": "13",
+        "ctx": {
+         "funding": "-0.00010865",
+         "openInterest": "13653.56",
+         "oraclePx": "105.06",
+         "markPx": "105.01",
+         "midPx": "105.01",
+         "impactPxs": [
+          "105.01",
+          "105.02"
+         ],
+         "lastPrice": "105.08",
+         "nextFundingTime": 1792414800000,
+         "prevFundingTime": 1792411200000,
+         "blockTime": 1792414356001
+        }
+       },
+       {
+        "coin": "2",
+        "ctx": {
+         "funding": "0.00110175",
+         "openInterest": "4027.466",
+         "oraclePx": "2421.41",
+         "markPx": "2420.32",
+         "midPx": "2420.30",
+         "impactPxs": [
+          "2420.30",
+          "2420.31"
+         ],
+         "lastPrice": "2420.39",
+         "nextFundingTime": 1792414800000,
+         "prevFundingTime": 1792411200000,
+         "blockTime": 1792414356001
+        }
+       },
+       {
+        "coin": "1",
+        "ctx": {
+         "funding": "0.00040330",
+         "openInterest": "184.0698",
+         "oraclePx": "82427.8",
+         "markPx": "82389.8",
+         "midPx": "82390.0",
+         "impactPxs": [
+          "82390.0",
+          "82390.1"
+         ],
+         "lastPrice": "82390.1",
+         "nextFundingTime": 1792414800000,
+         "prevFundingTime": 1792411200000,
+         "blockTime": 1792414356001
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "cell": "prices",
+   "url": "wss://api.txflow.com/ws",
+   "sent": [
+    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
+   ],
+   "frames": [
+    {
+     "channel": "allAssetCtxs",
+     "data": {
+      "ctxs": [
+       {
+        "coin": "13",
+        "ctx": {
+         "funding": "-0.00010865",
+         "openInterest": "13653.56",
+         "oraclePx": "105.06",
+         "markPx": "105.01",
+         "midPx": "105.01",
+         "impactPxs": [
+          "105.01",
+          "105.02"
+         ],
+         "lastPrice": "105.08",
+         "nextFundingTime": 1792414800000,
+         "prevFundingTime": 1792411200000,
+         "blockTime": 1792414356376
+        }
+       },
+       {
+        "coin": "1",
+        "ctx": {
+         "funding": "0.00040330",
+         "openInterest": "184.0698",
+         "oraclePx": "82427.8",
+         "markPx": "82389.8",
+         "midPx": "82390.0",
+         "impactPxs": [
+          "82390.0",
+          "82390.1"
+         ],
+         "lastPrice": "82390.1",
+         "nextFundingTime": 1792414800000,
+         "prevFundingTime": 1792411200000,
+         "blockTime": 1792414356376
+        }
+       },
+       {
+        "coin": "2",
+        "ctx": {
+         "funding": "0.00110175",
+         "openInterest": "4027.466",
+         "oraclePx": "2421.41",
+         "markPx": "2420.32",
+         "midPx": "2420.30",
+         "impactPxs": [
+          "2420.30",
+          "2420.31"
+         ],
+         "lastPrice": "2420.39",
+         "nextFundingTime": 1792414800000,
+         "prevFundingTime": 1792411200000,
+         "blockTime": 1792414356376
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "cell": "info",
+   "url": "wss://api.txflow.com/ws",
+   "sent": [
+    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
+   ],
+   "frames": [
+    {
+     "channel": "allAssetCtxs",
+     "data": {
+      "ctxs": [
+       {
+        "coin": "13",
+        "ctx": {
+         "funding": "-0.00010782",
+         "openInterest": "13653.56",
+         "oraclePx": "105.06",
+         "markPx": "105.01",
+         "midPx": "105.00",
+         "impactPxs": [
+          "105.00",
+          "105.01"
+         ],
+         "lastPrice": "105.08",
+         "nextFundingTime": 1792414800000,
+         "prevFundingTime": 1792411200000,
+         "blockTime": 1792414359406
+        }
+       },
+       {
+        "coin": "1",
+        "ctx": {
+         "funding": "0.00040363",
+         "openInterest": "184.0698",
+         "oraclePx": "82425.1",
+         "markPx": "82386.8",
+         "midPx": "82383.0",
+         "impactPxs": [
+          "82383.0",
+          "82383.1"
+         ],
+         "lastPrice": "82383.1",
+         "nextFundingTime": 1792414800000,
+         "prevFundingTime": 1792411200000,
+         "blockTime": 1792414359406
+        }
+       },
+       {
+        "coin": "2",
+        "ctx": {
+         "funding": "0.00110066",
+         "openInterest": "4027.466",
+         "oraclePx": "2421.16",
+         "markPx": "2420.07",
+         "midPx": "2419.98",
+         "impactPxs": [
+          "2419.98",
+          "2419.99"
+         ],
+         "lastPrice": "2420.31",
+         "nextFundingTime": 1792414800000,
+         "prevFundingTime": 1792411200000,
+         "blockTime": 1792414359406
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "cell": "unknown:info",
+   "url": "wss://api.txflow.com/ws",
+   "sent": [
+    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
+   ],
+   "frames": [
+    {
+     "channel": "allAssetCtxs",
+     "data": {
+      "ctxs": [
+       {
+        "coin": "1",
+        "ctx": {
+         "funding": "0.00040313",
+         "openInterest": "184.0698",
+         "oraclePx": "82424.4",
+         "markPx": "82386.0",
+         "midPx": "82383.0",
+         "impactPxs": [
+          "82383.0",
+          "82383.1"
+         ],
+         "lastPrice": "82383.1",
+         "nextFundingTime": 1792414800000,
+         "prevFundingTime": 1792411200000,
+         "blockTime": 1792414361991
+        }
+       },
+       {
+        "coin": "13",
+        "ctx": {
+         "funding": "-0.00010789",
+         "openInterest": "13653.56",
+         "oraclePx": "105.05",
+         "markPx": "105.00",
+         "midPx": "105.00",
+         "impactPxs": [
+          "105.00",
+          "105.01"
+         ],
+         "lastPrice": "105.08",
+         "nextFundingTime": 1792414800000,
+         "prevFundingTime": 1792411200000,
+         "blockTime": 1792414361991
+        }
+       },
+       {
+        "coin": "2",
+        "ctx": {
+         "funding": "0.00109986",
+         "openInterest": "4025.138",
+         "oraclePx": "2421.06",
+         "markPx": "2420.01",
+         "midPx": "2419.98",
+         "impactPxs": [
+          "2419.98",
+          "2419.99"
+         ],
+         "lastPrice": "2419.99",
+         "nextFundingTime": 1792414800000,
+         "prevFundingTime": 1792411200000,
+         "blockTime": 1792414361991
+        }
+       }
+      ]
+     }
+    }
+   ]
+  }
+ ],
+ "bodies": {
+  "c27b267ef2d37062": {
+   "universe": [
+    {
+     "name": "BTC-USDC",
+     "currencyType": "usdc",
+     "baseCurrency": "BTC",
+     "quoteCurrency": "USDC",
+     "basePrecision": "0.0001",
+     "quotePrecision": "0.01",
+     "szDecimals": 4,
+     "maxLeverage": 75,
+     "tokens": [
+      2,
+      1
+     ],
+     "index": 1,
+     "priceTick": "0.1",
+     "pricePrecision": "0.1",
+     "bookTicks": [
+      "0.1",
+      "1",
+      "10"
+     ],
+     "maxLimitOrderSize": 1000,
+     "maxMarketOrderSize": 100,
+     "haltTrading": false,
+     "onlyIsolated": false,
+     "delisted": false,
+     "useNotionalMargin": true,
+     "logo": "https://static.txflow.com/static/txflow/token-logo/BTC-E8Y4BJWZ.png",
+     "fullName": "Bitcoin",
+     "description": "BTCUSDC Perpetual Contract tracks the US dollar price of Bitcoin, the native asset of a decentralized peer-to-peer payment network secured by proof-of-work.",
+     "tagIds": [
+      1
+     ]
+    },
+    {
+     "name": "ETH-USDC",
+     "currencyType": "usdc",
+     "baseCurrency": "ETH",
+     "quoteCurrency": "USDC",
+     "basePrecision": "0.001",
+     "quotePrecision": "0.01",
+     "szDecimals": 3,
+     "maxLeverage": 75,
+     "tokens": [
+      3,
+      1
+     ],
+     "index": 2,
+     "priceTick": "0.01",
+     "pricePrecision": "0.01",
+     "bookTicks": [
+      "0.01",
+      "0.1",
+      "1"
+     ],
+     "maxLimitOrderSize": 6000,
+     "maxMarketOrderSize": 2000,
+     "haltTrading": false,
+     "onlyIsolated": false,
+     "delisted": false,
+     "useNotionalMargin": true,
+     "logo": "https://static.txflow.com/static/txflow/token-logo/ETH-J44388Me.png",
+     "fullName": "Ethereum",
+     "description": "ETHUSDC Perpetual Contract tracks the US dollar price of Ether, the native asset used to pay transaction fees and help secure the Ethereum smart contract network.",
+     "tagIds": [
+      1,
+      2
+     ]
+    },
+    {
+     "name": "SOL-USDC",
+     "currencyType": "usdc",
+     "baseCurrency": "SOL",
+     "quoteCurrency": "USDC",
+     "basePrecision": "0.01",
+     "quotePrecision": "0.01",
+     "szDecimals": 2,
+     "maxLeverage": 50,
+     "tokens": [
+      14,
+      1
+     ],
+     "index": 13,
+     "priceTick": "0.01",
+     "pricePrecision": "0.01",
+     "bookTicks": [
+      "0.01",
+      "0.1",
+      "1"
+     ],
+     "maxLimitOrderSize": 1000000,
+     "maxMarketOrderSize": 6000,
+     "haltTrading": false,
+     "onlyIsolated": false,
+     "delisted": false,
+     "useNotionalMargin": true,
+     "logo": "https://static.txflow.com/static/txflow/token-logo/SOL-30XT4dp3.png",
+     "fullName": "Solana",
+     "description": "SOLUSDC Perpetual Contract tracks the US dollar price of SOL, the native asset used for transaction fees and staking on the Solana blockchain.",
+     "tagIds": [
+      1,
+      2
+     ]
+    }
+   ]
+  }
+ }
+}

@@ -6,6 +6,9 @@
  *                                         name "BTC-USDC", baseCurrency, szDecimals (can be
  *                                         NEGATIVE: lot 10, 100 …), priceTick, maxLeverage,
  *                                         haltTrading, delisted, tagIds
+ *   POST /info {type:"allMarketTickers"}  per instrument: dayNtlVlm (24 h USD notional), prevDayPx …;
+ *                                         `instrumentId` == perpMeta `index` (spot rows ≥ 10000),
+ *                                         empty fields are "" (→ null). `market list|prices` only.
  *   WS allAssetCtxs (one-shot snapshot)   per coin: markPx, oraclePx, funding, openInterest,
  *                                         nextFundingTime, prevFundingTime. `coin` == perpMeta
  *                                         `index` (as a string) — joined by id, never by position.
@@ -86,14 +89,51 @@ export function percentToFraction(pct: string): string {
   return neg ? `-${out}` : out;
 }
 
-function assetClassOf(symbol: string, tagIds: number[]): AssetClass {
-  if (!tagIds.includes(TXFLOW_TRADFI_TAG)) return "crypto";
-  return TRADFI_CLASS[symbol] ?? "equity";
+/**
+ * TradFi markets listed WITHOUT the TradFi tag (live 2026-10-19: ~38 rows with `tagIds: []`, e.g.
+ * COPPER, NATGAS, MRNA, GS, PATH, TEAM, TLT, SOXS) were classed as crypto and got a crypto
+ * canonical, so arb could pair GS or PATH with same-named crypto tokens. A row is TradFi when it is
+ * tagged, its description reads like a share / ETF / commodity / FX / pre-IPO contract, its
+ * fullName reads like a company or fund (as Variational's looksTradFi), or it is one of the
+ * untagged equities whose perpMeta row has no description (UNTAGGED_TRADFI, from the live listing).
+ */
+const TRADFI_DESCRIPTION = /\b(common stock|ordinary shares|shares\b|ETF\b|Pre-IPO|exchange rate|price reference for|priced in US dollars, representing)/i;
+const TRADFI_FULLNAME = /\b(Inc|Corp|Corporation|Company|Holdings?|Ltd|Limited|plc|PBC|N\.V|Group|ETF|Shares|Currency FX|Co\.)\b\.?/i;
+const UNTAGGED_TRADFI: ReadonlySet<string> = new Set([
+  "CRDO", "APP", "ADBE", "COST", "BX", "DKNG", "BRKB", "KO", "IBM", "QNTX", "UNH", "TWST", "CVNA", "MCD", "NKE",
+  "AAOI", "ASTS", "VST", "SNPS", "BSP",
+]);
+
+/** Crypto tokens whose description reads like a commodity contract (Tether Gold is a token). */
+const CRYPTO_DESPITE_DESCRIPTION: ReadonlySet<string> = new Set(["XAUT"]);
+
+export function looksTxflowTradFi(symbol: string, tagIds: readonly number[], fullName: string | null, description: string | null): boolean {
+  if (tagIds.includes(TXFLOW_TRADFI_TAG)) return true;
+  if (CRYPTO_DESPITE_DESCRIPTION.has(symbol)) return false;
+  if (description !== null && TRADFI_DESCRIPTION.test(description)) return true;
+  if (fullName !== null && TRADFI_FULLNAME.test(fullName)) return true;
+  return UNTAGGED_TRADFI.has(symbol);
 }
 
-function canonicalOf(symbol: string, tagIds: number[], assetClass: AssetClass): string | null {
-  // An unclassified TradFi market is never matched across venues.
-  if (tagIds.includes(TXFLOW_TRADFI_TAG) && TRADFI_CLASS[symbol] === undefined) return null;
+/** Class of an unclassified TradFi row from its listing text (its canonical stays null either way). */
+function textClassOf(fullName: string | null, description: string | null): AssetClass {
+  const text = `${fullName ?? ""} ${description ?? ""}`;
+  if (/exchange rate|Currency FX/i.test(text)) return "fx";
+  if (/Pre-IPO|\bPBC\b|private artificial intelligence company/i.test(text)) return "preIpo";
+  if (/\bETF\b|\bShares\b/.test(text)) return "etf";
+  if (/priced in US dollars, representing/i.test(text)) return "commodity";
+  return "equity";
+}
+
+function assetClassOf(symbol: string, tradFi: boolean, fullName: string | null, description: string | null): AssetClass {
+  if (!tradFi) return "crypto";
+  const known = TRADFI_CLASS[symbol];
+  return known !== undefined ? known : textClassOf(fullName, description);
+}
+
+function canonicalOf(symbol: string, tradFi: boolean, assetClass: AssetClass): string | null {
+  // An unclassified TradFi market (tagged or not) is never matched across venues.
+  if (tradFi && TRADFI_CLASS[symbol] === undefined) return null;
   return canonicalFor("txflow", symbol, assetClass);
 }
 
@@ -112,7 +152,10 @@ export function toTxflowMarketMeta(raw: unknown): TxflowMarketMeta | null {
   if (r.delisted) return null;
   const symbol = r.baseCurrency.toUpperCase();
   const tagIds = r.tagIds as number[];
-  const assetClass = assetClassOf(symbol, tagIds);
+  const fullName = typeof r.fullName === "string" ? r.fullName : null;
+  const description = typeof r.description === "string" ? r.description : null;
+  const tradFi = looksTxflowTradFi(symbol, tagIds, fullName, description);
+  const assetClass = assetClassOf(symbol, tradFi, fullName, description);
   return {
     index: r.index,
     name: r.name,
@@ -124,7 +167,7 @@ export function toTxflowMarketMeta(raw: unknown): TxflowMarketMeta | null {
     halted: r.haltTrading,
     tagIds,
     assetClass,
-    canonical: canonicalOf(symbol, tagIds, assetClass),
+    canonical: canonicalOf(symbol, tradFi, assetClass),
   };
 }
 
@@ -205,7 +248,27 @@ export function hourlyFundingOf(ctx: TxflowCtx): string | null {
 
 // ── Mapping ──
 
-export function toTxflowVenueMarket(m: TxflowMarketMeta, ctx: TxflowCtx): VenueMarket {
+/** First spot instrumentId in allMarketTickers (perp ids are the perpMeta index, below it). */
+export const TXFLOW_SPOT_ID_BASE = 10_000;
+
+/**
+ * 24 h USD notional volume per perp coin id from allMarketTickers. "" (no trades) → null, never
+ * "0"; a non-list answer or a row without a numeric instrumentId is EXCHANGE_ERROR.
+ */
+export async function fetchTxflowDayVolumes(client: TxflowClient): Promise<Map<number, string | null>> {
+  const res = await client.info<unknown>({ type: "allMarketTickers" });
+  if (!Array.isArray(res)) throw txflowShapeError("allMarketTickers is not an array");
+  const out = new Map<number, string | null>();
+  for (const r of res) {
+    const x = r as { instrumentId?: unknown; dayNtlVlm?: unknown };
+    if (typeof x.instrumentId !== "number" || !Number.isInteger(x.instrumentId)) throw txflowShapeError("allMarketTickers row without a numeric instrumentId");
+    if (x.instrumentId >= TXFLOW_SPOT_ID_BASE) continue;
+    out.set(x.instrumentId, decOrNull(x.dayNtlVlm));
+  }
+  return out;
+}
+
+export function toTxflowVenueMarket(m: TxflowMarketMeta, ctx: TxflowCtx, volume24h: string | null): VenueMarket {
   return {
     venue: "txflow",
     venueSymbol: String(m.index),
@@ -221,7 +284,7 @@ export function toTxflowVenueMarket(m: TxflowMarketMeta, ctx: TxflowCtx): VenueM
     settlementIntervalHours: 1,
     // Base units (as Hyperliquid publishes it) [inferred].
     openInterest: ctx.openInterest,
-    volume24h: null,
+    volume24h,
     tickSize: m.tickSize,
     stepSize: m.stepSize,
     minSize: null,
@@ -266,7 +329,10 @@ async function fetchJoined(net: Network, deps: TxflowPublicDeps): Promise<Array<
 }
 
 export async function fetchTxflowMarkets(net: Network, deps: TxflowPublicDeps = DEFAULT_DEPS): Promise<VenueMarket[]> {
-  return (await fetchJoined(net, deps)).map(({ meta, ctx }) => toTxflowVenueMarket(meta, ctx));
+  const { client } = clientFor(net); // testnet → NOT_IMPLEMENTED before any request
+  const [joined, volumes] = await Promise.all([fetchJoined(net, deps), fetchTxflowDayVolumes(client)]);
+  // A market absent from allMarketTickers has no published volume → null.
+  return joined.map(({ meta, ctx }) => toTxflowVenueMarket(meta, ctx, volumes.has(meta.index) ? volumes.get(meta.index) as string | null : null));
 }
 
 export async function fetchTxflowFundingRates(net: Network, deps: TxflowPublicDeps = DEFAULT_DEPS): Promise<VenueFundingRate[]> {

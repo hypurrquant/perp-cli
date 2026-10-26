@@ -20,6 +20,8 @@
  */
 
 import { nonEmptyOrListed } from "./unknown-symbol.js";
+import { asterCliSymbol, isAsterListedPerpetual } from "../ws/aster-market.js";
+import { decimalsOf } from "./venue-types.js";
 import { accountCacheEpoch } from "../cache.js";
 import type {
   ExchangeAdapter,
@@ -31,6 +33,7 @@ import type {
   ExchangePublicTrade,
   ExchangeFundingPayment,
   ExchangeKline,
+  FundingHistoryRow
 } from "./interface.js";
 import type { ResolvedSlippage } from "./slippage.js";
 import type { EvmSigner } from "../signer/interface.js";
@@ -222,6 +225,12 @@ const ASTER_KLINE_PAGE = 1500;
 /** Page cap for one range (150 000 bars). */
 const ASTER_KLINE_MAX_PAGES = 100;
 
+/**
+ * Kline intervals verified live 2026-10-19 (/fapi/v3/klines BTCUSDT: each answers bars of that
+ * length; "7m" / "2d" → -1120 "Invalid interval."). Anything else is refused before a request.
+ */
+export const ASTER_KLINE_INTERVALS: ReadonlySet<string> = new Set(["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"]);
+
 export class AsterAdapter implements ExchangeAdapter {
   readonly name = "aster";
   readonly chain = "bnb";
@@ -248,6 +257,8 @@ export class AsterAdapter implements ExchangeAdapter {
   /** API symbol → price filters; null = listed but PRICE_FILTER / PERCENT_PRICE unreadable. */
   private _priceFilters = new Map<string, AsterPriceFilters | null>();
   private _priceFiltersLoadedAt = 0;
+  /** The in-flight exchangeInfo load shared by concurrent first uses (_ensureDirectory). */
+  private _directoryLoad: Promise<void> | null = null;
   private _accountCache: { data: unknown; time: number; epoch: number } | null = null;
   private _positionsCache: { data: unknown; time: number; epoch: number } | null = null;
   private _ordersCache: { data: unknown; time: number; epoch: number } | null = null;
@@ -399,11 +410,21 @@ export class AsterAdapter implements ExchangeAdapter {
 
   // ── Symbol helpers ──
 
-  /** CLI symbol → Aster API symbol (ETH → ETHUSDT) */
+  /**
+   * CLI symbol → Aster API symbol through the LOADED market directory (exchangeInfo): the exact
+   * venue symbol first (BTCUSDT, BTCUSD1, BTCU — a non-USDT market's CLI symbol is its venue
+   * symbol, asterCliSymbol), then the USDT market of a base (ETH → ETHUSDT, USD1 → USD1USDT),
+   * else SYMBOL_NOT_FOUND — never a guessed suffix. Callers load the directory first (_apiSymbol).
+   */
   private _toApi(symbol: string): string {
     const s = symbol.toUpperCase().replace(/-PERP$/, "");
-    if (s.endsWith("USDT") || s.endsWith("BUSD")) return s;
-    return `${s}USDT`;
+    // A bare base names its USDT market first (X → XUSDT), even if a non-USDT venue symbol is
+    // spelled X too; an exact venue symbol otherwise (BTCUSD1, BTCU, XUSDT).
+    if (this._priceFilters.has(`${s}USDT`)) return `${s}USDT`;
+    if (this._priceFilters.has(s)) return s;
+    throw new PerpError("SYMBOL_NOT_FOUND", `Aster has no market ${s} (neither the venue symbol ${s} nor ${s}USDT is listed)`, {
+      exchange: "aster", remediation: "List markets: perp -e aster market list",
+    });
   }
 
   /** Aster API symbol → CLI symbol (ETHUSDT → ETH) */
@@ -488,10 +509,9 @@ export class AsterAdapter implements ExchangeAdapter {
 
     this._ingestPriceFilters(info.symbols);
 
-    // USDT-quoted perps only: the CLI symbol mapping (ETH ↔ ETHUSDT) cannot address the USD1 / U
-    // quoted markets (live 2026-10-13: 22 USD1 + 2 U), so listing them would offer untradeable rows.
-    const tradingSymbols = info.symbols
-      .filter((s) => String(s.contractType) === "PERPETUAL" && String(s.status) === "TRADING" && String(s.quoteAsset) === "USDT");
+    // Every listed perpetual, any quote (the WS directory's set): USDT-quoted ones by base (ETH),
+    // USD1 / U quoted ones by venue symbol (BTCUSD1, BTCU — asterCliSymbol), with quoteAsset.
+    const tradingSymbols = info.symbols.filter((s) => isAsterListedPerpetual(s));
 
     const result = tradingSymbols.flatMap((s) => {
       const sym = String(s.symbol);
@@ -505,18 +525,25 @@ export class AsterAdapter implements ExchangeAdapter {
       const lotFilter = (s.filters as Array<Record<string, unknown>> | undefined)
         ?.find(f => f.filterType === "LOT_SIZE");
 
+      const cliSymbol = asterCliSymbol({ symbol: sym, baseAsset: String(s.baseAsset), quoteAsset: s.quoteAsset });
       const fundingHours = this._fundingHoursCache.get(this._fromApi(sym));
 
       return [{
-        symbol: this._fromApi(sym),
+        symbol: cliSymbol,
+        venueSymbol: sym,
+        quoteAsset: typeof s.quoteAsset === "string" ? s.quoteAsset : null,
         markPrice: String(premium.markPrice),
         indexPrice: premium?.indexPrice != null ? String(premium.indexPrice) : null,
         fundingRate: premium?.lastFundingRate != null ? String(premium.lastFundingRate) : null,
+        // premiumIndex lastFundingRate moves during the period (same value as WS markPrice@arr `r`: accruing).
+        fundingRateKind: premium?.lastFundingRate != null ? "accruing" as const : null,
         volume24h: ticker?.quoteVolume != null ? String(ticker.quoteVolume) : null,
         // /fapi/v3/exchangeInfo and ticker/24hr carry no open interest.
         openInterest: null,
         maxLeverage: maxLev,
-        sizeDecimals: s.quantityPrecision != null ? Number(s.quantityPrecision) : null,
+        // The LOT_SIZE step is the authoritative grid (quantityPrecision can disagree with it: CFX
+        // step "1", precision 1); its decimals, the public directory's rule (venueMarketRow).
+        sizeDecimals: lotFilter?.stepSize != null ? decimalsOf(String(lotFilter.stepSize)) : s.quantityPrecision != null ? Number(s.quantityPrecision) : null,
         stepSize: lotFilter?.stepSize != null ? String(lotFilter.stepSize) : null,
         fundingHours: fundingHours ?? null,
         marginTiers: null,
@@ -553,14 +580,37 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   /** PRICE_FILTER / PERCENT_PRICE of an API symbol (exchangeInfo, cached CACHE_TTL). */
-  private async _symbolPriceFilters(apiSymbol: string): Promise<AsterPriceFilters> {
-    if (!this._priceFiltersLoadedAt || Date.now() - this._priceFiltersLoadedAt >= AsterAdapter.CACHE_TTL) {
-      const info = await this._publicGet("/fapi/v3/exchangeInfo") as { symbols?: Array<Record<string, unknown>> };
-      if (!Array.isArray(info?.symbols)) {
-        throw new PerpError("EXCHANGE_ERROR", "Aster /fapi/v3/exchangeInfo returned no symbols", { exchange: "aster" });
-      }
-      this._ingestPriceFilters(info.symbols);
+  /** exchangeInfo symbols (the market directory) loaded / refreshed per CACHE_TTL. */
+  /**
+   * exchangeInfo symbols (the market directory), refreshed per CACHE_TTL. Concurrent first uses
+   * share ONE in-flight request; a failed load is not cached (the next call retries).
+   */
+  private async _ensureDirectory(): Promise<void> {
+    if (this._priceFiltersLoadedAt && Date.now() - this._priceFiltersLoadedAt < AsterAdapter.CACHE_TTL) return;
+    if (this._directoryLoad === null) {
+      this._directoryLoad = (async () => {
+        const info = await this._publicGet("/fapi/v3/exchangeInfo") as { symbols?: Array<Record<string, unknown>> };
+        if (!Array.isArray(info?.symbols)) {
+          throw new PerpError("EXCHANGE_ERROR", "Aster /fapi/v3/exchangeInfo returned no symbols", { exchange: "aster" });
+        }
+        this._ingestPriceFilters(info.symbols);
+      })().finally(() => { this._directoryLoad = null; });
     }
+    return this._directoryLoad;
+  }
+
+  /**
+   * CLI symbol → Aster API symbol, resolved through the market directory (_toApi), loaded on first
+   * use and cached CACHE_TTL — so the answer never depends on what was read before (a cold
+   * adapter resolves BTCU, USD1 → USD1USDT, an unknown symbol is SYMBOL_NOT_FOUND).
+   */
+  private async _apiSymbol(symbol: string): Promise<string> {
+    await this._ensureDirectory();
+    return this._toApi(symbol);
+  }
+
+  private async _symbolPriceFilters(apiSymbol: string): Promise<AsterPriceFilters> {
+    await this._ensureDirectory();
     if (!this._priceFilters.has(apiSymbol)) {
       throw new PerpError("SYMBOL_NOT_FOUND", `Aster market ${apiSymbol} not found in exchangeInfo`, { exchange: "aster", remediation: "List markets: perp -e aster market list" });
     }
@@ -577,7 +627,7 @@ export class AsterAdapter implements ExchangeAdapter {
    * No runtime substitute (no mid / last fallback): unavailable → PRICE_STALE.
    */
   async referencePrice(symbol: string): Promise<string> {
-    const apiSymbol = this._toApi(symbol);
+    const apiSymbol = await this._apiSymbol(symbol);
     let mark: unknown;
     try {
       const res = await this._publicGet("/fapi/v3/premiumIndex", { symbol: apiSymbol }) as { markPrice?: unknown };
@@ -622,7 +672,7 @@ export class AsterAdapter implements ExchangeAdapter {
    * against PRICE_FILTER / PERCENT_PRICE. appliedBps = the bound after tick alignment.
    */
   async computeProtectionPrice(symbol: string, side: "buy" | "sell", slippage: ResolvedSlippage): Promise<{ referencePrice: string; protectionPrice: string; appliedBps: number }> {
-    const apiSymbol = this._toApi(symbol);
+    const apiSymbol = await this._apiSymbol(symbol);
     const f = await this._symbolPriceFilters(apiSymbol);
     const ref = await this.referencePrice(symbol);
     const protectionPrice = alignProtectionPrice(slippagePrice(ref, side, slippage.bps), f.tickSize, side);
@@ -637,7 +687,7 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
-    const res = await this._publicGet("/fapi/v3/depth", { symbol: this._toApi(symbol), limit: "50" }) as {
+    const res = await this._publicGet("/fapi/v3/depth", { symbol: await this._apiSymbol(symbol), limit: "50" }) as {
       bids?: [string, string][];
       asks?: [string, string][];
     };
@@ -649,28 +699,32 @@ export class AsterAdapter implements ExchangeAdapter {
 
   async getRecentTrades(symbol: string, limit = 20): Promise<ExchangePublicTrade[]> {
     const trades = await this._publicGet("/fapi/v3/trades", {
-      symbol: this._toApi(symbol),
+      symbol: await this._apiSymbol(symbol),
       limit: String(limit),
     }) as Array<Record<string, unknown>>;
 
-    return (trades ?? []).map((t) => ({
-      time: Number(t.time ?? 0),
-      symbol: this._fromApi(String(t.symbol ?? symbol)),
-      side: t.isBuyerMaker ? "sell" as const : "buy" as const,
-      price: String(t.price ?? "0"),
-      size: String(t.qty ?? "0"),
-      fee: null, // the public tape carries no fee
-    }));
+    if (!Array.isArray(trades)) throw new PerpError("EXCHANGE_ERROR", `Aster trades is not a list (${JSON.stringify(trades).slice(0, 120)})`, { exchange: "aster" });
+    // The tape rows carry no symbol: the normalized venue symbol (was the raw argument, "BTC-PERP").
+    const sym = this._fromApi(await this._apiSymbol(symbol));
+    return trades.map((t) => {
+      if (typeof t.time !== "number" || typeof t.price !== "string" || typeof t.qty !== "string" || typeof t.isBuyerMaker !== "boolean") {
+        throw new PerpError("EXCHANGE_ERROR", `Aster trade row without time / price / qty / isBuyerMaker: ${JSON.stringify(t).slice(0, 160)}`, { exchange: "aster" });
+      }
+      return { time: t.time, symbol: sym, side: t.isBuyerMaker ? "sell" as const : "buy" as const, price: t.price, size: t.qty, fee: null }; // the public tape carries no fee
+    });
   }
 
-  async getFundingHistory(symbol: string, limit = 10): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(symbol: string, limit = 10): Promise<FundingHistoryRow[]> {
     const data = await this._publicGet("/fapi/v3/fundingRate", {
-      symbol: this._toApi(symbol),
+      symbol: await this._apiSymbol(symbol),
       limit: String(limit),
     });
     if (!Array.isArray(data)) {
       throw new PerpError("EXCHANGE_ERROR", `Aster fundingRate history is not a list (${JSON.stringify(data).slice(0, 120)})`, { exchange: "aster" });
     }
+    // Per-market interval (/fapi/v3/fundingInfo); null when the venue lists none for the symbol.
+    const hours = await this.getFundingHours(symbol);
+    const intervalHours = hours === undefined ? null : hours;
     // `200 []` for an unlisted symbol (live 2026-10-14): checked against the market directory.
     return nonEmptyOrListed(this, symbol, (data as Array<Record<string, unknown>>).map((d) => {
       const time = Number(d.fundingTime);
@@ -681,8 +735,10 @@ export class AsterAdapter implements ExchangeAdapter {
         time,
         rate: venueRateField(d.fundingRate, "fundingRate fundingRate", "aster"),
         price: d.markPrice ? String(d.markPrice) : null,
+        intervalHours,
+        rateKind: "lastSettled" as const,
       };
-    }), this._fromApi(this._toApi(symbol)));
+    }), this._fromApi(await this._apiSymbol(symbol)));
   }
 
   /**
@@ -691,6 +747,11 @@ export class AsterAdapter implements ExchangeAdapter {
    * range is never cut to the first page. More than ASTER_KLINE_MAX_PAGES pages → INVALID_PARAMS.
    */
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
+    if (!ASTER_KLINE_INTERVALS.has(interval)) {
+      throw new PerpError("INVALID_PARAMS", `Aster: unsupported candle interval "${interval}"`, {
+        remediation: `Use one of: ${[...ASTER_KLINE_INTERVALS].join(", ")}`,
+      });
+    }
     if (!(startTime <= endTime)) {
       throw new PerpError("INVALID_PARAMS", `Aster klines: start ${startTime} is after end ${endTime}`, {
         remediation: "Pass a --start that is before --end",
@@ -705,7 +766,7 @@ export class AsterAdapter implements ExchangeAdapter {
         });
       }
       const data = await this._publicGet("/fapi/v3/klines", {
-        symbol: this._toApi(symbol), interval,
+        symbol: await this._apiSymbol(symbol), interval,
         startTime: String(from), endTime: String(endTime), limit: String(ASTER_KLINE_PAGE),
       });
       if (!Array.isArray(data)) {
@@ -1106,7 +1167,7 @@ export class AsterAdapter implements ExchangeAdapter {
     // PRICE_FILTER / PERCENT_PRICE). newOrderRespType=RESULT makes the response carry the
     // final IOC status (FILLED / EXPIRED) and executedQty.
     const r = this._resolveSigner();
-    const apiSymbol = this._toApi(symbol);
+    const apiSymbol = await this._apiSymbol(symbol);
     const clientOrderId = opts.clientOrderId === undefined ? null : requireAsterClientOrderId(opts.clientOrderId);
     let protectionPrice: string;
     let protection: { referencePrice: string; protectionPrice: string; appliedBps: number };
@@ -1196,7 +1257,7 @@ export class AsterAdapter implements ExchangeAdapter {
     opts?: { reduceOnly?: boolean; tif?: string; clientOrderId?: string },
   ): Promise<unknown> {
     const r = this._resolveSigner();
-    const apiSymbol = this._toApi(symbol);
+    const apiSymbol = await this._apiSymbol(symbol);
     const clientOrderId = opts?.clientOrderId === undefined ? null : requireAsterClientOrderId(opts.clientOrderId);
     let params: Record<string, string | number | boolean>;
     try {
@@ -1236,7 +1297,7 @@ export class AsterAdapter implements ExchangeAdapter {
    */
   async editOrder(symbol: string, orderId: string, price: string, size: string): Promise<unknown> {
     const r = this._resolveSigner();
-    const apiSymbol = this._toApi(symbol);
+    const apiSymbol = await this._apiSymbol(symbol);
     const rawOrders = await this._signedGetEip712("/fapi/v3/openOrders", {}, r) as Array<Record<string, unknown>>;
     const existing = (rawOrders ?? []).find(o => String(o.orderId ?? "") === orderId);
     if (!existing) {
@@ -1286,7 +1347,7 @@ export class AsterAdapter implements ExchangeAdapter {
     const label = ref.kind === "orderId" ? ref.value : `c:${ref.value}`;
     let row: unknown;
     try {
-      row = await this._signedGetEip712("/fapi/v3/order", { symbol: this._toApi(symbol), ...key }, this._resolveSigner());
+      row = await this._signedGetEip712("/fapi/v3/order", { symbol: await this._apiSymbol(symbol), ...key }, this._resolveSigner());
     } catch (e) {
       if (e instanceof PerpError && e.structured.details?.venueCode === -2013) {
         throw new PerpError("ORDER_NOT_FOUND", `Aster has no order ${label} on ${symbol.toUpperCase()} (-2013 NO_SUCH_ORDER)`, {
@@ -1305,7 +1366,7 @@ export class AsterAdapter implements ExchangeAdapter {
     const r = this._resolveSigner();
     try {
       return await this._signedDeleteEip712("/fapi/v3/order", {
-        symbol: this._toApi(symbol),
+        symbol: await this._apiSymbol(symbol),
         ...key,
       }, r);
     } catch (e) {
@@ -1326,6 +1387,7 @@ export class AsterAdapter implements ExchangeAdapter {
     const r = this._resolveSigner();
     if (!symbol) {
       const orders = await this.getOpenOrders();
+      await this._ensureDirectory();
       const apiSymbols = new Set(orders.map(o => this._toApi(o.symbol)));
       const results = [];
       for (const sym of apiSymbols) {
@@ -1333,7 +1395,7 @@ export class AsterAdapter implements ExchangeAdapter {
       }
       return results;
     }
-    return this._signedDeleteEip712("/fapi/v3/allOpenOrders", { symbol: this._toApi(symbol) }, r);
+    return this._signedDeleteEip712("/fapi/v3/allOpenOrders", { symbol: await this._apiSymbol(symbol) }, r);
   }
 
   // ── Risk ──
@@ -1343,7 +1405,7 @@ export class AsterAdapter implements ExchangeAdapter {
     if (marginMode) {
       try {
         await this._signedPostEip712("/fapi/v3/marginType", {
-          symbol: this._toApi(symbol),
+          symbol: await this._apiSymbol(symbol),
           marginType: marginMode === "cross" ? "CROSSED" : "ISOLATED",
         }, r);
       } catch (e) {
@@ -1379,7 +1441,7 @@ export class AsterAdapter implements ExchangeAdapter {
       }
     }
     return this._signedPostEip712("/fapi/v3/leverage", {
-      symbol: this._toApi(symbol),
+      symbol: await this._apiSymbol(symbol),
       leverage: String(leverage),
     }, r);
   }
@@ -1405,7 +1467,7 @@ export class AsterAdapter implements ExchangeAdapter {
     opts?: { limitPrice?: string; reduceOnly?: boolean; triggerType?: "mark" | "last" | "mid"; kind?: "tp" | "sl" },
   ): Promise<unknown> {
     const r = this._resolveSigner();
-    const apiSymbol = this._toApi(symbol);
+    const apiSymbol = await this._apiSymbol(symbol);
     const what = `stop ${side} ${size} ${symbol} @ ${triggerPrice}`;
     let params: Record<string, string | number | boolean>;
     try {
@@ -1969,9 +2031,28 @@ export class AsterAdapter implements ExchangeAdapter {
     const url = `${this._baseUrl}${path}${qs ? `?${qs}` : ""}`;
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetch(url);
-      const result = await this._handleResponse(res, "GET", path, attempt);
+      let result: unknown;
+      try {
+        result = await this._handleResponse(res, "GET", path, attempt);
+      } catch (e) {
+        if (e instanceof PerpError) throw e;
+        // A public read never surfaces as UNKNOWN: rate limit / server-side / other HTTP failure.
+        const msg = e instanceof Error ? e.message : String(e);
+        throw new PerpError(res.status === 429 ? "RATE_LIMITED" : res.status >= 500 ? "EXCHANGE_UNREACHABLE" : "EXCHANGE_ERROR", `Aster ${msg}`, {
+          exchange: "aster", status: res.status, remediation: res.status === 429 || res.status >= 500 ? "Retry later" : "Check the request (symbol / parameters)",
+        });
+      }
+      // A parameter rejection arrives as HTTP 200 with an error body (live 2026-10-19,
+      // fundingRate limit=1001: {"status":"ERROR","type":"VALID","code":"000002","errorData":{"limit":"…"}}).
+      if (result !== null && typeof result === "object" && !Array.isArray(result) && (result as { status?: unknown }).status === "ERROR") {
+        const r = result as { type?: unknown; code?: unknown; errorData?: unknown };
+        const detail = JSON.stringify(r.errorData ?? r).slice(0, 200);
+        throw new PerpError(r.type === "VALID" ? "INVALID_PARAMS" : "EXCHANGE_ERROR", `Aster ${path} rejected the request: ${detail}`, {
+          exchange: "aster", venueCode: r.code, remediation: "Check the request parameters (e.g. --limit 1..1000)",
+        });
+      }
       if (result !== null) return result;
     }
-    throw new Error(`GET ${path} failed: max retries exceeded`);
+    throw new PerpError("RATE_LIMITED", `Aster GET ${path}: rate limited after 3 attempts`, { exchange: "aster", remediation: "Retry later" });
   }
 }

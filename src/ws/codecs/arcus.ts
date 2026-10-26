@@ -10,6 +10,7 @@
  */
 
 import { badShape, fetchJson } from "../directory.js";
+import { isArcusOnlineMarket } from "../arcus-market.js";
 import { VENUE_STATIC } from "../venue-static.js";
 import type { DecodedEvent, FillRow, MarketDirectoryEntry, MarketPatch, OrderRow, PositionRow, UserDelta, VenueCodec, WireSub } from "../types.js";
 import {
@@ -63,6 +64,9 @@ export const arcus: VenueCodec = {
       if (!isObj(m) || typeof m.marketDisplayName !== "string" || typeof m.marketId !== "number" || typeof m.baseAsset !== "string") {
         throw badShape("arcus", "market without marketDisplayName/marketId/baseAsset");
       }
+      // OFFLINE markets stream placeholder zeros (mark / index / rate / OI / volume "0"): not in
+      // the directory — the CLI's rule (isArcusOnlineMarket), never 0 for unknown.
+      if (!isArcusOnlineMarket(m)) continue;
       const quote = typeof m.quoteAsset === "string" ? m.quoteAsset : null;
       idToSymbol.set(String(m.marketId), m.marketDisplayName);
       entries.push({

@@ -42,6 +42,7 @@ import type { OndoAgentMeta } from "../../settings.js";
 import type {
   ExchangeAdapter, ExchangeBalance, ExchangeFundingPayment, ExchangeKline, ExchangeMarketInfo, ExchangeOrder,
   ExchangePosition, ExchangeTrade, ExchangePublicTrade,
+  FundingHistoryRow
 } from "../interface.js";
 import type { ResolvedSlippage } from "../slippage.js";
 import { alignProtectionPrice, floorSize, formatComputedPrice, requireOnTick, slippagePrice, subDecimal } from "../precision.js";
@@ -58,8 +59,8 @@ import { builderGateOf, builderRejectionOf, NO_BUILDER, requireFeeBps, type Buil
 import { loadOndoCredentials, ONDO_APPROVE_REMEDIATION } from "./agent.js";
 import { OndoClient, type OndoCredentials } from "./client.js";
 import {
-  fetchOndoTradingPairs, ondoPlainSymbol, ondoPublicData, ondoVenueSymbol, parseOndoTime, strOrNull,
-  type OndoMarkPrice, type OndoTradingPair,
+  fetchOndoMarketsWithStatus, fetchOndoTradingPairs, ondoDisabled, ondoPlainSymbol, ondoPublicData, ondoVenueSymbol, parseOndoTime, strOrNull,
+  type OndoContract, type OndoListedStatus, type OndoMarkPrice, type OndoTradingPair,
 } from "./public.js";
 
 // ── Raw shapes (OpenAPI rest-spec.json) ──
@@ -257,6 +258,7 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
   private readonly caps: VenueCapabilities;
   private readonly client: OndoClient;
   private pairsCache: { at: number; byMarket: Map<string, OndoTradingPair> } | null = null;
+  private contractsCache: { at: number; byMarket: Map<string, OndoContract> } | null = null;
   /**
    * Builder-fee gate (settings builder.ondo; Ondo has no approval step); null = not
    * configured. Set by the venue definition's create — the adapter never reads settings.
@@ -317,13 +319,26 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
 
   // ── Helpers ──
 
-  private async pairOf(symbol: string): Promise<OndoTradingPair> {
-    const market = ondoVenueSymbol(symbol);
+  private async pairsByMarket(): Promise<Map<string, OndoTradingPair>> {
     if (this.pairsCache === null || Date.now() - this.pairsCache.at > PAIRS_TTL_MS) {
       const pairs = await fetchOndoTradingPairs(this.client);
       this.pairsCache = { at: Date.now(), byMarket: new Map(pairs.map(p => [p.market, p])) };
     }
-    const pair = this.pairsCache.byMarket.get(market);
+    return this.pairsCache.byMarket;
+  }
+
+  private async contractsByMarket(): Promise<Map<string, OndoContract>> {
+    if (this.contractsCache === null || Date.now() - this.contractsCache.at > PAIRS_TTL_MS) {
+      const rows = await this.client.publicGet<OndoContract[]>("/v1/perps/contracts", null);
+      if (!Array.isArray(rows)) throw new PerpError("EXCHANGE_ERROR", "Ondo Perps: /v1/perps/contracts is not a list");
+      this.contractsCache = { at: Date.now(), byMarket: new Map(rows.map(c => [c.market, c])) };
+    }
+    return this.contractsCache.byMarket;
+  }
+
+  private async pairOf(symbol: string): Promise<OndoTradingPair> {
+    const market = ondoVenueSymbol(symbol);
+    const pair = (await this.pairsByMarket()).get(market);
     if (pair === undefined) {
       throw new PerpError("SYMBOL_NOT_FOUND", `Ondo Perps has no market ${market}`, {
         remediation: "List markets with: perp market list -e ondo",
@@ -770,19 +785,54 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
 
   // ── Legacy ExchangeAdapter: market data ──
 
-  async getMarkets(): Promise<ExchangeMarketInfo[]> {
-    return (await this.getVenueMarkets()).map(toLegacyMarketInfo);
+  /** Legacy rows of LISTED markets plus `tradable` (status "active") and `status` (active / closed / reduceOnly). */
+  async getMarkets(): Promise<Array<ExchangeMarketInfo & { tradable: boolean; status: OndoListedStatus }>> {
+    return (await fetchOndoMarketsWithStatus(this.network)).map(r => ({ ...toLegacyMarketInfo(r.market), tradable: r.market.tradable, status: r.status }));
+  }
+
+  /**
+   * `market info` for one market, resolved with the Ondo normalizer (ondoVenueSymbol: "AAPL",
+   * "AAPL-USD", "AAPL-USD.P", "AAPL-PERP"). A disabled market is refused like every per-symbol read.
+   */
+  async getMarketInfo(symbol: string): Promise<ExchangeMarketInfo & { tradable: boolean; status: OndoListedStatus }> {
+    const market = (await this.pairOf(symbol)).market; // unlisted → SYMBOL_NOT_FOUND
+    await this.readableMarket(market);
+    const row = (await this.getMarkets()).find(m => m.symbol === ondoPlainSymbol(market));
+    if (row === undefined) {
+      throw new PerpError("SYMBOL_NOT_FOUND", `Ondo Perps ${market} has no mark price (no price feed)`, { exchange: "ondo", remediation: "List markets with: perp market list -e ondo" });
+    }
+    return row;
+  }
+
+  /**
+   * Venue symbol of a per-symbol read (book / trades / funding / kline), via the one normalizer
+   * (ondoVenueSymbol). A disabled (delisted / paused) listing → SYMBOL_NOT_FOUND with status
+   * "disabled": its prices are zeroed or frozen and its funding rate is stale, so nothing it returns
+   * is live market data. An unlisted symbol is left to each read's own SYMBOL_NOT_FOUND
+   * (nonEmptyOrListed / the venue's answer).
+   */
+  private async readableMarket(symbol: string): Promise<string> {
+    const market = ondoVenueSymbol(symbol);
+    const pair = (await this.pairsByMarket()).get(market);
+    // Same predicate as the listing (ondoDisabled): the /v1/markets pair OR the contracts row.
+    if (pair !== undefined && ondoDisabled(pair, (await this.contractsByMarket()).get(market) ?? null)) {
+      throw new PerpError("SYMBOL_NOT_FOUND", `Ondo Perps ${market} is disabled (delisted / paused) — no live market data`, {
+        exchange: "ondo", status: "disabled", remediation: "List tradable markets with: perp market list -e ondo",
+      });
+    }
+    return market;
   }
 
   async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
-    const book = await this.client.publicGet<OndoBook>("/v1/perps/depth", { market: ondoVenueSymbol(symbol), depth: DEPTH_LEVELS });
+    const book = await this.client.publicGet<OndoBook>("/v1/perps/depth", { market: await this.readableMarket(symbol), depth: DEPTH_LEVELS });
     const lvl = (l: string[]): [string, string] => [l[0], l[1]];
     return { bids: book.bids.map(lvl), asks: book.asks.map(lvl) };
   }
 
   async getRecentTrades(symbol: string, limit?: number): Promise<ExchangePublicTrade[]> {
+    const market = await this.readableMarket(symbol);
     const trades = await this.client.publicGet<OndoPublicTrade[] | null>("/v1/perps/trades", {
-      market: ondoVenueSymbol(symbol), limit: limit === undefined ? null : limit,
+      market, limit: limit === undefined ? null : limit,
     });
     // `200 []` for an unlisted market (live 2026-10-14): checked against the market directory.
     return nonEmptyOrListed(this, symbol, listOf(trades).map(t => ({
@@ -792,25 +842,36 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
       price: t.price,
       size: t.size,
       fee: null, // public tape: no fee applies to the viewer
-    })), ondoPlainSymbol(ondoVenueSymbol(symbol)));
+    })), ondoPlainSymbol(market));
   }
 
-  async getFundingHistory(symbol: string, limit?: number): Promise<{ time: number; rate: string; price: string | null }[]> {
+  async getFundingHistory(symbol: string, limit?: number): Promise<FundingHistoryRow[]> {
     const rows = await this.client.publicGet<OndoFundingRateValue[] | null>("/v1/perps/funding_rate_history", {
-      market: ondoVenueSymbol(symbol), limit: limit === undefined ? null : limit,
+      market: await this.readableMarket(symbol), limit: limit === undefined ? null : limit,
     });
-    return listOf(rows).map(r => ({ time: parseOndoTime(r.time, "funding"), rate: r.fundingRate, price: null }));
+    return listOf(rows).map(r => ({ time: parseOndoTime(r.time, "funding"), rate: r.fundingRate, price: null, intervalHours: 1, rateKind: "lastSettled" as const }));
   }
 
-  /** GET /v1/perps/candles — authenticated (see klinesRequireAuth). */
+  /**
+   * GET /v1/perps/candles — authenticated (see klinesRequireAuth).
+   * Minute-based resolutions are bucketed from `from` (live 2026-10-19: from=10:01:07 → candles at
+   * :01), so `from` is floored to the interval boundary first; D / W / M are venue-aligned already.
+   * The venue also returns a zero-volume bucket that opens after `to`; candles opening after the
+   * requested end are not part of the range and are left out.
+   */
   async getKlines(symbol: string, interval: string, startTime: number, endTime: number): Promise<ExchangeKline[]> {
+    const resolution = toResolution(interval);
+    const minuteMs = /^\d+$/.test(resolution) ? Number(resolution) * 60_000 : null;
+    const from = minuteMs === null ? startTime : Math.floor(startTime / minuteMs) * minuteMs;
+    const market = await this.readableMarket(symbol);
     const candles = await this.client.get<OndoCandle[] | null>("/v1/perps/candles", {
-      market: ondoVenueSymbol(symbol),
-      resolution: toResolution(interval),
-      from: Math.floor(startTime / 1000),
+      market,
+      resolution,
+      from: Math.floor(from / 1000),
       to: Math.floor(endTime / 1000),
     });
-    return nonEmptyOrListed(this, symbol, listOf(candles).map(c => ({
+    const inRange = listOf(candles).filter(c => parseOndoTime(c.startTime, "candle") <= endTime);
+    return nonEmptyOrListed(this, symbol, inRange.map(c => ({
       time: parseOndoTime(c.startTime, "candle"),
       open: c.open,
       high: c.high,
@@ -819,7 +880,7 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
       volume: c.volume,
       quoteVolume: null,
       trades: null, // Ondo publishes no per-candle trade count
-    })), ondoPlainSymbol(ondoVenueSymbol(symbol)));
+    })), ondoPlainSymbol(market));
   }
 
   // ── Legacy ExchangeAdapter: account ──

@@ -324,7 +324,7 @@ function checkTpSlDirection(positionSide: "long" | "short", ref: number, refLabe
 
 /** The venue's current mark price for `symbol` (PRICE_STALE when it is not published / not positive). */
 async function markPriceOf(adapter: ExchangeAdapter, symbol: string): Promise<number> {
-  const m = (await adapter.getMarkets()).find(x => symbolMatch(x.symbol, symbol));
+  const m = (await adapter.getMarkets({ funding: false })).find(x => symbolMatch(x.symbol, symbol));
   const px = m === undefined ? NaN : Number(m.markPrice);
   if (!(px > 0) || !Number.isFinite(px)) {
     throw new PerpError("PRICE_STALE", `${adapter.name} ${symbol}: no mark price to check the TP/SL direction against`, { exchange: adapter.name });
@@ -543,7 +543,7 @@ export function registerTradeCommands(
 
   /** Mark price of `sym` (split sizing / risk); no usable mark → PRICE_STALE, nothing sent. */
   async function splitMarkPrice(adapter: ExchangeAdapter, sym: string): Promise<number> {
-    const market = (await adapter.getMarkets()).find(m => symbolMatch(m.symbol, sym));
+    const market = (await adapter.getMarkets({ funding: false })).find(m => symbolMatch(m.symbol, sym));
     const markPrice = market !== undefined ? Number(market.markPrice) : NaN;
     if (!(markPrice > 0)) {
       throw new PerpError("PRICE_STALE", `${adapter.name}: no usable mark price for ${sym} — cannot size the split; nothing was sent`, { exchange: adapter.name });

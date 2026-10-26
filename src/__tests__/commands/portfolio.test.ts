@@ -26,7 +26,8 @@ vi.mock("../../shared-api.js", () => ({
 
 const mockFetchAllFundingRates = vi.fn();
 
-vi.mock("../../funding-rates.js", () => ({
+vi.mock("../../funding-rates.js", async (orig) => ({
+  isRankedComparison: (await orig<typeof import("../../funding-rates.js")>()).isRankedComparison,
   fetchAllFundingRates: (...args: unknown[]) => mockFetchAllFundingRates(...args),
   TOP_SYMBOLS: ["BTC", "ETH", "SOL"],
 }));

@@ -127,7 +127,7 @@ export class SpotPerpExecutor {
 
       // Price estimate
       const price = await getPriceEstimate(perpAdapter, perpSymbol, symbol);
-      if (price <= 0) return { success: false, error: "price <= 0" };
+      if (price === null) return { success: false, error: `no positive mark price for ${perpSymbol} on ${perpExchange}` };
 
       // Liquidity check
       const liq = await checkSpotPerpLiquidity(spotAdapter, perpAdapter, symbol, perpSymbol, sizeUsd, 0.5, (msg) => log(`  ${msg}`));

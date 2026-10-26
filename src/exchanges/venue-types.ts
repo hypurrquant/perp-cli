@@ -5,7 +5,7 @@
  * silently substituted default.
  */
 
-import type { ExchangeMarketInfo } from "./interface.js";
+import type { ExchangeMarketInfo, FundingRateKind } from "./interface.js";
 import type { ResolvedSlippage, SlippageSource } from "./slippage.js";
 import type { AppliedBuilderFee } from "./builder-fee.js";
 
@@ -45,7 +45,12 @@ export function rateToHourly(rate: number, basis: FundingRateBasis): number {
 
 // ── Markets ──
 
-export type AssetClass = "crypto" | "equity" | "index" | "etf" | "commodity" | "fx" | "preIpo";
+/**
+ * "unclassified": listed, but its class is ambiguous (a ticker that names different instruments
+ * on different venues: SPX6900 vs the S&P 500, Pacifica BP / CHIP, Lighter BB / BOT / WEN / QNT,
+ * Lighter RH USELESS). Its canonical is always null, so it is never matched across venues.
+ */
+export type AssetClass = "crypto" | "equity" | "index" | "etf" | "commodity" | "fx" | "preIpo" | "unclassified";
 
 export interface MarketSession {
   /** Whether the underlying (e.g. US equity) market is open right now. */
@@ -91,12 +96,23 @@ export interface VenueMarket {
   session: MarketSession | null;
   /** false = listed but not tradable right now (offline / paused / corporate action). */
   tradable: boolean;
+  /**
+   * The venue's listing status as the CLI market row shows it (Extended "ACTIVE" / "REDUCE_ONLY",
+   * Ondo "active" / …, QFEX "active" / "nonUsdQuote"); absent = the venue states none.
+   */
+  status?: string | null;
 }
 
-function decimalsOf(step: string): number {
-  const s = step.includes("e") || step.includes("E") ? Number(step).toFixed(20).replace(/0+$/, "") : step;
-  const dot = s.indexOf(".");
-  return dot === -1 ? 0 : s.length - dot - 1;
+/**
+ * Quantity decimals of a lot step, or null when the step is not a power of ten ≤ 1 ("0.001" → 3,
+ * "1" → 0; TxFlow "10" / "100" and a "0.5" step → null): a decimals count cannot express them, and
+ * 0 next to stepSize "10" read as "any integer". `stepSize` is the authoritative grid.
+ */
+export function decimalsOf(step: string): number | null {
+  const s = step.includes("e") || step.includes("E") ? Number(step).toFixed(20) : step;
+  const t = s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s;
+  if (!/^(1|0\.0*1)$/.test(t)) return null;
+  return t === "1" ? 0 : t.length - 2;
 }
 
 /** Pure mapping used by new-venue adapters to serve the legacy getMarkets(). */
@@ -108,9 +124,55 @@ export function requireTradingPrecision(m: VenueMarket): { tickSize: string; ste
   return { tickSize: m.tickSize, stepSize: m.stepSize, maxLeverage: m.maxLeverage };
 }
 
-export function toLegacyMarketInfo(m: VenueMarket): ExchangeMarketInfo {
-  const p = requireTradingPrecision(m);
+/**
+ * What a VenueMarket.fundingRate is per venue (REST source), consistent with the WS `rateKind` where
+ * both read the same field. null = not verified. Venues with per-row kinds (GRVT, Extended,
+ * Variational) set their own on top.
+ *  - arcus: /v1/markets fundingRate = the last hourly settlement (WS markets channel: lastSettled).
+ *  - risex: current_funding_rate equals the last settled print (venues/risex.ts, verified 2026-10-14).
+ *  - txflow: allAssetCtxs `funding` moves every tick — the running period's accruing estimate.
+ *  - hyperliquid: metaAndAssetCtxs `funding` (WS allDexsAssetCtxs) — accruing.
+ *  - aster: premiumIndex lastFundingRate moves during the period (WS markPrice@arr `r`) — accruing.
+ *  - pacifica: /info/prices `funding` = the last settled hourly rate (WS prices `funding`).
+ *  - lighter, lighter-rh: WS market_stats funding_rate = the newest /fundings print — lastSettled.
+ *  - grvt: the ticker's funding rate is the next settlement's (predicted) — as the adapter labels it.
+ *  - extended: /info/markets fundingRate is the current hour's accruing rate.
+ *  - variational: the quoted rate is the predicted next payment.
+ *  - ondo, qfex: not verified against settled prints → null.
+ */
+const VENUE_MARKET_RATE_KIND: Partial<Record<VenueMarket["venue"], FundingRateKind>> = {
+  arcus: "lastSettled",
+  risex: "lastSettled",
+  txflow: "accruing",
+  hyperliquid: "accruing",
+  aster: "accruing",
+  pacifica: "lastSettled",
+  lighter: "lastSettled",
+  "lighter-rh": "lastSettled",
+  grvt: "predicted",
+  extended: "accruing",
+  variational: "predicted",
+  // Ondo /v1/perps/contracts `fundingRate` is the last settled print: live 2026-10-19 21:17 UTC it
+  // equalled the 21:00 funding_rate_history row on every market whose rate moves (CXMT 0.0001139,
+  // BB 0.00003, PURR 0.0000182, WTI 0.0000038, USDJPY 0.000001 — each different from the 20:00 print).
+  ondo: "lastSettled",
+};
+
+export function fundingRateKindOf(venue: VenueMarket["venue"], fundingRate: string | null): FundingRateKind | null {
+  if (fundingRate === null) return null;
+  const k = VENUE_MARKET_RATE_KIND[venue];
+  return k === undefined ? null : k;
+}
+
+/**
+ * THE market-row shape (`perp market list` / `info` / `prices`, ExchangeMarketInfo) of a
+ * VenueMarket — the one mapper for the CLI adapters of VenueMarket venues and the keyless MCP
+ * `get_markets` public directory rows. It does not require trading precision: a public row
+ * without a published tick / lot / leverage maps those to null.
+ */
+export function venueMarketRow(m: VenueMarket): ExchangeMarketInfo & { tradable: boolean; quoteAsset: string | null; status: string | null } {
   const hours = m.fundingRateBasis.kind === "perHours" ? m.fundingRateBasis.hours : null;
+  const status = (m as { status?: unknown }).status;
   return {
     symbol: m.symbol,
     markPrice: m.markPrice,
@@ -118,12 +180,22 @@ export function toLegacyMarketInfo(m: VenueMarket): ExchangeMarketInfo {
     fundingRate: m.fundingRate,
     volume24h: m.volume24h,
     openInterest: m.openInterest,
-    maxLeverage: p.maxLeverage,
-    sizeDecimals: decimalsOf(p.stepSize),
-    stepSize: p.stepSize,
+    maxLeverage: m.maxLeverage,
+    sizeDecimals: m.stepSize === null ? null : decimalsOf(m.stepSize),
+    stepSize: m.stepSize,
     fundingHours: hours,
     marginTiers: m.marginTiers,
+    tradable: m.tradable,
+    fundingRateKind: fundingRateKindOf(m.venue, m.fundingRate),
+    quoteAsset: m.quoteAsset,
+    status: typeof status === "string" ? status : null,
   };
+}
+
+/** venueMarketRow for an adapter that trades the market: tick / lot / leverage must be published. */
+export function toLegacyMarketInfo(m: VenueMarket): ExchangeMarketInfo {
+  requireTradingPrecision(m);
+  return venueMarketRow(m);
 }
 
 export interface VenueFundingRate {
@@ -131,10 +203,16 @@ export interface VenueFundingRate {
   venueSymbol: string;
   symbol: string;
   canonical: string | null;
-  rate: string;
+  /** null = no funding right now (`marketClosed` true: outside the market's funding hours). */
+  rate: string | null;
   basis: FundingRateBasis;
   markPrice: string | null;
   nextFundingTime: number | null;
+  /**
+   * true = the current funding window is outside the market's funding hours (QFEX market_hours):
+   * `rate` is null — the venue's 0 is "no funding", not a 0 rate. Absent = funds around the clock.
+   */
+  marketClosed?: boolean;
 }
 
 // ── Orders ──
@@ -296,4 +374,15 @@ export function orderRefOf(r: Pick<OrderResult, "orderId" | "clientOrderId">): O
 export function parseOrderRef(s: string): OrderRef {
   if (s.startsWith("c:")) return { kind: "clientOrderId", value: s.slice(2) };
   return { kind: "orderId", value: s };
+}
+
+/**
+ * Next funding settlement of a venue that documents hourly settlement on the hour (UTC): the next
+ * top of the hour after `now`. Used only where the venue's docs say so — Hyperliquid ("paid every
+ * hour"), Lighter ("at each hour mark"), Pacifica ("at the end of each 1-hour interval") — and
+ * their settled history is stamped on the hour (live 2026-10-19: HL 18:00:00.139 … 21:00:00.032,
+ * Pacifica 18:00:02.674 … 21:00:02.574). Other venues keep null unless they publish the time.
+ */
+export function nextTopOfHourMs(now: number = Date.now()): number {
+  return (Math.floor(now / 3_600_000) + 1) * 3_600_000;
 }

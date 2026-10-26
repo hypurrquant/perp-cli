@@ -11,6 +11,7 @@
  *     a retryable EXCHANGE_ERROR); Lighter's unknown market carries the market-list remediation.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { seedAsterDirectory } from "./aster-directory.js";
 
 vi.mock("../../cache.js", async () => ({
   withCache: async <T>(_key: string, _ttl: number, fn: () => Promise<T>) => fn(),
@@ -69,6 +70,7 @@ describe("1. public trade tape: fee is null, not 0", () => {
   it("Aster /fapi/v3/trades", async () => {
     const { AsterAdapter } = await import("../../exchanges/aster.js");
     const a = new AsterAdapter(undefined, false);
+    seedAsterDirectory(a);
     (a as unknown as Record<string, unknown>)._publicGet = vi.fn(async () => [{ time: 1, symbol: "BTCUSDT", isBuyerMaker: false, price: "83000", qty: "0.1" }]);
     const [t] = await a.getRecentTrades("BTC");
     expect(t).toMatchObject({ side: "buy", fee: null });
@@ -81,7 +83,7 @@ describe("2. Lighter candles: no trade count → null; V → quoteVolume", () =>
     (a as unknown as { getCandles: () => Promise<unknown> }).getCandles = async () => ({
       code: 200, r: "1h", c: [{ t: 1791939600000, o: 83379, h: 83419.2, l: 83123.3, c: 83286.9, v: 407.19, V: 33903932.72, i: 34504959654 }],
     });
-    const [k] = await a.getKlines("BTC", "1h", 0, 0);
+    const [k] = await a.getKlines("BTC", "1h", 1791939600000, 1791939600000);
     expect(k.trades).toBeNull();
     expect(k.volume).toBe("407.19");
     expect(k.quoteVolume).toBe("33903932.72");
@@ -123,7 +125,7 @@ describe("5. Hyperliquid delisted assets and unlisted coins", () => {
   it("getMarkets omits isDelisted assets (their zeroed funding / volume / OI are not market data)", async () => {
     const a = hl({ metaAndAssetCtxs: () => META, allMids: () => ({ BTC: "83000", MATIC: "0.37621" }) });
     const m = await a.getMarkets();
-    expect(m.map((x) => x.symbol)).toEqual(["BTC-PERP"]);
+    expect(m.map((x) => x.symbol)).toEqual(["BTC"]);
     expect(m[0]).toMatchObject({ openInterest: "100", fundingRate: "0.0000125" });
   });
 
@@ -197,7 +199,7 @@ describe("6. unknown-symbol errors carry remediation", () => {
   it("Hyperliquid klines of an unlisted coin → SYMBOL_NOT_FOUND before the request (candleSnapshot answers HTTP 500)", async () => {
     const candleSnapshot = vi.fn(() => { throw new Error("Hyperliquid info candleSnapshot failed (500): null"); });
     const a = hl({ candleSnapshot });
-    await expect(a.getKlines("NOPE", "1h", 0, 1)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "SYMBOL_NOT_FOUND", retryable: false }) });
+    await expect(a.getKlines("NOPE", "1h", Date.now() - 3_600_000, Date.now())).rejects.toMatchObject({ structured: expect.objectContaining({ code: "SYMBOL_NOT_FOUND", retryable: false }) });
     expect(candleSnapshot).not.toHaveBeenCalled();
   });
 

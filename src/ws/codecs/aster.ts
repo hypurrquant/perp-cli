@@ -1,5 +1,5 @@
 /**
- * Aster codec (§6.1, public only in 0.15.0). One combined-stream socket (`/stream`, frames
+ * Aster codec (§6.1, public channels only). One combined-stream socket (`/stream`, frames
  * {stream, data}) with `!markPrice@arr@1s` (every symbol, 1 s) + `!ticker@arr` (only changed symbols).
  * r = accruing current-period rate (Phase 0: == premiumIndex.lastFundingRate ≠ last settled).
  * The funding interval is per market from the LABELLED REST source `rest:/fapi/v3/fundingInfo`
@@ -13,6 +13,7 @@
  */
 
 import { badShape, fetchJson } from "../directory.js";
+import { asterMatchable, isAsterListedPerpetual } from "../aster-market.js";
 import { VENUE_STATIC } from "../venue-static.js";
 import type { CodecContext, DecodedEvent, MarketDirectoryEntry, MarketPatch, VenueCodec, WireSub } from "../types.js";
 import {
@@ -67,7 +68,7 @@ export const aster: VenueCodec = {
       openInterest: "Not on WS (REST only)",
       fundingInterval: `Labelled REST source ${FUNDING_INFO}, refreshed hourly; missing → null`,
       volume24hNotional: "!ticker@arr q (quote-asset volume)",
-      user: "KNOWN GAP in 0.15.0: no Aster user channels (signed USER_STREAM listenKey) — kind:\"user\" rejects CAPABILITY_UNSUPPORTED; arrives in 0.15.1",
+      user: "KNOWN GAP: no Aster user channels (signed USER_STREAM listenKey) — kind:\"user\" rejects CAPABILITY_UNSUPPORTED; planned, not yet available",
       bbo: "<symbol>@bookTicker; `u` orders frames (non-contiguous)",
     },
   }),
@@ -108,12 +109,16 @@ export const aster: VenueCodec = {
       if (!isObj(s) || typeof s.symbol !== "string" || typeof s.baseAsset !== "string") {
         throw badShape("aster", "exchangeInfo symbol without symbol/baseAsset");
       }
+      // Not a listed perpetual (SETTLING, PENDING_TRADING, contractType "") → not in the
+      // directory, the same rule as the CLI adapter (isAsterListedPerpetual).
+      if (!isAsterListedPerpetual(s)) continue;
       const quote = typeof s.quoteAsset === "string" && s.quoteAsset !== "" ? s.quoteAsset : null;
       listed.add(s.symbol);
       const hours = intervals.get(s.symbol);
       entries.push({
         venue: "aster", dex: null, symbol: s.symbol, venueSymbol: s.symbol, base: s.baseAsset, quote,
-        canonical: ctx.canonicalize("aster", { venueSymbol: s.symbol, dex: null, base: s.baseAsset, quote }),
+        // Only the USDT listing is matchable (asterMatchable — the CLI rule): BTCUSD1 is never a second BTC leg.
+        canonical: asterMatchable(s) ? ctx.canonicalize("aster", { venueSymbol: s.symbol, dex: null, base: s.baseAsset, quote }) : null,
         rateIntervalHours: hours === undefined ? null : hours,
         settlementIntervalHours: hours === undefined ? null : hours,
         source: "rest:/fapi/v3/exchangeInfo",
