@@ -4,6 +4,15 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-10-26
+
+> **Renumbered from 0.15.1, which was never released** (npm's latest is 0.15.0; there is no `v0.15.1`
+> tag). This section carries the whole 0.15.1 work, unchanged, including every entry of
+> **"JSON contract changes"** below. The bump is a **minor** one because that list removes, renames
+> and retypes documented `--json` / MCP fields — `docs/TESTING.md` §5 invariant 12 requires those to
+> be listed here, and SemVer requires at least a minor bump off the published 0.15.0. Both packages
+> move together (`RELEASING.md`:3-4, lockstep).
+
 ### Changed — README and docs layout (no runtime change)
 
 - **README** is a short quick start (install, three steps, AI agent skill, one venue table, common commands); the reference detail moved verbatim to `docs/setup.md`, `docs/venues.md` (support matrix + per-venue notes), `docs/trading.md`, `docs/commands.md`, `docs/verification.md`, `docs/mcp.md` and `docs/guardrail.md`. Korean, Chinese and Japanese READMEs (`README.{ko,zh,ja}.md`); the English README is canonical.
@@ -108,15 +117,6 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
   assumed — as a list that may shrink and not grow.
 - **`docs/qa-reports/` is tracked.** The QA history lived on one laptop, which made §7.3's
   "release PR: report attached" uncheckable by a reviewer.
-
-## [0.16.0] — 2026-10-23
-
-> **Renumbered from 0.15.1, which was never released** (npm's latest is 0.15.0; there is no `v0.15.1`
-> tag). This section carries the whole 0.15.1 work, unchanged, including every entry of
-> **"JSON contract changes"** below. The bump is a **minor** one because that list removes, renames
-> and retypes documented `--json` / MCP fields — `docs/TESTING.md` §5 invariant 12 requires those to
-> be listed here, and SemVer requires at least a minor bump off the published 0.15.0. Both packages
-> move together (`RELEASING.md`:3-4, lockstep).
 
 ### NEW: positions of any account by public address (`account positions --address`, MCP `get_positions_by_address`)
 
