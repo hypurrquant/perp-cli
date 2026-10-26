@@ -279,7 +279,7 @@ perp --json portfolio                               # cross-exchange equity + ri
 perp --json risk status                             # canTrade, level, violations
 perp --json risk liquidation-distance               # % from liq for ALL positions
 perp --json -e <ex> account positions --address <ADDR> [--symbol BTC] [--account-index <n>]   # keyless, ANY account
-perp --json -e <ex> account balance --address <ADDR> [--account-index <n>]                  # keyless balances of ANY account (perp-cli ≥ the release that ships it)
+perp --json -e <ex> account balance --address <ADDR> [--account-index <n>]                  # keyless balances of ANY account
 ```
 
 `arb status` reads every configured venue and fails as a whole (`EXCHANGE_ERROR`) when one venue's read fails — there is no venue filter; check the venues one by one with `perp --json -e <ex> account positions` and report which one failed. Never read the failure as "no positions".
