@@ -28,3 +28,8 @@ GROWTH.md
 docs/MAINNET-VERIFICATION-STATUS.md
 .codex/hooks.json
 .codex/hooks/
+
+# Internal / agent-only docs — kept locally, never published
+AGENTS.md
+docs/QA_WORKFLOW.md
+docs/bridge.md

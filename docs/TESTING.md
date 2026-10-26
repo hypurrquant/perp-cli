@@ -2,8 +2,7 @@
 
 > Canonical testing standard for perp-cli (CLI, MCP server, `perp-cli/ws` / `@hypurrquant/perp-ws`).
 > Every venue, feature and PR must satisfy it. Reviewers cite this file by section number.
-> Companion rules: [`docs/SSOT_RULES.md`](SSOT_RULES.md) (no fallback, single secret source),
-> [`docs/QA_WORKFLOW.md`](QA_WORKFLOW.md) (agent QA guardrails).
+> Companion rules: [`docs/SSOT_RULES.md`](SSOT_RULES.md) (no fallback, single secret source).
 
 **Why this exists.** perp-cli has 13 perp venues + Derive options, a CLI, an MCP server and a WS
 library. Through 0.15.0 the tests were per-venue unit tests with hand-built mocks, and nothing made

@@ -9,7 +9,7 @@ attached — which cannot be checked against an untracked directory. They are tr
 
 ## What belongs here
 
-- the structured cycle report (`docs/QA_WORKFLOW.md`), and
+- the structured QA cycle report, and
 - the `release-qa` report of a release candidate or a published release:
   `pnpm release-qa --tarball <perp-cli.tgz> --tarball <hypurrquant-perp-ws.tgz> --out <dir>`
   writes `release-qa.md` + `release-qa.json`; commit the `.md` as
