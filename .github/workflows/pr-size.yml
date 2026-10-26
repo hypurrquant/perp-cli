@@ -1,0 +1,53 @@
+name: PR Size
+
+# Labels every PR size/S|M|L|XL by changed lines (lockfile and snapshots excluded) and, once,
+# asks a PR over 500 changed lines whether it can be split (CONTRIBUTING: small PRs are preferred).
+# Fork PRs get a read-only token, so they are skipped.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-size-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  size:
+    name: Size label
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: issue_number, per_page: 100 });
+            const counted = files.filter(f => f.filename !== 'pnpm-lock.yaml' && !f.filename.endsWith('.snap'));
+            const lines = counted.reduce((n, f) => n + f.additions + f.deletions, 0);
+
+            const label = lines > 1000 ? 'size/XL' : lines > 500 ? 'size/L' : lines > 100 ? 'size/M' : 'size/S';
+            const { data: current } = await github.rest.issues.listLabelsOnIssue({ owner, repo, issue_number });
+            for (const l of current) {
+              if (l.name.startsWith('size/') && l.name !== label) {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number, name: l.name });
+              }
+            }
+            await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [label] });
+
+            if (lines > 500) {
+              const marker = '<!-- pr-size-split -->';
+              const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
+              if (!comments.some(c => c.body?.includes(marker))) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number,
+                  body: `${marker}\n⚠️ **Large PR** — ${lines} changed lines across ${counted.length} files (lockfile and snapshots excluded).\n\nIf it holds more than one logical change, consider splitting it for review.`,
+                });
+              }
+            }
+            core.info(`${lines} changed lines → ${label}`);
