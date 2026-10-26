@@ -25,6 +25,7 @@ import { PerpError, extractErrorMessage, isDefiniteOrderFailure, orderNotSent, o
 import { parseFiniteVenueNumber, venueRateField } from "../utils/numeric.js";
 import type { MarketInfo, PriceInfo } from "../pacifica/types/market.js";
 import type { Position } from "../pacifica/types/position.js";
+import type { AccountInfo } from "../pacifica/types/account.js";
 import type { TimeInForce as PacificaTif } from "../pacifica/types/order.js";
 import type { IocOutcome } from "./ioc-outcome.js";
 import { unsupported, validateLegacyTif } from "./trading-v2.js";
@@ -443,6 +444,53 @@ function pacificaField(row: Record<string, unknown>, key: string, endpoint: stri
   const v = row[key];
   if ((typeof v === "string" && v !== "") || (typeof v === "number" && Number.isFinite(v))) return String(v);
   throw new PerpError("EXCHANGE_ERROR", `Pacifica ${endpoint} row without a readable ${key}: ${JSON.stringify(row).slice(0, 160)}`, { exchange: "pacifica" });
+}
+
+/** Pacifica balance with its extras (USDC balance / loan, pending interest, withdrawable). */
+export type PacificaBalance = ExchangeBalance & { usdcBalance: string; borrowedUsdc: string; pendingInterest: string | null; availableToWithdraw: string };
+
+/**
+ * Balance of a Pacifica account from GET /account, its positions and /info/prices — the one
+ * implementation behind PacificaAdapter.getBalance() and the keyless `account balance --address`.
+ */
+export function pacificaBalanceOf(info: AccountInfo, positions: Position[], prices: PriceInfo[]): PacificaBalance {
+  const raw = info as unknown as Record<string, unknown>;
+  const priceMap = new Map(prices.map((p) => [p.symbol, p]));
+
+  // API often returns unrealized_pnl=0 — compute from price delta when needed
+  let totalPnl = 0;
+  for (const p of positions) {
+    let upnl = parseFiniteVenueNumber(p.unrealized_pnl, "position.unrealized_pnl", "pacifica");
+    const amount = parseFiniteVenueNumber(p.amount, "position.amount", "pacifica");
+    if (upnl === 0 && amount > 0) {
+      const mark = parseFiniteVenueNumber(
+        priceMap.get(p.symbol)?.mark ?? p.mark_price,
+        "position.mark", "pacifica",
+      );
+      const entry = parseFiniteVenueNumber(p.entry_price, "position.entry_price", "pacifica");
+      const dir = p.side === "bid" ? 1 : -1;
+      if (mark > 0 && entry > 0) upnl = (mark - entry) * amount * dir;
+    }
+    totalPnl += upnl;
+  }
+
+  // Unified margin: a negative USDC `balance` is a loan; `pending_interest` is accrued,
+  // unpaid loan interest (docs get-account-info). Surfaced, not folded into equity.
+  const usdcBalance = info.balance;
+  if (typeof usdcBalance !== "string") {
+    throw new PerpError("EXCHANGE_ERROR", "Pacifica account info has no USDC `balance`", { exchange: "pacifica", venueRaw: raw });
+  }
+  const balance: PacificaBalance = {
+    equity: info.account_equity,
+    available: info.available_to_spend,
+    marginUsed: String(raw.total_margin_used ?? raw.margin_used ?? "0"),
+    unrealizedPnl: totalPnl.toFixed(4),
+    usdcBalance,
+    borrowedUsdc: usdcBalance.startsWith("-") ? usdcBalance.slice(1) : "0",
+    pendingInterest: typeof info.pending_interest === "string" ? info.pending_interest : null,
+    availableToWithdraw: info.available_to_withdraw,
+  };
+  return balance;
 }
 
 /**
@@ -892,43 +940,7 @@ export class PacificaAdapter implements ExchangeAdapter {
       this._getPositions(),
       this._getPrices(),
     ]);
-    const raw = info as unknown as Record<string, unknown>;
-    const priceMap = new Map(prices.map((p) => [p.symbol, p]));
-
-    // API often returns unrealized_pnl=0 — compute from price delta when needed
-    let totalPnl = 0;
-    for (const p of positions) {
-      let upnl = parseFiniteVenueNumber(p.unrealized_pnl, "position.unrealized_pnl", "pacifica");
-      const amount = parseFiniteVenueNumber(p.amount, "position.amount", "pacifica");
-      if (upnl === 0 && amount > 0) {
-        const mark = parseFiniteVenueNumber(
-          priceMap.get(p.symbol)?.mark ?? p.mark_price,
-          "position.mark", "pacifica",
-        );
-        const entry = parseFiniteVenueNumber(p.entry_price, "position.entry_price", "pacifica");
-        const dir = p.side === "bid" ? 1 : -1;
-        if (mark > 0 && entry > 0) upnl = (mark - entry) * amount * dir;
-      }
-      totalPnl += upnl;
-    }
-
-    // Unified margin: a negative USDC `balance` is a loan; `pending_interest` is accrued,
-    // unpaid loan interest (docs get-account-info). Surfaced, not folded into equity.
-    const usdcBalance = info.balance;
-    if (typeof usdcBalance !== "string") {
-      throw new PerpError("EXCHANGE_ERROR", "Pacifica account info has no USDC `balance`", { exchange: "pacifica", venueRaw: raw });
-    }
-    const balance: ExchangeBalance & { usdcBalance: string; borrowedUsdc: string; pendingInterest: string | null; availableToWithdraw: string } = {
-      equity: info.account_equity,
-      available: info.available_to_spend,
-      marginUsed: String(raw.total_margin_used ?? raw.margin_used ?? "0"),
-      unrealizedPnl: totalPnl.toFixed(4),
-      usdcBalance,
-      borrowedUsdc: usdcBalance.startsWith("-") ? usdcBalance.slice(1) : "0",
-      pendingInterest: typeof info.pending_interest === "string" ? info.pending_interest : null,
-      availableToWithdraw: info.available_to_withdraw,
-    };
-    return balance;
+    return pacificaBalanceOf(info, positions, prices);
   }
 
   async getPositions(): Promise<ExchangePosition[]> {

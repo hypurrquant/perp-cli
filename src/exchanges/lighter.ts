@@ -484,6 +484,38 @@ export function lighterRowCreatedMs(row: Record<string, unknown>): number | null
  * 0 cross, 1 isolated (the values updateLeverage signs). Anything else throws — never a guess.
  */
 /**
+ * Balance of one Lighter-family account object (GET /account) — the one implementation behind
+ * LighterAdapter.getBalance() and the keyless `account balance --address`. Equity includes the
+ * spot collateral asset (USDC on Lighter, USDG on Lighter RH; separate from perp collateral).
+ */
+export function lighterBalanceOf(acct: Record<string, unknown>, venue: string, collateralSymbol: string): ExchangeBalance {
+  const totalAsset = parseFiniteVenueNumber(acct.total_asset_value, "total_asset_value", "lighter");
+  const available = parseFiniteVenueNumber(acct.available_balance, "available_balance", "lighter");
+  const collateral = parseFiniteVenueNumber(acct.collateral, "collateral", "lighter");
+  const unrealizedPnl = (acct.positions as unknown as Record<string, unknown>[])?.reduce(
+    (sum: number, p: Record<string, unknown>) =>
+      sum + parseFiniteVenueNumber(p.unrealized_pnl, "position.unrealized_pnl", "lighter"),
+    0,
+  ) ?? 0;
+
+  // Include spot collateral balance (USDC on Lighter, USDG on Lighter RH; separate from perp collateral)
+  // An account without that asset holds none of it (0); an unreadable assets list / balance throws.
+  let spotUsdc = 0;
+  if (!Array.isArray(acct.assets)) {
+    throw new PerpError("EXCHANGE_ERROR", `${venue} account has no assets list — spot ${collateralSymbol} balance unknown`, { exchange: venue });
+  }
+  const usdcAsset = (acct.assets as Array<Record<string, unknown>>).find(a => a?.symbol === collateralSymbol);
+  if (usdcAsset !== undefined) spotUsdc = parseFiniteVenueNumber(usdcAsset.balance, `assets.${collateralSymbol}.balance`, "lighter");
+
+  return {
+    equity: String(totalAsset + spotUsdc),
+    available: String(available),
+    marginUsed: String(Math.max(0, collateral - available)),
+    unrealizedPnl: String(unrealizedPnl),
+  };
+}
+
+/**
  * Open positions of one Lighter account (`GET /account` `accounts[].positions[]`): the venue lists
  * every market the account ever traded or configured, so rows with `position` 0 are dropped. The
  * ONE mapper of the keyed `getPositions` and the public-address read; `priceDecimalsOf` formats
@@ -1553,31 +1585,7 @@ export class LighterAdapter implements ExchangeAdapter {
       });
     }
 
-    const totalAsset = parseFiniteVenueNumber(acct.total_asset_value, "total_asset_value", "lighter");
-    const available = parseFiniteVenueNumber(acct.available_balance, "available_balance", "lighter");
-    const collateral = parseFiniteVenueNumber(acct.collateral, "collateral", "lighter");
-    const unrealizedPnl = (acct.positions as unknown as Record<string, unknown>[])?.reduce(
-      (sum: number, p: Record<string, unknown>) =>
-        sum + parseFiniteVenueNumber(p.unrealized_pnl, "position.unrealized_pnl", "lighter"),
-      0,
-    ) ?? 0;
-
-    // Include spot collateral balance (USDC on Lighter, USDG on Lighter RH; separate from perp collateral)
-    // An account without that asset holds none of it (0); an unreadable assets list / balance throws.
-    let spotUsdc = 0;
-    const collateralSymbol = this.collateralSymbol;
-    if (!Array.isArray(acct.assets)) {
-      throw new PerpError("EXCHANGE_ERROR", `${this.name} account has no assets list — spot ${collateralSymbol} balance unknown`, { exchange: this.name });
-    }
-    const usdcAsset = (acct.assets as Array<Record<string, unknown>>).find(a => a?.symbol === collateralSymbol);
-    if (usdcAsset !== undefined) spotUsdc = parseFiniteVenueNumber(usdcAsset.balance, `assets.${collateralSymbol}.balance`, "lighter");
-
-    return {
-      equity: String(totalAsset + spotUsdc),
-      available: String(available),
-      marginUsed: String(Math.max(0, collateral - available)),
-      unrealizedPnl: String(unrealizedPnl),
-    };
+    return lighterBalanceOf(acct, this.name, this.collateralSymbol);
   }
 
   async getPositions(): Promise<ExchangePosition[]> {

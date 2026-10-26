@@ -40,6 +40,10 @@ const publicData: VenuePublicData = {
   async fetchPositionsByAddress(net, address) {
     return (await import("../public-positions.js")).hyperliquidPositionsByAddress(net, address);
   },
+  // Keyless balances of any account by public address (account balance --address).
+  async fetchBalanceByAddress(net, address) {
+    return (await import("../public-balances.js")).hyperliquidBalanceByAddress(net, address);
+  },
 };
 
 export const hyperliquidVenue: VenueDefinition = {

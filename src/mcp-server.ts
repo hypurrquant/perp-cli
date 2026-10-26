@@ -26,7 +26,7 @@ import { z } from "zod";
 import type { ExchangeAdapter } from "./exchanges/interface.js";
 import { hasCredentials, listConfiguredAccountVenues, resolveCredentials, NO_CLI_CREDENTIAL_OPTS } from "./config.js";
 import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
-import { getVenue, listPublicPositionVenues, listVenues, listVenuesWithRole, networkConfig, READ_ONLY_CREDENTIALS, requireCapabilities, roleUnsupported, type VenueDefinition } from "./exchanges/venue.js";
+import { getVenue, listPublicBalanceVenues, listPublicPositionVenues, listVenues, listVenuesWithRole, networkConfig, READ_ONLY_CREDENTIALS, requireCapabilities, roleUnsupported, type VenueDefinition } from "./exchanges/venue.js";
 import "./exchanges/venues/index.js";
 import type { OrderRequest, VenueId } from "./exchanges/venue-types.js";
 import { venueMarketRow } from "./exchanges/venue-types.js";
@@ -42,6 +42,7 @@ import { probeVenueHealth } from "./venue-health.js";
 import { getOptionsVenue, listOptionsVenueIds } from "./exchanges/options-venues.js";
 import { fetchAllFundingRates, isRankedComparison } from "./funding-rates.js";
 import { readPositionsByAddress } from "./positions-by-address.js";
+import { readBalanceByAddress, readBalanceByAddressAll } from "./balance-by-address.js";
 import { loadArbState } from "./arb/state.js";
 import { validateTrade } from "./trade-validator.js";
 import { orderResultJson, symbolMatch } from "./utils.js";
@@ -617,6 +618,36 @@ server.tool(
       const r = await readPositionsByAddress(exchange, MCP_NETWORK, address, { symbol, accountIndex });
       return { content: [{ type: "text", text: ok(r.positions, {
         exchange: r.venue, address, source: "public", count: r.positions.length,
+        ...(r.warnings.length > 0 ? { warnings: r.warnings, errors: r.errors } : {}),
+        ...(r.notes.length > 0 ? { notes: r.notes } : {}),
+      }) }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: errOf(e, { exchange }) }], isError: true };
+    }
+  },
+);
+
+server.tool(
+  "get_balance_by_address",
+  `Balances of ANY account by its public address — keyless, read-only (public venue data; nothing is signed, no key is needed). Venues: ${listPublicBalanceVenues().map(v => `${v.id} (${v.publicData.addressKind === "solana" ? "base58 Solana address" : "0x address"})`).join(", ")}; omit exchange to read every one of them (a venue that fails, address format included, is listed in data.errors). data: { balance (equity / available / marginUsed / unrealizedPnl + venue extras; null on Lighter), spot (token balances; null where the venue does not publish them), accounts (Lighter: one row per account of the address; accountIndex narrows), dexes + accountMode (Hyperliquid: HIP-3 dexes with a non-zero account value; a dex that fails is in meta.errors / meta.warnings — unknown, not zero) }. Other venues: CAPABILITY_UNSUPPORTED; a wrong address format: INVALID_PARAMS. Same data as \`perp [-e <venue>] account balance --address <addr>\`.`,
+  {
+    exchange: z.string().optional().describe(`Exchange: ${listPublicBalanceVenues().map(v => v.id).join(", ")} (aliases accepted); omit for every one`),
+    address: z.string().describe("Public account address (0x… for hyperliquid / lighter / lighter-rh / risex; base58 Solana for pacifica)"),
+    accountIndex: z.number().int().nonnegative().optional().describe("Lighter only: one account (sub-account) of the address"),
+  },
+  async ({ exchange, address, accountIndex }) => {
+    try {
+      if (exchange === undefined) {
+        const all = await readBalanceByAddressAll(MCP_NETWORK, address, { accountIndex });
+        return { content: [{ type: "text", text: ok({
+          venues: all.venues,
+          ...(Object.keys(all.errors).length > 0 ? { errors: all.errors } : {}),
+          ...(Object.keys(all.notes).length > 0 ? { notes: all.notes } : {}),
+        }, { address, source: "public", ...(all.warnings.length > 0 ? { warnings: all.warnings } : {}) }) }] };
+      }
+      const r = await readBalanceByAddress(exchange, MCP_NETWORK, address, { accountIndex });
+      return { content: [{ type: "text", text: ok({ exchange: r.venue, address, ...r.data }, {
+        exchange: r.venue, address, source: "public",
         ...(r.warnings.length > 0 ? { warnings: r.warnings, errors: r.errors } : {}),
         ...(r.notes.length > 0 ? { notes: r.notes } : {}),
       }) }] };

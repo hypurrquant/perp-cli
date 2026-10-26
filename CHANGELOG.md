@@ -4,6 +4,48 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — Hyperliquid portfolio-margin equity counted USDC only
+
+- A Hyperliquid account in **portfolio margin** mode reported `equity` = the USDC spot row alone — negative when USDC is borrowed — and only noted the other collateral (live 0x157a…, 2026-10-26: equity `-18.05` while the account held 0.67 HYPE as collateral). Equity is now the whole portfolio: Σ eligible collateral `total` × its spot USDC price, the eligible rows being exactly the ones the venue marks with `ltv` (USDC, HYPE, USDT0 live; memecoins carry none). Same account after the fix: `33.11` (= −18.04 USDC + 0.6695 HYPE × 76.38); with its non-collateral spot (FATCAT etc. ≈ 1.34) it matches the venue's own `portfolio` account value minus vault equity (162.60 − 128.15 = 34.45). The balance carries `collateral` (token, total, priceUsd, valueUsd, ltv, borrowed, supplied) and `portfolioMarginRatio` (liquidatable above 0.95). A held collateral token without a USDC spot price is `PRICE_STALE` (never valued at a guess). Applies to the keyed balance / `portfolio` and to `account balance --address`.
+- `portfolio` no longer double counts that collateral. The spot rows' `shared` flag (counted in the perp equity) now branches on the account mode: portfolio margin → USDC + the `ltv` collateral rows; unified → USDC only (an `ltv` field never makes a non-USDC row shared there); standard / default / dexAbstraction and HIP-3 dex scopes → none.
+- **Unified** accounts are unchanged and confirmed: the USDC spot `total` already moves 1:1 with perp unrealized PnL (two reads 40 s apart: Δtotal = ΔuPnL), so `equity` = that total is right and adding perp `accountValue` / uPnL would double count. The `--address` note now says so.
+
+### NEW — `perp account balance --address <addr>`: any account's balances, keyless
+
+- **The balance counterpart of `account positions --address`.** `perp [-e <venue>] --json account
+  balance --address <addr>` reads the balances of ANY account from public venue data — nothing is
+  signed, no key is loaded. `data: { exchange, address, balance, spot }` (+ `accounts` on Lighter,
+  `dexes` / `accountMode` on Hyperliquid), `meta: { exchange, address, source: "public", warnings?,
+  errors?, notes? }`. Without `-e`: every supporting venue (`{ venues, errors?, notes? }`; an address
+  of the wrong format for a venue is that venue's `errors` entry). Venues: Hyperliquid, Lighter,
+  Lighter RH, Pacifica, RISEx (registry hook `VenuePublicData.fetchBalanceByAddress`); every other
+  venue refuses with `CAPABILITY_UNSUPPORTED` (feature `publicBalance`), a wrong address format with
+  `INVALID_PARAMS` — both before any request. `account balance` without `--address` keeps the
+  v0.12 rename pointer to `portfolio`.
+- **Same math as your own balance.** The keyed `getBalance` bodies became pure functions used by
+  both paths — `hlBalanceOf` (Hyperliquid; the equity source follows the account's `userAbstraction`
+  mode: unified / portfolio → the spot collateral row, standard / default → the perp
+  clearinghouse), `lighterBalanceOf`, `pacificaBalanceOf` (with `usdcBalance` / `borrowedUsdc` /
+  `pendingInterest` / `availableToWithdraw`) — and the spot rows come from the keyed spot mappers
+  (`hlSpotBalanceRows`, `lighterSpotBalanceRows`, `pacificaSpotBalanceRows`). RISEx reuses the
+  signer-less adapter. Keyed behaviour is unchanged.
+- **Spot** = token balances where the venue publishes them by address (Hyperliquid
+  `spotClearinghouseState`, Lighter account `assets`, Pacifica `spot_balances`); RISEx has none
+  (`spot: null`).
+- **Lighter / Lighter RH**: one row per account of the address (`accounts: [{ accountIndex,
+  balance, spot }]`, top-level `balance` / `spot` null); `--account-index` narrows; no account →
+  empty + note "no Lighter account for this address".
+- **Hyperliquid HIP-3**: `dexes: { <dex>: balance }` for every dex of the live `perpDexs` list with a
+  non-zero account value (the dex's own perp clearinghouse); a dex that fails is
+  `errors["hip3:<dex>"]` + a warning — unknown, not zero.
+- **Paced HIP-3 fan-out (positions too).** The per-dex reads of `account balance --address` and
+  `account positions --address` go through `hlDexFanOut`: at most 4 in flight and a token bucket at
+  the venue's documented refill (20 weight / s, `clearinghouseState` weight 2) with a 10-request
+  burst — HL testnet lists ~272 dexes and an unpaced burst got HTTP 429 on 62 of 272 reads. No
+  retries: a failed dex stays an `errors` entry.
+- **MCP:** new read-only tool `get_balance_by_address { exchange?, address, accountIndex? }` — the
+  same data as the CLI (omit `exchange` for every venue).
+
 ### Fixed — test fixture hygiene (no runtime change)
 
 - **Recorded fixtures carried real third-party wallets.** `src/__tests__/conformance/fixture-tools.ts`
