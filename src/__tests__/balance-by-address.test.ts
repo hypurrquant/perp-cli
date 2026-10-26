@@ -95,7 +95,30 @@ describe("Hyperliquid: the equity source follows the abstraction mode (keyed get
     const r = await fetchBalanceByAddress("hyperliquid", "mainnet", ADDR);
     expect(r.balance).toEqual({ equity: "1737.36042112", available: String(1737.36042112 - 724.975946), marginUsed: "724.975946", unrealizedPnl: String(8.12555 - 968.4758) });
     expect(r.accountMode).toBe("unified");
-    expect(r.notes).toEqual([expect.stringMatching(/^account mode unified: .*clearinghouse \(accountValue 568\.566325, withdrawable 0\.0\) is not added$/)]);
+    expect(r.notes).toEqual([expect.stringMatching(/^account mode unified: .*already moves with perp PnL.*clearinghouse \(accountValue 568\.566325, withdrawable 0\.0\) is a per-dex view and is not added$/)]);
+  });
+
+  // Live shape of a portfolio-margin account (2026-10-26, 0x157a…): borrowed USDC, HYPE collateral.
+  it("portfolio margin: equity = USDC total + HYPE × spot price; collateral rows priced and marked shared; ratio surfaced", async () => {
+    const pm = { portfolioMarginRatio: "0.517", balances: [
+      { coin: "USDC", token: 0, total: "-18.03", hold: "-28.13", entryNtl: "0.0", ltv: "0.0", borrowed: "23.13" },
+      { coin: "FATCAT", token: 126, total: "43.36", hold: "0.0", entryNtl: "1.16" },
+      { coin: "HYPE", token: 150, total: "0.6695", hold: "0.4661", entryNtl: "0.0", ltv: "0.65", supplied: "0.6695" },
+    ] };
+    const base = hlRoute({ mode: "portfolioMargin" });
+    stubFetch((url, body) => {
+      if (body?.type === "spotClearinghouseState") return json(pm);
+      if (body?.type === "spotMetaAndAssetCtxs") return json([{ universe: [{ tokens: [150, 0], index: 0 }, { tokens: [126, 0], index: 1 }] }, [{ markPx: "76.4", dayNtlVlm: "1" }, { markPx: "0.0306", dayNtlVlm: "1" }]]);
+      return base(url, body);
+    });
+    const r = await fetchBalanceByAddress("hyperliquid", "mainnet", ADDR);
+    const bal = r.balance as unknown as Record<string, unknown>;
+    expect(r.accountMode).toBe("portfolio");
+    expect(Number(bal.equity)).toBeCloseTo(-18.03 + 0.6695 * 76.4, 9);
+    expect(bal.available).toBe(String(-18.03 - -28.13));
+    expect(bal.portfolioMarginRatio).toBe("0.517");
+    expect((bal.collateral as Array<{ token: string }>).map(c => c.token)).toEqual(["USDC", "HYPE"]);
+    expect(r.spot?.map(x => [x.token, x.shared])).toEqual([["USDC", true], ["FATCAT", false], ["HYPE", true]]);
   });
 
   it("standard: equity = perp accountValue, available = withdrawable; no meta read", async () => {

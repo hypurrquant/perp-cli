@@ -509,9 +509,49 @@ export function hlAbstractionModeOf(raw: unknown): HlAbstractionMode {
 /** Reads hlBalanceOf() makes only when the mode needs them (the keyed adapter: cached; the public path: raw). */
 export interface HlBalanceReads {
   /** Spot balance row of the dex's collateral token (matched by token index); row null = none held. */
-  spotCollateralRow(): Promise<{ row: Record<string, unknown> | null; balances: Record<string, unknown>[]; token: number }>;
+  spotCollateralRow(): Promise<{ row: Record<string, unknown> | null; balances: Record<string, unknown>[]; token: number; portfolioMarginRatio?: unknown }>;
   /** Collateral token index of the dex (info `meta{dex}.collateralToken`). */
   collateralToken(): Promise<number>;
+  /** USDC price per spot token index (hlSpotUsdPricesOf over info `spotMetaAndAssetCtxs`); portfolio mode only. */
+  spotUsdPrices(): Promise<Map<number, number>>;
+}
+
+/**
+ * Portfolio-margin collateral rows: the venue returns an `ltv` on exactly the eligible collateral
+ * tokens (live 2026-10-26: USDC, HYPE, USDT0 carry it, memecoins do not; unified-mode rows never
+ * do), plus the dex's collateral token itself.
+ */
+export function hlIsPortfolioCollateral(row: Record<string, unknown>, collateralToken: number): boolean {
+  return Number(row.token) === collateralToken || Object.prototype.hasOwnProperty.call(row, "ltv");
+}
+
+/**
+ * USDC price of each spot token (index → price) from info `spotMetaAndAssetCtxs`: the mark of its
+ * USDC-quoted pair (quote token 0); several pairs for one token → the one with the larger 24h
+ * notional. USDC itself is 1. Malformed payload → EXCHANGE_ERROR (never a guessed price).
+ */
+export function hlSpotUsdPricesOf(raw: unknown): Map<number, number> {
+  const arr = raw as [{ universe?: Array<{ tokens?: unknown; index?: unknown }> }, Array<Record<string, unknown>>] | null;
+  const universe = Array.isArray(arr) ? arr[0]?.universe : undefined;
+  const ctxs = Array.isArray(arr) ? arr[1] : undefined;
+  if (!Array.isArray(universe) || !Array.isArray(ctxs)) {
+    throw new PerpError("EXCHANGE_ERROR", "Hyperliquid spotMetaAndAssetCtxs: expected [meta, ctxs]", { exchange: "hyperliquid" });
+  }
+  const best = new Map<number, { price: number; vol: number }>();
+  for (const pair of universe) {
+    const tokens = pair.tokens;
+    if (!Array.isArray(tokens) || tokens[1] !== 0 || typeof pair.index !== "number") continue;
+    const ctx = ctxs[pair.index];
+    const price = Number(ctx?.markPx);
+    if (!Number.isFinite(price) || price <= 0) continue;
+    const vol = Number(ctx?.dayNtlVlm);
+    const base = Number(tokens[0]);
+    const prev = best.get(base);
+    if (prev === undefined || (Number.isFinite(vol) ? vol : 0) > prev.vol) best.set(base, { price, vol: Number.isFinite(vol) ? vol : 0 });
+  }
+  const out = new Map<number, number>([[0, 1]]);
+  for (const [t, v] of best) out.set(t, v.price);
+  return out;
 }
 
 /**
@@ -526,10 +566,23 @@ export interface HlBalanceReads {
  *   would double-count.
  * - "standard" / "default": perp clearinghouse (per dex) is the collateral source.
  *
- * Portfolio-margin mode: eligible collateral includes HYPE, BTC, USDT besides
- * USDC. Only the collateral token is counted; a note lists the rest.
+ * Portfolio-margin mode: one portfolio of every eligible collateral token (HYPE, BTC, USDC,
+ * USDT — the rows the venue marks with `ltv`). The collateral token's `total` already moves with
+ * perp PnL (it can be negative = borrowed), so equity = Σ eligible `total` × spot USDC price —
+ * live 2026-10-26 this equals the venue's own `portfolio` account value minus vault equity.
+ * `available` stays the collateral token's total − hold. The balance carries `collateral` (the
+ * priced rows) and `portfolioMarginRatio` (liquidatable above 0.95, docs trading/portfolio-margin).
  */
-export async function hlBalanceOf(state: Record<string, unknown>, mode: HlAbstractionMode, dex: string, reads: HlBalanceReads): Promise<{ balance: ExchangeBalance; notes: string[] }> {
+/** One priced portfolio-margin collateral row (HlPortfolioBalance.collateral). */
+export interface HlPortfolioCollateral {
+  token: string; total: string; priceUsd: string; valueUsd: string;
+  ltv: string | null; borrowed: string | null; supplied: string | null;
+}
+
+/** Portfolio-margin balance: the ExchangeBalance plus its priced collateral and margin ratio. */
+export type HlPortfolioBalance = ExchangeBalance & { collateral: HlPortfolioCollateral[]; portfolioMarginRatio: string | null };
+
+export async function hlBalanceOf(state: Record<string, unknown>, mode: HlAbstractionMode, dex: string, reads: HlBalanceReads): Promise<{ balance: ExchangeBalance | HlPortfolioBalance; notes: string[] }> {
   const s = state;
   const notes: string[] = [];
   const margin = (s?.marginSummary ?? {}) as Record<string, unknown>;
@@ -550,6 +603,7 @@ export async function hlBalanceOf(state: Record<string, unknown>, mode: HlAbstra
 
   let equity: number;
   let available: number;
+  let portfolio: { collateral: HlPortfolioCollateral[]; portfolioMarginRatio: string | null } | null = null;
 
   // dexAbstraction (discontinued): USDC (token 0) lives in the NATIVE perp balance, any other
   // collateral token in spot. Native perps → the perp state below. A HIP-3 dex with non-USDC
@@ -573,25 +627,39 @@ export async function hlBalanceOf(state: Record<string, unknown>, mode: HlAbstra
     equity = spotTotal;
     available = spotTotal - spotHold;
     if (mode === "portfolio") {
-      // Eligible collateral per trading/account-abstraction-modes.md ("eligible
-      // assets, which are currently HYPE, BTC, USDC, USDT").
-      const PORTFOLIO_COLLATERAL = ["HYPE", "BTC", "USDT"];
-      const others = balances.filter((b) => {
-        if (Number(b.token) === token) return false;
+      const prices = await reads.spotUsdPrices();
+      const rows: HlPortfolioCollateral[] = [];
+      let value = 0;
+      for (const b of balances) {
+        if (!hlIsPortfolioCollateral(b, token)) continue;
         const c = String(b.coin);
-        // Reject NaN/empty here too — venue payload corruption shouldn't
-        // silently filter a token in or out.
         const total = parseFiniteVenueNumber(b.total, `spotBalance.${c}.total`, "hyperliquid");
-        if (total <= 0) return false;
-        return PORTFOLIO_COLLATERAL.some((p) => c === p || c.startsWith(`${p}-`));
-      });
-      if (others.length > 0) {
-        const summary = others.map((b) => `${b.coin}=${b.total}`).join(", ");
-        notes.push(
-          `[hl] portfolio mode: non-${coin} collateral present but not counted in equity (${summary}). ` +
-          `Equity reflects ${coin} only; full multi-asset accounting pending.\n`,
-        );
+        if (total === 0) continue; // an empty row adds nothing (USDT0 0 with a hold: the hold is in available)
+        const isCollateral = Number(b.token) === token;
+        let priceUsd: number;
+        if (isCollateral) priceUsd = 1;
+        else {
+          const p = prices.get(Number(b.token));
+          if (p === undefined) {
+            throw new PerpError("PRICE_STALE", `Hyperliquid portfolio margin: no USDC spot price for collateral ${c} (token ${String(b.token)}) — equity unknown`, {
+              exchange: "hyperliquid", remediation: "Retry shortly; the spot market context read may have failed",
+            });
+          }
+          priceUsd = p;
+        }
+        const valueUsd = total * priceUsd;
+        value += valueUsd;
+        rows.push({
+          token: c, total: String(b.total), priceUsd: String(priceUsd), valueUsd: String(valueUsd),
+          ltv: typeof b.ltv === "string" ? b.ltv : null,
+          borrowed: typeof b.borrowed === "string" ? b.borrowed : null,
+          supplied: typeof b.supplied === "string" ? b.supplied : null,
+        });
       }
+      equity = value;
+      const ratio = (await reads.spotCollateralRow()).portfolioMarginRatio;
+      portfolio = { collateral: rows, portfolioMarginRatio: typeof ratio === "string" ? ratio : null };
+      notes.push(`[hl] portfolio margin: equity = Σ collateral total × spot USDC price (${rows.map(r => `${r.token} ${r.total}${r.priceUsd !== "1" ? ` × ${r.priceUsd}` : ""}`).join(" + ")}); non-collateral spot tokens are listed in spot, vault equity is not included\n`);
     }
   } else {
     equity = parseFiniteVenueNumber(
@@ -621,6 +689,7 @@ export async function hlBalanceOf(state: Record<string, unknown>, mode: HlAbstra
       available: String(available),
       marginUsed: String(marginUsed),
       unrealizedPnl: String(unrealizedPnl),
+      ...(portfolio ?? {}),
     },
     notes,
   };
@@ -1330,11 +1399,11 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   /** Spot balance row of this dex's collateral token (matched by token index, not by coin name); null = none held. */
-  private async _spotCollateralRow(): Promise<{ row: Record<string, unknown> | null; balances: Record<string, unknown>[]; token: number }> {
+  private async _spotCollateralRow(): Promise<{ row: Record<string, unknown> | null; balances: Record<string, unknown>[]; token: number; portfolioMarginRatio?: unknown }> {
     const [spotState, token] = await Promise.all([this._getSpotClearinghouseState(), this._getCollateralToken()]);
     const balances = (spotState?.balances ?? []) as Record<string, unknown>[];
     const row = balances.find((b) => Number(b.token) === token) ?? null;
-    return { row, balances, token };
+    return { row, balances, token, portfolioMarginRatio: spotState?.portfolioMarginRatio };
   }
 
   async getBalance(): Promise<ExchangeBalance> {
@@ -1343,6 +1412,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const { balance, notes } = await hlBalanceOf(state, mode, this._dex, {
       spotCollateralRow: () => this._spotCollateralRow(),
       collateralToken: () => this._getCollateralToken(),
+      spotUsdPrices: async () => hlSpotUsdPricesOf(await this._infoPost({ type: "spotMetaAndAssetCtxs" })),
     });
     for (const n of notes) process.stderr.write(n);
     return balance;

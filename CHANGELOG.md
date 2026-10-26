@@ -4,6 +4,12 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — Hyperliquid portfolio-margin equity counted USDC only
+
+- A Hyperliquid account in **portfolio margin** mode reported `equity` = the USDC spot row alone — negative when USDC is borrowed — and only noted the other collateral (live 0x157a…, 2026-10-26: equity `-18.05` while the account held 0.67 HYPE as collateral). Equity is now the whole portfolio: Σ eligible collateral `total` × its spot USDC price, the eligible rows being exactly the ones the venue marks with `ltv` (USDC, HYPE, USDT0 live; memecoins carry none). Same account after the fix: `33.11` (= −18.04 USDC + 0.6695 HYPE × 76.38); with its non-collateral spot (FATCAT etc. ≈ 1.34) it matches the venue's own `portfolio` account value minus vault equity (162.60 − 128.15 = 34.45). The balance carries `collateral` (token, total, priceUsd, valueUsd, ltv, borrowed, supplied) and `portfolioMarginRatio` (liquidatable above 0.95). A held collateral token without a USDC spot price is `PRICE_STALE` (never valued at a guess). Applies to the keyed balance / `portfolio` and to `account balance --address`.
+- `portfolio` no longer double counts that collateral: HL spot rows the venue marks with `ltv` are `shared: true` (counted in the perp equity), like USDC on a unified account.
+- **Unified** accounts are unchanged and confirmed: the USDC spot `total` already moves 1:1 with perp unrealized PnL (two reads 40 s apart: Δtotal = ΔuPnL), so `equity` = that total is right and adding perp `accountValue` / uPnL would double count. The `--address` note now says so.
+
 ### NEW — `perp account balance --address <addr>`: any account's balances, keyless
 
 - **The balance counterpart of `account positions --address`.** `perp [-e <venue>] --json account

@@ -35,7 +35,9 @@ export function hlSpotBalanceRows(state: Record<string, unknown>, unified: boole
     available: String(Number(b.total ?? 0) - Number(b.hold ?? 0)),
     held: String(b.hold ?? "0"),
     entryNtl: b.entryNtl !== undefined ? String(b.entryNtl) : undefined,
-    shared: unified && String(b.coin ?? "") === "USDC",
+    // Shared with perp margin: USDC on a unified / portfolio account, and every portfolio-margin
+    // collateral row (the venue marks those with `ltv`; they are counted in the perp equity).
+    shared: unified && (String(b.coin ?? "") === "USDC" || Object.prototype.hasOwnProperty.call(b, "ltv")),
   }));
 }
 

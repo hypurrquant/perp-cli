@@ -53,7 +53,7 @@ function hlSpotBalancesOf(state: unknown): Record<string, unknown>[] {
 export async function hyperliquidBalanceByAddress(net: Network, address: string): Promise<PublicBalanceResult> {
   const { legacyPublicJson } = await import("../funding/legacy-public.js");
   const { legacyPublicBaseUrl } = await import("../api/public/urls.js");
-  const { hlAbstractionModeOf, hlBalanceOf } = await import("./hyperliquid.js");
+  const { hlAbstractionModeOf, hlBalanceOf, hlSpotUsdPricesOf } = await import("./hyperliquid.js");
   const { hlSpotBalanceRows } = await import("./hyperliquid-spot.js");
   const url = `${legacyPublicBaseUrl("hyperliquid", net)}/info`;
   const post = (body: Record<string, unknown>, label: string) => legacyPublicJson("hyperliquid", url, label, {
@@ -84,8 +84,9 @@ export async function hyperliquidBalanceByAddress(net: Network, address: string)
     collateralToken,
     spotCollateralRow: async () => {
       const t = await collateralToken();
-      return { row: balances.find(b => Number(b.token) === t) ?? null, balances, token: t };
+      return { row: balances.find(b => Number(b.token) === t) ?? null, balances, token: t, portfolioMarginRatio: (spotState as { portfolioMarginRatio?: unknown }).portfolioMarginRatio };
     },
+    spotUsdPrices: async () => hlSpotUsdPricesOf(await typed("hyperliquid", () => post({ type: "spotMetaAndAssetCtxs" }, "info spotMetaAndAssetCtxs"))),
   });
   const unified = mode === "unified" || mode === "portfolio";
   const out: string[] = notes.map(n => n.trim());
@@ -93,7 +94,7 @@ export async function hyperliquidBalanceByAddress(net: Network, address: string)
     const av = (nativeState.marginSummary as { accountValue?: unknown } | undefined)?.accountValue;
     const wd = nativeState.withdrawable;
     const perp = [typeof av === "string" ? `accountValue ${av}` : null, typeof wd === "string" ? `withdrawable ${wd}` : null].filter(x => x !== null).join(", ");
-    out.push(`account mode ${mode}: equity / available are the spot collateral balance (spotClearinghouseState), as in the keyed balance; the native perp clearinghouse${perp !== "" ? ` (${perp})` : ""} is not added`);
+    out.push(`account mode ${mode}: equity / available come from the spot clearinghouse (the collateral balance already moves with perp PnL), as in the keyed balance; the native perp clearinghouse${perp !== "" ? ` (${perp})` : ""} is a per-dex view and is not added`);
   }
 
   // HIP-3 dex balances: the dex's own perp clearinghouse (standard semantics — the mode-dependent
@@ -105,7 +106,7 @@ export async function hyperliquidBalanceByAddress(net: Network, address: string)
     const dex = dexList[i];
     if (res.status === "rejected") { errors[`hip3:${dex}`] = errorOf(res.reason, "hyperliquid"); continue; }
     try {
-      const b = (await hlBalanceOf(res.value as Record<string, unknown>, "standard", dex, { collateralToken: noSpotRead, spotCollateralRow: noSpotRead })).balance;
+      const b = (await hlBalanceOf(res.value as Record<string, unknown>, "standard", dex, { collateralToken: noSpotRead, spotCollateralRow: noSpotRead, spotUsdPrices: noSpotRead })).balance;
       if (Number(b.equity) !== 0) dexes[dex] = b;
     } catch (e) { errors[`hip3:${dex}`] = errorOf(e, "hyperliquid"); }
   }
