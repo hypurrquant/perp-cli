@@ -186,7 +186,7 @@ Desired size: 1.0
 ```bash
 perp --json -e <EX> market info <SYM>    # check maxLeverage, volume, openInterest
 ```
-Round `ORDER_SIZE` to the coarser step size of the two exchanges. If the matched size falls below either exchange's minimum, the arb is NOT executable at this size — reduce target or skip.
+Round `ORDER_SIZE` to the coarser step size of the two exchanges. If the matched size is below $15 notional on either leg (the skill's default smallest order — the $10 venue minimums plus a buffer for price moves, step rounding and fees; see SKILL.md Step 4), the arb is NOT executable at this size — raise the target or skip.
 
 #### Step 2: Execute Legs Sequentially with Same Size
 
