@@ -5,7 +5,7 @@
  * whose minimum order fits the cap. Fixtures: public testnet data read 2026-10-02.
  */
 import { describe, it, expect } from "vitest";
-import { isBookRejection, NO_TWO_SIDED_BOOK, pickSpotMarket, pickSpotMarketWithBook, SPOT_MIN_NOTIONAL_BUFFER, spotBookProblem, type SpotBook, type SpotCandidate } from "../../scripts/e2e/lib.js";
+import { isBookRejection, NO_TWO_SIDED_BOOK, pickSpotMarket, pickSpotMarketWithBook, spotBookProblem, type SpotBook, type SpotCandidate } from "../../scripts/e2e/lib.js";
 
 // POST https://api.hyperliquid-testnet.xyz/info {type:"spotMetaAndAssetCtxs"} — top pairs by dayNtlVlm.
 const HL_TESTNET: SpotCandidate[] = [
@@ -22,10 +22,10 @@ const LT_TESTNET: SpotCandidate[] = [
 ];
 
 describe("pickSpotMarket", () => {
-  it("HL testnet: skips the top-volume pair whose book mid is > 2% off its mark, picks PURR at the $10 minimum", () => {
+  it("HL testnet: skips the top-volume pair whose book mid is > 2% off its mark, picks PURR at the $15 order floor", () => {
     const { pick, rejected } = pickSpotMarket(HL_TESTNET, "USDC", 100, 100, null);
-    expect(pick).toMatchObject({ symbol: "PURR", size: "3" }); // ceil(10 × 1.1 / 4.6252) = 3
-    expect(pick!.notional).toBeGreaterThanOrEqual(10 * SPOT_MIN_NOTIONAL_BUFFER);
+    expect(pick).toMatchObject({ symbol: "PURR", size: "4" }); // ceil(max(15, 10 × 1.1) / 4.6252) = ceil(3.24) = 4
+    expect(pick!.notional).toBeGreaterThanOrEqual(15);
     expect(rejected).toEqual(expect.arrayContaining([
       { symbol: "PUCKY", reason: expect.stringMatching(/> 2% off the mark/) },
       { symbol: "PURR", reason: "quote DENIM (need USDC)" },
@@ -33,10 +33,16 @@ describe("pickSpotMarket", () => {
     ]));
   });
 
-  it("Lighter testnet: min size vs min notional → the larger, on the size grid; no price → rejected", () => {
+  it("Lighter testnet: min size vs min notional vs the $15 floor → the largest, on the size grid; no price → rejected", () => {
     const { pick, rejected } = pickSpotMarket(LT_TESTNET, "USDC", 100, 100, null);
-    expect(pick).toMatchObject({ symbol: "ETH", size: "0.0050" }); // 0.005 base > 11 / 2700 = 0.0041
+    expect(pick).toMatchObject({ symbol: "ETH", size: "0.0056" }); // 15 / 2700 = 0.00556 → 0.0056 > min size 0.005 > 11 / 2700
+    expect(pickSpotMarket(LT_TESTNET, "USDC", 100, 100, null, 0).pick).toMatchObject({ symbol: "ETH", size: "0.0050" }); // no floor: min size wins
     expect(rejected).toEqual([{ symbol: "LIT", reason: "no public price" }]);
+  });
+
+  it("a venue minimum above the $15 floor wins (× the 1.1 buffer)", () => {
+    const { pick } = pickSpotMarket([{ ...LT_TESTNET[0], minSize: null, minNotional: 20 }], "USDC", 100, 100, null);
+    expect(pick).toMatchObject({ symbol: "ETH", size: "0.0082" }); // 20 × 1.1 / 2700 = 0.00815 → 0.0082
   });
 
   it("cap too small → no pick, with every reason (the runner fails with them)", () => {
@@ -73,7 +79,7 @@ describe("pickSpotMarketWithBook (live two-sided book, every venue)", () => {
   it("HL testnet: the preferred major (PURR) is ranked first and picked on a two-sided book", async () => {
     const reads: string[] = [];
     const { pick } = await pickSpotMarketWithBook(HL_TESTNET, "USDC", 100, 100, "PURR", ref => { reads.push(ref); return read(ref); });
-    expect(pick).toMatchObject({ symbol: "PURR", size: "3", bookRef: "PURR/USDC" });
+    expect(pick).toMatchObject({ symbol: "PURR", size: "4", bookRef: "PURR/USDC" });
     expect(reads).toEqual(["PURR/USDC"]);
   });
 

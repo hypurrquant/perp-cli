@@ -1,5 +1,5 @@
 /**
- * E2E runner — simulated run at --max-usd 20 on a $10-minimum venue (unit ≈ $11). The real runLeg
+ * E2E runner — simulated run at --max-usd 30 on a $10-minimum venue (unit ≈ $15, the MIN_ORDER_USD floor). The real runLeg
  * drives a FAKE CLI (in-memory venue state) and a fake built venue definition: nothing is spawned
  * and nothing reaches a venue.
  *
@@ -73,7 +73,7 @@ function fakeVenue(faults: Partial<Faults> = {}) {
     if (g === "account" && c === "positions") {
       return ok([
         ...(st.pos !== 0 ? [{ symbol: "ETH", side: "long", size: String(st.pos), markPrice: "2700" }] : []),
-        ...(f.otherPosition ? [{ symbol: "BTC", side: "long", size: "0.0002", markPrice: "60000" }] : []),
+        ...(f.otherPosition ? [{ symbol: "BTC", side: "long", size: "0.0003", markPrice: "60000" }] : []),
       ]);
     }
     if (g === "account" && c === "orders") return ok(st.orders);
@@ -154,7 +154,7 @@ function fakeFetch(url: string | URL | Request): Promise<Response> {
 async function simulate(faults: Partial<Faults> = {}) {
   const venue = fakeVenue(faults);
   h.cli.run = venue.run;
-  const opts = parseArgs(["--venue", "pacifica", "--network", "testnet", "--phase", "trade,spot", "--yes-testnet", "--max-usd", "20", "--leverage", "5", "--pace-ms", "1"]);
+  const opts = parseArgs(["--venue", "pacifica", "--network", "testnet", "--phase", "trade,spot", "--yes-testnet", "--max-usd", "30", "--leverage", "5", "--pace-ms", "1"]);
   const report: RunReport = {
     tool: "perp-e2e", version: 1, startedAt: new Date().toISOString(), finishedAt: null, venue: opts.venue, cliVenue: "pacifica", dex: null, network: opts.network,
     phases: opts.phases, dryRun: false, operatorAuthorized: false, cliVersion: null, gitCommit: null, options: {}, market: null, sizing: null, hip3: null,
@@ -172,16 +172,16 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-describe("simulated run at --max-usd 20, unit ≈ $11", () => {
+describe("simulated run at --max-usd 30, unit ≈ $15", () => {
   it("trade + spot pass: the edit is valued as a replacement, nothing is left open", async () => {
     const { report, refused, st, outcome } = await simulate();
     expect(refused).toBeNull();
     expect(report.stopReason).toBeNull();
     expect(report.result).toBe("pass");
     expect(report.steps.filter(s => s.outcome === "fail" || s.outcome === "stopped")).toEqual([]);
-    expect((report.sizing as { unitNotional: number; marginNeededAtPeakUsd: number }).unitNotional).toBeCloseTo(11.07, 2);
-    expect((report.sizing as { marginNeededAtPeakUsd: number }).marginNeededAtPeakUsd).toBeCloseTo((11.07 * 2) / 5, 2);
-    // Every order-placing step ran under the $20 cap (none skipped).
+    expect((report.sizing as { unitNotional: number; marginNeededAtPeakUsd: number }).unitNotional).toBeCloseTo(15.12, 2);
+    expect((report.sizing as { marginNeededAtPeakUsd: number }).marginNeededAtPeakUsd).toBeCloseTo((15.12 * 2) / 5, 2);
+    // Every order-placing step ran under the $30 cap (none skipped).
     for (const id of ["t-limit-gtc", "t-edit", "t-edit-check", "t-cancel", "t-limit-alo", "t-entry-tpsl", "t-market-buy", "t-market-buy-2", "t-limit-sell-far", "t-flatten",
       "s-buy", "s-sell", "s-limit", "s-orders", "s-cancel", "s-limit-alo", "s-cancel-alo", "s-transfer-out"]) {
       expect(outcome(id), id).not.toBe("skipped");
@@ -192,7 +192,7 @@ describe("simulated run at --max-usd 20, unit ≈ $11", () => {
     const ids = report.steps.map(s => s.id);
     expect(ids.indexOf("s-buy")).toBeLessThan(ids.indexOf("s-sell"));
     expect(ids.indexOf("s-sell")).toBeLessThan(ids.indexOf("s-limit"));
-    expect(st.writes).toContain("spot-transfer to-spot 11.59");
+    expect(st.writes).toContain("spot-transfer to-spot 15.75"); // 1.05 × the $15 spot order
     // Venue is clean.
     expect(st.orders).toEqual([]);
     expect(st.spotOrders).toEqual([]);
@@ -202,7 +202,7 @@ describe("simulated run at --max-usd 20, unit ≈ $11", () => {
   });
 
   it("steps over the cap are skipped WITH their dependents — the run does not fail and leaves nothing open", async () => {
-    // $12 already open on another symbol: every $11 order would exceed the $20 cap.
+    // $18 already open on another symbol: every $15 order would exceed the $30 cap.
     const { report, st, outcome } = await simulate({ otherPosition: true });
     expect(report.stopReason).toBeNull();
     expect(report.result).toBe("pass");

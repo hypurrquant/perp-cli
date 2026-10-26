@@ -24,7 +24,7 @@ import {
   CLI_ENTRY, KILL_FILE, REPO_ROOT, ask, ceilToStep, confirmYesNo, decimalsOf, displayCommand, floorToStep, hlPrice,
   isInteractive, killSwitchActive, roundToTick, runCli, writeReport,
   isBookRejection, isDefiniteRejection, openExposureUsd, pickSpotMarketWithBook, pollUntil, spotAcquiredUsd, spotBuyLanded, spotHoldingOf, spotRefPriceProblem, unknownWriteOutcome, planSpotFunding, projectedExposureUsd, type SpotFundingPlan,
-  depositWalletProblem, fundingAmountProblem, lighterAssetMinimums, mainnetStartGate, spotQuoteNeed, unitsFromHex, SPOT_FEE_ALLOWANCE,
+  depositWalletProblem, fundingAmountProblem, lighterAssetMinimums, mainnetStartGate, spotQuoteNeed, unitsFromHex, SPOT_FEE_ALLOWANCE, MIN_ORDER_USD,
   type CliResult, type SpotBook, type SpotCandidate, type Envelope, type RunReport, type StepRecord,
 } from "./lib.js";
 import { DESIGN_ITEMS, E2E_VENUES, PROFILES, isE2eVenue, type DepositWallet, type E2eVenue, type FundingRoute, type Net } from "./venues.js";
@@ -35,7 +35,9 @@ const PHASES = ["preflight", "trade", "spot", "deposit", "withdraw"] as const;
 type Phase = (typeof PHASES)[number];
 
 /** User decision: real-money cap per venue. Higher needs an explicit --max-usd AND an interactive confirmation. */
-const MAINNET_DEFAULT_MAX_USD = 20;
+// Peak open exposure of a run is under 2 orders (+ slippage): with the $15 order floor (MIN_ORDER_USD)
+// a $30 cap runs every step at the floor; a lower cap skips the steps that would exceed it.
+const MAINNET_DEFAULT_MAX_USD = 30;
 const TESTNET_DEFAULT_MAX_USD = 100;
 
 interface Opts {
@@ -55,6 +57,8 @@ interface Opts {
   isolated: boolean;
   farPct: number;
   marginPct: number;
+  /** Smallest order notional (USD): every perp / spot order is sized to at least this (default MIN_ORDER_USD). */
+  minUsd: number;
   slippageBps: number;
   spotSymbol: string | null;
   spotSize: string | null;
@@ -80,7 +84,7 @@ const USAGE = `Usage: pnpm e2e -- --venue <${E2E_VENUES.join("|")}> --network <t
                               confirmation (no TTY needed). Cap stays $${MAINNET_DEFAULT_MAX_USD} (raising it still needs a TTY);
                               deposit / withdraw / approve prompts are auto-confirmed and recorded in the report
   [--yes-testnet]             testnet only: no prompts (deposit/withdraw/approve steps auto-confirmed)
-  [--symbol SYM] [--leverage N=2] [--isolated] [--far-pct 5] [--margin-pct 10] [--slippage-bps 100]
+  [--symbol SYM] [--leverage N=2] [--isolated] [--far-pct 5] [--min-usd 15] [--margin-pct 10] [--slippage-bps 100]
   [--spot-symbol SYM --spot-size N [--spot-ref-price P] [--spot-limit-price P]] [--allow-onchain-approve]
   [--deposit-amount N] [--withdraw-amount N] [--poll-timeout-sec 900] [--wallet NAME] [--pace-ms N]
 hyperliquid only: the HIP-3 dex runs as a second leg (preflight + trade, steps hip3-*) after the core dex passes
@@ -109,7 +113,7 @@ export function parseArgs(argv: string[]): Opts {
   };
   if (flags.has("help")) { console.log(USAGE); process.exit(0); }
   const known = new Set(["venue", "network", "phase", "max-usd", "confirm-real-money", "operator-authorized", "yes-testnet", "dry-run", "symbol", "dex", "leverage", "isolated",
-    "far-pct", "margin-pct", "slippage-bps", "spot-symbol", "spot-size", "spot-ref-price", "spot-limit-price", "deposit-amount", "withdraw-amount",
+    "far-pct", "min-usd", "margin-pct", "slippage-bps", "spot-symbol", "spot-size", "spot-ref-price", "spot-limit-price", "deposit-amount", "withdraw-amount",
     "allow-onchain-approve", "poll-timeout-sec", "wallet", "pace-ms", "hip3-symbol", "no-hip3", "help"]);
   for (const k of flags.keys()) if (!known.has(k)) throw new Error(`Unknown option --${k}\n${USAGE}`);
 
@@ -148,6 +152,7 @@ export function parseArgs(argv: string[]): Opts {
     isolated: flags.has("isolated"),
     farPct: num("far-pct", 5),
     marginPct: num("margin-pct", 10),
+    minUsd: num("min-usd", MIN_ORDER_USD),
     slippageBps: num("slippage-bps", 100),
     spotSymbol: str("spot-symbol")?.toUpperCase() ?? null,
     spotSize: str("spot-size"),
@@ -400,7 +405,7 @@ function priceAt(m: Mkt, opts: Opts, factor: number, dir: "down" | "up"): string
 }
 
 function sizeFor(m: Mkt, opts: Opts, price: number): string {
-  const required = m.minNotional * (1 + opts.marginPct / 100);
+  const required = Math.max(opts.minUsd, m.minNotional * (1 + opts.marginPct / 100));
   return ceilToStep(Math.max(required / price, m.minSize ?? 0, Number(m.step)), m.step);
 }
 
@@ -414,7 +419,7 @@ function computeSizing(m: Mkt, opts: Opts): Sizing {
   const farBuySize = sizeFor(m, opts, Number(farBuyPrice));
   const farBuySize2 = ceilToStep(Number(sizeFor(m, opts, Number(farBuyPrice2))) + Number(m.step), m.step);
   return {
-    unit, unitNotional: Number(unit) * m.mark, requiredNotional: m.minNotional * (1 + opts.marginPct / 100), farPct: far * 100,
+    unit, unitNotional: Number(unit) * m.mark, requiredNotional: Math.max(opts.minUsd, m.minNotional * (1 + opts.marginPct / 100)), farPct: far * 100,
     farBuyPrice, farBuyPrice2, farBuySize, farBuySize2,
     farSellPrice: priceAt(m, opts, 1 + far, "up"),
     tp: priceAt(m, opts, 1 + far, "up"), sl: priceAt(m, opts, 1 - far, "down"),
@@ -1444,7 +1449,7 @@ export async function runLeg(opts: Opts, report: RunReport, leg: "hip3" | null):
             if (pool.length === 1) spotBookRef = pool[0].bookRef;
             // Ranked (profile major first, then volume), then the LIVE book of each in order: two-sided,
             // mid within 2% of the mark — every venue.
-            const { pick, rejected } = await pickSpotMarketWithBook(pool, spotQuote, opts.maxUsd, opts.slippageBps, profile.spotSymbol[net], ref => spotBook(def, opts, ref));
+            const { pick, rejected } = await pickSpotMarketWithBook(pool, spotQuote, opts.maxUsd, opts.slippageBps, profile.spotSymbol[net], ref => spotBook(def, opts, ref), opts.minUsd);
             // Every quote market refused only for its price / book (none, empty / one-sided, mid off) → venue limitation: SKIP spot.
             const quoted = rejected.filter(r => !r.reason.startsWith("quote "));
             const noBook = pick === null && quoted.length > 0 && quoted.every(r => isBookRejection(r.reason));
@@ -1483,7 +1488,7 @@ export async function runLeg(opts: Opts, report: RunReport, leg: "hip3" | null):
         const notional = ref !== null && spotSize !== null ? Number(spotSize) * ref : null;
         // Quote the phase needs: the market buy + 5% (slippage / fees). Order is buy → sell → resting far
         // limit, so the limit reuses the quote the sell freed (it used to be placed while the bought base
-        // was still held: 2.05 × notional, and buy + limit together exceeded a $20 cap).
+        // was still held: 2.05 × notional, and buy + limit together exceeded the cap).
         const quoteAmt = notional !== null ? spotQuoteNeed(notional).toFixed(2) : "<QUOTE_AMOUNT>";
         internal("s-plan", `spot ${sym} size ${size}`, PH, "observed", { accountModel: sp.accountModel, quote: sp.quoteAssets[net], caps: sp.capabilities, refPrice: ref, notional, quoteNeed: notional !== null ? Number(quoteAmt) : null }, [],
           notional !== null ? `notional ≈ $${notional.toFixed(2)}; quote needed ≈ ${quoteAmt} ${spotQuote} (1.05 × notional; the far limit reuses the sell proceeds)` : null);

@@ -422,16 +422,22 @@ export const SPOT_BOOK_MAX_MID_DEV = 0.02;
 export const SPOT_MIN_NOTIONAL_BUFFER = 1.1;
 
 /**
+ * Smallest order notional (USD) the runner sends, perp and spot: the $10 venue minimums plus a
+ * buffer for price moves between sizing and the fill, step rounding and fees (`--min-usd`).
+ */
+export const MIN_ORDER_USD = 15;
+
+/**
  * Most liquid `quote` spot market whose minimum order fits the cap: size = the venue minimum
- * (max of min size and min notional × SPOT_MIN_NOTIONAL_BUFFER at the mark, rounded up to the
- * size grid); worst case = size × mark × (1 + slippage) must be ≤ maxUsd. Markets without a
+ * (max of min size, min notional × SPOT_MIN_NOTIONAL_BUFFER and `minOrderUsd` at the mark, rounded
+ * up to the size grid); worst case = size × mark × (1 + slippage) must be ≤ maxUsd. Markets without a
  * price, without a two-sided book, with a mid > 2% off the mark, or with no published minimum
  * are rejected (never sized on a guess). Ranking: the `preferred` base (a liquid major — the
  * venue profile's spotSymbol) first, then 24h volume (unpublished last), then the smaller
  * notional. `ranked` = every acceptable market in that order; `pick` = ranked[0]. No candidate
  * → pick null with every rejection reason. The live book is checked by pickSpotMarketWithBook.
  */
-export function pickSpotMarket(cands: SpotCandidate[], quote: string, maxUsd: number, slippageBps: number, preferred: string | null): { pick: SpotPick | null; ranked: SpotPick[]; rejected: Array<{ symbol: string; reason: string }> } {
+export function pickSpotMarket(cands: SpotCandidate[], quote: string, maxUsd: number, slippageBps: number, preferred: string | null, minOrderUsd = MIN_ORDER_USD): { pick: SpotPick | null; ranked: SpotPick[]; rejected: Array<{ symbol: string; reason: string }> } {
   const ok: SpotPick[] = [];
   const rejected: Array<{ symbol: string; reason: string }> = [];
   for (const c of cands) {
@@ -442,7 +448,8 @@ export function pickSpotMarket(cands: SpotCandidate[], quote: string, maxUsd: nu
     if (c.mid !== null && Math.abs(c.mid / c.mark - 1) > SPOT_BOOK_MAX_MID_DEV) { no(`${BOOK_MID_OFF} ${c.mid} is > 2% off the mark ${c.mark}`); continue; }
     if (c.minSize === null && c.minNotional === null) { no("no published minimum order"); continue; }
     const bySize = c.minSize !== null ? Number(ceilToStep(c.minSize, c.step)) : 0;
-    const byNotional = c.minNotional !== null ? Number(ceilToStep((c.minNotional * SPOT_MIN_NOTIONAL_BUFFER) / c.mark, c.step)) : 0;
+    const floorUsd = c.minNotional !== null ? Math.max(minOrderUsd, c.minNotional * SPOT_MIN_NOTIONAL_BUFFER) : minOrderUsd;
+    const byNotional = Number(ceilToStep(floorUsd / c.mark, c.step));
     const size = ceilToStep(Math.max(bySize, byNotional, Number(c.step)), c.step);
     const notional = Number(size) * c.mark;
     const worst = notional * (1 + slippageBps / 10_000);
@@ -480,8 +487,9 @@ export const SPOT_BOOK_CHECK_LIMIT = 10;
 export async function pickSpotMarketWithBook(
   cands: SpotCandidate[], quote: string, maxUsd: number, slippageBps: number, preferred: string | null,
   readBook: (bookRef: string) => Promise<SpotBook>,
+  minOrderUsd = MIN_ORDER_USD,
 ): Promise<{ pick: SpotPick | null; rejected: Array<{ symbol: string; reason: string }> }> {
-  const { ranked, rejected } = pickSpotMarket(cands, quote, maxUsd, slippageBps, preferred);
+  const { ranked, rejected } = pickSpotMarket(cands, quote, maxUsd, slippageBps, preferred, minOrderUsd);
   for (const [i, p] of ranked.entries()) {
     if (i >= SPOT_BOOK_CHECK_LIMIT) { rejected.push({ symbol: p.symbol, reason: `book not checked (limit ${SPOT_BOOK_CHECK_LIMIT})` }); continue; }
     const problem = spotBookProblem(await readBook(p.bookRef), p.mark);
