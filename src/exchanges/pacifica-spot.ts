@@ -55,6 +55,29 @@ function decimalsOf(step: string): number {
   return frac ? frac.replace(/0+$/, "").length : 0;
 }
 
+/**
+ * Spot balances from Pacifica GET /account (USDC = the shared perp collateral, then
+ * `spot_balances`) — the one mapper behind the keyed spot adapter and the keyless
+ * `account balance --address`.
+ */
+export function pacificaSpotBalanceRows(info: Record<string, unknown>): SpotBalance[] {
+  const rows = info.spot_balances;
+  if (!Array.isArray(rows)) {
+    throw new PerpError("INVALID_PARAMS", "Pacifica /account response has no spot_balances array", { exchange: "pacifica" });
+  }
+  const out: SpotBalance[] = [];
+  // USDC = the shared perp collateral (same money as perp equity).
+  const total = String(info.balance);
+  const available = String(info.available_to_spend);
+  out.push({ token: QUOTE, total, available, held: subDecimal(total, available), shared: true });
+  for (const r of rows as Array<Record<string, unknown>>) {
+    const t = String(r.amount);
+    const a = String(r.available_to_withdraw);
+    out.push({ token: String(r.symbol), total: t, available: a, held: subDecimal(t, a), shared: false });
+  }
+  return out;
+}
+
 export class PacificaSpotAdapter implements SpotAdapter, SpotOpenOrdersCapable, SpotCancelAllCapable {
   readonly name = "pacifica";
   private _perp: PacificaAdapter;
@@ -128,21 +151,7 @@ export class PacificaSpotAdapter implements SpotAdapter, SpotOpenOrdersCapable, 
 
   async getSpotBalances(): Promise<SpotBalance[]> {
     const info = (await this._perp.sdk.getAccount(this._perp.publicKey)) as unknown as Record<string, unknown>;
-    const rows = info.spot_balances;
-    if (!Array.isArray(rows)) {
-      throw new PerpError("INVALID_PARAMS", "Pacifica /account response has no spot_balances array", { exchange: "pacifica" });
-    }
-    const out: SpotBalance[] = [];
-    // USDC = the shared perp collateral (same money as perp equity).
-    const total = String(info.balance);
-    const available = String(info.available_to_spend);
-    out.push({ token: QUOTE, total, available, held: subDecimal(total, available), shared: true });
-    for (const r of rows as Array<Record<string, unknown>>) {
-      const t = String(r.amount);
-      const a = String(r.available_to_withdraw);
-      out.push({ token: String(r.symbol), total: t, available: a, held: subDecimal(t, a), shared: false });
-    }
-    return out;
+    return pacificaSpotBalanceRows(info);
   }
 
   /** Mark price for min-notional / slippage checks. */

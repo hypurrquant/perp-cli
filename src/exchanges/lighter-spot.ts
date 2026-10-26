@@ -50,6 +50,84 @@ interface PreparedSpotOrder {
   protection: { referencePrice: string; protectionPrice: string; appliedBps: number };
 }
 
+/**
+ * Spot balances of one Lighter-family account object (GET /account `assets`) — the one mapper
+ * behind the keyed spot adapter and the keyless `account balance --address`. `quote` is the
+ * venue collateral ("USDC" on Lighter, "USDG" on Lighter RH).
+ */
+export function lighterSpotBalanceRows(acct: Record<string, unknown>, venue: string, quote: string): SpotBalance[] {
+  const balances: SpotBalance[] = [];
+  if (acct.assets !== undefined && !Array.isArray(acct.assets)) {
+    throw new PerpError("EXCHANGE_ERROR", `${venue} spot balances: account.assets is not an array`, { exchange: venue, raw: acct.assets });
+  }
+  const assets = (acct.assets ?? []) as Array<{ symbol: string; asset_id: number; balance: string; locked_balance: string; margin_balance?: unknown }>;
+  // Docs (docs.lighter.xyz/trading/unified-trading-accounts): "Unified Trading Accounts (UTA)
+  // enables unified margin on Spot and Perpetuals USDC balances." vs Simple: "perpetual and spot
+  // balances are maintained separately." Mode = this same response's account_trading_mode
+  // ("Classic=0 and Unified=1", apidocs reference/account-1); an unknown mode fails the quote row.
+  const quoteShared = (): boolean => {
+    const mode = acct.account_trading_mode;
+    if (mode !== 0 && mode !== 1) {
+      throw new PerpError("EXCHANGE_ERROR", `${venue} spot balances: account_trading_mode is ${JSON.stringify(mode ?? null)} (expected 0 classic | 1 unified)`, {
+        exchange: venue,
+        remediation: `Retry; check the account with: perp -e ${venue} account info`,
+      });
+    }
+    return mode === 1;
+  };
+  const plainDecimal = (v: unknown, field: string): string => {
+    if (typeof v !== "string" || !/^-?\d+(\.\d+)?$/.test(v)) {
+      throw new PerpError("EXCHANGE_ERROR", `${venue} spot balances: ${field} is ${JSON.stringify(v ?? null)} (expected a decimal string)`, {
+        exchange: venue,
+        remediation: `Retry; check the account with: perp -e ${venue} account info`,
+      });
+    }
+    return v;
+  };
+  for (const asset of assets) {
+    const bal = Number(asset.balance);
+    const locked = Number(asset.locked_balance);
+    if (!Number.isFinite(bal) || !Number.isFinite(locked)) {
+      throw new PerpError("EXCHANGE_ERROR", `${venue} spot balance for ${asset.symbol} is not a number (balance=${asset.balance}, locked=${asset.locked_balance})`, { exchange: venue, raw: asset });
+    }
+    if (asset.symbol === quote && quoteShared()) {
+      // Unified account: the quote is ONE balance for spot and perp, and the venue books it
+      // under the asset row's `margin_balance` with `balance` "0.000000" (GET /account,
+      // mainnet account 723334, 2026-10-05: assets[USDC] balance "0.000000", margin_balance
+      // "15.952247503314"; account available_balance "15.952247"). apidocs reference/account-1
+      // lists the asset fields `balance`, `locked_balance`, `margin_mode` ("enabled" |
+      // "disabled"), `margin_balance` and the account field `available_balance` without
+      // defining them further, so:
+      //   total     = balance + margin_balance  (the quote the account holds, exact sum);
+      //   available = account `available_balance` — the only "free" figure the venue reports
+      //               for the unified margin, i.e. what is not committed as perp margin and
+      //               therefore usable by a spot order. It is the venue's number, not
+      //               total − held (it moves with perp margin use and unrealized PnL);
+      //   held      = locked_balance (quote locked by resting spot orders).
+      // Named by the bare quote symbol: it is not a separate spot balance (`_SPOT`).
+      const total = subDecimal(plainDecimal(asset.balance, `${quote} balance`), subDecimal("0", plainDecimal(asset.margin_balance, `${quote} margin_balance`)));
+      if (Number(total) > 0) {
+        balances.push({ token: quote, total, available: plainDecimal(acct.available_balance, "available_balance"), held: asset.locked_balance, shared: true });
+      }
+      continue;
+    }
+    if (bal > 0) {
+      balances.push({
+        // The quote row carries the bare quote symbol ("USDC" / "USDG") on classic accounts too:
+        // `shared: false` is what says it is a separate spot balance, not a `_SPOT` suffix.
+        token: asset.symbol,
+        total: asset.balance,
+        available: String(bal - locked),
+        held: asset.locked_balance,
+        // Classic quote: a separate spot balance. Base assets are never perp margin here.
+        shared: false,
+      });
+    }
+  }
+
+  return balances;
+}
+
 export class LighterSpotAdapter implements SpotAdapter {
   /** Venue id of the wrapped LighterAdapter ("lighter" | "lighter-rh"). */
   readonly name: string;
@@ -259,77 +337,7 @@ export class LighterSpotAdapter implements SpotAdapter {
       });
     }
 
-    const balances: SpotBalance[] = [];
-    const quote = this._quote;
-    if (acct.assets !== undefined && !Array.isArray(acct.assets)) {
-      throw new PerpError("EXCHANGE_ERROR", `${this.name} spot balances: account.assets is not an array`, { exchange: this.name, raw: acct.assets });
-    }
-    const assets = (acct.assets ?? []) as Array<{ symbol: string; asset_id: number; balance: string; locked_balance: string; margin_balance?: unknown }>;
-    // Docs (docs.lighter.xyz/trading/unified-trading-accounts): "Unified Trading Accounts (UTA)
-    // enables unified margin on Spot and Perpetuals USDC balances." vs Simple: "perpetual and spot
-    // balances are maintained separately." Mode = this same response's account_trading_mode
-    // ("Classic=0 and Unified=1", apidocs reference/account-1); an unknown mode fails the quote row.
-    const quoteShared = (): boolean => {
-      const mode = acct.account_trading_mode;
-      if (mode !== 0 && mode !== 1) {
-        throw new PerpError("EXCHANGE_ERROR", `${this.name} spot balances: account_trading_mode is ${JSON.stringify(mode ?? null)} (expected 0 classic | 1 unified)`, {
-          exchange: this.name,
-          remediation: `Retry; check the account with: perp -e ${this.name} account info`,
-        });
-      }
-      return mode === 1;
-    };
-    const plainDecimal = (v: unknown, field: string): string => {
-      if (typeof v !== "string" || !/^-?\d+(\.\d+)?$/.test(v)) {
-        throw new PerpError("EXCHANGE_ERROR", `${this.name} spot balances: ${field} is ${JSON.stringify(v ?? null)} (expected a decimal string)`, {
-          exchange: this.name,
-          remediation: `Retry; check the account with: perp -e ${this.name} account info`,
-        });
-      }
-      return v;
-    };
-    for (const asset of assets) {
-      const bal = Number(asset.balance);
-      const locked = Number(asset.locked_balance);
-      if (!Number.isFinite(bal) || !Number.isFinite(locked)) {
-        throw new PerpError("EXCHANGE_ERROR", `${this.name} spot balance for ${asset.symbol} is not a number (balance=${asset.balance}, locked=${asset.locked_balance})`, { exchange: this.name, raw: asset });
-      }
-      if (asset.symbol === quote && quoteShared()) {
-        // Unified account: the quote is ONE balance for spot and perp, and the venue books it
-        // under the asset row's `margin_balance` with `balance` "0.000000" (GET /account,
-        // mainnet account 723334, 2026-10-05: assets[USDC] balance "0.000000", margin_balance
-        // "15.952247503314"; account available_balance "15.952247"). apidocs reference/account-1
-        // lists the asset fields `balance`, `locked_balance`, `margin_mode` ("enabled" |
-        // "disabled"), `margin_balance` and the account field `available_balance` without
-        // defining them further, so:
-        //   total     = balance + margin_balance  (the quote the account holds, exact sum);
-        //   available = account `available_balance` — the only "free" figure the venue reports
-        //               for the unified margin, i.e. what is not committed as perp margin and
-        //               therefore usable by a spot order. It is the venue's number, not
-        //               total − held (it moves with perp margin use and unrealized PnL);
-        //   held      = locked_balance (quote locked by resting spot orders).
-        // Named by the bare quote symbol: it is not a separate spot balance (`_SPOT`).
-        const total = subDecimal(plainDecimal(asset.balance, `${quote} balance`), subDecimal("0", plainDecimal(asset.margin_balance, `${quote} margin_balance`)));
-        if (Number(total) > 0) {
-          balances.push({ token: quote, total, available: plainDecimal(acct.available_balance, "available_balance"), held: asset.locked_balance, shared: true });
-        }
-        continue;
-      }
-      if (bal > 0) {
-        balances.push({
-          // The quote row carries the bare quote symbol ("USDC" / "USDG") on classic accounts too:
-          // `shared: false` is what says it is a separate spot balance, not a `_SPOT` suffix.
-          token: asset.symbol,
-          total: asset.balance,
-          available: String(bal - locked),
-          held: asset.locked_balance,
-          // Classic quote: a separate spot balance. Base assets are never perp margin here.
-          shared: false,
-        });
-      }
-    }
-
-    return balances;
+    return lighterSpotBalanceRows(acct, this.name, this._quote);
   }
 
   async spotMarketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { slippage: ResolvedSlippage }): Promise<unknown> {

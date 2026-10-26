@@ -483,6 +483,149 @@ export function hlPositionRows(state: Record<string, unknown>, symbolOf: (coin: 
     });
 }
 
+/** The user's account abstraction mode (info `userAbstraction`, see HyperliquidAdapter._getAbstractionMode). */
+export type HlAbstractionMode = "unified" | "standard" | "portfolio" | "default" | "dexAbstraction";
+
+/**
+ * info `userAbstraction` answer → mode. Per SSOT Rule #2: an unrecognized venue response throws —
+ * no silent default.
+ */
+export function hlAbstractionModeOf(raw: unknown): HlAbstractionMode {
+  if (raw === "unifiedAccount") return "unified";
+  if (raw === "portfolioMargin") return "portfolio";
+  if (raw === "disabled") return "standard";
+  if (raw === "default") return "default";
+  // "dexAbstraction" is HL's discontinued fourth mode, still returned for some users. It is
+  // NOT unified: "USDC balances default to perps balance, all other collateral defaults to
+  // spot balance" (docs trading/account-abstraction-modes). Handled explicitly in hlBalanceOf().
+  if (raw === "dexAbstraction") return "dexAbstraction";
+  throw new PerpError(
+    "INVALID_PARAMS",
+    `UNKNOWN_ACCOUNT_MODE: HL returned unrecognized userAbstraction mode: ${JSON.stringify(raw)}`,
+    { remediation: "Check app.hyperliquid.xyz Settings → Account Mode" },
+  );
+}
+
+/** Reads hlBalanceOf() makes only when the mode needs them (the keyed adapter: cached; the public path: raw). */
+export interface HlBalanceReads {
+  /** Spot balance row of the dex's collateral token (matched by token index); row null = none held. */
+  spotCollateralRow(): Promise<{ row: Record<string, unknown> | null; balances: Record<string, unknown>[]; token: number }>;
+  /** Collateral token index of the dex (info `meta{dex}.collateralToken`). */
+  collateralToken(): Promise<number>;
+}
+
+/**
+ * Balance of one perp dex ("" = native) from its clearinghouseState and the user's abstraction
+ * mode — the one implementation behind HyperliquidAdapter.getBalance() and the keyless
+ * `account balance --address`. `notes` are the human warnings getBalance() writes to stderr.
+ *
+ * Branch by the user's account abstraction mode (Rule #2: no silent fallback).
+ * - "unified" / "portfolio": per HL docs, API users see all balances and holds
+ *   in the spot clearinghouse state; the dex's collateral token row (by token
+ *   index from meta{dex}.collateralToken) is the equity. Adding perp margin
+ *   would double-count.
+ * - "standard" / "default": perp clearinghouse (per dex) is the collateral source.
+ *
+ * Portfolio-margin mode: eligible collateral includes HYPE, BTC, USDT besides
+ * USDC. Only the collateral token is counted; a note lists the rest.
+ */
+export async function hlBalanceOf(state: Record<string, unknown>, mode: HlAbstractionMode, dex: string, reads: HlBalanceReads): Promise<{ balance: ExchangeBalance; notes: string[] }> {
+  const s = state;
+  const notes: string[] = [];
+  const margin = (s?.marginSummary ?? {}) as Record<string, unknown>;
+  const cross = (s?.crossMarginSummary ?? {}) as Record<string, unknown>;
+
+  const marginUsed = parseFiniteVenueNumber(
+    margin.totalMarginUsed ?? cross.totalMarginUsed,
+    "marginSummary.totalMarginUsed",
+    "hyperliquid",
+  );
+  // Sum unrealized PnL directly from positions (reliable for both main + dex accounts)
+  const positions = (s?.assetPositions ?? []) as Record<string, unknown>[];
+  let unrealizedPnl = 0;
+  for (const entry of positions) {
+    const pos = (entry.position ?? entry) as Record<string, unknown>;
+    unrealizedPnl += parseFiniteVenueNumber(pos.unrealizedPnl, "position.unrealizedPnl", "hyperliquid");
+  }
+
+  let equity: number;
+  let available: number;
+
+  // dexAbstraction (discontinued): USDC (token 0) lives in the NATIVE perp balance, any other
+  // collateral token in spot. Native perps → the perp state below. A HIP-3 dex with non-USDC
+  // collateral → its spot row. A USDC-collateral HIP-3 dex is refused: its dex state is not the
+  // balance ("Cross margin on HIP-3 DEXs does not behave intuitively for DEX abstraction users").
+  let spotIsTruth = mode === "unified" || mode === "portfolio";
+  if (mode === "dexAbstraction" && dex) {
+    if (await reads.collateralToken() === 0) {
+      throw new PerpError("NOT_IMPLEMENTED", `Hyperliquid account mode "dexAbstraction" (discontinued by the venue): the USDC balance of HIP-3 dex "${dex}" cannot be read reliably`, {
+        exchange: "hyperliquid",
+        remediation: "Switch the account mode first: perp -e hyperliquid wallet manage account-mode unified (or standard)",
+      });
+    }
+    spotIsTruth = true;
+  }
+  if (spotIsTruth) {
+    const { row, balances, token } = await reads.spotCollateralRow();
+    const coin = row === null ? `token#${token}` : String(row.coin);
+    const spotTotal = parseFiniteVenueNumber(row?.total, `spotBalance.${coin}.total`, "hyperliquid");
+    const spotHold = parseFiniteVenueNumber(row?.hold, `spotBalance.${coin}.hold`, "hyperliquid");
+    equity = spotTotal;
+    available = spotTotal - spotHold;
+    if (mode === "portfolio") {
+      // Eligible collateral per trading/account-abstraction-modes.md ("eligible
+      // assets, which are currently HYPE, BTC, USDC, USDT").
+      const PORTFOLIO_COLLATERAL = ["HYPE", "BTC", "USDT"];
+      const others = balances.filter((b) => {
+        if (Number(b.token) === token) return false;
+        const c = String(b.coin);
+        // Reject NaN/empty here too — venue payload corruption shouldn't
+        // silently filter a token in or out.
+        const total = parseFiniteVenueNumber(b.total, `spotBalance.${c}.total`, "hyperliquid");
+        if (total <= 0) return false;
+        return PORTFOLIO_COLLATERAL.some((p) => c === p || c.startsWith(`${p}-`));
+      });
+      if (others.length > 0) {
+        const summary = others.map((b) => `${b.coin}=${b.total}`).join(", ");
+        notes.push(
+          `[hl] portfolio mode: non-${coin} collateral present but not counted in equity (${summary}). ` +
+          `Equity reflects ${coin} only; full multi-asset accounting pending.\n`,
+        );
+      }
+    }
+  } else {
+    equity = parseFiniteVenueNumber(
+      margin.accountValue ?? cross.accountValue,
+      "marginSummary.accountValue",
+      "hyperliquid",
+    );
+    available = parseFiniteVenueNumber(s?.withdrawable, "withdrawable", "hyperliquid");
+    if (mode === "default" && equity === 0) {
+      // Unset mode: do not assume unified. If the perp side reads 0 while spot holds
+      // the collateral token, say so instead of reporting an empty account silently.
+      const { row, token } = await reads.spotCollateralRow();
+      const spotTotal = parseFiniteVenueNumber(row?.total, `spotBalance.token#${token}.total`, "hyperliquid");
+      if (spotTotal > 0) {
+        notes.push(
+          `[hl] account mode is unset ("default"): perp equity${dex ? ` on dex ${dex}` : ""} is 0 while spot holds ${spotTotal} ${String(row?.coin)}. ` +
+          `That spot balance is not perp collateral here. Either switch the account to unified ` +
+          `(perp wallet manage account-mode unified) or move it: perp -e hyperliquid trade spot-transfer to-perp <amount>\n`,
+        );
+      }
+    }
+  }
+
+  return {
+    balance: {
+      equity: String(equity),
+      available: String(available),
+      marginUsed: String(marginUsed),
+      unrealizedPnl: String(unrealizedPnl),
+    },
+    notes,
+  };
+}
+
 export class HyperliquidAdapter implements ExchangeAdapter {
   readonly name = "hyperliquid";
   readonly chain = "evm";
@@ -1154,25 +1297,11 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    *
    * Endpoint: `POST /info {"type":"userAbstraction","user":"0x..."}`.
    */
-  async _getAbstractionMode(opts: { fresh?: boolean } = {}): Promise<"unified" | "standard" | "portfolio" | "default" | "dexAbstraction"> {
+  async _getAbstractionMode(opts: { fresh?: boolean } = {}): Promise<HlAbstractionMode> {
     this.ensureAddress();
     const key = `${hlAbstractionCachePrefix(this._network)}${this._address.toLowerCase()}`;
-    return (opts.fresh === true ? fetchAndCache : withCache)(key, HL_ABSTRACTION_TTL_MS, async () => {
-      const raw = (await this._infoPost({ type: "userAbstraction", user: this._address })) as unknown;
-      if (raw === "unifiedAccount") return "unified";
-      if (raw === "portfolioMargin") return "portfolio";
-      if (raw === "disabled") return "standard";
-      if (raw === "default") return "default";
-      // "dexAbstraction" is HL's discontinued fourth mode, still returned for some users. It is
-      // NOT unified: "USDC balances default to perps balance, all other collateral defaults to
-      // spot balance" (docs trading/account-abstraction-modes). Handled explicitly in getBalance().
-      if (raw === "dexAbstraction") return "dexAbstraction";
-      throw new PerpError(
-        "INVALID_PARAMS",
-        `UNKNOWN_ACCOUNT_MODE: HL returned unrecognized userAbstraction mode: ${JSON.stringify(raw)}`,
-        { remediation: "Check app.hyperliquid.xyz Settings → Account Mode" },
-      );
-    });
+    return (opts.fresh === true ? fetchAndCache : withCache)(key, HL_ABSTRACTION_TTL_MS, async () =>
+      hlAbstractionModeOf(await this._infoPost({ type: "userAbstraction", user: this._address })));
   }
 
   /** Collateral token index of this adapter's perp dex (info `meta{dex}.collateralToken`; 0 = USDC on native perps). */
@@ -1210,106 +1339,13 @@ export class HyperliquidAdapter implements ExchangeAdapter {
 
   async getBalance(): Promise<ExchangeBalance> {
     const state = await this._getClearinghouseState();
-    const s = state as Record<string, unknown>;
-    const margin = (s?.marginSummary ?? {}) as Record<string, unknown>;
-    const cross = (s?.crossMarginSummary ?? {}) as Record<string, unknown>;
-
-    const marginUsed = parseFiniteVenueNumber(
-      margin.totalMarginUsed ?? cross.totalMarginUsed,
-      "marginSummary.totalMarginUsed",
-      "hyperliquid",
-    );
-    // Sum unrealized PnL directly from positions (reliable for both main + dex accounts)
-    const positions = (s?.assetPositions ?? []) as Record<string, unknown>[];
-    let unrealizedPnl = 0;
-    for (const entry of positions) {
-      const pos = (entry.position ?? entry) as Record<string, unknown>;
-      unrealizedPnl += parseFiniteVenueNumber(pos.unrealizedPnl, "position.unrealizedPnl", "hyperliquid");
-    }
-
-    let equity: number;
-    let available: number;
-
-    // Branch by the user's account abstraction mode (Rule #2: no silent fallback).
-    // - "unified" / "portfolio": per HL docs, API users see all balances and holds
-    //   in the spot clearinghouse state; the dex's collateral token row (by token
-    //   index from meta{dex}.collateralToken) is the equity. Adding perp margin
-    //   would double-count.
-    // - "standard" / "default": perp clearinghouse (per dex) is the collateral source.
-    //
-    // Portfolio-margin mode: eligible collateral includes HYPE, BTC, USDT besides
-    // USDC. Only the collateral token is counted; a stderr note lists the rest.
     const mode = await this._getAbstractionMode();
-    // dexAbstraction (discontinued): USDC (token 0) lives in the NATIVE perp balance, any other
-    // collateral token in spot. Native perps → the perp state below. A HIP-3 dex with non-USDC
-    // collateral → its spot row. A USDC-collateral HIP-3 dex is refused: its dex state is not the
-    // balance ("Cross margin on HIP-3 DEXs does not behave intuitively for DEX abstraction users").
-    let spotIsTruth = mode === "unified" || mode === "portfolio";
-    if (mode === "dexAbstraction" && this._dex) {
-      if (await this._getCollateralToken() === 0) {
-        throw new PerpError("NOT_IMPLEMENTED", `Hyperliquid account mode "dexAbstraction" (discontinued by the venue): the USDC balance of HIP-3 dex "${this._dex}" cannot be read reliably`, {
-          exchange: "hyperliquid",
-          remediation: "Switch the account mode first: perp -e hyperliquid wallet manage account-mode unified (or standard)",
-        });
-      }
-      spotIsTruth = true;
-    }
-    if (spotIsTruth) {
-      const { row, balances, token } = await this._spotCollateralRow();
-      const coin = row === null ? `token#${token}` : String(row.coin);
-      const spotTotal = parseFiniteVenueNumber(row?.total, `spotBalance.${coin}.total`, "hyperliquid");
-      const spotHold = parseFiniteVenueNumber(row?.hold, `spotBalance.${coin}.hold`, "hyperliquid");
-      equity = spotTotal;
-      available = spotTotal - spotHold;
-      if (mode === "portfolio") {
-        // Eligible collateral per trading/account-abstraction-modes.md ("eligible
-        // assets, which are currently HYPE, BTC, USDC, USDT").
-        const PORTFOLIO_COLLATERAL = ["HYPE", "BTC", "USDT"];
-        const others = balances.filter((b) => {
-          if (Number(b.token) === token) return false;
-          const c = String(b.coin);
-          // Reject NaN/empty here too — venue payload corruption shouldn't
-          // silently filter a token in or out.
-          const total = parseFiniteVenueNumber(b.total, `spotBalance.${c}.total`, "hyperliquid");
-          if (total <= 0) return false;
-          return PORTFOLIO_COLLATERAL.some((p) => c === p || c.startsWith(`${p}-`));
-        });
-        if (others.length > 0) {
-          const summary = others.map((b) => `${b.coin}=${b.total}`).join(", ");
-          process.stderr.write(
-            `[hl] portfolio mode: non-${coin} collateral present but not counted in equity (${summary}). ` +
-            `Equity reflects ${coin} only; full multi-asset accounting pending.\n`,
-          );
-        }
-      }
-    } else {
-      equity = parseFiniteVenueNumber(
-        margin.accountValue ?? cross.accountValue,
-        "marginSummary.accountValue",
-        "hyperliquid",
-      );
-      available = parseFiniteVenueNumber(s?.withdrawable, "withdrawable", "hyperliquid");
-      if (mode === "default" && equity === 0) {
-        // Unset mode: do not assume unified. If the perp side reads 0 while spot holds
-        // the collateral token, say so instead of reporting an empty account silently.
-        const { row, token } = await this._spotCollateralRow();
-        const spotTotal = parseFiniteVenueNumber(row?.total, `spotBalance.token#${token}.total`, "hyperliquid");
-        if (spotTotal > 0) {
-          process.stderr.write(
-            `[hl] account mode is unset ("default"): perp equity${this._dex ? ` on dex ${this._dex}` : ""} is 0 while spot holds ${spotTotal} ${String(row?.coin)}. ` +
-            `That spot balance is not perp collateral here. Either switch the account to unified ` +
-            `(perp wallet manage account-mode unified) or move it: perp -e hyperliquid trade spot-transfer to-perp <amount>\n`,
-          );
-        }
-      }
-    }
-
-    return {
-      equity: String(equity),
-      available: String(available),
-      marginUsed: String(marginUsed),
-      unrealizedPnl: String(unrealizedPnl),
-    };
+    const { balance, notes } = await hlBalanceOf(state, mode, this._dex, {
+      spotCollateralRow: () => this._spotCollateralRow(),
+      collateralToken: () => this._getCollateralToken(),
+    });
+    for (const n of notes) process.stderr.write(n);
+    return balance;
   }
 
   async getPositions(): Promise<ExchangePosition[]> {

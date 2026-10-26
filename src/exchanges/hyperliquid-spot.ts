@@ -22,6 +22,23 @@ function hlRoundSize(size: string, szDecimals: number): string {
   return floorSize(size, hlSizeStep(szDecimals));
 }
 
+/**
+ * Spot balances from info `spotClearinghouseState` — the one mapper behind the keyed spot adapter
+ * and the keyless `account balance --address`. `unified` = the account's spot USDC is its perp
+ * margin (unified / portfolio mode): that row is marked `shared`.
+ */
+export function hlSpotBalanceRows(state: Record<string, unknown>, unified: boolean): SpotBalance[] {
+  const balances = (state?.balances ?? []) as Record<string, unknown>[];
+  return balances.map((b) => ({
+    token: String(b.coin ?? ""),
+    total: String(b.total ?? "0"),
+    available: String(Number(b.total ?? 0) - Number(b.hold ?? 0)),
+    held: String(b.hold ?? "0"),
+    entryNtl: b.entryNtl !== undefined ? String(b.entryNtl) : undefined,
+    shared: unified && String(b.coin ?? "") === "USDC",
+  }));
+}
+
 export class HyperliquidSpotAdapter implements SpotAdapter, SpotHoldingPricesCapable {
   readonly name = "hyperliquid";
   private _hl: HyperliquidAdapter;
@@ -205,18 +222,9 @@ export class HyperliquidSpotAdapter implements SpotAdapter, SpotHoldingPricesCap
     // in the funding-arb bot (and a misleading empty holdings table).
     // Reuse cached spot clearinghouse state (shared with getBalance() — saves 1 API call).
     const state = await this._hl._getSpotClearinghouseState({ fresh });
-    const balances = (state?.balances ?? []) as Record<string, unknown>[];
     // Unified HL accounts: spot USDC IS the perp margin — mark it shared.
     // HIP-3 dex-scoped adapters report dex equity, which never contains spot USDC.
-    const unified = this._hl.isUnifiedAccount === true && this._hl.dex === "";
-    return balances.map((b) => ({
-      token: String(b.coin ?? ""),
-      total: String(b.total ?? "0"),
-      available: String(Number(b.total ?? 0) - Number(b.hold ?? 0)),
-      held: String(b.hold ?? "0"),
-      entryNtl: b.entryNtl !== undefined ? String(b.entryNtl) : undefined,
-      shared: unified && String(b.coin ?? "") === "USDC",
-    }));
+    return hlSpotBalanceRows(state, this._hl.isUnifiedAccount === true && this._hl.dex === "");
   }
 
   async spotMarketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { slippage: ResolvedSlippage }): Promise<unknown> {
