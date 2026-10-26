@@ -279,11 +279,12 @@ perp --json portfolio                               # cross-exchange equity + ri
 perp --json risk status                             # canTrade, level, violations
 perp --json risk liquidation-distance               # % from liq for ALL positions
 perp --json -e <ex> account positions --address <ADDR> [--symbol BTC] [--account-index <n>]   # keyless, ANY account
+perp --json -e <ex> account balance --address <ADDR> [--account-index <n>]                  # keyless balances of ANY account (perp-cli ≥ the release that ships it)
 ```
 
 `arb status` reads every configured venue and fails as a whole (`EXCHANGE_ERROR`) when one venue's read fails — there is no venue filter; check the venues one by one with `perp --json -e <ex> account positions` and report which one failed. Never read the failure as "no positions".
 
-`account positions --address` (keyless, nothing signed; without `-e`: every venue that supports it): hyperliquid (0x; native + every HIP-3 dex, rows carry `dex`), lighter / lighter-rh (0x; every account of the address, rows carry `accountIndex`, narrow with `--account-index`), pacifica (Solana address), risex (0x). Other venues → `CAPABILITY_UNSUPPORTED`. MCP `get_positions_by_address` returns the same rows (HIP-3 included).
+`account positions --address` (keyless, nothing signed; without `-e`: every venue that supports it): hyperliquid (0x; native + every HIP-3 dex, rows carry `dex`), lighter / lighter-rh (0x; every account of the address, rows carry `accountIndex`, narrow with `--account-index`), pacifica (Solana address), risex (0x). Other venues → `CAPABILITY_UNSUPPORTED`. MCP `get_positions_by_address` returns the same rows (HIP-3 included). `account balance --address` (same venues and address rules; MCP `get_balance_by_address`): `data = { exchange, address, balance, spot }` — `balance` = `{ equity, available, marginUsed, unrealizedPnl }` (+ Pacifica `usdcBalance` / `borrowedUsdc` / `pendingInterest` / `availableToWithdraw`), `spot` = token rows or null (RISEx). Hyperliquid: `accountMode` decides equity (unified / portfolio → the spot collateral row; standard / default → perp `accountValue`; read `meta.notes`), `dexes` = HIP-3 dexes with a non-zero value, a failed dex → `meta.errors["hip3:<dex>"]` + `meta.warnings` (unknown, not zero). Lighter: top-level `balance` / `spot` null, one row per account in `accounts: [{ accountIndex, balance, spot }]`; no account → `[]` + note. `account balance` WITHOUT `--address` is the renamed-command error — your own balance is `perp portfolio`.
 
 If `risk status.canTrade === false`, do NOT open new positions. If liquidation distance falls below the user's `--min-liq-distance`, recommend reducing position size.
 

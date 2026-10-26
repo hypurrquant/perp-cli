@@ -40,6 +40,8 @@ perp --json portfolio -e <VENUE_ID>            # perp balance + spot holdings + 
 perp --json -e <EX> account positions          # open positions
 perp --json -e <EX> account positions --address <ADDR>   # ANY account's open positions, keyless (public data; nothing signed)
 perp --json account positions --address <0xADDR>         # every supporting venue: { venues, errors?, notes? }
+perp --json -e <EX> account balance --address <ADDR>     # ANY account's balances + spot, keyless (same venues; Lighter: per account, --account-index)
+perp --json account balance --address <0xADDR>           # every supporting venue: { venues, errors?, notes? }
 perp --json -e <EX> account orders             # open/pending orders
 perp --json -e <EX> account history            # order history
 perp --json -e <EX> account trades             # trade fill history
