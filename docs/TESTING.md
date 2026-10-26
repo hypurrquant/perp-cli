@@ -281,7 +281,7 @@ Errors: unknown symbol → `SYMBOL_NOT_FOUND` + remediation; unsupported feature
 - [ ] Recorded-fixture adapter tests for parsing edge cases (layer 2).
 - [ ] Read-only venue: covered by the refusal table automatically — verify it lists the venue.
 - [ ] `pnpm test:conformance:live` run once, result pasted in the PR.
-- [ ] Docs: README venue table, skill docs, CHANGELOG.
+- [ ] Docs: README venue table, `docs/venues.md` support matrix, skill docs, CHANGELOG.
 
 ### 7.2 Adding or changing a feature
 

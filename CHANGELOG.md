@@ -4,6 +4,13 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Changed — README and docs layout (no runtime change)
+
+- **README** is a short quick start (install, three steps, AI agent skill, one venue table, common commands); the reference detail moved verbatim to `docs/setup.md`, `docs/venues.md` (support matrix + per-venue notes), `docs/trading.md`, `docs/commands.md`, `docs/verification.md`, `docs/mcp.md` and `docs/guardrail.md`. Korean, Chinese and Japanese READMEs (`README.{ko,zh,ja}.md`); the English README is canonical.
+- **Stale metadata refreshed:** the MCP server serves **31** tools (was documented as 30 / 18); `.claude-plugin` plugin + marketplace manifests at 0.16.0 with the current venue list (were 0.12.16 / 0.13.0); `.cursorrules` venue list; `package.json` description.
+- **`mcp-config.example.json` no longer puts private keys in the MCP config** (it showed `PACIFICA_PRIVATE_KEY` / `HL_PRIVATE_KEY` / `LIGHTER_PRIVATE_KEY` env entries). It is now the keyless `npx perp-mcp` config; keys come from `perp setup` (OWS vault / agent keystores), as the README says.
+- Repository: unused `tsup.config.ts` removed; `.gitattributes` pins LF; a PR size-label workflow (`size/S`..`XL`, one comment above 500 changed lines).
+
 ### Changed — E2E runner sizes every order at $15 (no runtime change)
 
 - `scripts/e2e`: the smallest order is now **$15 notional** (`MIN_ORDER_USD`, `--min-usd N`) instead of the venue minimum + 10 % (≈ $11 on the $10 venues): perp units are `max(--min-usd, venue minimum × (1 + --margin-pct))`, auto-picked spot orders `max(--min-usd, venue minimum × 1.1)`, on the size grid. The buffer absorbs price moves between sizing and the fill, step rounding and fees. A venue minimum above $15 still wins.

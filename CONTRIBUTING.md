@@ -84,9 +84,10 @@ We follow a lightweight [Conventional Commits](https://www.conventionalcommits.o
 
 If your PR changes any of the following, please update the relevant docs:
 
-- CLI commands or flags → update `README.md`
+- CLI commands or flags → update `docs/commands.md` (and the `README.md` Command Groups table for a new group)
+- Venue support or per-venue behaviour → update `docs/venues.md` (support matrix) and the `README.md` venue table
 - `--json` output shape → update `API_RESPONSE_SPEC.md`
-- MCP tool name or schema → update `README.md` (AI Agent section)
+- MCP tool name or schema → update `docs/mcp.md`
 
 ## Code Style
 

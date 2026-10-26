@@ -21,13 +21,13 @@ Related issue: <!-- #issue-number (optional) -->
 - [ ] Write path → refuses on read-only venues before any I/O or key load, also with `--dry-run`
 - [ ] Row caps / intervals touched → measured live, `SERVER_CAPS` / `KLINE_INTERVALS` updated with the measurement date
 
-**New venue** (TESTING.md §7.1): capability-table entry · `KLINE_INTERVALS` + caps measured or in `UNMEASURED_CAPS` · fixtures recorded (venue, ranges, ws, cross) · `pnpm test:conformance:live` output pasted below · README / skill / CHANGELOG.
+**New venue** (TESTING.md §7.1): capability-table entry · `KLINE_INTERVALS` + caps measured or in `UNMEASURED_CAPS` · fixtures recorded (venue, ranges, ws, cross) · `pnpm test:conformance:live` output pasted below · README venue table + `docs/venues.md` / skill / CHANGELOG.
 
 **Release PR:** `pnpm release-qa --version <v>` report attached after `npm publish`.
 
 ### If applicable
 
-- [ ] Updated `README.md` (new/changed commands)
+- [ ] Updated `docs/commands.md` / `README.md` (new/changed commands)
 - [ ] Updated `API_RESPONSE_SPEC.md` (changed `--json` output)
 - [ ] Added/updated tests for new functionality
 - [ ] MCP tool name or schema changed? Documented in description

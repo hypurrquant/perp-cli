@@ -401,8 +401,8 @@ describe("fan-out without -e, and the MCP tool", () => {
 });
 
 describe("docs follow the registry", () => {
-  it("README support matrix: the balance-by-address column is ✅ exactly for the supporting venues", () => {
-    const readme = readFileSync(resolve(import.meta.dirname, "../../README.md"), "utf8").split("\n");
+  it("docs/venues.md support matrix: the balance-by-address column is ✅ exactly for the supporting venues", () => {
+    const readme = readFileSync(resolve(import.meta.dirname, "../../docs/venues.md"), "utf8").split("\n");
     const headerLine = readme.find(l => l.startsWith("| Venue | Market data (CLI) |"))!;
     const header = headerLine.split("|").map(c => c.trim());
     const col = header.findIndex(c => c.startsWith("Balance by address"));

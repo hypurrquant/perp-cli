@@ -11,6 +11,21 @@ Two npm packages are released together, **always with the same version**:
 perp-cli's version. Syncing (write mode) is an **explicit release step** (step 1); CI and both
 `prepublishOnly` hooks only run `--check` and refuse to publish on drift — a publish never rewrites files.
 
+## Before the release: stale-content check
+
+Version numbers, venue lists and MCP counts are written by hand in several files that no test reads.
+Check each against the live values before step 1:
+
+- [ ] **Venues**: `perp --json` → `data.venues` (ids, read-only / market-data-only roles)
+- [ ] **MCP counts**: start `perp-mcp` and list them (`tools/list`, `resources/list`, `prompts/list`)
+- [ ] `README.md` + `README.{ko,zh,ja}.md`: venue table, MCP tool count, commands still valid
+- [ ] `docs/venues.md` support matrix, `docs/mcp.md` tool list + counts, `docs/verification.md` date
+- [ ] `package.json` `description`; the GitHub repository description and topics
+- [ ] `.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`: `version` (both fields), description, MCP counts
+- [ ] `.cursorrules`, `mcp-config.example.json` (no private keys in an MCP config)
+- [ ] `skills/perp-cli/SKILL.md` + `references/*.md` match the CLI (`--help`); skill `package.json` version
+- [ ] CHANGELOG `[Unreleased]` lists every merged PR since the last tag (`git log v<last>..main --merges`)
+
 ## Steps
 
 1. Bump the version in the root `package.json` (e.g. `0.15.0`), then sync (write mode — the only
