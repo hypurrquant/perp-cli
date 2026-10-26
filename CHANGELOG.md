@@ -4,6 +4,42 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### NEW — `perp account balance --address <addr>`: any account's balances, keyless
+
+- **The balance counterpart of `account positions --address`.** `perp [-e <venue>] --json account
+  balance --address <addr>` reads the balances of ANY account from public venue data — nothing is
+  signed, no key is loaded. `data: { exchange, address, balance, spot }` (+ `accounts` on Lighter,
+  `dexes` / `accountMode` on Hyperliquid), `meta: { exchange, address, source: "public", warnings?,
+  errors?, notes? }`. Without `-e`: every supporting venue (`{ venues, errors?, notes? }`; an address
+  of the wrong format for a venue is that venue's `errors` entry). Venues: Hyperliquid, Lighter,
+  Lighter RH, Pacifica, RISEx (registry hook `VenuePublicData.fetchBalanceByAddress`); every other
+  venue refuses with `CAPABILITY_UNSUPPORTED` (feature `publicBalance`), a wrong address format with
+  `INVALID_PARAMS` — both before any request. `account balance` without `--address` keeps the
+  v0.12 rename pointer to `portfolio`.
+- **Same math as your own balance.** The keyed `getBalance` bodies became pure functions used by
+  both paths — `hlBalanceOf` (Hyperliquid; the equity source follows the account's `userAbstraction`
+  mode: unified / portfolio → the spot collateral row, standard / default → the perp
+  clearinghouse), `lighterBalanceOf`, `pacificaBalanceOf` (with `usdcBalance` / `borrowedUsdc` /
+  `pendingInterest` / `availableToWithdraw`) — and the spot rows come from the keyed spot mappers
+  (`hlSpotBalanceRows`, `lighterSpotBalanceRows`, `pacificaSpotBalanceRows`). RISEx reuses the
+  signer-less adapter. Keyed behaviour is unchanged.
+- **Spot** = token balances where the venue publishes them by address (Hyperliquid
+  `spotClearinghouseState`, Lighter account `assets`, Pacifica `spot_balances`); RISEx has none
+  (`spot: null`).
+- **Lighter / Lighter RH**: one row per account of the address (`accounts: [{ accountIndex,
+  balance, spot }]`, top-level `balance` / `spot` null); `--account-index` narrows; no account →
+  empty + note "no Lighter account for this address".
+- **Hyperliquid HIP-3**: `dexes: { <dex>: balance }` for every dex of the live `perpDexs` list with a
+  non-zero account value (the dex's own perp clearinghouse); a dex that fails is
+  `errors["hip3:<dex>"]` + a warning — unknown, not zero.
+- **Paced HIP-3 fan-out (positions too).** The per-dex reads of `account balance --address` and
+  `account positions --address` go through `hlDexFanOut`: at most 4 in flight and a token bucket at
+  the venue's documented refill (20 weight / s, `clearinghouseState` weight 2) with a 10-request
+  burst — HL testnet lists ~272 dexes and an unpaced burst got HTTP 429 on 62 of 272 reads. No
+  retries: a failed dex stays an `errors` entry.
+- **MCP:** new read-only tool `get_balance_by_address { exchange?, address, accountIndex? }` — the
+  same data as the CLI (omit `exchange` for every venue).
+
 ### Fixed — test fixture hygiene (no runtime change)
 
 - **Recorded fixtures carried real third-party wallets.** `src/__tests__/conformance/fixture-tools.ts`
