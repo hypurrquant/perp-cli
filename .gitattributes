@@ -1,0 +1,22 @@
+# Line endings: LF everywhere (Git decides text vs binary for anything not listed).
+* text=auto eol=lf
+
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+
+# Binary fixtures and the vendored Lighter signer: never converted or diffed as text.
+*.gz binary
+*.wasm binary
+*.png binary
+*.jpg binary
+
+# Lockfile and snapshots: collapsed in GitHub diffs.
+pnpm-lock.yaml linguist-generated=true
+*.snap linguist-generated=true
