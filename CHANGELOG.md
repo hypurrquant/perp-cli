@@ -4,6 +4,57 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — test fixture hygiene (no runtime change)
+
+- **Recorded fixtures carried real third-party wallets.** `src/__tests__/conformance/fixture-tools.ts`
+  matched a trader identity by bare key name (`maker`, `taker`, `account`), so Arcus's
+  `makerAddress` / `takerAddress` walked past the scrubber and seven real counterparty wallets were
+  committed in `src/__tests__/fixtures/conformance/arcus.json` — a `docs/TESTING.md` §7.3-2
+  violation ("no secrets / real ids"). The scrubber now matches a party word with or without an
+  identifier suffix, which also closes `makerOrderId` / `takerOrderId` (Arcus) and
+  `owner_account_index` (Lighter: 24 real account ids in `lighter.json`, 23 in `lighter-rh.json`,
+  15 in `cross.json`). The affected fixtures were re-anonymized with the same dummy scheme, so row
+  equality and the joins between endpoints are preserved.
+- **The hole is now fail-closed, not fail-silent.** `guardFixtureIdentities` refuses to write a
+  recording in which any address-shaped value survives outside the classified protocol constants
+  (token contracts, HIP-3 dex deployers), so the next venue that spells an identity field its own
+  way stops the recorder instead of reaching a fixture. Pinned by
+  `src/__tests__/conformance/fixture-anonymization.test.ts`, which also sweeps every committed
+  fixture in `src/__tests__/fixtures/`.
+- **The same leak outside the conformance directory.**
+  `src/__tests__/fixtures/hyperliquid/read-path-2026-10-19.json` was recorded ad hoc and never
+  went through the scrubber, so 23 real counterparty wallets (`recentTrades[].users`, which
+  Hyperliquid serves as `[maker, taker]`) and 22 real transaction hashes were committed with it.
+  Re-anonymized with the same dummy scheme — injective, so row equality is preserved — leaving
+  the market-data columns byte-identical. The adapter reads only `time` / `coin` / `side` / `px` /
+  `sz`, so nothing downstream changes. Found because the anonymization sweep was scoped to
+  `fixtures/conformance/` while the leak sat one directory over; the sweep now walks the whole
+  tree, with the three pre-existing exceptions named and frozen in `LEGACY_UNCLASSIFIED`.
+- **The same leak again, in the half of the identity space no gate could see.**
+  `src/__tests__/fixtures/lighter/book-live.json` held 555 real Lighter `owner_account_index`
+  values (76 distinct accounts, one per resting order) — the same key, and the same data, that was
+  re-anonymized in `lighter.json` / `lighter-rh.json` / `cross.json` above. Both gates were blind
+  to it by construction: each tested only address-shaped STRINGS, and a venue that numbers its
+  accounts has no address to match. Since Arcus and Hyperliquid identify a trader by wallet while
+  Lighter does so by account index, that made the sweep unable to see any identity in any Lighter
+  fixture, and `pnpm test` stayed green over 7166 tests with the file committed. The sweep and
+  `guardFixtureIdentities` now both examine integers under an account-naming key
+  (`isAccountIdKey`), with the venue's own published accounts (`operator_account_index`,
+  `insurance_fund_account_index`, `integrator_*_fee_collector_index`) classified explicitly rather
+  than excused by a regex miss. `book-live.json` was re-anonymized with the same dummy scheme,
+  leaving every other byte — prices, sizes, `order_id`, `order_index`, timestamps — identical.
+  `docs/TESTING.md` §7.3 now states what each half of the sweep can and cannot conclude.
+- **Fixture provenance is declared and enforced.** 23 of the 56 fixtures added for 0.16.0 stated
+  nothing about where their bytes came from, so §9's ban on hand-written shapes could not be
+  checked. Nine hand-assembled envelopes gained a `recordedWith` header; the 14 that are verbatim
+  wire bodies are described in the new `src/__tests__/fixtures/PROVENANCE.json` (adding a key to
+  those would make them differ from the real response). Every statement there cites the
+  contemporaneous evidence it came from. `fixture-provenance.test.ts` fails on a fixture that
+  declares neither, and holds the 70 pre-0.16.0 fixtures — whose provenance is unknown, not
+  assumed — as a list that may shrink and not grow.
+- **`docs/qa-reports/` is tracked.** The QA history lived on one laptop, which made §7.3's
+  "release PR: report attached" uncheckable by a reviewer.
+
 ## [0.16.0] — 2026-10-23
 
 > **Renumbered from 0.15.1, which was never released** (npm's latest is 0.15.0; there is no `v0.15.1`
