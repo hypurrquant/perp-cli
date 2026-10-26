@@ -216,7 +216,7 @@ export function registerAccountCommands(
     .command("positions")
     .description("Show open positions (yours; or any account's, keyless, with --address)")
     .option("--hip3", "Include HIP-3 dex positions (Hyperliquid)")
-    .option("--address <address>", "Read this public address instead of your account — keyless (hyperliquid, lighter, lighter-rh: 0x address; pacifica: Solana address). Without -e: every venue that supports it")
+    .option("--address <address>", "Read this public address instead of your account — keyless (hyperliquid, lighter, lighter-rh, risex: 0x address; pacifica: Solana address). Without -e: every venue that supports it")
     .option("--account-index <n>", "With --address on Lighter: only this account (sub-account) of the address")
     .option("--symbol <symbol>", "With --address: only this market (plain asset, e.g. BTC)")
     .action(async (opts: { hip3?: boolean; address?: string; accountIndex?: string; symbol?: string }) => {

@@ -1556,8 +1556,8 @@ export function registerTradeCommands(
   // === Pacifica-only commands ===
 
   supportsDryRun(trade.command("edit <symbol> <orderId> <price> <size>"))
-    .description("Edit an existing order: new price and new open (unfilled) size; the order keeps its TIF / post-only (pacifica: re-created as ALO) — orderId, or c:<clientOrderId> on ondo/arcus/qfex (qfex: plain LIMIT / ALO only; the venue assigns a new order id, the client id is kept)")
-    .option("--tif <tif>", "Time-in-force of the replacement (cancel+replace venues only, e.g. ondo; ALO keeps post-only)")
+    .description("Edit an existing order: new price and new open (unfilled) size; the order keeps its TIF / post-only (pacifica: TIF read from the order's client id — ALO via native edit, GTC / TOB via cancel+replace; a new order id either way) — use the orderId the edit returns; orderId, or c:<clientOrderId> on ondo/arcus/qfex (qfex: plain LIMIT / ALO only; the venue assigns a new order id, the client id is kept)")
+    .option("--tif <tif>", "Time-in-force of the replacement (ondo / pacifica only; ALO keeps post-only)")
     .option("--force-tif", "Allow --tif to flip the order's post-only flag (ondo / pacifica); otherwise such a conflict is refused")
     .action(async (symbol: string, orderId: string, price: string, size: string, opts: { tif?: string; forceTif?: boolean }) => {
       const adapter = await getAdapter();

@@ -548,7 +548,7 @@ Global flags: `--json`, `--fields <f>`, `--ndjson`, `--dry-run`, `--dex <name>` 
 
 [![Glama MCP server](https://glama.ai/mcp/servers/hypurrquant/perp-cli/badges/score.svg)](https://glama.ai/mcp/servers/hypurrquant/perp-cli)
 
-perp-cli includes a full-featured MCP server (29 tools, 3 resources, 2 prompts) for Claude Desktop, Cursor, and other MCP clients.
+perp-cli includes a full-featured MCP server (30 tools, 3 resources, 2 prompts) for Claude Desktop, Cursor, and other MCP clients.
 
 **No API keys required for market data** — explore prices, orderbooks, funding rates, and arb opportunities without any setup. Add keys only when you want to trade.
 
