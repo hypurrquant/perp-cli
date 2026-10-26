@@ -49,6 +49,13 @@ const publicData: VenuePublicData = {
     const adapter = new RisexAdapter(risexVenue, net, { account: address, signer: null, meta: null, noSignerReason: null });
     return { positions: await adapter.getPositions(), errors: {}, notes: [] };
   },
+  // Keyless balance (account balance --address): the same signer-less adapter's getBalance. RISEx
+  // has no spot market: spot null.
+  async fetchBalanceByAddress(net, address) {
+    const { RisexAdapter } = await import("../risex/adapter.js");
+    const adapter = new RisexAdapter(risexVenue, net, { account: address, signer: null, meta: null, noSignerReason: null });
+    return { balance: await adapter.getBalance(), spot: null, accounts: null, dexes: null, accountMode: null, errors: {}, notes: [] };
+  },
 };
 
 export const risexVenue: VenueDefinition = {

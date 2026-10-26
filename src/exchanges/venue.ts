@@ -10,9 +10,9 @@
  */
 
 import { PerpError } from "../errors.js";
-import type { ExchangeAdapter, ExchangePosition } from "./interface.js";
+import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "./interface.js";
 import { requireAddressOfKind, type AddressKind } from "./address.js";
-import type { SpotAdapter } from "./spot-interface.js";
+import type { SpotAdapter, SpotBalance } from "./spot-interface.js";
 import type {
   FundingRateBasis, LegacyVenueId, Network, TimeInForce, VenueFundingRate, VenueId, VenueMarket,
 } from "./venue-types.js";
@@ -147,6 +147,35 @@ export interface VenuePublicData {
    */
   addressKind?: AddressKind;
   fetchPositionsByAddress?(net: Network, address: string, opts: PublicPositionsOptions): Promise<PublicPositionsResult>;
+  /**
+   * Keyless balances of ANY account by its public address (`account balance --address`, MCP
+   * get_balance_by_address). Present = the venue supports it (takes `addressKind`, like
+   * fetchPositionsByAddress). The balance is the keyed `getBalance` math (the same function).
+   */
+  fetchBalanceByAddress?(net: Network, address: string, opts: PublicPositionsOptions): Promise<PublicBalanceResult>;
+}
+
+/** One Lighter account (sub-account) of an address: its balance and spot assets. */
+export interface PublicAccountBalance {
+  accountIndex: number;
+  balance: ExchangeBalance;
+  spot: SpotBalance[];
+}
+
+export interface PublicBalanceResult {
+  /** The account's balance (the keyed getBalance fields + the venue's extras); null on Lighter (per account in `accounts`). */
+  balance: ExchangeBalance | null;
+  /** Spot token balances where the venue publishes them by address; null = not published (nothing invented). */
+  spot: SpotBalance[] | null;
+  /** Lighter / Lighter RH: every account of the address (or the one of accountIndex); null elsewhere. */
+  accounts: PublicAccountBalance[] | null;
+  /** Hyperliquid: HIP-3 dexes with a non-zero account value (the dex's own perp clearinghouse); null elsewhere. */
+  dexes: Record<string, ExchangeBalance> | null;
+  /** Hyperliquid: the account abstraction mode the balance was read under; null elsewhere. */
+  accountMode: string | null;
+  /** Sub-reads that failed (Hyperliquid: one HIP-3 dex, "hip3:<dex>") — unknown, never zero. */
+  errors: Record<string, { code: string; message: string }>;
+  notes: string[];
 }
 
 export interface PublicPositionsOptions {
@@ -366,6 +395,37 @@ export async function fetchPositionsByAddress(venue: string, net: Network, addre
     throw new PerpError("INVALID_PARAMS", `--account-index applies to Lighter only (${def.id} has one account per address)`, { exchange: def.id, remediation: "Drop --account-index" });
   }
   return pd.fetchPositionsByAddress(net, requireAddressOfKind(def.id, pd.addressKind, address), opts);
+}
+
+/** Venues that read balances by public address (VenuePublicData.fetchBalanceByAddress). */
+export function listPublicBalanceVenues(): VenueDefinition[] {
+  return listVenues().filter(v => typeof v.publicData.fetchBalanceByAddress === "function" && v.publicData.addressKind !== undefined);
+}
+
+/** CAPABILITY_UNSUPPORTED for a venue without public-address balance reads (registry-derived). */
+export function publicBalanceUnsupported(def: VenueDefinition): PerpError {
+  const reason = !def.roles.includes("account")
+    ? `${def.displayName} is available for market data only (no account reads)`
+    : `${def.displayName} publishes balances only to the account itself (signed or API-key reads)`;
+  const supported = listPublicBalanceVenues().map(v => v.id).join(", ");
+  return new PerpError("CAPABILITY_UNSUPPORTED", `${def.id} does not support publicBalance — ${reason}`, {
+    venue: def.id, feature: "publicBalance", reason,
+    remediation: `Public-address reads: ${supported}; for your own account: perp -e ${def.id} portfolio`,
+  });
+}
+
+/**
+ * Balances of `address` on `venue`, keyless: unsupported venue → CAPABILITY_UNSUPPORTED, wrong
+ * address format → INVALID_PARAMS, both before any request.
+ */
+export async function fetchBalanceByAddress(venue: string, net: Network, address: string, opts: PublicPositionsOptions = {}): Promise<PublicBalanceResult> {
+  const def = getVenue(venue);
+  const pd = def.publicData;
+  if (pd.fetchBalanceByAddress === undefined || pd.addressKind === undefined) throw publicBalanceUnsupported(def);
+  if (opts.accountIndex !== undefined && def.id !== "lighter" && def.id !== "lighter-rh") {
+    throw new PerpError("INVALID_PARAMS", `--account-index applies to Lighter only (${def.id} has one account per address)`, { exchange: def.id, remediation: "Drop --account-index" });
+  }
+  return pd.fetchBalanceByAddress(net, requireAddressOfKind(def.id, pd.addressKind, address), opts);
 }
 
 export function networkConfig(def: VenueDefinition, net: Network): VenueNetworkConfig {

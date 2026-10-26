@@ -236,3 +236,21 @@ export const PositionRow = z.looseObject({
   accountIndex: z.number().int().nonnegative().optional(),
 });
 export const PositionList = z.array(PositionRow);
+
+// ── account balance --address (public, keyless) ──
+
+/** A balance (`account balance --address`, MCP get_balance_by_address; the keyed getBalance fields). Venue extras are additive. */
+export const BalanceFields = z.looseObject({ equity: Dec, available: Dec, marginUsed: Dec, unrealizedPnl: Dec });
+/** A spot token balance (keyed SpotBalance). */
+export const SpotBalanceRow = z.looseObject({ token: z.string().min(1), total: Dec, available: Dec, held: Dec, shared: z.boolean() });
+/** One venue's answer: `balance` / `spot` always (null = per account / not published); venue keys only on their venue. */
+export const BalanceByAddress = z.looseObject({
+  balance: BalanceFields.nullable(),
+  spot: z.array(SpotBalanceRow).nullable(),
+  /** Lighter / Lighter RH: one row per account of the address. */
+  accounts: z.array(z.looseObject({ accountIndex: z.number().int().nonnegative(), balance: BalanceFields, spot: z.array(SpotBalanceRow) })).optional(),
+  /** Hyperliquid: HIP-3 dexes with a non-zero account value. */
+  dexes: z.record(z.string().min(1), BalanceFields).optional(),
+  /** Hyperliquid: the account abstraction mode the balance was read under. */
+  accountMode: z.enum(["unified", "standard", "portfolio", "default", "dexAbstraction"]).optional(),
+});

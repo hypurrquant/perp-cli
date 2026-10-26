@@ -46,8 +46,14 @@ export function registerAccountCommands(
   // user what to run and exit non-zero so scripts can detect the rename.
   account
     .command("balance")
-    .description("[renamed] Use 'perp portfolio' (exchange-aggregated) or 'perp portfolio -e <ex>'")
-    .action(async () => {
+    .description("Any account's balances by public address, keyless (--address). Your own balance: 'perp portfolio' (renamed in v0.12)")
+    .option("--address <address>", "Read this public address — keyless (hyperliquid, lighter, lighter-rh, risex: 0x address; pacifica: Solana address). Without -e: every venue that supports it")
+    .option("--account-index <n>", "With --address on Lighter: only this account (sub-account) of the address")
+    .action(async (opts: { address?: string; accountIndex?: string }) => {
+      if (opts.address !== undefined) {
+        const explicitExchange = program.getOptionValueSource?.("exchange") === "cli";
+        return void await withJsonErrors(isJson(), () => balanceByAddress(opts.address as string, explicitExchange ? String(program.opts().exchange) : null, opts));
+      }
       const msg = "'account balance' was renamed in v0.12 — use 'portfolio' instead.";
       const remediation = "perp portfolio                      # all exchanges\nperp portfolio -e <exchange>        # single exchange detail";
       if (isJson()) {
@@ -81,6 +87,75 @@ export function registerAccountCommands(
       .filter((r): r is PromiseFulfilledResult<{ dex: string; items: T[] }> => r.status === "fulfilled")
       .map(r => r.value)
       .filter(r => r.items.length > 0);
+  }
+
+  /** `account balance --address`: keyless public read (registry: VenuePublicData.fetchBalanceByAddress). */
+  async function balanceByAddress(address: string, venue: string | null, opts: { accountIndex?: string }): Promise<void> {
+    const { readBalanceByAddress, readBalanceByAddressAll } = await import("../balance-by-address.js");
+    const { networkOf } = await import("../cli-flags.js");
+    let accountIndex: number | undefined;
+    if (opts.accountIndex !== undefined) {
+      if (!/^\d+$/.test(opts.accountIndex.trim())) throw new PerpError("INVALID_PARAMS", `--account-index must be a whole number, got "${opts.accountIndex}"`);
+      accountIndex = Number(opts.accountIndex);
+    }
+    const net = networkOf(program);
+    type Data = import("../balance-by-address.js").BalanceData;
+    const balanceRows = (d: Data): string[][] => {
+      const row = (label: string, b: import("../exchanges/index.js").ExchangeBalance): string[] => [
+        label, `$${formatUsd(b.equity)}`, `$${formatUsd(b.available)}`, `$${formatUsd(b.marginUsed)}`, formatPnl(b.unrealizedPnl),
+      ];
+      return [
+        ...(d.balance !== null ? [row(d.accountMode !== undefined ? `native (${d.accountMode})` : "account", d.balance)] : []),
+        ...(d.accounts ?? []).map(a => row(`account ${a.accountIndex}`, a.balance)),
+        ...Object.entries(d.dexes ?? {}).map(([dex, b]) => row(chalk.magenta(`dex ${dex}`), b)),
+      ];
+    };
+    const spotRows = (d: Data): string[][] => [
+      ...(d.spot ?? []).map(s => ["-", s.token, s.total, s.available, s.held]),
+      ...(d.accounts ?? []).flatMap(a => a.spot.map(s => [String(a.accountIndex), s.token, s.total, s.available, s.held])),
+    ];
+    const extras = (d: Data): string[] => {
+      const b = d.balance as (Record<string, unknown> | null);
+      if (b === null) return [];
+      return ["usdcBalance", "borrowedUsdc", "pendingInterest", "availableToWithdraw"].filter(k => k in b).map(k => `${k}: ${b[k] === null ? "-" : String(b[k])}`);
+    };
+    const printVenue = (ex: string, d: Data): void => {
+      console.log(chalk.cyan.bold(`\n  ${ex}`));
+      const rows = balanceRows(d);
+      if (rows.length > 0) console.log(makeTable(["Account", "Equity", "Available", "Margin Used", "uPnL"], rows));
+      const x = extras(d);
+      if (x.length > 0) console.log(chalk.gray(`  ${x.join("  ")}`));
+      const sr = spotRows(d);
+      if (sr.length > 0) console.log(makeTable(["Acct", "Spot token", "Total", "Available", "Held"], sr));
+      if (rows.length === 0 && sr.length === 0) console.log(chalk.gray("  no balance (see notes)"));
+    };
+    if (venue !== null) {
+      const r = await readBalanceByAddress(venue, net, address, { accountIndex });
+      if (isJson()) {
+        return printJson(jsonOk({ exchange: r.venue, address, ...r.data }, {
+          exchange: r.venue, address, source: "public",
+          ...(r.warnings.length > 0 ? { warnings: r.warnings, errors: r.errors } : {}),
+          ...(r.notes.length > 0 ? { notes: r.notes } : {}),
+        }));
+      }
+      for (const w of r.warnings) console.log(chalk.yellow(`  ${w}`));
+      printVenue(r.venue, r.data);
+      for (const n of r.notes) console.log(chalk.gray(`  ${n}`));
+      console.log();
+      return;
+    }
+    const all = await readBalanceByAddressAll(net, address, { accountIndex });
+    if (isJson()) {
+      return printJson(jsonOk({
+        venues: all.venues,
+        ...(Object.keys(all.errors).length > 0 ? { errors: all.errors } : {}),
+        ...(Object.keys(all.notes).length > 0 ? { notes: all.notes } : {}),
+      }, { address, source: "public", ...(all.warnings.length > 0 ? { warnings: all.warnings } : {}) }));
+    }
+    for (const [ex, d] of Object.entries(all.venues)) printVenue(ex, d);
+    console.log();
+    for (const [ex, e] of Object.entries(all.errors)) console.log(chalk.gray(`  ${ex}: ${e.code} ${e.message}`));
+    for (const [ex, n] of Object.entries(all.notes)) console.log(chalk.gray(`  ${ex}: ${n.join("; ")}`));
   }
 
   /** `account positions --address`: keyless public read (registry: VenuePublicData.fetchPositionsByAddress). */

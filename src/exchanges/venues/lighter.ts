@@ -19,6 +19,10 @@ const publicData: VenuePublicData = {
   async fetchPositionsByAddress(net, address, opts) {
     return (await import("../public-positions.js")).lighterPositionsByAddress("lighter", net, address, opts);
   },
+  // Keyless balances of any account by public address (account balance --address).
+  async fetchBalanceByAddress(net, address, opts) {
+    return (await import("../public-balances.js")).lighterBalanceByAddress("lighter", net, address, opts);
+  },
 };
 
 export const lighterVenue: VenueDefinition = {
