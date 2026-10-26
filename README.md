@@ -207,7 +207,7 @@ Errors include `retryable` flag — only retry when `true`.
 
 [![Glama MCP server](https://glama.ai/mcp/servers/hypurrquant/perp-cli/badges/score.svg)](https://glama.ai/mcp/servers/hypurrquant/perp-cli)
 
-`perp-mcp` serves 30 tools to Claude Desktop, Cursor and other MCP clients. Market data needs no keys; for account and trading tools run `perp setup` first (the server reads the same wallet). Never put private keys in the MCP config.
+`perp-mcp` serves 31 tools to Claude Desktop, Cursor and other MCP clients. Market data needs no keys; for account and trading tools run `perp setup` first (the server reads the same wallet). Never put private keys in the MCP config.
 
 ```json
 {

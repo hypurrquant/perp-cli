@@ -209,7 +209,7 @@ perp --json -e hl trade status c:0x1234567890abcdef1234567890abcdef
 
 [![Glama MCP server](https://glama.ai/mcp/servers/hypurrquant/perp-cli/badges/score.svg)](https://glama.ai/mcp/servers/hypurrquant/perp-cli)
 
-`perp-mcp` 为 Claude Desktop、Cursor 及其他 MCP 客户端提供 30 个工具。查询市场数据无需密钥；如需账户和交易工具，请先运行 `perp setup`（服务器读取的是同一个钱包）。切勿在 MCP 配置中放入私钥。
+`perp-mcp` 为 Claude Desktop、Cursor 及其他 MCP 客户端提供 31 个工具。查询市场数据无需密钥；如需账户和交易工具，请先运行 `perp setup`（服务器读取的是同一个钱包）。切勿在 MCP 配置中放入私钥。
 
 ```json
 {

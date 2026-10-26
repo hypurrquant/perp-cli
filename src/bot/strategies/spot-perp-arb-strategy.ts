@@ -1,7 +1,7 @@
 /**
  * Spot-Perp Arbitrage Strategy
  *
- * Focused strategy: buy spot (HL or Lighter) + short perp on the BEST of 4 exchanges.
+ * Focused strategy: buy spot (HL or Lighter) + short perp on the best of the configured perp exchanges (`exchanges`).
  * No perp-perp logic. History-based entry/exit with short rotation.
  *
  * Strategy layer handles ONLY decisions (opportunity scanning, scoring, close/rotation decisions).

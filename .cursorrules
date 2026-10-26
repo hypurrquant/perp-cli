@@ -1,9 +1,9 @@
-You have access to perp-cli, a multi-DEX perpetual futures CLI supporting Pacifica (Solana), Hyperliquid (HyperEVM), and Lighter (Ethereum).
+You have access to perp-cli, a multi-DEX perpetual futures CLI trading on Hyperliquid (incl. HIP-3), Pacifica, Lighter, Lighter RH, Aster, Ondo Perps, Arcus and QFEX (market data only: RISEx, GRVT, Extended, Variational, TxFlow).
 
 ## Usage
 - Always use `--json` flag for structured output
 - Always use `--dry-run` before executing trades
-- Use `-e <exchange>` to select exchange (pacifica, hyperliquid, lighter; aliases: pac, hl, lt)
+- Use `-e <exchange>` to select exchange (e.g. hyperliquid, pacifica, lighter, lighter-rh, aster, ondo, arcus, qfex; aliases: hl, pac, lt, lrh, ast, qf) — `perp --json` lists every venue
 
 ## Common Commands
 ```bash
@@ -18,7 +18,7 @@ perp --json analytics compare                  # arb position comparison
 ```
 
 ## MCP Server
-perp-cli includes an MCP server (`perp-mcp`) with 18 tools for trading, analytics, and market data. Configure in Cursor settings:
+perp-cli includes an MCP server (`perp-mcp`) with 31 tools for trading, analytics, and market data. Configure in Cursor settings:
 ```json
 {
   "mcpServers": {

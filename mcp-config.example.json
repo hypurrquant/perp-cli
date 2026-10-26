@@ -1,12 +1,15 @@
 {
   "mcpServers": {
     "perp-cli": {
-      "command": "node",
-      "args": ["./dist/mcp-server.js"],
+      "command": "npx",
+      "args": [
+        "-y",
+        "-p",
+        "perp-cli",
+        "perp-mcp"
+      ],
       "env": {
-        "PACIFICA_PRIVATE_KEY": "your-solana-private-key",
-        "HL_PRIVATE_KEY": "your-evm-private-key",
-        "LIGHTER_PRIVATE_KEY": "your-evm-private-key"
+        "PERP_NETWORK": "mainnet"
       }
     }
   }

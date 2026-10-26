@@ -1,7 +1,7 @@
 {
   "name": "perp-cli",
   "version": "0.16.0",
-  "description": "Multi-DEX Perpetual Futures CLI + MCP - trade on Pacifica, Hyperliquid, Lighter, Aster, Lighter RH, Ondo Perps, Arcus, QFEX; market data on RISEx, TxFlow (unofficial API), Variational, GRVT, Extended; Derive options data",
+  "description": "Multi-DEX perpetual futures CLI + MCP server for traders and AI agents — trade on Hyperliquid (incl. HIP-3), Pacifica, Lighter, Aster, Ondo, Arcus, QFEX and more; funding-rate arb, portfolio, bots, bridge. 31 MCP tools, agent skill, JSON output.",
   "bin": {
     "perp": "dist/index.js",
     "perp-mcp": "dist/mcp-server.js",

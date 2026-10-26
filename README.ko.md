@@ -209,7 +209,7 @@ perp --json -e hl trade status c:0x1234567890abcdef1234567890abcdef
 
 [![Glama MCP server](https://glama.ai/mcp/servers/hypurrquant/perp-cli/badges/score.svg)](https://glama.ai/mcp/servers/hypurrquant/perp-cli)
 
-`perp-mcp`는 Claude Desktop, Cursor 등 MCP 클라이언트에 도구 30개를 제공합니다. 마켓 데이터에는 키가 필요 없으며, 계정 및 거래 도구를 쓰려면 먼저 `perp setup`을 실행하세요(서버는 같은 지갑을 읽습니다). MCP 설정에는 절대 개인 키를 넣지 마세요.
+`perp-mcp`는 Claude Desktop, Cursor 등 MCP 클라이언트에 도구 31개를 제공합니다. 마켓 데이터에는 키가 필요 없으며, 계정 및 거래 도구를 쓰려면 먼저 `perp setup`을 실행하세요(서버는 같은 지갑을 읽습니다). MCP 설정에는 절대 개인 키를 넣지 마세요.
 
 ```json
 {

@@ -2,7 +2,7 @@
 
 [← README](../README.md) · Configuration, network selection and the full tool list.
 
-perp-cli includes a full-featured MCP server (30 tools, 3 resources, 2 prompts) for Claude Desktop, Cursor, and other MCP clients.
+perp-cli includes a full-featured MCP server (31 tools, 3 resources, 2 prompts) for Claude Desktop, Cursor, and other MCP clients.
 
 **No API keys required for market data** — explore prices, orderbooks, funding rates, and arb opportunities without any setup. Add keys only when you want to trade.
 
