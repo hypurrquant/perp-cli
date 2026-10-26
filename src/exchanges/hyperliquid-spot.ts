@@ -12,7 +12,7 @@ import { HyperliquidOutcomeAdapter } from "./hyperliquid-outcome.js";
 import type { ResolvedSlippage } from "./slippage.js";
 import { PERP_TO_SPOT_MAP, SPOT_PERP_TOKEN_MAP } from "./spot-interface.js";
 import type { HyperliquidAdapter } from "./hyperliquid.js";
-import { assertHlAppliedBps, hlIocOutcome, hlProtectionPrice, hlRequirePriceOnGrid, hlSizeStep, hlTif } from "./hyperliquid.js";
+import { type HlAbstractionMode, assertHlAppliedBps, hlIocOutcome, hlProtectionPrice, hlRequirePriceOnGrid, hlSizeStep, hlTif } from "./hyperliquid.js";
 import { floorSize } from "./precision.js";
 import { PerpError, isDefiniteOrderFailure, isTransportFailure, orderNotSent, orderOutcomeUnknown } from "../errors.js";
 import { invalidateCache } from "../cache.js";
@@ -24,10 +24,11 @@ function hlRoundSize(size: string, szDecimals: number): string {
 
 /**
  * Spot balances from info `spotClearinghouseState` — the one mapper behind the keyed spot adapter
- * and the keyless `account balance --address`. `unified` = the account's spot USDC is its perp
- * margin (unified / portfolio mode): that row is marked `shared`.
+ * and the keyless `account balance --address`. `shared` (already counted in the perp equity) follows
+ * the account mode: unified → the USDC row; portfolio margin → USDC and every eligible collateral row
+ * (the venue marks those with `ltv`); any other mode, or `null` (a HIP-3 dex scope / mode unknown) → none.
  */
-export function hlSpotBalanceRows(state: Record<string, unknown>, unified: boolean): SpotBalance[] {
+export function hlSpotBalanceRows(state: Record<string, unknown>, mode: HlAbstractionMode | null): SpotBalance[] {
   const balances = (state?.balances ?? []) as Record<string, unknown>[];
   return balances.map((b) => ({
     token: String(b.coin ?? ""),
@@ -35,9 +36,8 @@ export function hlSpotBalanceRows(state: Record<string, unknown>, unified: boole
     available: String(Number(b.total ?? 0) - Number(b.hold ?? 0)),
     held: String(b.hold ?? "0"),
     entryNtl: b.entryNtl !== undefined ? String(b.entryNtl) : undefined,
-    // Shared with perp margin: USDC on a unified / portfolio account, and every portfolio-margin
-    // collateral row (the venue marks those with `ltv`; they are counted in the perp equity).
-    shared: unified && (String(b.coin ?? "") === "USDC" || Object.prototype.hasOwnProperty.call(b, "ltv")),
+    shared: (mode === "unified" || mode === "portfolio") && String(b.coin ?? "") === "USDC"
+      || mode === "portfolio" && Object.prototype.hasOwnProperty.call(b, "ltv"),
   }));
 }
 
@@ -224,9 +224,8 @@ export class HyperliquidSpotAdapter implements SpotAdapter, SpotHoldingPricesCap
     // in the funding-arb bot (and a misleading empty holdings table).
     // Reuse cached spot clearinghouse state (shared with getBalance() — saves 1 API call).
     const state = await this._hl._getSpotClearinghouseState({ fresh });
-    // Unified HL accounts: spot USDC IS the perp margin — mark it shared.
-    // HIP-3 dex-scoped adapters report dex equity, which never contains spot USDC.
-    return hlSpotBalanceRows(state, this._hl.isUnifiedAccount === true && this._hl.dex === "");
+    // HIP-3 dex-scoped adapters report dex equity, which never contains spot balances.
+    return hlSpotBalanceRows(state, this._hl.dex === "" ? this._hl.accountMode : null);
   }
 
   async spotMarketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { slippage: ResolvedSlippage }): Promise<unknown> {

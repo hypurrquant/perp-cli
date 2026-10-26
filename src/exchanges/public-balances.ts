@@ -110,7 +110,7 @@ export async function hyperliquidBalanceByAddress(net: Network, address: string)
       if (Number(b.equity) !== 0) dexes[dex] = b;
     } catch (e) { errors[`hip3:${dex}`] = errorOf(e, "hyperliquid"); }
   }
-  return { balance, spot: hlSpotBalanceRows({ balances }, unified), accounts: null, dexes, accountMode: mode, errors, notes: out };
+  return { balance, spot: hlSpotBalanceRows({ balances }, mode), accounts: null, dexes, accountMode: mode, errors, notes: out };
 }
 
 /**

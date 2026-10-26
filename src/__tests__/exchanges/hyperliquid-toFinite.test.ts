@@ -392,15 +392,19 @@ describe("HyperliquidAdapter portfolio-margin note and shared spot rows", () => 
     expect(out).not.toMatch(/USDH/);
   });
 
-  it("hlSpotBalanceRows: USDC and every ltv row are shared on a unified / portfolio account, nothing on standard", async () => {
+  it("hlSpotBalanceRows: shared follows the mode — PM: USDC + ltv rows; unified: USDC only (even with ltv); else none", async () => {
     const { hlSpotBalanceRows } = await import("../../exchanges/hyperliquid-spot.js");
     const balances = [
       { coin: "USDC", token: 0, total: "-18", hold: "0", ltv: "0.0" },
       { coin: "HYPE", token: 150, total: "0.5", hold: "0", ltv: "0.65" },
       { coin: "FATCAT", token: 126, total: "43", hold: "0" },
     ];
-    expect(hlSpotBalanceRows({ balances }, true).map(r => [r.token, r.shared])).toEqual([["USDC", true], ["HYPE", true], ["FATCAT", false]]);
-    expect(hlSpotBalanceRows({ balances }, false).every(r => !r.shared)).toBe(true);
+    expect(hlSpotBalanceRows({ balances }, "portfolio").map(r => [r.token, r.shared])).toEqual([["USDC", true], ["HYPE", true], ["FATCAT", false]]);
+    // Unified: non-USDC spot is not perp collateral — an `ltv` field must not make HYPE shared.
+    expect(hlSpotBalanceRows({ balances }, "unified").map(r => [r.token, r.shared])).toEqual([["USDC", true], ["HYPE", false], ["FATCAT", false]]);
+    for (const m of ["standard", "default", "dexAbstraction", null] as const) {
+      expect(hlSpotBalanceRows({ balances }, m).every(r => !r.shared)).toBe(true);
+    }
   });
 
   it("hlSpotUsdPricesOf: USDC-quoted pairs only, the larger 24h notional wins, USDC = 1", async () => {

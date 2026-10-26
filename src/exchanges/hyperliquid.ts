@@ -708,6 +708,8 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * semantics for accounts that have never opted in. Codex v0.12.12 final QA #1.
    */
   isUnifiedAccount = false;
+  /** The account abstraction mode resolved in init() (null until then / without an address). */
+  accountMode: HlAbstractionMode | null = null;
   private _address: string;
   private _privateKey: string;
   private _testnet: boolean;
@@ -776,6 +778,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     a._agentMeta = this._agentMeta;
     a._useNoAgent = this._useNoAgent;
     a.isUnifiedAccount = this.isUnifiedAccount;
+    a.accountMode = this.accountMode;
     a.builderFee = this.builderFee;
     a.setDex(dex);
     return a;
@@ -933,6 +936,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     // every caller that branches on the account mode.
     if (this._address) {
       const mode = await this._getAbstractionMode();
+      this.accountMode = mode;
       // dexAbstraction is not unified (USDC stays in the perp balance).
       this.isUnifiedAccount = mode === "unified" || mode === "portfolio";
     }
