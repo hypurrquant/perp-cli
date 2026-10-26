@@ -4,6 +4,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Changed — E2E runner sizes every order at $15 (no runtime change)
+
+- `scripts/e2e`: the smallest order is now **$15 notional** (`MIN_ORDER_USD`, `--min-usd N`) instead of the venue minimum + 10 % (≈ $11 on the $10 venues): perp units are `max(--min-usd, venue minimum × (1 + --margin-pct))`, auto-picked spot orders `max(--min-usd, venue minimum × 1.1)`, on the size grid. The buffer absorbs price moves between sizing and the fill, step rounding and fees. A venue minimum above $15 still wins.
+- The mainnet default `--max-usd` cap is **$30** (was $20): a run's peak open exposure is under two orders, so $15 orders need it for no step to be skipped (simulated run: every order-placing step runs at $30). Raising it above $30 still needs the TTY `RAISE-CAP-<N>` typing; `--operator-authorized` runs keep the default cap.
+
 ### Fixed — Hyperliquid portfolio-margin equity counted USDC only
 
 - A Hyperliquid account in **portfolio margin** mode reported `equity` = the USDC spot row alone — negative when USDC is borrowed — and only noted the other collateral (live 0x157a…, 2026-10-26: equity `-18.05` while the account held 0.67 HYPE as collateral). Equity is now the whole portfolio: Σ eligible collateral `total` × its spot USDC price, the eligible rows being exactly the ones the venue marks with `ltv` (USDC, HYPE, USDT0 live; memecoins carry none). Same account after the fix: `33.11` (= −18.04 USDC + 0.6695 HYPE × 76.38); with its non-collateral spot (FATCAT etc. ≈ 1.34) it matches the venue's own `portfolio` account value minus vault equity (162.60 − 128.15 = 34.45). The balance carries `collateral` (token, total, priceUsd, valueUsd, ltv, borrowed, supplied) and `portfolioMarginRatio` (liquidatable above 0.95). A held collateral token without a USDC spot price is `PRICE_STALE` (never valued at a guess). Applies to the keyed balance / `portfolio` and to `account balance --address`.
