@@ -51,6 +51,47 @@ perp --json -e hl trade market BTC buy 0.001          # market order (bounded by
 perp --json -e hl trade close BTC
 ```
 
+## AI Agent Skill
+
+Drop-in skill for Claude Code, Cursor, Codex, Gemini CLI, and other agent CLIs. Bundles a non-interactive command guide, ops playbook, strategy framework, and reusable shell scripts (preflight, arb monitor, validation) so your agent stops at the right confirmation points and never wedges on interactive wizards.
+
+### Install
+
+```bash
+# Claude Code — slash command
+/install-skill hypurrquant/perp-cli
+
+# Cursor / Codex / generic agent CLIs — via npx
+npx skills add hypurrquant/perp-cli
+
+# Manual install (any agent that reads a Skills directory)
+git clone https://github.com/hypurrquant/perp-cli.git
+cp -R perp-cli/skills/perp-cli ~/.claude/skills/        # or your CLI's skills dir
+```
+
+The skill ships inside the npm package (`perp-cli/skills/perp-cli`), so a global install also makes it available locally:
+
+```bash
+npm install -g perp-cli@latest
+ls "$(npm root -g)/perp-cli/skills/perp-cli"
+```
+
+### What's in the skill
+
+| File | Purpose |
+|------|---------|
+| `SKILL.md` | Top-level agent guide — rules, workflows, examples |
+| `references/commands.md` | Full non-interactive command reference (every group) |
+| `references/agent-operations.md` | Setup flows, idempotency, error handling, common mistakes |
+| `references/strategies.md` | Funding-arb decision framework + risk management |
+| `scripts/preflight.sh` | Install + wallet + connectivity + risk readiness check |
+| `scripts/arb-monitor.sh` | Live monitor for open arb positions |
+| `scripts/spot-perp-scan.sh` | Scan spot+perp opportunities with balance context |
+| `scripts/funding-analysis.sh` | Cross-exchange funding overview / per-symbol drilldown |
+| `scripts/validate-arb.sh` | Pre-execution validation (price / balance / risk / dry-run) |
+
+See [`skills/perp-cli/SKILL.md`](skills/perp-cli/SKILL.md) for the full agent guide.
+
 ## Features
 
 - **Funding rate arb** — perp-perp and spot-perp scans, one-command dual-leg entry and exit
@@ -180,47 +221,6 @@ Errors include `retryable` flag — only retry when `true`.
 ```
 
 Testnet, the full tool list, resources and prompts: **[docs/mcp.md](docs/mcp.md)**.
-
-## AI Agent Skill
-
-Drop-in skill for Claude Code, Cursor, Codex, Gemini CLI, and other agent CLIs. Bundles a non-interactive command guide, ops playbook, strategy framework, and reusable shell scripts (preflight, arb monitor, validation) so your agent stops at the right confirmation points and never wedges on interactive wizards.
-
-### Install
-
-```bash
-# Claude Code — slash command
-/install-skill hypurrquant/perp-cli
-
-# Cursor / Codex / generic agent CLIs — via npx
-npx skills add hypurrquant/perp-cli
-
-# Manual install (any agent that reads a Skills directory)
-git clone https://github.com/hypurrquant/perp-cli.git
-cp -R perp-cli/skills/perp-cli ~/.claude/skills/        # or your CLI's skills dir
-```
-
-The skill ships inside the npm package (`perp-cli/skills/perp-cli`), so a global install also makes it available locally:
-
-```bash
-npm install -g perp-cli@latest
-ls "$(npm root -g)/perp-cli/skills/perp-cli"
-```
-
-### What's in the skill
-
-| File | Purpose |
-|------|---------|
-| `SKILL.md` | Top-level agent guide — rules, workflows, examples |
-| `references/commands.md` | Full non-interactive command reference (every group) |
-| `references/agent-operations.md` | Setup flows, idempotency, error handling, common mistakes |
-| `references/strategies.md` | Funding-arb decision framework + risk management |
-| `scripts/preflight.sh` | Install + wallet + connectivity + risk readiness check |
-| `scripts/arb-monitor.sh` | Live monitor for open arb positions |
-| `scripts/spot-perp-scan.sh` | Scan spot+perp opportunities with balance context |
-| `scripts/funding-analysis.sh` | Cross-exchange funding overview / per-symbol drilldown |
-| `scripts/validate-arb.sh` | Pre-execution validation (price / balance / risk / dry-run) |
-
-See [`skills/perp-cli/SKILL.md`](skills/perp-cli/SKILL.md) for the full agent guide.
 
 ## Documentation
 

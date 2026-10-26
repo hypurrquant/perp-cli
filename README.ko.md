@@ -53,6 +53,47 @@ perp --json -e hl trade market BTC buy 0.001          # market order (bounded by
 perp --json -e hl trade close BTC
 ```
 
+## AI Agent Skill
+
+Claude Code, Cursor, Codex, Gemini CLI 등 에이전트 CLI에 바로 넣어 쓸 수 있는 스킬입니다. 비대화형 커맨드 가이드, 운영 플레이북, 전략 프레임워크, 재사용 가능한 셸 스크립트(사전 점검, 차익거래 모니터, 검증)가 포함되어 있어, 에이전트가 적절한 확인 지점에서 멈추고 대화형 마법사에서 막히는 일이 없습니다.
+
+### 설치
+
+```bash
+# Claude Code — slash command
+/install-skill hypurrquant/perp-cli
+
+# Cursor / Codex / generic agent CLIs — via npx
+npx skills add hypurrquant/perp-cli
+
+# Manual install (any agent that reads a Skills directory)
+git clone https://github.com/hypurrquant/perp-cli.git
+cp -R perp-cli/skills/perp-cli ~/.claude/skills/        # or your CLI's skills dir
+```
+
+스킬은 npm 패키지 안(`perp-cli/skills/perp-cli`)에 포함되어 있으므로, 전역 설치만 해도 로컬에서 사용할 수 있습니다:
+
+```bash
+npm install -g perp-cli@latest
+ls "$(npm root -g)/perp-cli/skills/perp-cli"
+```
+
+### 스킬 구성
+
+| 파일 | 용도 |
+|------|---------|
+| `SKILL.md` | 최상위 에이전트 가이드 — 규칙, 워크플로, 예시 |
+| `references/commands.md` | 비대화형 커맨드 전체 레퍼런스 (모든 그룹) |
+| `references/agent-operations.md` | 설정 흐름, 멱등성, 오류 처리, 흔한 실수 |
+| `references/strategies.md` | 펀딩비 차익거래 의사결정 프레임워크 + 리스크 관리 |
+| `scripts/preflight.sh` | 설치 + 지갑 + 연결 + 리스크 준비 상태 점검 |
+| `scripts/arb-monitor.sh` | 진행 중인 차익거래 포지션 실시간 모니터 |
+| `scripts/spot-perp-scan.sh` | 잔고 정보를 반영한 spot+perp 기회 스캔 |
+| `scripts/funding-analysis.sh` | 거래소 간 펀딩비 개요 / 심볼별 상세 분석 |
+| `scripts/validate-arb.sh` | 실행 전 검증 (가격 / 잔고 / 리스크 / dry-run) |
+
+전체 에이전트 가이드는 [`skills/perp-cli/SKILL.md`](skills/perp-cli/SKILL.md)를 참고하세요.
+
 ## 주요 기능
 
 - **펀딩비 차익거래** — perp-perp 및 spot-perp 스캔, 커맨드 한 번으로 양방향 레그 진입과 청산
@@ -182,47 +223,6 @@ perp --json -e hl trade status c:0x1234567890abcdef1234567890abcdef
 ```
 
 테스트넷, 전체 도구 목록, 리소스, 프롬프트: **[docs/mcp.md](docs/mcp.md)**.
-
-## AI Agent Skill
-
-Claude Code, Cursor, Codex, Gemini CLI 등 에이전트 CLI에 바로 넣어 쓸 수 있는 스킬입니다. 비대화형 커맨드 가이드, 운영 플레이북, 전략 프레임워크, 재사용 가능한 셸 스크립트(사전 점검, 차익거래 모니터, 검증)가 포함되어 있어, 에이전트가 적절한 확인 지점에서 멈추고 대화형 마법사에서 막히는 일이 없습니다.
-
-### 설치
-
-```bash
-# Claude Code — slash command
-/install-skill hypurrquant/perp-cli
-
-# Cursor / Codex / generic agent CLIs — via npx
-npx skills add hypurrquant/perp-cli
-
-# Manual install (any agent that reads a Skills directory)
-git clone https://github.com/hypurrquant/perp-cli.git
-cp -R perp-cli/skills/perp-cli ~/.claude/skills/        # or your CLI's skills dir
-```
-
-스킬은 npm 패키지 안(`perp-cli/skills/perp-cli`)에 포함되어 있으므로, 전역 설치만 해도 로컬에서 사용할 수 있습니다:
-
-```bash
-npm install -g perp-cli@latest
-ls "$(npm root -g)/perp-cli/skills/perp-cli"
-```
-
-### 스킬 구성
-
-| 파일 | 용도 |
-|------|---------|
-| `SKILL.md` | 최상위 에이전트 가이드 — 규칙, 워크플로, 예시 |
-| `references/commands.md` | 비대화형 커맨드 전체 레퍼런스 (모든 그룹) |
-| `references/agent-operations.md` | 설정 흐름, 멱등성, 오류 처리, 흔한 실수 |
-| `references/strategies.md` | 펀딩비 차익거래 의사결정 프레임워크 + 리스크 관리 |
-| `scripts/preflight.sh` | 설치 + 지갑 + 연결 + 리스크 준비 상태 점검 |
-| `scripts/arb-monitor.sh` | 진행 중인 차익거래 포지션 실시간 모니터 |
-| `scripts/spot-perp-scan.sh` | 잔고 정보를 반영한 spot+perp 기회 스캔 |
-| `scripts/funding-analysis.sh` | 거래소 간 펀딩비 개요 / 심볼별 상세 분석 |
-| `scripts/validate-arb.sh` | 실행 전 검증 (가격 / 잔고 / 리스크 / dry-run) |
-
-전체 에이전트 가이드는 [`skills/perp-cli/SKILL.md`](skills/perp-cli/SKILL.md)를 참고하세요.
 
 ## 문서
 

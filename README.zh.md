@@ -53,6 +53,47 @@ perp --json -e hl trade market BTC buy 0.001          # market order (bounded by
 perp --json -e hl trade close BTC
 ```
 
+## AI Agent Skill
+
+适用于 Claude Code、Cursor、Codex、Gemini CLI 及其他 agent CLI 的即插即用技能（skill）。内含非交互式命令指南、运维手册、策略框架以及可复用的 shell 脚本（预检、套利监控、校验），让你的 agent 在正确的确认节点停下，并且永远不会卡在交互式向导上。
+
+### 安装
+
+```bash
+# Claude Code — slash command
+/install-skill hypurrquant/perp-cli
+
+# Cursor / Codex / generic agent CLIs — via npx
+npx skills add hypurrquant/perp-cli
+
+# Manual install (any agent that reads a Skills directory)
+git clone https://github.com/hypurrquant/perp-cli.git
+cp -R perp-cli/skills/perp-cli ~/.claude/skills/        # or your CLI's skills dir
+```
+
+该技能随 npm 包一同发布（`perp-cli/skills/perp-cli`），因此全局安装后也可在本地使用：
+
+```bash
+npm install -g perp-cli@latest
+ls "$(npm root -g)/perp-cli/skills/perp-cli"
+```
+
+### 技能包含的内容
+
+| 文件 | 用途 |
+|------|---------|
+| `SKILL.md` | 顶层 agent 指南 — 规则、工作流、示例 |
+| `references/commands.md` | 完整的非交互式命令参考（涵盖所有命令组） |
+| `references/agent-operations.md` | 设置流程、幂等性、错误处理、常见错误 |
+| `references/strategies.md` | 资金费率套利决策框架 + 风险管理 |
+| `scripts/preflight.sh` | 安装 + 钱包 + 连通性 + 风险就绪检查 |
+| `scripts/arb-monitor.sh` | 实时监控未平仓的套利持仓 |
+| `scripts/spot-perp-scan.sh` | 结合余额信息扫描现货+永续机会 |
+| `scripts/funding-analysis.sh` | 跨交易所资金费率概览 / 单交易对深入分析 |
+| `scripts/validate-arb.sh` | 执行前校验（价格 / 余额 / 风险 / dry-run） |
+
+完整的 agent 指南请参见 [`skills/perp-cli/SKILL.md`](skills/perp-cli/SKILL.md)。
+
 ## 功能特性
 
 - **资金费率套利** — 永续-永续和现货-永续扫描，一条命令完成双腿开仓与平仓
@@ -182,47 +223,6 @@ perp --json -e hl trade status c:0x1234567890abcdef1234567890abcdef
 ```
 
 测试网、完整工具列表、资源和提示词：**[docs/mcp.md](docs/mcp.md)**。
-
-## AI Agent Skill
-
-适用于 Claude Code、Cursor、Codex、Gemini CLI 及其他 agent CLI 的即插即用技能（skill）。内含非交互式命令指南、运维手册、策略框架以及可复用的 shell 脚本（预检、套利监控、校验），让你的 agent 在正确的确认节点停下，并且永远不会卡在交互式向导上。
-
-### 安装
-
-```bash
-# Claude Code — slash command
-/install-skill hypurrquant/perp-cli
-
-# Cursor / Codex / generic agent CLIs — via npx
-npx skills add hypurrquant/perp-cli
-
-# Manual install (any agent that reads a Skills directory)
-git clone https://github.com/hypurrquant/perp-cli.git
-cp -R perp-cli/skills/perp-cli ~/.claude/skills/        # or your CLI's skills dir
-```
-
-该技能随 npm 包一同发布（`perp-cli/skills/perp-cli`），因此全局安装后也可在本地使用：
-
-```bash
-npm install -g perp-cli@latest
-ls "$(npm root -g)/perp-cli/skills/perp-cli"
-```
-
-### 技能包含的内容
-
-| 文件 | 用途 |
-|------|---------|
-| `SKILL.md` | 顶层 agent 指南 — 规则、工作流、示例 |
-| `references/commands.md` | 完整的非交互式命令参考（涵盖所有命令组） |
-| `references/agent-operations.md` | 设置流程、幂等性、错误处理、常见错误 |
-| `references/strategies.md` | 资金费率套利决策框架 + 风险管理 |
-| `scripts/preflight.sh` | 安装 + 钱包 + 连通性 + 风险就绪检查 |
-| `scripts/arb-monitor.sh` | 实时监控未平仓的套利持仓 |
-| `scripts/spot-perp-scan.sh` | 结合余额信息扫描现货+永续机会 |
-| `scripts/funding-analysis.sh` | 跨交易所资金费率概览 / 单交易对深入分析 |
-| `scripts/validate-arb.sh` | 执行前校验（价格 / 余额 / 风险 / dry-run） |
-
-完整的 agent 指南请参见 [`skills/perp-cli/SKILL.md`](skills/perp-cli/SKILL.md)。
 
 ## 文档
 

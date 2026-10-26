@@ -53,6 +53,47 @@ perp --json -e hl trade market BTC buy 0.001          # market order (bounded by
 perp --json -e hl trade close BTC
 ```
 
+## AI Agent Skill
+
+Claude Code、Cursor、Codex、Gemini CLI などのエージェント CLI にそのまま導入できるスキルです。非対話型のコマンドガイド、運用プレイブック、戦略フレームワーク、再利用可能なシェルスクリプト（事前チェック、アービトラージ監視、バリデーション）を同梱しており、エージェントが適切な確認ポイントで停止し、対話型ウィザードで止まってしまうことがありません。
+
+### インストール
+
+```bash
+# Claude Code — slash command
+/install-skill hypurrquant/perp-cli
+
+# Cursor / Codex / generic agent CLIs — via npx
+npx skills add hypurrquant/perp-cli
+
+# Manual install (any agent that reads a Skills directory)
+git clone https://github.com/hypurrquant/perp-cli.git
+cp -R perp-cli/skills/perp-cli ~/.claude/skills/        # or your CLI's skills dir
+```
+
+スキルは npm パッケージ内（`perp-cli/skills/perp-cli`）に同梱されているため、グローバルインストールでもローカルで利用できます:
+
+```bash
+npm install -g perp-cli@latest
+ls "$(npm root -g)/perp-cli/skills/perp-cli"
+```
+
+### スキルの内容
+
+| ファイル | 用途 |
+|------|---------|
+| `SKILL.md` | トップレベルのエージェントガイド — ルール、ワークフロー、例 |
+| `references/commands.md` | 非対話型コマンドの完全なリファレンス（全グループ） |
+| `references/agent-operations.md` | セットアップフロー、冪等性、エラー処理、よくある間違い |
+| `references/strategies.md` | ファンディング・アービトラージの意思決定フレームワーク + リスク管理 |
+| `scripts/preflight.sh` | インストール + ウォレット + 接続性 + リスクの準備状況チェック |
+| `scripts/arb-monitor.sh` | オープン中のアービトラージポジションのライブ監視 |
+| `scripts/spot-perp-scan.sh` | 残高を考慮した現物 + 無期限先物の機会スキャン |
+| `scripts/funding-analysis.sh` | 取引所横断のファンディング概要 / シンボルごとの詳細 |
+| `scripts/validate-arb.sh` | 執行前バリデーション（価格 / 残高 / リスク / dry-run） |
+
+エージェントガイドの全文は [`skills/perp-cli/SKILL.md`](skills/perp-cli/SKILL.md) を参照してください。
+
 ## 機能
 
 - **ファンディングレート・アービトラージ** — perp-perp と spot-perp のスキャン、1 コマンドでの両建てエントリーと決済
@@ -182,47 +223,6 @@ perp --json -e hl trade status c:0x1234567890abcdef1234567890abcdef
 ```
 
 testnet、全ツール一覧、リソース、プロンプト: **[docs/mcp.md](docs/mcp.md)**。
-
-## AI Agent Skill
-
-Claude Code、Cursor、Codex、Gemini CLI などのエージェント CLI にそのまま導入できるスキルです。非対話型のコマンドガイド、運用プレイブック、戦略フレームワーク、再利用可能なシェルスクリプト（事前チェック、アービトラージ監視、バリデーション）を同梱しており、エージェントが適切な確認ポイントで停止し、対話型ウィザードで止まってしまうことがありません。
-
-### インストール
-
-```bash
-# Claude Code — slash command
-/install-skill hypurrquant/perp-cli
-
-# Cursor / Codex / generic agent CLIs — via npx
-npx skills add hypurrquant/perp-cli
-
-# Manual install (any agent that reads a Skills directory)
-git clone https://github.com/hypurrquant/perp-cli.git
-cp -R perp-cli/skills/perp-cli ~/.claude/skills/        # or your CLI's skills dir
-```
-
-スキルは npm パッケージ内（`perp-cli/skills/perp-cli`）に同梱されているため、グローバルインストールでもローカルで利用できます:
-
-```bash
-npm install -g perp-cli@latest
-ls "$(npm root -g)/perp-cli/skills/perp-cli"
-```
-
-### スキルの内容
-
-| ファイル | 用途 |
-|------|---------|
-| `SKILL.md` | トップレベルのエージェントガイド — ルール、ワークフロー、例 |
-| `references/commands.md` | 非対話型コマンドの完全なリファレンス（全グループ） |
-| `references/agent-operations.md` | セットアップフロー、冪等性、エラー処理、よくある間違い |
-| `references/strategies.md` | ファンディング・アービトラージの意思決定フレームワーク + リスク管理 |
-| `scripts/preflight.sh` | インストール + ウォレット + 接続性 + リスクの準備状況チェック |
-| `scripts/arb-monitor.sh` | オープン中のアービトラージポジションのライブ監視 |
-| `scripts/spot-perp-scan.sh` | 残高を考慮した現物 + 無期限先物の機会スキャン |
-| `scripts/funding-analysis.sh` | 取引所横断のファンディング概要 / シンボルごとの詳細 |
-| `scripts/validate-arb.sh` | 執行前バリデーション（価格 / 残高 / リスク / dry-run） |
-
-エージェントガイドの全文は [`skills/perp-cli/SKILL.md`](skills/perp-cli/SKILL.md) を参照してください。
 
 ## ドキュメント
 
