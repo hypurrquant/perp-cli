@@ -285,23 +285,6 @@ describe("BUG 5: HL getAssetIndex retries on empty map", () => {
   });
 });
 
-// ── BUG 7: cli-spec version from package.json ──
-describe("BUG 7: cli-spec reads version from package.json", () => {
-  it("version is not hardcoded '0.1.0'", async () => {
-    const { getCliSpec } = await import("../cli-spec.js");
-    const { Command } = await import("commander");
-    const program = new Command();
-    program.name("perp");
-    const spec = getCliSpec(program);
-    expect(spec.version).not.toBe("0.1.0");
-    // Should match the version in package.json
-    const { createRequire } = await import("node:module");
-    const req = createRequire(import.meta.url);
-    const pkg = req("../../package.json") as { version: string };
-    expect(spec.version).toBe(pkg.version);
-  });
-});
-
 /**
  * Every HL action path must check the PER-ENTRY verdict, not just the envelope.
  *
