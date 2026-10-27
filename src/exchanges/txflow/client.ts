@@ -12,13 +12,15 @@
  *      no connection at all                         → not sent (EXCHANGE_UNREACHABLE, sent:false)
  *      HTTP 429                                     → RATE_LIMITED, sent:false (docs: a rate-limited
  *                                                     action did not execute)
- *      `{status:"err"}` / HTTP 4xx                  → definite refusal (POLICY_DENIED for the mainnet
+ *      `{status:"err"}` (HTTP < 500) / HTTP 4xx     → definite refusal (POLICY_DENIED for the mainnet
  *                                                     whitelist / access gate, DEPOSIT_REQUIRED,
  *                                                     AGENT_NOT_REGISTERED, else the caller's code)
  *      `statuses: [{error}]`                        → executed and failed: definite refusal
- *      `statuses: ["success"]`                      → executed (the response never carries an
+ *      `statuses: ["success"]` + `confirm: executed` → executed (the response never carries an
  *                                                     order id or a fill — callers read those back)
- *      timeout / reset / 5xx / HTTP 202 `pending` /
+ *      any HTTP ≥ 500 (even with an err body),
+ *      "success" without the confirm echo,
+ *      timeout / reset / HTTP 202 `pending` /
  *      async `traceId` ack / unreadable body        → outcome UNKNOWN (TxflowSendUnknown)
  *  - WS one-shot: open → subscribe `allAssetCtxs` → first data frame → close (bulk mark / funding
  *    snapshot of every perp). The socket factory is injectable for tests.
@@ -146,6 +148,11 @@ export class TxflowClient {
     try { parsed = JSON.parse(text); } catch { parsed = undefined; }
     const body = parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
     const venueCode = typeof body?.code === "number" ? body.code : null;
+    // A 5xx can come after consensus (the action may have executed): unknown, even with an err body.
+    if (res.status >= 500) {
+      const msg = textOf(body?.message) ?? textOf(body?.response) ?? text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+      throw new TxflowSendUnknown(`TxFlow ${what}`, new Error(`HTTP ${res.status} ${msg}`), res.status);
+    }
     if (body !== null && body.status === "err") {
       const message = textOf(body.message) ?? textOf(body.response) ?? "rejected";
       throw txflowRefusal(what, message, res.status, venueCode, rejectCode, network);
@@ -176,6 +183,12 @@ export class TxflowClient {
       throw txflowRefusal(what, (st as { error: string }).error, res.status, venueCode, rejectCode, network);
     }
     if (st !== "success") throw new TxflowSendUnknown(`TxFlow ${what}`, new Error(`unexpected execution status ${JSON.stringify(st)}`), res.status);
+    // Docs (Exchange API § Response): with confirm "executed" the reply "carries confirm: executed".
+    // Without that echo "success" only proves consensus acceptance, not execution → unknown.
+    const echo = body.confirm ?? (data as { confirm?: unknown }).confirm;
+    if (echo !== "executed") {
+      throw new TxflowSendUnknown(`TxFlow ${what}`, new Error("the reply does not echo confirm: executed — accepted by consensus, execution not proven"), res.status);
+    }
     return { type: typeof data.type === "string" ? data.type : null };
   }
 }

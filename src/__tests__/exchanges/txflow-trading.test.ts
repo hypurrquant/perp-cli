@@ -29,7 +29,7 @@ type Body = Record<string, unknown> & { type?: string };
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
 const recorded = (k: string) => json(FIX.reads[k].httpStatus, FIX.reads[k].body);
 const ok = (data: unknown) => json(200, { success: true, code: 0, data });
-const executed = (type = "PlaceOrder") => json(200, { status: "ok", code: 0, data: { type, data: { statuses: ["success"] } } });
+const executed = (type = "PlaceOrder") => json(200, { status: "ok", code: 0, confirm: "executed", data: { type, data: { statuses: ["success"] } } });
 
 interface Venue {
   /** /info answers by request type (defaults: the recorded fixture). */

@@ -34,7 +34,7 @@ function signerOf(w: ethers.Wallet | ethers.HDNodeWallet): EvmSigner {
 }
 
 const ok = (data: unknown) => new Response(JSON.stringify({ success: true, code: 0, data }), { status: 200 });
-const executed = () => new Response(JSON.stringify({ status: "ok", code: 0, data: { type: "ApproveAgent", data: { statuses: ["success"] } } }), { status: 200 });
+const executed = () => new Response(JSON.stringify({ status: "ok", code: 0, confirm: "executed", data: { type: "ApproveAgent", data: { statuses: ["success"] } } }), { status: 200 });
 
 interface VenueState {
   eligible: boolean;

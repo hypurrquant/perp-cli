@@ -182,7 +182,7 @@ describe("TxflowClient.exchange — accepted / rejected / unknown", () => {
   const send = (net: "mainnet" | "testnet" = "testnet") => client().exchange(REQ, "place order", "ORDER_REJECTED", net);
 
   it("sends the envelope with confirm: executed and x-api-version; an executed success resolves", async () => {
-    fetchMock.mockResolvedValueOnce(respond(200, { status: "ok", code: 0, data: { type: "PlaceOrder", data: { statuses: ["success"] } } }));
+    fetchMock.mockResolvedValueOnce(respond(200, { status: "ok", code: 0, confirm: "executed", data: { type: "PlaceOrder", data: { statuses: ["success"] } } }));
     await expect(send()).resolves.toEqual({ type: "PlaceOrder" });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://rpc.example/exchange");
@@ -221,6 +221,20 @@ describe("TxflowClient.exchange — accepted / rejected / unknown", () => {
     expect((await send().catch(x => x) as PerpError).structured.code).toBe("DEPOSIT_REQUIRED");
     fetchMock.mockResolvedValueOnce(respond(200, { status: "err", code: 1, message: "Agent 0xabc is not authorized by any account" }));
     expect((await send().catch(x => x) as PerpError).structured.code).toBe("AGENT_NOT_REGISTERED");
+  });
+
+  it("HTTP ≥ 500 is UNKNOWN even with an err body (the action may have executed after consensus)", async () => {
+    fetchMock.mockResolvedValueOnce(respond(500, { status: "err", code: 10000, message: "User not in whitelist" }));
+    await expect(send("mainnet")).rejects.toBeInstanceOf(TxflowSendUnknown);
+    fetchMock.mockResolvedValueOnce(respond(503, { status: "err", code: 1, response: "Price precision does not match the tick size: 0.1" }));
+    await expect(send()).rejects.toBeInstanceOf(TxflowSendUnknown);
+  });
+
+  it("\"success\" without the confirm: executed echo proves consensus only → UNKNOWN", async () => {
+    fetchMock.mockResolvedValueOnce(respond(200, { status: "ok", code: 0, data: { type: "PlaceOrder", data: { statuses: ["success"] } } }));
+    await expect(send()).rejects.toBeInstanceOf(TxflowSendUnknown);
+    fetchMock.mockResolvedValueOnce(respond(200, { status: "ok", code: 0, confirm: "consensus", data: { type: "PlaceOrder", data: { statuses: ["success"] } } }));
+    await expect(send()).rejects.toBeInstanceOf(TxflowSendUnknown);
   });
 
   it("HTTP 429 → RATE_LIMITED, sent:false (a rate-limited action did not execute)", async () => {
