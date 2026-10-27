@@ -224,7 +224,7 @@ export function txflowCancelGrouping(o: { row: Record<string, unknown>; trigger:
   return o.trigger ? "trigger" : undefined;
 }
 
-/** A leg order id of a tpslOrders row: "" / "0" / absent = the leg is not set. */
+/** A leg order id of a tpslOrders row: "" / "0" / absent = no id (a leg is also unset when its trigger price is ""). */
 function tpslLegOid(v: unknown, what: string): number | null {
   if (v === undefined || v === null || v === "" || v === "0" || v === 0) return null;
   return num(v, what);
@@ -241,7 +241,8 @@ function tpslLegRows(x: Rec): OpenRow[] {
   const out: OpenRow[] = [];
   for (const kind of ["sl", "tp"] as const) {
     const oid = tpslLegOid(x[`${kind}Oid`], `tpslOrders ${kind}Oid`);
-    if (oid === null) continue;
+    // Live (testnet 2026-10-28): an unset leg still carries an allocated oid; its trigger price is "".
+    if (oid === null || x[`${kind}TriggerPrice`] === "") continue;
     const orderType = x[`${kind}OrderType`];
     if (typeof orderType !== "string" || orderType === "") throw txflowShapeError(`tpslOrders ${kind}OrderType`);
     const limitPx = optionalPrice(x[`${kind}OrderPrice`], `tpslOrders ${kind}OrderPrice`);
@@ -1175,11 +1176,13 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     const { newVenueClientOrderId } = await import("../trading-v2.js");
     const cloid = newVenueClientOrderId(this.venue);
     assertTxflowCloid(cloid);
+    // The client id rides on the first (SL) leg only: the node refuses one id on both legs
+    // ("Duplicate client order ID", testnet 2026-10-28); the tpslOrders row carries it.
     const leg = (kind: "tp" | "sl", trigger: string | null, limit: string | null): TxflowOrderBody => txflowOrderBody({
       asset: m.index, isBuy: pair.closeSide === "buy",
       price: trigger === null || limit === null ? "" : requireOnTick(limit, m.tickSize), size: trigger === null ? "" : size, reduceOnly: true,
       type: { trigger: { isMarket: limit === null, triggerPx: trigger === null ? "" : requireOnTick(trigger, m.tickSize), tpsl: kind } },
-      cloid, marginMode: margin.mode,
+      cloid: kind === "sl" ? cloid : null, marginMode: margin.mode,
     });
     const action: TxflowAgentAction = { type: "order", grouping: "positionTpsl", orders: [leg("sl", pair.sl, null), leg("tp", pair.tp, pair.tpLimit)] };
     const notes = [margin.note, "one positionTpsl action: the legs are one OCO pair (tpslOrders)", "triggers fire on the mark price; a fired order is not guaranteed to fill (docs: Triggered is not filled)"];

@@ -85,7 +85,8 @@ export interface TxflowOrderBody {
   s: string;
   r: boolean;
   t: { limit: { tif: TxflowTif } } | { trigger: TxflowTrigger };
-  c: string;
+  /** Client order id; omitted on the second leg of a positionTpsl pair (live: one id per action — "Duplicate client order ID"). */
+  c?: string;
   /** Margin mode — always sent: it is part of the position key (docs: order `m`). */
   m: "cross" | "isolated";
 }
@@ -120,7 +121,7 @@ export interface TxflowApproveAgentAction {
 }
 
 /** Order body in the node's key order. A trigger body keeps isMarket, triggerPx, tpsl. */
-export function txflowOrderBody(o: { asset: number; isBuy: boolean; price: string; size: string; reduceOnly: boolean; type: TxflowOrderBody["t"]; cloid: string; marginMode: "cross" | "isolated" }): TxflowOrderBody {
+export function txflowOrderBody(o: { asset: number; isBuy: boolean; price: string; size: string; reduceOnly: boolean; type: TxflowOrderBody["t"]; cloid: string | null; marginMode: "cross" | "isolated" }): TxflowOrderBody {
   let t: TxflowOrderBody["t"];
   if ("limit" in o.type) {
     t = { limit: { tif: o.type.limit.tif } };
@@ -128,7 +129,9 @@ export function txflowOrderBody(o: { asset: number; isBuy: boolean; price: strin
     const tr = o.type.trigger;
     t = { trigger: { isMarket: tr.isMarket, triggerPx: tr.triggerPx, tpsl: tr.tpsl } };
   }
-  return { a: o.asset, b: o.isBuy, p: o.price, s: o.size, r: o.reduceOnly, t, c: o.cloid, m: o.marginMode };
+  return o.cloid === null
+    ? { a: o.asset, b: o.isBuy, p: o.price, s: o.size, r: o.reduceOnly, t, m: o.marginMode }
+    : { a: o.asset, b: o.isBuy, p: o.price, s: o.size, r: o.reduceOnly, t, c: o.cloid, m: o.marginMode };
 }
 
 /** A cancel body in the node's key order: {a, o}, or {grouping, a, o} for a trigger / TP/SL. */

@@ -273,9 +273,11 @@ describe("placeOrder — action building per order type", () => {
     const c = a.orders[0].c;
     expect(a.orders).toEqual([
       { a: 1, b: false, p: "", s: "0.01", r: true, t: { trigger: { isMarket: true, triggerPx: "60000", tpsl: "sl" } }, c, m: "cross" },
-      { a: 1, b: false, p: "89990", s: "0.01", r: true, t: { trigger: { isMarket: false, triggerPx: "90000", tpsl: "tp" } }, c, m: "cross" },
+      // No client id on the TP leg: the node refuses one id on both legs ("Duplicate client order ID", testnet).
+      { a: 1, b: false, p: "89990", s: "0.01", r: true, t: { trigger: { isMarket: false, triggerPx: "90000", tpsl: "tp" } }, m: "cross" },
     ]);
     expect(Object.keys(a.orders[0])).toEqual(["a", "b", "p", "s", "r", "t", "c", "m"]);
+    expect(Object.keys(a.orders[1])).toEqual(["a", "b", "p", "s", "r", "t", "m"]);
     expect(legs.map(l => [l.kind, l.trigger, l.result.orderId, l.result.status, l.result.execution.method])).toEqual([
       ["sl", "60000", "501", "open", "positionTpsl"], ["tp", "90000", "502", "open", "positionTpsl"],
     ]);
@@ -530,6 +532,15 @@ describe("review fixes: client-id reuse, cancel races, paging, mixed groupings, 
     expect(a.cancels).toEqual([{ grouping: "tpsl", a: 1, o: 501 }, { a: 1, o: 901 }, { grouping: "trigger", a: 1, o: 902 }]);
     expect(a.cancels.map(c => Object.keys(c))).toEqual([["grouping", "a", "o"], ["a", "o"], ["grouping", "a", "o"]]);
     expect(r.cancelled.map(c => c.value).sort()).toEqual(["501", "502", "901", "902"]);
+  });
+
+  it("open orders: an unset TP/SL leg keeps an allocated oid with trigger \"\" (live testnet row) → only the set leg is listed", async () => {
+    venue.info.frontendOpenOrders = () => ok([]);
+    venue.info.tpslOrders = () => ok([tpslRow({ tpOid: "502", tpTriggerPrice: "", tpOrderPrice: "", tpOrderType: "Market" })]);
+    const orders = await adapter().getOpenOrders();
+    expect(orders).toEqual([
+      { orderId: "501", symbol: "BTC", side: "sell", price: "0", size: "0.01", filled: "0", status: "untriggered", type: "sl market reduce-only", triggerPrice: "60000" },
+    ]);
   });
 
   it("open orders list each live TP/SL leg (tpslOrders); cancelling one leg cancels the pair — both legs proven, a fired pair is not cancelled", async () => {
