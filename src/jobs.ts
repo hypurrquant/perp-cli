@@ -11,6 +11,7 @@ import "./exchanges/venues/index.js";
 import { PerpError } from "./errors.js";
 import { QFEX_AUTOMATION_VERIFIED, QFEX_REDUCE_ONLY_WIRE, qfexAutomationGate, qfexReduceOnlyGate } from "./exchanges/qfex/signing.js";
 import { startRefusal, unsupported } from "./exchanges/trading-v2.js";
+import { TXFLOW_AUTOMATION_GATE } from "./exchanges/venues/txflow.js";
 import { scrubSecretEnv, secretEnvNamesIn } from "./secret-env.js";
 
 const JOBS_DIR = join(homedir(), ".perp", "jobs");
@@ -239,9 +240,9 @@ export function startJob(opts: StartJobOpts): JobEntry {
         if (!risex.roles.includes("trading")) throw startRefusal(what, "it would trade unattended", roleUnsupported(risex, "automation"));
         throw startRefusal(what, "it would trade unattended", unsupported("RISEx", "automation", "unattended trading on RISEx is not enabled until its trading path is verified on mainnet (and it has no TP/SL yet)", "Trade RISEx manually with perp trade …"));
       }
-      // TxFlow: market data only in perp-cli.
+      // TxFlow: unattended trading stays off until its trading path is verified live.
       if (id === "txflow" || id === "txf") {
-        throw startRefusal(what, "TxFlow has no trading in perp-cli", unsupported("txflow", "trading", "TxFlow is available for market data only in perp-cli", "Trade on the TxFlow website"));
+        throw startRefusal(what, "it would trade unattended", unsupported("TxFlow", "automation", TXFLOW_AUTOMATION_GATE.reason, TXFLOW_AUTOMATION_GATE.remediation));
       }
       // Any other registered venue without the trading role (Variational, GRVT, Extended: read-only in this version).
       const venueId = id === undefined ? null : tryResolveVenueId(id);

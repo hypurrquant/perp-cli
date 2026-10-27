@@ -85,7 +85,7 @@ async function getOrCreateAdapter(exchange: string): Promise<ExchangeAdapter> {
   const def = getVenue(exchange);
   const cached = adapters.get(def.id);
   if (cached) return cached;
-  // Market-data-only venue (e.g. TxFlow): every account / trading tool refuses here.
+  // Market-data-only venue (e.g. Variational): every account / trading tool refuses here.
   if (!def.roles.includes("account")) throw roleUnsupported(def, "account");
   const create = requireCreate(def);
   if (!(await hasCredentials(def.id, NO_CLI_CREDENTIAL_OPTS))) {
@@ -1586,7 +1586,7 @@ server.tool(
       const result: Record<string, unknown> = {};
       for (const { venue, ...p } of health.probes) result[venue] = { ...p, statusText: p.ok ? "healthy" : "unreachable" };
       result.covered = health.probes.map(p => p.venue);
-      // A venue without an environment on the server's network (TxFlow has no testnet) is not probed.
+      // A venue without an environment on the server's network is not probed.
       result.skipped = health.skipped;
       // Same two verdicts as `perp health --json`: healthy = every OFFICIAL-API venue is up (an
       // unofficial API being down does not make perp-cli unhealthy); allHealthy includes them.
@@ -1879,7 +1879,7 @@ server.tool(
   },
   async ({ exchange, symbol, side, size, orderType, price, tif, reduceOnly }) => {
     try {
-      // No trading role (TxFlow, release-gated RISEx) → CAPABILITY_UNSUPPORTED before any credential.
+      // No trading role (market-data-only venues, release-gated RISEx) → CAPABILITY_UNSUPPORTED before any credential.
       requireCapabilities(getVenue(exchange));
       const adapter = await getOrCreateAdapter(exchange);
       const sym = symbol.toUpperCase();

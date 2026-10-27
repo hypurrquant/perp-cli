@@ -13,6 +13,7 @@ import { cliCredentialOptsFrom, requireMasterWallet } from "../config.js";
 import type { VenueId } from "../exchanges/venue-types.js";
 import { getVenue, requireCapabilities, roleUnsupported, READ_ONLY_CREDENTIALS, type Network as VenueNetwork, type VenueDefinition } from "../exchanges/venue.js";
 import { RISEX_APP_URL, RISEX_FUNDS_APP_ONLY } from "../exchanges/venues/risex.js";
+import { TXFLOW_APP_URL, TXFLOW_FUNDS_APP_ONLY } from "../exchanges/venues/txflow.js";
 import { VARIATIONAL_READ_ONLY_REMEDIATION } from "../exchanges/venues/variational.js";
 import { EXTENDED_READ_ONLY_REMEDIATION } from "../exchanges/venues/extended.js";
 import { unsupported } from "../exchanges/trading-v2.js";
@@ -1158,12 +1159,12 @@ export function registerFundsCommands(
     .action(async () => {
       throw unsupported("risex", "withdraw", RISEX_FUNDS_APP_ONLY.reason, RISEX_FUNDS_APP_ONLY.remediation);
     });
-  // TxFlow: market data only in perp-cli.
+  // TxFlow: withdrawals are master-signed in the TxFlow web app (perp-cli trades with an agent key).
   supportsDryRun(withdraw.command("txflow [amount]"))
-    .description("Not available: TxFlow is market data only in perp-cli — refused")
-    .option("--to <address>", "Ignored")
+    .description(`Not available: TxFlow withdrawals are done in the TxFlow web app (${TXFLOW_APP_URL}) — refused, also with --dry-run`)
+    .option("--to <address>", "Ignored — perp-cli does not move TxFlow funds")
     .action(async () => {
-      throw roleUnsupported(getVenue("txflow"), "withdraw");
+      throw unsupported("txflow", "withdraw", TXFLOW_FUNDS_APP_ONLY.reason, TXFLOW_FUNDS_APP_ONLY.remediation);
     });
   // Variational: read-only (market data) in perp-cli; no public trading API yet.
   supportsDryRun(withdraw.command("variational [amount]"))
@@ -1336,9 +1337,9 @@ export function registerFundsCommands(
       throw unsupported("risex", "deposit", RISEX_FUNDS_APP_ONLY.reason, RISEX_FUNDS_APP_ONLY.remediation);
     });
   supportsDryRun(deposit.command("txflow [amount]"))
-    .description("Not available: TxFlow is market data only in perp-cli — refused")
+    .description(`Not available: TxFlow deposits are done in the TxFlow web app (${TXFLOW_APP_URL}) — refused, also with --dry-run`)
     .action(async () => {
-      throw roleUnsupported(getVenue("txflow"), "deposit");
+      throw unsupported("txflow", "deposit", TXFLOW_FUNDS_APP_ONLY.reason, TXFLOW_FUNDS_APP_ONLY.remediation);
     });
   supportsDryRun(deposit.command("variational [amount]"))
     .description("Not available: Variational is read-only (market data) in perp-cli — refused")
@@ -1415,6 +1416,7 @@ export function registerFundsCommands(
         const def = getVenue(exchangeOpt);
         if (!def.roles.includes("account")) throw roleUnsupported(def, "transfer");
         if (def.id === "risex") throw unsupported("risex", "transfer", RISEX_FUNDS_APP_ONLY.reason, RISEX_FUNDS_APP_ONLY.remediation);
+        if (def.id === "txflow") throw unsupported("txflow", "transfer", TXFLOW_FUNDS_APP_ONLY.reason, TXFLOW_FUNDS_APP_ONLY.remediation);
       }
       if (exchangeOpt !== undefined && getVenue(exchangeOpt).id === "qfex") {
         if (isDryRun()) {
@@ -1506,7 +1508,7 @@ export function registerFundsCommands(
             aster: { chain: "BNB Chain (default) / Arbitrum", token: "USDT (default) / USDC", min: null, gas: "BNB / Arbitrum ETH", method: "approve + vault depositFor(token, forAddress, amount, broker 1) (mainnet only)", command: "perp funds deposit aster <amount> [--chain bsc|arbitrum] [--asset USDT|USDC]" },
             ondo: { chain: "Arbitrum (default) / Ethereum", token: "USDC", min: null, gas: "ETH", method: "USDC transfer to the account's funding address (mainnet only)", command: "perp funds deposit ondo <amount> [--chain arbitrum|ethereum] [--probe <amount>]" },
             risex: { supported: false, note: `${RISEX_FUNDS_APP_ONLY.reason} — ${RISEX_FUNDS_APP_ONLY.remediation}`, testnet: getVenue("risex").roles.includes("trading") ? "perp -n testnet funds faucet risex (1000 test USDC, once)" : null },
-            txflow: { supported: false, note: "TxFlow is market data only in perp-cli" },
+            txflow: { supported: false, note: `${TXFLOW_FUNDS_APP_ONLY.reason} — ${TXFLOW_FUNDS_APP_ONLY.remediation}` },
             variational: { supported: false, note: VARIATIONAL_READ_ONLY_REMEDIATION },
             grvt: { supported: false, note: "GRVT is read-only (market data) in this version; trading is planned for a later release" },
             extended: { supported: false, note: EXTENDED_READ_ONLY_REMEDIATION },
@@ -1522,7 +1524,7 @@ export function registerFundsCommands(
               : { supported: false, note: `${QFEX_WITHDRAW_DISABLED.reason} — ${QFEX_WITHDRAW_DISABLED.remediation}` },
             arcus: { chain: "Robinhood Chain", token: "USDG", command: "perp funds withdraw arcus <amount>" },
             risex: { supported: false, note: `${RISEX_FUNDS_APP_ONLY.reason} — ${RISEX_FUNDS_APP_ONLY.remediation}` },
-            txflow: { supported: false, note: "TxFlow is market data only in perp-cli" },
+            txflow: { supported: false, note: `${TXFLOW_FUNDS_APP_ONLY.reason} — ${TXFLOW_FUNDS_APP_ONLY.remediation}` },
             variational: { supported: false, note: VARIATIONAL_READ_ONLY_REMEDIATION },
             grvt: { supported: false, note: "GRVT is read-only (market data) in this version; trading is planned for a later release" },
             extended: { supported: false, note: EXTENDED_READ_ONLY_REMEDIATION },

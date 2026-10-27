@@ -81,6 +81,8 @@ const V2_CLIENT_ID_RULES: Readonly<Partial<Record<VenueDefinition["id"], { re: R
   aster: { re: ASTER_CLIENT_ID_RE, desc: "1-36 chars of A-Z a-z 0-9 . : / _ -" },
   // uint64 decimal (range checked by the adapter).
   risex: { re: /^[1-9][0-9]{0,19}$/, desc: "a decimal integer from 1 to 2^64 - 1" },
+  // docs (order `c`): any string up to 64 bytes; the "0x" prefix is reserved.
+  txflow: { re: /^(?!0[xX])[A-Za-z0-9._:-]{1,64}$/, desc: "1-64 chars of A-Z a-z 0-9 . _ : - (not starting with 0x)" },
 };
 
 /**
