@@ -105,6 +105,16 @@ export async function sendApproveAgent(client: TxflowClient, network: Network, m
   await client.exchange({ action: action as unknown as Record<string, unknown>, signature, nonce }, agentAddress === ZERO_ADDRESS ? "agent revoke" : "agent approval", "ACTION_REJECTED", network);
 }
 
+/** Run an OWS delete; null on success, else the failure text (callers surface it — never swallowed). */
+export function deleteFailure(del: () => void): string | null {
+  try {
+    del();
+    return null;
+  } catch (e) {
+    return extractErrorMessage(e);
+  }
+}
+
 /** Poll agentOwner until it shows `expected` (an address, or null for "no account"). */
 async function confirmOwner(client: TxflowClient, agent: string, expected: string | null, sleep: (ms: number) => Promise<void>): Promise<boolean> {
   for (let i = 0; i < CONFIRM_ATTEMPTS; i++) {
@@ -152,8 +162,10 @@ export async function approveTxflowAgent(opts: ApproveTxflowAgentOpts & { passph
       createSigner: name => {
         const wallet = ows.createWallet(name, "");
         if (!wallet.accounts.some((a: { chainId: string }) => a.chainId.startsWith("eip155:"))) {
-          try { ows.deleteWallet(name); } catch { /* reported below */ }
-          throw new PerpError("INVALID_PARAMS", `Agent wallet "${name}" has no EVM account`, { remediation: "Check OWS vault configuration" });
+          const left = deleteFailure(() => ows.deleteWallet(name));
+          throw new PerpError("INVALID_PARAMS", `Agent wallet "${name}" has no EVM account${left === null ? "" : `; deleting it failed (${left}) — it stayed in the OWS vault`}`, {
+            remediation: left === null ? "Check OWS vault configuration" : `Check OWS vault configuration, and delete the wallet: ows wallet delete ${name}`,
+          });
         }
         return OwsEvmSigner.create(name, "");
       },
@@ -210,8 +222,14 @@ export async function approveTxflowAgentWith(opts: ApproveTxflowAgentOpts, deps:
         remediation: `Do NOT re-run approve yet. Its key is kept in OWS wallet "${agentWalletName}" and recorded; check: ${verifyHint}`,
       });
     }
-    try { ows.deleteWallet(agentWalletName); } catch { /* the error below is what matters */ }
-    throw e;
+    const left = deleteFailure(() => ows.deleteWallet(agentWalletName));
+    if (left === null) throw e;
+    // The refusal stands; the unused key could not be deleted and is reported, never hidden.
+    const base = e instanceof PerpError ? e : new PerpError("APPROVE_FAILED", extractErrorMessage(e), { exchange: "txflow" });
+    throw new PerpError(base.structured.code, `${base.message} — and deleting the unused new key failed (${left}): it stayed in OWS wallet "${agentWalletName}"`, {
+      ...(base.structured.details ?? {}), keyLeftInVault: agentWalletName,
+      remediation: `${base.structured.remediation !== undefined ? `${base.structured.remediation}. ` : ""}The key was never approved; delete it: ows wallet delete ${agentWalletName}`,
+    });
   }
   if (!(await confirmOwner(client, agentAddress, account, deps.sleep))) {
     deps.saveMeta(meta);
@@ -219,9 +237,16 @@ export async function approveTxflowAgentWith(opts: ApproveTxflowAgentOpts, deps:
       exchange: "txflow", agent: agentAddress, remediation: `The key is kept and recorded; check again: ${verifyHint}`,
     });
   }
-  if (replacing !== null && replacing.agentWalletName !== agentWalletName) {
+  if (replacing !== null && replacing.agentWalletName !== agentWalletName && ows.walletExists(replacing.agentWalletName)) {
     // The label now points to the new key; the old key is dead on the venue.
-    try { ows.deleteWallet(replacing.agentWalletName); } catch { /* already gone */ }
+    const left = deleteFailure(() => ows.deleteWallet(replacing.agentWalletName));
+    if (left !== null) {
+      deps.saveMeta(meta); // the new agent is approved and works: keep its record
+      throw new PerpError("APPROVE_PARTIAL", `TxFlow agent "${agentName}" was rotated to ${agentAddress} (recorded), but deleting the old key failed (${left}): it stayed in OWS wallet "${replacing.agentWalletName}"`, {
+        exchange: "txflow", keyLeftInVault: replacing.agentWalletName,
+        remediation: `The old key no longer trades on TxFlow (its label was rebound). Delete it: ows wallet delete ${replacing.agentWalletName}`,
+      });
+    }
   }
   return meta;
 }

@@ -1845,8 +1845,18 @@ Examples:
             const { revokeTxflowAgent } = await import("../exchanges/txflow/agent.js");
             await revokeTxflowAgent({ meta: txMeta, masterOwsWallet: masterName, passphrase });
           }
-          try { loadOws().deleteWallet(txMeta.agentWalletName); } catch { /* already gone */ }
+          const ows = loadOws();
           deleteVenueAgent("txflow", agentName);
+          if (ows.listWallets().some((w: { name: string }) => w.name === txMeta.agentWalletName)) {
+            const { deleteFailure } = await import("../exchanges/txflow/agent.js");
+            const left = deleteFailure(() => ows.deleteWallet(txMeta.agentWalletName));
+            if (left !== null) {
+              throw new PerpError("APPROVE_PARTIAL", `TxFlow agent "${agentName}" was ${localOnly ? "removed locally" : "revoked"}, but deleting its key failed (${left}): it stayed in OWS wallet "${txMeta.agentWalletName}"`, {
+                exchange: "txflow", keyLeftInVault: txMeta.agentWalletName,
+                remediation: `Delete the key: ows wallet delete ${txMeta.agentWalletName}${localOnly ? " (and revoke the agent in the TxFlow web app)" : ""}`,
+              });
+            }
+          }
           if (useJson) printJson(jsonOk({ revoked: !localOnly, local: localOnly }));
           else console.log(localOnly
             ? chalk.yellow(`Agent "${agentName}" on txflow removed locally only — revoke agent ${txMeta.agentAddress} in the TxFlow web app.`)
