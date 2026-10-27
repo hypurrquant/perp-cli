@@ -11,8 +11,8 @@ import type { Network } from "../venue-types.js";
 import type { RisexClient } from "./client.js";
 import { allocateNonce, parseRemoteNonceState } from "./nonce.js";
 import {
-  assertPinned, EIP1967_IMPLEMENTATION_SLOT, RISEX_AUTH_IFACE, RISEX_PERMISSION_ID_MASK, RISEX_PERMISSION_IDS, RISEX_PINS,
-  RISEX_TRADING_ONLY_BITS, RISEX_TRADING_PERMISSION, type NonceSlot, type RisexDomain,
+  assertPinned, EIP1967_IMPLEMENTATION_SLOT, RISEX_AUTH_IFACE, RISEX_FORBIDDEN_BITS, RISEX_PERMISSION_IDS, RISEX_PINS,
+  RISEX_TRADING_BIT, RISEX_TRADING_PERMISSION, type NonceSlot, type RisexDomain,
 } from "./typed-data.js";
 
 export interface RisexSigningContext {
@@ -132,21 +132,24 @@ export async function assertReviewedContracts(chain: RisexChainReader, net: Netw
  *  1. assertReviewedContracts (pinned implementations of Authorization / router / account registry,
  *     no permission id ≥ 5) — bits 5–31 of the bitmap, which a new signer holds and which cannot be
  *     cleared, map to no permission while this holds;
- *  2. the signer is Active and its raw bitmap's permission bits 0..4 are exactly {2} (trading);
+ *  2. the signer is Active (raw status 1) and unexpired, and its raw bitmap has bits 0, 3, 4 clear
+ *     and bit 2 set (permission masks: typed-data.ts — bit 1 alone is no permission);
  *  3. hasPermission(0..4) agrees ({2} only) — so the verdict does not rest on the bit mapping alone.
  * Throws POLICY_DENIED (never a default) when any check fails; RPC failures propagate.
  */
 export async function assertTradingOnlyOnChain(chain: RisexChainReader, net: Network, account: string, signer: string): Promise<RisexSessionKey> {
   await assertReviewedContracts(chain, net);
   const sk = await chain.sessionKey(account, signer);
-  const low = sk.bitmap & RISEX_PERMISSION_ID_MASK;
+  const low = sk.bitmap & 0x1fn;
   const notTradingOnly = (why: string) => new PerpError("POLICY_DENIED", `RISEx signer ${signer} is not trading-only on chain (${why})`, {
     exchange: "risex", signer, bitmap: `0x${sk.bitmap.toString(16)}`, status: sk.status,
     remediation: "Revoke it (perp wallet agent revoke risex <name>) and approve a new signer",
   });
-  if (sk.status !== 1 || low !== RISEX_TRADING_ONLY_BITS) {
-    throw notTradingOnly(`status ${sk.status}, permission bitmap 0x${sk.bitmap.toString(16)}, ids 0..4 = 0b${low.toString(2).padStart(5, "0")}, required 0b00100`);
+  if (sk.status !== 1 || (sk.bitmap & RISEX_FORBIDDEN_BITS) !== 0n || (sk.bitmap & RISEX_TRADING_BIT) === 0n) {
+    throw notTradingOnly(`status ${sk.status}, permission bitmap 0x${sk.bitmap.toString(16)}, bits 4..0 = 0b${low.toString(2).padStart(5, "0")}, required bits 0, 3, 4 clear and bit 2 set`);
   }
+  // hasPermission ignores the status and the expiration; the raw status 1 above does not either.
+  if (!(sk.expiration > Math.floor(Date.now() / 1000))) throw notTradingOnly(`expired at ${new Date(sk.expiration * 1000).toISOString()}`);
   const per = await Promise.all(RISEX_PERMISSION_IDS.map(async id => [id, await chain.hasPermission(account, signer, id)] as const));
   const wrong = per.filter(([id, on]) => on !== (id === RISEX_TRADING_PERMISSION));
   if (wrong.length > 0) throw notTradingOnly(`hasPermission disagrees with the bitmap: ${wrong.map(([id, on]) => `${id}=${on}`).join(", ")}`);

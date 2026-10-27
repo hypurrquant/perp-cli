@@ -24,7 +24,9 @@ const chainExtras = (low: () => number) => ({
   implementationOf: async (proxy: string) => ({ [RISEX_PINS.mainnet.auth.toLowerCase()]: RISEX_PINS.mainnet.authImplementation, [RISEX_PINS.mainnet.router.toLowerCase()]: RISEX_PINS.mainnet.routerImplementation, [RISEX_PINS.mainnet.accountRegistry.toLowerCase()]: RISEX_PINS.mainnet.accountRegistryImplementation } as Record<string, string>)[proxy.toLowerCase()] as string,
   accountRegistry: async () => RISEX_PINS.mainnet.accountRegistry,
 });
-const bitsOf = (perms: Map<number, boolean>) => [...perms].reduce((acc, [p, on]) => acc | (on ? 1 << p : 0), 0);
+/** The live permission model (Authorization bytecode 0x4252): mask(1) = every bit ("all"), else 1 << p. */
+const maskOf = (p: number) => (p === 1 ? 0x1f : 1 << p);
+const hasBits = (low: number, p: number) => (low & maskOf(p)) === maskOf(p);
 
 const ok = (data: unknown, status = 200) => new Response(JSON.stringify({ data, request_id: "r" }), { status });
 const err = (status: number, code: string, message: string) => new Response(JSON.stringify({ error: { code, message }, request_id: "r" }), { status });
@@ -56,7 +58,7 @@ function routes(o: Over = {}): void {
 
 let nonceDir: string;
 let wallets: Set<string>;
-let perms: Map<number, boolean>;
+let low: number;
 let saved: RisexAgentMeta[];
 
 function deps(o: { sendFails?: boolean; gasFails?: boolean } = {}): RisexApproveDeps & { deleted: string[] } {
@@ -70,10 +72,10 @@ function deps(o: { sendFails?: boolean; gasFails?: boolean } = {}): RisexApprove
       deleteWallet: n => { wallets.delete(n); deleted.push(n); },
     },
     client: new RisexClient("https://api.rise.trade", getVenue("risex").rateLimit, "risex:approve-test"),
-    chain: { hasPermission: async (_a, _s, p) => perms.get(p) as boolean, isNonceUsed: async () => false, ...chainExtras(() => bitsOf(perms)) },
+    chain: { hasPermission: async (_a, _s, p) => hasBits(low, p), isNonceUsed: async () => false, ...chainExtras(() => low) },
     sender: () => async (permission) => {
       if (o.sendFails) throw new PerpError("INSUFFICIENT_BALANCE", "no gas");
-      perms.set(permission, false);
+      low &= ~maskOf(permission);
       return `0xtx${permission}`;
     },
     assertGas: async () => { if (o.gasFails) throw new PerpError("INSUFFICIENT_BALANCE", "no RISE-chain ETH — nothing was registered"); },
@@ -91,7 +93,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   nonceDir = mkdtempSync(join(tmpdir(), "risex-approve-"));
   wallets = new Set();
-  perms = new Map([[0, true], [1, true], [2, true], [3, true], [4, true]]);
+  low = 0x1f;
   saved = [];
 });
 afterEach(() => {
@@ -103,24 +105,23 @@ describe("approveRisexAgentWith", () => {
   it("success: registered, restricted on-chain, meta trading-only (persisted by the caller)", async () => {
     routes();
     const meta = await approveRisexAgentWith(OPTS, deps());
-    expect(meta.permissions).toMatchObject({ tradingOnly: true, disabled: [0, 1, 3, 4] });
+    expect(meta.permissions).toMatchObject({ tradingOnly: true, disabled: [0, 3, 4] });
     expect(posts).toEqual(["/v1/auth/register-signer"]);
     expect(wallets.has(WALLET)).toBe(true);
     expect(saved).toEqual([]);
   });
 
-  it("hasPermission(1) also needs bit 0 (live testnet): skips come from the raw bitmap and id 0 goes last → trading-only", async () => {
+  it("permission 1 is the \"all\" mask (live testnet): only 0, 3, 4 are disabled → bits 4..0 = 0b00110, hasPermission {2}", async () => {
     routes();
     const d = deps();
-    // Live 2026-10-28: after disabling 0, hasPermission(1) read false while bit 1 was still set.
-    d.chain = { ...d.chain, hasPermission: async (_a, _s, p) => (p === 1 ? perms.get(0) === true && perms.get(1) === true : perms.get(p) as boolean) };
     const sent: number[] = [];
     const inner = d.sender;
     d.sender = signer => { const send = inner(signer); return async (permission, slot, sig) => { sent.push(permission); return send(permission, slot, sig); }; };
     const meta = await approveRisexAgentWith(OPTS, d);
-    expect(sent).toEqual([4, 3, 1, 0]);
+    expect(sent).toEqual([0, 3, 4]);
     expect(meta.permissions).toMatchObject({ tradingOnly: true });
-    expect([...perms].filter(([, on]) => on).map(([id]) => id)).toEqual([2]);
+    expect(low).toBe(0b00110);
+    expect([0, 1, 2, 3, 4].filter(p => hasBits(low, p))).toEqual([2]);
   });
 
   it("an upgraded contract (pin mismatch) refuses in the pre-check, before anything is created or registered", async () => {

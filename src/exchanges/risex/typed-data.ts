@@ -159,20 +159,26 @@ export const RISEX_TRADING_PERMISSION = 2;
 export const EIP1967_IMPLEMENTATION_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
 /**
- * The low bits of `sessionKeys(account, signer)` word 1 that map to permission ids 0..4; a
- * trading-only signer has exactly bit 2 set among them. Bits 5–31 (set to 1 on every new signer,
- * bitmap 0xffffffff) have no permission id in the reviewed implementation: hasPermission and
- * disablePermission both reject ids ≥5 at ABI decoding, so those bits can neither be read as a
- * permission nor cleared. They are guarded instead by the implementation pin and the "no id 5" probe
- * (assertTradingOnlyOnChain, session.ts).
+ * Permission ids are masks over the 32-bit `sessionKeys` bitmap (Authorization bytecode 0x4252,
+ * identical on testnet and mainnet, codehash 0xa067268e…7381): mask(p) = 1 << p, except
+ * mask(1) = 0xffffffff ("all"). hasPermission(p) = (bitmap & mask(p)) == mask(p);
+ * disablePermission(p) clears mask(p) — so disabling 1 wipes every bit, trading included
+ * (testnet 2026-10-28). A new signer holds 0xffffffff.
+ *
+ * Trading-only = bits 0, 3, 4 clear and bit 2 set. Bit 1 and bits 5–31 are no permission on
+ * their own (every entry point takes p < 5 and goes through the mask) and stay set: the result
+ * of the restriction is 0xffffffe6, where hasPermission(0..4) = {2} and "all" (1) is false.
  */
-export const RISEX_PERMISSION_ID_MASK = 0x1fn;
-export const RISEX_TRADING_ONLY_BITS = 1n << 2n;
+export const RISEX_PERMISSION_ALL = 1;
+/** Bits that must be clear on a trading-only signer (ids 0, 3, 4). */
+export const RISEX_FORBIDDEN_BITS = 0b11001n;
+/** Bit of the trading permission (id 2). */
+export const RISEX_TRADING_BIT = 1n << 2n;
 
 /** Valid permission ids (hasPermission reverts above 4). */
 export const RISEX_PERMISSION_IDS: readonly number[] = [0, 1, 2, 3, 4];
-/** Permissions perp-cli disables right after registration (all except trading). */
-export const RISEX_NON_TRADING_PERMISSIONS: readonly number[] = RISEX_PERMISSION_IDS.filter(p => p !== RISEX_TRADING_PERMISSION);
+/** Permissions perp-cli disables right after registration: 0, 3, 4 — never 1 ("all": clears trading too). */
+export const RISEX_NON_TRADING_PERMISSIONS: readonly number[] = RISEX_PERMISSION_IDS.filter(p => p !== RISEX_TRADING_PERMISSION && p !== RISEX_PERMISSION_ALL);
 
 export const RISEX_AUTH_IFACE = new Interface([
   "function disablePermission(address account, address signer, uint48 nonceAnchor, uint8 nonceBitmap, uint8 permission, bytes signature)",

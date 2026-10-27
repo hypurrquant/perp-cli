@@ -274,7 +274,7 @@ describe("CLI entry points (with and without --dry-run)", () => {
       kind: "risex", agentName: "perp-cli-risex", agentWalletName: "agent-risex-main",
       signerAddress: "0x00000000000000000000000000000000000000a1", accountAddress: ACCOUNT,
       expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-      permissions: { tradingOnly: true, disabled: [0, 1, 3, 4], verifiedAt: "2026-10-14T00:00:00Z" },
+      permissions: { tradingOnly: true, disabled: [0, 3, 4], verifiedAt: "2026-10-14T00:00:00Z" },
       network: "mainnet", approvedAt: "2026-10-14T00:00:00Z", source: "approved",
     };
     const writeMeta = () => {
@@ -339,7 +339,7 @@ describe("RisexAdapter.create while trading is gated", () => {
     kind: "risex", agentName: "perp-cli-risex", agentWalletName: "agent-risex-stale",
     signerAddress: "0x00000000000000000000000000000000000000a1", accountAddress: ACCOUNT,
     expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-    permissions: { tradingOnly: true, disabled: [0, 1, 3, 4], verifiedAt: "2026-10-14T00:00:00Z" },
+    permissions: { tradingOnly: true, disabled: [0, 3, 4], verifiedAt: "2026-10-14T00:00:00Z" },
     network: "mainnet", approvedAt: "2026-10-14T00:00:00Z", source: "approved",
   };
   const ctx = (owsWallet: string | null) => ({

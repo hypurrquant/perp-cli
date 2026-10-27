@@ -88,7 +88,7 @@ describe("assertTradingOnlyOnChain", () => {
 describe("verifyRisexAgent", () => {
   beforeEach(() => vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ data: { status: 1 } }), { status: 200 }))));
   afterEach(() => vi.restoreAllMocks());
-  const meta = { kind: "risex", agentName: "a", agentWalletName: "w", signerAddress: SIGNER, accountAddress: ACCOUNT, expiresAt: new Date(Date.now() + 1e9).toISOString(), permissions: { tradingOnly: true, disabled: [0, 1, 3, 4], verifiedAt: "x" }, network: "mainnet", approvedAt: "x", source: "approved" } as RisexAgentMeta;
+  const meta = { kind: "risex", agentName: "a", agentWalletName: "w", signerAddress: SIGNER, accountAddress: ACCOUNT, expiresAt: new Date(Date.now() + 1e9).toISOString(), permissions: { tradingOnly: true, disabled: [0, 3, 4], verifiedAt: "x" }, network: "mainnet", approvedAt: "x", source: "approved" } as RisexAgentMeta;
 
   it("trading-only bitmap → tradingOnly with the raw bitmap reported", async () => {
     expect(await verifyRisexAgent(meta, reader())).toMatchObject({ active: true, tradingOnly: true, bitmap: "0xffffffe4", reason: null });

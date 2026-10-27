@@ -25,6 +25,7 @@ import { RisexClient, RisexSendUnknown, revertNameOf } from "../../exchanges/ris
 import { toRisexFundingRates, toRisexVenueMarkets, type RisexRawMarket } from "../../exchanges/risex/public.js";
 import { RisexAdapter } from "../../exchanges/risex/adapter.js";
 import { restrictSignerToTrading } from "../../exchanges/risex/agent.js";
+import { assertTradingOnlyOnChain } from "../../exchanges/risex/session.js";
 import { newVenueClientOrderId } from "../../exchanges/trading-v2.js";
 
 
@@ -35,7 +36,8 @@ const chainExtras = (low: () => number) => ({
   implementationOf: async (proxy: string) => ({ [RISEX_PINS.mainnet.auth.toLowerCase()]: RISEX_PINS.mainnet.authImplementation, [RISEX_PINS.mainnet.router.toLowerCase()]: RISEX_PINS.mainnet.routerImplementation, [RISEX_PINS.mainnet.accountRegistry.toLowerCase()]: RISEX_PINS.mainnet.accountRegistryImplementation } as Record<string, string>)[proxy.toLowerCase()] as string,
   accountRegistry: async () => RISEX_PINS.mainnet.accountRegistry,
 });
-const bitsOf = (perms: Map<number, boolean>) => [...perms].reduce((acc, [p, on]) => acc | (on ? 1 << p : 0), 0);
+/** The live permission model (Authorization bytecode 0x4252): mask(1) = every bit ("all"), else 1 << p. */
+const maskOf = (p: number) => (p === 1 ? 0x1f : 1 << p);
 
 const MAINNET = "https://api.rise.trade";
 const DOMAIN = { name: "RISEx", version: "1", chainId: 4153, verifyingContract: RISEX_PINS.mainnet.auth };
@@ -533,28 +535,52 @@ describe("adapter: cancel / cancel-all / leverage", () => {
   });
 });
 
+describe("trading-only proof (permission masks: 1 = all)", () => {
+  /** Chain reader for a raw bitmap under the live mask model (mask(1) = every bit). */
+  const chainFor = (bitmap: bigint, expiration = 2_000_000_000) => {
+    const mask = (p: number) => (p === 1 ? 0xffffffffn : 1n << BigInt(p));
+    return {
+      hasPermission: async (_a: string, _s: string, p: number) => (bitmap & mask(p)) === mask(p), isNonceUsed: async () => false,
+      ...chainExtras(() => 0), sessionKey: async () => ({ expiration, bitmap, status: 1 }),
+    };
+  };
+  const S = "0x97Aff841E119524bC015BE9C062D4697FeE2a2A1";
+
+  it("accepts the live restricted state 0xffffffe6 (bit 1 and bits 5–31 set, hasPermission {2})", async () => {
+    await expect(assertTradingOnlyOnChain(chainFor(0xffffffe6n), "mainnet", ACCOUNT, S)).resolves.toMatchObject({ bitmap: 0xffffffe6n });
+  });
+
+  it("refuses a wiped bitmap (disable 1), a leftover bit 0 / 3 / 4, and an expired key", async () => {
+    for (const bm of [0x0n, 0xffffffe7n, 0xffffffeen, 0xfffffff6n]) {
+      await expect(assertTradingOnlyOnChain(chainFor(bm), "mainnet", ACCOUNT, S)).rejects.toMatchObject({ structured: { code: "POLICY_DENIED" } });
+    }
+    await expect(assertTradingOnlyOnChain(chainFor(0xffffffe6n, 1_000), "mainnet", ACCOUNT, S)).rejects.toThrow(/expired/);
+  });
+});
+
 describe("signer restriction (on-chain, trading-only)", () => {
   it("the SIGNER signs DisablePermission for every non-trading permission; final state proven", async () => {
     routeFetch(base);
     const signer = await LocalEvmSigner.create(Wallet.createRandom().privateKey);
-    const perms = new Map<number, boolean>([[0, true], [1, true], [2, true], [3, true], [4, true]]);
+    let low = 0x1f;
     const sent: Array<{ permission: number; signer: string }> = [];
     const r = await restrictSignerToTrading({
       client: new RisexClient(MAINNET, getVenue("risex").rateLimit, "risex:test"), network: "mainnet",
       ctx: { domain: DOMAIN, router: RISEX_PINS.mainnet.router, auth: RISEX_PINS.mainnet.auth },
       account: ACCOUNT, signer, nonceDir,
-      chain: { hasPermission: async (_a, _s, p) => perms.get(p) as boolean, isNonceUsed: async () => false, ...chainExtras(() => bitsOf(perms)) },
+      chain: { hasPermission: async (_a, _s, p) => (low & maskOf(p)) === maskOf(p), isNonceUsed: async () => false, ...chainExtras(() => low) },
       send: async (permission, slot, signature) => {
         const rec = verifyTypedData({ ...DOMAIN, verifyingContract: getAddress(DOMAIN.verifyingContract) }, { DisablePermission: RISEX_TYPES.DisablePermission },
           { account: ACCOUNT, signer: signer.getAddress(), permission, nonceAnchor: slot.anchor, nonceBitmap: slot.bit }, signature);
         sent.push({ permission, signer: rec });
-        perms.set(permission, false);
+        low &= ~maskOf(permission);
         return `0xtx${permission}`;
       },
     });
-    expect(sent.map(s => s.permission)).toEqual([4, 3, 1, 0]); // id 0 last: hasPermission(1) also needs bit 0 (live testnet)
+    expect(sent.map(s => s.permission)).toEqual([0, 3, 4]); // never 1: the "all" mask would clear trading too
     expect(sent.every(s => s.signer === signer.getAddress())).toBe(true);
-    expect(r.disabled.map(d => d.permission)).toEqual([4, 3, 1, 0]);
+    expect(r.disabled.map(d => d.permission)).toEqual([0, 3, 4]);
+    expect(low).toBe(0b00110);
   });
 
   it("a state that is not trading-only after the sends is a failure (never stored as restricted)", async () => {
