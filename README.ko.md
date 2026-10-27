@@ -10,8 +10,8 @@
 
 여러 DEX의 무기한 선물(perpetual futures)을 하나로 다루는 CLI — 터미널에서 거래하고, 펀딩비를 비교하고, 자금을 옮기고, 봇을 실행하거나, AI 에이전트에게 맡길 수 있습니다(JSON 출력, MCP 서버, 에이전트 스킬).
 
-- **8개 거래소에서 거래:** Hyperliquid (HIP-3 dex 포함), Pacifica, Lighter, Lighter RH, Aster, Ondo Perps, Arcus, QFEX (브리지와 perp-perp 차익거래는 기존 4곳 지원: Pacifica, Hyperliquid, Lighter, Aster)
-- **마켓 데이터 전용:** RISEx, GRVT, Extended, Variational, TxFlow (비공식 API) — 그리고 Derive 옵션 데이터
+- **9개 거래소에서 거래:** Hyperliquid (HIP-3 dex 포함), Pacifica, Lighter, Lighter RH, Aster, Ondo Perps, Arcus, QFEX, RISEx (브리지와 perp-perp 차익거래는 기존 4곳 지원: Pacifica, Hyperliquid, Lighter, Aster)
+- **마켓 데이터 전용:** GRVT, Extended, Variational, TxFlow (비공식 API) — 그리고 Derive 옵션 데이터
 
 ## 설치
 
@@ -115,7 +115,7 @@ ls "$(npm root -g)/perp-cli/skills/perp-cli"
 | Ondo Perps | `ondo` | ✅ | 오프체인, USDC |
 | Arcus | `arcus` | ✅ (접근 화이트리스트) | Robinhood chain, USDG |
 | QFEX | `qfex` (`qf`) | ✅ (수동 거래만 가능) | 수탁형; 주식, 지수, 원자재 |
-| RISEx | `risex` | 읽기 전용 | RISE chain, USDC |
+| RISEx | `risex` | ✅ (수동 거래만; 메인넷 미검증) | RISE chain, USDC |
 | GRVT | `grvt` | 마켓 데이터 전용 | USDT |
 | Extended | `extended` (`ext`) | 마켓 데이터 전용 | Starknet; 크립토 + 주식 / FX |
 | Variational | `variational` (`var`) | 마켓 데이터 전용 | RFQ 거래소 |

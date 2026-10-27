@@ -34,7 +34,7 @@ For trading and account data, run `perp setup` first: the MCP server reads the s
 
 **Account & trading tools (keys required):** `get_balance`, `get_positions`, `get_open_orders`, `get_outcome_positions`, `portfolio`, `trade_preview`, `trade_execute`, `trade_close`, `get_funding_analysis`, `get_pnl_analysis`, `get_arb_compare`
 
-- `get_markets` / `get_orderbook` add `meta.apiStatus` (`"unofficial"` + `apiNote` for TxFlow); `get_prices` lists `meta.unofficialApiVenues`; `health_check` rows carry `apiStatus`. Account / trading tools refuse TxFlow with `CAPABILITY_UNSUPPORTED`; `trade_preview` / `trade_execute` / `trade_close` refuse RISEx (read-only) before any credential is read.
+- `get_markets` / `get_orderbook` add `meta.apiStatus` (`"unofficial"` + `apiNote` for TxFlow); `get_prices` lists `meta.unofficialApiVenues`; `health_check` rows carry `apiStatus`. Account / trading tools refuse TxFlow with `CAPABILITY_UNSUPPORTED`. RISEx trades through `trade_preview` / `trade_execute` / `trade_close` like the other trading venues (manual orders only; mainnet not yet verified).
 
 **Resources:** `market://prices`, `market://funding-rates`, `perp://schema`
 

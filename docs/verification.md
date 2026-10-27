@@ -24,7 +24,7 @@ Every mark below comes from a real-money mainnet run, not from code reading — 
 | Deposit via perp-cli | ✅ | (HL) | ✅ | ✅ | ✅ | ✅ | ✅ | — (web app) | — (address only) |
 | Withdraw (to your own address)⁶ | ✅ | (HL) | ✅ | ✅ | ✅ | ✅ (`--asset USDC`) | ⛔⁴ | ✅ | ⛔⁵ |
 
-RISEx, TxFlow, Variational, GRVT and Extended are not in this table: none trades in this release. RISEx trading (shipped but disabled since 0.15.0) was exercised on **testnet** only (2026-10-14); no mainnet RISEx order has been run.
+RISEx, TxFlow, Variational, GRVT and Extended are not in this table: none trades in this release. RISEx trading (switched on 2026-10-27; shipped but disabled in 0.15.0) was exercised on **testnet** only (2026-10-14); no mainnet RISEx order has been run.
 
 ² perp-cli has no native TWAP for this venue: `trade twap` runs the client-side TWAP (slices) instead. Whether the venue's API offers one is not checked.  
 ³ Verified in the session; no saved log file.  

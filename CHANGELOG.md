@@ -4,6 +4,20 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Changed — RISEx trading switched on (manual trading only)
+
+- `RISEX_TRADING_ENABLED` is now `true` (owner request 2026-10-27). The trading path shipped switched off in 0.15.0: a session signer restricted on-chain to trading only, plus EIP-712 permits.
+  - Back on: `perp -e risex trade …` (market, limit GTC / IOC / FOK / ALO, reduce-only, cancel, cancel-all, leverage, margin mode, status).
+  - Also back on: `trade multi` / `arb exec` legs, `wallet agent approve|revoke|rotate risex`, `perp setup --venues risex`, `perp -n testnet funds faucet risex`, and the MCP `trade_preview` / `trade_execute` / `trade_close` tools.
+  - In `arb scan`, a pair with a RISEx leg is executable again.
+- Still refused (`CAPABILITY_UNSUPPORTED`):
+  - TP/SL / stops, amend and builder fee;
+  - unattended trading: bots, TWAP, grid, background jobs and `strategy …` on RISEx;
+  - `wallet agent import risex`;
+  - deposits and withdrawals (RISEx app only).
+- Mainnet RISEx trading was verified on testnet only (2026-10-14). No mainnet RISEx order has been run yet (`docs/verification.md`).
+- The read-only gate stays in the code and is still tested: `risex-read-only.test.ts` now mocks the switch off.
+
 ## [0.16.0] — 2026-10-26
 
 > **Renumbered from 0.15.1, which was never released** (npm's latest is 0.15.0; there is no `v0.15.1`

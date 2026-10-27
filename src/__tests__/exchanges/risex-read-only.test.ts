@@ -1,6 +1,6 @@
 /**
  * RISEx read-only release phase (0.15.0, owner decision 2026-10-19): with RISEX_TRADING_ENABLED
- * false (the shipped value — NOT mocked here), every trading / signer / agent / bot / MCP-write /
+ * false (mocked here — trading ships on since 2026-10-27; the gate must still hold if it is switched off again), every trading / signer / agent / bot / MCP-write /
  * setup entry point refuses with CAPABILITY_UNSUPPORTED (also under --dry-run) before any request,
  * while market data and public-by-address account reads keep working. No network: fetch is mocked.
  */
@@ -17,6 +17,7 @@ vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
   },
 }));
 vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({ StdioServerTransport: class {} }));
+vi.mock("../../exchanges/venues/risex-release.js", () => ({ RISEX_TRADING_ENABLED: false }));
 const owsCreate = vi.fn((name: string) => ({ getAddress: () => (name === "main" ? "0x00000000000000000000000000000000000000c3" : "0x00000000000000000000000000000000000000a1") }));
 vi.mock("../../signer/ows-evm.js", () => ({ OwsEvmSigner: { create: (name: string, _p: string) => owsCreate(name) } }));
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
