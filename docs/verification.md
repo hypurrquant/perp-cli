@@ -26,7 +26,7 @@ Every mark below comes from a real-money mainnet run, not from code reading — 
 
 RISEx, Variational, GRVT and Extended are not in this table: none trades in this release. RISEx trading (shipped but disabled since 0.15.0) was exercised on **testnet** only (2026-10-14); no mainnet RISEx order has been run.
 
-**TxFlow** trading (orders, cancel, amend, stop / TP / SL, leverage / margin mode, agent approve / import / revoke) is new and **not yet verified live** — not on testnet, not on mainnet. Unit tests check the signing against the docs' published test vectors and parse recorded testnet `/info` reads. No TxFlow order, cancel or agent approval has been sent by perp-cli yet. Mainnet trading also needs a whitelisted account (apply at txflow.com/apply).
+**TxFlow** trading (orders, cancel, amend, stop / TP / SL, leverage / margin mode, agent approve / import / revoke) is implemented but **switched off** (`TXFLOW_TRADING_ENABLED`) and **not yet verified live** — not on testnet, not on mainnet. Unit tests check the signing against the docs' published test vectors and parse recorded testnet `/info` reads. No TxFlow order, cancel or agent approval has been sent by perp-cli yet. Mainnet trading also needs a whitelisted account (apply at txflow.com/apply).
 
 ² perp-cli has no native TWAP for this venue: `trade twap` runs the client-side TWAP (slices) instead. Whether the venue's API offers one is not checked.  
 ³ Verified in the session; no saved log file.  

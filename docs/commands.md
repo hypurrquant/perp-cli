@@ -29,7 +29,7 @@ perp --json -e <EX> trade buy <SYM> <SIZE> --tp <PX> --sl <PX>  # entry protecte
 perp --json -e <EX> trade tpsl <SYM> long --tp <PX> --sl <PX>   # TP/SL on an open position (long|short)
 perp --json -e <EX> trade stop <SYM> sell <SIZE> <PX>            # reduce-only stop (default)
 perp --json -e <EX> trade leverage <SYM> <N>
-perp --json -n testnet -e txflow trade limit BTC buy 70000 0.001 --tif ALO   # TxFlow: agent-signed, read back by client id (not yet verified live)
+# TxFlow trading: implemented, switched off pending testnet verification (TXFLOW_TRADING_ENABLED) — trade commands refuse
 
 # Account
 perp --json portfolio -e <EX>                        # balance + spot + positions (your own balance: account balance was renamed in v0.12)
