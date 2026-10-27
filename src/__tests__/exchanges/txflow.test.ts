@@ -5,6 +5,9 @@
  * CAPABILITY_UNSUPPORTED with zero network calls). Trading: txflow-trading.test.ts.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 // The release switch as shipped (OFF): this file is the gate test. Trading: txflow-trading.test.ts (switch mocked ON).
 vi.mock("../../exchanges/venues/txflow-release.js", () => ({ TXFLOW_TRADING_ENABLED: false }));
 import "../../exchanges/venues/index.js";
@@ -387,8 +390,20 @@ describe("refusal table: -e txflow paths that must refuse before any I/O", () =>
     return { env: JSON.parse(out.join("").trim()) as Env, docs: 1 };
   };
 
+  // A bot config on TxFlow (strategy start).
+  const botDir = mkdtempSync(join(tmpdir(), "txflow-gate-"));
+  const botConfig = join(botDir, "bot.json");
+  writeFileSync(botConfig, JSON.stringify({ exchange: "txflow", symbol: "BTC", strategy: { type: "grid" } }));
+
   /** Still unsupported on TxFlow: funds (web app), builder codes, TWAP / bots (automation gate), funding arb. */
   const UNSUPPORTED: string[][] = [
+    // trade multi: refused while the legs are parsed — the Hyperliquid leg is never sent.
+    ["trade", "multi", "hyperliquid:BTC:buy:0.001", "txflow:BTC:sell:0.001"],
+    ["trade", "multi", "txflow:BTC:buy:0.001", "hyperliquid:BTC:sell:0.001"],
+    ["strategy", "start", botConfig, "--headless"],
+    ["strategy", "start", botConfig, "--background"],
+    ["-e", "txflow", "strategy", "run", "grid", "BTC", "--headless"],
+    ["wallet", "agent", "revoke", "txflow", "perp-cli-txflow"],
     ["funds", "deposit", "txflow", "10"],
     ["funds", "withdraw", "txflow", "10"],
     ["--dry-run", "funds", "withdraw", "txflow", "10"],
@@ -422,6 +437,7 @@ describe("refusal table: -e txflow paths that must refuse before any I/O", () =>
       const { env, docs } = await run(args);
       expect(env.ok).toBe(false);
       expect(env.error!.code).toBe("CAPABILITY_UNSUPPORTED");
+      if (args[1] === "multi") expect(env.error!.message).toMatch(/^trade multi refused before any leg was sent: leg "txflow:BTC:(buy|sell):0\.001"/);
       expect(docs).toBe(1);
       expect(fetchMock).not.toHaveBeenCalled();
     });

@@ -79,11 +79,11 @@ export const TXFLOW_ORDER_NOT_FOUND_CODE = 21001;
 const READ_BACK_ATTEMPTS = 3;
 const READ_BACK_DELAY_MS = 700;
 /**
- * frontendOpenOrders is read in pages (docs: `limit` / `offset`) until a page comes back short; the
- * page cap guards against a listing that never ends.
+ * frontendOpenOrders is read in pages (docs: `limit` / `offset`) until a page comes back EMPTY; the
+ * page cap guards against a listing that never ends (typed error when hit).
  */
 export const TXFLOW_OPEN_ORDERS_PAGE = 500;
-const TXFLOW_OPEN_ORDERS_MAX_PAGES = 100;
+export const TXFLOW_OPEN_ORDERS_MAX_PAGES = 100;
 /**
  * Client order ids are unique only among OPEN orders (docs: order `c`), so a read-back by client id
  * matches only rows created at or after the local send time minus this skew (local clock vs the
@@ -469,12 +469,21 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
   private async openRows(asset: number | null): Promise<OpenRow[]> {
     const user = this.requireAccount();
     const filter = asset === null ? {} : { asset: String(asset) };
+    // Paged until an EMPTY page (a server that caps a page below the requested limit cannot cut
+    // the list short); the offset advances by the rows actually received. Hitting the page cap is
+    // a typed error — never a silently truncated list (cancel-all relies on it).
     const front: unknown[] = [];
-    for (let page = 0; ; page++) {
-      if (page >= TXFLOW_OPEN_ORDERS_MAX_PAGES) throw txflowShapeError(`frontendOpenOrders still paging after ${TXFLOW_OPEN_ORDERS_MAX_PAGES} pages`);
-      const rows = arr(await this.client.info<unknown>({ type: "frontendOpenOrders", user, ...filter, limit: TXFLOW_OPEN_ORDERS_PAGE, offset: page * TXFLOW_OPEN_ORDERS_PAGE }), "frontendOpenOrders");
+    for (let page = 0, offset = 0; ; page++) {
+      if (page >= TXFLOW_OPEN_ORDERS_MAX_PAGES) {
+        throw new PerpError("EXCHANGE_ERROR", `TxFlow frontendOpenOrders: still paging after ${TXFLOW_OPEN_ORDERS_MAX_PAGES} pages (${front.length} rows) — the open-order list was not read to its end`, {
+          exchange: "txflow", rowsRead: front.length,
+          remediation: "Nothing was assumed from a partial list. Cancel orders one by one (perp -e txflow trade cancel <symbol> <orderId>) or in the TxFlow web app",
+        });
+      }
+      const rows = arr(await this.client.info<unknown>({ type: "frontendOpenOrders", user, ...filter, limit: TXFLOW_OPEN_ORDERS_PAGE, offset }), "frontendOpenOrders");
+      if (rows.length === 0) break;
       front.push(...rows);
-      if (rows.length < TXFLOW_OPEN_ORDERS_PAGE) break;
+      offset += rows.length;
     }
     const triggers = await this.client.info<unknown>({ type: "triggerOrders", user, ...filter });
     const out: OpenRow[] = [];

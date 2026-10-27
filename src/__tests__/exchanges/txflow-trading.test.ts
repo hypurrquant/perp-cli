@@ -17,7 +17,7 @@ import { Wallet, TypedDataEncoder, recoverAddress, Signature } from "ethers";
 import "../../exchanges/venues/index.js";
 import { PerpError } from "../../errors.js";
 import { getVenue } from "../../exchanges/venue.js";
-import { TxflowAdapter, txflowHistoryStatus, TXFLOW_CLOID_MATCH_SKEW_MS, TXFLOW_OPEN_ORDERS_PAGE } from "../../exchanges/txflow/adapter.js";
+import { TxflowAdapter, txflowHistoryStatus, TXFLOW_CLOID_MATCH_SKEW_MS, TXFLOW_OPEN_ORDERS_MAX_PAGES, TXFLOW_OPEN_ORDERS_PAGE } from "../../exchanges/txflow/adapter.js";
 import { txflowConnectionId, txflowDomain, TXFLOW_AGENT_TYPES, type TxflowAgentAction } from "../../exchanges/txflow/signing.js";
 import { LocalEvmSigner } from "../../signer/evm-local.js";
 import type { OrderRequest } from "../../exchanges/venue-types.js";
@@ -40,6 +40,8 @@ interface Venue {
   exchange: (b: { action: TxflowAgentAction; nonce: number; signature: { r: string; s: string; v: number } }) => Response;
   sent: Array<{ action: TxflowAgentAction; nonce: number; signature: { r: string; s: string; v: number }; confirm: unknown }>;
   infos: Body[];
+  /** false (default): a frontendOpenOrders handler returns the WHOLE list and the mock serves it page by page. */
+  rawPaging: boolean;
 }
 
 let venue: Venue;
@@ -55,6 +57,7 @@ beforeEach(async () => {
     exchange: () => executed(),
     sent: [],
     infos: [],
+    rawPaging: false,
   };
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body)) as Body;
@@ -65,6 +68,13 @@ beforeEach(async () => {
     venue.infos.push(body);
     const t = String(body.type);
     const custom = venue.info[t];
+    if (t === "frontendOpenOrders" && !venue.rawPaging) {
+      // Serve the handler's (or the fixture's) full list in pages, like the venue (limit / offset).
+      const full = await (custom ? custom(body) : recorded("frontendOpenOrders")).json() as { data: unknown[] };
+      const off = Number(body.offset ?? 0);
+      const lim = Number(body.limit ?? full.data.length);
+      return ok(full.data.slice(off, off + lim));
+    }
     if (custom) return custom(body);
     switch (t) {
       case "perpMeta": return recorded("perpMeta");
@@ -452,17 +462,41 @@ describe("review fixes: client-id reuse, cancel races, paging, mixed groupings, 
     expect(r.cancelled.map(c => c.value)).toEqual(["901", "902", "903"]);
   });
 
-  it("frontendOpenOrders is paged (limit / offset) until a short page", async () => {
-    const page = (n: number, from: number) => Array.from({ length: n }, (_, i) => ({ ...openRowFor(`x${from + i}`), oid: from + i }));
+  const page = (n: number, from: number) => Array.from({ length: n }, (_, i) => ({ ...openRowFor(`x${from + i}`), oid: from + i }));
+
+  it("frontendOpenOrders is paged (limit / offset) until an EMPTY page; the offset advances by the rows received", async () => {
     const offsets: unknown[] = [];
+    venue.rawPaging = true;
     venue.info.frontendOpenOrders = b => {
       offsets.push(b.offset);
       expect(b.limit).toBe(TXFLOW_OPEN_ORDERS_PAGE);
-      return ok(b.offset === 0 ? page(TXFLOW_OPEN_ORDERS_PAGE, 1) : page(2, TXFLOW_OPEN_ORDERS_PAGE + 1));
+      return ok(b.offset === 0 ? page(TXFLOW_OPEN_ORDERS_PAGE, 1) : b.offset === TXFLOW_OPEN_ORDERS_PAGE ? page(2, TXFLOW_OPEN_ORDERS_PAGE + 1) : []);
     };
     const os = await adapter().getOpenOrders();
     expect(os).toHaveLength(TXFLOW_OPEN_ORDERS_PAGE + 2);
-    expect(offsets).toEqual([0, TXFLOW_OPEN_ORDERS_PAGE]);
+    expect(offsets).toEqual([0, TXFLOW_OPEN_ORDERS_PAGE, TXFLOW_OPEN_ORDERS_PAGE + 2]);
+  });
+
+  it("a server that caps pages below the limit cannot truncate the list (cancel-all sees every order)", async () => {
+    const all = page(250, 1); // served 100 rows at a time, whatever limit is asked
+    let gone = false;
+    venue.rawPaging = true;
+    venue.exchange = () => { gone = true; return executed("CancelOrder"); };
+    venue.info.frontendOpenOrders = b => ok(gone ? [] : all.slice(Number(b.offset), Number(b.offset) + 100));
+    venue.info.orderDetails = b => ok({ type: "orderDetails", orderDetails: historyRowFor("x", "canceled", { oid: Number(b.orderId), sz: "0.01" }) });
+    const r = await adapter().cancelAllV2(null);
+    expect(((await sentAction()) as unknown as { cancels: unknown[] }).cancels).toHaveLength(200);
+    expect(((await sentAction(1)) as unknown as { cancels: unknown[] }).cancels).toHaveLength(50);
+    expect(r.cancelled).toHaveLength(250);
+  });
+
+  it("the page cap is a typed error, never a silent truncation", async () => {
+    venue.rawPaging = true;
+    venue.info.frontendOpenOrders = b => ok(page(1, Number(b.offset) + 1)); // never ends
+    const e = await adapter().getOpenOrders().catch(x => x) as PerpError;
+    expect(e.structured.code).toBe("EXCHANGE_ERROR");
+    expect(e.message).toMatch(new RegExp(`still paging after ${TXFLOW_OPEN_ORDERS_MAX_PAGES} pages`));
+    expect(venue.sent).toEqual([]);
   });
 
   it("margin mode: an opening order takes activeAssetData's mode; reduce-only without a position → POSITION_NOT_FOUND, nothing sent", async () => {

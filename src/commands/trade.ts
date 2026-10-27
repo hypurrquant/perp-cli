@@ -14,7 +14,7 @@ import { quarantineEntryFor, quarantineSymbol } from "../bot/quarantine.js";
 import { fillSizeString, sizeDecimalsOf } from "../exchanges/spot-result.js";
 import chalk from "chalk";
 import { hasPacificaSdk, isTwapCapable, isQueryOrderCapable } from "../exchanges/capabilities.js";
-import { getVenue, listVenuesWithRole, requireCapabilities, type VenueCapabilities, type VenueDefinition } from "../exchanges/venue.js";
+import { getVenue, listVenuesWithRole, requireCapabilities, roleUnsupported, tryResolveVenueId, type VenueCapabilities, type VenueDefinition } from "../exchanges/venue.js";
 import "../exchanges/venues/index.js";
 import { isTradingV2, newVenueClientOrderId, placeAndConfirm, reduceOnlyGateOf, stopOrderGateOf, unsupported, validateLegacyTif, validateOrderRequest, type PlacedOrder, type TradingV2 } from "../exchanges/trading-v2.js";
 import { placeTpSlLeg, tradingV2Of } from "../exchanges/legacy-trading-v2.js";
@@ -2649,6 +2649,18 @@ function parseMultiLeg(spec: string): MultiLeg {
   const exRef = exchange.toLowerCase() === "lit" ? "lighter" : exchange;
   const trading = listVenuesWithRole("trading");
   const def = trading.find(v => v.id === exRef.toLowerCase() || v.aliases.includes(exRef.toLowerCase()));
+  // A registered venue without the trading role (switched-off TxFlow / RISEx, read-only GRVT,
+  // Extended, Variational) refuses the WHOLE multi here, while legs are parsed — before any adapter
+  // is created or any leg is sent — naming the leg.
+  const registered = tryResolveVenueId(exRef);
+  if (!def && registered !== null) {
+    const venueDef = getVenue(registered);
+    const r = roleUnsupported(venueDef, "trading");
+    throw new PerpError("CAPABILITY_UNSUPPORTED", `trade multi refused before any leg was sent: leg "${spec}" — ${r.message}`, {
+      ...(r.structured.details ?? {}), leg: spec,
+      ...(r.structured.remediation !== undefined ? { remediation: r.structured.remediation } : {}),
+    });
+  }
   if (!def) {
     throw new Error(`Unknown exchange "${exchange}" in leg spec — valid: ${trading.map(v => v.id).join(", ")}`);
   }

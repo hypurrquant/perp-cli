@@ -83,11 +83,15 @@ describe("MCP read tools with a stored TxFlow agent", () => {
     });
     const users: unknown[] = [];
     fetchMock.mockImplementation(async (_u: string, init: RequestInit) => {
-      const b = JSON.parse(String(init.body)) as { type: string; user?: string };
+      const b = JSON.parse(String(init.body)) as { type: string; user?: string; offset?: number };
       if (b.user !== undefined) users.push(b.user);
+      // The recording is the whole list: page 0 serves it, the next page is empty.
       const key = b.type === "clearinghouseState" ? "clearinghouseState.position" : b.type === "triggerOrders" ? "triggerOrders.empty" : b.type;
       const rec = FIX.reads[key];
       if (rec === undefined) throw new Error(`unexpected /info ${b.type}`);
+      if (b.type === "frontendOpenOrders" && (b.offset ?? 0) > 0) {
+        return new Response(JSON.stringify({ ...(rec.body as object), data: [] }), { status: rec.httpStatus });
+      }
       return new Response(JSON.stringify(rec.body), { status: rec.httpStatus });
     });
     const pos = await call("get_positions", { exchange: "txflow" });
