@@ -383,7 +383,7 @@ describe("adapter: placeOrder", () => {
     ]);
     const a = await adapter();
     const r = await a.placeOrder(req({ type: "market", price: null, tif: null, clientOrderId: null, slippage: { bps: 100, source: "flag" } }));
-    expect(placed).toMatchObject({ order_type: 0, time_in_force: 3, post_only: false });
+    expect(placed).toMatchObject({ order_type: 1, time_in_force: 3, post_only: false }); // LIMIT IOC: the venue's MARKET type ignores the price (live testnet)
     // mark 83425.59… × 1.01 = 84259.85 → ceil to the 0.1 tick = 84259.9
     expect((placed as unknown as Record<string, unknown>).price_ticks).toBe(842599);
     expect(String((placed as unknown as Record<string, unknown>).client_order_id)).toMatch(/^[1-9]\d+$/);
@@ -560,6 +560,20 @@ describe("adapter: cancel / cancel-all / leverage", () => {
     const r = await a.applyLeverage("BTC", 5, null);
     expect(r).toMatchObject({ leverage: 5, marginMode: "cross" });
     expect(fetchMock.mock.calls.filter(c => String(c[0]).includes("/v1/account/margin-mode"))).toHaveLength(0);
+  });
+});
+
+describe("iocOutcomeOf (market orders are LIMIT IOC read back by id)", () => {
+  const res = (status: string, method = "protectedIoc", finality = "final") => ({ venue: "risex", status, finality, filledSize: status === "filled" ? "0.1" : "0", execution: { method } });
+  it("filled / cancelled are venue-final; partiallyFilled (possibly a lagging OPEN record), limits and pending reads are not", async () => {
+    const a = await adapter();
+    expect(a.iocOutcomeOf(res("filled"))).toEqual({ filledSize: "0.1", final: true });
+    // Live testnet 2026-10-28: a close with no liquidity inside the bound — cancelled, nothing filled.
+    expect(a.iocOutcomeOf(res("cancelled"))).toEqual({ filledSize: "0", final: true });
+    expect(a.iocOutcomeOf(res("partiallyFilled"))).toBeNull();
+    expect(a.iocOutcomeOf(res("cancelled", "limit"))).toBeNull();
+    expect(a.iocOutcomeOf(res("cancelled", "protectedIoc", "pending"))).toBeNull();
+    expect(a.iocOutcomeOf({ status: "ok" })).toBeNull();
   });
 });
 

@@ -18,6 +18,7 @@
  *    The permit deadline is short (RISEX_PERMIT_TTL_S), so an unproven permit expires quickly.
  */
 
+import type { IocOutcome } from "../ioc-outcome.js";
 import { PerpError, extractErrorMessage } from "../../errors.js";
 import { quarantineSymbol } from "../../bot/quarantine.js";
 import type { RisexAgentMeta } from "../../settings.js";
@@ -583,7 +584,9 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
     }
     const fields = {
       marketId: Number(m.market_id), sizeSteps, priceTicks, side: SIDE[req.side], postOnly: tif === "ALO", reduceOnly: req.reduceOnly,
-      stpMode: STP_EXPIRE_MAKER, orderType: req.type === "market" ? ORDER_TYPE.market : ORDER_TYPE.limit, tif: tifCode,
+      // A market order goes out as LIMIT IOC at the protection price: the venue's MARKET type ignores
+      // the price (testnet 2026-10-28: a 1 bps bound at 2336.30 filled at 2353.17), LIMIT IOC honors it.
+      stpMode: STP_EXPIRE_MAKER, orderType: ORDER_TYPE.limit, tif: tifCode,
     } as const;
     const actionHash = placeOrderHash(packOrder(fields), BigInt(clientOrderId));
     const { permit, slot } = await this.permit(account, signer, actionHash);
@@ -822,6 +825,18 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   // ── Legacy trading shims ──
+
+  /**
+   * Venue-final outcome of a market order (LIMIT IOC) read back by id: "filled" or "cancelled" is
+   * terminal (an IOC cannot rest). "partiallyFilled" can be the lagging OPEN record → null (measured).
+   */
+  iocOutcomeOf(raw: unknown): IocOutcome | null {
+    if (raw === null || typeof raw !== "object") return null;
+    const r = raw as Partial<OrderResult>;
+    if (r.venue !== "risex" || r.finality !== "final" || r.execution?.method !== "protectedIoc") return null;
+    if (r.status !== "filled" && r.status !== "cancelled") return null;
+    return typeof r.filledSize === "string" ? { filledSize: r.filledSize, final: true } : null;
+  }
 
   async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { reduceOnly: boolean; slippage: ResolvedSlippage; clientOrderId?: string }): Promise<unknown> {
     return this.placeOrder({
