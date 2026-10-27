@@ -28,6 +28,20 @@ RISEx, Variational, GRVT and Extended are not in this table: none trades in this
 
 **TxFlow** trading (orders, cancel, amend, stop / TP / SL, leverage / margin mode, agent approve / import / revoke) is implemented but **switched off** (`TXFLOW_TRADING_ENABLED`) and **not yet verified live** — not on testnet, not on mainnet. Unit tests check the signing against the docs' published test vectors and parse recorded testnet `/info` reads. No TxFlow order, cancel or agent approval has been sent by perp-cli yet. Mainnet trading also needs a whitelisted account (apply at txflow.com/apply).
 
+TxFlow testnet checklist (switch `TXFLOW_TRADING_ENABLED` on in a local build; `-n testnet`):
+
+1. `wallet agent approve txflow`: the label is accepted, `agentOwner` shows the agent; `--rotate` rebinds the label; `revoke` frees it.
+2. Where the `/exchange` reply echoes `confirm: "executed"` (top level or `data.confirm`; without it every write reads as unknown).
+3. The order's client id (`cloid`) and `timestamp` come back on `frontendOpenOrders` / `historicalOrders`, within 30 s of the local clock.
+4. A market trigger: is `p` (trigger ± slippage bound) the limit of the fired market order?
+5. `normalTrigger` takes a single trigger; triggers are listed in `frontendOpenOrders` or `triggerOrders`; cancel with `grouping: trigger` / `tpsl`.
+6. Record a `historicalTriggerOrders` row and check that it has `timestamp` / `createTime` (the client-id match window needs one) and the `triggerState` strings.
+7. `m` (`cross` / `isolated`) is accepted as sent; `orderDetails` covers cancelled orders.
+8. Market IOC inside the 5% oracle band; `modify2`; `updateLeverage` / `updateMarginMode` (and the `activeAssetData` casing).
+9. The HTTP status and text of a rejection (e.g. off-tick), the mainnet whitelist refusal and "deposit first"; an `err` body below HTTP 500 is treated as a definite refusal.
+10. `frontendOpenOrders` paging: the page size the server really serves for `limit: 500`.
+11. Whether `approveBuilderFee` is required before trading (perp-cli attaches no builder).
+
 ² perp-cli has no native TWAP for this venue: `trade twap` runs the client-side TWAP (slices) instead. Whether the venue's API offers one is not checked.  
 ³ Verified in the session; no saved log file.  
 ⁴ Not available: the Ondo Perps API does not allow withdrawals (`funds withdraw ondo` → `CAPABILITY_UNSUPPORTED`). Withdraw in the Ondo web app.  
