@@ -96,7 +96,7 @@
       "slot": "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc (EIP-1967)",
       "router": {
         "mainnet": "0xe2da7a94a81fe9ee58f70ebce862a176280092ae",
-        "testnet": "0x9218cd0d7626d9611b62e55dc3659936f9e57f68"
+        "testnet": "0x91916671d82987b9b7a2aa01a3bf00ae878ef908"
       },
       "accountRegistry": {
         "source": "Authorization getAccountRegistry() (0x0ab142ed)",

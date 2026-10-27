@@ -73,7 +73,9 @@ export const RISEX_PINS: Readonly<Record<Network, RisexPins>> = {
     // eth_chainId 0xaa39db = 11155931 (verified); the testnet system config lists no RPC.
     rpcUrl: "https://testnet.riselabs.xyz",
     authImplementation: "0xc5b84461547eb5397a7c3fd067abfcbc24b53663",
-    routerImplementation: "0x9218cd0d7626d9611b62e55dc3659936f9e57f68",
+    // Re-reviewed 2026-10-28 (bytecode; source unverified): upgrade of 2026-10-27 only adds three batch
+    // place/cancel entries whose permits are checked with permission 2 (trading) on the same Authorization.
+    routerImplementation: "0x91916671d82987b9b7a2aa01a3bf00ae878ef908",
     accountRegistry: "0xf733038054cfb47fa9da1a1d6e79be6fb61f0a70",
     accountRegistryImplementation: "0x99ccc05d52b69bd889a8ab4bc7c12b47aca94b58",
   },
