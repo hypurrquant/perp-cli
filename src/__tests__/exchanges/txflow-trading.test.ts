@@ -15,7 +15,7 @@ import { Wallet, TypedDataEncoder, recoverAddress, Signature } from "ethers";
 import "../../exchanges/venues/index.js";
 import { PerpError } from "../../errors.js";
 import { getVenue } from "../../exchanges/venue.js";
-import { TxflowAdapter, txflowHistoryStatus } from "../../exchanges/txflow/adapter.js";
+import { TxflowAdapter, txflowHistoryStatus, TXFLOW_CLOID_MATCH_SKEW_MS, TXFLOW_OPEN_ORDERS_PAGE } from "../../exchanges/txflow/adapter.js";
 import { txflowConnectionId, txflowDomain, TXFLOW_AGENT_TYPES, type TxflowAgentAction } from "../../exchanges/txflow/signing.js";
 import { LocalEvmSigner } from "../../signer/evm-local.js";
 import type { OrderRequest } from "../../exchanges/venue-types.js";
@@ -101,11 +101,11 @@ function req(over: Partial<OrderRequest>): OrderRequest {
 /** A recorded open-order row re-keyed to the order that was just sent. */
 function openRowFor(cloid: string, over: Record<string, unknown> = {}): Record<string, unknown> {
   const base = (FIX.reads.frontendOpenOrders.body.data as Array<Record<string, unknown>>)[0];
-  return { ...base, asset: 1, coin: "BTC-USDC", cloid, oid: 4242, origSz: "0.01", sz: "0.01", state: "Open", ...over };
+  return { ...base, asset: 1, coin: "BTC-USDC", cloid, oid: 4242, origSz: "0.01", sz: "0.01", state: "Open", timestamp: Date.now(), ...over };
 }
 function historyRowFor(cloid: string, status: string, over: Record<string, unknown> = {}): Record<string, unknown> {
   const base = ((FIX.reads.historicalOrders.body.data as { data: Array<Record<string, unknown>> }).data)[0];
-  return { ...base, status, order: { ...(base.order as object), instrumentId: 1, coin: "BTC", cloid, oid: 4243, origSz: "0.01", sz: "0.0000", avgFillPrice: "79600.1", ...over } };
+  return { ...base, status, order: { ...(base.order as object), instrumentId: 1, coin: "BTC", cloid, oid: 4243, origSz: "0.01", sz: "0.0000", avgFillPrice: "79600.1", timestamp: Date.now(), ...over } };
 }
 
 describe("account reads (recorded testnet answers)", () => {
@@ -187,7 +187,7 @@ describe("placeOrder — action building per order type", () => {
     const a = await sentAction();
     expect(a).toEqual({
       type: "order", grouping: "na",
-      orders: [{ a: 1, b: true, p: "80022.4", s: "0.01", r: false, t: { limit: { tif: "Ioc" } }, c: "cli-test-1" }],
+      orders: [{ a: 1, b: true, p: "80022.4", s: "0.01", r: false, t: { limit: { tif: "Ioc" } }, c: "cli-test-1", m: "cross" }],
     });
     // mark 79624.2 (recorded activeAssetCtx) × 1.005 = 80022.321 → ceil to the 0.1 tick
     expect(r).toMatchObject({ status: "filled", finality: "final", orderId: "4243", clientOrderId: "cli-test-1", filledSize: "0.01", avgPrice: "79600.1" });
@@ -198,7 +198,8 @@ describe("placeOrder — action building per order type", () => {
     venue.info.frontendOpenOrders = () => ok([openRowFor("cli-test-1", { tif: "ALO" })]);
     const r = await adapter().placeOrder(req({ tif: "ALO", side: "sell", reduceOnly: true }));
     const a = await sentAction();
-    expect((a as { orders: unknown[] }).orders[0]).toEqual({ a: 1, b: false, p: "70000", s: "0.01", r: true, t: { limit: { tif: "Alo" } }, c: "cli-test-1" });
+    // Reduce-only: m is the margin mode of the BTC position it reduces (recorded: Cross).
+    expect((a as { orders: unknown[] }).orders[0]).toEqual({ a: 1, b: false, p: "70000", s: "0.01", r: true, t: { limit: { tif: "Alo" } }, c: "cli-test-1", m: "cross" });
     expect(r).toMatchObject({ status: "open", finality: "final", orderId: "4242", filledSize: "0" });
   });
 
@@ -222,14 +223,15 @@ describe("placeOrder — action building per order type", () => {
     expect(r).toMatchObject({ status: "accepted", finality: "pending", orderId: null, clientOrderId: "cli-test-1", filledSize: null });
   });
 
-  it("stop-market sell below the mark: normalTrigger, tpsl sl, isMarket, p = trigger, reduce-only", async () => {
+  it("stop-market sell below the mark: normalTrigger, tpsl sl, isMarket, p = trigger − slippage, reduce-only", async () => {
     venue.info.frontendOpenOrders = () => ok([]);
-    venue.info.triggerOrders = () => ok([{ asset: "1", coin: "1", oid: 77, cloid: "cli-test-1", side: "A", sz: "0.01", limitPx: "60000", triggerPx: "60000", triggerState: "", orderType: "Stop", reduceOnly: true, createTime: 1 }]);
+    venue.info.triggerOrders = () => ok([{ asset: "1", coin: "1", oid: 77, cloid: "cli-test-1", side: "A", sz: "0.01", limitPx: "59700", triggerPx: "60000", triggerState: "", orderType: "Stop", reduceOnly: true, createTime: Date.now() }]);
     const r = await adapter().placeOrder(req({ type: "stopMarket", side: "sell", price: null, tif: null, triggerPrice: "60000", reduceOnly: true, slippage: slip }));
     const a = await sentAction();
     expect(a).toEqual({
       type: "order", grouping: "normalTrigger",
-      orders: [{ a: 1, b: false, p: "60000", s: "0.01", r: true, t: { trigger: { isMarket: true, triggerPx: "60000", tpsl: "sl" } }, c: "cli-test-1" }],
+      // p = 60000 × (1 − 50 bps) = 59700, aligned down (sell) to the 0.1 tick.
+      orders: [{ a: 1, b: false, p: "59700", s: "0.01", r: true, t: { trigger: { isMarket: true, triggerPx: "60000", tpsl: "sl" } }, c: "cli-test-1", m: "cross" }],
     });
     expect(r).toMatchObject({ status: "open", orderId: "77" });
     expect(r.execution.notes.join(" ")).toMatch(/sent as sl: trigger 60000 is below the mark/);
@@ -240,7 +242,7 @@ describe("placeOrder — action building per order type", () => {
     venue.info.historicalOrders = () => ok({ data: [], hasMore: false });
     await adapter().placeTpSlLeg({ symbol: "BTC", closeSide: "sell", size: "0.01", trigger: "90000", kind: "tp", limitPrice: "89990", slippage: slip });
     const o = ((await sentAction()) as unknown as { orders: Array<Record<string, unknown>> }).orders[0];
-    expect(o).toMatchObject({ b: false, p: "89990", r: true, t: { trigger: { isMarket: false, triggerPx: "90000", tpsl: "tp" } } });
+    expect(o).toMatchObject({ b: false, p: "89990", r: true, t: { trigger: { isMarket: false, triggerPx: "90000", tpsl: "tp" } }, m: "cross" });
   });
 });
 
@@ -295,6 +297,7 @@ describe("cancel / amend / leverage", () => {
     let gone = false;
     venue.exchange = () => { gone = true; return executed("CancelOrder"); };
     venue.info.frontendOpenOrders = () => ok(gone ? [] : [openBtc]);
+    venue.info.orderDetails = () => ok({ type: "orderDetails", orderDetails: historyRowFor("c-9", "canceled", { oid: 555, sz: "0.01" }) });
     const r = await adapter().cancelByRef("BTC", { kind: "orderId", value: "555" });
     expect(await sentAction()).toEqual({ type: "cancel", cancels: [{ a: 1, o: 555 }] });
     expect(r).toMatchObject({ cancelled: [{ kind: "orderId", value: "555" }], failed: [], pending: [] });
@@ -370,5 +373,118 @@ describe("order status reads", () => {
     // orderDetails takes no user: an id of another market is not reported as this market's order.
     await expect(adapter().getOrderStatus("BTC", { kind: "orderId", value: String(found.orderDetails.order.oid) }))
       .rejects.toMatchObject({ structured: { code: "ORDER_NOT_FOUND" } });
+  });
+});
+
+describe("review fixes: client-id reuse, cancel races, paging, mixed groupings, margin mode", () => {
+  it("venue definition with the switch ON: trading role, no gate", () => {
+    expect(getVenue("txflow").roles).toEqual(["marketData", "account", "trading"]);
+    expect(getVenue("txflow").gatedRoles).toBeNull();
+  });
+
+  it("client-id reuse: an OLDER filled order with the same client id is never read as this order", async () => {
+    const old = historyRowFor("cli-test-1", "filled", { timestamp: Date.now() - TXFLOW_CLOID_MATCH_SKEW_MS - 60_000, oid: 1 });
+    venue.info.frontendOpenOrders = () => ok([]);
+    venue.info.historicalOrders = () => ok({ data: [old], hasMore: false });
+    const r = await adapter().placeOrder(req({ tif: "IOC" }));
+    expect(r).toMatchObject({ status: "accepted", finality: "pending", orderId: null, filledSize: null });
+  });
+
+  it("client-id reuse: two orders with the id since the send → never a guess (pending; reconciliation → ORDER_PENDING)", async () => {
+    const two = () => ok({ data: [historyRowFor("cli-test-1", "filled", { oid: 11 }), historyRowFor("cli-test-1", "canceled", { oid: 12, sz: "0.01" })], hasMore: false });
+    venue.info.frontendOpenOrders = () => ok([]);
+    venue.info.historicalOrders = two;
+    const r = await adapter().placeOrder(req({ tif: "IOC" }));
+    expect(r).toMatchObject({ status: "accepted", finality: "pending" });
+    expect(r.execution.notes.join(" ")).toMatch(/2 orders carry client id cli-test-1/);
+    venue.exchange = () => json(502, "bad gateway");
+    await expect(adapter().placeOrder(req({ tif: "IOC" }))).rejects.toMatchObject({ structured: { code: "ORDER_PENDING" } });
+    // A lookup without a send (another process: trade status c:<id>) refuses to pick one.
+    await expect(adapter().getOrderStatus("BTC", { kind: "clientOrderId", value: "cli-test-1" })).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+  });
+
+  it("a cancel racing a fill: the order left the open list FILLED → failed with the real state, never cancelled", async () => {
+    let gone = false;
+    venue.exchange = () => { gone = true; return executed("CancelOrder"); };
+    venue.info.frontendOpenOrders = () => ok(gone ? [] : [{ ...openRowFor("c-1"), oid: 700 }]);
+    venue.info.orderDetails = () => ok({ type: "orderDetails", orderDetails: historyRowFor("c-1", "filled", { oid: 700 }) });
+    const r = await adapter().cancelByRef("BTC", { kind: "orderId", value: "700" });
+    expect(r.cancelled).toEqual([]);
+    expect(r.failed[0].error).toMatch(/not cancelled — the order is filled \(filled 0\.01\)/);
+    // Partially filled, then cancelled → cancelled, and the fill is visible in venueRaw.
+    gone = false;
+    venue.info.orderDetails = () => ok({ type: "orderDetails", orderDetails: historyRowFor("c-1", "partialCanceled", { oid: 700, sz: "0.004" }) });
+    const r2 = await adapter().cancelByRef("BTC", { kind: "orderId", value: "700" });
+    expect(r2.cancelled).toEqual([{ kind: "orderId", value: "700" }]);
+    expect(r2.venueRaw).toEqual([{ orderId: "700", venueStatus: "partialCanceled", filledSize: "0.006" }]);
+    // Gone, but not in the order history yet → pending.
+    gone = false;
+    venue.info.orderDetails = () => recorded("orderDetails.notFound");
+    const r3 = await adapter().cancelByRef("BTC", { kind: "orderId", value: "700" });
+    expect(r3.pending).toHaveLength(1);
+  });
+
+  it("a refused batch is re-verified per order: gone + cancelled → cancelled; still open → failed", async () => {
+    const rows = [{ ...openRowFor("a"), oid: 801 }, { ...openRowFor("b"), oid: 802 }];
+    let sent = false;
+    venue.exchange = () => { sent = true; return json(200, { status: "err", code: 1, message: "Order not found" }); };
+    // 801 was cancelled elsewhere between the listing and the batch; 802 stays open.
+    venue.info.frontendOpenOrders = () => ok(sent ? [rows[1]] : rows);
+    venue.info.orderDetails = () => ok({ type: "orderDetails", orderDetails: historyRowFor("a", "canceled", { oid: 801, sz: "0.01" }) });
+    const r = await adapter().cancelAllV2("BTC");
+    expect(r.cancelled).toEqual([{ kind: "orderId", value: "801" }]);
+    expect(r.failed).toEqual([{ ref: { kind: "orderId", value: "802" }, error: expect.stringMatching(/Order not found/) }]);
+  });
+
+  it("mixed-grouping batch cancel: plain → none, trigger → trigger, position TP/SL → tpsl", async () => {
+    const plain = { ...openRowFor("p"), oid: 901 };
+    const trig = { ...openRowFor("t"), oid: 902, isTrigger: true };
+    const tpsl = { ...openRowFor("s"), oid: 903, isTrigger: true, isPositionTpsl: true };
+    let gone = false;
+    venue.exchange = () => { gone = true; return executed("CancelOrder"); };
+    venue.info.frontendOpenOrders = () => ok(gone ? [] : [plain, trig, tpsl]);
+    venue.info.orderDetails = () => ok({ type: "orderDetails", orderDetails: historyRowFor("p", "canceled", { oid: 901, sz: "0.01" }) });
+    venue.info.historicalTriggerOrders = () => ok({ data: [{ oid: 902, triggerState: "canceled", createTime: Date.now() }, { oid: 903, triggerState: "canceled", createTime: Date.now() }], hasMore: false });
+    const r = await adapter().cancelAllV2(null);
+    expect(await sentAction()).toEqual({ type: "cancel", cancels: [{ a: 1, o: 901 }, { a: 1, o: 902, grouping: "trigger" }, { a: 1, o: 903, grouping: "tpsl" }] });
+    expect(r.cancelled.map(c => c.value)).toEqual(["901", "902", "903"]);
+  });
+
+  it("frontendOpenOrders is paged (limit / offset) until a short page", async () => {
+    const page = (n: number, from: number) => Array.from({ length: n }, (_, i) => ({ ...openRowFor(`x${from + i}`), oid: from + i }));
+    const offsets: unknown[] = [];
+    venue.info.frontendOpenOrders = b => {
+      offsets.push(b.offset);
+      expect(b.limit).toBe(TXFLOW_OPEN_ORDERS_PAGE);
+      return ok(b.offset === 0 ? page(TXFLOW_OPEN_ORDERS_PAGE, 1) : page(2, TXFLOW_OPEN_ORDERS_PAGE + 1));
+    };
+    const os = await adapter().getOpenOrders();
+    expect(os).toHaveLength(TXFLOW_OPEN_ORDERS_PAGE + 2);
+    expect(offsets).toEqual([0, TXFLOW_OPEN_ORDERS_PAGE]);
+  });
+
+  it("margin mode: an opening order takes activeAssetData's mode; reduce-only without a position → POSITION_NOT_FOUND, nothing sent", async () => {
+    venue.info.activeAssetData = () => ok({ user: ACCOUNT, coin: "1", leverage: { mode: "oneWay", type: "Isolated", value: 5, raw_usd: "1" }, maxTradeSzs: [], availableToTrade: [], markPx: "0", onlyIsolated: false });
+    venue.info.frontendOpenOrders = () => ok([openRowFor("cli-test-1")]);
+    await adapter().placeOrder(req({}));
+    expect(((await sentAction()) as unknown as { orders: Array<{ m: string }> }).orders[0].m).toBe("isolated");
+    venue.sent = [];
+    venue.info.clearinghouseState = () => ok({ ...(FIX.reads["clearinghouseState.position"].body.data as object), assetPositions: [] });
+    await expect(adapter().placeOrder(req({ reduceOnly: true, side: "sell" }))).rejects.toMatchObject({ structured: { code: "POSITION_NOT_FOUND", details: { sent: false } } });
+    expect(venue.sent).toEqual([]);
+  });
+
+  it("shape drift is an error, never a null: malformed liquidationPx, unknown history status", async () => {
+    const d = FIX.reads["clearinghouseState.position"].body.data as { assetPositions: Array<{ position: Record<string, unknown> }> };
+    venue.info.clearinghouseState = () => ok({ ...d, assetPositions: [{ ...d.assetPositions[0], position: { ...d.assetPositions[0].position, liquidationPx: "n/a" } }] });
+    await expect(adapter().getPositions()).rejects.toMatchObject({ structured: { code: "EXCHANGE_ERROR" } });
+    venue.info.historicalOrders = () => ok({ data: [historyRowFor("z", "weird")], hasMore: false });
+    await expect(adapter().getOrderHistory(5)).rejects.toMatchObject({ structured: { code: "EXCHANGE_ERROR" } });
+  });
+
+  it("a market trigger without a slippage bound is refused before sending", async () => {
+    await expect(adapter().placeOrder(req({ type: "stopMarket", side: "sell", price: null, tif: null, triggerPrice: "60000", reduceOnly: true, slippage: null })))
+      .rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+    expect(venue.sent).toEqual([]);
   });
 });

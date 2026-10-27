@@ -1307,7 +1307,7 @@ export function registerTradeCommands(
     .option("--limit-price <price>", "Limit price (makes it stop-limit)")
     .option("--no-reduce-only", "Allow the triggered order to open or flip a position (default: reduce-only)")
     .option("--trigger-type <type>", "Trigger price source: mark | last | mid (pacifica; aster mark | last; other venues: unsupported)")
-    .option("--slippage-bps <n>", "Bound for protection-priced market triggers (lighter, arcus) in bps, around the trigger price (default: settings)")
+    .option("--slippage-bps <n>", "Bound for protection-priced market triggers (lighter, arcus, txflow) in bps, around the trigger price (default: settings)")
     .option("--force", "With --no-reduce-only: bypass local risk-limit checks (maxPosition / total exposure)")
     .action(async (symbol: string, side: string, rawSize: string, stopPrice: string, opts: { limitPrice?: string; reduceOnly: boolean; triggerType?: string; slippageBps?: string; force?: boolean }) => {
       const s = side.toLowerCase();
@@ -1324,7 +1324,7 @@ export function registerTradeCommands(
       const slippageFlag = parseSlippageBpsFlag(opts.slippageBps);
       if (slippageFlag !== null) {
         if (isLimit) throw new PerpError("INVALID_PARAMS", "--slippage-bps applies to market triggers only; a stop-limit executes at --limit-price");
-        if (venueDef.family !== "lighter" && venueDef.id !== "arcus") {
+        if (venueDef.family !== "lighter" && venueDef.id !== "arcus" && venueDef.id !== "txflow") {
           throw unsupported(venueDef.displayName, "stopSlippage", "market triggers on this venue are venue-native market orders (no slippage bound)", "Omit --slippage-bps, or use --limit-price");
         }
       }
@@ -1370,7 +1370,7 @@ export function registerTradeCommands(
     .option("--tp-limit <price>", "Take-profit limit price once triggered (default: market trigger)")
     .option("--sl <price>", "Stop-loss trigger price (long: below mark; short: above)")
     .option("--size <size>", "Protect only this much of the position (≤ position size; pacifica: whole position only)")
-    .option("--slippage-bps <n>", "Bound for protection-priced market triggers (lighter, arcus) in bps (default: settings)")
+    .option("--slippage-bps <n>", "Bound for protection-priced market triggers (lighter, arcus, txflow) in bps (default: settings)")
     .action(async (symbol: string, positionSide: string, opts: { tp?: string; tpLimit?: string; sl?: string; size?: string; slippageBps?: string }) => {
       const ps = positionSide.toLowerCase();
       if (ps !== "long" && ps !== "short") {

@@ -121,16 +121,18 @@ describe("signature checks before anything is sent", () => {
 });
 
 describe("action building (node key order, null fields omitted)", () => {
-  it("limit body: a, b, p, s, r, t, c — no m / expiresAt", () => {
-    const b = txflowOrderBody({ asset: 1, isBuy: false, price: "79000", size: "0.01", reduceOnly: true, type: { limit: { tif: "Alo" } }, cloid: "p1" });
-    expect(Object.keys(b)).toEqual(["a", "b", "p", "s", "r", "t", "c"]);
-    expect(b).toEqual({ a: 1, b: false, p: "79000", s: "0.01", r: true, t: { limit: { tif: "Alo" } }, c: "p1" });
+  it("limit body: a, b, p, s, r, t, c, m — m always sent, no expiresAt", async () => {
+    const b = txflowOrderBody({ asset: 1, isBuy: false, price: "79000", size: "0.01", reduceOnly: true, type: { limit: { tif: "Alo" } }, cloid: "p1", marginMode: "isolated" });
+    expect(Object.keys(b)).toEqual(["a", "b", "p", "s", "r", "t", "c", "m"]);
+    expect(b).toEqual({ a: 1, b: false, p: "79000", s: "0.01", r: true, t: { limit: { tif: "Alo" } }, c: "p1", m: "isolated" });
+    // Hand-decoded tail: … a1 63 a2 "p1", a1 6d a8 "isolated" (keys c then m, after t).
+    expect(hexlify(await txflowActionPack({ type: "order", grouping: "na", orders: [b] }))).toMatch(/a163a27031a16da869736f6c61746564$/);
   });
 
   it("trigger body keeps isMarket, triggerPx, tpsl; tpsl omitted when absent", () => {
-    const withTag = txflowOrderBody({ asset: 2, isBuy: false, price: "60000", size: "1", reduceOnly: true, type: { trigger: { isMarket: true, triggerPx: "60000", tpsl: "sl" } }, cloid: "p2" });
+    const withTag = txflowOrderBody({ asset: 2, isBuy: false, price: "60000", size: "1", reduceOnly: true, type: { trigger: { isMarket: true, triggerPx: "60000", tpsl: "sl" } }, cloid: "p2", marginMode: "cross" });
     expect(Object.keys((withTag.t as { trigger: object }).trigger)).toEqual(["isMarket", "triggerPx", "tpsl"]);
-    const noTag = txflowOrderBody({ asset: 2, isBuy: false, price: "60000", size: "1", reduceOnly: true, type: { trigger: { isMarket: false, triggerPx: "60000" } }, cloid: "p2" });
+    const noTag = txflowOrderBody({ asset: 2, isBuy: false, price: "60000", size: "1", reduceOnly: true, type: { trigger: { isMarket: false, triggerPx: "60000" } }, cloid: "p2", marginMode: "cross" });
     expect(Object.keys((noTag.t as { trigger: object }).trigger)).toEqual(["isMarket", "triggerPx"]);
   });
 

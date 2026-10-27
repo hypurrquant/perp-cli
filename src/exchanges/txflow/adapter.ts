@@ -78,6 +78,18 @@ export const TXFLOW_ORDER_NOT_FOUND_CODE = 21001;
 /** Read-back after an executed order: the open-order / history reads can lag the block briefly. */
 const READ_BACK_ATTEMPTS = 3;
 const READ_BACK_DELAY_MS = 700;
+/**
+ * frontendOpenOrders is read in pages (docs: `limit` / `offset`) until a page comes back short; the
+ * page cap guards against a listing that never ends.
+ */
+export const TXFLOW_OPEN_ORDERS_PAGE = 500;
+const TXFLOW_OPEN_ORDERS_MAX_PAGES = 100;
+/**
+ * Client order ids are unique only among OPEN orders (docs: order `c`), so a read-back by client id
+ * matches only rows created at or after the local send time minus this skew (local clock vs the
+ * consensus timestamp). Two or more matching orders → the outcome is unknown, never a guess.
+ */
+export const TXFLOW_CLOID_MATCH_SKEW_MS = 30_000;
 /** Cancel verification: re-lists of the open orders after an executed cancel. */
 const CANCEL_VERIFY_ATTEMPTS = 3;
 const CANCEL_VERIFY_DELAY_MS = 700;
@@ -110,8 +122,14 @@ function trim(v: string): string {
   return addDecimal(v, "0");
 }
 
-function positiveOrNull(v: unknown): string | null {
-  if (typeof v !== "string" || !/^\d+(\.\d+)?$/.test(v)) return null;
+/**
+ * An optional price: null / absent / "" (documented as nullable or empty) → null, and "0" — the
+ * docs' placeholder for "none" — → null. Any other non-decimal value is shape drift (EXCHANGE_ERROR),
+ * never read as "no price".
+ */
+function optionalPrice(v: unknown, what: string): string | null {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v !== "string" || !/^\d+(\.\d+)?$/.test(v)) throw txflowShapeError(`${what} ${JSON.stringify(v)} is not a decimal string`);
   return Number(v) > 0 ? trim(v) : null;
 }
 
@@ -173,6 +191,27 @@ export function txflowHistoryStatus(status: unknown, filled: string): OrderStatu
   }
 }
 
+/** The venue's history status string, checked against the known vocabulary (unknown → EXCHANGE_ERROR). */
+function historyStatusText(r: Rec): string {
+  const o = rec(r.order, "historicalOrders order");
+  if (typeof r.status !== "string") throw txflowShapeError("history row without a status");
+  txflowHistoryStatus(r.status, filledOf(o.origSz, o.sz, "history order"));
+  return r.status;
+}
+
+/** Creation time of an open / trigger / history row (ms). */
+function rowTime(x: Rec, what: string): number {
+  const t = x.timestamp ?? x.createTime;
+  if (typeof t !== "number" || !Number.isFinite(t)) throw txflowShapeError(`${what} without a timestamp`);
+  return t;
+}
+
+/** Cancel `grouping` of an open row: position TP/SL → "tpsl", other triggers → "trigger", plain orders none. */
+export function txflowCancelGrouping(o: { row: Record<string, unknown>; trigger: boolean }): "tpsl" | "trigger" | undefined {
+  if (o.row.isPositionTpsl === true) return "tpsl";
+  return o.trigger ? "trigger" : undefined;
+}
+
 /** A client order id the venue accepts: 1–64 bytes, not starting with the reserved "0x". */
 export function assertTxflowCloid(id: string): void {
   if (Buffer.byteLength(id, "utf8") < 1 || Buffer.byteLength(id, "utf8") > 64 || /^0x/i.test(id)) {
@@ -188,6 +227,8 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
   private readonly client: TxflowClient;
   private readonly deps: TxflowAdapterDeps;
   private dir: Promise<TxflowMarketMeta[]> | null = null;
+  /** Local send time per client order id sent by this adapter (read-back match window). */
+  private readonly sentAt = new Map<string, number>();
 
   constructor(readonly venue: VenueDefinition, readonly network: Network, deps: TxflowAdapterDeps = NO_DEPS) {
     this.client = new TxflowClient(networkConfig(venue, network).restUrl, venue.rateLimit);
@@ -409,7 +450,7 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
         size: trim(szi.replace(/^-/, "")),
         entryPrice: trim(dec(p.entryPx, "position entryPx")),
         markPrice: trim(dec(p.markPx, "position markPx")),
-        liquidationPrice: positiveOrNull(p.liquidationPx),
+        liquidationPrice: optionalPrice(p.liquidationPx, "position liquidationPx"),
         unrealizedPnl: trim(dec(p.unrealizedPnl, "position unrealizedPnl")),
         leverage: lev.value,
         marginMode: marginModeOf(lev.type, "position leverage"),
@@ -422,16 +463,22 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
   private async openRows(asset: number | null): Promise<OpenRow[]> {
     const user = this.requireAccount();
     const filter = asset === null ? {} : { asset: String(asset) };
-    const [front, triggers] = await Promise.all([
-      this.client.info<unknown>({ type: "frontendOpenOrders", user, ...filter }),
-      this.client.info<unknown>({ type: "triggerOrders", user, ...filter }),
-    ]);
+    const front: unknown[] = [];
+    for (let page = 0; ; page++) {
+      if (page >= TXFLOW_OPEN_ORDERS_MAX_PAGES) throw txflowShapeError(`frontendOpenOrders still paging after ${TXFLOW_OPEN_ORDERS_MAX_PAGES} pages`);
+      const rows = arr(await this.client.info<unknown>({ type: "frontendOpenOrders", user, ...filter, limit: TXFLOW_OPEN_ORDERS_PAGE, offset: page * TXFLOW_OPEN_ORDERS_PAGE }), "frontendOpenOrders");
+      front.push(...rows);
+      if (rows.length < TXFLOW_OPEN_ORDERS_PAGE) break;
+    }
+    const triggers = await this.client.info<unknown>({ type: "triggerOrders", user, ...filter });
     const out: OpenRow[] = [];
     const seen = new Set<number>();
-    for (const r of arr(front, "frontendOpenOrders")) {
+    for (const r of front) {
       const x = rec(r, "frontendOpenOrders row");
       if (x.instrumentType !== "Perps") continue;
-      seen.add(num(x.oid, "open order oid"));
+      const oid = num(x.oid, "open order oid");
+      if (seen.has(oid)) continue; // a row that moved across a page boundary between reads
+      seen.add(oid);
       out.push({ row: x, trigger: x.isTrigger === true });
     }
     for (const r of arr(triggers, "triggerOrders")) {
@@ -454,14 +501,14 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
         type: `trigger ${kind}${x.reduceOnly === true ? " reduce-only" : ""}`, triggerPrice: trim(dec(x.triggerPx, "trigger triggerPx")),
       };
     }
-    const state = x.state === "Open" ? "open" : x.state === "PartialFilled" ? "partiallyFilled" : String(x.state);
+    const state = x.state === "Open" ? "open" : x.state === "PartialFilled" ? "partiallyFilled" : (() => { throw txflowShapeError(`open order state ${JSON.stringify(x.state)}`); })();
     const kind = typeof x.orderType === "string" ? x.orderType.toLowerCase() : "order";
     return {
       orderId: String(num(x.oid, "open order oid")), symbol: await this.symbolOfIndex(num(x.asset, "open order asset")),
       side: sideOf(x.side, "open order"), price: trim(dec(x.limitPx, "open order limitPx")), size: trim(dec(x.origSz, "open order origSz")),
       filled: filledOf(x.origSz, x.sz, "open order"), status: state,
       type: `${kind}${typeof x.tif === "string" && x.tif !== "" ? ` ${x.tif}` : ""}${x.reduceOnly === true ? " reduce-only" : ""}`,
-      triggerPrice: o.trigger ? positiveOrNull(x.triggerPx) : null,
+      triggerPrice: o.trigger ? optionalPrice(x.triggerPx, "open order triggerPx") : null,
     };
   }
 
@@ -488,9 +535,9 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     return {
       orderId: String(num(o.oid, "history oid")), symbol: await this.symbolOfIndex(num(o.instrumentId, "history instrumentId")),
       side: sideOf(o.side, "history order"), price: trim(dec(o.limitPx, "history limitPx")), size: trim(dec(o.origSz, "history origSz")),
-      filled: filledOf(o.origSz, o.sz, "history order"), status: typeof r.status === "string" ? r.status : String(o.status),
+      filled: filledOf(o.origSz, o.sz, "history order"), status: historyStatusText(r),
       type: `${String(o.orderType).toLowerCase()} ${String(o.tif)}${o.reduceOnly === true ? " reduce-only" : ""}`,
-      triggerPrice: o.isTrigger === true ? positiveOrNull(o.triggerPx) : null,
+      triggerPrice: o.isTrigger === true ? optionalPrice(o.triggerPx, "history triggerPx") : null,
     };
   }
 
@@ -528,7 +575,7 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
   /** Mark price of one market (activeAssetCtx) — the reference of market-order protection prices. */
   private async markOf(m: TxflowMarketMeta): Promise<string> {
     const d = rec(await this.client.info<unknown>({ type: "activeAssetCtx", coin: String(m.index) }), "activeAssetCtx");
-    const mark = positiveOrNull(d.markPx);
+    const mark = optionalPrice(d.markPx, "activeAssetCtx markPx");
     if (mark === null) throw new PerpError("PRICE_STALE", `TxFlow ${m.symbol}: no mark price to bound the order — nothing was sent`, { exchange: "txflow" });
     return mark;
   }
@@ -544,6 +591,30 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     if (lev.mode !== "oneWay") throw txflowShapeError(`activeAssetData position mode ${JSON.stringify(lev.mode)}`);
     if (typeof lev.value !== "number") throw txflowShapeError("activeAssetData leverage value");
     return { marginMode: marginModeOf(lev.type, "activeAssetData leverage"), leverage: lev.value };
+  }
+
+  /**
+   * The `m` an order is sent with. A reduce-only order (close, reduce, stop, TP/SL) takes the
+   * margin mode of the position it reduces (clearinghouseState): no position, or more than one on
+   * the market, is a typed refusal. An opening order takes the account's mode on the market
+   * (activeAssetData). An unknown mode is shape drift — `m` is never omitted.
+   */
+  private async marginModeFor(account: string, m: TxflowMarketMeta, reduceOnly: boolean, settings: { marginMode: "cross" | "isolated" }): Promise<{ mode: "cross" | "isolated"; note: string }> {
+    if (!reduceOnly) return { mode: settings.marginMode, note: `margin mode ${settings.marginMode}: the account's mode on ${m.symbol} (activeAssetData)` };
+    const rows = this.positionRows(await this.clearinghouse())
+      .filter(p => num(p.asset, "position asset") === m.index && Number(dec(p.szi, "position szi")) !== 0);
+    if (rows.length === 0) {
+      throw new PerpError("POSITION_NOT_FOUND", `TxFlow ${m.symbol}: no open position for this reduce-only order to take its margin mode from — not sent`, {
+        exchange: "txflow", sent: false, remediation: `Check positions: perp${this.netFlag()} -e txflow account positions`,
+      });
+    }
+    if (rows.length > 1) {
+      throw new PerpError("INVALID_PARAMS", `TxFlow ${m.symbol}: ${rows.length} positions (cross and isolated) — cannot tell which one this reduce-only order reduces; not sent`, {
+        exchange: "txflow", sent: false, remediation: "Close the position in the TxFlow web app",
+      });
+    }
+    const mode = marginModeOf(rec(rows[0].leverage, "position leverage").type, "position leverage");
+    return { mode, note: `margin mode ${mode}: the mode of the ${m.symbol} position this order reduces (clearinghouseState)` };
   }
 
   /** Sign + send one agent action. Definite refusals throw; an unknown outcome throws TxflowSendUnknown. */
@@ -572,7 +643,8 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     let t: TxflowOrderBody["t"];
     let referencePrice: string | null = null;
     let tifSent: string | null = null;
-    const notes: string[] = [`margin mode: the account's current ${settings.marginMode} mode on ${sym} (m omitted — the node routes to it)`];
+    const margin = await this.marginModeFor(account, m, req.reduceOnly, settings);
+    const notes: string[] = [margin.note];
     let method: string;
     if (req.type === "market") {
       const slip = req.slippage as ResolvedSlippage;
@@ -595,26 +667,37 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
         throw unsupported(this.venue.displayName, "triggerType", "TP / SL / stop triggers fire on the MARK price only (docs: Orders & Time-in-Force)", "Omit --trigger-type (or pass mark)");
       }
       const kind = await this.stopKind(m, req.side, trigger, (req as OrderRequest & { kind?: "tp" | "sl" }).kind ?? null, notes);
-      // A market trigger carries the trigger price as `p` (the docs do not say how `p` is used once
-      // a market trigger fires); a stop-limit carries its limit price.
-      price = req.type === "stopLimit" ? requireOnTick(req.price as string, m.tickSize) : trigger;
+      if (req.type === "stopLimit") {
+        price = requireOnTick(req.price as string, m.tickSize);
+      } else {
+        // A market trigger carries a slippage-bounded price as `p`: trigger ± the bound, aligned
+        // toward crossing. Whether the node uses `p` as the fired market order's limit is not
+        // documented (testnet checklist).
+        if (req.slippage === null) {
+          throw new PerpError("INVALID_PARAMS", `TxFlow ${sym}: a market trigger needs the resolved slippage bound (--slippage-bps or settings) — not sent`, { exchange: "txflow" });
+        }
+        price = alignProtectionPrice(slippagePrice(trigger, req.side, req.slippage.bps), m.tickSize, req.side);
+        notes.push(`p = trigger ${trigger} ± ${req.slippage.bps} bps = ${price}`);
+      }
       t = { trigger: { isMarket: req.type === "stopMarket", triggerPx: trigger, tpsl: kind } };
       referencePrice = trigger;
       method = req.type === "stopLimit" ? "triggerLimit" : "trigger";
       notes.push("trigger fires on the mark price; a fired order is not guaranteed to fill (docs: Triggered is not filled)");
     }
-    const body = txflowOrderBody({ asset: m.index, isBuy: req.side === "buy", price, size, reduceOnly: req.reduceOnly, type: t, cloid });
+    const body = txflowOrderBody({ asset: m.index, isBuy: req.side === "buy", price, size, reduceOnly: req.reduceOnly, type: t, cloid, marginMode: margin.mode });
     const action: TxflowAgentAction = { type: "order", grouping: isStop ? "normalTrigger" : "na", orders: [body] };
 
     const { logClientId } = await import("../../client-id-tracker.js");
     const now = new Date().toISOString();
     const logType = req.type === "market" || req.type === "limit" ? req.type : "stop";
     logClientId({ clientOrderId: cloid, exchange: "txflow", symbol: sym, side: req.side, size, price, type: logType, status: "pending", createdAt: now, updatedAt: now });
+    const bounded = req.type === "market" || req.type === "stopMarket";
     const exec: Partial<Omit<OrderExecution, "method">> = {
-      slippageBps: req.type === "market" ? (req.slippage as ResolvedSlippage).bps : null,
-      slippageSource: req.type === "market" ? (req.slippage as ResolvedSlippage).source : null,
-      protectionPrice: req.type === "market" ? price : null, referencePrice, tifRequested: req.tif, tifSent,
+      slippageBps: bounded ? (req.slippage as ResolvedSlippage).bps : null,
+      slippageSource: bounded ? (req.slippage as ResolvedSlippage).source : null,
+      protectionPrice: bounded ? price : null, referencePrice, tifRequested: req.tif, tifSent,
     };
+    this.sentAt.set(cloid, Date.now());
     try {
       await this.send(signer, action, `place ${req.type} order`, "ORDER_REJECTED");
     } catch (e) {
@@ -717,41 +800,97 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   /**
-   * Cancel `rows` (one market) in batches of ≤200, then prove each cancel by re-listing the open
-   * orders: gone → cancelled; still listed → pending (never reported cancelled).
+   * Cancel `rows` (one market) in batches of ≤200, each body with the grouping of its row
+   * (`trigger` / `tpsl` / none). Every order is then proven one by one, whatever the batch answered:
+   * still listed open → pending (sent / unknown) or failed (refused); gone → its final state from
+   * the order history (orderDetails / historicalTriggerOrders): cancelled → cancelled (a partial
+   * fill before the cancel is reported), filled / fired → failed with that state, not in the
+   * history yet → pending. "Gone from the open orders" alone is never reported as cancelled.
    */
   private async cancelRows(signer: EvmSigner, asset: number, rows: OpenRow[], result: CancelResult): Promise<void> {
-    const refOf = (o: OpenRow): OrderRef => ({ kind: "orderId", value: String(num(o.row.oid, "open order oid")) });
-    const pending = result.pending as NonNullable<CancelResult["pending"]>;
-    const sent: OpenRow[] = [];
+    const outcome = new Map<OpenRow, { kind: "executed" } | { kind: "refused" | "unknown"; error: string }>();
     for (let i = 0; i < rows.length; i += TXFLOW_CANCEL_BATCH_MAX) {
       const batch = rows.slice(i, i + TXFLOW_CANCEL_BATCH_MAX);
-      const cancels = batch.map(o => (o.trigger
-        ? { a: asset, o: num(o.row.oid, "open order oid"), grouping: "trigger" as const }
-        : { a: asset, o: num(o.row.oid, "open order oid") }));
+      const cancels = batch.map(o => {
+        const g = txflowCancelGrouping(o);
+        return g === undefined ? { a: asset, o: num(o.row.oid, "open order oid") } : { a: asset, o: num(o.row.oid, "open order oid"), grouping: g };
+      });
       try {
         await this.send(signer, { type: "cancel", cancels }, "cancel", "ACTION_REJECTED");
-        sent.push(...batch);
+        for (const o of batch) outcome.set(o, { kind: "executed" });
       } catch (e) {
-        if (e instanceof TxflowSendUnknown) {
-          for (const o of batch) pending.push({ ref: refOf(o), reason: extractErrorMessage(e.cause), remediation: `Do NOT resend blindly — check: perp${this.netFlag()} account orders -e txflow` });
-          continue;
-        }
-        for (const o of batch) result.failed.push({ ref: refOf(o), error: extractErrorMessage(e) });
+        const kind = e instanceof TxflowSendUnknown ? "unknown" as const : "refused" as const;
+        const error = e instanceof TxflowSendUnknown ? extractErrorMessage(e.cause) : extractErrorMessage(e);
+        for (const o of batch) outcome.set(o, { kind, error });
       }
     }
-    if (sent.length === 0) return;
+    await this.proveCancels(asset, outcome, result);
+  }
+
+  private async proveCancels(asset: number, outcome: Map<OpenRow, { kind: "executed" } | { kind: "refused" | "unknown"; error: string }>, result: CancelResult): Promise<void> {
+    const pending = result.pending as NonNullable<CancelResult["pending"]>;
+    const finals: Array<{ orderId: string; venueStatus: string; filledSize: string | null }> = [];
+    const oidOf = (o: OpenRow): string => String(num(o.row.oid, "open order oid"));
+    const check = `perp${this.netFlag()} account orders -e txflow`;
     let still = new Set<string>();
     for (let attempt = 0; attempt < CANCEL_VERIFY_ATTEMPTS; attempt++) {
       if (attempt > 0) await this.sleep(CANCEL_VERIFY_DELAY_MS);
-      still = new Set((await this.openRows(asset)).map(o => String(num(o.row.oid, "open order oid"))));
-      if (sent.every(o => !still.has(String(num(o.row.oid, "open order oid"))))) break;
+      still = new Set((await this.openRows(asset)).map(oidOf));
+      // Only an executed cancel is waited for; a refused / unknown one is judged on the first re-list.
+      if ([...outcome].every(([o, out]) => out.kind !== "executed" || !still.has(oidOf(o)))) break;
     }
-    for (const o of sent) {
-      const ref = refOf(o);
-      if (still.has(ref.value)) pending.push({ ref, reason: "the cancel executed but the order is still listed open", remediation: `Check: perp${this.netFlag()} account orders -e txflow` });
-      else result.cancelled.push(ref);
+    for (const [o, out] of outcome) {
+      const ref: OrderRef = { kind: "orderId", value: oidOf(o) };
+      if (still.has(ref.value)) {
+        if (out.kind === "refused") result.failed.push({ ref, error: out.error });
+        else pending.push({ ref, reason: out.kind === "unknown" ? out.error : "the cancel executed but the order is still listed open", remediation: `Do NOT resend blindly — check: ${check}` });
+        continue;
+      }
+      const fin = await this.finalStateOf(asset, o);
+      finals.push({ orderId: ref.value, venueStatus: fin.venueStatus, filledSize: fin.filledSize });
+      if (fin.state === "cancelled") result.cancelled.push(ref);
+      else if (fin.state === "notCancelled") result.failed.push({ ref, error: `not cancelled — the order is ${fin.venueStatus}${fin.filledSize !== null ? ` (filled ${fin.filledSize})` : ""}` });
+      else pending.push({ ref, reason: `gone from the open orders, final state not readable yet (${fin.venueStatus})`, remediation: `Check: perp${this.netFlag()} -e txflow trade status ${ref.value} --symbol <symbol>` });
     }
+    result.venueRaw = [...(Array.isArray(result.venueRaw) ? result.venueRaw : []), ...finals];
+  }
+
+  /** Final state of an order that left the open orders (history reads; never assumed). */
+  private async finalStateOf(asset: number, o: OpenRow): Promise<{ state: "cancelled" | "notCancelled" | "unknown"; venueStatus: string; filledSize: string | null }> {
+    const oid = num(o.row.oid, "open order oid");
+    if (o.trigger) {
+      const t = (await this.triggerHistory(asset)).find(r => num(r.oid, "trigger oid") === oid);
+      if (t === undefined) return { state: "unknown", venueStatus: "not in historicalTriggerOrders yet", filledSize: null };
+      const st = typeof t.triggerState === "string" ? t.triggerState : "";
+      if (/cancel/i.test(st)) return { state: "cancelled", venueStatus: st, filledSize: null };
+      if (/trigger/i.test(st)) return { state: "notCancelled", venueStatus: `${st} (fired before the cancel)`, filledSize: null };
+      return { state: "unknown", venueStatus: st === "" ? "no trigger state" : st, filledSize: null };
+    }
+    const row = await this.orderDetails(oid);
+    if (row === null) return { state: "unknown", venueStatus: "not in the order history yet", filledSize: null };
+    const ord = rec(row.order, "orderDetails order");
+    const filled = filledOf(ord.origSz, ord.sz, "orderDetails order");
+    const status = txflowHistoryStatus(row.status, filled);
+    const venueStatus = String(row.status);
+    if (row.status === "canceled" || row.status === "partialCanceled") return { state: "cancelled", venueStatus, filledSize: filled };
+    if (status === "filled" || status === "rejected") return { state: "notCancelled", venueStatus, filledSize: filled };
+    return { state: "unknown", venueStatus, filledSize: filled };
+  }
+
+  /** orderDetails row, or null for the venue's "order not found" (code 21001). */
+  private async orderDetails(oid: number): Promise<Rec | null> {
+    try {
+      const d = rec(await this.client.info<unknown>({ type: "orderDetails", orderId: oid }), "orderDetails");
+      return rec(d.orderDetails, "orderDetails orderDetails");
+    } catch (e) {
+      if (e instanceof PerpError && e.structured.details?.venueCode === TXFLOW_ORDER_NOT_FOUND_CODE) return null;
+      throw e;
+    }
+  }
+
+  private async triggerHistory(asset: number): Promise<Rec[]> {
+    const d = rec(await this.client.info<unknown>({ type: "historicalTriggerOrders", user: this.requireAccount(), coin: String(asset), limit: 200 }), "historicalTriggerOrders");
+    return arr(d.data, "historicalTriggerOrders data").map(r => rec(r, "historicalTriggerOrders row"));
   }
 
   async cancelByRef(symbol: string, ref: OrderRef): Promise<CancelResult> {
@@ -822,62 +961,92 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     return { venue: "txflow", symbol: m.symbol, leverage, marginMode: mode, venueRaw: { executed: raw } };
   }
 
-  /** Open order → trigger order → history (orderDetails by id, historicalOrders / historicalTriggerOrders by client id). */
+  /**
+   * Open order → trigger order → history. By venue id: the open lists, then orderDetails, then
+   * historicalTriggerOrders. By client id: every source, keeping only rows created at or after this
+   * adapter's send time minus TXFLOW_CLOID_MATCH_SKEW_MS (client ids are unique among OPEN orders
+   * only); two or more distinct orders → ORDER_PENDING after a send (outcome unknown), else
+   * INVALID_PARAMS (look it up by venue order id).
+   */
   async getOrderStatus(symbol: string, ref: OrderRef): Promise<OrderResult> {
     const m = await this.market(symbol);
     const sym = m.symbol;
-    const match = (x: Rec): boolean => (ref.kind === "orderId" ? String(x.oid) === ref.value : x.cloid === ref.value);
-    const cloidOf = (x: Rec): string | null => (typeof x.cloid === "string" && x.cloid !== "" ? x.cloid : null);
-    const open = (await this.openRows(m.index)).find(o => match(o.row));
-    if (open !== undefined) {
-      const x = open.row;
-      const oid = String(num(x.oid, "open order oid"));
-      if (!("origSz" in x)) {
-        return withExecution({
-          venue: "txflow", symbol: sym, status: "open", finality: "final", orderId: oid, clientOrderId: cloidOf(x), filledSize: "0", avgPrice: null, venueRaw: x,
-        }, "read", { notes: [`untriggered ${String(x.orderType)} trigger @ ${String(x.triggerPx)} (triggerOrders)`] });
-      }
-      const filled = filledOf(x.origSz, x.sz, "open order");
-      return withExecution({
-        venue: "txflow", symbol: sym, status: Number(filled) > 0 ? "partiallyFilled" : "open", finality: "final", orderId: oid, clientOrderId: cloidOf(x),
-        filledSize: filled, avgPrice: positiveOrNull(x.avgFillPx), venueRaw: x,
-      }, "read", { tifSent: typeof x.tif === "string" ? x.tif : null, notes: open.trigger ? ["untriggered trigger order (frontendOpenOrders)"] : [] });
-    }
-    let row: Rec | undefined;
+    const open = await this.openRows(m.index);
     if (ref.kind === "orderId") {
-      try {
-        const d = rec(await this.client.info<unknown>({ type: "orderDetails", orderId: num(ref.value, "order id") }), "orderDetails");
-        row = rec(d.orderDetails, "orderDetails orderDetails");
-      } catch (e) {
-        if (!(e instanceof PerpError && e.structured.details?.venueCode === TXFLOW_ORDER_NOT_FOUND_CODE)) throw e;
-      }
-    } else {
-      row = (await this.historyRows({ coin: m.index, limit: 200 })).find(r => rec(r.order, "historicalOrders order").cloid === ref.value);
-      if (row === undefined) {
-        const d = rec(await this.client.info<unknown>({ type: "historicalTriggerOrders", user: this.requireAccount(), coin: String(m.index), limit: 200 }), "historicalTriggerOrders");
-        const t = arr(d.data, "historicalTriggerOrders data").map(r => rec(r, "historicalTriggerOrders row")).find(r => r.cloid === ref.value);
-        if (t !== undefined) {
-          const state = typeof t.triggerState === "string" ? t.triggerState : "";
-          const status: OrderStatus = /cancel/i.test(state) ? "cancelled" : /reject/i.test(state) ? "rejected" : "accepted";
-          return withExecution({
-            venue: "txflow", symbol: sym, status, finality: status === "accepted" ? "pending" : "final", orderId: String(num(t.oid, "trigger oid")), clientOrderId: ref.value,
-            filledSize: null, avgPrice: null, venueRaw: t,
-          }, "read", { notes: [`trigger state ${JSON.stringify(state)} (historicalTriggerOrders) — a fired trigger's fill is a separate order`] });
+      const hit = open.find(o => String(o.row.oid) === ref.value);
+      if (hit !== undefined) return this.openResult(sym, hit);
+      const row = await this.orderDetails(num(ref.value, "order id"));
+      if (row !== null) {
+        if (num(rec(row.order, "order").instrumentId, "order instrumentId") !== m.index) {
+          throw new PerpError("ORDER_NOT_FOUND", `TxFlow: order ${ref.value} is not a ${sym} order`, { exchange: "txflow" });
         }
+        return this.historyResult(sym, row);
       }
+      const t = (await this.triggerHistory(m.index)).find(r => String(r.oid) === ref.value);
+      if (t !== undefined) return this.triggerHistoryResult(sym, t);
+      throw new PerpError("ORDER_NOT_FOUND", `TxFlow: order ${ref.value} not found on ${sym}`, { exchange: "txflow" });
     }
-    if (row === undefined) {
-      throw new PerpError("ORDER_NOT_FOUND", `TxFlow: order ${ref.kind === "clientOrderId" ? "c:" : ""}${ref.value} not found on ${sym}`, { exchange: "txflow" });
+    const since = this.sentAt.get(ref.value);
+    const minTime = since === undefined ? null : since - TXFLOW_CLOID_MATCH_SKEW_MS;
+    const fresh = (x: Rec, what: string): boolean => x.cloid === ref.value && (minTime === null || rowTime(x, what) >= minTime);
+    const hits = new Map<string, () => OrderResult>();
+    for (const o of open) if (fresh(o.row, "open order")) hits.set(String(o.row.oid), () => this.openResult(sym, o));
+    for (const r of await this.historyRows({ coin: m.index, limit: 200 })) {
+      const o = rec(r.order, "historicalOrders order");
+      if (fresh(o, "history order") && !hits.has(String(o.oid))) hits.set(String(o.oid), () => this.historyResult(sym, r));
     }
+    for (const t of await this.triggerHistory(m.index)) {
+      if (fresh(t, "trigger history") && !hits.has(String(t.oid))) hits.set(String(t.oid), () => this.triggerHistoryResult(sym, t));
+    }
+    if (hits.size === 0) throw new PerpError("ORDER_NOT_FOUND", `TxFlow: order c:${ref.value} not found on ${sym}`, { exchange: "txflow" });
+    if (hits.size > 1) {
+      const ids = [...hits.keys()].join(", ");
+      throw since !== undefined
+        ? new PerpError("ORDER_PENDING", `TxFlow: ${hits.size} orders carry client id ${ref.value} since it was sent (${ids}) — outcome unknown`, {
+          exchange: "txflow", orderIds: [...hits.keys()], remediation: `Do NOT resubmit — check each: perp${this.netFlag()} -e txflow trade status <orderId> --symbol ${sym}`,
+        })
+        : new PerpError("INVALID_PARAMS", `TxFlow: ${hits.size} orders carry client id ${ref.value} (${ids}) — client ids are unique among open orders only`, {
+          exchange: "txflow", orderIds: [...hits.keys()], remediation: `Look the order up by its venue id: perp${this.netFlag()} -e txflow trade status <orderId> --symbol ${sym}`,
+        });
+    }
+    return [...hits.values()][0]();
+  }
+
+  private openResult(sym: string, o: OpenRow): OrderResult {
+    const x = o.row;
+    const oid = String(num(x.oid, "open order oid"));
+    const cloid = typeof x.cloid === "string" && x.cloid !== "" ? x.cloid : null;
+    if (!("origSz" in x)) {
+      return withExecution({
+        venue: "txflow", symbol: sym, status: "open", finality: "final", orderId: oid, clientOrderId: cloid, filledSize: "0", avgPrice: null, venueRaw: x,
+      }, "read", { notes: [`untriggered ${String(x.orderType)} trigger @ ${String(x.triggerPx)} (triggerOrders)`] });
+    }
+    const filled = filledOf(x.origSz, x.sz, "open order");
+    return withExecution({
+      venue: "txflow", symbol: sym, status: Number(filled) > 0 ? "partiallyFilled" : "open", finality: "final", orderId: oid, clientOrderId: cloid,
+      filledSize: filled, avgPrice: optionalPrice(x.avgFillPx, "open order avgFillPx"), venueRaw: x,
+    }, "read", { tifSent: typeof x.tif === "string" ? x.tif : null, notes: o.trigger ? ["untriggered trigger order (frontendOpenOrders)"] : [] });
+  }
+
+  private historyResult(sym: string, row: Rec): OrderResult {
     const o = rec(row.order, "order");
-    if (num(o.instrumentId, "order instrumentId") !== m.index) {
-      throw new PerpError("ORDER_NOT_FOUND", `TxFlow: order ${ref.value} is not a ${sym} order`, { exchange: "txflow" });
-    }
     const filled = filledOf(o.origSz, o.sz, "order");
+    const notes = typeof o.cancelReason === "string" && o.cancelReason !== "" ? [o.cancelReason] : [];
+    if (row.status === "partialCanceled") notes.push("partially filled, then the remainder was cancelled");
     return withExecution({
       venue: "txflow", symbol: sym, status: txflowHistoryStatus(row.status, filled), finality: "final", orderId: String(num(o.oid, "order oid")),
-      clientOrderId: cloidOf(o), filledSize: filled, avgPrice: positiveOrNull(o.avgFillPrice), venueRaw: row,
-    }, "read", { tifSent: typeof o.tif === "string" ? o.tif : null, notes: typeof o.cancelReason === "string" && o.cancelReason !== "" ? [o.cancelReason] : [] });
+      clientOrderId: typeof o.cloid === "string" && o.cloid !== "" ? o.cloid : null, filledSize: filled,
+      avgPrice: optionalPrice(o.avgFillPrice, "order avgFillPrice"), venueRaw: row,
+    }, "read", { tifSent: typeof o.tif === "string" ? o.tif : null, notes });
+  }
+
+  private triggerHistoryResult(sym: string, t: Rec): OrderResult {
+    const state = typeof t.triggerState === "string" ? t.triggerState : "";
+    const status: OrderStatus = /cancel/i.test(state) ? "cancelled" : /reject/i.test(state) ? "rejected" : "accepted";
+    return withExecution({
+      venue: "txflow", symbol: sym, status, finality: status === "accepted" ? "pending" : "final", orderId: String(num(t.oid, "trigger oid")),
+      clientOrderId: typeof t.cloid === "string" && t.cloid !== "" ? t.cloid : null, filledSize: null, avgPrice: null, venueRaw: t,
+    }, "read", { notes: [`trigger state ${JSON.stringify(state)} (historicalTriggerOrders) — a fired trigger's fill is a separate order`] });
   }
 
   /** A TP / SL leg (separateOrders: legacy-trading-v2 placeTpSlLeg dispatches here): a reduce-only trigger. */

@@ -72,7 +72,7 @@ export type TxflowTif = "Gtc" | "Ioc" | "Alo";
 
 export interface TxflowTrigger { isMarket: boolean; triggerPx: string; tpsl?: "tp" | "sl" }
 
-/** One order body: keys a, b, p, s, r, t, c (the docs' order; `m` and `expiresAt` are never sent). */
+/** One order body: keys a, b, p, s, r, t, c, m (the docs' order; `expiresAt` — GTD only — is never sent). */
 export interface TxflowOrderBody {
   a: number;
   b: boolean;
@@ -81,12 +81,14 @@ export interface TxflowOrderBody {
   r: boolean;
   t: { limit: { tif: TxflowTif } } | { trigger: TxflowTrigger };
   c: string;
+  /** Margin mode — always sent: it is part of the position key (docs: order `m`). */
+  m: "cross" | "isolated";
 }
 
 export type TxflowGrouping = "na" | "normalTrigger";
 
 export interface TxflowOrderAction { type: "order"; grouping: TxflowGrouping; orders: TxflowOrderBody[] }
-export interface TxflowCancelAction { type: "cancel"; cancels: Array<{ a: number; o: number; grouping?: "trigger" }> }
+export interface TxflowCancelAction { type: "cancel"; cancels: Array<{ a: number; o: number; grouping?: "trigger" | "tpsl" }> }
 export interface TxflowModifyAction { type: "modify2"; order: { o: number; p: string; s: string } }
 export interface TxflowLeverageAction { type: "updateLeverage"; asset: number; leverage: number; marginMode?: "cross" | "isolated" }
 export interface TxflowMarginModeAction { type: "updateMarginMode"; asset: number; isCross: boolean }
@@ -104,7 +106,7 @@ export interface TxflowApproveAgentAction {
 }
 
 /** Order body in the node's key order. A trigger body keeps isMarket, triggerPx, tpsl. */
-export function txflowOrderBody(o: { asset: number; isBuy: boolean; price: string; size: string; reduceOnly: boolean; type: TxflowOrderBody["t"]; cloid: string }): TxflowOrderBody {
+export function txflowOrderBody(o: { asset: number; isBuy: boolean; price: string; size: string; reduceOnly: boolean; type: TxflowOrderBody["t"]; cloid: string; marginMode: "cross" | "isolated" }): TxflowOrderBody {
   let t: TxflowOrderBody["t"];
   if ("limit" in o.type) {
     t = { limit: { tif: o.type.limit.tif } };
@@ -112,7 +114,7 @@ export function txflowOrderBody(o: { asset: number; isBuy: boolean; price: strin
     const tr = o.type.trigger;
     t = { trigger: tr.tpsl === undefined ? { isMarket: tr.isMarket, triggerPx: tr.triggerPx } : { isMarket: tr.isMarket, triggerPx: tr.triggerPx, tpsl: tr.tpsl } };
   }
-  return { a: o.asset, b: o.isBuy, p: o.price, s: o.size, r: o.reduceOnly, t, c: o.cloid };
+  return { a: o.asset, b: o.isBuy, p: o.price, s: o.size, r: o.reduceOnly, t, c: o.cloid, m: o.marginMode };
 }
 
 // ── Agent flow ──
