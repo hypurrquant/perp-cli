@@ -204,7 +204,26 @@ export interface RisexAgentMeta {
   source: "approved";
 }
 
-export type AnyAgentMeta = AgentMeta | OndoAgentMeta | ArcusAgentMeta | QfexAgentMeta | RisexAgentMeta;
+/**
+ * TxFlow agent wallet (EVM key). Authorized by the master with approveAgent (direct EIP-712,
+ * docs.txflow.com/api/exchange/approveAgent), or created in the TxFlow web app and imported. The
+ * venue keys agents by LABEL (`agentName` is sent as the label); an agent signs trading actions
+ * only — fund movements (withdraw3, tokenSend) need the master. The private key lives only in OWS
+ * wallet `agentWalletName` (SSOT Rule #3). TxFlow agents carry no expiry.
+ */
+export interface TxflowAgentMeta {
+  kind: "txflow";
+  agentName: string;
+  agentWalletName: string;
+  agentAddress: `0x${string}`;
+  /** The TxFlow account (master wallet address) the agent trades for — every read's `user`. */
+  accountAddress: `0x${string}`;
+  network: "mainnet" | "testnet";
+  approvedAt: string;
+  source: AgentSource;
+}
+
+export type AnyAgentMeta = AgentMeta | OndoAgentMeta | ArcusAgentMeta | QfexAgentMeta | RisexAgentMeta | TxflowAgentMeta;
 
 export interface AgentsByExchange {
   aster?: Record<string, AgentMeta>;
@@ -216,6 +235,7 @@ export interface AgentsByExchange {
   arcus?: Record<string, ArcusAgentMeta>;
   qfex?: Record<string, QfexAgentMeta>;
   risex?: Record<string, RisexAgentMeta>;
+  txflow?: Record<string, TxflowAgentMeta>;
 }
 
 export interface Settings {

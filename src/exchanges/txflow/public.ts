@@ -314,7 +314,7 @@ const DEFAULT_DEPS: TxflowPublicDeps = {
 };
 
 function clientFor(net: Network): { client: TxflowClient; wsUrl: string } {
-  const cfg = networkConfig(txflowVenue, net); // testnet → NOT_IMPLEMENTED (no testnet)
+  const cfg = networkConfig(txflowVenue, net);
   if (cfg.wsUrl === null) throw new Error("txflow venue definition has no wsUrl");
   return { client: new TxflowClient(cfg.restUrl, txflowVenue.rateLimit), wsUrl: cfg.wsUrl };
 }
@@ -336,7 +336,7 @@ async function fetchJoined(net: Network, deps: TxflowPublicDeps): Promise<Array<
 }
 
 export async function fetchTxflowMarkets(net: Network, deps: TxflowPublicDeps = DEFAULT_DEPS): Promise<VenueMarket[]> {
-  const { client } = clientFor(net); // testnet → NOT_IMPLEMENTED before any request
+  const { client } = clientFor(net);
   const [joined, volumes] = await Promise.all([fetchJoined(net, deps), fetchTxflowDayVolumes(client)]);
   // webData2 lists every instrument (docs), so a listed perp without a row is reported, not hidden;
   // its volume is unknown (null).
