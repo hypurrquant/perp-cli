@@ -56,6 +56,8 @@ export const RISEX_PERMIT_TTL_S = 120;
 export const RISEX_TRADING_ONLY_TTL_MS = 60_000;
 const ORDER_READ_ATTEMPTS = 3;
 const ORDER_READ_DELAY_MS = 700;
+/** Extra open-list reads (× ORDER_READ_DELAY_MS) after a cancel-all before an order counts as pending. */
+const CANCEL_SETTLE_READS = 15;
 
 export interface RisexAdapterDeps {
   /** Account the reads and permits are for; null = public market data only. */
@@ -710,10 +712,22 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
           for (const r of refs) result.failed.push({ ref: r, error: `cancel-all answered success=${String(res.success)}` });
           continue;
         }
-        const still = new Set((await this.openOrdersRaw(id)).map(o => lower(o.order_id)));
+        // The open list lags the cancel-all tx (testnet 2026-10-28: both orders CANCELLED by id while
+        // still listed right after): re-read for a short window, then prove each gone order by id.
+        let still = new Set((await this.openOrdersRaw(id)).map(o => lower(o.order_id)));
+        for (let i = 0; i < CANCEL_SETTLE_READS && refs.some(r => still.has(lower(r.value))); i++) {
+          await this.sleep(ORDER_READ_DELAY_MS);
+          still = new Set((await this.openOrdersRaw(id)).map(o => lower(o.order_id)));
+        }
+        const sym = await this.symbolOfId(id);
         for (const r of refs) {
-          if (still.has(lower(r.value))) (result.pending as NonNullable<CancelResult["pending"]>).push({ ref: r, reason: "still listed after cancel-all", remediation: "Check perp -e risex account orders" });
-          else result.cancelled.push(r);
+          if (still.has(lower(r.value))) {
+            (result.pending as NonNullable<CancelResult["pending"]>).push({ ref: r, reason: "still listed after cancel-all", remediation: "Check perp -e risex account orders" });
+            continue;
+          }
+          const st = await this.getOrderStatus(sym, r);
+          if (st.status === "cancelled") result.cancelled.push(r);
+          else result.failed.push({ ref: r, error: `left the open list ${st.status} (not cancelled)` });
         }
       } catch (e) {
         if (!(e instanceof RisexSendUnknown)) {

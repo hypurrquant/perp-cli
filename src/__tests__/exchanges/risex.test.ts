@@ -509,16 +509,44 @@ describe("adapter: cancel / cancel-all / leverage", () => {
     await expect(a.cancelByRef("BTC", { kind: "orderId", value: "0xnope" })).rejects.toMatchObject({ structured: { code: "ORDER_NOT_FOUND" } });
   });
 
-  it("cancel-all per market; proven only when the order is gone afterwards", async () => {
+  const byId = (status: string, filled = "0") => (url: URL) => url.pathname === "/v1/orders/by-id/0xa1"
+    ? ok({ order: { id: "0xa1", price: "55024.8", size: "0.0002", market_id: "1", side: "BUY", type: "LIMIT", time_in_force: "GTC", post_only: true, reduce_only: false, filled_size: filled, status, avg_price: "0", client_order_id: "77", created_at: "1" } })
+    : undefined;
+
+  it("cancel-all per market; proven only when the order is gone afterwards AND cancelled by id", async () => {
     let lists = 0;
     routeFetch([...base,
       url => url.pathname === "/v1/orders/open" ? ok({ orders: lists++ === 0 ? OPEN : [] }) : undefined,
       url => url.pathname === "/v1/orders/cancel-all" ? ok({ tx_hash: "0x2", block_number: "2", success: true }) : undefined,
+      byId("ORDER_STATUS_CANCELLED"),
     ]);
     const a = await adapter();
     const r = await a.cancelAllV2(null);
     expect(r.cancelled).toEqual([{ kind: "orderId", value: "0xa1" }]);
     expect(r.pending).toEqual([]);
+  });
+
+  it("cancel-all: the open list lagging the tx (live testnet) is re-read, not reported pending; a fill instead of a cancel → failed", async () => {
+    let lists = 0;
+    routeFetch([...base,
+      // listed before + 3 lagging reads after the cancel-all, then gone
+      url => url.pathname === "/v1/orders/open" ? ok({ orders: lists++ <= 3 ? OPEN : [] }) : undefined,
+      url => url.pathname === "/v1/orders/cancel-all" ? ok({ tx_hash: "0x2", block_number: "2", success: true }) : undefined,
+      byId("ORDER_STATUS_CANCELLED"),
+    ]);
+    const r = await (await adapter()).cancelAllV2(null);
+    expect(r.cancelled).toEqual([{ kind: "orderId", value: "0xa1" }]);
+    expect(r.pending).toEqual([]);
+
+    lists = 0;
+    routeFetch([...base,
+      url => url.pathname === "/v1/orders/open" ? ok({ orders: lists++ === 0 ? OPEN : [] }) : undefined,
+      url => url.pathname === "/v1/orders/cancel-all" ? ok({ tx_hash: "0x2", block_number: "2", success: true }) : undefined,
+      byId("ORDER_STATUS_FILLED", "0.0002"),
+    ]);
+    const f = await (await adapter()).cancelAllV2(null);
+    expect(f.cancelled).toEqual([]);
+    expect(f.failed).toEqual([{ ref: { kind: "orderId", value: "0xa1" }, error: "left the open list filled (not cancelled)" }]);
   });
 
   it("margin-mode switch with an open position is refused before sending; leverage bounded by the market", async () => {
