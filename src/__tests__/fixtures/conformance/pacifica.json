@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "name": "pacifica",
- "capturedAt": 1792415907033,
+ "capturedAt": 1793071049924,
  "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
  "keep": [
   "BTC",
@@ -18,7 +18,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a1ec1b6cf95ffea2"
+    "$body": "5bb616b96906f9d6"
    },
    "text": null
   },
@@ -30,7 +30,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "d50f88d07863c13a"
+    "$body": "98c343d4428ff0f5"
    },
    "text": null
   },
@@ -42,7 +42,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a1ec1b6cf95ffea2"
+    "$body": "5bb616b96906f9d6"
    },
    "text": null
   },
@@ -54,7 +54,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "d50f88d07863c13a"
+    "$body": "98c343d4428ff0f5"
    },
    "text": null
   },
@@ -66,7 +66,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a1ec1b6cf95ffea2"
+    "$body": "5bb616b96906f9d6"
    },
    "text": null
   },
@@ -78,7 +78,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "d50f88d07863c13a"
+    "$body": "98c343d4428ff0f5"
    },
    "text": null
   },
@@ -90,7 +90,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a1ec1b6cf95ffea2"
+    "$body": "5bb616b96906f9d6"
    },
    "text": null
   },
@@ -105,47 +105,47 @@
     "success": true,
     "data": [
      {
-      "oracle_price": "82600.512793",
-      "bid_impact_price": "82557.780884",
-      "ask_impact_price": "82573",
+      "oracle_price": "79818.939716",
+      "bid_impact_price": "79794",
+      "ask_impact_price": "79795",
       "funding_rate": "0.0000125",
       "next_funding_rate": "0.0000125",
-      "created_at": 1792414802574
+      "created_at": 1793070003680
      },
      {
-      "oracle_price": "82357.956522",
-      "bid_impact_price": "82303.83808",
-      "ask_impact_price": "82321",
+      "oracle_price": "80069.73311",
+      "bid_impact_price": "80032",
+      "ask_impact_price": "80033",
       "funding_rate": "0.0000125",
       "next_funding_rate": "0.0000125",
-      "created_at": 1792411202574
+      "created_at": 1793066403679
      },
      {
-      "oracle_price": "82422.348579",
-      "bid_impact_price": "82374.136034",
-      "ask_impact_price": "82376",
+      "oracle_price": "80222.649707",
+      "bid_impact_price": "80230",
+      "ask_impact_price": "80232.799824",
       "funding_rate": "0.0000125",
       "next_funding_rate": "0.0000125",
-      "created_at": 1792407602574
+      "created_at": 1793062803679
      },
      {
-      "oracle_price": "82761.2676",
-      "bid_impact_price": "82737",
-      "ask_impact_price": "82738",
+      "oracle_price": "80147.201421",
+      "bid_impact_price": "80123.534347",
+      "ask_impact_price": "80125",
       "funding_rate": "0.0000125",
       "next_funding_rate": "0.0000125",
-      "created_at": 1792404002574
+      "created_at": 1793059203680
      },
      {
-      "oracle_price": "82820.01852",
-      "bid_impact_price": "82793.650968",
-      "ask_impact_price": "82795",
+      "oracle_price": "80001.788253",
+      "bid_impact_price": "79968.433392",
+      "ask_impact_price": "79970",
       "funding_rate": "0.0000125",
       "next_funding_rate": "0.0000125",
-      "created_at": 1792400402574
+      "created_at": 1793055603679
      }
     ],
-    "next_cursor": "1111cnvCT",
+    "next_cursor": "1111dghf1",
     "has_more": true
    },
    "text": null
@@ -158,7 +158,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a1ec1b6cf95ffea2"
+    "$body": "5bb616b96906f9d6"
    },
    "text": null
   },
@@ -176,110 +176,110 @@
      "l": [
       [
        {
-        "p": "82539",
-        "a": "0.95745",
-        "n": 14
-       },
-       {
-        "p": "82538",
-        "a": "0.04846",
+        "p": "79648",
+        "a": "0.12665",
         "n": 2
        },
        {
-        "p": "82537",
-        "a": "0.17403",
+        "p": "79647",
+        "a": "1.02666",
         "n": 2
        },
        {
-        "p": "82536",
-        "a": "0.06142",
+        "p": "79646",
+        "a": "0.05022",
         "n": 2
        },
        {
-        "p": "82535",
-        "a": "0.03634",
-        "n": 1
+        "p": "79645",
+        "a": "0.05047",
+        "n": 3
        },
        {
-        "p": "82534",
-        "a": "0.07245",
+        "p": "79644",
+        "a": "0.05736",
+        "n": 3
+       },
+       {
+        "p": "79643",
+        "a": "0.94388",
+        "n": 5
+       },
+       {
+        "p": "79642",
+        "a": "0.05022",
         "n": 2
        },
        {
-        "p": "82533",
-        "a": "0.03634",
-        "n": 1
+        "p": "79641",
+        "a": "0.13655",
+        "n": 3
        },
        {
-        "p": "82532",
-        "a": "0.07245",
-        "n": 2
+        "p": "79640",
+        "a": "0.66386",
+        "n": 4
        },
        {
-        "p": "82531",
-        "a": "0.03664",
-        "n": 2
-       },
-       {
-        "p": "82530",
-        "a": "0.07246",
-        "n": 2
+        "p": "79639",
+        "a": "0.09888",
+        "n": 3
        }
       ],
       [
        {
-        "p": "82540",
-        "a": "0.04953",
+        "p": "79649",
+        "a": "0.75338",
+        "n": 11
+       },
+       {
+        "p": "79650",
+        "a": "0.6152",
+        "n": 3
+       },
+       {
+        "p": "79651",
+        "a": "0.05022",
         "n": 2
        },
        {
-        "p": "82542",
-        "a": "0.13768",
-        "n": 1
+        "p": "79652",
+        "a": "0.61522",
+        "n": 3
        },
        {
-        "p": "82544",
-        "a": "0.09742",
+        "p": "79653",
+        "a": "0.09888",
+        "n": 3
+       },
+       {
+        "p": "79654",
+        "a": "0.66377",
         "n": 4
        },
        {
-        "p": "82545",
-        "a": "0.07245",
-        "n": 2
+        "p": "79655",
+        "a": "0.09888",
+        "n": 3
        },
        {
-        "p": "82546",
-        "a": "0.61472",
-        "n": 4
+        "p": "79656",
+        "a": "0.75444",
+        "n": 6
        },
        {
-        "p": "82547",
-        "a": "0.16695",
-        "n": 5
+        "p": "79657",
+        "a": "0.09888",
+        "n": 3
        },
        {
-        "p": "82548",
-        "a": "0.66488",
-        "n": 5
-       },
-       {
-        "p": "82549",
-        "a": "0.11266",
-        "n": 4
-       },
-       {
-        "p": "82550",
-        "a": "0.72008",
-        "n": 4
-       },
-       {
-        "p": "82551",
-        "a": "0.07017",
+        "p": "79658",
+        "a": "0.72808",
         "n": 3
        }
       ]
      ],
-     "t": 1792415906694
+     "t": 1793071049656
     },
     "error": null,
     "code": null
@@ -294,7 +294,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a1ec1b6cf95ffea2"
+    "$body": "5bb616b96906f9d6"
    },
    "text": null
   },
@@ -310,104 +310,104 @@
     "data": [
      {
       "event_type": "fulfill_taker",
-      "price": "82510",
-      "amount": "0.02958",
-      "side": "open_long",
-      "cause": "normal",
-      "created_at": 1792415897669
-     },
-     {
-      "event_type": "fulfill_maker",
-      "price": "82510",
-      "amount": "0.02958",
-      "side": "open_short",
-      "cause": "normal",
-      "created_at": 1792415897669
-     },
-     {
-      "event_type": "fulfill_taker",
-      "price": "82510",
-      "amount": "0.00294",
-      "side": "open_long",
-      "cause": "normal",
-      "created_at": 1792415897669
-     },
-     {
-      "event_type": "fulfill_maker",
-      "price": "82510",
-      "amount": "0.00294",
-      "side": "open_short",
-      "cause": "normal",
-      "created_at": 1792415897669
-     },
-     {
-      "event_type": "fulfill_taker",
-      "price": "82503",
-      "amount": "0.64334",
-      "side": "close_short",
-      "cause": "normal",
-      "created_at": 1792415858882
-     },
-     {
-      "event_type": "fulfill_maker",
-      "price": "82503",
-      "amount": "0.64334",
+      "price": "79648",
+      "amount": "0.00062",
       "side": "close_long",
       "cause": "normal",
-      "created_at": 1792415858882
+      "created_at": 1793071048859
      },
      {
       "event_type": "fulfill_maker",
-      "price": "82485",
-      "amount": "0.94561",
-      "side": "open_short",
+      "price": "79648",
+      "amount": "0.00062",
+      "side": "open_long",
       "cause": "normal",
-      "created_at": 1792415833757
+      "created_at": 1793071048859
      },
      {
       "event_type": "fulfill_taker",
-      "price": "82470",
-      "amount": "0.00024",
+      "price": "79660",
+      "amount": "0.46059",
+      "side": "close_long",
+      "cause": "normal",
+      "created_at": 1793070988784
+     },
+     {
+      "event_type": "fulfill_maker",
+      "price": "79660",
+      "amount": "0.46059",
       "side": "close_short",
       "cause": "normal",
-      "created_at": 1792415833288
+      "created_at": 1793070988784
+     },
+     {
+      "event_type": "fulfill_taker",
+      "price": "79660",
+      "amount": "0.96103",
+      "side": "close_long",
+      "cause": "normal",
+      "created_at": 1793070988784
      },
      {
       "event_type": "fulfill_maker",
-      "price": "82470",
+      "price": "79660",
+      "amount": "0.96103",
+      "side": "close_short",
+      "cause": "normal",
+      "created_at": 1793070988784
+     },
+     {
+      "event_type": "fulfill_taker",
+      "price": "79675",
+      "amount": "0.00062",
+      "side": "close_long",
+      "cause": "normal",
+      "created_at": 1793070958266
+     },
+     {
+      "event_type": "fulfill_maker",
+      "price": "79675",
+      "amount": "0.00062",
+      "side": "open_long",
+      "cause": "normal",
+      "created_at": 1793070958266
+     },
+     {
+      "event_type": "fulfill_taker",
+      "price": "79675",
       "amount": "0.00024",
-      "side": "open_short",
+      "side": "close_long",
       "cause": "normal",
-      "created_at": 1792415833288
-     },
-     {
-      "event_type": "fulfill_taker",
-      "price": "82470",
-      "amount": "0.00495",
-      "side": "open_long",
-      "cause": "normal",
-      "created_at": 1792415807544
+      "created_at": 1793070958266
      },
      {
       "event_type": "fulfill_maker",
-      "price": "82470",
-      "amount": "0.00495",
-      "side": "open_short",
+      "price": "79675",
+      "amount": "0.00024",
+      "side": "open_long",
       "cause": "normal",
-      "created_at": 1792415807544
+      "created_at": 1793070958265
      },
      {
       "event_type": "fulfill_taker",
-      "price": "82470",
-      "amount": "0.02165",
+      "price": "79675",
+      "amount": "0.00062",
+      "side": "close_long",
+      "cause": "normal",
+      "created_at": 1793070931745
+     },
+     {
+      "event_type": "fulfill_maker",
+      "price": "79675",
+      "amount": "0.00062",
       "side": "open_long",
       "cause": "normal",
-      "created_at": 1792415807544
+      "created_at": 1793070931745
      }
     ],
     "error": null,
     "code": null,
-    "last_order_id": 14609703161
+    "last_order_id": 15046944337
    },
    "text": null
   },
@@ -419,14 +419,14 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a1ec1b6cf95ffea2"
+    "$body": "5bb616b96906f9d6"
    },
    "text": null
   },
   {
    "cell": "kline",
    "method": "GET",
-   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=1h&start_time=1792329506817&end_time=1792415906817",
+   "url": "https://api.pacifica.fi/api/v1/kline?symbol=BTC&interval=1h&start_time=1792984649778&end_time=1793071049778",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -434,148 +434,148 @@
     "success": true,
     "data": [
      {
-      "t": 1792332000000,
-      "T": 1792335600000,
+      "t": 1792987200000,
+      "T": 1792990800000,
       "s": "BTC",
       "i": "1h",
-      "o": "81532",
-      "c": "81084",
-      "h": "81535",
-      "l": "81029",
-      "v": "198.08744",
-      "n": 1190
+      "o": "79568",
+      "c": "80111",
+      "h": "80133",
+      "l": "79556",
+      "v": "232.65768",
+      "n": 945
      },
      {
-      "t": 1792335600000,
-      "T": 1792339200000,
+      "t": 1792990800000,
+      "T": 1792994400000,
       "s": "BTC",
       "i": "1h",
-      "o": "81076",
-      "c": "81164",
-      "h": "81215",
-      "l": "80985",
-      "v": "115.07892",
-      "n": 738
+      "o": "80111",
+      "c": "80246",
+      "h": "80280",
+      "l": "80057",
+      "v": "165.2753",
+      "n": 821
      },
      {
-      "t": 1792339200000,
-      "T": 1792342800000,
+      "t": 1792994400000,
+      "T": 1792998000000,
       "s": "BTC",
       "i": "1h",
-      "o": "81159",
-      "c": "81068",
-      "h": "81238",
-      "l": "81017",
-      "v": "140.12894",
-      "n": 827
+      "o": "80247",
+      "c": "80114",
+      "h": "80263",
+      "l": "79947",
+      "v": "186.30032",
+      "n": 774
      },
      {
-      "t": 1792342800000,
-      "T": 1792346400000,
+      "t": 1792998000000,
+      "T": 1793001600000,
       "s": "BTC",
       "i": "1h",
-      "o": "81089",
-      "c": "81171",
-      "h": "81198",
-      "l": "81089",
-      "v": "104.65278",
-      "n": 589
+      "o": "80113",
+      "c": "80015",
+      "h": "80222",
+      "l": "79955",
+      "v": "212.09464",
+      "n": 1351
      },
      {
-      "t": 1792346400000,
-      "T": 1792350000000,
+      "t": 1793001600000,
+      "T": 1793005200000,
       "s": "BTC",
       "i": "1h",
-      "o": "81170",
-      "c": "81183",
-      "h": "81263",
-      "l": "81065",
-      "v": "116.14104",
-      "n": 578
+      "o": "80001",
+      "c": "80227",
+      "h": "80370",
+      "l": "79655",
+      "v": "257.12018",
+      "n": 1339
      },
      {
-      "t": 1792350000000,
-      "T": 1792353600000,
+      "t": 1793005200000,
+      "T": 1793008800000,
       "s": "BTC",
       "i": "1h",
-      "o": "81175",
-      "c": "80889",
-      "h": "81175",
-      "l": "80788",
-      "v": "125.97018",
-      "n": 1051
+      "o": "80213",
+      "c": "80527",
+      "h": "80560",
+      "l": "80174",
+      "v": "173.64088",
+      "n": 993
      },
      {
-      "t": 1792396800000,
-      "T": 1792400400000,
+      "t": 1793052000000,
+      "T": 1793055600000,
       "s": "BTC",
       "i": "1h",
-      "o": "82695",
-      "c": "82794",
-      "h": "82938",
-      "l": "82560",
-      "v": "220.52032",
-      "n": 1039
+      "o": "80079",
+      "c": "79977",
+      "h": "80104",
+      "l": "79883",
+      "v": "83.20702",
+      "n": 739
      },
      {
-      "t": 1792400400000,
-      "T": 1792404000000,
+      "t": 1793055600000,
+      "T": 1793059200000,
       "s": "BTC",
       "i": "1h",
-      "o": "82794",
-      "c": "82758",
-      "h": "83065",
-      "l": "82723",
-      "v": "188.75248",
-      "n": 855
+      "o": "79970",
+      "c": "80123",
+      "h": "80156",
+      "l": "79709",
+      "v": "95.75156",
+      "n": 776
      },
      {
-      "t": 1792404000000,
-      "T": 1792407600000,
+      "t": 1793059200000,
+      "T": 1793062800000,
       "s": "BTC",
       "i": "1h",
-      "o": "82723",
-      "c": "82375",
-      "h": "82848",
-      "l": "82083",
-      "v": "231.08806",
-      "n": 1428
+      "o": "80125",
+      "c": "80223",
+      "h": "80340",
+      "l": "80113",
+      "v": "119.29654",
+      "n": 975
      },
      {
-      "t": 1792407600000,
-      "T": 1792411200000,
+      "t": 1793062800000,
+      "T": 1793066400000,
       "s": "BTC",
       "i": "1h",
-      "o": "82375",
-      "c": "82320",
-      "h": "82375",
-      "l": "82118",
-      "v": "204.99908",
-      "n": 896
+      "o": "80204",
+      "c": "80026",
+      "h": "80340",
+      "l": "80011",
+      "v": "218.2261",
+      "n": 1383
      },
      {
-      "t": 1792411200000,
-      "T": 1792414800000,
+      "t": 1793066400000,
+      "T": 1793070000000,
       "s": "BTC",
       "i": "1h",
-      "o": "82320",
-      "c": "82573",
-      "h": "82656",
-      "l": "82292",
-      "v": "190.0379",
-      "n": 1041
+      "o": "80038",
+      "c": "79789",
+      "h": "80092",
+      "l": "79725",
+      "v": "177.31916",
+      "n": 1050
      },
      {
-      "t": 1792414800000,
-      "T": 1792418400000,
+      "t": 1793070000000,
+      "T": 1793073600000,
       "s": "BTC",
       "i": "1h",
-      "o": "82573",
-      "c": "82510",
-      "h": "82718",
-      "l": "82469",
-      "v": "73.9562",
-      "n": 396
+      "o": "79795",
+      "c": "79648",
+      "h": "79801",
+      "l": "79648",
+      "v": "66.31986",
+      "n": 244
      }
     ],
     "error": null,
@@ -591,7 +591,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a1ec1b6cf95ffea2"
+    "$body": "5bb616b96906f9d6"
    },
    "text": null
   },
@@ -603,7 +603,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "d50f88d07863c13a"
+    "$body": "98c343d4428ff0f5"
    },
    "text": null
   },
@@ -615,7 +615,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a1ec1b6cf95ffea2"
+    "$body": "5bb616b96906f9d6"
    },
    "text": null
   },
@@ -627,7 +627,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a1ec1b6cf95ffea2"
+    "$body": "5bb616b96906f9d6"
    },
    "text": null
   },
@@ -639,7 +639,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a1ec1b6cf95ffea2"
+    "$body": "5bb616b96906f9d6"
    },
    "text": null
   },
@@ -651,35 +651,16 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a1ec1b6cf95ffea2"
+    "$body": "5bb616b96906f9d6"
    },
    "text": null
   }
  ],
  "ws": [],
  "bodies": {
-  "a1ec1b6cf95ffea2": {
+  "5bb616b96906f9d6": {
    "success": true,
    "data": [
-    {
-     "symbol": "BTC",
-     "tick_size": "1",
-     "min_tick": "0",
-     "max_tick": "1000000",
-     "lot_size": "0.00001",
-     "max_leverage": 50,
-     "isolated_only": false,
-     "min_order_size": "10",
-     "max_order_size": "5000000",
-     "funding_rate": "0.0000125",
-     "next_funding_rate": "0.0000125",
-     "created_at": 1748881333944,
-     "instrument_type": "perpetual",
-     "base_asset": "BTC",
-     "execution_modes": [
-      "orderbook"
-     ]
-    },
     {
      "symbol": "ETH",
      "tick_size": "0.1",
@@ -690,8 +671,8 @@
      "isolated_only": false,
      "min_order_size": "10",
      "max_order_size": "5000000",
-     "funding_rate": "0.0000125",
-     "next_funding_rate": "0.0000124",
+     "funding_rate": "0.00000982",
+     "next_funding_rate": "0.00001117",
      "created_at": 1748881333944,
      "instrument_type": "perpetual",
      "base_asset": "ETH",
@@ -719,6 +700,25 @@
      ]
     },
     {
+     "symbol": "BTC",
+     "tick_size": "1",
+     "min_tick": "0",
+     "max_tick": "1000000",
+     "lot_size": "0.00001",
+     "max_leverage": 50,
+     "isolated_only": false,
+     "min_order_size": "10",
+     "max_order_size": "5000000",
+     "funding_rate": "0.0000125",
+     "next_funding_rate": "0.0000125",
+     "created_at": 1748881333944,
+     "instrument_type": "perpetual",
+     "base_asset": "BTC",
+     "execution_modes": [
+      "orderbook"
+     ]
+    },
+    {
      "symbol": "SOL-USDC",
      "tick_size": "0.01",
      "min_tick": "0",
@@ -741,56 +741,56 @@
    "error": null,
    "code": null
   },
-  "d50f88d07863c13a": {
+  "98c343d4428ff0f5": {
    "success": true,
    "data": [
     {
      "funding": "0.0000125",
-     "mark": "82539",
-     "mid": "82539.5",
+     "mark": "100",
+     "mid": "100.005",
      "next_funding": "0.0000125",
-     "open_interest": "470.43027",
-     "oracle": "82571.313336",
-     "symbol": "BTC",
-     "timestamp": 1792415906025,
-     "volume_24h": "350125050.51744",
-     "yesterday_price": "81906"
-    },
-    {
-     "funding": "0.0000125",
-     "mark": "105.335976",
-     "mid": "105.335",
-     "next_funding": "0.0000125",
-     "open_interest": "152103.74",
-     "oracle": "105.335976",
+     "open_interest": "158130.12",
+     "oracle": "100.019006",
      "symbol": "SOL",
-     "timestamp": 1792415906025,
-     "volume_24h": "54158301.6752",
-     "yesterday_price": "103.9"
+     "timestamp": 1793071048106,
+     "volume_24h": "76508653.2516",
+     "yesterday_price": "100.72"
     },
     {
      "funding": "0.0000125",
-     "mark": "2421.558",
-     "mid": "2421.45",
+     "mark": "79649",
+     "mid": "79648.5",
      "next_funding": "0.0000125",
-     "open_interest": "14102.4402",
-     "oracle": "2422.61025",
+     "open_interest": "519.42893",
+     "oracle": "79670.796823",
+     "symbol": "BTC",
+     "timestamp": 1793071048106,
+     "volume_24h": "341525681.93286",
+     "yesterday_price": "79645"
+    },
+    {
+     "funding": "0.00000982",
+     "mark": "2309.036",
+     "mid": "2309.05",
+     "next_funding": "0.00001114",
+     "open_interest": "14225.586",
+     "oracle": "2310.135644",
      "symbol": "ETH",
-     "timestamp": 1792415906025,
-     "volume_24h": "248969774.50294",
-     "yesterday_price": "2414.3"
+     "timestamp": 1793071048106,
+     "volume_24h": "293478334.32928",
+     "yesterday_price": "2305.6"
     },
     {
      "funding": "0",
-     "mark": "105.335976",
-     "mid": "105.335",
+     "mark": "100.019006",
+     "mid": "99.965",
      "next_funding": "0",
      "open_interest": "0",
-     "oracle": "105.335976",
+     "oracle": "100.019006",
      "symbol": "SOL-USDC",
-     "timestamp": 1792415906025,
-     "volume_24h": "120661.47768",
-     "yesterday_price": "104"
+     "timestamp": 1793071048106,
+     "volume_24h": "107413.68046",
+     "yesterday_price": "100.69"
     }
    ],
    "error": null,

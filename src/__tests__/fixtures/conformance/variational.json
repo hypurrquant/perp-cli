@@ -1,13 +1,14 @@
 {
  "schema": 1,
  "name": "variational",
- "capturedAt": 1792406046923,
+ "capturedAt": 1793071382176,
  "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
  "keep": [
   "BTC",
   "ETH",
   "SOL"
  ],
+ "full": [],
  "http": [
   {
    "cell": "list",
@@ -17,238 +18,149 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "1ce33997acb453b6"
-   },
-   "text": null
-  },
-  {
-   "cell": "prices",
-   "method": "GET",
-   "url": "https://omni-client-api.prod.ap-northeast-1.variational.io/metadata/v2/stats",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "1ce33997acb453b6"
-   },
-   "text": null
-  },
-  {
-   "cell": "info",
-   "method": "GET",
-   "url": "https://omni-client-api.prod.ap-northeast-1.variational.io/metadata/v2/stats",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "1ce33997acb453b6"
-   },
-   "text": null
-  },
-  {
-   "cell": "funding",
-   "method": "GET",
-   "url": "https://omni-client-api.prod.ap-northeast-1.variational.io/metadata/v2/stats",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "1ce33997acb453b6"
-   },
-   "text": null
-  },
-  {
-   "cell": "book",
-   "method": "GET",
-   "url": "https://omni-client-api.prod.ap-northeast-1.variational.io/metadata/v2/stats",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "1ce33997acb453b6"
-   },
-   "text": null
-  },
-  {
-   "cell": "unknown:info",
-   "method": "GET",
-   "url": "https://omni-client-api.prod.ap-northeast-1.variational.io/metadata/v2/stats",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "1ce33997acb453b6"
-   },
-   "text": null
-  },
-  {
-   "cell": "unknown:funding",
-   "method": "GET",
-   "url": "https://omni-client-api.prod.ap-northeast-1.variational.io/metadata/v2/stats",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "1ce33997acb453b6"
-   },
-   "text": null
-  },
-  {
-   "cell": "unknown:book",
-   "method": "GET",
-   "url": "https://omni-client-api.prod.ap-northeast-1.variational.io/metadata/v2/stats",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "1ce33997acb453b6"
+    "total_volume_24h": "2591442278.814940",
+    "cumulative_volume": "440203899887.573715",
+    "tvl": "238425858.351189238319",
+    "open_interest": "1928332307.1150574687210180400",
+    "num_markets": 582,
+    "loss_refund": {
+     "pool_size": "0",
+     "refunded_24h": "0"
+    },
+    "listings": [
+     {
+      "ticker": "ETH-PERP",
+      "contract_type": "perpetual",
+      "name": "Ethereum",
+      "mark_price": "2305.455834552454",
+      "volume_24h": "185829119.612441",
+      "open_interest": {
+       "long_open_interest": "67474617.539333228120124800000",
+       "short_open_interest": "59922359.284175725384606000000"
+      },
+      "funding": {
+       "last": {
+        "annualized_rate": "0.1095",
+        "interval_rate": "0.0001"
+       },
+       "next": {
+        "annualized_rate": "0.1095",
+        "interval_rate": "0.0001"
+       },
+       "interval_seconds": 28800,
+       "next_timestamp": 1793088000
+      },
+      "base_spread_bps": "1.4313872122562745259860710000",
+      "quotes": {
+       "updated_at": "2026-10-27T03:22:22.051679221Z",
+       "base": {
+        "bid": "2309.65",
+        "ask": "2309.98"
+       },
+       "size_1k": {
+        "bid": "2309.65",
+        "ask": "2309.98"
+       },
+       "size_100k": {
+        "bid": "2309.65",
+        "ask": "2309.98"
+       },
+       "size_1m": {
+        "bid": "2308.74",
+        "ask": "2310.36"
+       }
+      }
+     },
+     {
+      "ticker": "SOL-PERP",
+      "contract_type": "perpetual",
+      "name": "Solana",
+      "mark_price": "99.8946480195325",
+      "volume_24h": "16664737.158312",
+      "open_interest": {
+       "long_open_interest": "20766275.099558315777808760000",
+       "short_open_interest": "15114371.422635593505880920000"
+      },
+      "funding": {
+       "last": {
+        "annualized_rate": "0.1095",
+        "interval_rate": "0.0001"
+       },
+       "next": {
+        "annualized_rate": "0.1095",
+        "interval_rate": "0.0001"
+       },
+       "interval_seconds": 28800,
+       "next_timestamp": 1793088000
+      },
+      "base_spread_bps": "2.7128580496826126275010690000",
+      "quotes": {
+       "updated_at": "2026-10-27T03:22:55.384490759Z",
+       "base": {
+        "bid": "99.9057",
+        "ask": "99.9328"
+       },
+       "size_1k": {
+        "bid": "99.9057",
+        "ask": "99.9328"
+       },
+       "size_100k": {
+        "bid": "99.9057",
+        "ask": "99.9328"
+       },
+       "size_1m": {
+        "bid": "99.8541",
+        "ask": "99.9537"
+       }
+      }
+     },
+     {
+      "ticker": "BTC-PERP",
+      "contract_type": "perpetual",
+      "name": "Bitcoin",
+      "mark_price": "79513.5334854529",
+      "volume_24h": "414043827.519541",
+      "open_interest": {
+       "long_open_interest": "106395454.99085536163360076000",
+       "short_open_interest": "85695985.49319840155420418000"
+      },
+      "funding": {
+       "last": {
+        "annualized_rate": "0.1095",
+        "interval_rate": "0.0001"
+       },
+       "next": {
+        "annualized_rate": "0.1095",
+        "interval_rate": "0.0001"
+       },
+       "interval_seconds": 28800,
+       "next_timestamp": 1793088000
+      },
+      "base_spread_bps": "1.069000411301691879700540000",
+      "quotes": {
+       "updated_at": "2026-10-27T03:22:44.857491581Z",
+       "base": {
+        "bid": "79599.66",
+        "ask": "79608.16"
+       },
+       "size_1k": {
+        "bid": "79599.66",
+        "ask": "79608.16"
+       },
+       "size_100k": {
+        "bid": "79599.66",
+        "ask": "79608.16"
+       },
+       "size_1m": {
+        "bid": "79583.51",
+        "ask": "79625.46"
+       }
+      }
+     }
+    ]
    },
    "text": null
   }
  ],
- "ws": [],
- "bodies": {
-  "1ce33997acb453b6": {
-   "total_volume_24h": "1792718844.657583",
-   "cumulative_volume": "421965706524.748342",
-   "tvl": "241044549.888578238319",
-   "open_interest": "1973639331.2913200610096123220",
-   "num_markets": 576,
-   "loss_refund": {
-    "pool_size": "0",
-    "refunded_24h": "0"
-   },
-   "listings": [
-    {
-     "ticker": "BTC-PERP",
-     "contract_type": "perpetual",
-     "name": "Bitcoin",
-     "mark_price": "82203.8334923545",
-     "volume_24h": "411199241.033581",
-     "open_interest": {
-      "long_open_interest": "101260496.15919298574114778000",
-      "short_open_interest": "93290437.88466291871291609000"
-     },
-     "funding": {
-      "last": {
-       "annualized_rate": "0.1095",
-       "interval_rate": "0.0001"
-      },
-      "next": {
-       "annualized_rate": "0.1095",
-       "interval_rate": "0.0001"
-      },
-      "interval_seconds": 28800,
-      "next_timestamp": 1792425600
-     },
-     "base_spread_bps": "2.4621722783624748857268350000",
-     "quotes": {
-      "updated_at": "2026-10-19T10:33:58.599316525Z",
-      "base": {
-       "bid": "82100.89",
-       "ask": "82121.13"
-      },
-      "size_1k": {
-       "bid": "82100.89",
-       "ask": "82121.13"
-      },
-      "size_100k": {
-       "bid": "82100.89",
-       "ask": "82123.58"
-      },
-      "size_1m": {
-       "bid": "82097.02",
-       "ask": "82136.77"
-      }
-     }
-    },
-    {
-     "ticker": "ETH-PERP",
-     "contract_type": "perpetual",
-     "name": "Ethereum",
-     "mark_price": "2419.491165583491",
-     "volume_24h": "258109597.643324",
-     "open_interest": {
-      "long_open_interest": "76076742.571447315795572310000",
-      "short_open_interest": "66177177.414422394887813730000"
-     },
-     "funding": {
-      "last": {
-       "annualized_rate": "0.1095",
-       "interval_rate": "0.0001"
-      },
-      "next": {
-       "annualized_rate": "0.1095",
-       "interval_rate": "0.0001"
-      },
-      "interval_seconds": 28800,
-      "next_timestamp": 1792425600
-     },
-     "base_spread_bps": "1.8185641934091890598920530000",
-     "quotes": {
-      "updated_at": "2026-10-19T10:33:25.548879085Z",
-      "base": {
-       "bid": "2417.2",
-       "ask": "2417.64"
-      },
-      "size_1k": {
-       "bid": "2417.2",
-       "ask": "2417.64"
-      },
-      "size_100k": {
-       "bid": "2417.2",
-       "ask": "2417.64"
-      },
-      "size_1m": {
-       "bid": "2416.71",
-       "ask": "2418.23"
-      }
-     }
-    },
-    {
-     "ticker": "SOL-PERP",
-     "contract_type": "perpetual",
-     "name": "Solana",
-     "mark_price": "104.6792185150587",
-     "volume_24h": "23204982.146272",
-     "open_interest": {
-      "long_open_interest": "23408646.192123319092097690000",
-      "short_open_interest": "10087162.963646368713054790000"
-     },
-     "funding": {
-      "last": {
-       "annualized_rate": "0.1095",
-       "interval_rate": "0.0001"
-      },
-      "next": {
-       "annualized_rate": "0.1095",
-       "interval_rate": "0.0001"
-      },
-      "interval_seconds": 28800,
-      "next_timestamp": 1792425600
-     },
-     "base_spread_bps": "2.7703684084943933092794870000",
-     "quotes": {
-      "updated_at": "2026-10-19T10:33:31.475928460Z",
-      "base": {
-       "bid": "104.48",
-       "ask": "104.509"
-      },
-      "size_1k": {
-       "bid": "104.48",
-       "ask": "104.509"
-      },
-      "size_100k": {
-       "bid": "104.477",
-       "ask": "104.514"
-      },
-      "size_1m": {
-       "bid": "104.426",
-       "ask": "104.542"
-      }
-     }
-    }
-   ]
-  }
- }
+ "ws": []
 }
