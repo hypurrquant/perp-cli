@@ -49,8 +49,8 @@ import { txflowShapeError, TxflowClient, TxflowSendUnknown } from "./client.js";
 import { fetchTxflowDirectory, fetchTxflowMarkets, resolveTxflowMarket, type TxflowMarketMeta } from "./public.js";
 import { TXFLOW_AUTOMATION_GATE } from "../venues/txflow.js";
 import {
-  nextTxflowNonce, signTxflowAgentAction, txflowOrderBody,
-  type TxflowAgentAction, type TxflowOrderBody, type TxflowTif,
+  nextTxflowNonce, signTxflowAgentAction, txflowCancelBody, txflowOrderBody,
+  type TxflowAgentAction, type TxflowCancelBody, type TxflowOrderBody, type TxflowTif,
 } from "./signing.js";
 
 /**
@@ -689,7 +689,6 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
       if (req.triggerSource !== null && req.triggerSource !== "mark") {
         throw unsupported(this.venue.displayName, "triggerType", "TP / SL / stop triggers fire on the MARK price only (docs: Orders & Time-in-Force)", "Omit --trigger-type (or pass mark)");
       }
-      const kind = await this.stopKind(m, req.side, trigger, (req as OrderRequest & { kind?: "tp" | "sl" }).kind ?? null, notes);
       if (req.type === "stopLimit") {
         price = requireOnTick(req.price as string, m.tickSize);
       } else {
@@ -702,7 +701,8 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
         price = alignProtectionPrice(slippagePrice(trigger, req.side, req.slippage.bps), m.tickSize, req.side);
         notes.push(`p = trigger ${trigger} ± ${req.slippage.bps} bps = ${price}`);
       }
-      t = { trigger: { isMarket: req.type === "stopMarket", triggerPx: trigger, tpsl: kind } };
+      // A standalone trigger carries tpsl "" (normalTrigger refuses "tp" / "sl").
+      t = { trigger: { isMarket: req.type === "stopMarket", triggerPx: trigger, tpsl: "" } };
       referencePrice = trigger;
       method = req.type === "stopLimit" ? "triggerLimit" : "trigger";
       notes.push("trigger fires on the mark price; a fired order is not guaranteed to fill (docs: Triggered is not filled)");
@@ -748,22 +748,6 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
       venue: "txflow", symbol: sym, status: "accepted", finality: "pending", orderId: null, clientOrderId: cloid, filledSize: null, avgPrice: null,
       venueRaw: { action: action.type, grouping: action.grouping, cloid },
     }, method, { ...exec, notes: [...notes, "executed, but not visible on the order reads yet"] });
-  }
-
-  /**
-   * The tp / sl tag of a trigger: given explicitly (TP/SL legs), else classified from the trigger
-   * vs the mark like a protective order — a sell trigger below the mark (or a buy above it) is a
-   * stop-loss, the other side a take-profit. A trigger equal to the mark is refused.
-   */
-  private async stopKind(m: TxflowMarketMeta, side: "buy" | "sell", trigger: string, given: "tp" | "sl" | null, notes: string[]): Promise<"tp" | "sl"> {
-    if (given !== null) return given;
-    const mark = await this.markOf(m);
-    const cmp = Number(subDecimal(trigger, mark));
-    if (cmp === 0) throw new PerpError("INVALID_PARAMS", `TxFlow ${m.symbol}: trigger ${trigger} equals the mark ${mark} — cannot tell stop-loss from take-profit; not sent`);
-    const below = cmp < 0;
-    const kind = (side === "sell") === below ? "sl" : "tp";
-    notes.push(`sent as ${kind}: trigger ${trigger} is ${below ? "below" : "above"} the mark ${mark}`);
-    return kind;
   }
 
   /** One read-only reconciliation of an unknown place outcome by client order id. */
@@ -834,10 +818,7 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     const outcome = new Map<OpenRow, { kind: "executed" } | { kind: "refused" | "unknown"; error: string }>();
     for (let i = 0; i < rows.length; i += TXFLOW_CANCEL_BATCH_MAX) {
       const batch = rows.slice(i, i + TXFLOW_CANCEL_BATCH_MAX);
-      const cancels = batch.map(o => {
-        const g = txflowCancelGrouping(o);
-        return g === undefined ? { a: asset, o: num(o.row.oid, "open order oid") } : { a: asset, o: num(o.row.oid, "open order oid"), grouping: g };
-      });
+      const cancels: TxflowCancelBody[] = batch.map(o => txflowCancelBody(asset, num(o.row.oid, "open order oid"), txflowCancelGrouping(o)));
       try {
         await this.send(signer, { type: "cancel", cancels }, "cancel", "ACTION_REJECTED");
         for (const o of batch) outcome.set(o, { kind: "executed" });
@@ -1076,13 +1057,13 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     }, "read", { notes: [`trigger state ${JSON.stringify(state)} (historicalTriggerOrders) — a fired trigger's fill is a separate order`] });
   }
 
-  /** A TP / SL leg (separateOrders: legacy-trading-v2 placeTpSlLeg dispatches here): a reduce-only trigger. */
+  /** A TP / SL leg (separateOrders: legacy-trading-v2 placeTpSlLeg dispatches here): a standalone reduce-only trigger. */
   async placeTpSlLeg(leg: { symbol: string; closeSide: "buy" | "sell"; size: string; trigger: string; kind: "tp" | "sl"; limitPrice: string | null; slippage: ResolvedSlippage }): Promise<OrderResult> {
     const { newVenueClientOrderId } = await import("../trading-v2.js");
-    const req: OrderRequest & { kind: "tp" | "sl" } = {
+    const req: OrderRequest = {
       symbol: leg.symbol, side: leg.closeSide, type: leg.limitPrice === null ? "stopMarket" : "stopLimit", size: leg.size,
       price: leg.limitPrice, triggerPrice: leg.trigger, triggerSource: null, tif: leg.limitPrice === null ? null : "GTC",
-      reduceOnly: true, clientOrderId: newVenueClientOrderId(this.venue), slippage: leg.limitPrice === null ? leg.slippage : null, tpsl: null, kind: leg.kind,
+      reduceOnly: true, clientOrderId: newVenueClientOrderId(this.venue), slippage: leg.limitPrice === null ? leg.slippage : null, tpsl: null,
     };
     return this.placeOrder(req);
   }
@@ -1128,14 +1109,13 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     return this.applyLeverage(symbol, leverage, marginMode ?? null);
   }
 
-  async stopOrder(symbol: string, side: "buy" | "sell", size: string, triggerPrice: string, opts?: { limitPrice?: string; reduceOnly?: boolean; triggerType?: "mark" | "last" | "mid"; slippage?: ResolvedSlippage; kind?: "tp" | "sl" }): Promise<unknown> {
+  async stopOrder(symbol: string, side: "buy" | "sell", size: string, triggerPrice: string, opts?: { limitPrice?: string; reduceOnly?: boolean; triggerType?: "mark" | "last" | "mid"; slippage?: ResolvedSlippage }): Promise<unknown> {
     const { newVenueClientOrderId } = await import("../trading-v2.js");
     const isLimit = opts?.limitPrice !== undefined;
-    const req: OrderRequest & { kind?: "tp" | "sl" } = {
+    const req: OrderRequest = {
       symbol, side, type: isLimit ? "stopLimit" : "stopMarket", size, price: opts?.limitPrice ?? null, triggerPrice,
       triggerSource: opts?.triggerType ?? null, tif: isLimit ? "GTC" : null, reduceOnly: opts?.reduceOnly !== false,
       clientOrderId: newVenueClientOrderId(this.venue), slippage: isLimit ? null : opts?.slippage ?? null, tpsl: null,
-      ...(opts?.kind !== undefined ? { kind: opts.kind } : {}),
     };
     return this.placeOrder(req);
   }

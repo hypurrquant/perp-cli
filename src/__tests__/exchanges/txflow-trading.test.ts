@@ -235,7 +235,7 @@ describe("placeOrder — action building per order type", () => {
     expect(r).toMatchObject({ status: "accepted", finality: "pending", orderId: null, clientOrderId: "cli-test-1", filledSize: null });
   });
 
-  it("stop-market sell below the mark: normalTrigger, tpsl sl, isMarket, p = trigger − slippage, reduce-only", async () => {
+  it("stop-market sell: normalTrigger, tpsl \"\" (live: normalTrigger refuses tp / sl), isMarket, p = trigger − slippage, reduce-only", async () => {
     venue.info.frontendOpenOrders = () => ok([]);
     venue.info.triggerOrders = () => ok([{ asset: "1", coin: "1", oid: 77, cloid: "cli-test-1", side: "A", sz: "0.01", limitPx: "59700", triggerPx: "60000", triggerState: "", orderType: "Stop", reduceOnly: true, createTime: Date.now() }]);
     const r = await adapter().placeOrder(req({ type: "stopMarket", side: "sell", price: null, tif: null, triggerPrice: "60000", reduceOnly: true, slippage: slip }));
@@ -243,18 +243,19 @@ describe("placeOrder — action building per order type", () => {
     expect(a).toEqual({
       type: "order", grouping: "normalTrigger",
       // p = 60000 × (1 − 50 bps) = 59700, aligned down (sell) to the 0.1 tick.
-      orders: [{ a: 1, b: false, p: "59700", s: "0.01", r: true, t: { trigger: { isMarket: true, triggerPx: "60000", tpsl: "sl" } }, c: "cli-test-1", m: "cross" }],
+      orders: [{ a: 1, b: false, p: "59700", s: "0.01", r: true, t: { trigger: { isMarket: true, triggerPx: "60000", tpsl: "" } }, c: "cli-test-1", m: "cross" }],
     });
     expect(r).toMatchObject({ status: "open", orderId: "77" });
-    expect(r.execution.notes.join(" ")).toMatch(/sent as sl: trigger 60000 is below the mark/);
+    // No mark read to classify the trigger as tp / sl any more.
+    expect(venue.infos.some(b => b.type === "activeAssetCtx")).toBe(false);
   });
 
-  it("TP leg (placeTpSlLeg): the given kind is sent; stop-limit carries its limit price", async () => {
+  it("TP leg (placeTpSlLeg): a standalone trigger (tpsl \"\"); stop-limit carries its limit price", async () => {
     venue.info.frontendOpenOrders = () => ok([]);
     venue.info.historicalOrders = () => ok({ data: [], hasMore: false });
     await adapter().placeTpSlLeg({ symbol: "BTC", closeSide: "sell", size: "0.01", trigger: "90000", kind: "tp", limitPrice: "89990", slippage: slip });
     const o = ((await sentAction()) as unknown as { orders: Array<Record<string, unknown>> }).orders[0];
-    expect(o).toMatchObject({ b: false, p: "89990", r: true, t: { trigger: { isMarket: false, triggerPx: "90000", tpsl: "tp" } }, m: "cross" });
+    expect(o).toMatchObject({ b: false, p: "89990", r: true, t: { trigger: { isMarket: false, triggerPx: "90000", tpsl: "" } }, m: "cross" });
   });
 });
 
@@ -469,7 +470,10 @@ describe("review fixes: client-id reuse, cancel races, paging, mixed groupings, 
     venue.info.orderDetails = () => ok({ type: "orderDetails", orderDetails: historyRowFor("p", "canceled", { oid: 901, sz: "0.01" }) });
     venue.info.historicalTriggerOrders = () => ok({ data: [{ oid: 902, triggerState: "canceled", createTime: Date.now() }, { oid: 903, triggerState: "canceled", createTime: Date.now() }], hasMore: false });
     const r = await adapter().cancelAllV2(null);
-    expect(await sentAction()).toEqual({ type: "cancel", cancels: [{ a: 1, o: 901 }, { a: 1, o: 902, grouping: "trigger" }, { a: 1, o: 903, grouping: "tpsl" }] });
+    const a = await sentAction() as unknown as { cancels: Array<Record<string, unknown>> };
+    expect(a.cancels).toEqual([{ a: 1, o: 901 }, { grouping: "trigger", a: 1, o: 902 }, { grouping: "tpsl", a: 1, o: 903 }]);
+    // Key order is signed: {a, o}, or {grouping, a, o} (live 2026-10-28: {a, o, grouping} fails signature recovery).
+    expect(a.cancels.map(c => Object.keys(c))).toEqual([["a", "o"], ["grouping", "a", "o"], ["grouping", "a", "o"]]);
     expect(r.cancelled.map(c => c.value)).toEqual(["901", "902", "903"]);
   });
 

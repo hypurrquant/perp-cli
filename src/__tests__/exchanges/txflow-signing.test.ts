@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Wallet, TypedDataEncoder, hexlify } from "ethers";
 import { PerpError } from "../../errors.js";
 import {
-  nextTxflowNonce, signTxflowAgentAction, signTxflowApproveAgent, txflowActionPack, txflowApproveAgentAction, txflowConnectionId,
+  nextTxflowNonce, signTxflowAgentAction, signTxflowApproveAgent, txflowActionPack, txflowApproveAgentAction, txflowCancelBody, txflowConnectionId,
   txflowDomain, txflowOrderBody, TXFLOW_AGENT_TYPES, TXFLOW_APPROVE_AGENT_TYPES, type TxflowAgentAction, type TxflowOrderAction,
 } from "../../exchanges/txflow/signing.js";
 import { TxflowClient, TxflowSendUnknown, TXFLOW_APPLY_URL } from "../../exchanges/txflow/client.js";
@@ -129,17 +129,26 @@ describe("action building (node key order, null fields omitted)", () => {
     expect(hexlify(await txflowActionPack({ type: "order", grouping: "na", orders: [b] }))).toMatch(/a163a27031a16da869736f6c61746564$/);
   });
 
-  it("trigger body keeps isMarket, triggerPx, tpsl; tpsl omitted when absent", () => {
+  it("trigger body keeps isMarket, triggerPx, tpsl — a standalone trigger sends tpsl \"\" (normalTrigger refuses tp / sl)", () => {
     const withTag = txflowOrderBody({ asset: 2, isBuy: false, price: "60000", size: "1", reduceOnly: true, type: { trigger: { isMarket: true, triggerPx: "60000", tpsl: "sl" } }, cloid: "p2", marginMode: "cross" });
     expect(Object.keys((withTag.t as { trigger: object }).trigger)).toEqual(["isMarket", "triggerPx", "tpsl"]);
-    const noTag = txflowOrderBody({ asset: 2, isBuy: false, price: "60000", size: "1", reduceOnly: true, type: { trigger: { isMarket: false, triggerPx: "60000" } }, cloid: "p2", marginMode: "cross" });
-    expect(Object.keys((noTag.t as { trigger: object }).trigger)).toEqual(["isMarket", "triggerPx"]);
+    const standalone = txflowOrderBody({ asset: 2, isBuy: false, price: "60000", size: "1", reduceOnly: true, type: { trigger: { isMarket: false, triggerPx: "60000", tpsl: "" } }, cloid: "p2", marginMode: "cross" });
+    expect(standalone.t).toEqual({ trigger: { isMarket: false, triggerPx: "60000", tpsl: "" } });
+  });
+
+  it("cancel body key order: {a, o}, or {grouping, a, o} — grouping FIRST (live 2026-10-28: {a, o, grouping} fails signature recovery)", async () => {
+    expect(Object.keys(txflowCancelBody(1, 5, undefined))).toEqual(["a", "o"]);
+    expect(Object.keys(txflowCancelBody(1, 5, "trigger"))).toEqual(["grouping", "a", "o"]);
+    expect(Object.keys(txflowCancelBody(2, 7, "tpsl"))).toEqual(["grouping", "a", "o"]);
+    // The packed bytes the connectionId hashes: map{cancels: [{a:1,o:5}, {grouping:"tpsl",a:1,o:6}]}.
+    const packed = await txflowActionPack({ type: "cancel", cancels: [txflowCancelBody(1, 5, undefined), txflowCancelBody(1, 6, "tpsl")] });
+    expect(hexlify(packed)).toBe("0x81a763616e63656c739282a16101a16f0583a867726f7570696e67a47470736ca16101a16f06");
   });
 
   it("cancel / modify2 / leverage / margin-mode packs are deterministic (throwaway-key vectors, NOT venue-validated)", async () => {
     const signer = walletSigner(Wallet.createRandom().privateKey);
     const actions: TxflowAgentAction[] = [
-      { type: "cancel", cancels: [{ a: 1, o: 123456789 }, { a: 1, o: 5, grouping: "trigger" }] },
+      { type: "cancel", cancels: [txflowCancelBody(1, 123456789, undefined), txflowCancelBody(1, 5, "trigger")] },
       { type: "modify2", order: { o: 444555666, p: "52000.0", s: "0.03" } },
       { type: "updateLeverage", asset: 1, leverage: 20, marginMode: "cross" },
       { type: "updateMarginMode", asset: 1, isCross: true },
@@ -147,7 +156,7 @@ describe("action building (node key order, null fields omitted)", () => {
     // Hand-decoded: the docs' request examples' key order is kept, `type` is dropped, ints are
     // compact (fixint 1 / 5 / 20, uint32 0xce for 123456789 and 444555666), bools native.
     expect(hexlify(await txflowActionPack(actions[0]))).toBe(
-      "0x81a763616e63656c739282a16101a16fce075bcd1583a16101a16f05a867726f7570696e67a774726967676572");
+      "0x81a763616e63656c739282a16101a16fce075bcd1583a867726f7570696e67a774726967676572a16101a16f05");
     expect(hexlify(await txflowActionPack(actions[1]))).toBe("0x81a56f7264657283a16fce1a7f6192a170a735323030302e30a173a4302e3033");
     expect(hexlify(await txflowActionPack(actions[2]))).toBe("0x83a5617373657401a86c6576657261676514aa6d617267696e4d6f6465a563726f7373");
     expect(hexlify(await txflowActionPack(actions[3]))).toBe("0x82a5617373657401a7697343726f7373c3");

@@ -70,7 +70,12 @@ export const TXFLOW_APPROVE_AGENT_TYPES = {
 
 export type TxflowTif = "Gtc" | "Ioc" | "Alo";
 
-export interface TxflowTrigger { isMarket: boolean; triggerPx: string; tpsl?: "tp" | "sl" }
+/**
+ * `tpsl` is "" on a standalone trigger (grouping normalTrigger: the node refuses "tp" / "sl" there —
+ * live 2026-10-28 "normalTrigger main order must not have tpsl=tp/sl"; the TxFlow web app sends "")
+ * and "tp" / "sl" on a positionTpsl leg. `triggerPx` is "" on an unset positionTpsl leg.
+ */
+export interface TxflowTrigger { isMarket: boolean; triggerPx: string; tpsl: "" | "tp" | "sl" }
 
 /** One order body: keys a, b, p, s, r, t, c, m (the docs' order; `expiresAt` — GTD only — is never sent). */
 export interface TxflowOrderBody {
@@ -85,10 +90,19 @@ export interface TxflowOrderBody {
   m: "cross" | "isolated";
 }
 
-export type TxflowGrouping = "na" | "normalTrigger";
+/** na = plain orders; normalTrigger = standalone triggers; positionTpsl = one position TP/SL pair (legs [sl, tp]). */
+export type TxflowGrouping = "na" | "normalTrigger" | "positionTpsl";
+
+export type TxflowCancelGrouping = "trigger" | "tpsl";
+/**
+ * One cancel body. With a grouping the key order is {grouping, a, o} — grouping FIRST: the node
+ * hashes it so (live testnet 2026-10-28: {a, o, grouping} — the docs' order — and {a, grouping, o}
+ * both failed signature recovery; {grouping, a, o} executed; the web app builds the same).
+ */
+export type TxflowCancelBody = { a: number; o: number } | { grouping: TxflowCancelGrouping; a: number; o: number };
 
 export interface TxflowOrderAction { type: "order"; grouping: TxflowGrouping; orders: TxflowOrderBody[] }
-export interface TxflowCancelAction { type: "cancel"; cancels: Array<{ a: number; o: number; grouping?: "trigger" | "tpsl" }> }
+export interface TxflowCancelAction { type: "cancel"; cancels: TxflowCancelBody[] }
 export interface TxflowModifyAction { type: "modify2"; order: { o: number; p: string; s: string } }
 export interface TxflowLeverageAction { type: "updateLeverage"; asset: number; leverage: number; marginMode?: "cross" | "isolated" }
 export interface TxflowMarginModeAction { type: "updateMarginMode"; asset: number; isCross: boolean }
@@ -112,9 +126,14 @@ export function txflowOrderBody(o: { asset: number; isBuy: boolean; price: strin
     t = { limit: { tif: o.type.limit.tif } };
   } else {
     const tr = o.type.trigger;
-    t = { trigger: tr.tpsl === undefined ? { isMarket: tr.isMarket, triggerPx: tr.triggerPx } : { isMarket: tr.isMarket, triggerPx: tr.triggerPx, tpsl: tr.tpsl } };
+    t = { trigger: { isMarket: tr.isMarket, triggerPx: tr.triggerPx, tpsl: tr.tpsl } };
   }
   return { a: o.asset, b: o.isBuy, p: o.price, s: o.size, r: o.reduceOnly, t, c: o.cloid, m: o.marginMode };
+}
+
+/** A cancel body in the node's key order: {a, o}, or {grouping, a, o} for a trigger / TP/SL. */
+export function txflowCancelBody(asset: number, oid: number, grouping: TxflowCancelGrouping | undefined): TxflowCancelBody {
+  return grouping === undefined ? { a: asset, o: oid } : { grouping, a: asset, o: oid };
 }
 
 // ── Agent flow ──
