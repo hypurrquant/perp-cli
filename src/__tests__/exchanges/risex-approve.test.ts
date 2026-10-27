@@ -109,6 +109,20 @@ describe("approveRisexAgentWith", () => {
     expect(saved).toEqual([]);
   });
 
+  it("hasPermission(1) also needs bit 0 (live testnet): skips come from the raw bitmap and id 0 goes last → trading-only", async () => {
+    routes();
+    const d = deps();
+    // Live 2026-10-28: after disabling 0, hasPermission(1) read false while bit 1 was still set.
+    d.chain = { ...d.chain, hasPermission: async (_a, _s, p) => (p === 1 ? perms.get(0) === true && perms.get(1) === true : perms.get(p) as boolean) };
+    const sent: number[] = [];
+    const inner = d.sender;
+    d.sender = signer => { const send = inner(signer); return async (permission, slot, sig) => { sent.push(permission); return send(permission, slot, sig); }; };
+    const meta = await approveRisexAgentWith(OPTS, d);
+    expect(sent).toEqual([4, 3, 1, 0]);
+    expect(meta.permissions).toMatchObject({ tradingOnly: true });
+    expect([...perms].filter(([, on]) => on).map(([id]) => id)).toEqual([2]);
+  });
+
   it("an upgraded contract (pin mismatch) refuses in the pre-check, before anything is created or registered", async () => {
     routes();
     const d = deps();

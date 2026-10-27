@@ -552,9 +552,9 @@ describe("signer restriction (on-chain, trading-only)", () => {
         return `0xtx${permission}`;
       },
     });
-    expect(sent.map(s => s.permission)).toEqual([...RISEX_NON_TRADING_PERMISSIONS]);
+    expect(sent.map(s => s.permission)).toEqual([4, 3, 1, 0]); // id 0 last: hasPermission(1) also needs bit 0 (live testnet)
     expect(sent.every(s => s.signer === signer.getAddress())).toBe(true);
-    expect(r.disabled.map(d => d.permission)).toEqual([0, 1, 3, 4]);
+    expect(r.disabled.map(d => d.permission)).toEqual([4, 3, 1, 0]);
   });
 
   it("a state that is not trading-only after the sends is a failure (never stored as restricted)", async () => {
