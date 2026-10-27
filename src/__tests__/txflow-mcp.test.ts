@@ -2,7 +2,8 @@
  * MCP and TxFlow: the account read tools (get_balance / get_positions / get_open_orders) cover
  * TxFlow — without credentials they refuse with NO_SIGNER_AVAILABLE before any request; with a
  * stored agent they read the AGENT's account (`user` = the account address, never the agent's)
- * from the recorded testnet answers. The OWS signer is faked (no vault in unit tests).
+ * from the recorded testnet answers. Trading tools refuse while the release switch is off (as
+ * shipped). The OWS signer is faked (no vault in unit tests).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
@@ -41,14 +42,27 @@ const call = async (tool: string, args: Record<string, unknown>) => {
   return JSON.parse(r.content[0].text) as { ok: boolean; code?: string; data?: unknown };
 };
 
-describe("MCP account / trading tools on txflow without credentials", () => {
+describe("MCP trading tools on txflow: switched off (txflow-release.ts) → CAPABILITY_UNSUPPORTED, zero fetch", () => {
+  const TRADE: Array<[string, Record<string, unknown>]> = [
+    ["trade_preview", { exchange: "txflow", symbol: "BTC", side: "buy", size: "0.001", orderType: "market", reduceOnly: false }],
+    ["trade_execute", { exchange: "txflow", symbol: "BTC", side: "buy", size: "0.001", orderType: "market", reduceOnly: false }],
+    ["trade_close", { exchange: "txflow", symbol: "BTC" }],
+  ];
+  for (const [tool, args] of TRADE) {
+    it(`${tool} → CAPABILITY_UNSUPPORTED`, async () => {
+      const env = await call(tool, args);
+      expect(env.ok).toBe(false);
+      expect(env.code).toBe("CAPABILITY_UNSUPPORTED");
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  }
+});
+
+describe("MCP account read tools on txflow without credentials", () => {
   const CALLS: Array<[string, Record<string, unknown>]> = [
     ["get_balance", { exchange: "txflow" }],
     ["get_positions", { exchange: "txf" }],
     ["get_open_orders", { exchange: "txflow" }],
-    ["trade_preview", { exchange: "txflow", symbol: "BTC", side: "buy", size: "0.001", orderType: "market", reduceOnly: false }],
-    ["trade_execute", { exchange: "txflow", symbol: "BTC", side: "buy", size: "0.001", orderType: "market", reduceOnly: false }],
-    ["trade_close", { exchange: "txflow", symbol: "BTC" }],
   ];
   for (const [tool, args] of CALLS) {
     it(`${tool} → NO_SIGNER_AVAILABLE, zero fetch`, async () => {

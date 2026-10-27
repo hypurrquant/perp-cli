@@ -119,7 +119,7 @@ describe("arb scan --basis", () => {
     expect(data[0]).toMatchObject({ symbol: "SOL", buyOn: "hyperliquid", sellOn: "pacifica" });
   });
 
-  it("venue scope = trading venues, funding-verified or not: QFEX and TxFlow in, market-data-only Variational out", async () => {
+  it("venue scope = trading venues, funding-verified or not: QFEX in; TxFlow (trading switched off) and market-data-only Variational out", async () => {
     const spies = venuesReturn({
       qfex: [mkt("qfex", "AAPL", "AAPL", "341.3")],
       ondo: [mkt("ondo", "AAPL", "AAPL", "341.1")],
@@ -127,7 +127,8 @@ describe("arb scan --basis", () => {
       variational: [mkt("variational", "AAPL", "AAPL", "341.0")],
     });
     const { data } = await scan();
-    expect(Object.keys(data[0].prices).sort()).toEqual(["ondo", "qfex", "txflow"]);
+    expect(Object.keys(data[0].prices).sort()).toEqual(["ondo", "qfex"]);
+    expect(spies.get("txflow")).not.toHaveBeenCalled();
     expect(spies.get("variational")).not.toHaveBeenCalled();
   });
 

@@ -20,6 +20,8 @@ const mockOws = {
   }),
 };
 vi.mock("../../signer/ows-loader.js", () => ({ loadOws: () => mockOws }));
+// TxFlow trading ships switched off (txflow-release.ts); the agent flow is part of it.
+vi.mock("../../exchanges/venues/txflow-release.js", () => ({ TXFLOW_TRADING_ENABLED: true }));
 vi.mock("../../exchanges/rate-limiter.js", async orig => ({ ...await orig<typeof import("../../exchanges/rate-limiter.js")>(), acquireRate: async () => {} }));
 
 const { approveTxflowAgentWith, verifyTxflowAgent, txflowAgentWalletName, txflowClient } = await import("../../exchanges/txflow/agent.js");

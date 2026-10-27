@@ -242,6 +242,8 @@ export function startJob(opts: StartJobOpts): JobEntry {
       }
       // TxFlow: unattended trading stays off until its trading path is verified live.
       if (id === "txflow" || id === "txf") {
+        const txflow = getVenue("txflow");
+        if (!txflow.roles.includes("trading")) throw startRefusal(what, "it would trade unattended", roleUnsupported(txflow, "automation"));
         throw startRefusal(what, "it would trade unattended", unsupported("TxFlow", "automation", TXFLOW_AUTOMATION_GATE.reason, TXFLOW_AUTOMATION_GATE.remediation));
       }
       // Any other registered venue without the trading role (Variational, GRVT, Extended: read-only in this version).

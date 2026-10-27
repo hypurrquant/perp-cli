@@ -9,6 +9,8 @@
  *    out of arb ranking unless --include-unverified;
  *  - account reads are by the account address (`user`), unsigned — the adapter reads the master /
  *    agent's account; keyless `--address` reads are not wired for TxFlow (no conformance replay yet);
+ *  - RELEASE PHASE: trading is implemented but switched OFF (txflow-release.ts TXFLOW_TRADING_ENABLED);
+ *    while off, every trading / agent write refuses with CAPABILITY_UNSUPPORTED (TXFLOW_TRADING_GATE);
  *  - trading is signed by an AGENT key the master approves with approveAgent (txflow/signing.ts);
  *    mainnet `/exchange` is open to whitelisted accounts only (apply at txflow.com/apply) — a
  *    refusal is POLICY_DENIED with that link; testnet is open;
@@ -18,6 +20,7 @@
  */
 
 import type { VenueDefinition, VenuePublicData } from "../venue.js";
+import { TXFLOW_TRADING_ENABLED } from "./txflow-release.js";
 
 export const TXFLOW_REST_URL = "https://rpc.txflow.com";
 export const TXFLOW_WS_URL = "wss://rpc.txflow.com/ws";
@@ -31,6 +34,12 @@ export const TXFLOW_APP_URL = "https://txflow.com";
 export const TXFLOW_FUNDS_APP_ONLY = {
   reason: "TxFlow deposits, withdrawals and transfers are signed by the master wallet in the TxFlow web app; perp-cli does not move TxFlow funds",
   remediation: `Deposit / withdraw in the TxFlow web app (${TXFLOW_APP_URL}). perp-cli reads the TxFlow account (perp -e txflow portfolio) and trades with an approved agent key`,
+} as const;
+
+/** The uniform refusal of every TxFlow trading / agent write while TXFLOW_TRADING_ENABLED is false. */
+export const TXFLOW_TRADING_GATE = {
+  reason: "TxFlow trading is implemented but not yet verified; it ships switched off",
+  remediation: `Trade TxFlow in the TxFlow web app (${TXFLOW_APP_URL}). perp-cli shows TxFlow market data (perp -e txflow market list|prices|info|book|trades|kline) and account reads (perp -e txflow portfolio, perp -e txflow account positions)`,
 } as const;
 
 /** The uniform refusal of unattended trading (bots, plans, TWAP / grid / DCA, funding arb, jobs). */
@@ -89,8 +98,9 @@ export const txflowVenue: VenueDefinition = {
   // settlement's estimate or the last settled print is undocumented and there is no public
   // funding-history read to check it, so it stays unverified.
   fundingVerified: false,
-  roles: ["marketData", "account", "trading"],
-  gatedRoles: null,
+  // Trading ships switched off until verified on testnet (txflow-release.ts); account reads stay on.
+  roles: TXFLOW_TRADING_ENABLED ? ["marketData", "account", "trading"] : ["marketData", "account"],
+  gatedRoles: TXFLOW_TRADING_ENABLED ? null : { roles: ["trading"], ...TXFLOW_TRADING_GATE },
   capabilities: {
     // Market = IOC limit at mark ± the slippage bound (the venue also caps market fills at oracle ± 5%).
     marketOrder: "slippageBounded",

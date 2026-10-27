@@ -39,7 +39,7 @@ import { assertCandleInterval } from "../interface.js";
 import { addDecimal, alignProtectionPrice, requireOnTick, slippagePrice, subDecimal, toUnitsExact, unitsToString } from "../precision.js";
 import type { ResolvedSlippage } from "../slippage.js";
 import { unsupported, validateLegacyTif, validateOrderRequest, type TradingV2 } from "../trading-v2.js";
-import { networkConfig, requireCapabilities, type VenueCapabilities, type VenueCreateContext, type VenueDefinition } from "../venue.js";
+import { networkConfig, requireCapabilities, roleUnsupported, type VenueCapabilities, type VenueCreateContext, type VenueDefinition } from "../venue.js";
 import {
   parseOrderRef, toLegacyMarketInfo, withExecution,
   type AmendRequest, type CancelResult, type LeverageResult, type Network, type OrderExecution, type OrderRef, type OrderRequest,
@@ -252,6 +252,12 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     }
     const raw = ctx.noAgent ? null : ctx.credentials.agent;
     const meta = raw !== null && (raw as { kind?: unknown }).kind === "txflow" ? raw as TxflowAgentMeta : null;
+    // Trading gated (txflow-release.ts): reads need only the account address — the master's, else
+    // the one recorded with a stored agent. The agent key is never opened.
+    if (!def.roles.includes("trading")) {
+      const recorded = meta !== null && meta.network === ctx.network ? meta.accountAddress : null;
+      return new TxflowAdapter(def, ctx.network, { account: masterAddress ?? recorded, signer: null, meta: null, noSignerReason: null });
+    }
     if (meta === null) {
       return new TxflowAdapter(def, ctx.network, {
         account: masterAddress, signer: null, meta: null,
@@ -1062,6 +1068,7 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
 
   /** Bots / TWAP / grid / funding-arb legs stay off until the TxFlow trading path is verified live. */
   automationGate(): PerpError {
+    if (!this.venue.roles.includes("trading")) return roleUnsupported(this.venue, "automation");
     return unsupported(this.venue.displayName, "automation", TXFLOW_AUTOMATION_GATE.reason, TXFLOW_AUTOMATION_GATE.remediation);
   }
 
