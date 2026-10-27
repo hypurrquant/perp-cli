@@ -93,6 +93,14 @@ export const TXFLOW_CLOID_MATCH_SKEW_MS = 30_000;
 /** Cancel verification: re-lists of the open orders after an executed cancel. */
 const CANCEL_VERIFY_ATTEMPTS = 3;
 const CANCEL_VERIFY_DELAY_MS = 700;
+/**
+ * The order history is "served from an index — can briefly lag" (docs). Live testnet 2026-10-27:
+ * a cancelled resting order read "order not found" (21001) for 30 s+, another read "open" right
+ * after its executed cancel; both later read `canceled` / UserCanceled. The final state of an
+ * order that left the open orders is re-read (reads only) until it is terminal or this times out.
+ */
+const HISTORY_SETTLE_TIMEOUT_MS = 90_000;
+const HISTORY_SETTLE_INTERVAL_MS = 3_000;
 
 /** Legacy market row plus the label every TxFlow row carries in JSON output. */
 export type TxflowMarketInfo = ExchangeMarketInfo & { fundingVerified: false };
@@ -861,7 +869,11 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
         else pending.push({ ref, reason: out.kind === "unknown" ? out.error : "the cancel executed but the order is still listed open", remediation: `Do NOT resend blindly — check: ${check}` });
         continue;
       }
-      const fin = await this.finalStateOf(asset, o);
+      let fin = await this.finalStateOf(asset, o);
+      for (let i = 0; fin.state === "unknown" && i < HISTORY_SETTLE_TIMEOUT_MS / HISTORY_SETTLE_INTERVAL_MS; i++) {
+        await this.sleep(HISTORY_SETTLE_INTERVAL_MS);
+        fin = await this.finalStateOf(asset, o);
+      }
       finals.push({ orderId: ref.value, venueStatus: fin.venueStatus, filledSize: fin.filledSize });
       if (fin.state === "cancelled") result.cancelled.push(ref);
       else if (fin.state === "notCancelled") result.failed.push({ ref, error: `not cancelled — the order is ${fin.venueStatus}${fin.filledSize !== null ? ` (filled ${fin.filledSize})` : ""}` });

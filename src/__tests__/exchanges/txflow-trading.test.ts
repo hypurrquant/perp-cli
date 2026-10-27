@@ -429,11 +429,22 @@ describe("review fixes: client-id reuse, cancel races, paging, mixed groupings, 
     const r2 = await adapter().cancelByRef("BTC", { kind: "orderId", value: "700" });
     expect(r2.cancelled).toEqual([{ kind: "orderId", value: "700" }]);
     expect(r2.venueRaw).toEqual([{ orderId: "700", venueStatus: "partialCanceled", filledSize: "0.006" }]);
-    // Gone, but not in the order history yet → pending.
+    // Gone, but never in the order history within the settle window → pending.
     gone = false;
     venue.info.orderDetails = () => recorded("orderDetails.notFound");
     const r3 = await adapter().cancelByRef("BTC", { kind: "orderId", value: "700" });
     expect(r3.pending).toHaveLength(1);
+    // The history lags (live testnet 2026-10-27: "not found", then "open", then canceled): it is
+    // re-read until terminal — not found → open → canceled → cancelled.
+    gone = false;
+    const seq = [() => recorded("orderDetails.notFound"),
+      () => ok({ type: "orderDetails", orderDetails: historyRowFor("c-1", "open", { oid: 700 }) }),
+      () => ok({ type: "orderDetails", orderDetails: historyRowFor("c-1", "canceled", { oid: 700 }) })];
+    let n = 0;
+    venue.info.orderDetails = () => seq[Math.min(n++, seq.length - 1)]();
+    const r4 = await adapter().cancelByRef("BTC", { kind: "orderId", value: "700" });
+    expect(r4.cancelled).toEqual([{ kind: "orderId", value: "700" }]);
+    expect(n).toBe(3);
   });
 
   it("a refused batch is re-verified per order: gone + cancelled → cancelled; still open → failed", async () => {
