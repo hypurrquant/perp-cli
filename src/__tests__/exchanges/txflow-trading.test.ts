@@ -323,6 +323,15 @@ describe("placeOrder — refusals and outcomes", () => {
     expect(venue.infos.some(b => b.type === "frontendOpenOrders")).toBe(false);
   });
 
+  it("price-band refusal of a market order → the band in details and the largest slippage bound that fits (never retried)", async () => {
+    venue.exchange = () => json(200, { status: "err", code: 10000, message: "Order buy price is not within the price limit (Minimum price: 15924.84; Maximum price: 81216.68)" });
+    const e = await adapter().placeOrder(req({ type: "market", price: null, tif: null, slippage: { ...slip, bps: 300 } })).catch((x: unknown) => x) as PerpError;
+    expect(e.structured).toMatchObject({ code: "ORDER_REJECTED", details: { sent: false, priceBand: { min: "15924.84", max: "81216.68" } } });
+    // mark 79624.2 → the band max leaves 199.99 bps
+    expect(e.structured.remediation).toContain("retry with --slippage-bps 199 or less");
+    expect(venue.sent.length).toBe(1);
+  });
+
   it("mainnet whitelist refusal → POLICY_DENIED with the apply link", async () => {
     venue.exchange = () => json(403, { status: "err", code: 10000, response: "This action is not allowed." });
     const e = await adapter("mainnet").placeOrder(req({})).catch(x => x) as PerpError;

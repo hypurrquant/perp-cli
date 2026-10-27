@@ -243,7 +243,20 @@ export function txflowRefusal(what: string, message: string, httpStatus: number,
       ...base, remediation: `Approve an agent: perp${network === "testnet" ? " -n testnet" : ""} wallet agent approve txflow (or check it: perp wallet agent verify txflow)`,
     });
   }
+  const band = txflowPriceBand(message);
+  if (band !== null) {
+    return new PerpError(fallback, msg, {
+      ...base, priceBand: band,
+      remediation: `TxFlow bounds order prices around the oracle with a dynamic band (docs: Position & Order Limits) — this order's price must be within ${band.min}–${band.max}. A market / stop order: lower --slippage-bps so its protection price stays inside; a limit order: pick a price inside the band`,
+    });
+  }
   return new PerpError(fallback, msg, base);
+}
+
+/** The band of a "not within the price limit (Minimum price: X; Maximum price: Y)" refusal, or null. */
+export function txflowPriceBand(message: string): { min: string; max: string } | null {
+  const m = /not within the price limit \(Minimum price: ([0-9.]+); Maximum price: ([0-9.]+)\)/i.exec(message);
+  return m === null ? null : { min: m[1], max: m[2] };
 }
 
 function textOf(v: unknown): string | null {

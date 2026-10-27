@@ -262,6 +262,24 @@ function tpslLegRows(x: Rec): OpenRow[] {
   return out;
 }
 
+/**
+ * A protection-priced order refused by the venue's price band: name the largest slippage bound
+ * that keeps the protection price inside it (from the band in the refusal; never retried).
+ */
+function withBandBound(e: unknown, side: "buy" | "sell", reference: string, bps: number): unknown {
+  if (!(e instanceof PerpError)) return e;
+  const band = (e.structured.details as { priceBand?: { min: string; max: string } } | undefined)?.priceBand;
+  if (band === undefined) return e;
+  const ref = Number(reference);
+  const room = side === "buy" ? (Number(band.max) / ref - 1) * 10_000 : (1 - Number(band.min) / ref) * 10_000;
+  const fit = Math.floor(room);
+  if (!(fit < bps) || fit < 1) return e;
+  return new PerpError(e.structured.code, e.message, {
+    ...(e.structured.details ?? {}),
+    remediation: `${e.structured.remediation ?? ""} — from the reference ${reference} the band leaves at most ${fit} bps (sent ${bps}): retry with --slippage-bps ${fit} or less`,
+  });
+}
+
 /** A client order id the venue accepts: 1–64 bytes, not starting with the reserved "0x". */
 export function assertTxflowCloid(id: string): void {
   if (Buffer.byteLength(id, "utf8") < 1 || Buffer.byteLength(id, "utf8") > 64 || /^0x/i.test(id)) {
@@ -789,7 +807,7 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     } catch (e) {
       if (!(e instanceof TxflowSendUnknown)) {
         logClientId({ clientOrderId: cloid, exchange: "txflow", symbol: sym, side: req.side, size, price, type: logType, status: "failed", createdAt: now, updatedAt: new Date().toISOString() });
-        throw e;
+        throw bounded && referencePrice !== null ? withBandBound(e, req.side, referencePrice, (req.slippage as ResolvedSlippage).bps) : e;
       }
       return this.reconcilePlace(sym, cloid, e, method, { ...exec, notes });
     }
