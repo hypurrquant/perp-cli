@@ -17,7 +17,7 @@ import { hasPacificaSdk, isTwapCapable, isQueryOrderCapable } from "../exchanges
 import { getVenue, listVenuesWithRole, requireCapabilities, roleUnsupported, tryResolveVenueId, type VenueCapabilities, type VenueDefinition } from "../exchanges/venue.js";
 import "../exchanges/venues/index.js";
 import { isTradingV2, newVenueClientOrderId, placeAndConfirm, reduceOnlyGateOf, stopOrderGateOf, unsupported, validateLegacyTif, validateOrderRequest, type PlacedOrder, type TradingV2 } from "../exchanges/trading-v2.js";
-import { placeTpSlLeg, tradingV2Of } from "../exchanges/legacy-trading-v2.js";
+import { placeTpSlLeg, tpSlPairOf, tradingV2Of } from "../exchanges/legacy-trading-v2.js";
 import type { AsterAdapter } from "../exchanges/aster.js";
 import type { PacificaAdapter } from "../exchanges/pacifica.js";
 import { PACIFICA_UUID_RE } from "../exchanges/venues/pacifica.js";
@@ -686,7 +686,8 @@ export function registerTradeCommands(
    * verified fill.
    *  - attached (ondo) / batchGroup (arcus): the venue attaches the legs to the entry.
    *  - separateOrders (hl, lighter, aster): entry fill VERIFIED (placePerpVerified: venue-final
-   *    report cross-checked with the position delta), then reduce-only TP/SL triggers sized to it.
+   *    report cross-checked with the position delta), then reduce-only TP/SL triggers sized to it
+   *    (txflow: both legs in one venue action — a position TP/SL pair, tpSlPairOf).
    *  - positionLevel (pacifica): entry fill verified, then position TP/SL (refused when TP/SL
    *    or a position already exists — the position-level TP/SL would cover more than this fill).
    * Entry outcome unknown → ORDER_PENDING, no legs ("position may be unprotected"); entry ok and
@@ -773,6 +774,15 @@ export function registerTradeCommands(
         throw partial(`position TP/SL (${label})`, e);
       }
       return { entry, filledSize: filled, method: "positionLevel", legs };
+    }
+    const pair = tpSlPairOf(adapter);
+    if (pair !== null) {
+      try {
+        for (const l of await pair({ symbol: sym, closeSide, size: filled, tp: prices.tp, tpLimit: null, sl: prices.sl })) legs.push({ ...l, venueRaw: l.result.venueRaw });
+      } catch (e) {
+        throw partial(`TP/SL pair (tp ${prices.tp ?? "-"} / sl ${prices.sl ?? "-"})`, e);
+      }
+      return { entry, filledSize: filled, method: "positionTpsl", legs };
     }
     for (const [kind, trigger] of [["tp", prices.tp], ["sl", prices.sl]] as const) {
       if (trigger === null) continue;
@@ -1370,7 +1380,7 @@ export function registerTradeCommands(
     .option("--tp-limit <price>", "Take-profit limit price once triggered (default: market trigger)")
     .option("--sl <price>", "Stop-loss trigger price (long: below mark; short: above)")
     .option("--size <size>", "Protect only this much of the position (≤ position size; pacifica: whole position only)")
-    .option("--slippage-bps <n>", "Bound for protection-priced market triggers (lighter, arcus, txflow) in bps (default: settings)")
+    .option("--slippage-bps <n>", "Bound for protection-priced market triggers (lighter, arcus) in bps (default: settings)")
     .action(async (symbol: string, positionSide: string, opts: { tp?: string; tpLimit?: string; sl?: string; size?: string; slippageBps?: string }) => {
       const ps = positionSide.toLowerCase();
       if (ps !== "long" && ps !== "short") {
@@ -1429,11 +1439,17 @@ export function registerTradeCommands(
           remediation: `The position is protected on one side only. Inspect with: ${hint}, then place the missing leg or cancel the placed one.`,
         });
 
+      const pair = tpSlPairOf(adapter);
+      let method: string = caps.tpsl;
       if (caps.tpsl === "positionLevel") {
         const pac = positionTpSlAdapter(adapter);
         await refuseExistingPositionTpSl(pac, def, sym);
         const raw = await pac.setPositionTpSl(sym, ps, { tp: prices.tp, tpLimit, sl: prices.sl });
         legs.push({ kind: "tpsl", trigger: `tp ${prices.tp ?? "-"} / sl ${prices.sl ?? "-"}`, result: null, venueRaw: raw });
+      } else if (pair !== null) {
+        // Both legs in ONE venue action (txflow positionTpsl: an OCO pair) — all or nothing.
+        for (const l of await pair({ symbol: sym, closeSide, size, tp: prices.tp, tpLimit, sl: prices.sl })) legs.push({ ...l, venueRaw: l.result.venueRaw });
+        method = "positionTpsl";
       } else {
         for (const [kind, trigger] of [["tp", prices.tp], ["sl", prices.sl]] as const) {
           if (trigger === null) continue;
@@ -1464,11 +1480,11 @@ export function registerTradeCommands(
 
       if (isJson()) {
         return printJson(jsonOk({
-          symbol: sym, positionSide: ps, size, method: caps.tpsl,
+          symbol: sym, positionSide: ps, size, method,
           legs: legs.map(l => ({ kind: l.kind, trigger: l.trigger, ...(l.result !== null ? orderResultJson(l.result) : { venueRaw: l.venueRaw }) })),
         }));
       }
-      console.log(chalk.green(`\n  TP/SL set for ${ps} ${size} ${sym} on ${def.displayName} (${caps.tpsl}, reduce-only):`));
+      console.log(chalk.green(`\n  TP/SL set for ${ps} ${size} ${sym} on ${def.displayName} (${method}, reduce-only):`));
       for (const l of legs) {
         console.log(chalk.green(`  ${legLabel(l)}`));
         if (l.result !== null) for (const line of formatOrderResult(l.result)) console.log(line);

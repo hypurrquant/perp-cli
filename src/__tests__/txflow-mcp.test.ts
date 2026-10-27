@@ -86,7 +86,8 @@ describe("MCP read tools with a stored TxFlow agent", () => {
       const b = JSON.parse(String(init.body)) as { type: string; user?: string; offset?: number };
       if (b.user !== undefined) users.push(b.user);
       // The recording is the whole list: page 0 serves it, the next page is empty.
-      const key = b.type === "clearinghouseState" ? "clearinghouseState.position" : b.type === "triggerOrders" ? "triggerOrders.empty" : b.type;
+      // tpslOrders: no position TP/SL on the recorded account (the same empty-list envelope).
+      const key = b.type === "clearinghouseState" ? "clearinghouseState.position" : b.type === "triggerOrders" || b.type === "tpslOrders" ? "triggerOrders.empty" : b.type;
       const rec = FIX.reads[key];
       if (rec === undefined) throw new Error(`unexpected /info ${b.type}`);
       if (b.type === "frontendOpenOrders" && (b.offset ?? 0) > 0) {

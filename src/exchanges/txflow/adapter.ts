@@ -5,8 +5,9 @@
  * readable (the API documents no such read and refuses `fundingHistory` with HTTP 403).
  *
  * Account reads are public by address (`user` = the ACCOUNT address, never the agent's):
- * clearinghouseState (balance / positions), frontendOpenOrders + triggerOrders (open orders),
- * historicalOrders / orderDetails / historicalTriggerOrders (order status and history), userFills,
+ * clearinghouseState (balance / positions), frontendOpenOrders + triggerOrders + tpslOrders (open
+ * orders; each live leg of a position TP/SL pair is one row), historicalOrders / orderDetails /
+ * historicalTriggerOrders / historicalTpslOrders (order status and history), userFills,
  * userFundings. Rows of other instrument types (spot, Outcome) are left out.
  *
  * Trading is signed by the approved AGENT key (signing.ts, Agent flow) and sent to POST /exchange
@@ -23,8 +24,10 @@
  *
  * Refused (CAPABILITY_UNSUPPORTED): hedge position mode (perp-cli trades one-way accounts),
  * FOK / GTD (FOK is not offered; GTD is Outcome-only per the order-types table), entry-attached
- * TP/SL groupings (legs are placed as separate reduce-only triggers after the verified fill),
- * TWAP, and unattended automation until the trading path is verified live.
+ * TP/SL groupings (normalTpsl), TWAP, and unattended automation until the trading path is verified
+ * live. TP/SL on a position (trade tpsl, and an entry's --tp/--sl after its verified fill) is ONE
+ * positionTpsl action carrying both legs (an OCO pair, placeTpSlPair); a plain stop is a standalone
+ * normalTrigger with tpsl "".
  */
 
 import { PerpError, extractErrorMessage } from "../../errors.js";
@@ -52,6 +55,7 @@ import {
   nextTxflowNonce, signTxflowAgentAction, txflowCancelBody, txflowOrderBody,
   type TxflowAgentAction, type TxflowCancelBody, type TxflowOrderBody, type TxflowTif,
 } from "./signing.js";
+import type { TpSlPair, TpSlPairLeg } from "../legacy-trading-v2.js";
 
 /**
  * Candle intervals the docs list for candleSnapshot (1m … 1d; verified live 2026-10-19, coin 1).
@@ -214,10 +218,47 @@ function rowTime(x: Rec, what: string): number {
   return t;
 }
 
-/** Cancel `grouping` of an open row: position TP/SL → "tpsl", other triggers → "trigger", plain orders none. */
-export function txflowCancelGrouping(o: { row: Record<string, unknown>; trigger: boolean }): "tpsl" | "trigger" | undefined {
-  if (o.row.isPositionTpsl === true) return "tpsl";
+/** Cancel `grouping` of an open row: position TP/SL (tpslOrders leg) → "tpsl", other triggers → "trigger", plain orders none. */
+export function txflowCancelGrouping(o: { row: Record<string, unknown>; trigger: boolean; tpsl?: unknown }): "tpsl" | "trigger" | undefined {
+  if (o.tpsl !== undefined || o.row.isPositionTpsl === true) return "tpsl";
   return o.trigger ? "trigger" : undefined;
+}
+
+/** A leg order id of a tpslOrders row: "" / "0" / absent = the leg is not set. */
+function tpslLegOid(v: unknown, what: string): number | null {
+  if (v === undefined || v === null || v === "" || v === "0" || v === 0) return null;
+  return num(v, what);
+}
+
+/**
+ * The live legs of one tpslOrders row (a position TP/SL pair), each as an open trigger row:
+ * oid = the leg's order id, size = the pair's quantity, price = the leg's order price (none for a
+ * Market leg), trigger = the leg's trigger price. `pairKey` ties the legs of one pair together
+ * (cancelling one leg with grouping "tpsl" cancels the pair).
+ */
+function tpslLegRows(x: Rec): OpenRow[] {
+  const pairKey = `${String(x.slOid ?? "")}/${String(x.tpOid ?? "")}`;
+  const out: OpenRow[] = [];
+  for (const kind of ["sl", "tp"] as const) {
+    const oid = tpslLegOid(x[`${kind}Oid`], `tpslOrders ${kind}Oid`);
+    if (oid === null) continue;
+    const orderType = x[`${kind}OrderType`];
+    if (typeof orderType !== "string" || orderType === "") throw txflowShapeError(`tpslOrders ${kind}OrderType`);
+    const limitPx = optionalPrice(x[`${kind}OrderPrice`], `tpslOrders ${kind}OrderPrice`);
+    if (limitPx === null && orderType.toLowerCase() !== "market") throw txflowShapeError(`tpslOrders ${orderType} ${kind} leg without an order price`);
+    out.push({
+      row: {
+        oid, asset: x.asset, coin: x.coin, cloid: x.cloid, side: x.side, sz: dec(x.quantity, "tpslOrders quantity"),
+        // A Market leg has no limit price: "0" in the price column, "market" in its type.
+        limitPx: limitPx ?? "0", triggerPx: dec(x[`${kind}TriggerPrice`], `tpslOrders ${kind}TriggerPrice`),
+        orderType, reduceOnly: x.reduceOnly, createTime: x.createTime, triggerState: "",
+      },
+      trigger: true,
+      tpsl: { kind, pairKey },
+    });
+  }
+  if (out.length === 0) throw txflowShapeError("tpslOrders row without a leg order id");
+  return out;
 }
 
 /** A client order id the venue accepts: 1–64 bytes, not starting with the reserved "0x". */
@@ -227,7 +268,7 @@ export function assertTxflowCloid(id: string): void {
   }
 }
 
-interface OpenRow { row: Rec; trigger: boolean }
+interface OpenRow { row: Rec; trigger: boolean; tpsl?: { kind: "tp" | "sl"; pairKey: string } }
 
 export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
   readonly name = "txflow" as const;
@@ -473,7 +514,7 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     return out;
   }
 
-  /** Perp open orders (frontendOpenOrders, instrumentType Perps) plus untriggered triggers (triggerOrders). */
+  /** Perp open orders (frontendOpenOrders, instrumentType Perps), untriggered triggers (triggerOrders) and position TP/SL legs (tpslOrders). */
   private async openRows(asset: number | null): Promise<OpenRow[]> {
     const user = this.requireAccount();
     const filter = asset === null ? {} : { asset: String(asset) };
@@ -494,8 +535,18 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
       offset += rows.length;
     }
     const triggers = await this.client.info<unknown>({ type: "triggerOrders", user, ...filter });
+    const tpsl = await this.client.info<unknown>({ type: "tpslOrders", user, ...filter });
     const out: OpenRow[] = [];
     const seen = new Set<number>();
+    // Position TP/SL legs first: a leg is cancelled with grouping "tpsl" whichever list also shows it.
+    for (const r of arr(tpsl, "tpslOrders")) {
+      for (const leg of tpslLegRows(rec(r, "tpslOrders row"))) {
+        const oid = num(leg.row.oid, "tpsl leg oid");
+        if (seen.has(oid)) continue;
+        seen.add(oid);
+        out.push(leg);
+      }
+    }
     for (const r of front) {
       const x = rec(r, "frontendOpenOrders row");
       if (x.instrumentType !== "Perps") continue;
@@ -506,7 +557,9 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     }
     for (const r of arr(triggers, "triggerOrders")) {
       const x = rec(r, "triggerOrders row");
-      if (seen.has(num(x.oid, "trigger order oid"))) continue;
+      const oid = num(x.oid, "trigger order oid");
+      if (seen.has(oid)) continue;
+      seen.add(oid);
       out.push({ row: x, trigger: true });
     }
     return out;
@@ -514,6 +567,15 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
 
   private async toOpenOrder(o: OpenRow): Promise<ExchangeOrder> {
     const x = o.row;
+    if (o.tpsl !== undefined) {
+      // tpslOrders leg: one side of a position TP/SL pair.
+      return {
+        orderId: String(num(x.oid, "tpsl leg oid")), symbol: await this.symbolOfIndex(num(x.asset, "tpsl asset")),
+        side: sideOf(x.side, "tpsl"), price: trim(dec(x.limitPx, "tpsl leg price")), size: trim(dec(x.sz, "tpsl quantity")),
+        filled: "0", status: "untriggered",
+        type: `${o.tpsl.kind} ${String(x.orderType).toLowerCase()}${x.reduceOnly === true ? " reduce-only" : ""}`, triggerPrice: trim(dec(x.triggerPx, "tpsl leg triggerPx")),
+      };
+    }
     if ("triggerState" in x && !("origSz" in x)) {
       // triggerOrders row: an untriggered stop / TP / SL.
       const kind = typeof x.orderType === "string" ? x.orderType.toLowerCase() : "trigger";
@@ -701,7 +763,7 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
         price = alignProtectionPrice(slippagePrice(trigger, req.side, req.slippage.bps), m.tickSize, req.side);
         notes.push(`p = trigger ${trigger} ± ${req.slippage.bps} bps = ${price}`);
       }
-      // A standalone trigger carries tpsl "" (normalTrigger refuses "tp" / "sl").
+      // A standalone trigger carries tpsl "" (normalTrigger refuses "tp" / "sl"; TP/SL pairs: placeTpSlPair).
       t = { trigger: { isMarket: req.type === "stopMarket", triggerPx: trigger, tpsl: "" } };
       referencePrice = trigger;
       method = req.type === "stopLimit" ? "triggerLimit" : "trigger";
@@ -808,7 +870,9 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
 
   /**
    * Cancel `rows` (one market) in batches of ≤200, each body with the grouping of its row
-   * (`trigger` / `tpsl` / none). Every order is then proven one by one, whatever the batch answered:
+   * (`trigger` / `tpsl` / none). A position TP/SL pair is cancelled by ONE body (grouping "tpsl",
+   * either leg's id — the venue cancels the pair); every leg of it is proven. Every order is then
+   * proven one by one, whatever the batch answered:
    * still listed open → pending (sent / unknown) or failed (refused); gone → its final state from
    * the order history (orderDetails / historicalTriggerOrders): cancelled → cancelled (a partial
    * fill before the cancel is reported), filled / fired → failed with that state, not in the
@@ -816,16 +880,29 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
    */
   private async cancelRows(signer: EvmSigner, asset: number, rows: OpenRow[], result: CancelResult): Promise<void> {
     const outcome = new Map<OpenRow, { kind: "executed" } | { kind: "refused" | "unknown"; error: string }>();
-    for (let i = 0; i < rows.length; i += TXFLOW_CANCEL_BATCH_MAX) {
-      const batch = rows.slice(i, i + TXFLOW_CANCEL_BATCH_MAX);
+    // One body per order, one per TP/SL pair (its other legs share the body's outcome).
+    const bodies: OpenRow[] = [];
+    const covered = new Map<OpenRow, OpenRow[]>();
+    const pairs = new Map<string, OpenRow[]>();
+    for (const o of rows) {
+      const group = o.tpsl !== undefined ? pairs.get(o.tpsl.pairKey) : undefined;
+      if (group !== undefined) { group.push(o); continue; }
+      const own = [o];
+      if (o.tpsl !== undefined) pairs.set(o.tpsl.pairKey, own);
+      covered.set(o, own);
+      bodies.push(o);
+    }
+    for (let i = 0; i < bodies.length; i += TXFLOW_CANCEL_BATCH_MAX) {
+      const batch = bodies.slice(i, i + TXFLOW_CANCEL_BATCH_MAX);
       const cancels: TxflowCancelBody[] = batch.map(o => txflowCancelBody(asset, num(o.row.oid, "open order oid"), txflowCancelGrouping(o)));
+      const legs = batch.flatMap(o => covered.get(o) as OpenRow[]);
       try {
         await this.send(signer, { type: "cancel", cancels }, "cancel", "ACTION_REJECTED");
-        for (const o of batch) outcome.set(o, { kind: "executed" });
+        for (const o of legs) outcome.set(o, { kind: "executed" });
       } catch (e) {
         const kind = e instanceof TxflowSendUnknown ? "unknown" as const : "refused" as const;
         const error = e instanceof TxflowSendUnknown ? extractErrorMessage(e.cause) : extractErrorMessage(e);
-        for (const o of batch) outcome.set(o, { kind, error });
+        for (const o of legs) outcome.set(o, { kind, error });
       }
     }
     await this.proveCancels(asset, outcome, result);
@@ -866,6 +943,14 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
   /** Final state of an order that left the open orders (history reads; never assumed). */
   private async finalStateOf(asset: number, o: OpenRow): Promise<{ state: "cancelled" | "notCancelled" | "unknown"; venueStatus: string; filledSize: string | null }> {
     const oid = num(o.row.oid, "open order oid");
+    if (o.tpsl !== undefined) {
+      const t = (await this.tpslHistory(asset)).find(r => String(r.slOrderId) === String(oid) || String(r.tpOrderId) === String(oid));
+      if (t === undefined) return { state: "unknown", venueStatus: "not in historicalTpslOrders yet", filledSize: null };
+      const st = typeof t.state === "string" ? t.state : "";
+      if (/cancel/i.test(st)) return { state: "cancelled", venueStatus: st, filledSize: null };
+      if (/trigger/i.test(st)) return { state: "notCancelled", venueStatus: `${st} (fired before the cancel)`, filledSize: null };
+      return { state: "unknown", venueStatus: st === "" ? "no TP/SL state" : st, filledSize: null };
+    }
     if (o.trigger) {
       const t = (await this.triggerHistory(asset)).find(r => num(r.oid, "trigger oid") === oid);
       if (t === undefined) return { state: "unknown", venueStatus: "not in historicalTriggerOrders yet", filledSize: null };
@@ -901,10 +986,17 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     return arr(d.data, "historicalTriggerOrders data").map(r => rec(r, "historicalTriggerOrders row"));
   }
 
+  /** historicalTpslOrders (docs: rows in data.data; slOrderId / tpOrderId / state). */
+  private async tpslHistory(asset: number): Promise<Rec[]> {
+    const d = rec(await this.client.info<unknown>({ type: "historicalTpslOrders", user: this.requireAccount(), accountType: ["perp"], coin: String(asset), limit: 200 }), "historicalTpslOrders");
+    return arr(d.data, "historicalTpslOrders data").map(r => rec(r, "historicalTpslOrders row"));
+  }
+
   async cancelByRef(symbol: string, ref: OrderRef): Promise<CancelResult> {
     const { signer } = this.requireSigner();
     const m = await this.market(symbol);
-    const open = (await this.openRows(m.index)).find(o => (ref.kind === "orderId"
+    const rows = await this.openRows(m.index);
+    const open = rows.find(o => (ref.kind === "orderId"
       ? String(num(o.row.oid, "open order oid")) === ref.value
       : o.row.cloid === ref.value));
     if (open === undefined) {
@@ -913,7 +1005,9 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
       });
     }
     const result: CancelResult = { venue: "txflow", cancelled: [], failed: [], pending: [], venueRaw: null };
-    await this.cancelRows(signer, m.index, [open], result);
+    // A TP/SL leg is cancelled with its pair (grouping "tpsl"): every leg of the pair is proven.
+    const pairKey = open.tpsl?.pairKey;
+    await this.cancelRows(signer, m.index, pairKey === undefined ? [open] : rows.filter(o => o.tpsl?.pairKey === pairKey), result);
     return result;
   }
 
@@ -1025,9 +1119,10 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     const oid = String(num(x.oid, "open order oid"));
     const cloid = typeof x.cloid === "string" && x.cloid !== "" ? x.cloid : null;
     if (!("origSz" in x)) {
+      const what = o.tpsl !== undefined ? `${o.tpsl.kind} leg of a position TP/SL pair (tpslOrders)` : "trigger (triggerOrders)";
       return withExecution({
         venue: "txflow", symbol: sym, status: "open", finality: "final", orderId: oid, clientOrderId: cloid, filledSize: "0", avgPrice: null, venueRaw: x,
-      }, "read", { notes: [`untriggered ${String(x.orderType)} trigger @ ${String(x.triggerPx)} (triggerOrders)`] });
+      }, "read", { notes: [`untriggered ${String(x.orderType)} ${what} @ ${String(x.triggerPx)}`] });
     }
     const filled = filledOf(x.origSz, x.sz, "open order");
     return withExecution({
@@ -1057,15 +1152,117 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     }, "read", { notes: [`trigger state ${JSON.stringify(state)} (historicalTriggerOrders) — a fired trigger's fill is a separate order`] });
   }
 
-  /** A TP / SL leg (separateOrders: legacy-trading-v2 placeTpSlLeg dispatches here): a standalone reduce-only trigger. */
-  async placeTpSlLeg(leg: { symbol: string; closeSide: "buy" | "sell"; size: string; trigger: string; kind: "tp" | "sl"; limitPrice: string | null; slippage: ResolvedSlippage }): Promise<OrderResult> {
+  /**
+   * Position TP/SL as ONE action — grouping positionTpsl, orders [sl, tp] like the TxFlow web app —
+   * which the venue keeps as one OCO pair (one tpslOrders row). Each leg: the close side,
+   * reduce-only, the margin mode of the position, p = the limit price or "" (market), tpsl
+   * "sl" / "tp"; an unset leg has p, s and triggerPx "". Sending the client order id `c` (the same
+   * on both legs) is perp-cli's choice — the web app omits it; the pair is read back by it from
+   * tpslOrders and both leg order ids are reported. Unknown send outcome → one read-only
+   * reconciliation by client id, else ORDER_PENDING (never resubmitted).
+   */
+  async placeTpSlPair(pair: TpSlPair): Promise<TpSlPairLeg[]> {
+    const { account, signer } = this.requireSigner();
+    if (pair.tp === null && pair.sl === null) throw new PerpError("INVALID_PARAMS", "TxFlow TP/SL: set a take-profit and/or a stop-loss");
+    if (pair.tpLimit !== null && pair.tp === null) throw new PerpError("INVALID_PARAMS", "TxFlow TP/SL: a take-profit limit price needs a take-profit trigger");
+    const m = await this.market(pair.symbol);
+    const sym = m.symbol;
+    if (m.halted) throw new PerpError("ORDER_REJECTED", `TxFlow ${sym} is halted — nothing was sent`, { exchange: "txflow", sent: false });
+    const sizeUnits = toUnitsExact(pair.size, m.stepSize, "size");
+    if (sizeUnits <= 0n) throw new PerpError("SIZE_TOO_SMALL", `TxFlow ${sym} size must be at least ${m.stepSize}`, { exchange: "txflow" });
+    const size = unitsToString(sizeUnits, m.stepSize);
+    const margin = await this.marginModeFor(account, m, true, await this.assetSettings(account, m));
     const { newVenueClientOrderId } = await import("../trading-v2.js");
-    const req: OrderRequest = {
-      symbol: leg.symbol, side: leg.closeSide, type: leg.limitPrice === null ? "stopMarket" : "stopLimit", size: leg.size,
-      price: leg.limitPrice, triggerPrice: leg.trigger, triggerSource: null, tif: leg.limitPrice === null ? null : "GTC",
-      reduceOnly: true, clientOrderId: newVenueClientOrderId(this.venue), slippage: leg.limitPrice === null ? leg.slippage : null, tpsl: null,
-    };
-    return this.placeOrder(req);
+    const cloid = newVenueClientOrderId(this.venue);
+    assertTxflowCloid(cloid);
+    const leg = (kind: "tp" | "sl", trigger: string | null, limit: string | null): TxflowOrderBody => txflowOrderBody({
+      asset: m.index, isBuy: pair.closeSide === "buy",
+      price: trigger === null || limit === null ? "" : requireOnTick(limit, m.tickSize), size: trigger === null ? "" : size, reduceOnly: true,
+      type: { trigger: { isMarket: limit === null, triggerPx: trigger === null ? "" : requireOnTick(trigger, m.tickSize), tpsl: kind } },
+      cloid, marginMode: margin.mode,
+    });
+    const action: TxflowAgentAction = { type: "order", grouping: "positionTpsl", orders: [leg("sl", pair.sl, null), leg("tp", pair.tp, pair.tpLimit)] };
+    const notes = [margin.note, "one positionTpsl action: the legs are one OCO pair (tpslOrders)", "triggers fire on the mark price; a fired order is not guaranteed to fill (docs: Triggered is not filled)"];
+    const set = (["sl", "tp"] as const).filter(k => pair[k] !== null);
+    this.sentAt.set(cloid, Date.now());
+    try {
+      await this.send(signer, action, "place position TP/SL", "ORDER_REJECTED");
+    } catch (e) {
+      if (!(e instanceof TxflowSendUnknown)) throw e;
+      let reconcileError: string;
+      try {
+        const row = await this.tpslPairByCloid(m.index, cloid);
+        if (row !== null) return this.tpslPairLegs(sym, row, set, [...notes, "reconciled"]);
+        reconcileError = `client id ${cloid} is not in tpslOrders`;
+      } catch (re) {
+        reconcileError = extractErrorMessage(re);
+      }
+      throw new PerpError("ORDER_PENDING", `TxFlow place position TP/SL: outcome unknown — ${extractErrorMessage(e.cause)}`, {
+        exchange: "txflow", clientOrderId: cloid, ...(e.txHash !== null ? { txHash: e.txHash } : {}), reconcileError,
+        remediation: `Do NOT resubmit — the TP/SL may have been placed (client id ${cloid}). Check: perp${this.netFlag()} account orders -e txflow`,
+      });
+    }
+    notes.push("executed (confirm: executed); the venue response carries no order id — read back by client order id (tpslOrders)");
+    for (let i = 0; i < READ_BACK_ATTEMPTS; i++) {
+      let row: Rec | null;
+      try {
+        row = await this.tpslPairByCloid(m.index, cloid);
+      } catch (e) {
+        if (e instanceof PerpError && e.structured.code === "ORDER_PENDING") throw e;
+        notes.push(`read-back failed: ${extractErrorMessage(e)}`);
+        break;
+      }
+      if (row !== null) return this.tpslPairLegs(sym, row, set, notes);
+      if (i < READ_BACK_ATTEMPTS - 1) await this.sleep(READ_BACK_DELAY_MS);
+    }
+    return set.map(kind => ({
+      kind, trigger: pair[kind] as string,
+      result: withExecution({
+        venue: "txflow", symbol: sym, status: "accepted", finality: "pending", orderId: null, clientOrderId: cloid, filledSize: null, avgPrice: null,
+        venueRaw: { action: action.type, grouping: action.grouping, cloid },
+      }, "positionTpsl", { referencePrice: pair[kind], notes: [...notes, "executed, but not visible on tpslOrders yet"] }),
+    }));
+  }
+
+  /** The tpslOrders row created by `cloid` since it was sent (null: none yet; two or more → ORDER_PENDING). */
+  private async tpslPairByCloid(asset: number, cloid: string): Promise<Rec | null> {
+    const since = this.sentAt.get(cloid);
+    const minTime = since === undefined ? null : since - TXFLOW_CLOID_MATCH_SKEW_MS;
+    const rows = arr(await this.client.info<unknown>({ type: "tpslOrders", user: this.requireAccount(), asset: String(asset) }), "tpslOrders")
+      .map(r => rec(r, "tpslOrders row"))
+      .filter(x => x.cloid === cloid && (minTime === null || rowTime(x, "tpslOrders row") >= minTime));
+    if (rows.length > 1) {
+      throw new PerpError("ORDER_PENDING", `TxFlow: ${rows.length} TP/SL pairs carry client id ${cloid} since it was sent — outcome unknown`, {
+        exchange: "txflow", remediation: `Do NOT resubmit — check: perp${this.netFlag()} account orders -e txflow`,
+      });
+    }
+    return rows[0] ?? null;
+  }
+
+  /** One OrderResult per requested leg of a read-back tpslOrders row (a requested leg missing from it is shape drift). */
+  private tpslPairLegs(sym: string, row: Rec, set: ReadonlyArray<"tp" | "sl">, notes: string[]): TpSlPairLeg[] {
+    const legs = tpslLegRows(row);
+    return set.map(kind => {
+      const leg = legs.find(l => l.tpsl?.kind === kind);
+      if (leg === undefined) throw txflowShapeError(`tpslOrders row for client id ${String(row.cloid)} has no ${kind} leg`);
+      const r = this.openResult(sym, leg);
+      return {
+        kind, trigger: trim(String(leg.row.triggerPx)),
+        result: { ...r, execution: { ...r.execution, method: "positionTpsl", referencePrice: trim(String(leg.row.triggerPx)), notes: [...notes, ...r.execution.notes] } },
+      };
+    });
+  }
+
+  /** A single TP / SL leg (legacy-trading-v2 placeTpSlLeg dispatches here): a position TP/SL pair with the other leg unset. */
+  async placeTpSlLeg(leg: { symbol: string; closeSide: "buy" | "sell"; size: string; trigger: string; kind: "tp" | "sl"; limitPrice: string | null }): Promise<OrderResult> {
+    if (leg.kind === "sl" && leg.limitPrice !== null) {
+      throw unsupported(this.venue.displayName, "tpslLimitSl", "a position stop-loss leg is a market trigger", "Omit the stop-loss limit price");
+    }
+    const [placed] = await this.placeTpSlPair({
+      symbol: leg.symbol, closeSide: leg.closeSide, size: leg.size,
+      tp: leg.kind === "tp" ? leg.trigger : null, tpLimit: leg.kind === "tp" ? leg.limitPrice : null, sl: leg.kind === "sl" ? leg.trigger : null,
+    });
+    return placed.result;
   }
 
   /** Bots / TWAP / grid / funding-arb legs stay off until the TxFlow trading path is verified live. */
