@@ -73,6 +73,10 @@ export const TXFLOW_KLINE_MAX_WINDOWS = 50;
 export const TXFLOW_HISTORY_MAX = 2000;
 /** `cancel` takes at most 200 bodies per action (docs). */
 export const TXFLOW_CANCEL_BATCH_MAX = 200;
+/** userFills paging for a cancel proof (docs: limit max 2000, `hasMore`). */
+const FILL_PAGE_SIZE = 500;
+const FILL_PAGES_MAX = 20;
+
 /** The order-history code of `orderDetails` for an unknown id (live 2026-10-27: {code: 21001, "order not found"}). */
 export const TXFLOW_ORDER_NOT_FOUND_CODE = 21001;
 /** Read-back after an executed order: the open-order / history reads can lag the block briefly. */
@@ -861,7 +865,7 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
         else pending.push({ ref, reason: out.kind === "unknown" ? out.error : "the cancel executed but the order is still listed open", remediation: `Do NOT resend blindly — check: ${check}` });
         continue;
       }
-      const fin = await this.finalStateOf(asset, o);
+      const fin = await this.finalStateOf(asset, o, out.kind === "executed");
       finals.push({ orderId: ref.value, venueStatus: fin.venueStatus, filledSize: fin.filledSize });
       if (fin.state === "cancelled") result.cancelled.push(ref);
       else if (fin.state === "notCancelled") result.failed.push({ ref, error: `not cancelled — the order is ${fin.venueStatus}${fin.filledSize !== null ? ` (filled ${fin.filledSize})` : ""}` });
@@ -870,8 +874,18 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
     result.venueRaw = [...(Array.isArray(result.venueRaw) ? result.venueRaw : []), ...finals];
   }
 
-  /** Final state of an order that left the open orders (history reads; never assumed). */
-  private async finalStateOf(asset: number, o: OpenRow): Promise<{ state: "cancelled" | "notCancelled" | "unknown"; venueStatus: string; filledSize: string | null }> {
+  /**
+   * Final state of an order that left the open orders (history reads; never assumed).
+   *
+   * TxFlow's order history indexes only orders that traded: a resting order cancelled with no fill
+   * never appears in historicalOrders / orderDetails (live testnet 2026-10-27: oid 225036083658,
+   * cancelled 0-fill → orderDetails 21001 "order not found", historicalOrders empty, 30 s+ later).
+   * The cancel docs say to confirm a cancel on frontendOpenOrders. So an order that is gone after
+   * an EXECUTED cancel (`confirm: executed`, status success) and is absent from the history counts
+   * as cancelled only when userFills (by oid, since the order's timestamp) shows no fill for it;
+   * a fill that is not in the history yet → unknown. A refused / unknown cancel never proves one.
+   */
+  private async finalStateOf(asset: number, o: OpenRow, cancelExecuted: boolean): Promise<{ state: "cancelled" | "notCancelled" | "unknown"; venueStatus: string; filledSize: string | null }> {
     const oid = num(o.row.oid, "open order oid");
     if (o.trigger) {
       const t = (await this.triggerHistory(asset)).find(r => num(r.oid, "trigger oid") === oid);
@@ -882,7 +896,14 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
       return { state: "unknown", venueStatus: st === "" ? "no trigger state" : st, filledSize: null };
     }
     const row = await this.orderDetails(oid);
-    if (row === null) return { state: "unknown", venueStatus: "not in the order history yet", filledSize: null };
+    if (row === null) {
+      if (!cancelExecuted) return { state: "unknown", venueStatus: "not in the order history yet", filledSize: null };
+      const since = typeof o.row.timestamp === "number" ? o.row.timestamp : null;
+      if (since === null) return { state: "unknown", venueStatus: "not in the order history yet (no order timestamp to bound the fill read)", filledSize: null };
+      const fills = await this.fillsOf(asset, oid, since);
+      if (fills.length > 0) return { state: "unknown", venueStatus: `${fills.length} fill(s) recorded but the order is not in the history yet`, filledSize: null };
+      return { state: "cancelled", venueStatus: "gone from the open orders after an executed cancel; no fill recorded (0-fill orders are not in TxFlow's order history)", filledSize: "0" };
+    }
     const ord = rec(row.order, "orderDetails order");
     const filled = filledOf(ord.origSz, ord.sz, "orderDetails order");
     const status = txflowHistoryStatus(row.status, filled);
@@ -901,6 +922,18 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
       if (e instanceof PerpError && e.structured.details?.venueCode === TXFLOW_ORDER_NOT_FOUND_CODE) return null;
       throw e;
     }
+  }
+
+  /** userFills rows of one order since `sinceMs` (every page; an unreadable page throws). */
+  private async fillsOf(asset: number, oid: number, sinceMs: number): Promise<Rec[]> {
+    const out: Rec[] = [];
+    for (let page = 0; page < FILL_PAGES_MAX; page++) {
+      const d = rec(await this.client.info<unknown>({ type: "userFills", user: this.requireAccount(), accountType: ["perp"], coin: String(asset), startTimeMs: sinceMs, limit: FILL_PAGE_SIZE, offset: page * FILL_PAGE_SIZE }), "userFills");
+      const rows = arr(d.data, "userFills data").map(r => rec(r, "userFills row"));
+      out.push(...rows.filter(r => num(r.oid, "fill oid") === oid));
+      if (d.hasMore !== true) return out;
+    }
+    throw new PerpError("EXCHANGE_ERROR", `TxFlow userFills: more than ${FILL_PAGES_MAX * FILL_PAGE_SIZE} fills since the order — cannot prove order ${oid} has none`, { exchange: "txflow" });
   }
 
   private async triggerHistory(asset: number): Promise<Rec[]> {
