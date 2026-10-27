@@ -40,7 +40,7 @@ const executed = () => new Response(JSON.stringify({ status: "ok", code: 0, conf
 
 interface VenueState {
   eligible: boolean;
-  access: boolean | "403";
+  accessReads: number;
   labels: Array<{ agentAddress: string; agentName: string }>;
   owners: Map<string, string>;
   exchange: (body: { action: Record<string, unknown> }) => Response;
@@ -53,7 +53,7 @@ beforeEach(() => {
   vault.clear();
   master = ethers.Wallet.createRandom();
   st = {
-    eligible: true, access: true, labels: [], owners: new Map(),
+    eligible: true, accessReads: 0, labels: [], owners: new Map(),
     exchange: b => {
       const a = b.action as { agentAddress: string };
       if (a.agentAddress === ethers.ZeroAddress) for (const [k] of st.owners) st.owners.delete(k);
@@ -70,9 +70,9 @@ beforeEach(() => {
     }
     switch (b.type) {
       case "approveAgentEligibility": return ok({ eligible: st.eligible });
-      case "accountAccessStatus": return st.access === "403"
-        ? new Response(JSON.stringify({ success: false, code: 10000, message: "This action is not allowed." }), { status: 403 })
-        : ok({ user: String(b.user).toLowerCase(), rc: "", allowExchange: st.access, reason: null });
+      // Undocumented; testnet answers {success:false, code:10000, "invalid request"} for any body
+      // (2026-10-27), mainnet HTTP 403. perp-cli must never depend on it.
+      case "accountAccessStatus": st.accessReads++; return new Response(JSON.stringify({ success: false, code: 10000, message: "invalid request" }), { status: 200 });
       case "approvedAgents": return ok({ user: b.user, agents: st.labels });
       case "agentOwner": return ok({ agent: String(b.agent).toLowerCase(), user: st.owners.get(String(b.agent).toLowerCase()) ?? null });
       default: throw new Error(`unexpected /info ${String(b.type)}`);
@@ -118,21 +118,14 @@ describe("approve", () => {
     expect(recoverAddress(digest, Signature.from(signature))).toBe(master.address);
   });
 
-  it("an unfunded account → DEPOSIT_REQUIRED; access refused → POLICY_DENIED — before any key or signature", async () => {
+  it("an unfunded account → DEPOSIT_REQUIRED before any key or signature; access is never pre-read", async () => {
     st.eligible = false;
     const a = deps();
     await expect(approveTxflowAgentWith(opts(), a.d)).rejects.toMatchObject({ structured: { code: "DEPOSIT_REQUIRED" } });
-    st.eligible = true;
-    st.access = false;
-    const b = deps();
-    const e = await approveTxflowAgentWith(opts(), b.d).catch(x => x);
-    expect(e.structured.code).toBe("POLICY_DENIED");
-    expect(e.structured.remediation).toMatch(/txflow\.com\/apply/);
-    expect([a.wallets.size, b.wallets.size, st.sent.length]).toEqual([0, 0, 0]);
+    expect([a.wallets.size, st.sent.length, st.accessReads]).toEqual([0, 0, 0]);
   });
 
-  it("mainnet access status unreadable (HTTP 403) is unknown, not a refusal; /exchange decides (whitelist → POLICY_DENIED, key deleted)", async () => {
-    st.access = "403";
+  it("mainnet whitelist: no access pre-read; /exchange decides (whitelist → POLICY_DENIED, key deleted)", async () => {
     st.exchange = () => new Response(JSON.stringify({ status: "err", code: 10000, message: "User not in whitelist" }), { status: 200 });
     const { d, wallets } = deps();
     d.client = txflowClient("mainnet");
@@ -179,15 +172,15 @@ describe("approve", () => {
 });
 
 describe("verify", () => {
-  it("authorized for its account under its label; access flag read (null when the venue refuses the read)", async () => {
+  it("authorized for its account under its label (no access pre-read)", async () => {
     const agent = "0x00000000000000000000000000000000000a6e47";
     st.owners.set(agent, master.address);
     st.labels = [{ agentAddress: agent, agentName: "bot" }];
     const meta: TxflowAgentMeta = { kind: "txflow", agentName: "bot", agentWalletName: "w", agentAddress: agent, accountAddress: master.address as `0x${string}`, network: "testnet", approvedAt: "", source: "approved" };
-    expect(await verifyTxflowAgent(meta)).toEqual({ owner: master.address, authorized: true, label: "bot", accessAllowed: true });
+    expect(await verifyTxflowAgent(meta)).toEqual({ owner: master.address, authorized: true, label: "bot" });
     st.owners.clear();
-    st.access = "403";
-    expect(await verifyTxflowAgent(meta)).toEqual({ owner: null, authorized: false, label: null, accessAllowed: null });
+    expect(await verifyTxflowAgent(meta)).toEqual({ owner: null, authorized: false, label: null });
+    expect(st.accessReads).toBe(0);
   });
 });
 

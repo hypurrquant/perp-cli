@@ -29,7 +29,7 @@ import type { TxflowAgentMeta } from "../../settings.js";
 import type { EvmSigner } from "../../signer/interface.js";
 import { networkConfig, getVenue } from "../venue.js";
 import type { Network } from "../venue-types.js";
-import { TxflowClient, TxflowSendUnknown, TXFLOW_APPLY_URL } from "./client.js";
+import { TxflowClient, TxflowSendUnknown } from "./client.js";
 import { nextTxflowNonce, signTxflowApproveAgent, txflowApproveAgentAction, ZERO_ADDRESS } from "./signing.js";
 
 const CONFIRM_ATTEMPTS = 8;
@@ -65,22 +65,11 @@ export async function txflowApprovedAgents(client: TxflowClient, account: string
 }
 
 /**
- * accountAccessStatus `allowExchange` (testnet answers it; mainnet refuses the read with HTTP 403
- * for every caller → null = unknown, and POST /exchange decides). Any other failure throws.
+ * Refuse before anything is created or signed: an account that cannot approve an agent yet.
+ * Mainnet access (the whitelist) is NOT pre-checked: `accountAccessStatus` is undocumented and
+ * refused on testnet ("invalid request", code 10000, 2026-10-27) and on mainnet (HTTP 403) — the
+ * /exchange reply decides, and its whitelist refusal is typed POLICY_DENIED with the apply link.
  */
-export async function txflowAccessAllowed(client: TxflowClient, account: string): Promise<boolean | null> {
-  let d: { allowExchange?: unknown };
-  try {
-    d = await client.info<{ allowExchange?: unknown }>({ type: "accountAccessStatus", user: account });
-  } catch (e) {
-    if (e instanceof PerpError && e.structured.details?.status === 403) return null;
-    throw e;
-  }
-  if (typeof d?.allowExchange !== "boolean") throw new PerpError("EXCHANGE_ERROR", "TxFlow accountAccessStatus: no allowExchange flag", { exchange: "txflow" });
-  return d.allowExchange;
-}
-
-/** Refuse before anything is created or signed: unfunded account, or access explicitly refused. */
 export async function txflowApprovePreflight(client: TxflowClient, network: Network, account: string): Promise<void> {
   const elig = await client.info<{ eligible?: unknown; reason?: unknown }>({ type: "approveAgentEligibility", user: account });
   if (typeof elig?.eligible !== "boolean") throw new PerpError("EXCHANGE_ERROR", "TxFlow approveAgentEligibility: no eligible flag", { exchange: "txflow" });
@@ -88,11 +77,6 @@ export async function txflowApprovePreflight(client: TxflowClient, network: Netw
     throw new PerpError("DEPOSIT_REQUIRED", `TxFlow account ${account} cannot approve an agent yet${typeof elig.reason === "string" && elig.reason !== "" ? ` (${elig.reason})` : ""} — it is activated by its first deposit`, {
       exchange: "txflow",
       remediation: network === "testnet" ? "Fund the account with test USDC in the TxFlow testnet web app, then retry" : "Deposit USDC in the TxFlow web app, then retry",
-    });
-  }
-  if (await txflowAccessAllowed(client, account) === false) {
-    throw new PerpError("POLICY_DENIED", `TxFlow does not allow trading for ${account} (accountAccessStatus allowExchange: false)`, {
-      exchange: "txflow", remediation: `Apply for access at ${TXFLOW_APPLY_URL}`,
     });
   }
 }
@@ -284,10 +268,10 @@ export async function revokeTxflowAgent(opts: { meta: TxflowAgentMeta; masterOws
 
 /** Verify a stored agent: authorized for its account, listed under its label, and the account's access flag. */
 export async function verifyTxflowAgent(meta: TxflowAgentMeta, client: TxflowClient = txflowClient(meta.network)): Promise<{
-  owner: string | null; authorized: boolean; label: string | null; accessAllowed: boolean | null;
+  owner: string | null; authorized: boolean; label: string | null;
 }> {
   const owner = await txflowAgentOwner(client, meta.agentAddress);
   const authorized = owner !== null && owner.toLowerCase() === meta.accountAddress.toLowerCase();
   const listed = authorized ? (await txflowApprovedAgents(client, meta.accountAddress)).find(a => a.agentAddress.toLowerCase() === meta.agentAddress.toLowerCase()) : undefined;
-  return { owner, authorized, label: listed === undefined ? null : listed.agentName, accessAllowed: await txflowAccessAllowed(client, meta.accountAddress) };
+  return { owner, authorized, label: listed === undefined ? null : listed.agentName };
 }

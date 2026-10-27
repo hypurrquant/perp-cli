@@ -597,11 +597,10 @@ async function verifyTxflow(network: Network, opts: VerifyOpts): Promise<VerifyR
       ? `TxFlow agent ${meta.agentAddress} is NOT authorized by any account — approve it again: perp${net} wallet agent approve txflow${meta.source === "approved" ? " --rotate" : ""}`
       : `TxFlow agent ${meta.agentAddress} is authorized for ${v.owner}, not ${meta.accountAddress}`);
   }
-  if (v.accessAllowed === false) warnings.push(`TxFlow does not allow trading for ${meta.accountAddress} (accountAccessStatus allowExchange: false) — apply at https://txflow.com/apply`);
-  if (v.accessAllowed === null && network === "mainnet") warnings.push("TxFlow mainnet trading is open to whitelisted accounts only (apply at https://txflow.com/apply); the access status cannot be read on mainnet");
+  if (network === "mainnet") warnings.push("TxFlow mainnet trading is open to whitelisted accounts only (apply at https://txflow.com/apply); access is not readable in advance — the first order is refused (POLICY_DENIED) if the account is not whitelisted");
   return {
     registered: v.authorized, count: 1,
-    items: [{ agentName: meta.agentName, agent: meta.agentAddress, account: meta.accountAddress, network: meta.network, source: meta.source, owner: v.owner, label: v.label, accessAllowed: v.accessAllowed }],
+    items: [{ agentName: meta.agentName, agent: meta.agentAddress, account: meta.accountAddress, network: meta.network, source: meta.source, owner: v.owner, label: v.label }],
     warnings: warnings.length > 0 ? warnings : undefined,
   };
 }
