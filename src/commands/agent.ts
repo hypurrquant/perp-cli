@@ -7,7 +7,7 @@ import { printJson, jsonOk } from "../utils.js";
 import { PerpError, classifyError } from "../errors.js";
 import chalk from "chalk";
 import bs58 from "bs58";
-import { loadSettings, type AgentMeta, type OndoAgentMeta, type ArcusAgentMeta, type QfexAgentMeta, type RisexAgentMeta } from "../settings.js";
+import { loadSettings, type AgentMeta, type OndoAgentMeta, type ArcusAgentMeta, type QfexAgentMeta, type RisexAgentMeta, type TxflowAgentMeta } from "../settings.js";
 import {
   getAgent, setAgent, deleteAgent, listAgents, acquireLock, releaseLock,
   getVenueAgent, getVenueAgentForNetwork, setVenueAgent, deleteVenueAgent, listVenueAgents,
@@ -575,6 +575,37 @@ async function verifyRisex(network: Network, opts: VerifyOpts): Promise<VerifyRe
   };
 }
 
+/** TxFlow: agentOwner / approvedAgents (read-only) — the agent is authorized for its account under its label. */
+async function verifyTxflow(network: Network, opts: VerifyOpts): Promise<VerifyResult> {
+  const meta = opts.agentName !== undefined ? getVenueAgent("txflow", opts.agentName) : getVenueAgentForNetwork("txflow", network);
+  const net = network === "testnet" ? " -n testnet" : "";
+  if (!meta) {
+    throw new PerpError("AGENT_NOT_REGISTERED", `No TxFlow agent registered for ${network}`, {
+      remediation: `perp${net} wallet agent approve txflow --master <ows-wallet> (or import one created in the TxFlow web app: perp${net} wallet agent import txflow)`,
+    });
+  }
+  if (meta.network !== network) {
+    throw new PerpError("AGENT_NOT_REGISTERED", `TxFlow agent "${meta.agentName}" is registered on ${meta.network}, not ${network}`, {
+      remediation: meta.network === "mainnet" ? "Run without -n testnet" : "Run with -n testnet",
+    });
+  }
+  const { verifyTxflowAgent } = await import("../exchanges/txflow/agent.js");
+  const v = await verifyTxflowAgent(meta);
+  const warnings: string[] = [];
+  if (!v.authorized) {
+    warnings.push(v.owner === null
+      ? `TxFlow agent ${meta.agentAddress} is NOT authorized by any account — approve it again: perp${net} wallet agent approve txflow${meta.source === "approved" ? " --rotate" : ""}`
+      : `TxFlow agent ${meta.agentAddress} is authorized for ${v.owner}, not ${meta.accountAddress}`);
+  }
+  if (v.accessAllowed === false) warnings.push(`TxFlow does not allow trading for ${meta.accountAddress} (accountAccessStatus allowExchange: false) — apply at https://txflow.com/apply`);
+  if (v.accessAllowed === null && network === "mainnet") warnings.push("TxFlow mainnet trading is open to whitelisted accounts only (apply at https://txflow.com/apply); the access status cannot be read on mainnet");
+  return {
+    registered: v.authorized, count: 1,
+    items: [{ agentName: meta.agentName, agent: meta.agentAddress, account: meta.accountAddress, network: meta.network, source: meta.source, owner: v.owner, label: v.label, accessAllowed: v.accessAllowed }],
+    warnings: warnings.length > 0 ? warnings : undefined,
+  };
+}
+
 /** Dispatch a verify to the venue-specific implementation. */
 async function verifyVenue(ex: VenueId, network: Network, opts: VerifyOpts): Promise<VerifyResult> {
   if (ex === "aster") return verifyAster(opts);
@@ -585,8 +616,9 @@ async function verifyVenue(ex: VenueId, network: Network, opts: VerifyOpts): Pro
   if (ex === "arcus") return verifyArcus(network, opts);
   if (ex === "qfex") return verifyQfex(network, opts);
   if (ex === "risex") return verifyRisex(network, opts);
+  if (ex === "txflow") return verifyTxflow(network, opts);
   throw new PerpError("NOT_IMPLEMENTED", `${ex} has no agents to verify`, {
-    remediation: "perp wallet agent verify <aster|hyperliquid|pacifica|lighter|lighter-rh|ondo|arcus|qfex|risex> [agentName]",
+    remediation: "perp wallet agent verify <aster|hyperliquid|pacifica|lighter|lighter-rh|ondo|arcus|qfex|risex|txflow> [agentName]",
   });
 }
 
@@ -698,7 +730,7 @@ function assertAgentNameFree(venue: VenueId, agentName: string, network: Network
 }
 
 /** Ondo / Arcus: refuse (even with --rotate) to replace a record registered on another network. */
-function assertVenueAgentNameFree(venue: "ondo" | "arcus" | "risex", agentName: string, network: Network): void {
+function assertVenueAgentNameFree(venue: "ondo" | "arcus" | "risex" | "txflow", agentName: string, network: Network): void {
   const existing = getVenueAgent(venue, agentName);
   if (existing !== null && existing.network !== network) {
     throw new PerpError("INVALID_PARAMS", `${venue} agent "${agentName}" is already registered on ${existing.network}`, {
@@ -742,6 +774,7 @@ export type ApproveAgentOutcome =
   | { venue: "ondo"; meta: OndoAgentMeta }
   | { venue: "arcus"; meta: ArcusAgentMeta }
   | { venue: "risex"; meta: RisexAgentMeta }
+  | { venue: "txflow"; meta: TxflowAgentMeta }
   | { venue: LighterVenueId; agentName: string; expiresAt: string; result: LtApproveFlowResult }
   | { venue: "pacifica"; agentName: string; expiresAt: string; result: PacApproveFlowResult }
   | { venue: "hyperliquid"; agentName: string; expiresAt: string; result: HlApproveFlowResult }
@@ -866,6 +899,37 @@ export async function approveVenueAgent(p: ApproveAgentParams): Promise<ApproveA
     }
   }
 
+  // TxFlow: master-signed approveAgent (direct EIP-712); the agent signs trading actions only.
+  if (p.venue === "txflow") {
+    const masterName = requireMaster(p.master);
+    assertVenueAgentNameFree("txflow", agentName, p.network);
+    if (p.canWithdraw || p.canSpot) {
+      throw new PerpError("INVALID_PARAMS", "TxFlow agent keys sign trading actions only (withdrawals and transfers are master-signed); perp-cli trades perps only", {
+        remediation: "Drop --can-withdraw / --can-spot",
+      });
+    }
+    const existing = getVenueAgent("txflow", agentName);
+    if (existing !== null && !p.rotate) {
+      throw new PerpError("INVALID_PARAMS", `TxFlow agent "${agentName}" already exists`, {
+        remediation: `Replace it (the venue rebinds the label to a new key): perp${p.network === "testnet" ? " -n testnet" : ""} wallet agent approve txflow --rotate — or choose another --agent-name`,
+      });
+    }
+    if (existing !== null && existing.source === "imported") {
+      throw new PerpError("INVALID_PARAMS", `TxFlow agent "${agentName}" was imported from the TxFlow web app — --rotate replaces keys this CLI approved`, {
+        remediation: `Remove the imported copy first (perp wallet agent revoke txflow ${agentName} --local-only), or choose another --agent-name`,
+      });
+    }
+    const { approveTxflowAgent } = await import("../exchanges/txflow/agent.js");
+    acquireLock("txflow");
+    try {
+      const meta = await approveTxflowAgent({ agentName, masterOwsWallet: masterName, passphrase: p.passphrase, network: p.network, replacing: existing });
+      setVenueAgent("txflow", meta);
+      return { venue: "txflow", meta };
+    } finally {
+      releaseLock("txflow");
+    }
+  }
+
   const expiresAt = parseExpiresInParam(p.expiresIn);
   const masterName = requireMaster(p.master);
   const expiresAtIso = expiresAt.toISOString();
@@ -974,7 +1038,7 @@ export function qfexWithdrawKeyWarning(meta: Pick<QfexAgentMeta, "agentName" | "
 /** Venues `wallet agent rotate` (and `approve --rotate`) can rotate. */
 type RotatableVenue = "aster" | "hyperliquid" | "pacifica" | LighterVenueId;
 
-type RotatedAgentOutcome = Exclude<ApproveAgentOutcome, { venue: "ondo" | "arcus" | "risex" }>;
+type RotatedAgentOutcome = Exclude<ApproveAgentOutcome, { venue: "ondo" | "arcus" | "risex" | "txflow" }>;
 
 export interface RotateAgentParams {
   exchange: RotatableVenue;
@@ -1226,6 +1290,16 @@ export function printApproveOutcome(outcome: ApproveAgentOutcome): void {
       console.log(chalk.gray("  Deposits / withdrawals: RISEx app only (perp-cli never moves RISEx funds)."));
       console.log();
       return;
+    case "txflow":
+      console.log(chalk.green.bold("\n  TxFlow agent approved!\n"));
+      console.log(`  Name (label): ${chalk.cyan(outcome.meta.agentName)}`);
+      console.log(`  Agent:        ${chalk.cyan(outcome.meta.agentAddress)}`);
+      console.log(`  Account:      ${chalk.cyan(outcome.meta.accountAddress)}`);
+      console.log(`  Network:      ${chalk.cyan(outcome.meta.network)}`);
+      console.log(chalk.gray("  The agent signs trading actions only; deposits / withdrawals stay in the TxFlow web app. TxFlow agents do not expire."));
+      if (outcome.meta.network === "mainnet") console.log(chalk.gray("  Mainnet trading is open to whitelisted accounts only (apply at https://txflow.com/apply)."));
+      console.log();
+      return;
     case "lighter":
     case "lighter-rh":
       console.log(chalk.green.bold(`\n  ${getVenue(outcome.venue).displayName} Agent approved successfully!\n`));
@@ -1282,7 +1356,7 @@ export function registerWalletAgentCommands(
   // ── agent approve <exchange> ── register an agent wallet ──────────────────
   agent
     .command("approve <exchange>")
-    .description("Register an agent wallet / API key for an exchange (aster, hyperliquid, pacifica, lighter, lighter-rh, ondo, arcus, risex — risex: a trading-only session signer, restricted on-chain)")
+    .description("Register an agent wallet / API key for an exchange (aster, hyperliquid, pacifica, lighter, lighter-rh, ondo, arcus, risex, txflow — risex: a trading-only session signer, restricted on-chain; txflow: an agent key approved by the master, no expiry)")
     .option("--master <name>", "Master OWS wallet name")
     .option("--agent-name <name>", "Agent name (default: perp-cli-aster)")
     .option("--expires-in <duration>", "Expiry: 30d, 90d, 180d, 1y, or ISO-8601 datetime (default: 90d)")
@@ -1436,7 +1510,7 @@ export function registerWalletAgentCommands(
   agent
     .command("import <exchange> [key]")
     .description("Import an agent wallet / API key created on the exchange WEBSITE (master wallet not needed on this computer; key via hidden prompt or stdin — never argv)")
-    .option("--master-address <address>", "Master / owner public address (aster, pacifica, arcus: required; hyperliquid, lighter: optional cross-check)")
+    .option("--master-address <address>", "Master / owner public address (aster, pacifica, arcus: required; hyperliquid, lighter, txflow: optional cross-check)")
     .option("--account-index <n>", "Lighter / Lighter RH: account index (required). Arcus: subaccount the key is scoped to (optional cross-check)")
     .option("--api-key-index <n>", "Lighter / Lighter RH: the key's API key slot (required)")
     .option("--account-id <uuid>", "QFEX: the account the key trades (default: the primary account; required without a terminal — it is the confirmation)")
@@ -1461,6 +1535,7 @@ Per venue:
   qfex         API public key + secret [--account-id <uuid>]. Verified: signed reads as the account + Trade WebSocket
                auth. The key is bound to ONE account UUID, which is shown and must be confirmed (y/N in a terminal;
                piped: pass --account-id <uuid> equal to it). QFEX keys are created only on the website (2FA).
+  txflow       agent (API wallet) private key [+ --master-address]. Verified: info agentOwner = an account (the master).
 
 The imported key trades. Deposits / withdrawals / transfers / referral / agent approvals need the
 master wallet: do them on the website, or add the master with 'perp wallet import'.
@@ -1578,14 +1653,14 @@ Examples:
       const venueFilter = exchange === undefined ? null : resolveVenueId(exchange);
       for (const { exchange: ex, meta } of listVenueAgents()) {
         if (venueFilter !== null && venueFilter !== ex) continue;
-        const expiresAt = meta.kind === "arcus" ? meta.validUntil : meta.kind === "risex" ? meta.expiresAt : null;
+        const expiresAt = meta.kind === "arcus" ? meta.validUntil : meta.kind === "risex" ? meta.expiresAt : null; // ondo / qfex / txflow keys carry no expiry
         const status: "active" | "expired" = expiresAt !== null && expiresAt !== "" && new Date(expiresAt).getTime() < now ? "expired" : "active";
         rows.push({
           name: meta.agentName,
           exchange: ex,
           network: meta.network,
           source: agentSourceOf(ex, meta),
-          evmAddress: meta.kind === "arcus" ? meta.ownerAddress : meta.kind === "risex" ? meta.signerAddress : "",
+          evmAddress: meta.kind === "arcus" ? meta.ownerAddress : meta.kind === "risex" ? meta.signerAddress : meta.kind === "txflow" ? meta.agentAddress : "",
           // Ondo keys carry no expiry; shown as "—".
           expiresAt: expiresAt ?? "",
           status,
@@ -1663,7 +1738,7 @@ Examples:
         network = networkOf(command);
         // An imported key is only ever removed locally, so it needs no venue support for revoke
         // (e.g. an imported Aster testnet key).
-        const rec = exchange === "ondo" || exchange === "arcus" || exchange === "qfex" || exchange === "risex" ? getVenueAgent(exchange, agentName) : getAgent(exchange, agentName);
+        const rec = exchange === "ondo" || exchange === "arcus" || exchange === "qfex" || exchange === "risex" || exchange === "txflow" ? getVenueAgent(exchange, agentName) : getAgent(exchange, agentName);
         // QFEX keys only exist as imports: a missing record is "already removed", never an approve-capability error.
         // A release-gated venue (RISEx in 0.15.0) still lets --force / --local-only clear local state: nothing is signed or sent.
         const localCleanupOfGated = localOnly && getVenue(exchange).gatedRoles !== null;
@@ -1739,6 +1814,43 @@ Examples:
           else console.log(localOnly
             ? chalk.yellow(`Agent "${agentName}" on risex removed locally only — revoke signer ${risexMeta.signerAddress} in the RISEx app.`)
             : chalk.green(`Agent "${agentName}" on risex revoked successfully.`));
+          return;
+        }
+        // ── TxFlow: approveAgent with the zero address under the agent's label (master-signed) ──
+        if (exchange === "txflow") {
+          const txMeta = getVenueAgent("txflow", agentName);
+          if (!txMeta) {
+            if (useJson) printJson({ ok: true, data: { alreadyRevoked: true } });
+            else console.log(`Agent "${agentName}" on txflow not found locally — already revoked.`);
+            return;
+          }
+          if (txMeta.network !== network) {
+            throw new PerpError("AGENT_NOT_REGISTERED", `TxFlow agent "${agentName}" is registered on ${txMeta.network}, not ${network}`, {
+              remediation: txMeta.network === "mainnet" ? "Run without -n testnet to revoke it" : "Run with -n testnet to revoke it",
+            });
+          }
+          if (txMeta.source === "imported" && !localOnly) {
+            throw new PerpError("INVALID_PARAMS", `txflow agent "${agentName}" was imported from the TxFlow web app — this CLI cannot revoke it (it has no master wallet signature for it)`, {
+              remediation: `Revoke it in the TxFlow web app, then remove the local copy: perp${network === "testnet" ? " -n testnet" : ""} wallet agent revoke txflow ${agentName} --local-only`,
+            });
+          }
+          if (!localOnly) {
+            const masterName = opts.master ?? loadSettings().owsActiveWallet;
+            if (!masterName) {
+              throw new PerpError("INVALID_PARAMS", "Master wallet name is required to revoke a TxFlow agent", {
+                remediation: "Use --master <name>, or --force to clear local state only (then revoke it in the TxFlow web app)",
+              });
+            }
+            const passphrase = await resolvePassphrase({ flag: passphraseFlag });
+            const { revokeTxflowAgent } = await import("../exchanges/txflow/agent.js");
+            await revokeTxflowAgent({ meta: txMeta, masterOwsWallet: masterName, passphrase });
+          }
+          try { loadOws().deleteWallet(txMeta.agentWalletName); } catch { /* already gone */ }
+          deleteVenueAgent("txflow", agentName);
+          if (useJson) printJson(jsonOk({ revoked: !localOnly, local: localOnly }));
+          else console.log(localOnly
+            ? chalk.yellow(`Agent "${agentName}" on txflow removed locally only — revoke agent ${txMeta.agentAddress} in the TxFlow web app.`)
+            : chalk.green(`Agent "${agentName}" on txflow revoked successfully.`));
           return;
         }
         // ── Arcus: EIP-712 RevokeApiKey signed by the master wallet ──

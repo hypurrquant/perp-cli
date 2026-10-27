@@ -15,6 +15,7 @@
  *   arcus        API key private key (Ed25519)         --master-address [--account-index]  derived public key listed ACTIVE by GET /v1/apiKeys?address=<owner>
  *   ondo         API key id + secret                   —                            authenticated GET /v1/account (same as approve)
  *   qfex         API public key + secret               [--account-id <uuid>]        signed reads as the resolved account + Trade WebSocket auth; the account UUID is shown and must be confirmed
+ *   txflow       agent (API wallet) private key (EVM)  [--master-address]           info agentOwner(agent) = an account (= --master-address when given); approvedAgents → its label
  *
  * Storage (SSOT Rule #3): EVM / Solana / Ed25519 keys → OWS vault wallet
  * `agent-<venue>-import-<agentName>` (empty passphrase, like approved agent wallets); Lighter-family
@@ -23,7 +24,7 @@
  */
 import chalk from "chalk";
 import { PerpError, classifyError } from "../errors.js";
-import type { AgentMeta, ArcusAgentMeta, OndoAgentMeta, QfexAgentMeta } from "../settings.js";
+import type { AgentMeta, ArcusAgentMeta, OndoAgentMeta, QfexAgentMeta, TxflowAgentMeta } from "../settings.js";
 import {
   acquireLock, releaseLock, getAgent, setAgent, deleteAgent, listAgents, agentNetworkOf, agentSourceOf,
   getVenueAgent, setVenueAgent, deleteVenueAgent,
@@ -114,7 +115,7 @@ export function defaultImportAgentName(venue: VenueId, network: Network): string
 }
 
 /** OWS wallet holding an imported EVM / Solana / Ed25519 agent key. */
-export function importedAgentWalletName(venue: "hyperliquid" | "aster" | "pacifica" | "arcus", agentName: string): string {
+export function importedAgentWalletName(venue: "hyperliquid" | "aster" | "pacifica" | "arcus" | "txflow", agentName: string): string {
   const prefix = venue === "hyperliquid" ? "hl" : venue === "pacifica" ? "pac" : venue;
   return `agent-${prefix}-import-${agentName}`;
 }
@@ -143,7 +144,7 @@ export function importSecretLabel(venue: VenueId): string {
     case "ondo": return "Ondo API secret";
     case "qfex": return "QFEX API secret";
     case "risex": return "RISEx signer private key";
-    case "txflow": return "TxFlow key (not supported)";
+    case "txflow": return "TxFlow agent (API wallet) private key";
     case "variational": return "Variational key (not supported)";
     case "grvt": return "GRVT key (not supported)";
     case "extended": return "Extended key (not supported)";
@@ -233,8 +234,7 @@ function redacted(err: unknown, secrets: readonly string[], venue: VenueId): Per
 }
 
 /**
- * Venues whose keys cannot be imported. TxFlow: market-data-only.
- * RISEx: perp-cli trades only with a signer it registered itself and then restricted ON-CHAIN to
+ * Venues whose keys cannot be imported. RISEx: perp-cli trades only with a signer it registered itself and then restricted ON-CHAIN to
  * the trading permission; a signer created in the RISEx app keeps every permission (including
  * deposit / withdraw), so it is never stored here.
  */
@@ -336,11 +336,11 @@ const NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
  * Name checks shared by every venue. Returns the record being replaced (an imported record of the
  * same venue / network / name, only with `replace`), or null.
  */
-function checkName(venue: VenueId, network: Network, agentName: string, replace: boolean): AgentMeta | OndoAgentMeta | ArcusAgentMeta | QfexAgentMeta | null {
+function checkName(venue: VenueId, network: Network, agentName: string, replace: boolean): AgentMeta | OndoAgentMeta | ArcusAgentMeta | QfexAgentMeta | TxflowAgentMeta | null {
   if (!NAME_RE.test(agentName)) {
     throw new PerpError("INVALID_PARAMS", `Agent name "${agentName}" must be 1-64 letters, digits, '.', '_' or '-'`);
   }
-  const existing = venue === "ondo" || venue === "arcus" || venue === "qfex" ? getVenueAgent(venue, agentName) : getAgent(venue, agentName);
+  const existing = venue === "ondo" || venue === "arcus" || venue === "qfex" || venue === "txflow" ? getVenueAgent(venue, agentName) : getAgent(venue, agentName);
   if (existing === null) return null;
   const existingNetwork = "kind" in existing ? existing.network : agentNetworkOf(venue, existing);
   if (existingNetwork !== network) {
@@ -362,7 +362,7 @@ function checkName(venue: VenueId, network: Network, agentName: string, replace:
 }
 
 /** Delete the local key + record of an imported agent (the key stays authorized on the venue). */
-export async function deleteImportedAgentLocal(venue: VenueId, network: Network, meta: AgentMeta | OndoAgentMeta | ArcusAgentMeta | QfexAgentMeta): Promise<{ keyRemoved: boolean }> {
+export async function deleteImportedAgentLocal(venue: VenueId, network: Network, meta: AgentMeta | OndoAgentMeta | ArcusAgentMeta | QfexAgentMeta | TxflowAgentMeta): Promise<{ keyRemoved: boolean }> {
   let keyRemoved = false;
   if ("kind" in meta) {
     if (meta.kind === "ondo") {
@@ -373,6 +373,9 @@ export async function deleteImportedAgentLocal(venue: VenueId, network: Network,
       const { revokeQfexAgentLocal } = await import("../exchanges/qfex/agent.js");
       keyRemoved = revokeQfexAgentLocal(meta.publicKey);
       deleteVenueAgent("qfex", meta.agentName);
+    } else if (meta.kind === "txflow") {
+      keyRemoved = deleteOwsWalletIfPresent(meta.agentWalletName);
+      deleteVenueAgent("txflow", meta.agentName);
     } else {
       keyRemoved = deleteOwsWalletIfPresent(meta.agentWalletName);
       deleteVenueAgent("arcus", meta.agentName);
@@ -402,7 +405,7 @@ function deleteOwsWalletIfPresent(name: string): boolean {
  * the standard name, the new key is staged under a fresh name, so the old key + record stay intact
  * until the new key is verified and stored (commitOwsImport swaps them).
  */
-function stagedImportWalletName(venue: "hyperliquid" | "aster" | "pacifica" | "arcus", agentName: string, replacing: { agentWalletName: string } | null): string {
+function stagedImportWalletName(venue: "hyperliquid" | "aster" | "pacifica" | "arcus" | "txflow", agentName: string, replacing: { agentWalletName: string } | null): string {
   const std = importedAgentWalletName(venue, agentName);
   return replacing !== null && replacing.agentWalletName === std ? `${std}-${Date.now().toString(36)}` : std;
 }
@@ -510,6 +513,44 @@ async function importHyperliquid(p: ImportAgentParams, agentName: string, key: s
     venue: "hyperliquid", network: p.network, agentName, source: "imported", masterAddress: master, agentAddress, publicKey: null,
     accountIndex: null, apiKeyIndex: null, accountId: null, expiresAt, storage: `OWS wallet ${walletName}`,
     verification: { status: "verified", method: `Hyperliquid info userRole: ${agentAddress} is an agent of ${master}${validUntil !== null ? "; extraAgents validUntil" : ""}` },
+    warnings: [IMPORT_KEY_WARNING],
+  };
+}
+
+async function importTxflow(p: ImportAgentParams, agentName: string, key: string, replacing: TxflowAgentMeta | null): Promise<ImportAgentOutcome> {
+  const { address: agentAddress } = await evmFromKey(key, "TxFlow agent private key");
+  if (p.masterAddress !== null && p.masterAddress.toLowerCase() === agentAddress.toLowerCase()) throw masterKeyRefused("txflow", p.network);
+  const { txflowAgentOwner, txflowApprovedAgents, txflowClient } = await import("../exchanges/txflow/agent.js");
+  const client = txflowClient(p.network);
+  // Official info endpoint: agentOwner(agent) = the account it is authorized for; null = none.
+  const owner = await txflowAgentOwner(client, agentAddress);
+  if (owner === null) {
+    throw new PerpError("AGENT_NOT_REGISTERED", `${agentAddress} is not an authorized agent of any TxFlow ${p.network} account (agentOwner: null)`, {
+      remediation: `${venueHint("txflow", p.network)} — approve it there first. A mainnet key is not valid on testnet and vice versa. (Pasted the master key? Never import it: use perp wallet import.)`,
+    });
+  }
+  if (owner.toLowerCase() === agentAddress.toLowerCase()) throw masterKeyRefused("txflow", p.network);
+  const master = p.masterAddress !== null ? await requireEvmAddress(p.masterAddress, "account", "txflow") : owner as `0x${string}`;
+  if (master.toLowerCase() !== owner.toLowerCase()) {
+    throw new PerpError("AGENT_NOT_REGISTERED", `TxFlow agent ${agentAddress} is authorized for ${owner}, not ${master}`, {
+      remediation: "Pass the master address the key was approved for, or omit --master-address",
+    });
+  }
+  const label = (await txflowApprovedAgents(client, owner)).find(a => a.agentAddress.toLowerCase() === agentAddress.toLowerCase())?.agentName ?? null;
+  const walletName = stagedImportWalletName("txflow", agentName, replacing);
+  const stored = await storeOwsAgentKey(walletName, key, "evm");
+  if (stored.evm === null || stored.evm.toLowerCase() !== agentAddress.toLowerCase()) {
+    deleteOwsWalletIfPresent(walletName);
+    throw new PerpError("SIGNATURE_FAILED", `OWS stored a different address (${stored.evm}) than the key's ${agentAddress}; nothing was saved`);
+  }
+  commitOwsImport(walletName, () => setVenueAgent("txflow", {
+    kind: "txflow", agentName, agentWalletName: walletName, agentAddress, accountAddress: owner as `0x${string}`,
+    network: p.network, approvedAt: new Date().toISOString(), source: "imported",
+  }), replacing?.agentWalletName ?? null);
+  return {
+    venue: "txflow", network: p.network, agentName, source: "imported", masterAddress: owner, agentAddress, publicKey: null,
+    accountIndex: null, apiKeyIndex: null, accountId: null, expiresAt: null, storage: `OWS wallet ${walletName}`,
+    verification: { status: "verified", method: `TxFlow info agentOwner: ${agentAddress} is an agent of ${owner}${label !== null ? ` (label "${label}")` : ""}` },
     warnings: [IMPORT_KEY_WARNING],
   };
 }
@@ -840,8 +881,8 @@ export async function importVenueAgent(p: ImportAgentParams): Promise<ImportAgen
       case "lighter":
       case "lighter-rh":
         return await importLighter(p, p.venue, agentName, key, replacing as AgentMeta | null);
+      case "txflow": return await importTxflow(p, agentName, key, replacing as TxflowAgentMeta | null);
       case "risex":
-      case "txflow":
       case "variational":
       case "grvt":
       case "extended":
