@@ -29,6 +29,7 @@ vi.mock("../venue-health.js", async (orig) => ({
   probeVenueHealth: async () => ({
     probes: [
       { venue: "hyperliquid", ok: true, latencyMs: 10, status: 200, error: null, probe: "rest", apiStatus: "official" },
+      // Synthetic: TxFlow relabelled unofficial to exercise the official / unofficial split (no venue is unofficial today).
       { venue: "txflow", ok: false, latencyMs: 0, status: null, error: "down", probe: "public", apiStatus: "unofficial" },
     ],
     skipped: [],

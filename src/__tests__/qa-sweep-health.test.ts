@@ -3,7 +3,9 @@
  * aster. It now runs the same probe as `perp portfolio --health` and the MCP health_check
  * (src/venue-health.ts): every registered venue, read-only venues through their public
  * market-data read, unofficial APIs tagged, venues without an environment on the network listed
- * under `skipped` (never silently dropped).
+ * under `skipped` (never silently dropped). No registered venue is read through an unofficial API
+ * since TxFlow published its official API, so the unofficial split is exercised by
+ * relabelling TxFlow for one test (asUnofficial).
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { Command } from "commander";
@@ -13,7 +15,16 @@ import { probeVenueHealth } from "../venue-health.js";
 import { listVenues } from "../exchanges/venue.js";
 import "../exchanges/venues/index.js";
 
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); process.exitCode = undefined; });
+let restoreApiStatus: (() => void) | null = null;
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); process.exitCode = undefined; restoreApiStatus?.(); restoreApiStatus = null; });
+
+/** Relabel one registered venue as read through an unofficial API for the current test. */
+function asUnofficial(id: string): void {
+  const def = listVenues().find((v) => v.id === id)!;
+  const saved = def.apiStatus;
+  (def as { apiStatus: typeof def.apiStatus }).apiStatus = { kind: "unofficial", note: "test", docs: null };
+  restoreApiStatus = () => { (def as { apiStatus: typeof def.apiStatus }).apiStatus = saved; };
+}
 
 function offline() {
   vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
@@ -30,14 +41,14 @@ describe("probeVenueHealth", () => {
     for (const p of h.probes) expect(p.error).toEqual(expect.any(String));
   });
 
-  it("read-only TxFlow is probed through its market-data read and tagged unofficial", async () => {
+  it("read-only TxFlow is probed through its market-data read and tagged official", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
     const txflow = listVenues().find((v) => v.id === "txflow")!;
     const fetchMarkets = vi.spyOn(txflow.publicData, "fetchMarkets").mockResolvedValue([]);
     const h = await probeVenueHealth("mainnet", ["txflow", "aster"]);
     expect(fetchMarkets).toHaveBeenCalledWith("mainnet", { funding: false }); // a health probe needs no funding read
     expect(h.probes).toEqual([
-      expect.objectContaining({ venue: "txflow", ok: true, probe: "markets", status: null, error: null, apiStatus: "unofficial" }),
+      expect.objectContaining({ venue: "txflow", ok: true, probe: "markets", status: null, error: null, apiStatus: "official" }),
       expect.objectContaining({ venue: "aster", ok: true, probe: "ping", status: 200, apiStatus: "official" }),
     ]);
   });
@@ -66,6 +77,7 @@ describe("perp health", () => {
   }
 
   it("--json covers every registered venue (not the former 4): official venues in exchanges, unofficial ones listed separately", async () => {
+    asUnofficial("txflow");
     offline();
     const out = await health(["--json", "health"]);
     const env = JSON.parse(out[0]);
@@ -82,6 +94,7 @@ describe("perp health", () => {
   });
 
   it("`healthy` counts official-API venues only: an unofficial venue being down does not flip it", async () => {
+    asUnofficial("txflow");
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
     for (const v of listVenues()) {
       if (v.id === "txflow") vi.spyOn(v.publicData, "fetchMarkets").mockRejectedValue(new Error("txflow offline"));

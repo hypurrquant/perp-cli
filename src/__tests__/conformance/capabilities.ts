@@ -51,7 +51,7 @@ export const VENUE_CONFORMANCE: Record<VenueId, VenueConformance> = {
   risex: { symbol: "BTC", keep: DEFAULT_KEEP, cells: {} },
   txflow: {
     symbol: "BTC", keep: DEFAULT_KEEP,
-    cells: { funding: { kind: "unsupported", reason: "TxFlow's unofficial API refuses funding-history reads" } },
+    cells: { funding: { kind: "unsupported", reason: "TxFlow publishes no market funding-history read (fundingHistory → HTTP 403)" } },
   },
   variational: {
     symbol: "BTC", keep: DEFAULT_KEEP,

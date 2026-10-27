@@ -1,5 +1,5 @@
 /**
- * MCP: every account / trading tool refuses TxFlow (market data only, unofficial read-only API)
+ * MCP: every account / trading tool refuses TxFlow (market data only in perp-cli)
  * with CAPABILITY_UNSUPPORTED and makes zero network calls.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";

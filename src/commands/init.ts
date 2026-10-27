@@ -299,7 +299,7 @@ function signingSummary(p: ApproveAgentParams, master: { evm: string | null; sol
         `Then the new signer signs DisablePermission for every permission except trading, and ${master.evm} sends those transactions ON-CHAIN on RISE chain (needs RISE-chain ETH for gas): the signer can trade but never move funds, and only the master could re-enable a permission.`,
       ];
     case "txflow":
-      return ["Nothing — TxFlow is market data only (unofficial read-only API)."];
+      return ["Nothing — TxFlow is market data only in perp-cli."];
     case "variational":
       return [`Nothing — ${VARIATIONAL_READ_ONLY_REMEDIATION}.`];
     case "grvt":

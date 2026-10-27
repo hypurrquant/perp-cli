@@ -239,9 +239,9 @@ export function startJob(opts: StartJobOpts): JobEntry {
         if (!risex.roles.includes("trading")) throw startRefusal(what, "it would trade unattended", roleUnsupported(risex, "automation"));
         throw startRefusal(what, "it would trade unattended", unsupported("RISEx", "automation", "unattended trading on RISEx is not enabled until its trading path is verified on mainnet (and it has no TP/SL yet)", "Trade RISEx manually with perp trade …"));
       }
-      // TxFlow: market data only (unofficial read-only API).
+      // TxFlow: market data only in perp-cli.
       if (id === "txflow" || id === "txf") {
-        throw startRefusal(what, "TxFlow has no trading in perp-cli", unsupported("txflow", "trading", "TxFlow is integrated through an unofficial read-only API (market data only)", "Trade on the TxFlow website"));
+        throw startRefusal(what, "TxFlow has no trading in perp-cli", unsupported("txflow", "trading", "TxFlow is available for market data only in perp-cli", "Trade on the TxFlow website"));
       }
       // Any other registered venue without the trading role (Variational, GRVT, Extended: read-only in this version).
       const venueId = id === undefined ? null : tryResolveVenueId(id);

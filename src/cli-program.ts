@@ -196,7 +196,7 @@ export function buildProgram(opts: { defaultExchange: string; version: string })
         remediation: `${def.id} is market-data only — use the funding/market public commands (e.g. perp arb scan)`,
       });
     }
-    // A market-data-only venue (TxFlow: unofficial read-only API) never gets a credentialed adapter:
+    // A market-data-only venue (e.g. TxFlow) never gets a credentialed adapter:
     // every account / trading / funds / bot path refuses here, before any credential or request.
     if (!publicOnly && !def.roles.includes("account")) throw roleUnsupported(def, "account");
     const network = currentNetwork();

@@ -94,8 +94,10 @@ describe("release switch + venue definition", () => {
     expect(() => requireCapabilities(getVenue("risex"))).toThrow(GATED);
   });
 
-  it("TxFlow keeps its own unofficial-API refusal", () => {
-    expect(roleUnsupported(getVenue("txflow"), "trading").message).toMatch(/unofficial read-only API/);
+  it("TxFlow refuses as a market-data-only venue, pointing to its website", () => {
+    const e = roleUnsupported(getVenue("txflow"), "trading");
+    expect(e.message).toBe("txflow does not support trading — TxFlow is available for market data only (no trading role)");
+    expect(e.structured.remediation).toMatch(/^Trade on the TxFlow website/);
   });
 });
 

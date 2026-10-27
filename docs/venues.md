@@ -17,7 +17,7 @@ What each venue supports in this release, derived from the code (venue definitio
 | Arcus | ✅ | ✅ hourly | ✅ public + user | — | — | ✅ | — (web app) | ✅ (to the account owner) | spot (on-chain swaps), client-side TWAP | official |
 | QFEX | ✅ | unverified (display only, `--include-unverified`) | — | — | — | ✅ (no resting reduce-only, no automation — see [QFEX](#qfex)) | address only | — (disabled for now; web app)⁵ | — | official |
 | RISEx | ✅ | ✅ hourly | — | ✅ | ✅ | — (**read-only**; trading planned, not yet available) | — (app only) | — (app only) | account reads by address | official |
-| TxFlow | ✅ | unverified (display only, `--include-unverified`) | — | — | — | — (market data only) | — | — | — | **unofficial** |
+| TxFlow | ✅ | unverified (display only, `--include-unverified`) | — | — | — | — (market data only) | — | — | — | official (Beta) |
 | Variational | ✅ (`market book` = RFQ quotes, not an order book) | unverified (display only, `--include-unverified`); interval per market (1h / 4h / 8h) | — | — | — | — (market data only) | — | — | equities / ETFs / commodities; pre-IPO (not matched) | official |
 | GRVT | ✅ | unverified (display only, `--include-unverified`); interval per market (4h / 8h) | — (per-instrument streams only) | — | — | — (market data only in this version; trading planned, not yet available) | — | — | equities / ETFs, commodities; pre-IPO not matched | official |
 | Extended | ✅ (crypto plus equities / ETFs / commodities / indices / FX) | unverified (display only, `--include-unverified`), hourly; `_24_5` equities print 0 off-hours | — (one socket per stream; not supported yet) | — | — | — (read-only) | — | — | asset-class column; pre-IPO and ambiguous tickers not matched | official |
@@ -45,7 +45,7 @@ What each venue supports in this release, derived from the code (venue definitio
 | Variational | `variational` (`var`, `omni`) | **no — market data only** (see **Variational** below) | Variational Omni, an RFQ venue (one market maker, no order book); official read-only API, no public trading API yet. Funding is unverified (shown only with `--include-unverified`); restricted: US, CA and others |
 | GRVT | `grvt` (`grv`) | **no — market data only in this version** (trading planned, not yet available; see **GRVT** below) | Hybrid perps exchange, USDT collateral; official Market Data API. Funding is unverified (shown only with `--include-unverified`); testnet = `-n testnet`; trading needs KYC; restricted: US, CA, SG, HK and others |
 | Extended | `extended` (`ext`, `x10`) | **no — market data only in this version** (trading planned, not yet available; see **Extended** below) | Perps order book on Starknet (formerly X10), USD collateral; official public API. Crypto plus RWA (equities, ETFs, indices, commodities, FX). Funding is unverified (shown only with `--include-unverified`); testnet = Sepolia (`-n testnet`); restricted: US, GB, CA, HK and others |
-| TxFlow | `txflow` (`txf`) | **no — market data only** | **UNOFFICIAL API**: TxFlow has no official API yet; perp-cli reads the undocumented API its web app uses. It may change or break without notice. Funding is unverified (shown only with `--include-unverified`) |
+| TxFlow | `txflow` (`txf`) | **no — market data only** | Official API (Beta, [docs](https://docs.txflow.com/api)). Funding is unverified (shown only with `--include-unverified`) |
 
 - **Restricted regions:** creating a signing adapter for a venue with restricted regions (Ondo, Arcus, QFEX) prints a one-time stderr notice; it never blocks — check the venue terms yourself.
 - **Aggregate views** (`portfolio`, `account positions/orders`, `risk`, `history`, `wallet agent verify`, MCP `portfolio`) cover every account venue with configured credentials.
@@ -99,16 +99,16 @@ perp -e risex account positions --ows <master>   # account reads are public by a
 - **Funds:** deposits and withdrawals are done in the RISEx app (app.rise.trade). `funds deposit|withdraw risex`, `funds transfer -e risex` and `funds rebalance execute` with risex refuse with `CAPABILITY_UNSUPPORTED` (also under `--dry-run`).
 - The trading code (session signer restricted on-chain to trading only, EIP-712 permits) ships with its tests but is switched off by one flag (`RISEX_TRADING_ENABLED` in `src/exchanges/venues/risex-release.ts`).
 
-## TxFlow (market data only — UNOFFICIAL API)
+## TxFlow (market data only)
 
-TxFlow publishes no official API yet. perp-cli reads the **undocumented** API that app.txflow.com uses — read-only, and it may change or be blocked at any time. Every JSON row carries `venueApi: "unofficial"` (`apiStatus` in mixed tables and MCP output); human output adds a footnote.
+perp-cli reads TxFlow's official API, which TxFlow marks **Beta** ([docs](https://docs.txflow.com/api)): `POST https://rpc.txflow.com/info` with the `x-api-version` header (`perpMeta` directory, `webData2` 24 h volume, `l2Book`, `trades`, `candleSnapshot`) and the `/ws` channel `allAssetCtxs` (mark, oracle, funding, open interest for every perp). Read-only in perp-cli.
 
 ```bash
 perp -e txflow market list | info <SYM> | book <SYM> | trades <SYM> | kline <SYM> 1h
 perp arb scan --rates --include-unverified                  # TxFlow funding (percent per hour on the venue, shown as a fraction), display only
 ```
 
-Every trade / account / portfolio / funds (deposit, withdraw, transfer, rebalance) / agent / builder / strategy / arb exec command and every MCP account or trading tool refuses TxFlow with `CAPABILITY_UNSUPPORTED` before any request. There is no funding history and no testnet; a market whose funding interval cannot be proven to be 1 hour shows funding as unknown.
+Every trade / account / portfolio / funds (deposit, withdraw, transfer, rebalance) / agent / builder / strategy / arb exec command and every MCP account or trading tool refuses TxFlow with `CAPABILITY_UNSUPPORTED` before any request. Funding stays unverified: the docs give it in percent per settlement interval (one hour) but do not say whether it is the next settlement's estimate or the last settled print, and TxFlow publishes no market funding history to check it against (`fundingHistory` answers HTTP 403). There is no testnet in perp-cli; a market whose funding interval cannot be proven to be 1 hour shows funding as unknown.
 
 ## Variational (market data only — official API)
 

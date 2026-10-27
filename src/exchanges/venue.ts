@@ -454,7 +454,7 @@ export function roleUnsupported(def: VenueDefinition, feature: string, role: Ven
     ? `${def.displayName} is integrated through an unofficial read-only API (market data only)`
     : `${def.displayName} is available for market data only (no ${role} role)`;
   // Precedence: gatedRoles (above: a role switched off this release, e.g. RISEx) → the venue's own
-  // readOnlyRemediation (official read-only venues, e.g. Variational) → the generic text (TxFlow).
+  // readOnlyRemediation (read-only venues, e.g. Variational, TxFlow) → the generic text.
   const remediation = def.readOnlyRemediation !== undefined
     ? def.readOnlyRemediation
     : def.apiStatus.kind === "unofficial"

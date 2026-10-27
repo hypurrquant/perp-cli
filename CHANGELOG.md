@@ -4,6 +4,19 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Changed — TxFlow reads its official API
+
+- **TxFlow published an official API (Beta, https://docs.txflow.com/api)**, and perp-cli now reads it instead of the undocumented web-app API. Requests go to `https://rpc.txflow.com/info` and `wss://rpc.txflow.com/ws` (was `api.txflow.com`), send the documented `x-api-version: 2026-08-16` header, and read the documented `{success, code, data}` envelope. An error envelope is `EXCHANGE_ERROR` with the venue's message and code; a body without the envelope is reported as shape drift, never read as data.
+- **24 h volume** comes from the documented `webData2` `assetCtxs` (one row per listed instrument; the required `user` is the zero address, since it only selects open orders, which are ignored) instead of the undocumented `allMarketTickers`. Mark, oracle, funding and open interest still come from the documented `/ws` `allAssetCtxs` channel.
+- The REST rate budget follows the documented limit (50 requests/s per IP): 10 requests/s, burst 20 (was 2/s).
+- **Funding stays unverified** (`fundingVerified: false`, shown only with `--include-unverified`): the docs give the rate in percent per one-hour interval but do not say whether it is the next settlement's estimate or the last settled print, and TxFlow has no public market funding-history read (`fundingHistory` still answers HTTP 403).
+
+### JSON contract changes
+
+- TxFlow is no longer labelled unofficial: `perp -e txflow market list --json` rows drop `venueApi: "unofficial"`; `apiStatus` is `"official"` in `arb scan --rates` rows, `health` (TxFlow moves from `unofficial[]` to `exchanges[]` and now counts toward `healthy`) and MCP `get_markets` / `get_orderbook` / `health_check` meta (no `apiNote`; `get_markets` / `get_orderbook` meta gain `fundingVerified: false` + the `fundingNote` every unverified-funding venue carries); MCP `get_prices` rows no longer list TxFlow in `unofficialApiVenues`. `perp --json` (venue list) shows `apiStatus: "official"`, `note: null` for TxFlow.
+- Because TxFlow now counts as an official-API venue, a TxFlow outage turns `health` / `health_check` `healthy` false (it used to count only toward `allHealthy`).
+- TxFlow error text: `EXCHANGE_ERROR` messages are `TxFlow <type>: <venue message> (code N[, HTTP s])`; shape drift reads `TxFlow API shape changed: …` (was `TxFlow unofficial API shape changed: …`); the `CAPABILITY_UNSUPPORTED` reason for TxFlow is `TxFlow is available for market data only (no trading role)` (was `… integrated through an unofficial read-only API …`), and its remediation no longer lists `market funding` (TxFlow's funding-history read is refused as well).
+
 ## [0.16.0] — 2026-10-26
 
 > **Renumbered from 0.15.1, which was never released** (npm's latest is 0.15.0; there is no `v0.15.1`
