@@ -29,6 +29,7 @@ perp --json -e <EX> trade buy <SYM> <SIZE> --tp <PX> --sl <PX>  # entry protecte
 perp --json -e <EX> trade tpsl <SYM> long --tp <PX> --sl <PX>   # TP/SL on an open position (long|short)
 perp --json -e <EX> trade stop <SYM> sell <SIZE> <PX>            # reduce-only stop (default)
 perp --json -e <EX> trade leverage <SYM> <N>
+perp --json -n testnet -e txflow trade limit BTC buy 70000 0.001 --tif ALO   # TxFlow: agent-signed, read back by client id (not yet verified live)
 
 # Account
 perp --json portfolio -e <EX>                        # balance + spot + positions (your own balance: account balance was renamed in v0.12)
@@ -73,6 +74,7 @@ perp --json funds withdraw aster 8 --chain bsc         # USDT → your own addre
 perp --json funds deposit ondo 12 --probe 2            # USDC transfer to your Ondo funding address (Arbitrum; --chain ethereum)
 perp --json funds withdraw arcus 10                   # to the Arcus account owner
 perp --json funds transfer 100 <ADDRESS>             # HL internal transfer (instant)
+# TxFlow: deposits / withdrawals / transfers are done in the TxFlow web app — funds deposit|withdraw txflow → CAPABILITY_UNSUPPORTED
 perp --json funds bridge quote --from solana --to arbitrum --amount 100
 perp --json funds bridge send --from solana --to arbitrum --amount 100   # auto-cheapest provider
 perp --json --dry-run funds bridge send --from robinhood --to solana --from-asset USDG --to-asset SOL --amount 15   # Relay quote only

@@ -17,7 +17,7 @@ What each venue supports in this release, derived from the code (venue definitio
 | Arcus | ✅ | ✅ hourly | ✅ public + user | — | — | ✅ | — (web app) | ✅ (to the account owner) | spot (on-chain swaps), client-side TWAP | official |
 | QFEX | ✅ | unverified (display only, `--include-unverified`) | — | — | — | ✅ (no resting reduce-only, no automation — see [QFEX](#qfex)) | address only | — (disabled for now; web app)⁵ | — | official |
 | RISEx | ✅ | ✅ hourly | — | ✅ | ✅ | — (**read-only**; trading planned, not yet available) | — (app only) | — (app only) | account reads by address | official |
-| TxFlow | ✅ | unverified (display only, `--include-unverified`) | — | — | — | — (market data only) | — | — | — | official (Beta) |
+| TxFlow | ✅ | unverified (display only, `--include-unverified`) | — | — | — | ✅ (agent key; mainnet whitelisted, not yet verified live — see [TxFlow](#txflow)) | — (web app) | — (web app) | — | official (Beta) |
 | Variational | ✅ (`market book` = RFQ quotes, not an order book) | unverified (display only, `--include-unverified`); interval per market (1h / 4h / 8h) | — | — | — | — (market data only) | — | — | equities / ETFs / commodities; pre-IPO (not matched) | official |
 | GRVT | ✅ | unverified (display only, `--include-unverified`); interval per market (4h / 8h) | — (per-instrument streams only) | — | — | — (market data only in this version; trading planned, not yet available) | — | — | equities / ETFs, commodities; pre-IPO not matched | official |
 | Extended | ✅ (crypto plus equities / ETFs / commodities / indices / FX) | unverified (display only, `--include-unverified`), hourly; `_24_5` equities print 0 off-hours | — (one socket per stream; not supported yet) | — | — | — (read-only) | — | — | asset-class column; pre-IPO and ambiguous tickers not matched | official |
@@ -45,7 +45,7 @@ What each venue supports in this release, derived from the code (venue definitio
 | Variational | `variational` (`var`, `omni`) | **no — market data only** (see **Variational** below) | Variational Omni, an RFQ venue (one market maker, no order book); official read-only API, no public trading API yet. Funding is unverified (shown only with `--include-unverified`); restricted: US, CA and others |
 | GRVT | `grvt` (`grv`) | **no — market data only in this version** (trading planned, not yet available; see **GRVT** below) | Hybrid perps exchange, USDT collateral; official Market Data API. Funding is unverified (shown only with `--include-unverified`); testnet = `-n testnet`; trading needs KYC; restricted: US, CA, SG, HK and others |
 | Extended | `extended` (`ext`, `x10`) | **no — market data only in this version** (trading planned, not yet available; see **Extended** below) | Perps order book on Starknet (formerly X10), USD collateral; official public API. Crypto plus RWA (equities, ETFs, indices, commodities, FX). Funding is unverified (shown only with `--include-unverified`); testnet = Sepolia (`-n testnet`); restricted: US, GB, CA, HK and others |
-| TxFlow | `txflow` (`txf`) | **no — market data only** | Official API (Beta, [docs](https://docs.txflow.com/api)). Funding is unverified (shown only with `--include-unverified`) |
+| TxFlow | `txflow` (`txf`) | yes (see **TxFlow** below; not yet verified live) | Official API (Beta, [docs](https://docs.txflow.com/api)). Agent-signed orders; limit TIF GTC (default) / IOC / ALO; cross / isolated; **mainnet access whitelist** (apply at txflow.com/apply); testnet = `-n testnet`. Funding is unverified (shown only with `--include-unverified`); deposits / withdrawals in the TxFlow web app |
 
 - **Restricted regions:** creating a signing adapter for a venue with restricted regions (Ondo, Arcus, QFEX) prints a one-time stderr notice; it never blocks — check the venue terms yourself.
 - **Aggregate views** (`portfolio`, `account positions/orders`, `risk`, `history`, `wallet agent verify`, MCP `portfolio`) cover every account venue with configured credentials.
@@ -99,16 +99,32 @@ perp -e risex account positions --ows <master>   # account reads are public by a
 - **Funds:** deposits and withdrawals are done in the RISEx app (app.rise.trade). `funds deposit|withdraw risex`, `funds transfer -e risex` and `funds rebalance execute` with risex refuse with `CAPABILITY_UNSUPPORTED` (also under `--dry-run`).
 - The trading code (session signer restricted on-chain to trading only, EIP-712 permits) ships with its tests but is switched off by one flag (`RISEX_TRADING_ENABLED` in `src/exchanges/venues/risex-release.ts`).
 
-## TxFlow (market data only)
+## TxFlow
 
-perp-cli reads TxFlow's official API, which TxFlow marks **Beta** ([docs](https://docs.txflow.com/api)): `POST https://rpc.txflow.com/info` with the `x-api-version` header (`perpMeta` directory, `webData2` 24 h volume, `l2Book`, `trades`, `candleSnapshot`) and the `/ws` channel `allAssetCtxs` (mark, oracle, funding, open interest for every perp). Read-only in perp-cli.
+perp-cli uses TxFlow's official API, which TxFlow marks **Beta** ([docs](https://docs.txflow.com/api)): `POST /info` reads and signed `POST /exchange` writes, with the `x-api-version` header, on `https://rpc.txflow.com` (mainnet) or `https://rpc.txflow-testnet.xyz` (testnet, `-n testnet`), plus the `/ws` channel `allAssetCtxs` for market rows. **Trading is new and not yet verified live** (see [verification](verification.md)).
+
+**Keys.** Trades are signed by an **agent key** the master wallet approves once (`approveAgent`, EIP-712 signed by the master; the agent's key lives in OWS wallet `agent-txflow-<master>[-testnet]`). TxFlow keys agents by label — the perp-cli agent name. An agent cannot move funds and does not expire. The account must be funded first (testnet: the faucet in the TxFlow web app).
 
 ```bash
-perp -e txflow market list | info <SYM> | book <SYM> | trades <SYM> | kline <SYM> 1h
-perp arb scan --rates --include-unverified                  # TxFlow funding (percent per hour on the venue, shown as a fraction), display only
+perp -n testnet wallet agent approve txflow --master <ows-wallet>   # master signs approveAgent; agentOwner proves it
+perp -n testnet wallet agent import txflow                          # or a key created in the TxFlow web app (hidden prompt / stdin)
+perp -n testnet wallet agent verify txflow                          # agentOwner / approvedAgents (read-only)
+perp -n testnet -e txflow account positions | orders | trades | portfolio
+perp -n testnet -e txflow trade market BTC buy 0.001 --sl 70000      # IOC at mark ± slippage; SL placed after the verified fill
+perp -n testnet -e txflow trade limit BTC buy 70000 0.001 --tif ALO
+perp -n testnet -e txflow trade edit BTC <orderId> 70100 0.002       # modify2: same order id, new TOTAL size
+perp -n testnet -e txflow trade stop BTC sell 0.001 65000            # reduce-only trigger on the MARK price
+perp -n testnet -e txflow trade tpsl BTC long --tp 90000 --sl 65000
+perp -n testnet -e txflow trade leverage BTC 5 --isolated            # cross unless --isolated
+perp -n testnet -e txflow trade status c:<clientId> --symbol BTC
 ```
 
-Every trade / account / portfolio / funds (deposit, withdraw, transfer, rebalance) / agent / builder / strategy / arb exec command and every MCP account or trading tool refuses TxFlow with `CAPABILITY_UNSUPPORTED` before any request. Funding stays unverified: the docs give it in percent per settlement interval (one hour) but do not say whether it is the next settlement's estimate or the last settled print, and TxFlow publishes no market funding history to check it against (`fundingHistory` answers HTTP 403). There is no testnet in perp-cli; a market whose funding interval cannot be proven to be 1 hour shows funding as unknown.
+- **Mainnet is whitelisted:** TxFlow opens `POST /exchange` on mainnet to whitelisted accounts only. A refusal is `POLICY_DENIED` with "apply at https://txflow.com/apply". Testnet is open.
+- **Order outcomes are read back, never assumed.** perp-cli sends every write with `confirm: "executed"`. The venue answers one status for the whole action and never reports an order id, a fill or a resting state. So every order carries a client order id, and its state is read back by that id (open orders → trigger orders → order history). An order that executed but is not visible yet is `accepted` / pending. Anything unclear after sending is `ORDER_PENDING` with the `c:<id>` to check — never resubmit. A cancel counts only once the order is gone from the open orders.
+- **TP/SL** are separate reduce-only trigger orders (grouping `normalTrigger`, tagged `tp` / `sl`), placed after the entry's verified fill. They fire on the mark price; a fired order is not guaranteed to fill. The OCO pair groupings (`normalTpsl` / `positionTpsl`) are not used.
+- **Margin:** `trade leverage` (cross, or `--isolated`) sends `updateMarginMode` when the mode changes, then `updateLeverage`, and checks the result with `activeAssetData`. The venue refuses a leverage change while the market has open, trigger or TP/SL orders. Orders omit `m`: the venue routes each one to the account's current mode for that market.
+- **Refused** (`CAPABILITY_UNSUPPORTED`, before anything is sent): deposits, withdrawals and transfers (`funds deposit|withdraw txflow`, `funds transfer -e txflow`, `funds rebalance`; do them in the TxFlow web app); `--tif FOK` (not offered) and GTD (Outcome only); hedge position mode (switch the account to one-way in the web app); amending a trigger order; builder codes (`wallet builder approve txflow`); unattended automation (bots, plans, TWAP / grid / DCA, trailing stop, background jobs) until the trading path is verified live; `arb exec` legs (funding unverified); keyless `--address` reads.
+- **Funding** stays unverified. The docs give it in percent per settlement interval (one hour), but they do not say whether it is the next settlement's estimate or the last settled print. TxFlow publishes no market funding history to check it against (`fundingHistory` answers HTTP 403). A market whose funding interval cannot be proven to be 1 hour shows funding as unknown. `perp arb scan --rates --include-unverified` shows it, display only.
 
 ## Variational (market data only — official API)
 
