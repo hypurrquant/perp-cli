@@ -85,7 +85,7 @@ Order outcomes are never guessed: an IOC / market order is final only on a venue
 
 ## RISEx
 
-RISEx is a fully on-chain perps order book on RISE chain (USDC collateral), reached through its **official** API. Trading is on since 2026-10-27 (shipped switched off in 0.15.0). It was verified on **testnet** (2026-10-14); no mainnet RISEx order has been run yet.
+RISEx is a fully on-chain perps order book on RISE chain (USDC collateral), reached through its **official** API. Trading is on since 2026-10-27 (shipped switched off in 0.15.0). It was verified on **testnet** (2026-10-14, again 2026-10-28 after the signer-restriction and market-order fixes); no mainnet RISEx order has been run yet.
 
 ```bash
 perp -e risex market list                     # public; funding = last settled hourly rate (verified)
@@ -99,8 +99,8 @@ perp -n testnet funds faucet risex            # testnet only: 1000 test USDC, on
 ```
 
 - **Signer:** `wallet agent approve risex --master <w>` registers a session signer (default `--expires-in 30d`). The signer is then restricted ON-CHAIN to trading only: the master sends the DisablePermission transactions and needs a little RISE-chain ETH for gas. Never interrupt the approve: until the last DisablePermission lands, the signer briefly holds full permissions. `wallet agent import risex` is refused, because an app-created signer keeps fund-movement permissions. Trading-only is re-proven from the on-chain permission bitmap and the reviewed contract versions before signed actions. After a contract upgrade or a new permission id, every signed action is refused (`POLICY_DENIED`) until perp-cli is updated.
-- **Orders:** market (IOC within the market's match price band, 2 % on mainnet today), limit GTC / IOC / FOK / ALO, reduce-only, cancel, cancel-all, leverage, margin mode (refused while a position is open), `trade status c:<id>`. Sizes and prices must sit on the step / tick grid (`INVALID_TICK`, never rounded).
-- **Not yet** (`CAPABILITY_UNSUPPORTED`): TP/SL / stops, amend, builder fee. Bots, TWAP, grid, background jobs and `strategy …` on RISEx are refused too ("unattended trading on RISEx is not enabled until its trading path is verified on mainnet").
+- **Orders:** market (sent as LIMIT IOC at the slippage-bounded protection price — the venue's MARKET type ignores the price, testnet 2026-10-28 — within the market's match price band, 2 % on mainnet today), limit GTC / IOC / FOK / ALO, reduce-only, cancel, cancel-all, leverage, margin mode (refused while a position is open), `trade status c:<id>`. Sizes and prices must sit on the step / tick grid (`INVALID_TICK`, never rounded).
+- **Not supported** (`CAPABILITY_UNSUPPORTED`): TP/SL / stops — RISEx executes them from its backend against an account-signed OperatorHub spending allowance (`approve-single`, "Required for TPSL"; overwriting it needs an on-chain lockdown), outside the trading-only session signer, so perp-cli does not grant it (set TP/SL in the RISEx app); amend; builder fee. Bots, TWAP, grid, background jobs and `strategy …` on RISEx are refused too ("unattended trading on RISEx is not enabled until its trading path is verified on mainnet").
 - **Funds:** deposits and withdrawals are done in the RISEx app (app.rise.trade). `funds deposit|withdraw risex`, `funds transfer -e risex` and `funds rebalance execute` with risex refuse with `CAPABILITY_UNSUPPORTED` (also under `--dry-run`).
 - One flag still switches trading off again (`RISEX_TRADING_ENABLED` in `src/exchanges/venues/risex-release.ts`): with it false, every trade / agent / bot path refuses with `CAPABILITY_UNSUPPORTED` before any key is read.
 

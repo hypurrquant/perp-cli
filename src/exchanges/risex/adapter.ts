@@ -535,7 +535,7 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
   async placeOrder(req: OrderRequest): Promise<OrderResult> {
     validateOrderRequest(this.venue, this.caps, req);
     if (req.type !== "market" && req.type !== "limit") {
-      throw unsupported(this.venue.displayName, "stopOrders", "TP/SL and stop orders are not implemented for RISEx yet", "Use market / limit orders; set protection in the RISEx app");
+      throw unsupported(this.venue.displayName, "stopOrders", "RISEx TP/SL orders are executed by the venue backend against an account-signed OperatorHub spending allowance (docs: approve-single, required for TP/SL), outside the trading-only session signer — perp-cli does not grant it", "Set TP/SL in the RISEx app (it grants that allowance), or use reduce-only limit orders");
     }
     const { account, signer } = this.requireSigner();
     const m = await this.market(req.symbol, true);
@@ -880,12 +880,12 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   async stopOrder(): Promise<unknown> {
-    throw unsupported(this.venue.displayName, "stopOrders", "TP/SL and stop orders are not implemented for RISEx yet", "Set TP/SL in the RISEx app");
+    throw unsupported(this.venue.displayName, "stopOrders", "RISEx TP/SL orders are executed by the venue backend against an account-signed OperatorHub spending allowance (docs: approve-single, required for TP/SL), outside the trading-only session signer — perp-cli does not grant it", "Set TP/SL in the RISEx app (it grants that allowance), or use reduce-only limit orders");
   }
 
   /** TP/SL entries are refused before the entry is sent (not implemented yet). */
   stopOrderGate(): PerpError {
-    return unsupported(this.venue.displayName, "stopOrders", "TP/SL and stop orders are not implemented for RISEx yet", "Set TP/SL in the RISEx app");
+    return unsupported(this.venue.displayName, "stopOrders", "RISEx TP/SL orders are executed by the venue backend against an account-signed OperatorHub spending allowance (docs: approve-single, required for TP/SL), outside the trading-only session signer — perp-cli does not grant it", "Set TP/SL in the RISEx app (it grants that allowance), or use reduce-only limit orders");
   }
 
   /** Bots / TWAP / grid / funding-arb legs stay off until RISEx trading is verified on mainnet. */

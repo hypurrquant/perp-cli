@@ -18,6 +18,15 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - Mainnet RISEx trading was verified on testnet only (2026-10-14). No mainnet RISEx order has been run yet (`docs/verification.md`).
 - The read-only gate stays in the code and is still tested: `risex-read-only.test.ts` now mocks the switch off.
 
+### Fixed — RISEx (testnet 2026-10-28)
+
+- **Market orders ignored the slippage bound.** The venue's MARKET order type ignores the price: a buy with a 1 bps bound filled 0.7 % above the mark. Market orders (and closes) now go out as LIMIT IOC at the protection price; an IOC that fills nothing reports `ORDER_REJECTED` "IOC filled nothing" instead of `ORDER_PENDING`, and fills carry the average price.
+- **Signer restriction.** Permission 1 is the "all bits" mask on the Authorization contract (bytecode-verified, identical on testnet and mainnet): disabling it wipes trading too, and the old proof wrongly required its bit clear, so every approve failed (fail-closed — the signer was revoked). perp-cli now disables 0, 3, 4 only and proves trading-only from the masks (bits 0 / 3 / 4 clear, bit 2 set, `hasPermission` = {2}, Active, unexpired).
+- `wallet agent approve risex` with an OWS master failed with "Do not know how to serialize a BigInt" before signing.
+- `cancel-all` reported cancelled orders as pending (the open list lags the tx); it now re-reads and proves each order cancelled by id.
+- The testnet router implementation is re-pinned after its 2026-10-27 upgrade (bytecode review: only batch place / cancel entries added, still permission 2).
+- RISEx TP/SL stays unsupported, now with the reason: the venue executes TP/SL against an account-signed OperatorHub spending allowance, outside the trading-only signer.
+
 ## [0.16.0] — 2026-10-26
 
 > **Renumbered from 0.15.1, which was never released** (npm's latest is 0.15.0; there is no `v0.15.1`
