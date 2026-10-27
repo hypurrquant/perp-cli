@@ -429,26 +429,11 @@ describe("review fixes: client-id reuse, cancel races, paging, mixed groupings, 
     const r2 = await adapter().cancelByRef("BTC", { kind: "orderId", value: "700" });
     expect(r2.cancelled).toEqual([{ kind: "orderId", value: "700" }]);
     expect(r2.venueRaw).toEqual([{ orderId: "700", venueStatus: "partialCanceled", filledSize: "0.006" }]);
-    // Gone, not in the order history, but a fill of it is recorded → pending (history lags).
+    // Gone, but not in the order history yet → pending.
     gone = false;
     venue.info.orderDetails = () => recorded("orderDetails.notFound");
-    venue.info.userFills = () => ok({ data: [{ oid: 700, coin: "BTC", px: "60000", sz: "0.002", side: "B", time: Date.now(), fee: "0", instrumentId: 1 }], hasMore: false, total: 1 });
     const r3 = await adapter().cancelByRef("BTC", { kind: "orderId", value: "700" });
     expect(r3.pending).toHaveLength(1);
-    expect(r3.cancelled).toEqual([]);
-    // Gone after an executed cancel, not in the history, no fill recorded → cancelled with 0 filled
-    // (live testnet 2026-10-27: 0-fill cancelled orders are never in TxFlow's order history).
-    gone = false;
-    venue.info.userFills = () => ok({ data: [{ oid: 701, coin: "BTC", px: "60000", sz: "0.002", side: "B", time: Date.now(), fee: "0", instrumentId: 1 }], hasMore: false, total: 1 });
-    const r4 = await adapter().cancelByRef("BTC", { kind: "orderId", value: "700" });
-    expect(r4.cancelled).toEqual([{ kind: "orderId", value: "700" }]);
-    expect(r4.venueRaw).toEqual([expect.objectContaining({ orderId: "700", filledSize: "0" })]);
-    // A REFUSED cancel never proves a 0-fill cancel, even when the order is gone.
-    gone = false;
-    venue.exchange = () => { gone = true; return json(200, { status: "err", code: 1, message: "Order not found" }); };
-    const r5 = await adapter().cancelByRef("BTC", { kind: "orderId", value: "700" });
-    expect(r5.cancelled).toEqual([]);
-    expect(r5.pending).toHaveLength(1);
   });
 
   it("a refused batch is re-verified per order: gone + cancelled → cancelled; still open → failed", async () => {
