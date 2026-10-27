@@ -784,18 +784,6 @@
   },
   {
    "cell": "cli:market-list-all",
-   "method": "POST",
-   "url": "https://api.txflow.com/info",
-   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "e32a389f7ff640a4"
-   },
-   "text": null
-  },
-  {
-   "cell": "cli:market-list-all",
    "method": "GET",
    "url": "https://omni-client-api.prod.ap-northeast-1.variational.io/metadata/v2/stats",
    "body": null,
@@ -1060,137 +1048,6 @@
      }
     ]
    },
-   "text": null
-  },
-  {
-   "cell": "cli:market-list-all",
-   "method": "POST",
-   "url": "https://api.txflow.com/info",
-   "body": "{\"type\":\"allMarketTickers\"}",
-   "status": 200,
-   "contentType": "application/json",
-   "response": [
-    {
-     "coin": "BTC/USDC",
-     "instrumentId": 10000,
-     "lastPrice": "81995.46",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "619316.0874152",
-     "prevDayPx": "81040.47",
-     "change24h": "954.99",
-     "change24hPct": "1.18"
-    },
-    {
-     "coin": "ETH/USDC",
-     "instrumentId": 10001,
-     "lastPrice": "2399.93",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "102676.353076",
-     "prevDayPx": "2365.66",
-     "change24h": "34.27",
-     "change24hPct": "1.45"
-    },
-    {
-     "coin": "SOL/USDC",
-     "instrumentId": 10002,
-     "lastPrice": "104.55",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "106044.4547",
-     "prevDayPx": "101.78",
-     "change24h": "2.77",
-     "change24hPct": "2.72"
-    },
-    {
-     "coin": "BTC",
-     "instrumentId": 1,
-     "lastPrice": "81905.6",
-     "markPx": "81906.2",
-     "oraclePx": "81943.4",
-     "openInterest": "182.0214",
-     "fundingRate": "0.00125000",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426887224,
-     "dayNtlVlm": "62659740.9450022",
-     "prevDayPx": "81003.5",
-     "change24h": "902.1",
-     "change24hPct": "1.11"
-    },
-    {
-     "coin": "ETH",
-     "instrumentId": 2,
-     "lastPrice": "2398.61",
-     "markPx": "2398.60",
-     "oraclePx": "2399.48",
-     "openInterest": "4174.688",
-     "fundingRate": "0.00054168",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426887224,
-     "dayNtlVlm": "13009184.349484816",
-     "prevDayPx": "2364.16",
-     "change24h": "34.45",
-     "change24hPct": "1.46"
-    },
-    {
-     "coin": "SOL",
-     "instrumentId": 13,
-     "lastPrice": "104.50",
-     "markPx": "104.38",
-     "oraclePx": "104.44",
-     "openInterest": "14329.02",
-     "fundingRate": "-0.00015449",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426887224,
-     "dayNtlVlm": "3608249.429213465",
-     "prevDayPx": "101.8",
-     "change24h": "2.70",
-     "change24hPct": "2.65"
-    },
-    {
-     "coin": "NVDA",
-     "instrumentId": 122,
-     "lastPrice": "218.69",
-     "markPx": "218.57",
-     "oraclePx": "218.62",
-     "openInterest": "1918.38",
-     "fundingRate": "0.00125000",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426887224,
-     "dayNtlVlm": "1003653.4298648472",
-     "prevDayPx": "212.06",
-     "change24h": "6.63",
-     "change24hPct": "3.13"
-    },
-    {
-     "coin": "SAMSUNG",
-     "instrumentId": 153,
-     "lastPrice": "165.62",
-     "markPx": "165.60",
-     "oraclePx": "166.17",
-     "openInterest": "76.56",
-     "fundingRate": "-0.00013552",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426887224,
-     "dayNtlVlm": "233317.6449632114",
-     "prevDayPx": "153.64",
-     "change24h": "11.98",
-     "change24hPct": "7.80"
-    }
-   ],
    "text": null
   },
   {
@@ -6560,18 +6417,6 @@
   },
   {
    "cell": "cli:market-prices-all",
-   "method": "POST",
-   "url": "https://api.txflow.com/info",
-   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "e32a389f7ff640a4"
-   },
-   "text": null
-  },
-  {
-   "cell": "cli:market-prices-all",
    "method": "GET",
    "url": "https://fapi.asterdex.com/fapi/v3/fundingInfo",
    "body": null,
@@ -6580,137 +6425,6 @@
    "response": {
     "$body": "097f973b494317d4"
    },
-   "text": null
-  },
-  {
-   "cell": "cli:market-prices-all",
-   "method": "POST",
-   "url": "https://api.txflow.com/info",
-   "body": "{\"type\":\"allMarketTickers\"}",
-   "status": 200,
-   "contentType": "application/json",
-   "response": [
-    {
-     "coin": "BTC/USDC",
-     "instrumentId": 10000,
-     "lastPrice": "81995.46",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "619316.0874152",
-     "prevDayPx": "81040.47",
-     "change24h": "954.99",
-     "change24hPct": "1.18"
-    },
-    {
-     "coin": "ETH/USDC",
-     "instrumentId": 10001,
-     "lastPrice": "2399.93",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "102676.353076",
-     "prevDayPx": "2365.66",
-     "change24h": "34.27",
-     "change24hPct": "1.45"
-    },
-    {
-     "coin": "SOL/USDC",
-     "instrumentId": 10002,
-     "lastPrice": "104.55",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "105696.8734",
-     "prevDayPx": "101.93",
-     "change24h": "2.62",
-     "change24hPct": "2.57"
-    },
-    {
-     "coin": "BTC",
-     "instrumentId": 1,
-     "lastPrice": "81900.0",
-     "markPx": "81899.6",
-     "oraclePx": "81937.3",
-     "openInterest": "183.8346",
-     "fundingRate": "0.00125000",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426895099,
-     "dayNtlVlm": "62655030.2763522",
-     "prevDayPx": "81008.3",
-     "change24h": "891.7",
-     "change24hPct": "1.10"
-    },
-    {
-     "coin": "ETH",
-     "instrumentId": 2,
-     "lastPrice": "2397.89",
-     "markPx": "2397.86",
-     "oraclePx": "2398.83",
-     "openInterest": "4174.688",
-     "fundingRate": "0.00054143",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426895099,
-     "dayNtlVlm": "13009156.866204817",
-     "prevDayPx": "2364.19",
-     "change24h": "33.70",
-     "change24hPct": "1.43"
-    },
-    {
-     "coin": "SOL",
-     "instrumentId": 13,
-     "lastPrice": "104.50",
-     "markPx": "104.34",
-     "oraclePx": "104.40",
-     "openInterest": "14329.02",
-     "fundingRate": "-0.00015845",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426895099,
-     "dayNtlVlm": "3608249.429213465",
-     "prevDayPx": "101.8",
-     "change24h": "2.70",
-     "change24hPct": "2.65"
-    },
-    {
-     "coin": "NVDA",
-     "instrumentId": 122,
-     "lastPrice": "218.59",
-     "markPx": "218.59",
-     "oraclePx": "218.63",
-     "openInterest": "1918.70",
-     "fundingRate": "0.00125000",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426895099,
-     "dayNtlVlm": "1003688.4042648472",
-     "prevDayPx": "212.06",
-     "change24h": "6.53",
-     "change24hPct": "3.08"
-    },
-    {
-     "coin": "SAMSUNG",
-     "instrumentId": 153,
-     "lastPrice": "165.62",
-     "markPx": "165.59",
-     "oraclePx": "166.17",
-     "openInterest": "76.56",
-     "fundingRate": "-0.00034072",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426895099,
-     "dayNtlVlm": "233383.8929632114",
-     "prevDayPx": "153.64",
-     "change24h": "11.98",
-     "change24hPct": "7.80"
-    }
-   ],
    "text": null
   },
   {
@@ -9611,18 +9325,6 @@
   },
   {
    "cell": "cli:health",
-   "method": "POST",
-   "url": "https://api.txflow.com/info",
-   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "e32a389f7ff640a4"
-   },
-   "text": null
-  },
-  {
-   "cell": "cli:health",
    "method": "GET",
    "url": "https://api.starknet.extended.exchange/api/v1/info/markets",
    "body": null,
@@ -10596,137 +10298,6 @@
     },
     "request_id": "e79053df-51ea-483d-8242-31fc8f548973"
    },
-   "text": null
-  },
-  {
-   "cell": "cli:health",
-   "method": "POST",
-   "url": "https://api.txflow.com/info",
-   "body": "{\"type\":\"allMarketTickers\"}",
-   "status": 200,
-   "contentType": "application/json",
-   "response": [
-    {
-     "coin": "BTC/USDC",
-     "instrumentId": 10000,
-     "lastPrice": "81995.46",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "618576.1217316",
-     "prevDayPx": "81047.72",
-     "change24h": "947.74",
-     "change24hPct": "1.17"
-    },
-    {
-     "coin": "ETH/USDC",
-     "instrumentId": 10001,
-     "lastPrice": "2399.93",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "102676.353076",
-     "prevDayPx": "2365.66",
-     "change24h": "34.27",
-     "change24hPct": "1.45"
-    },
-    {
-     "coin": "SOL/USDC",
-     "instrumentId": 10002,
-     "lastPrice": "104.55",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "105696.8734",
-     "prevDayPx": "101.93",
-     "change24h": "2.62",
-     "change24hPct": "2.57"
-    },
-    {
-     "coin": "BTC",
-     "instrumentId": 1,
-     "lastPrice": "81900.0",
-     "markPx": "81888.4",
-     "oraclePx": "81925.0",
-     "openInterest": "183.8346",
-     "fundingRate": "0.00125000",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426898487,
-     "dayNtlVlm": "62724109.148432195",
-     "prevDayPx": "81023.3",
-     "change24h": "876.7",
-     "change24hPct": "1.08"
-    },
-    {
-     "coin": "ETH",
-     "instrumentId": 2,
-     "lastPrice": "2397.20",
-     "markPx": "2397.33",
-     "oraclePx": "2398.38",
-     "openInterest": "4172.730",
-     "fundingRate": "0.00054049",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426898487,
-     "dayNtlVlm": "13011503.725004816",
-     "prevDayPx": "2364.19",
-     "change24h": "33.01",
-     "change24hPct": "1.40"
-    },
-    {
-     "coin": "SOL",
-     "instrumentId": 13,
-     "lastPrice": "104.50",
-     "markPx": "104.32",
-     "oraclePx": "104.38",
-     "openInterest": "14329.02",
-     "fundingRate": "-0.00015996",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426898487,
-     "dayNtlVlm": "3608249.429213465",
-     "prevDayPx": "101.8",
-     "change24h": "2.70",
-     "change24hPct": "2.65"
-    },
-    {
-     "coin": "NVDA",
-     "instrumentId": 122,
-     "lastPrice": "218.59",
-     "markPx": "218.61",
-     "oraclePx": "218.65",
-     "openInterest": "1918.70",
-     "fundingRate": "0.00125000",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426898487,
-     "dayNtlVlm": "1003688.4042648472",
-     "prevDayPx": "212.06",
-     "change24h": "6.53",
-     "change24hPct": "3.08"
-    },
-    {
-     "coin": "SAMSUNG",
-     "instrumentId": 153,
-     "lastPrice": "165.60",
-     "markPx": "165.58",
-     "oraclePx": "166.17",
-     "openInterest": "76.76",
-     "fundingRate": "-0.00041671",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426898487,
-     "dayNtlVlm": "233385.08096321145",
-     "prevDayPx": "153.72",
-     "change24h": "11.88",
-     "change24hPct": "7.73"
-    }
-   ],
    "text": null
   },
   {
@@ -13632,158 +13203,6 @@
   {
    "cell": "cli:arb-scan",
    "method": "GET",
-   "url": "https://mainnet.zklighter.elliot.ai/api/v1/funding-rates",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json; charset=utf-8",
-   "response": {
-    "code": 200,
-    "funding_rates": [
-     {
-      "market_id": 2,
-      "exchange": "binance",
-      "symbol": "SOL",
-      "rate": 0.00003365
-     },
-     {
-      "market_id": 0,
-      "exchange": "binance",
-      "symbol": "ETH",
-      "rate": 0.00005037
-     },
-     {
-      "market_id": 185,
-      "exchange": "binance",
-      "symbol": "BOT",
-      "rate": 0
-     },
-     {
-      "market_id": 110,
-      "exchange": "binance",
-      "symbol": "NVDA",
-      "rate": 0
-     },
-     {
-      "market_id": 140,
-      "exchange": "binance",
-      "symbol": "SAMSUNG",
-      "rate": 0
-     },
-     {
-      "market_id": 1,
-      "exchange": "binance",
-      "symbol": "BTC",
-      "rate": 0.00009104
-     },
-     {
-      "market_id": 185,
-      "exchange": "bybit",
-      "symbol": "BOT",
-      "rate": -0.00028843
-     },
-     {
-      "market_id": 1,
-      "exchange": "bybit",
-      "symbol": "BTC",
-      "rate": 0.00005415
-     },
-     {
-      "market_id": 0,
-      "exchange": "bybit",
-      "symbol": "ETH",
-      "rate": 0.00005505
-     },
-     {
-      "market_id": 110,
-      "exchange": "bybit",
-      "symbol": "NVDA",
-      "rate": 0
-     },
-     {
-      "market_id": 140,
-      "exchange": "bybit",
-      "symbol": "SAMSUNG",
-      "rate": -0.00051133
-     },
-     {
-      "market_id": 2,
-      "exchange": "bybit",
-      "symbol": "SOL",
-      "rate": -0.00002882
-     },
-     {
-      "market_id": 1,
-      "exchange": "hyperliquid",
-      "symbol": "BTC",
-      "rate": 0.0001
-     },
-     {
-      "market_id": 0,
-      "exchange": "hyperliquid",
-      "symbol": "ETH",
-      "rate": 0.0001
-     },
-     {
-      "market_id": 2,
-      "exchange": "hyperliquid",
-      "symbol": "SOL",
-      "rate": 0.0000812048
-     },
-     {
-      "market_id": 110,
-      "exchange": "hyperliquid",
-      "symbol": "NVDA",
-      "rate": 0.00005
-     },
-     {
-      "market_id": 140,
-      "exchange": "hyperliquid",
-      "symbol": "SAMSUNG",
-      "rate": -0.0006199192
-     },
-     {
-      "market_id": 185,
-      "exchange": "lighter",
-      "symbol": "BOT",
-      "rate": 0.000032
-     },
-     {
-      "market_id": 110,
-      "exchange": "lighter",
-      "symbol": "NVDA",
-      "rate": 0.000032
-     },
-     {
-      "market_id": 0,
-      "exchange": "lighter",
-      "symbol": "ETH",
-      "rate": 0.00009599999999999999
-     },
-     {
-      "market_id": 162,
-      "exchange": "lighter",
-      "symbol": "SAMSUNGUSD",
-      "rate": -0.000584
-     },
-     {
-      "market_id": 2,
-      "exchange": "lighter",
-      "symbol": "SOL",
-      "rate": 0.000056
-     },
-     {
-      "market_id": 1,
-      "exchange": "lighter",
-      "symbol": "BTC",
-      "rate": 0.00009599999999999999
-     }
-    ]
-   },
-   "text": null
-  },
-  {
-   "cell": "cli:arb-scan",
-   "method": "GET",
    "url": "https://fapi.asterdex.com/fapi/v1/premiumIndex",
    "body": null,
    "status": 200,
@@ -16299,18 +15718,6 @@
    "contentType": "application/json",
    "response": {
     "$body": "452c6a17f7c1bc2b"
-   },
-   "text": null
-  },
-  {
-   "cell": "cli:arb-rates-unverified",
-   "method": "POST",
-   "url": "https://api.txflow.com/info",
-   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "e32a389f7ff640a4"
    },
    "text": null
   },
@@ -21340,18 +20747,6 @@
       ]
      }
     ]
-   },
-   "text": null
-  },
-  {
-   "cell": "cli:arb-compare-unverified",
-   "method": "POST",
-   "url": "https://api.txflow.com/info",
-   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "e32a389f7ff640a4"
    },
    "text": null
   },
@@ -27919,18 +27314,6 @@
   },
   {
    "cell": "mcp:get_prices",
-   "method": "POST",
-   "url": "https://api.txflow.com/info",
-   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "e32a389f7ff640a4"
-   },
-   "text": null
-  },
-  {
-   "cell": "mcp:get_prices",
    "method": "GET",
    "url": "https://fapi.asterdex.com/fapi/v1/exchangeInfo",
    "body": null,
@@ -29172,137 +28555,6 @@
     },
     "request_id": "fd69675b-b742-4018-9e37-97b11528030d"
    },
-   "text": null
-  },
-  {
-   "cell": "mcp:get_prices",
-   "method": "POST",
-   "url": "https://api.txflow.com/info",
-   "body": "{\"type\":\"allMarketTickers\"}",
-   "status": 200,
-   "contentType": "application/json",
-   "response": [
-    {
-     "coin": "BTC/USDC",
-     "instrumentId": 10000,
-     "lastPrice": "81995.46",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "618576.1217316",
-     "prevDayPx": "81047.72",
-     "change24h": "947.74",
-     "change24hPct": "1.17"
-    },
-    {
-     "coin": "ETH/USDC",
-     "instrumentId": 10001,
-     "lastPrice": "2399.93",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "102676.353076",
-     "prevDayPx": "2365.66",
-     "change24h": "34.27",
-     "change24hPct": "1.45"
-    },
-    {
-     "coin": "SOL/USDC",
-     "instrumentId": 10002,
-     "lastPrice": "104.39",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "105762.6391",
-     "prevDayPx": "101.93",
-     "change24h": "2.46",
-     "change24hPct": "2.41"
-    },
-    {
-     "coin": "BTC",
-     "instrumentId": 1,
-     "lastPrice": "81864.8",
-     "markPx": "81884.1",
-     "oraclePx": "81920.6",
-     "openInterest": "183.9036",
-     "fundingRate": "0.00125000",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426919995,
-     "dayNtlVlm": "62732056.597212195",
-     "prevDayPx": "81024.7",
-     "change24h": "840.1",
-     "change24hPct": "1.04"
-    },
-    {
-     "coin": "ETH",
-     "instrumentId": 2,
-     "lastPrice": "2397.20",
-     "markPx": "2397.19",
-     "oraclePx": "2398.34",
-     "openInterest": "4172.730",
-     "fundingRate": "0.00053863",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426919995,
-     "dayNtlVlm": "13004528.142024815",
-     "prevDayPx": "2364.91",
-     "change24h": "32.29",
-     "change24hPct": "1.37"
-    },
-    {
-     "coin": "SOL",
-     "instrumentId": 13,
-     "lastPrice": "104.50",
-     "markPx": "104.32",
-     "oraclePx": "104.39",
-     "openInterest": "14329.02",
-     "fundingRate": "-0.00015661",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426919995,
-     "dayNtlVlm": "3608249.429213465",
-     "prevDayPx": "101.8",
-     "change24h": "2.70",
-     "change24hPct": "2.65"
-    },
-    {
-     "coin": "NVDA",
-     "instrumentId": 122,
-     "lastPrice": "218.54",
-     "markPx": "218.55",
-     "oraclePx": "218.60",
-     "openInterest": "1918.70",
-     "fundingRate": "0.00125000",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426919995,
-     "dayNtlVlm": "1003710.2582648472",
-     "prevDayPx": "212.06",
-     "change24h": "6.48",
-     "change24hPct": "3.06"
-    },
-    {
-     "coin": "SAMSUNG",
-     "instrumentId": 153,
-     "lastPrice": "165.54",
-     "markPx": "165.59",
-     "oraclePx": "166.16",
-     "openInterest": "76.52",
-     "fundingRate": "-0.00095045",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426919995,
-     "dayNtlVlm": "233404.9457632114",
-     "prevDayPx": "153.72",
-     "change24h": "11.82",
-     "change24hPct": "7.69"
-    }
-   ],
    "text": null
   },
   {
@@ -31566,149 +30818,6 @@
   },
   {
    "cell": "mcp:health_check",
-   "method": "POST",
-   "url": "https://api.txflow.com/info",
-   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "e32a389f7ff640a4"
-   },
-   "text": null
-  },
-  {
-   "cell": "mcp:health_check",
-   "method": "POST",
-   "url": "https://api.txflow.com/info",
-   "body": "{\"type\":\"allMarketTickers\"}",
-   "status": 200,
-   "contentType": "application/json",
-   "response": [
-    {
-     "coin": "BTC/USDC",
-     "instrumentId": 10000,
-     "lastPrice": "81995.46",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "618576.1217316",
-     "prevDayPx": "81047.72",
-     "change24h": "947.74",
-     "change24hPct": "1.17"
-    },
-    {
-     "coin": "ETH/USDC",
-     "instrumentId": 10001,
-     "lastPrice": "2399.93",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "102676.353076",
-     "prevDayPx": "2365.66",
-     "change24h": "34.27",
-     "change24hPct": "1.45"
-    },
-    {
-     "coin": "SOL/USDC",
-     "instrumentId": 10002,
-     "lastPrice": "104.39",
-     "markPx": "",
-     "oraclePx": "",
-     "openInterest": "",
-     "fundingRate": "",
-     "nextFundingTime": 0,
-     "blockTime": 0,
-     "dayNtlVlm": "105762.6391",
-     "prevDayPx": "101.93",
-     "change24h": "2.46",
-     "change24hPct": "2.41"
-    },
-    {
-     "coin": "BTC",
-     "instrumentId": 1,
-     "lastPrice": "81873.2",
-     "markPx": "81878.0",
-     "oraclePx": "81914.6",
-     "openInterest": "183.9032",
-     "fundingRate": "0.00125000",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426923103,
-     "dayNtlVlm": "62731571.04363221",
-     "prevDayPx": "81024.6",
-     "change24h": "848.6",
-     "change24hPct": "1.05"
-    },
-    {
-     "coin": "ETH",
-     "instrumentId": 2,
-     "lastPrice": "2397.20",
-     "markPx": "2396.74",
-     "oraclePx": "2397.90",
-     "openInterest": "4172.730",
-     "fundingRate": "0.00053782",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426923103,
-     "dayNtlVlm": "13004528.142024815",
-     "prevDayPx": "2364.91",
-     "change24h": "32.29",
-     "change24hPct": "1.37"
-    },
-    {
-     "coin": "SOL",
-     "instrumentId": 13,
-     "lastPrice": "104.50",
-     "markPx": "104.33",
-     "oraclePx": "104.39",
-     "openInterest": "14329.02",
-     "fundingRate": "-0.00015624",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426923103,
-     "dayNtlVlm": "3608249.429213465",
-     "prevDayPx": "101.8",
-     "change24h": "2.70",
-     "change24hPct": "2.65"
-    },
-    {
-     "coin": "NVDA",
-     "instrumentId": 122,
-     "lastPrice": "218.49",
-     "markPx": "218.53",
-     "oraclePx": "218.54",
-     "openInterest": "1918.70",
-     "fundingRate": "0.00125000",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426923103,
-     "dayNtlVlm": "1003710.2582648472",
-     "prevDayPx": "212.06",
-     "change24h": "6.43",
-     "change24hPct": "3.03"
-    },
-    {
-     "coin": "SAMSUNG",
-     "instrumentId": 153,
-     "lastPrice": "165.54",
-     "markPx": "165.59",
-     "oraclePx": "166.16",
-     "openInterest": "76.52",
-     "fundingRate": "-0.00102228",
-     "nextFundingTime": 1792429200000,
-     "blockTime": 1792426923103,
-     "dayNtlVlm": "233404.9457632114",
-     "prevDayPx": "153.72",
-     "change24h": "11.82",
-     "change24hPct": "7.69"
-    }
-   ],
-   "text": null
-  },
-  {
-   "cell": "mcp:health_check",
    "method": "GET",
    "url": "https://api.rise.trade/v1/markets",
    "body": null,
@@ -32174,115 +31283,567 @@
     }
    },
    "text": null
+  },
+  {
+   "cell": "cli:market-list-all",
+   "method": "POST",
+   "url": "https://rpc.txflow.com/info",
+   "body": "{\"type\":\"webData2\",\"user\":\"0x0000000000000000000000000000000000000000\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "code": 0,
+    "data": {
+     "openOrders": [],
+     "assetCtxs": [
+      {
+       "coin": "BTC/USDC",
+       "instrumentId": 10000,
+       "dayNtlVlm": "558900.1099056",
+       "coinVlm": "6.98076",
+       "prevDayPx": "80051.04",
+       "lastPrice": "80837.76",
+       "dayHighPx": "81148.23",
+       "dayLowPx": "79427.71",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": []
+      },
+      {
+       "coin": "ETH/USDC",
+       "instrumentId": 10001,
+       "dayNtlVlm": "112051.671731",
+       "coinVlm": "48.2813",
+       "prevDayPx": "2320.27",
+       "lastPrice": "2349.76",
+       "dayHighPx": "2359.45",
+       "dayLowPx": "2296.26",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": []
+      },
+      {
+       "coin": "SOL/USDC",
+       "instrumentId": 10002,
+       "dayNtlVlm": "66643.0712",
+       "coinVlm": "664.1600000000001",
+       "prevDayPx": "100.75",
+       "lastPrice": "101.35",
+       "dayHighPx": "101.7",
+       "dayLowPx": "99.12",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": []
+      },
+      {
+       "coin": "BTC",
+       "instrumentId": 1,
+       "dayNtlVlm": "59671473.5464682",
+       "coinVlm": "744.394",
+       "prevDayPx": "80043.1",
+       "lastPrice": "80868.9",
+       "dayHighPx": "81556",
+       "dayLowPx": "79056.8",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        1
+       ]
+      },
+      {
+       "coin": "ETH",
+       "instrumentId": 2,
+       "dayNtlVlm": "15541164.759038351",
+       "coinVlm": "6696.552",
+       "prevDayPx": "2320.1",
+       "lastPrice": "2349.53",
+       "dayHighPx": "2371.6",
+       "dayLowPx": "2280.12",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        1,
+        2
+       ]
+      },
+      {
+       "coin": "SOL",
+       "instrumentId": 13,
+       "dayNtlVlm": "7225484.954097375",
+       "coinVlm": "71807.72",
+       "prevDayPx": "100.76",
+       "lastPrice": "101.21",
+       "dayHighPx": "101.62",
+       "dayLowPx": "98.14",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        1,
+        2
+       ]
+      },
+      {
+       "coin": "NVDA",
+       "instrumentId": 122,
+       "dayNtlVlm": "729162.6450467762",
+       "coinVlm": "3353.23",
+       "prevDayPx": "216.4",
+       "lastPrice": "217.98",
+       "dayHighPx": "219.26",
+       "dayLowPx": "214.75",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        5
+       ]
+      },
+      {
+       "coin": "SAMSUNG",
+       "instrumentId": 153,
+       "dayNtlVlm": "220776.1990472471",
+       "coinVlm": "1301.11",
+       "prevDayPx": "166.4",
+       "lastPrice": "173.02",
+       "dayHighPx": "173.71",
+       "dayLowPx": "166.44",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        5
+       ]
+      }
+     ]
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "cli:market-list-all",
+   "method": "POST",
+   "url": "https://rpc.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "9cd7f8c34815ebd3"
+   },
+   "text": null
+  },
+  {
+   "cell": "cli:market-prices-all",
+   "method": "POST",
+   "url": "https://rpc.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "9cd7f8c34815ebd3"
+   },
+   "text": null
+  },
+  {
+   "cell": "cli:market-prices-all",
+   "method": "POST",
+   "url": "https://rpc.txflow.com/info",
+   "body": "{\"type\":\"webData2\",\"user\":\"0x0000000000000000000000000000000000000000\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "code": 0,
+    "data": {
+     "openOrders": [],
+     "assetCtxs": [
+      {
+       "coin": "BTC/USDC",
+       "instrumentId": 10000,
+       "dayNtlVlm": "558900.1099056",
+       "coinVlm": "6.98076",
+       "prevDayPx": "80051.04",
+       "lastPrice": "80837.76",
+       "dayHighPx": "81148.23",
+       "dayLowPx": "79427.71",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": []
+      },
+      {
+       "coin": "ETH/USDC",
+       "instrumentId": 10001,
+       "dayNtlVlm": "112051.671731",
+       "coinVlm": "48.2813",
+       "prevDayPx": "2320.27",
+       "lastPrice": "2349.76",
+       "dayHighPx": "2359.45",
+       "dayLowPx": "2296.26",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": []
+      },
+      {
+       "coin": "SOL/USDC",
+       "instrumentId": 10002,
+       "dayNtlVlm": "66643.0712",
+       "coinVlm": "664.1600000000001",
+       "prevDayPx": "100.75",
+       "lastPrice": "101.35",
+       "dayHighPx": "101.7",
+       "dayLowPx": "99.12",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": []
+      },
+      {
+       "coin": "BTC",
+       "instrumentId": 1,
+       "dayNtlVlm": "59671497.8071382",
+       "coinVlm": "744.3942999999999",
+       "prevDayPx": "80043.1",
+       "lastPrice": "80868.9",
+       "dayHighPx": "81556",
+       "dayLowPx": "79056.8",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        1
+       ]
+      },
+      {
+       "coin": "ETH",
+       "instrumentId": 2,
+       "dayNtlVlm": "15541181.205328353",
+       "coinVlm": "6696.559",
+       "prevDayPx": "2320.1",
+       "lastPrice": "2349.47",
+       "dayHighPx": "2371.6",
+       "dayLowPx": "2280.12",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        1,
+        2
+       ]
+      },
+      {
+       "coin": "SOL",
+       "instrumentId": 13,
+       "dayNtlVlm": "7225484.954097375",
+       "coinVlm": "71807.72",
+       "prevDayPx": "100.76",
+       "lastPrice": "101.21",
+       "dayHighPx": "101.62",
+       "dayLowPx": "98.14",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        1,
+        2
+       ]
+      },
+      {
+       "coin": "NVDA",
+       "instrumentId": 122,
+       "dayNtlVlm": "729162.6450467762",
+       "coinVlm": "3353.23",
+       "prevDayPx": "216.4",
+       "lastPrice": "217.98",
+       "dayHighPx": "219.26",
+       "dayLowPx": "214.75",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        5
+       ]
+      },
+      {
+       "coin": "SAMSUNG",
+       "instrumentId": 153,
+       "dayNtlVlm": "220776.19904724704",
+       "coinVlm": "1301.11",
+       "prevDayPx": "166.4",
+       "lastPrice": "173.02",
+       "dayHighPx": "173.71",
+       "dayLowPx": "166.44",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        5
+       ]
+      }
+     ]
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "cli:health",
+   "method": "POST",
+   "url": "https://rpc.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "9cd7f8c34815ebd3"
+   },
+   "text": null
+  },
+  {
+   "cell": "cli:health",
+   "method": "POST",
+   "url": "https://rpc.txflow.com/info",
+   "body": "{\"type\":\"webData2\",\"user\":\"0x0000000000000000000000000000000000000000\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "success": true,
+    "code": 0,
+    "data": {
+     "openOrders": [],
+     "assetCtxs": [
+      {
+       "coin": "BTC/USDC",
+       "instrumentId": 10000,
+       "dayNtlVlm": "558900.1099056",
+       "coinVlm": "6.98076",
+       "prevDayPx": "80051.04",
+       "lastPrice": "80837.76",
+       "dayHighPx": "81148.23",
+       "dayLowPx": "79427.71",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": []
+      },
+      {
+       "coin": "ETH/USDC",
+       "instrumentId": 10001,
+       "dayNtlVlm": "112051.671731",
+       "coinVlm": "48.2813",
+       "prevDayPx": "2320.27",
+       "lastPrice": "2349.76",
+       "dayHighPx": "2359.45",
+       "dayLowPx": "2296.26",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": []
+      },
+      {
+       "coin": "SOL/USDC",
+       "instrumentId": 10002,
+       "dayNtlVlm": "66643.0712",
+       "coinVlm": "664.1600000000001",
+       "prevDayPx": "100.75",
+       "lastPrice": "101.35",
+       "dayHighPx": "101.7",
+       "dayLowPx": "99.12",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": []
+      },
+      {
+       "coin": "BTC",
+       "instrumentId": 1,
+       "dayNtlVlm": "59671513.98109819",
+       "coinVlm": "744.3945",
+       "prevDayPx": "80043.1",
+       "lastPrice": "80869.8",
+       "dayHighPx": "81556",
+       "dayLowPx": "79056.8",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        1
+       ]
+      },
+      {
+       "coin": "ETH",
+       "instrumentId": 2,
+       "dayNtlVlm": "15541181.205328353",
+       "coinVlm": "6696.559",
+       "prevDayPx": "2320.1",
+       "lastPrice": "2349.47",
+       "dayHighPx": "2371.6",
+       "dayLowPx": "2280.12",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        1,
+        2
+       ]
+      },
+      {
+       "coin": "SOL",
+       "instrumentId": 13,
+       "dayNtlVlm": "7225484.954097375",
+       "coinVlm": "71807.72",
+       "prevDayPx": "100.76",
+       "lastPrice": "101.21",
+       "dayHighPx": "101.62",
+       "dayLowPx": "98.14",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        1,
+        2
+       ]
+      },
+      {
+       "coin": "NVDA",
+       "instrumentId": 122,
+       "dayNtlVlm": "729162.6450467762",
+       "coinVlm": "3353.23",
+       "prevDayPx": "216.4",
+       "lastPrice": "217.98",
+       "dayHighPx": "219.26",
+       "dayLowPx": "214.75",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        5
+       ]
+      },
+      {
+       "coin": "SAMSUNG",
+       "instrumentId": 153,
+       "dayNtlVlm": "220776.1990472471",
+       "coinVlm": "1301.11",
+       "prevDayPx": "166.4",
+       "lastPrice": "173.02",
+       "dayHighPx": "173.71",
+       "dayLowPx": "166.44",
+       "openInterest": "",
+       "oraclePx": "",
+       "markPx": "",
+       "blockTime": 0,
+       "tagIds": [
+        5
+       ]
+      }
+     ]
+    }
+   },
+   "text": null
+  },
+  {
+   "cell": "cli:arb-rates-unverified",
+   "method": "POST",
+   "url": "https://rpc.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "9cd7f8c34815ebd3"
+   },
+   "text": null
+  },
+  {
+   "cell": "cli:arb-compare-unverified",
+   "method": "POST",
+   "url": "https://rpc.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "9cd7f8c34815ebd3"
+   },
+   "text": null
+  },
+  {
+   "cell": "mcp:get_prices",
+   "method": "POST",
+   "url": "https://rpc.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "9cd7f8c34815ebd3"
+   },
+   "text": null
+  },
+  {
+   "cell": "mcp:get_prices",
+   "method": "POST",
+   "url": "https://rpc.txflow.com/info",
+   "body": "{\"type\":\"webData2\",\"user\":\"0x0000000000000000000000000000000000000000\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "e5729085d26b200a"
+   },
+   "text": null
+  },
+  {
+   "cell": "mcp:health_check",
+   "method": "POST",
+   "url": "https://rpc.txflow.com/info",
+   "body": "{\"type\":\"perpMeta\",\"dex\":\"\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "9cd7f8c34815ebd3"
+   },
+   "text": null
+  },
+  {
+   "cell": "mcp:health_check",
+   "method": "POST",
+   "url": "https://rpc.txflow.com/info",
+   "body": "{\"type\":\"webData2\",\"user\":\"0x0000000000000000000000000000000000000000\"}",
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "e5729085d26b200a"
+   },
+   "text": null
   }
  ],
  "ws": [
-  {
-   "cell": "cli:market-list-all",
-   "url": "wss://api.txflow.com/ws",
-   "sent": [
-    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
-   ],
-   "frames": [
-    {
-     "channel": "allAssetCtxs",
-     "data": {
-      "ctxs": [
-       {
-        "coin": "13",
-        "ctx": {
-         "funding": "-0.00015449",
-         "openInterest": "14329.02",
-         "oraclePx": "104.44",
-         "markPx": "104.38",
-         "midPx": "104.38",
-         "impactPxs": [
-          "104.38",
-          "104.39"
-         ],
-         "lastPrice": "104.50",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426887817
-        }
-       },
-       {
-        "coin": "153",
-        "ctx": {
-         "funding": "-0.00013552",
-         "openInterest": "76.56",
-         "oraclePx": "166.17",
-         "markPx": "165.60",
-         "midPx": "165.60",
-         "impactPxs": [
-          "165.56",
-          "165.63"
-         ],
-         "lastPrice": "165.62",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426887817
-        }
-       },
-       {
-        "coin": "1",
-        "ctx": {
-         "funding": "0.00125000",
-         "openInterest": "182.0214",
-         "oraclePx": "81943.4",
-         "markPx": "81906.2",
-         "midPx": "81905.6",
-         "impactPxs": [
-          "81905.6",
-          "81905.7"
-         ],
-         "lastPrice": "81905.6",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426887817
-        }
-       },
-       {
-        "coin": "2",
-        "ctx": {
-         "funding": "0.00054168",
-         "openInterest": "4174.688",
-         "oraclePx": "2399.48",
-         "markPx": "2398.60",
-         "midPx": "2398.41",
-         "impactPxs": [
-          "2398.41",
-          "2398.42"
-         ],
-         "lastPrice": "2398.61",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426887817
-        }
-       },
-       {
-        "coin": "122",
-        "ctx": {
-         "funding": "0.00125000",
-         "openInterest": "1918.38",
-         "oraclePx": "218.62",
-         "markPx": "218.57",
-         "midPx": "218.60",
-         "impactPxs": [
-          "218.60",
-          "218.61"
-         ],
-         "lastPrice": "218.69",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426887817
-        }
-       }
-      ]
-     }
-    }
-   ]
-  },
   {
    "cell": "cli:market-list-all",
    "url": "wss://mainnet.zklighter.elliot.ai/stream",
@@ -32729,112 +32290,6 @@
   },
   {
    "cell": "cli:market-prices-all",
-   "url": "wss://api.txflow.com/ws",
-   "sent": [
-    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
-   ],
-   "frames": [
-    {
-     "channel": "allAssetCtxs",
-     "data": {
-      "ctxs": [
-       {
-        "coin": "153",
-        "ctx": {
-         "funding": "-0.00041671",
-         "openInterest": "76.76",
-         "oraclePx": "166.17",
-         "markPx": "165.58",
-         "midPx": "165.60",
-         "impactPxs": [
-          "165.56",
-          "165.64"
-         ],
-         "lastPrice": "165.60",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426898048
-        }
-       },
-       {
-        "coin": "13",
-        "ctx": {
-         "funding": "-0.00015996",
-         "openInterest": "14329.02",
-         "oraclePx": "104.38",
-         "markPx": "104.32",
-         "midPx": "104.32",
-         "impactPxs": [
-          "104.32",
-          "104.33"
-         ],
-         "lastPrice": "104.50",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426898048
-        }
-       },
-       {
-        "coin": "2",
-        "ctx": {
-         "funding": "0.00054049",
-         "openInterest": "4172.730",
-         "oraclePx": "2398.38",
-         "markPx": "2397.33",
-         "midPx": "2397.07",
-         "impactPxs": [
-          "2397.07",
-          "2397.08"
-         ],
-         "lastPrice": "2397.20",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426898048
-        }
-       },
-       {
-        "coin": "1",
-        "ctx": {
-         "funding": "0.00125000",
-         "openInterest": "183.8346",
-         "oraclePx": "81925.0",
-         "markPx": "81888.4",
-         "midPx": "81900.8",
-         "impactPxs": [
-          "81896.3",
-          "81901.6"
-         ],
-         "lastPrice": "81900.0",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426898048
-        }
-       },
-       {
-        "coin": "122",
-        "ctx": {
-         "funding": "0.00125000",
-         "openInterest": "1918.70",
-         "oraclePx": "218.65",
-         "markPx": "218.61",
-         "midPx": "218.64",
-         "impactPxs": [
-          "218.56",
-          "218.72"
-         ],
-         "lastPrice": "218.59",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426898048
-        }
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "cell": "cli:market-prices-all",
    "url": "wss://mds.qfex.com",
    "sent": [
     "{\"type\":\"subscribe\",\"channels\":[\"market_stats\"],\"symbols\":[\"*\"]}"
@@ -33086,218 +32541,6 @@
        "volume": "567240.851"
       }
      ]
-    }
-   ]
-  },
-  {
-   "cell": "cli:health",
-   "url": "wss://api.txflow.com/ws",
-   "sent": [
-    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
-   ],
-   "frames": [
-    {
-     "channel": "allAssetCtxs",
-     "data": {
-      "ctxs": [
-       {
-        "coin": "153",
-        "ctx": {
-         "funding": "-0.00049187",
-         "openInterest": "76.76",
-         "oraclePx": "166.17",
-         "markPx": "165.58",
-         "midPx": "165.60",
-         "impactPxs": [
-          "165.56",
-          "165.65"
-         ],
-         "lastPrice": "165.60",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426901027
-        }
-       },
-       {
-        "coin": "122",
-        "ctx": {
-         "funding": "0.00125000",
-         "openInterest": "1918.70",
-         "oraclePx": "218.63",
-         "markPx": "218.63",
-         "midPx": "218.60",
-         "impactPxs": [
-          "218.59",
-          "218.61"
-         ],
-         "lastPrice": "218.59",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426901027
-        }
-       },
-       {
-        "coin": "13",
-        "ctx": {
-         "funding": "-0.00016126",
-         "openInterest": "14329.02",
-         "oraclePx": "104.36",
-         "markPx": "104.29",
-         "midPx": "104.29",
-         "impactPxs": [
-          "104.28",
-          "104.30"
-         ],
-         "lastPrice": "104.50",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426901027
-        }
-       },
-       {
-        "coin": "1",
-        "ctx": {
-         "funding": "0.00125000",
-         "openInterest": "184.0338",
-         "oraclePx": "81909.6",
-         "markPx": "81872.3",
-         "midPx": "81867.4",
-         "impactPxs": [
-          "81867.4",
-          "81867.5"
-         ],
-         "lastPrice": "81900.0",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426901027
-        }
-       },
-       {
-        "coin": "2",
-        "ctx": {
-         "funding": "0.00053835",
-         "openInterest": "4172.730",
-         "oraclePx": "2397.49",
-         "markPx": "2396.41",
-         "midPx": "2396.29",
-         "impactPxs": [
-          "2396.28",
-          "2396.30"
-         ],
-         "lastPrice": "2397.20",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426901027
-        }
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "cell": "cli:arb-rates-unverified",
-   "url": "wss://api.txflow.com/ws",
-   "sent": [
-    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
-   ],
-   "frames": [
-    {
-     "channel": "allAssetCtxs",
-     "data": {
-      "ctxs": [
-       {
-        "coin": "1",
-        "ctx": {
-         "funding": "0.00125000",
-         "openInterest": "184.0350",
-         "oraclePx": "81902.0",
-         "markPx": "81865.8",
-         "midPx": "81864.7",
-         "impactPxs": [
-          "81864.7",
-          "81864.7"
-         ],
-         "lastPrice": "81864.8",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426908799
-        }
-       },
-       {
-        "coin": "153",
-        "ctx": {
-         "funding": "-0.00068921",
-         "openInterest": "76.76",
-         "oraclePx": "166.16",
-         "markPx": "165.58",
-         "midPx": "165.62",
-         "impactPxs": [
-          "165.58",
-          "165.65"
-         ],
-         "lastPrice": "165.60",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426908799
-        }
-       },
-       {
-        "coin": "122",
-        "ctx": {
-         "funding": "0.00125000",
-         "openInterest": "1918.70",
-         "oraclePx": "218.63",
-         "markPx": "218.59",
-         "midPx": "218.59",
-         "impactPxs": [
-          "218.59",
-          "218.60"
-         ],
-         "lastPrice": "218.59",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426908799
-        }
-       },
-       {
-        "coin": "13",
-        "ctx": {
-         "funding": "-0.00016288",
-         "openInterest": "14329.02",
-         "oraclePx": "104.35",
-         "markPx": "104.28",
-         "midPx": "104.29",
-         "impactPxs": [
-          "104.28",
-          "104.30"
-         ],
-         "lastPrice": "104.50",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426908799
-        }
-       },
-       {
-        "coin": "2",
-        "ctx": {
-         "funding": "0.00053864",
-         "openInterest": "4172.730",
-         "oraclePx": "2397.42",
-         "markPx": "2396.30",
-         "midPx": "2396.43",
-         "impactPxs": [
-          "2396.42",
-          "2396.45"
-         ],
-         "lastPrice": "2397.20",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426908799
-        }
-       }
-      ]
-     }
     }
    ]
   },
@@ -33554,112 +32797,6 @@
        "volume": "567240.851"
       }
      ]
-    }
-   ]
-  },
-  {
-   "cell": "cli:arb-compare-unverified",
-   "url": "wss://api.txflow.com/ws",
-   "sent": [
-    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
-   ],
-   "frames": [
-    {
-     "channel": "allAssetCtxs",
-     "data": {
-      "ctxs": [
-       {
-        "coin": "122",
-        "ctx": {
-         "funding": "0.00125000",
-         "openInterest": "1918.70",
-         "oraclePx": "218.59",
-         "markPx": "218.55",
-         "midPx": "218.54",
-         "impactPxs": [
-          "218.54",
-          "218.55"
-         ],
-         "lastPrice": "218.59",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426914820
-        }
-       },
-       {
-        "coin": "1",
-        "ctx": {
-         "funding": "0.00125000",
-         "openInterest": "183.9150",
-         "oraclePx": "81901.9",
-         "markPx": "81866.5",
-         "midPx": "81864.7",
-         "impactPxs": [
-          "81864.7",
-          "81864.7"
-         ],
-         "lastPrice": "81864.7",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426914820
-        }
-       },
-       {
-        "coin": "13",
-        "ctx": {
-         "funding": "-0.00016270",
-         "openInterest": "14329.02",
-         "oraclePx": "104.35",
-         "markPx": "104.29",
-         "midPx": "104.30",
-         "impactPxs": [
-          "104.30",
-          "104.31"
-         ],
-         "lastPrice": "104.50",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426914820
-        }
-       },
-       {
-        "coin": "153",
-        "ctx": {
-         "funding": "-0.00083340",
-         "openInterest": "76.76",
-         "oraclePx": "166.15",
-         "markPx": "165.58",
-         "midPx": "165.61",
-         "impactPxs": [
-          "165.53",
-          "165.66"
-         ],
-         "lastPrice": "165.60",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426914820
-        }
-       },
-       {
-        "coin": "2",
-        "ctx": {
-         "funding": "0.00053845",
-         "openInterest": "4172.730",
-         "oraclePx": "2397.48",
-         "markPx": "2396.37",
-         "midPx": "2396.60",
-         "impactPxs": [
-          "2396.60",
-          "2396.61"
-         ],
-         "lastPrice": "2397.20",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426914820
-        }
-       }
-      ]
-     }
     }
    ]
   },
@@ -34177,112 +33314,6 @@
   },
   {
    "cell": "mcp:get_prices",
-   "url": "wss://api.txflow.com/ws",
-   "sent": [
-    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
-   ],
-   "frames": [
-    {
-     "channel": "allAssetCtxs",
-     "data": {
-      "ctxs": [
-       {
-        "coin": "13",
-        "ctx": {
-         "funding": "-0.00015624",
-         "openInterest": "14329.02",
-         "oraclePx": "104.39",
-         "markPx": "104.33",
-         "midPx": "104.33",
-         "impactPxs": [
-          "104.33",
-          "104.34"
-         ],
-         "lastPrice": "104.50",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426922885
-        }
-       },
-       {
-        "coin": "1",
-        "ctx": {
-         "funding": "0.00125000",
-         "openInterest": "183.9032",
-         "oraclePx": "81914.6",
-         "markPx": "81878.0",
-         "midPx": "81873.2",
-         "impactPxs": [
-          "81873.2",
-          "81873.2"
-         ],
-         "lastPrice": "81873.2",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426922885
-        }
-       },
-       {
-        "coin": "153",
-        "ctx": {
-         "funding": "-0.00102228",
-         "openInterest": "76.52",
-         "oraclePx": "166.16",
-         "markPx": "165.59",
-         "midPx": "165.59",
-         "impactPxs": [
-          "165.53",
-          "165.62"
-         ],
-         "lastPrice": "165.54",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426922885
-        }
-       },
-       {
-        "coin": "2",
-        "ctx": {
-         "funding": "0.00053782",
-         "openInterest": "4172.730",
-         "oraclePx": "2397.90",
-         "markPx": "2396.74",
-         "midPx": "2396.70",
-         "impactPxs": [
-          "2396.70",
-          "2396.71"
-         ],
-         "lastPrice": "2397.20",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426922885
-        }
-       },
-       {
-        "coin": "122",
-        "ctx": {
-         "funding": "0.00125000",
-         "openInterest": "1918.70",
-         "oraclePx": "218.54",
-         "markPx": "218.53",
-         "midPx": "218.43",
-         "impactPxs": [
-          "218.43",
-          "218.44"
-         ],
-         "lastPrice": "218.49",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426922885
-        }
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "cell": "mcp:get_prices",
    "url": "wss://mds.qfex.com",
    "sent": [
     "{\"type\":\"subscribe\",\"channels\":[\"market_stats\"],\"symbols\":[\"*\"]}"
@@ -34538,8 +33569,114 @@
    ]
   },
   {
-   "cell": "mcp:health_check",
-   "url": "wss://api.txflow.com/ws",
+   "cell": "cli:market-list-all",
+   "url": "wss://rpc.txflow.com/ws",
+   "sent": [
+    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
+   ],
+   "frames": [
+    {
+     "channel": "allAssetCtxs",
+     "data": {
+      "ctxs": [
+       {
+        "coin": "153",
+        "ctx": {
+         "funding": "0.00758134",
+         "openInterest": "15.88",
+         "oraclePx": "172.83",
+         "markPx": "173.09",
+         "midPx": "173.00",
+         "impactPxs": [
+          "172.95",
+          "173.07"
+         ],
+         "lastPrice": "173.02",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144841214
+        }
+       },
+       {
+        "coin": "13",
+        "ctx": {
+         "funding": "0.00087388",
+         "openInterest": "20445.80",
+         "oraclePx": "101.35",
+         "markPx": "101.31",
+         "midPx": "101.30",
+         "impactPxs": [
+          "101.30",
+          "101.31"
+         ],
+         "lastPrice": "101.21",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144841214
+        }
+       },
+       {
+        "coin": "122",
+        "ctx": {
+         "funding": "0.00125000",
+         "openInterest": "3506.92",
+         "oraclePx": "218.09",
+         "markPx": "217.97",
+         "midPx": "217.99",
+         "impactPxs": [
+          "217.98",
+          "218.03"
+         ],
+         "lastPrice": "217.98",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144841214
+        }
+       },
+       {
+        "coin": "1",
+        "ctx": {
+         "funding": "0.00080154",
+         "openInterest": "317.5884",
+         "oraclePx": "80902.1",
+         "markPx": "80866.3",
+         "midPx": "80869.8",
+         "impactPxs": [
+          "80869.8",
+          "80869.8"
+         ],
+         "lastPrice": "80868.9",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144841214
+        }
+       },
+       {
+        "coin": "2",
+        "ctx": {
+         "funding": "0.00125000",
+         "openInterest": "4506.776",
+         "oraclePx": "2350.37",
+         "markPx": "2349.56",
+         "midPx": "2349.47",
+         "impactPxs": [
+          "2349.47",
+          "2349.48"
+         ],
+         "lastPrice": "2349.47",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144841214
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "cell": "cli:market-prices-all",
+   "url": "wss://rpc.txflow.com/ws",
    "sent": [
     "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
    ],
@@ -34551,91 +33688,621 @@
        {
         "coin": "2",
         "ctx": {
-         "funding": "0.00053810",
-         "openInterest": "4172.730",
-         "oraclePx": "2397.92",
-         "markPx": "2396.77",
-         "midPx": "2396.58",
-         "impactPxs": [
-          "2396.58",
-          "2396.59"
-         ],
-         "lastPrice": "2397.20",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426925878
-        }
-       },
-       {
-        "coin": "1",
-        "ctx": {
          "funding": "0.00125000",
-         "openInterest": "183.9032",
-         "oraclePx": "81916.1",
-         "markPx": "81879.1",
-         "midPx": "81873.2",
+         "openInterest": "4506.776",
+         "oraclePx": "2350.66",
+         "markPx": "2349.86",
+         "midPx": "2349.92",
          "impactPxs": [
-          "81873.2",
-          "81873.2"
+          "2349.91",
+          "2349.94"
          ],
-         "lastPrice": "81873.2",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426925878
-        }
-       },
-       {
-        "coin": "153",
-        "ctx": {
-         "funding": "-0.00109728",
-         "openInterest": "76.52",
-         "oraclePx": "166.16",
-         "markPx": "165.59",
-         "midPx": "165.59",
-         "impactPxs": [
-          "165.53",
-          "165.62"
-         ],
-         "lastPrice": "165.54",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426925878
+         "lastPrice": "2349.47",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144847626
         }
        },
        {
         "coin": "13",
         "ctx": {
-         "funding": "-0.00015513",
-         "openInterest": "14329.02",
-         "oraclePx": "104.39",
-         "markPx": "104.33",
-         "midPx": "104.32",
+         "funding": "0.00087608",
+         "openInterest": "20445.80",
+         "oraclePx": "101.35",
+         "markPx": "101.31",
+         "midPx": "101.30",
          "impactPxs": [
-          "104.32",
-          "104.33"
+          "101.30",
+          "101.31"
          ],
-         "lastPrice": "104.50",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426925878
+         "lastPrice": "101.21",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144847626
         }
        },
        {
         "coin": "122",
         "ctx": {
          "funding": "0.00125000",
-         "openInterest": "1918.70",
-         "oraclePx": "218.55",
-         "markPx": "218.48",
-         "midPx": "218.45",
+         "openInterest": "3506.92",
+         "oraclePx": "218.09",
+         "markPx": "217.96",
+         "midPx": "217.99",
          "impactPxs": [
-          "218.44",
-          "218.47"
+          "217.98",
+          "218.03"
          ],
-         "lastPrice": "218.45",
-         "nextFundingTime": 1792429200000,
-         "prevFundingTime": 1792425600000,
-         "blockTime": 1792426925878
+         "lastPrice": "217.98",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144847626
+        }
+       },
+       {
+        "coin": "153",
+        "ctx": {
+         "funding": "0.00758068",
+         "openInterest": "15.88",
+         "oraclePx": "172.83",
+         "markPx": "173.05",
+         "midPx": "173.08",
+         "impactPxs": [
+          "172.98",
+          "173.12"
+         ],
+         "lastPrice": "173.02",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144847626
+        }
+       },
+       {
+        "coin": "1",
+        "ctx": {
+         "funding": "0.00080332",
+         "openInterest": "317.5880",
+         "oraclePx": "80902.5",
+         "markPx": "80868.0",
+         "midPx": "80870.8",
+         "impactPxs": [
+          "80870.8",
+          "80870.8"
+         ],
+         "lastPrice": "80869.8",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144847626
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "cell": "cli:health",
+   "url": "wss://rpc.txflow.com/ws",
+   "sent": [
+    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
+   ],
+   "frames": [
+    {
+     "channel": "allAssetCtxs",
+     "data": {
+      "ctxs": [
+       {
+        "coin": "153",
+        "ctx": {
+         "funding": "0.00758237",
+         "openInterest": "15.88",
+         "oraclePx": "172.83",
+         "markPx": "173.04",
+         "midPx": "173.11",
+         "impactPxs": [
+          "173.08",
+          "173.15"
+         ],
+         "lastPrice": "173.02",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144849852
+        }
+       },
+       {
+        "coin": "122",
+        "ctx": {
+         "funding": "0.00125000",
+         "openInterest": "3506.92",
+         "oraclePx": "218.09",
+         "markPx": "217.97",
+         "midPx": "217.99",
+         "impactPxs": [
+          "217.98",
+          "218.03"
+         ],
+         "lastPrice": "217.98",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144849852
+        }
+       },
+       {
+        "coin": "1",
+        "ctx": {
+         "funding": "0.00080359",
+         "openInterest": "317.5880",
+         "oraclePx": "80902.5",
+         "markPx": "80868.7",
+         "midPx": "80870.8",
+         "impactPxs": [
+          "80870.8",
+          "80870.8"
+         ],
+         "lastPrice": "80869.8",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144849852
+        }
+       },
+       {
+        "coin": "2",
+        "ctx": {
+         "funding": "0.00125000",
+         "openInterest": "4506.776",
+         "oraclePx": "2350.67",
+         "markPx": "2349.87",
+         "midPx": "2349.81",
+         "impactPxs": [
+          "2349.81",
+          "2349.82"
+         ],
+         "lastPrice": "2349.47",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144849852
+        }
+       },
+       {
+        "coin": "13",
+        "ctx": {
+         "funding": "0.00087616",
+         "openInterest": "20445.80",
+         "oraclePx": "101.35",
+         "markPx": "101.31",
+         "midPx": "101.29",
+         "impactPxs": [
+          "101.29",
+          "101.30"
+         ],
+         "lastPrice": "101.21",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144849852
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "cell": "cli:arb-rates-unverified",
+   "url": "wss://rpc.txflow.com/ws",
+   "sent": [
+    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
+   ],
+   "frames": [
+    {
+     "channel": "allAssetCtxs",
+     "data": {
+      "ctxs": [
+       {
+        "coin": "2",
+        "ctx": {
+         "funding": "0.00125000",
+         "openInterest": "4506.776",
+         "oraclePx": "2350.49",
+         "markPx": "2349.68",
+         "midPx": "2349.78",
+         "impactPxs": [
+          "2349.78",
+          "2349.79"
+         ],
+         "lastPrice": "2349.47",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144859261
+        }
+       },
+       {
+        "coin": "153",
+        "ctx": {
+         "funding": "0.00757990",
+         "openInterest": "15.88",
+         "oraclePx": "172.83",
+         "markPx": "173.05",
+         "midPx": "173.06",
+         "impactPxs": [
+          "172.98",
+          "173.16"
+         ],
+         "lastPrice": "173.02",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144859261
+        }
+       },
+       {
+        "coin": "13",
+        "ctx": {
+         "funding": "0.00087615",
+         "openInterest": "20445.80",
+         "oraclePx": "101.33",
+         "markPx": "101.28",
+         "midPx": "101.28",
+         "impactPxs": [
+          "101.28",
+          "101.29"
+         ],
+         "lastPrice": "101.21",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144859261
+        }
+       },
+       {
+        "coin": "1",
+        "ctx": {
+         "funding": "0.00080483",
+         "openInterest": "317.4512",
+         "oraclePx": "80899.3",
+         "markPx": "80866.9",
+         "midPx": "80866.0",
+         "impactPxs": [
+          "80866.0",
+          "80866.1"
+         ],
+         "lastPrice": "80866.0",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144859261
+        }
+       },
+       {
+        "coin": "122",
+        "ctx": {
+         "funding": "0.00125000",
+         "openInterest": "3506.92",
+         "oraclePx": "218.09",
+         "markPx": "217.98",
+         "midPx": "217.99",
+         "impactPxs": [
+          "217.98",
+          "218.03"
+         ],
+         "lastPrice": "217.98",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144859261
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "cell": "cli:arb-compare-unverified",
+   "url": "wss://rpc.txflow.com/ws",
+   "sent": [
+    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
+   ],
+   "frames": [
+    {
+     "channel": "allAssetCtxs",
+     "data": {
+      "ctxs": [
+       {
+        "coin": "122",
+        "ctx": {
+         "funding": "0.00125000",
+         "openInterest": "3506.92",
+         "oraclePx": "218.09",
+         "markPx": "217.98",
+         "midPx": "217.99",
+         "impactPxs": [
+          "217.98",
+          "218.03"
+         ],
+         "lastPrice": "217.98",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144865232
+        }
+       },
+       {
+        "coin": "2",
+        "ctx": {
+         "funding": "0.00125000",
+         "openInterest": "4506.776",
+         "oraclePx": "2350.74",
+         "markPx": "2349.89",
+         "midPx": "2349.94",
+         "impactPxs": [
+          "2349.94",
+          "2349.95"
+         ],
+         "lastPrice": "2349.47",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144865232
+        }
+       },
+       {
+        "coin": "1",
+        "ctx": {
+         "funding": "0.00080545",
+         "openInterest": "317.4532",
+         "oraclePx": "80905.9",
+         "markPx": "80871.9",
+         "midPx": "80870.8",
+         "impactPxs": [
+          "80870.8",
+          "80870.8"
+         ],
+         "lastPrice": "80870.8",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144865232
+        }
+       },
+       {
+        "coin": "153",
+        "ctx": {
+         "funding": "0.00758685",
+         "openInterest": "15.88",
+         "oraclePx": "172.83",
+         "markPx": "173.05",
+         "midPx": "173.05",
+         "impactPxs": [
+          "172.97",
+          "173.10"
+         ],
+         "lastPrice": "173.02",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144865232
+        }
+       },
+       {
+        "coin": "13",
+        "ctx": {
+         "funding": "0.00087787",
+         "openInterest": "20445.80",
+         "oraclePx": "101.33",
+         "markPx": "101.28",
+         "midPx": "101.29",
+         "impactPxs": [
+          "101.29",
+          "101.30"
+         ],
+         "lastPrice": "101.21",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144865232
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "cell": "mcp:get_prices",
+   "url": "wss://rpc.txflow.com/ws",
+   "sent": [
+    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
+   ],
+   "frames": [
+    {
+     "channel": "allAssetCtxs",
+     "data": {
+      "ctxs": [
+       {
+        "coin": "1",
+        "ctx": {
+         "funding": "0.00080463",
+         "openInterest": "318.7590",
+         "oraclePx": "80908.3",
+         "markPx": "80874.3",
+         "midPx": "80870.8",
+         "impactPxs": [
+          "80870.8",
+          "80870.8"
+         ],
+         "lastPrice": "80870.9",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144872114
+        }
+       },
+       {
+        "coin": "2",
+        "ctx": {
+         "funding": "0.00125000",
+         "openInterest": "4506.776",
+         "oraclePx": "2350.83",
+         "markPx": "2350.03",
+         "midPx": "2349.94",
+         "impactPxs": [
+          "2349.94",
+          "2349.95"
+         ],
+         "lastPrice": "2349.47",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144872114
+        }
+       },
+       {
+        "coin": "153",
+        "ctx": {
+         "funding": "0.00759349",
+         "openInterest": "15.62",
+         "oraclePx": "172.84",
+         "markPx": "173.07",
+         "midPx": "173.10",
+         "impactPxs": [
+          "173.06",
+          "173.17"
+         ],
+         "lastPrice": "173.07",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144872114
+        }
+       },
+       {
+        "coin": "13",
+        "ctx": {
+         "funding": "0.00088186",
+         "openInterest": "20445.80",
+         "oraclePx": "101.33",
+         "markPx": "101.28",
+         "midPx": "101.29",
+         "impactPxs": [
+          "101.29",
+          "101.30"
+         ],
+         "lastPrice": "101.21",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144872114
+        }
+       },
+       {
+        "coin": "122",
+        "ctx": {
+         "funding": "0.00125000",
+         "openInterest": "3506.92",
+         "oraclePx": "218.09",
+         "markPx": "217.98",
+         "midPx": "217.99",
+         "impactPxs": [
+          "217.98",
+          "218.03"
+         ],
+         "lastPrice": "217.98",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144872114
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "cell": "mcp:health_check",
+   "url": "wss://rpc.txflow.com/ws",
+   "sent": [
+    "{\"method\":\"subscribe\",\"type\":\"allAssetCtxs\",\"subscription\":{\"type\":\"allAssetCtxs\"}}"
+   ],
+   "frames": [
+    {
+     "channel": "allAssetCtxs",
+     "data": {
+      "ctxs": [
+       {
+        "coin": "153",
+        "ctx": {
+         "funding": "0.00761097",
+         "openInterest": "15.62",
+         "oraclePx": "172.84",
+         "markPx": "173.08",
+         "midPx": "173.11",
+         "impactPxs": [
+          "173.04",
+          "173.17"
+         ],
+         "lastPrice": "173.07",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144876899
+        }
+       },
+       {
+        "coin": "1",
+        "ctx": {
+         "funding": "0.00080385",
+         "openInterest": "318.7590",
+         "oraclePx": "80907.4",
+         "markPx": "80872.3",
+         "midPx": "80870.8",
+         "impactPxs": [
+          "80870.8",
+          "80870.8"
+         ],
+         "lastPrice": "80870.9",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144876899
+        }
+       },
+       {
+        "coin": "2",
+        "ctx": {
+         "funding": "0.00125000",
+         "openInterest": "4506.776",
+         "oraclePx": "2350.77",
+         "markPx": "2349.92",
+         "midPx": "2349.82",
+         "impactPxs": [
+          "2349.82",
+          "2349.83"
+         ],
+         "lastPrice": "2349.47",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144876899
+        }
+       },
+       {
+        "coin": "122",
+        "ctx": {
+         "funding": "0.00125000",
+         "openInterest": "3506.92",
+         "oraclePx": "218.08",
+         "markPx": "217.98",
+         "midPx": "217.99",
+         "impactPxs": [
+          "217.98",
+          "218.03"
+         ],
+         "lastPrice": "217.98",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144876899
+        }
+       },
+       {
+        "coin": "13",
+        "ctx": {
+         "funding": "0.00088709",
+         "openInterest": "20445.80",
+         "oraclePx": "101.33",
+         "markPx": "101.28",
+         "midPx": "101.29",
+         "impactPxs": [
+          "101.29",
+          "101.30"
+         ],
+         "lastPrice": "101.21",
+         "nextFundingTime": 1793145600000,
+         "prevFundingTime": 1793142000000,
+         "blockTime": 1793144876899
         }
        }
       ]
@@ -35070,182 +34737,6 @@
      }
     ]
    }
-  },
-  "e32a389f7ff640a4": {
-   "universe": [
-    {
-     "name": "BTC-USDC",
-     "currencyType": "usdc",
-     "baseCurrency": "BTC",
-     "quoteCurrency": "USDC",
-     "basePrecision": "0.0001",
-     "quotePrecision": "0.01",
-     "szDecimals": 4,
-     "maxLeverage": 75,
-     "tokens": [
-      2,
-      1
-     ],
-     "index": 1,
-     "priceTick": "0.1",
-     "pricePrecision": "0.1",
-     "bookTicks": [
-      "0.1",
-      "1",
-      "10"
-     ],
-     "maxLimitOrderSize": 1000,
-     "maxMarketOrderSize": 100,
-     "haltTrading": false,
-     "onlyIsolated": false,
-     "delisted": false,
-     "useNotionalMargin": true,
-     "logo": "https://static.txflow.com/static/txflow/token-logo/BTC-E8Y4BJWZ.png",
-     "fullName": "Bitcoin",
-     "description": "BTCUSDC Perpetual Contract tracks the US dollar price of Bitcoin, the native asset of a decentralized peer-to-peer payment network secured by proof-of-work.",
-     "tagIds": [
-      1
-     ]
-    },
-    {
-     "name": "ETH-USDC",
-     "currencyType": "usdc",
-     "baseCurrency": "ETH",
-     "quoteCurrency": "USDC",
-     "basePrecision": "0.001",
-     "quotePrecision": "0.01",
-     "szDecimals": 3,
-     "maxLeverage": 75,
-     "tokens": [
-      3,
-      1
-     ],
-     "index": 2,
-     "priceTick": "0.01",
-     "pricePrecision": "0.01",
-     "bookTicks": [
-      "0.01",
-      "0.1",
-      "1"
-     ],
-     "maxLimitOrderSize": 6000,
-     "maxMarketOrderSize": 2000,
-     "haltTrading": false,
-     "onlyIsolated": false,
-     "delisted": false,
-     "useNotionalMargin": true,
-     "logo": "https://static.txflow.com/static/txflow/token-logo/ETH-J44388Me.png",
-     "fullName": "Ethereum",
-     "description": "ETHUSDC Perpetual Contract tracks the US dollar price of Ether, the native asset used to pay transaction fees and help secure the Ethereum smart contract network.",
-     "tagIds": [
-      1,
-      2
-     ]
-    },
-    {
-     "name": "SOL-USDC",
-     "currencyType": "usdc",
-     "baseCurrency": "SOL",
-     "quoteCurrency": "USDC",
-     "basePrecision": "0.01",
-     "quotePrecision": "0.01",
-     "szDecimals": 2,
-     "maxLeverage": 50,
-     "tokens": [
-      14,
-      1
-     ],
-     "index": 13,
-     "priceTick": "0.01",
-     "pricePrecision": "0.01",
-     "bookTicks": [
-      "0.01",
-      "0.1",
-      "1"
-     ],
-     "maxLimitOrderSize": 1000000,
-     "maxMarketOrderSize": 6000,
-     "haltTrading": false,
-     "onlyIsolated": false,
-     "delisted": false,
-     "useNotionalMargin": true,
-     "logo": "https://static.txflow.com/static/txflow/token-logo/SOL-30XT4dp3.png",
-     "fullName": "Solana",
-     "description": "SOLUSDC Perpetual Contract tracks the US dollar price of SOL, the native asset used for transaction fees and staking on the Solana blockchain.",
-     "tagIds": [
-      1,
-      2
-     ]
-    },
-    {
-     "name": "NVDA-USDC",
-     "currencyType": "usdc",
-     "baseCurrency": "NVDA",
-     "quoteCurrency": "USDC",
-     "basePrecision": "0.01",
-     "quotePrecision": "0.01",
-     "szDecimals": 2,
-     "maxLeverage": 20,
-     "tokens": [
-      123,
-      1
-     ],
-     "index": 122,
-     "priceTick": "0.01",
-     "pricePrecision": "0.01",
-     "bookTicks": [
-      "0.01",
-      "0.1",
-      "1"
-     ],
-     "maxLimitOrderSize": 6000,
-     "maxMarketOrderSize": 600,
-     "haltTrading": false,
-     "onlyIsolated": false,
-     "delisted": false,
-     "useNotionalMargin": true,
-     "logo": "https://static.txflow.com/static/txflow/token-logo/3wNeKeC38NZ6.png",
-     "fullName": "NVIDIA Corporation",
-     "description": "NVDAUSDC Perpetual Contract tracks the US dollar price of NVIDIA Corporation common stock, referencing a semiconductor and computing company known for GPUs and AI infrastructure.",
-     "tagIds": [
-      5
-     ]
-    },
-    {
-     "name": "SAMSUNG-USDC",
-     "currencyType": "usdc",
-     "baseCurrency": "SAMSUNG",
-     "quoteCurrency": "USDC",
-     "basePrecision": "0.01",
-     "quotePrecision": "0.01",
-     "szDecimals": 2,
-     "maxLeverage": 25,
-     "tokens": [
-      154,
-      1
-     ],
-     "index": 153,
-     "priceTick": "0.01",
-     "pricePrecision": "0.01",
-     "bookTicks": [
-      "0.01",
-      "0.1",
-      "1"
-     ],
-     "maxLimitOrderSize": 20000,
-     "maxMarketOrderSize": 2000,
-     "haltTrading": false,
-     "onlyIsolated": false,
-     "delisted": false,
-     "useNotionalMargin": true,
-     "logo": "https://static.txflow.com/static/txflow/token-logo/J8p6h3XP18Jp.png",
-     "fullName": "Samsung Electronics Co., Ltd.",
-     "description": "SAMSUNGUSDC Perpetual Contract tracks the US dollar price reference for Samsung Electronics Co., Ltd. shares, referencing a global electronics, semiconductor, and device manufacturer.",
-     "tagIds": [
-      5
-     ]
-    }
-   ]
   },
   "739df92998817ad3": {
    "$schema": "https://api.qfex.com/schemas/RefdataResponse.json",
@@ -43419,6 +42910,327 @@
      "daily_chart": {}
     }
    ]
+  },
+  "9cd7f8c34815ebd3": {
+   "success": true,
+   "code": 0,
+   "data": {
+    "universe": [
+     {
+      "name": "BTC-USDC",
+      "currencyType": "usdc",
+      "baseCurrency": "BTC",
+      "quoteCurrency": "USDC",
+      "basePrecision": "0.0001",
+      "quotePrecision": "0.01",
+      "szDecimals": 4,
+      "maxLeverage": 75,
+      "tokens": [
+       2,
+       1
+      ],
+      "index": 1,
+      "priceTick": "0.1",
+      "pricePrecision": "0.1",
+      "bookTicks": [
+       "0.1",
+       "1",
+       "10"
+      ],
+      "maxLimitOrderSize": 1000,
+      "maxMarketOrderSize": 100,
+      "haltTrading": false,
+      "onlyIsolated": false,
+      "delisted": false,
+      "useNotionalMargin": true,
+      "logo": "https://static.txflow.com/static/txflow/token-logo/BTC-E8Y4BJWZ.png",
+      "fullName": "Bitcoin",
+      "description": "BTCUSDC Perpetual Contract tracks the US dollar price of Bitcoin, the native asset of a decentralized peer-to-peer payment network secured by proof-of-work.",
+      "tagIds": [
+       1
+      ]
+     },
+     {
+      "name": "ETH-USDC",
+      "currencyType": "usdc",
+      "baseCurrency": "ETH",
+      "quoteCurrency": "USDC",
+      "basePrecision": "0.001",
+      "quotePrecision": "0.01",
+      "szDecimals": 3,
+      "maxLeverage": 75,
+      "tokens": [
+       3,
+       1
+      ],
+      "index": 2,
+      "priceTick": "0.01",
+      "pricePrecision": "0.01",
+      "bookTicks": [
+       "0.01",
+       "0.1",
+       "1"
+      ],
+      "maxLimitOrderSize": 6000,
+      "maxMarketOrderSize": 2000,
+      "haltTrading": false,
+      "onlyIsolated": false,
+      "delisted": false,
+      "useNotionalMargin": true,
+      "logo": "https://static.txflow.com/static/txflow/token-logo/ETH-J44388Me.png",
+      "fullName": "Ethereum",
+      "description": "ETHUSDC Perpetual Contract tracks the US dollar price of Ether, the native asset used to pay transaction fees and help secure the Ethereum smart contract network.",
+      "tagIds": [
+       1,
+       2
+      ]
+     },
+     {
+      "name": "SOL-USDC",
+      "currencyType": "usdc",
+      "baseCurrency": "SOL",
+      "quoteCurrency": "USDC",
+      "basePrecision": "0.01",
+      "quotePrecision": "0.01",
+      "szDecimals": 2,
+      "maxLeverage": 50,
+      "tokens": [
+       14,
+       1
+      ],
+      "index": 13,
+      "priceTick": "0.01",
+      "pricePrecision": "0.01",
+      "bookTicks": [
+       "0.01",
+       "0.1",
+       "1"
+      ],
+      "maxLimitOrderSize": 1000000,
+      "maxMarketOrderSize": 6000,
+      "haltTrading": false,
+      "onlyIsolated": false,
+      "delisted": false,
+      "useNotionalMargin": true,
+      "logo": "https://static.txflow.com/static/txflow/token-logo/SOL-30XT4dp3.png",
+      "fullName": "Solana",
+      "description": "SOLUSDC Perpetual Contract tracks the US dollar price of SOL, the native asset used for transaction fees and staking on the Solana blockchain.",
+      "tagIds": [
+       1,
+       2
+      ]
+     },
+     {
+      "name": "NVDA-USDC",
+      "currencyType": "usdc",
+      "baseCurrency": "NVDA",
+      "quoteCurrency": "USDC",
+      "basePrecision": "0.01",
+      "quotePrecision": "0.01",
+      "szDecimals": 2,
+      "maxLeverage": 20,
+      "tokens": [
+       123,
+       1
+      ],
+      "index": 122,
+      "priceTick": "0.01",
+      "pricePrecision": "0.01",
+      "bookTicks": [
+       "0.01",
+       "0.1",
+       "1"
+      ],
+      "maxLimitOrderSize": 6000,
+      "maxMarketOrderSize": 600,
+      "haltTrading": false,
+      "onlyIsolated": false,
+      "delisted": false,
+      "useNotionalMargin": true,
+      "logo": "https://static.txflow.com/static/txflow/token-logo/3wNeKeC38NZ6.png",
+      "fullName": "NVIDIA Corporation",
+      "description": "NVDAUSDC Perpetual Contract tracks the US dollar price of NVIDIA Corporation common stock, referencing a semiconductor and computing company known for GPUs and AI infrastructure.",
+      "tagIds": [
+       5
+      ]
+     },
+     {
+      "name": "SAMSUNG-USDC",
+      "currencyType": "usdc",
+      "baseCurrency": "SAMSUNG",
+      "quoteCurrency": "USDC",
+      "basePrecision": "0.01",
+      "quotePrecision": "0.01",
+      "szDecimals": 2,
+      "maxLeverage": 25,
+      "tokens": [
+       154,
+       1
+      ],
+      "index": 153,
+      "priceTick": "0.01",
+      "pricePrecision": "0.01",
+      "bookTicks": [
+       "0.01",
+       "0.1",
+       "1"
+      ],
+      "maxLimitOrderSize": 20000,
+      "maxMarketOrderSize": 2000,
+      "haltTrading": false,
+      "onlyIsolated": false,
+      "delisted": false,
+      "useNotionalMargin": true,
+      "logo": "https://static.txflow.com/static/txflow/token-logo/J8p6h3XP18Jp.png",
+      "fullName": "Samsung Electronics Co., Ltd.",
+      "description": "SAMSUNGUSDC Perpetual Contract tracks the US dollar price reference for Samsung Electronics Co., Ltd. shares, referencing a global electronics, semiconductor, and device manufacturer.",
+      "tagIds": [
+       5
+      ]
+     }
+    ]
+   }
+  },
+  "e5729085d26b200a": {
+   "success": true,
+   "code": 0,
+   "data": {
+    "openOrders": [],
+    "assetCtxs": [
+     {
+      "coin": "BTC/USDC",
+      "instrumentId": 10000,
+      "dayNtlVlm": "558946.7659169",
+      "coinVlm": "6.98133",
+      "prevDayPx": "80077.53",
+      "lastPrice": "80906.89",
+      "dayHighPx": "81148.23",
+      "dayLowPx": "79427.71",
+      "openInterest": "",
+      "oraclePx": "",
+      "markPx": "",
+      "blockTime": 0,
+      "tagIds": []
+     },
+     {
+      "coin": "ETH/USDC",
+      "instrumentId": 10001,
+      "dayNtlVlm": "112051.671731",
+      "coinVlm": "48.2813",
+      "prevDayPx": "2320.27",
+      "lastPrice": "2349.76",
+      "dayHighPx": "2359.45",
+      "dayLowPx": "2296.26",
+      "openInterest": "",
+      "oraclePx": "",
+      "markPx": "",
+      "blockTime": 0,
+      "tagIds": []
+     },
+     {
+      "coin": "SOL/USDC",
+      "instrumentId": 10002,
+      "dayNtlVlm": "66643.0712",
+      "coinVlm": "664.1600000000001",
+      "prevDayPx": "100.75",
+      "lastPrice": "101.35",
+      "dayHighPx": "101.7",
+      "dayLowPx": "99.12",
+      "openInterest": "",
+      "oraclePx": "",
+      "markPx": "",
+      "blockTime": 0,
+      "tagIds": []
+     },
+     {
+      "coin": "BTC",
+      "instrumentId": 1,
+      "dayNtlVlm": "59677158.4336582",
+      "coinVlm": "744.4643",
+      "prevDayPx": "80043.1",
+      "lastPrice": "80870.8",
+      "dayHighPx": "81556",
+      "dayLowPx": "79056.8",
+      "openInterest": "",
+      "oraclePx": "",
+      "markPx": "",
+      "blockTime": 0,
+      "tagIds": [
+       1
+      ]
+     },
+     {
+      "coin": "ETH",
+      "instrumentId": 2,
+      "dayNtlVlm": "15541058.209288351",
+      "coinVlm": "6696.506",
+      "prevDayPx": "2320.68",
+      "lastPrice": "2349.47",
+      "dayHighPx": "2371.6",
+      "dayLowPx": "2280.12",
+      "openInterest": "",
+      "oraclePx": "",
+      "markPx": "",
+      "blockTime": 0,
+      "tagIds": [
+       1,
+       2
+      ]
+     },
+     {
+      "coin": "SOL",
+      "instrumentId": 13,
+      "dayNtlVlm": "7223670.914097375",
+      "coinVlm": "71789.72",
+      "prevDayPx": "100.78",
+      "lastPrice": "101.21",
+      "dayHighPx": "101.62",
+      "dayLowPx": "98.14",
+      "openInterest": "",
+      "oraclePx": "",
+      "markPx": "",
+      "blockTime": 0,
+      "tagIds": [
+       1,
+       2
+      ]
+     },
+     {
+      "coin": "NVDA",
+      "instrumentId": 122,
+      "dayNtlVlm": "729162.6450467762",
+      "coinVlm": "3353.23",
+      "prevDayPx": "216.4",
+      "lastPrice": "217.98",
+      "dayHighPx": "219.26",
+      "dayLowPx": "214.75",
+      "openInterest": "",
+      "oraclePx": "",
+      "markPx": "",
+      "blockTime": 0,
+      "tagIds": [
+       5
+      ]
+     },
+     {
+      "coin": "SAMSUNG",
+      "instrumentId": 153,
+      "dayNtlVlm": "220776.19904724704",
+      "coinVlm": "1301.11",
+      "prevDayPx": "166.4",
+      "lastPrice": "173.02",
+      "dayHighPx": "173.71",
+      "dayLowPx": "166.44",
+      "openInterest": "",
+      "oraclePx": "",
+      "markPx": "",
+      "blockTime": 0,
+      "tagIds": [
+       5
+      ]
+     }
+    ]
+   }
   }
  }
 }
