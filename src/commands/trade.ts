@@ -667,7 +667,7 @@ export function registerTradeCommands(
    */
   function prevalidateEntryTpSl(def: VenueDefinition, caps: VenueCapabilities, side: "buy" | "sell", reduceOnly: boolean, immediate: boolean, ref: number, refLabel: string, prices: TpSlPrices): void {
     if (caps.tpsl === null) {
-      throw unsupported(def.displayName, "tpsl", "the venue has no TP/SL orders", `Use stop orders: perp trade stop -e ${def.id} ...`);
+      throw unsupported(def.displayName, "tpsl", "the venue has no TP/SL orders", `Use a reduce-only stop where the venue offers one (perp trade stop -e ${def.id} ...); otherwise set protection in the ${def.displayName} app`);
     }
     if (reduceOnly) {
       throw new PerpError("INVALID_PARAMS", "--tp/--sl protect the position an entry opens; they cannot be combined with --reduce-only");
@@ -1385,7 +1385,7 @@ export function registerTradeCommands(
       const adapter = await getAdapter();
       const { def, caps } = tradingVenueOf(adapter);
       if (caps.tpsl === null) {
-        throw unsupported(def.displayName, "tpsl", "the venue has no TP/SL orders", `Use stop orders: perp trade stop -e ${def.id} ...`);
+        throw unsupported(def.displayName, "tpsl", "the venue has no TP/SL orders", `Use a reduce-only stop where the venue offers one (perp trade stop -e ${def.id} ...); otherwise set protection in the ${def.displayName} app`);
       }
       if (opts.size !== undefined && caps.tpsl === "positionLevel") {
         throw unsupported(def.displayName, "tpslSize", "TP/SL is position-level and always covers the whole position", "Omit --size");
