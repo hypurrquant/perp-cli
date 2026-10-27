@@ -626,9 +626,19 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
         : filledSteps === 0n ? "cancelled"
         : filledSteps !== null && filledSteps >= sizeSteps ? "filled" : "partiallyFilled";
       if (status === "partiallyFilled") notes.push(`${tif}: the unfilled remainder was cancelled`);
+      // The tx response has no fill price: one by-id read for avg_price (the fill itself is already final).
+      let avgPrice: string | null = null;
+      if (orderId !== null && filledSteps !== null && filledSteps > 0n) {
+        try {
+          avgPrice = (await this.getOrderStatus(sym, { kind: "orderId", value: orderId })).avgPrice;
+          if (avgPrice === null) notes.push(`average fill price not published yet — see perp${this.network === "testnet" ? " -n testnet" : ""} -e risex trade fills ${sym}`);
+        } catch (e) {
+          notes.push(`average fill price unread (${extractErrorMessage(e)})`);
+        }
+      }
       return withExecution({
         venue: "risex", symbol: sym, status, finality: filledSize === null ? "pending" : "final", orderId, clientOrderId,
-        filledSize, avgPrice: null, venueRaw: res,
+        filledSize, avgPrice, venueRaw: res,
       }, method, { ...exec, notes });
     }
     // Resting TIF: read the order back (status / immediate fills).
@@ -827,14 +837,14 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
   // ── Legacy trading shims ──
 
   /**
-   * Venue-final outcome of a market order (LIMIT IOC) read back by id: "filled" or "cancelled" is
-   * terminal (an IOC cannot rest). "partiallyFilled" can be the lagging OPEN record → null (measured).
+   * Venue-final outcome of a market order (LIMIT IOC): its filled size comes from the place tx's
+   * `filled_quantity` (finality "final") — filled, partially filled (remainder cancelled) or cancelled.
    */
   iocOutcomeOf(raw: unknown): IocOutcome | null {
     if (raw === null || typeof raw !== "object") return null;
     const r = raw as Partial<OrderResult>;
     if (r.venue !== "risex" || r.finality !== "final" || r.execution?.method !== "protectedIoc") return null;
-    if (r.status !== "filled" && r.status !== "cancelled") return null;
+    if (r.status !== "filled" && r.status !== "cancelled" && r.status !== "partiallyFilled") return null;
     return typeof r.filledSize === "string" ? { filledSize: r.filledSize, final: true } : null;
   }
 

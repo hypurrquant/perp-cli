@@ -380,9 +380,11 @@ describe("adapter: placeOrder", () => {
     let placed: Record<string, unknown> | null = null;
     routeFetch([...base,
       (url, init) => url.pathname === "/v1/orders/place" ? (placed = bodyOf(init), ok({ order_id: "0xdef", block_number: "1", filled_quantity: "200000000000000" })) : undefined,
+      url => url.pathname === "/v1/orders/by-id/0xdef" ? ok({ order: { id: "0xdef", price: "84259.9", size: "0.0002", market_id: "1", side: "BUY", type: "LIMIT", time_in_force: "IOC", post_only: false, reduce_only: false, filled_size: "0.0002", status: "ORDER_STATUS_FILLED", avg_price: "83430.1", client_order_id: "1", created_at: "1" } }) : undefined,
     ]);
     const a = await adapter();
     const r = await a.placeOrder(req({ type: "market", price: null, tif: null, clientOrderId: null, slippage: { bps: 100, source: "flag" } }));
+    expect(r.avgPrice).toBe("83430.1"); // the tx response has no fill price: read by id once
     expect(placed).toMatchObject({ order_type: 1, time_in_force: 3, post_only: false }); // LIMIT IOC: the venue's MARKET type ignores the price (live testnet)
     // mark 83425.59… × 1.01 = 84259.85 → ceil to the 0.1 tick = 84259.9
     expect((placed as unknown as Record<string, unknown>).price_ticks).toBe(842599);
@@ -564,13 +566,13 @@ describe("adapter: cancel / cancel-all / leverage", () => {
 });
 
 describe("iocOutcomeOf (market orders are LIMIT IOC read back by id)", () => {
-  const res = (status: string, method = "protectedIoc", finality = "final") => ({ venue: "risex", status, finality, filledSize: status === "filled" ? "0.1" : "0", execution: { method } });
-  it("filled / cancelled are venue-final; partiallyFilled (possibly a lagging OPEN record), limits and pending reads are not", async () => {
+  const res = (status: string, method = "protectedIoc", finality = "final") => ({ venue: "risex", status, finality, filledSize: status === "filled" ? "0.1" : status === "partiallyFilled" ? "0.07" : "0", execution: { method } });
+  it("filled / partiallyFilled / cancelled from the place tx are venue-final; limits and pending results are not", async () => {
     const a = await adapter();
     expect(a.iocOutcomeOf(res("filled"))).toEqual({ filledSize: "0.1", final: true });
     // Live testnet 2026-10-28: a close with no liquidity inside the bound — cancelled, nothing filled.
     expect(a.iocOutcomeOf(res("cancelled"))).toEqual({ filledSize: "0", final: true });
-    expect(a.iocOutcomeOf(res("partiallyFilled"))).toBeNull();
+    expect(a.iocOutcomeOf(res("partiallyFilled"))).toEqual({ filledSize: "0.07", final: true });
     expect(a.iocOutcomeOf(res("cancelled", "limit"))).toBeNull();
     expect(a.iocOutcomeOf(res("cancelled", "protectedIoc", "pending"))).toBeNull();
     expect(a.iocOutcomeOf({ status: "ok" })).toBeNull();
