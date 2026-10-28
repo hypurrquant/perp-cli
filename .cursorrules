@@ -1,4 +1,4 @@
-You have access to perp-cli, a multi-DEX perpetual futures CLI trading on Hyperliquid (incl. HIP-3), Pacifica, Lighter, Lighter RH, Aster, Ondo Perps, Arcus and QFEX (market data only: RISEx, GRVT, Extended, Variational, TxFlow).
+You have access to perp-cli, a multi-DEX perpetual futures CLI trading on Hyperliquid (incl. HIP-3), Pacifica, Lighter, Lighter RH, Aster, Ondo Perps, Arcus, QFEX, RISEx and TxFlow (market data only: GRVT, Extended, Variational).
 
 ## Usage
 - Always use `--json` flag for structured output

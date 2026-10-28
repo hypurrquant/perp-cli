@@ -1,7 +1,7 @@
 {
   "name": "perp-cli",
-  "version": "0.16.0",
-  "description": "Multi-DEX perpetual futures CLI + MCP server for AI agents — trade on Hyperliquid (incl. HIP-3), Pacifica, Lighter, Lighter RH, Aster, Ondo Perps, Arcus and QFEX; market data on RISEx, GRVT, Extended, Variational, TxFlow. Trade, bridge, arb, and manage positions via natural language.",
+  "version": "0.17.0",
+  "description": "Multi-DEX perpetual futures CLI + MCP server for AI agents — trade on Hyperliquid (incl. HIP-3), Pacifica, Lighter, Lighter RH, Aster, Ondo Perps, Arcus, QFEX, RISEx and TxFlow; market data on GRVT, Extended, Variational. Trade, bridge, arb, and manage positions via natural language.",
   "author": {
     "name": "HypurrQuant",
     "email": "hypurrquant@proton.me",
