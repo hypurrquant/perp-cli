@@ -2,8 +2,9 @@
  * MCP and TxFlow: the account read tools (get_balance / get_positions / get_open_orders) cover
  * TxFlow — without credentials they refuse with NO_SIGNER_AVAILABLE before any request; with a
  * stored agent they read the AGENT's account (`user` = the account address, never the agent's)
- * from the recorded testnet answers. Trading tools refuse while the release switch is off (as
- * shipped). The OWS signer is faked (no vault in unit tests).
+ * from the recorded testnet answers. Trading tools refuse while the release switch is off (mocked
+ * off here — trading ships on since 2026-10-28; the gate must hold if it is switched off again).
+ * The OWS signer is faked (no vault in unit tests).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
@@ -20,6 +21,7 @@ vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
   },
 }));
 vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({ StdioServerTransport: class {} }));
+vi.mock("../exchanges/venues/txflow-release.js", () => ({ TXFLOW_TRADING_ENABLED: false }));
 const AGENT = "0x00000000000000000000000000000000000a6e47";
 vi.mock("../signer/ows-evm.js", () => ({
   OwsEvmSigner: { create: () => ({ getAddress: () => AGENT, signTypedData: async () => { throw new Error("no signing in this test"); }, signMessage: async () => "0x" }) },

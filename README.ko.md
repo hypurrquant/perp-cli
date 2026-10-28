@@ -10,8 +10,8 @@
 
 여러 DEX의 무기한 선물(perpetual futures)을 하나로 다루는 CLI — 터미널에서 거래하고, 펀딩비를 비교하고, 자금을 옮기고, 봇을 실행하거나, AI 에이전트에게 맡길 수 있습니다(JSON 출력, MCP 서버, 에이전트 스킬).
 
-- **8개 거래소에서 거래:** Hyperliquid (HIP-3 dex 포함), Pacifica, Lighter, Lighter RH, Aster, Ondo Perps, Arcus, QFEX (브리지와 perp-perp 차익거래는 기존 4곳 지원: Pacifica, Hyperliquid, Lighter, Aster)
-- **마켓 데이터 전용:** RISEx, GRVT, Extended, Variational, TxFlow (TxFlow: 계정 조회 포함; 거래는 구현됨, 테스트넷 검증 전까지 꺼져 있음) — 그리고 Derive 옵션 데이터
+- **9개 거래소에서 거래:** Hyperliquid (HIP-3 dex 포함), Pacifica, Lighter, Lighter RH, Aster, Ondo Perps, Arcus, QFEX, TxFlow (브리지와 perp-perp 차익거래는 기존 4곳 지원: Pacifica, Hyperliquid, Lighter, Aster)
+- **마켓 데이터 전용:** RISEx, GRVT, Extended, Variational — 그리고 Derive 옵션 데이터
 
 ## 설치
 
@@ -119,7 +119,7 @@ ls "$(npm root -g)/perp-cli/skills/perp-cli"
 | GRVT | `grvt` | 마켓 데이터 전용 | USDT |
 | Extended | `extended` (`ext`) | 마켓 데이터 전용 | Starknet; 크립토 + 주식 / FX |
 | Variational | `variational` (`var`) | 마켓 데이터 전용 | RFQ 거래소 |
-| TxFlow | `txflow` (`txf`) | 구현됨, 테스트넷 검증 전까지 꺼져 있음 | 공식 API (Beta), USDC |
+| TxFlow | `txflow` (`txf`) | ✅ (수동 거래만; 메인넷 미검증, 화이트리스트) | 공식 API (Beta), USDC |
 | Derive | `derive` | 옵션 데이터 전용 | — |
 
 - **[지원 현황표 및 거래소별 참고 사항](docs/venues.md)** — 펀딩비, WebSocket, 입금 / 출금, 주소 기반 조회, 이용 제한 지역

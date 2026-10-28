@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // The client-side token bucket is not under test here (it only paces the mocked requests).
-// TxFlow trading ships switched off (txflow-release.ts); these tests exercise the trading code.
+// These tests exercise the trading code with the release switch mocked on, whatever the shipped value.
 vi.mock("../../exchanges/venues/txflow-release.js", () => ({ TXFLOW_TRADING_ENABLED: true }));
 vi.mock("../../exchanges/rate-limiter.js", async orig => ({ ...await orig<typeof import("../../exchanges/rate-limiter.js")>(), acquireRate: async () => {} }));
 import { readFileSync } from "node:fs";

@@ -26,9 +26,20 @@ Every mark below comes from a real-money mainnet run, not from code reading — 
 
 RISEx, Variational, GRVT and Extended are not in this table: none trades in this release. RISEx trading (shipped but disabled since 0.15.0) was exercised on **testnet** only (2026-10-14); no mainnet RISEx order has been run.
 
-**TxFlow** trading (orders, cancel, amend, stop / TP / SL, leverage / margin mode, agent approve / import / revoke) is implemented but **switched off** (`TXFLOW_TRADING_ENABLED`) and **not yet verified live** — not on testnet, not on mainnet. Unit tests check the signing against the docs' published test vectors and parse recorded testnet `/info` reads. No TxFlow order, cancel or agent approval has been sent by perp-cli yet. Mainnet trading also needs a whitelisted account (apply at txflow.com/apply).
+**TxFlow** trading is on since 2026-10-28 and was verified on **testnet** only (2026-10-27, `-n testnet`):
 
-TxFlow testnet checklist (switch `TXFLOW_TRADING_ENABLED` on in a local build; `-n testnet`):
+- `wallet agent approve txflow`;
+- limit order, read back by client id, `trade edit` (modify2), cancel, cancel-all;
+- market order (IOC), `trade close`, `flatten`;
+- `trade leverage` with cross ↔ isolated (read back with `activeAssetData`), and an isolated position opened and closed;
+- stops (market, limit, and a stop that opens a position) and their cancel;
+- the TP/SL pair (`trade tpsl`: one `positionTpsl` action, cancelled as a pair) and an entry with `--tp` / `--sl`;
+- the price-band refusal (300 bps refused; the error names the largest slippage bound that fits, 200 bps);
+- orders without a builder code (none is required).
+
+No mainnet TxFlow order has been run: mainnet `/exchange` is open to whitelisted accounts only (apply at txflow.com/apply).
+
+The original TxFlow testnet checklist, kept for the mainnet run:
 
 1. `wallet agent approve txflow`: the label is accepted, `agentOwner` shows the agent; `--rotate` rebinds the label; `revoke` frees it.
 2. Where the `/exchange` reply echoes `confirm: "executed"` (top level or `data.confirm`; without it every write reads as unknown).

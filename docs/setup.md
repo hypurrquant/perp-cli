@@ -41,7 +41,7 @@ These venues have no `wallet set` private-key path — register an agent / API k
 perp wallet agent approve lighter-rh                  # Lighter RH L2 slot key (USDG collateral, Robinhood chain)
 printf '%s\n%s\n' "$KEY_ID" "$SECRET" | perp wallet agent approve ondo   # Ondo HMAC key id + secret, stdin only
 perp wallet agent approve arcus --master <ows-wallet> # Arcus Ed25519 API key (OWS wallet agent-arcus-<master>)
-perp -n testnet wallet agent approve txflow --master <ows-wallet>   # TxFlow agent key — refused while TxFlow trading is switched off (TXFLOW_TRADING_ENABLED)
+perp -n testnet wallet agent approve txflow --master <ows-wallet>   # TxFlow agent key (master signs approveAgent)
 perp wallet agent verify [lighter-rh|ondo|arcus|txflow]  # no venue = verify every configured venue
 ```
 
@@ -60,7 +60,7 @@ perp wallet agent import lighter --account-index 123 --api-key-index 5   # slot 
 perp wallet agent import arcus --master-address 0xOWNER            # Ed25519 key; public key listed ACTIVE for the owner
 printf '%s\n%s\n' "$KEY_ID" "$SECRET" | perp wallet agent import ondo
 printf '%s\n%s\n' "$PUBLIC_KEY" "$SECRET" | perp wallet agent import qfex --account-id <uuid>   # QFEX: import only (keys are created on the website, 2FA)
-perp -n testnet wallet agent import txflow                         # TxFlow web-app key (agentOwner check) — refused while TxFlow trading is switched off
+perp -n testnet wallet agent import txflow                         # TxFlow web-app key (agentOwner check)
 perp wallet agent list                                              # SOURCE column: approved | imported
 
 # Setup without any master wallet: one stdin line per --import-agents venue, in order (ondo: 2 lines)

@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-// The release switch as shipped (OFF): this file is the gate test. Trading: txflow-trading.test.ts (switch mocked ON).
+// The release switch mocked OFF (trading ships on since 2026-10-28): this file is the gate test. Trading: txflow-trading.test.ts (switch mocked ON).
 vi.mock("../../exchanges/venues/txflow-release.js", () => ({ TXFLOW_TRADING_ENABLED: false }));
 import "../../exchanges/venues/index.js";
 import { PerpError } from "../../errors.js";
@@ -96,7 +96,7 @@ describe("TxFlow venue definition", () => {
   it("switch OFF: market data + account reads; trading gated with the uniform reason; official API, unverified funding, mainnet + testnet", () => {
     const def = getVenue("txflow");
     expect(def.roles).toEqual(["marketData", "account"]);
-    expect(def.gatedRoles).toMatchObject({ roles: ["trading"], reason: "TxFlow trading is implemented but not yet verified; it ships switched off" });
+    expect(def.gatedRoles).toMatchObject({ roles: ["trading"], reason: "TxFlow trading is switched off in this build" });
     expect([def.masterKeyKind, def.agentKeyKind, def.secretStorage.kind]).toEqual(["evm", "evm", "ows-wallet"]);
     expect(def.fundingVerified).toBe(false);
     expect(def.apiStatus.kind).toBe("official");
@@ -111,7 +111,7 @@ describe("TxFlow venue definition", () => {
 
   it("requireCapabilities refuses with the gate (CAPABILITY_UNSUPPORTED); the declared capabilities describe the implemented path", () => {
     expect(() => requireCapabilities(getVenue("txflow"))).toThrow(expect.objectContaining({
-      structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED", message: expect.stringMatching(/implemented but not yet verified; it ships switched off/) }),
+      structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED", message: expect.stringMatching(/TxFlow trading is switched off in this build/) }),
     }));
     expect(getVenue("txflow").capabilities).toEqual({
       marketOrder: "slippageBounded", timeInForce: ["GTC", "IOC", "ALO"], reduceOnlyTif: null, clientOrderId: true,

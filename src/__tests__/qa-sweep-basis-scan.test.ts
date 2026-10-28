@@ -7,8 +7,8 @@
  * .fetchMarkets — independent of funding: a market with a null rate, or a venue whose funding is
  * unverified, still has a price), groups by canonical symbol with the perp-perp scan's median
  * price-outlier drop, and requires the cheap / rich pair to agree within MAX_PRICE_DEVIATION_PCT.
- * Venue scope: venues with the "trading" role (both legs must be executable) — TxFlow (market
- * data only) is out.
+ * Venue scope: venues with the "trading" role (both legs must be executable) — market-data-only
+ * venues (Variational) are out.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 
@@ -119,7 +119,7 @@ describe("arb scan --basis", () => {
     expect(data[0]).toMatchObject({ symbol: "SOL", buyOn: "hyperliquid", sellOn: "pacifica" });
   });
 
-  it("venue scope = trading venues, funding-verified or not: QFEX in; TxFlow (trading switched off) and market-data-only Variational out", async () => {
+  it("venue scope = trading venues, funding-verified or not: QFEX and TxFlow in; market-data-only Variational out", async () => {
     const spies = venuesReturn({
       qfex: [mkt("qfex", "AAPL", "AAPL", "341.3")],
       ondo: [mkt("ondo", "AAPL", "AAPL", "341.1")],
@@ -127,8 +127,7 @@ describe("arb scan --basis", () => {
       variational: [mkt("variational", "AAPL", "AAPL", "341.0")],
     });
     const { data } = await scan();
-    expect(Object.keys(data[0].prices).sort()).toEqual(["ondo", "qfex"]);
-    expect(spies.get("txflow")).not.toHaveBeenCalled();
+    expect(Object.keys(data[0].prices).sort()).toEqual(["ondo", "qfex", "txflow"]);
     expect(spies.get("variational")).not.toHaveBeenCalled();
   });
 
