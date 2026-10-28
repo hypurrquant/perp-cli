@@ -57,7 +57,7 @@ describe("probeVenueHealth", () => {
     offline();
     const h = await probeVenueHealth("testnet");
     const noTestnet = listVenues().filter((v) => v.networks.testnet === null).map((v) => v.id);
-    expect(noTestnet).toContain("txflow");
+    expect(noTestnet).toContain("variational");
     expect(h.skipped.map((s) => s.venue)).toEqual(noTestnet);
     expect(h.skipped[0].reason).toMatch(/no testnet environment/);
     expect(h.probes.map((p) => p.venue)).toEqual(listVenues().filter((v) => v.networks.testnet !== null).map((v) => v.id));
@@ -106,10 +106,10 @@ describe("perp health", () => {
     expect(env.data.unofficial[0]).toMatchObject({ exchange: "txflow", status: "down", error: "txflow offline" });
   });
 
-  it("-n testnet reports TxFlow as skipped", async () => {
+  it("-n testnet reports Variational (no testnet) as skipped", async () => {
     offline();
     const env = JSON.parse((await health(["-n", "testnet", "--json", "health"]))[0]);
     expect(env.data.network).toBe("testnet");
-    expect(env.data.skipped.map((s: { venue: string }) => s.venue)).toContain("txflow");
+    expect(env.data.skipped.map((s: { venue: string }) => s.venue)).toContain("variational");
   });
 });

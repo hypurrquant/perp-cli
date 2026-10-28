@@ -6,12 +6,28 @@
  *    (HTTP 200 for a missing book, 403 for a read the venue does not allow, e.g. fundingHistory).
  *    A non-envelope body or a non-2xx HTML / text page is an error too. There is no fallback for a
  *    refused read (no HL-endpoint substitution, no guessing).
+ *  - REST writes: `POST <rest>/exchange` with a signed envelope (signing.ts) and
+ *    `"confirm": "executed"`, so the answer is the EXECUTION result, not just consensus
+ *    acceptance (docs: Exchange API § Response). Writes are NEVER retried. Outcome classes:
+ *      no connection at all                         → not sent (EXCHANGE_UNREACHABLE, sent:false)
+ *      HTTP 429                                     → RATE_LIMITED, sent:false (docs: a rate-limited
+ *                                                     action did not execute)
+ *      `{status:"err"}` (HTTP < 500) / HTTP 4xx     → definite refusal (POLICY_DENIED for the mainnet
+ *                                                     whitelist / access gate, DEPOSIT_REQUIRED,
+ *                                                     AGENT_NOT_REGISTERED, else the caller's code)
+ *      `statuses: [{error}]`                        → executed and failed: definite refusal
+ *      `statuses: ["success"]` + `confirm: executed` → executed (the response never carries an
+ *                                                     order id or a fill — callers read those back)
+ *      any HTTP ≥ 500 (even with an err body),
+ *      "success" without the confirm echo,
+ *      timeout / reset / HTTP 202 `pending` /
+ *      async `traceId` ack / unreadable body        → outcome UNKNOWN (TxflowSendUnknown)
  *  - WS one-shot: open → subscribe `allAssetCtxs` → first data frame → close (bulk mark / funding
  *    snapshot of every perp). The socket factory is injectable for tests.
  */
 
 import WebSocket from "ws";
-import { PerpError, extractErrorMessage } from "../../errors.js";
+import { PerpError, extractErrorMessage, isConnectFailure, type ErrorCode } from "../../errors.js";
 import { acquireRate, rateLimitedError } from "../rate-limiter.js";
 import type { RateLimitPolicy } from "../venue.js";
 import { TXFLOW_API_VERSION } from "../venues/txflow.js";
@@ -71,6 +87,7 @@ export class TxflowClient {
       const message = typeof env.message === "string" && env.message !== "" ? env.message : "request failed";
       throw new PerpError("EXCHANGE_ERROR", `TxFlow ${body.type}: ${message} (code ${env.code}${res.ok ? "" : `, HTTP ${res.status}`})`, {
         exchange: "txflow",
+        venueCode: env.code,
         ...(res.ok ? {} : { status: res.status }),
         remediation: res.status === 403
           ? `TxFlow does not allow the "${body.type}" read; perp-cli has no other source for it`
@@ -92,6 +109,158 @@ export class TxflowClient {
     if (!("data" in env)) throw txflowShapeError(`${body.type} answered success:true without data`);
     return env.data as T;
   }
+
+  /**
+   * POST /exchange with `confirm: "executed"`. Resolves with the response `data.type` when the
+   * action EXECUTED ("success"); every refusal is a PerpError with `sent: false`; anything that
+   * may have executed throws TxflowSendUnknown. Never retried.
+   */
+  async exchange(req: TxflowSignedRequest, what: string, rejectCode: ErrorCode, network: "mainnet" | "testnet"): Promise<{ type: string | null }> {
+    await acquireRate("txflow", this.rateLimit, "exchange");
+    let res: Response;
+    try {
+      res = await fetch(`${this.restUrl}/exchange`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-version": TXFLOW_API_VERSION },
+        body: JSON.stringify({ action: req.action, signature: req.signature, nonce: req.nonce, vaultAddress: null, signatureChainId: null, confirm: "executed" }),
+        signal: AbortSignal.timeout(TXFLOW_HTTP_TIMEOUT_MS),
+      });
+    } catch (e) {
+      if (isConnectFailure(e)) {
+        throw new PerpError("EXCHANGE_UNREACHABLE", `TxFlow ${what}: could not connect — nothing was sent`, { exchange: "txflow", sent: false });
+      }
+      throw new TxflowSendUnknown(`TxFlow ${what}`, e, null);
+    }
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (e) {
+      throw new TxflowSendUnknown(`TxFlow ${what}`, e, res.status);
+    }
+    if (res.status === 429) {
+      const r = rateLimitedError("txflow", res.headers.get("retry-after"), text);
+      throw new PerpError("RATE_LIMITED", `TxFlow ${what} refused: rate limited (HTTP 429)`, {
+        ...(r.structured.details ?? {}), exchange: "txflow", sent: false,
+        remediation: "Nothing was executed (a rate-limited TxFlow action does not run). Wait, then retry — a retry is signed with a fresh nonce",
+      });
+    }
+    let parsed: unknown;
+    try { parsed = JSON.parse(text); } catch { parsed = undefined; }
+    const body = parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+    const venueCode = typeof body?.code === "number" ? body.code : null;
+    // A 5xx can come after consensus (the action may have executed): unknown, even with an err body.
+    if (res.status >= 500) {
+      const msg = textOf(body?.message) ?? textOf(body?.response) ?? text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+      throw new TxflowSendUnknown(`TxFlow ${what}`, new Error(`HTTP ${res.status} ${msg}`), res.status);
+    }
+    if (body !== null && body.status === "err") {
+      const message = textOf(body.message) ?? textOf(body.response) ?? "rejected";
+      throw txflowRefusal(what, message, res.status, venueCode, rejectCode, network);
+    }
+    if (res.status === 202 || body?.status === "pending") {
+      throw new TxflowSendUnknown(`TxFlow ${what}`, new Error("the venue did not report the execution result in time (HTTP 202 pending)"), res.status, textOf(body?.txHash));
+    }
+    if (res.status >= 400 && res.status < 500) {
+      // A gateway refusal without the err envelope: never reached execution.
+      const clean = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+      throw txflowRefusal(what, textOf(body?.message) ?? textOf(body?.response) ?? `HTTP ${res.status} ${clean}`, res.status, venueCode, rejectCode, network);
+    }
+    if (!res.ok || body === null) {
+      throw new TxflowSendUnknown(`TxFlow ${what}`, new Error(`HTTP ${res.status} ${text.slice(0, 200)}`), res.status);
+    }
+    if (body.status !== "ok") throw new TxflowSendUnknown(`TxFlow ${what}`, new Error(`unexpected status ${JSON.stringify(body.status)}`), res.status);
+    const data = body.data as { type?: unknown; data?: { statuses?: unknown } } | undefined;
+    if (data === undefined) {
+      // { status: "ok", traceId } = queued asynchronously (Outcome orders), not executed.
+      throw new TxflowSendUnknown(`TxFlow ${what}`, new Error(`acknowledged without an execution result${textOf(body.traceId) !== null ? ` (traceId ${String(body.traceId)})` : ""}`), res.status);
+    }
+    const statuses = data?.data?.statuses;
+    if (!Array.isArray(statuses) || statuses.length !== 1) {
+      throw new TxflowSendUnknown(`TxFlow ${what}`, new Error("response has no single execution status"), res.status);
+    }
+    const st = statuses[0] as unknown;
+    if (st !== null && typeof st === "object" && typeof (st as { error?: unknown }).error === "string") {
+      throw txflowRefusal(what, (st as { error: string }).error, res.status, venueCode, rejectCode, network);
+    }
+    if (st !== "success") throw new TxflowSendUnknown(`TxFlow ${what}`, new Error(`unexpected execution status ${JSON.stringify(st)}`), res.status);
+    // Docs (Exchange API § Response): with confirm "executed" the reply "carries confirm: executed".
+    // Without that echo "success" only proves consensus acceptance, not execution → unknown.
+    const echo = body.confirm ?? (data as { confirm?: unknown }).confirm;
+    if (echo !== "executed") {
+      throw new TxflowSendUnknown(`TxFlow ${what}`, new Error("the reply does not echo confirm: executed — accepted by consensus, execution not proven"), res.status);
+    }
+    return { type: typeof data.type === "string" ? data.type : null };
+  }
+}
+
+// ── Writes (POST /exchange) ──
+
+/** Where to apply for mainnet trading access (docs: Exchange API — "Mainnet access is whitelisted"). */
+export const TXFLOW_APPLY_URL = "https://txflow.com/apply";
+
+/** The send of a write could not be classified: it may have executed. Carries the cause. */
+export class TxflowSendUnknown extends Error {
+  constructor(readonly what: string, readonly cause: unknown, readonly status: number | null, readonly txHash: string | null = null) {
+    super(`${what}: outcome unknown — ${extractErrorMessage(cause)}`);
+    this.name = "TxflowSendUnknown";
+  }
+}
+
+/** Signed envelope fields (signing.ts) — never logged. */
+export interface TxflowSignedRequest {
+  action: Record<string, unknown>;
+  signature: { r: string; s: string; v: number };
+  nonce: number;
+}
+
+/**
+ * Venue refusal text → the typed refusal. The mainnet whitelist / access-code gate (accountStatus
+ * reasons "User not in whitelist", "Exchange is not allowed", "User not authorized for this
+ * channel", "User is blacklisted"; the gateway's "This action is not allowed.") and HTTP 403 are
+ * POLICY_DENIED with the apply link; a missing account is DEPOSIT_REQUIRED; an unapproved agent
+ * is AGENT_NOT_REGISTERED. Anything else keeps `fallback` (ORDER_REJECTED / ACTION_REJECTED).
+ */
+export function txflowRefusal(what: string, message: string, httpStatus: number, venueCode: number | null, fallback: ErrorCode, network: "mainnet" | "testnet"): PerpError {
+  const base = { exchange: "txflow", sent: false, httpStatus, ...(venueCode !== null ? { venueCode } : {}) };
+  const msg = `TxFlow ${what} refused: ${message}`;
+  if (httpStatus === 403 || /whitelist|not allowed|not authorized for this channel|blacklist|access code/i.test(message)) {
+    return new PerpError("POLICY_DENIED", msg, {
+      ...base,
+      remediation: network === "mainnet"
+        ? `TxFlow mainnet trading is open to whitelisted accounts only — apply at ${TXFLOW_APPLY_URL}. Testnet is open: perp -n testnet -e txflow …`
+        : `TxFlow refused this account (${message}). Check the account on the TxFlow testnet web app`,
+    });
+  }
+  if (/deposit first|no trading account/i.test(message)) {
+    return new PerpError("DEPOSIT_REQUIRED", msg, {
+      ...base, remediation: network === "testnet"
+        ? "Fund the account first (TxFlow testnet faucet in the TxFlow web app), then retry"
+        : "Deposit USDC in the TxFlow web app first, then retry",
+    });
+  }
+  if (/is not authorized by any account|agent .*not (approved|authorized)/i.test(message)) {
+    return new PerpError("AGENT_NOT_REGISTERED", msg, {
+      ...base, remediation: `Approve an agent: perp${network === "testnet" ? " -n testnet" : ""} wallet agent approve txflow (or check it: perp wallet agent verify txflow)`,
+    });
+  }
+  const band = txflowPriceBand(message);
+  if (band !== null) {
+    return new PerpError(fallback, msg, {
+      ...base, priceBand: band,
+      remediation: `TxFlow bounds order prices around the oracle with a dynamic band (docs: Position & Order Limits) — this order's price must be within ${band.min}–${band.max}. A market / stop order: lower --slippage-bps so its protection price stays inside; a limit order: pick a price inside the band`,
+    });
+  }
+  return new PerpError(fallback, msg, base);
+}
+
+/** The band of a "not within the price limit (Minimum price: X; Maximum price: Y)" refusal, or null. */
+export function txflowPriceBand(message: string): { min: string; max: string } | null {
+  const m = /not within the price limit \(Minimum price: ([0-9.]+); Maximum price: ([0-9.]+)\)/i.exec(message);
+  return m === null ? null : { min: m[1], max: m[2] };
+}
+
+function textOf(v: unknown): string | null {
+  return typeof v === "string" && v !== "" ? v : null;
 }
 
 // ── WS one-shot snapshot ──

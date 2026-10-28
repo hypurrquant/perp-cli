@@ -69,6 +69,31 @@ export interface TpSlLeg {
   slippage: ResolvedSlippage;
 }
 
+/** A position TP/SL placed as ONE venue action (both legs together; TxFlow positionTpsl). */
+export interface TpSlPair {
+  symbol: string;
+  /** Side that closes the protected position (sell closes a long). */
+  closeSide: "buy" | "sell";
+  /** Positive size (the verified fill or the live position) — never "0". */
+  size: string;
+  tp: string | null;
+  /** Take-profit limit price once triggered; null = market trigger. */
+  tpLimit: string | null;
+  sl: string | null;
+}
+
+/** One placed leg of a TpSlPair (only the legs that were set). */
+export interface TpSlPairLeg { kind: "tp" | "sl"; trigger: string; result: OrderResult }
+
+/**
+ * The venue's own pair placement, or null when the venue places TP/SL legs one by one
+ * (placeTpSlLeg). A dispatch on what the adapter implements — never a fallback after a failure.
+ */
+export function tpSlPairOf(adapter: ExchangeAdapter): ((p: TpSlPair) => Promise<TpSlPairLeg[]>) | null {
+  const own = (adapter as { placeTpSlPair?: (p: TpSlPair) => Promise<TpSlPairLeg[]> }).placeTpSlPair;
+  return isTradingV2(adapter) && typeof own === "function" ? (p: TpSlPair) => own.call(adapter, p) : null;
+}
+
 /**
  * Place one reduce-only TP/SL trigger on a separateOrders venue (hyperliquid, lighter /
  * lighter-rh, aster) and normalize the result. HL tags the trigger "tp"/"sl" natively;

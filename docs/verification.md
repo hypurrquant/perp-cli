@@ -24,7 +24,34 @@ Every mark below comes from a real-money mainnet run, not from code reading — 
 | Deposit via perp-cli | ✅ | (HL) | ✅ | ✅ | ✅ | ✅ | ✅ | — (web app) | — (address only) |
 | Withdraw (to your own address)⁶ | ✅ | (HL) | ✅ | ✅ | ✅ | ✅ (`--asset USDC`) | ⛔⁴ | ✅ | ⛔⁵ |
 
-RISEx, TxFlow, Variational, GRVT and Extended are not in this table: none trades in this release. RISEx trading (shipped but disabled since 0.15.0) was exercised on **testnet** only (2026-10-14); no mainnet RISEx order has been run.
+RISEx, Variational, GRVT and Extended are not in this table: none trades in this release. RISEx trading (shipped but disabled since 0.15.0) was exercised on **testnet** only (2026-10-14); no mainnet RISEx order has been run.
+
+**TxFlow** trading is on since 2026-10-28 and was verified on **testnet** only (2026-10-27, `-n testnet`):
+
+- `wallet agent approve txflow`;
+- limit order, read back by client id, `trade edit` (modify2), cancel, cancel-all;
+- market order (IOC), `trade close`, `flatten`;
+- `trade leverage` with cross ↔ isolated (read back with `activeAssetData`), and an isolated position opened and closed;
+- stops (market, limit, and a stop that opens a position) and their cancel;
+- the TP/SL pair (`trade tpsl`: one `positionTpsl` action, cancelled as a pair) and an entry with `--tp` / `--sl`;
+- the price-band refusal (300 bps refused; the error names the largest slippage bound that fits, 200 bps);
+- orders without a builder code (none is required).
+
+No mainnet TxFlow order has been run: mainnet `/exchange` is open to whitelisted accounts only (apply at txflow.com/apply).
+
+The original TxFlow testnet checklist, kept for the mainnet run:
+
+1. `wallet agent approve txflow`: the label is accepted, `agentOwner` shows the agent; `--rotate` rebinds the label; `revoke` frees it.
+2. Where the `/exchange` reply echoes `confirm: "executed"` (top level or `data.confirm`; without it every write reads as unknown).
+3. The order's client id (`cloid`) and `timestamp` come back on `frontendOpenOrders` / `historicalOrders`, within 30 s of the local clock.
+4. A market trigger: is `p` (trigger ± slippage bound) the limit of the fired market order?
+5. `normalTrigger` takes a single trigger; triggers are listed in `frontendOpenOrders` or `triggerOrders`; cancel with `grouping: trigger` / `tpsl`.
+6. Record a `historicalTriggerOrders` row and check that it has `timestamp` / `createTime` (the client-id match window needs one) and the `triggerState` strings.
+7. `m` (`cross` / `isolated`) is accepted as sent; `orderDetails` covers cancelled orders.
+8. Market IOC inside the 5% oracle band; `modify2`; `updateLeverage` / `updateMarginMode` (and the `activeAssetData` casing).
+9. The HTTP status and text of a rejection (e.g. off-tick), the mainnet whitelist refusal and "deposit first"; an `err` body below HTTP 500 is treated as a definite refusal.
+10. `frontendOpenOrders` paging: the page size the server really serves for `limit: 500`.
+11. Whether `approveBuilderFee` is required before trading (perp-cli attaches no builder).
 
 ² perp-cli has no native TWAP for this venue: `trade twap` runs the client-side TWAP (slices) instead. Whether the venue's API offers one is not checked.  
 ³ Verified in the session; no saved log file.  

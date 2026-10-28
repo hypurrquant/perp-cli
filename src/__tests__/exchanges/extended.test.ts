@@ -25,7 +25,6 @@ import { fetchVenuesRates } from "../../funding/rates.js";
 import { probeVenueHealth } from "../../venue-health.js";
 import { buildProgram } from "../../cli-program.js";
 import { startJob } from "../../jobs.js";
-import { TXFLOW_READ_ONLY_REMEDIATION } from "../../exchanges/venues/txflow.js";
 
 const FIX = resolve(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "extended");
 const fixture = <T = { status: string; data: unknown }>(name: string): T => JSON.parse(readFileSync(resolve(FIX, name), "utf-8")) as T;
@@ -89,11 +88,6 @@ describe("Extended venue definition", () => {
     expect(e.structured.remediation).toBe(EXTENDED_READ_ONLY_REMEDIATION);
     expect(e.structured.remediation).toMatch(/^Extended is read-only \(market data\) in this version; trading is planned for a later release/);
     expect(() => requireCapabilities(getVenue("extended"))).toThrow(expect.objectContaining({ structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED" }) }));
-  });
-
-  it("TxFlow has its own remediation, without market funding (its history read is refused too)", () => {
-    expect(roleUnsupported(getVenue("txflow"), "trading").structured.remediation).toBe(TXFLOW_READ_ONLY_REMEDIATION);
-    expect(TXFLOW_READ_ONLY_REMEDIATION).not.toMatch(/funding/);
   });
 });
 

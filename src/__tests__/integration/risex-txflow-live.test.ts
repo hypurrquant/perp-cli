@@ -14,7 +14,7 @@ import { RISEX_PINS } from "../../exchanges/risex/typed-data.js";
 import { RisexAdapter } from "../../exchanges/risex/adapter.js";
 import { TxflowClient, fetchAllAssetCtxsOnce } from "../../exchanges/txflow/client.js";
 import { fetchTxflowDirectory, fetchTxflowFundingRates, fetchTxflowMarkets } from "../../exchanges/txflow/public.js";
-import { TxflowPublicAdapter } from "../../exchanges/txflow/adapter.js";
+import { TxflowAdapter } from "../../exchanges/txflow/adapter.js";
 
 describe.skipIf(process.env.PERP_RISEX_LIVE !== "1")("RISEx live public reads", () => {
   for (const net of ["mainnet", "testnet"] as const) {
@@ -58,7 +58,7 @@ describe.skipIf(process.env.PERP_TXFLOW_LIVE !== "1")("TxFlow live drift detecto
     expect(baseline).toBeGreaterThan(ctxs.length / 4);
     const rates = await fetchTxflowFundingRates("mainnet");
     expect(rates.find(r => r.symbol === "BTC")).toBeDefined();
-    const book = await new TxflowPublicAdapter(def, "mainnet").getOrderbook("BTC");
+    const book = await new TxflowAdapter(def, "mainnet").getOrderbook("BTC");
     expect(book.bids.length).toBeGreaterThan(0);
     // webData2 assetCtxs still carries 24 h volume for the listed perps.
     const markets = await fetchTxflowMarkets("mainnet");

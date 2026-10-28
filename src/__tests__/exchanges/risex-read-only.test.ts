@@ -93,12 +93,6 @@ describe("release switch + venue definition", () => {
     expect(e.structured.remediation).toMatch(/app\.rise\.trade/);
     expect(() => requireCapabilities(getVenue("risex"))).toThrow(GATED);
   });
-
-  it("TxFlow refuses as a market-data-only venue, pointing to its website", () => {
-    const e = roleUnsupported(getVenue("txflow"), "trading");
-    expect(e.message).toBe("txflow does not support trading — TxFlow is available for market data only (no trading role)");
-    expect(e.structured.remediation).toMatch(/^Trade on the TxFlow website/);
-  });
 });
 
 describe("adapter: reads work, every write refuses before any request", () => {

@@ -19,6 +19,7 @@ import type { SolanaSigner } from "../signer/interface.js";
 import { getVenue, roleUnsupported, tryResolveVenueId } from "../exchanges/venue.js";
 import { unsupported } from "../exchanges/trading-v2.js";
 import { RISEX_FUNDS_APP_ONLY } from "../exchanges/venues/risex.js";
+import { TXFLOW_FUNDS_APP_ONLY } from "../exchanges/venues/txflow.js";
 import "../exchanges/venues/index.js";
 
 export function registerFundsRebalanceCommands(
@@ -193,6 +194,7 @@ export function registerFundsRebalanceCommands(
         const def = getVenue(id);
         if (!def.roles.includes("account")) throw roleUnsupported(def, "rebalance");
         if (id === "risex") throw unsupported("risex", "rebalance", RISEX_FUNDS_APP_ONLY.reason, RISEX_FUNDS_APP_ONLY.remediation);
+        if (id === "txflow") throw unsupported("txflow", "rebalance", TXFLOW_FUNDS_APP_ONLY.reason, TXFLOW_FUNDS_APP_ONLY.remediation);
       }
       const adapters = new Map<string, ExchangeAdapter>();
       const unavailable: Array<{ exchange: string; error: string }> = [];

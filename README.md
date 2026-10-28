@@ -8,8 +8,8 @@
 
 One CLI for perpetual futures across many DEXs — trade, compare funding, move funds and run bots from the terminal, or hand it to an AI agent (JSON output, MCP server, agent skill).
 
-- **Trade on 8 venues:** Hyperliquid (incl. HIP-3 dexes), Pacifica, Lighter, Lighter RH, Aster, Ondo Perps, Arcus, QFEX (bridge and perp-perp arb cover the original four: Pacifica, Hyperliquid, Lighter, Aster)
-- **Market data only:** RISEx, GRVT, Extended, Variational, TxFlow — plus Derive options data
+- **Trade on 9 venues:** Hyperliquid (incl. HIP-3 dexes), Pacifica, Lighter, Lighter RH, Aster, Ondo Perps, Arcus, QFEX, TxFlow (bridge and perp-perp arb cover the original four: Pacifica, Hyperliquid, Lighter, Aster)
+- **Market data only:** RISEx, GRVT, Extended, Variational — plus Derive options data
 
 ## Install
 
@@ -117,7 +117,7 @@ See [`skills/perp-cli/SKILL.md`](skills/perp-cli/SKILL.md) for the full agent gu
 | GRVT | `grvt` | market data only | USDT |
 | Extended | `extended` (`ext`) | market data only | Starknet; crypto + equities / FX |
 | Variational | `variational` (`var`) | market data only | RFQ venue |
-| TxFlow | `txflow` (`txf`) | market data only | official API (Beta) |
+| TxFlow | `txflow` (`txf`) | ✅ (manual trading only; mainnet not yet verified, whitelist) | official API (Beta), USDC |
 | Derive | `derive` | options data only | — |
 
 - **[Support matrix and per-venue notes](docs/venues.md)** — funding, WebSocket, deposit / withdraw, lookups by address, restricted regions

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from "fs";
 import { resolve } from "path";
-import type { AgentMeta, AgentSource, AnyAgentMeta, ArcusAgentMeta, OndoAgentMeta, QfexAgentMeta, RisexAgentMeta } from "../settings.js";
+import type { AgentMeta, AgentSource, AnyAgentMeta, ArcusAgentMeta, OndoAgentMeta, QfexAgentMeta, RisexAgentMeta, TxflowAgentMeta } from "../settings.js";
 import { loadSettings, saveSettings } from "../settings.js";
 import { PerpError } from "../errors.js";
 import type { Network } from "../exchanges/venue-types.js";
@@ -105,7 +105,7 @@ function isPidAlive(pid: number): boolean {
  * agentName is omitted.
  */
 /** Venues whose agents use a non-legacy meta shape (see getVenueAgent). */
-const NON_LEGACY_AGENT_VENUES = new Set(["ondo", "arcus", "qfex", "risex"]);
+const NON_LEGACY_AGENT_VENUES = new Set(["ondo", "arcus", "qfex", "risex", "txflow"]);
 
 function assertLegacyAgentVenue(exchange: string): void {
   if (NON_LEGACY_AGENT_VENUES.has(exchange)) {
@@ -268,7 +268,7 @@ export function listAgents(
 
 // ── Venue-specific agent metas (Ondo HMAC key, Arcus Ed25519 key) ──
 
-type VenueAgentMap = { ondo: OndoAgentMeta; arcus: ArcusAgentMeta; qfex: QfexAgentMeta; risex: RisexAgentMeta };
+type VenueAgentMap = { ondo: OndoAgentMeta; arcus: ArcusAgentMeta; qfex: QfexAgentMeta; risex: RisexAgentMeta; txflow: TxflowAgentMeta };
 
 /** Named agent, or the only/first registered one when agentName is omitted. */
 export function getVenueAgent<V extends keyof VenueAgentMap>(venue: V, agentName?: string): VenueAgentMap[V] | null {
@@ -313,11 +313,11 @@ export function deleteVenueAgent(venue: keyof VenueAgentMap, agentName: string):
   return true;
 }
 
-export function listVenueAgents(): Array<{ exchange: keyof VenueAgentMap; meta: OndoAgentMeta | ArcusAgentMeta | QfexAgentMeta | RisexAgentMeta }> {
+export function listVenueAgents(): Array<{ exchange: keyof VenueAgentMap; meta: VenueAgentMap[keyof VenueAgentMap] }> {
   const settings = loadSettings();
-  const out: Array<{ exchange: keyof VenueAgentMap; meta: OndoAgentMeta | ArcusAgentMeta | QfexAgentMeta | RisexAgentMeta }> = [];
-  for (const v of ["ondo", "arcus", "qfex", "risex"] as const) {
-    const m = settings.agents?.[v] as Record<string, OndoAgentMeta | ArcusAgentMeta | QfexAgentMeta | RisexAgentMeta> | undefined;
+  const out: Array<{ exchange: keyof VenueAgentMap; meta: VenueAgentMap[keyof VenueAgentMap] }> = [];
+  for (const v of ["ondo", "arcus", "qfex", "risex", "txflow"] as const) {
+    const m = settings.agents?.[v] as Record<string, VenueAgentMap[keyof VenueAgentMap]> | undefined;
     if (m) for (const meta of Object.values(m)) out.push({ exchange: v, meta });
   }
   return out;

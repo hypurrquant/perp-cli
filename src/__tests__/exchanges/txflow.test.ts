@@ -1,10 +1,15 @@
 /**
- * TxFlow (market data only, official API in Beta): exact unit conversions, the id → symbol join,
- * the `{success, code, data}` envelope and its error mapping, the `x-api-version` header, the
- * one-shot WS snapshot, and the write-refusal table (every write path refuses with
- * CAPABILITY_UNSUPPORTED and makes zero network calls).
+ * TxFlow market data (official API in Beta): exact unit conversions, the id → symbol join, the
+ * `{success, code, data}` envelope and its error mapping, the `x-api-version` header, the one-shot
+ * WS snapshot, and the refusal table of what stays unsupported (funds, builder codes, automation —
+ * CAPABILITY_UNSUPPORTED with zero network calls). Trading: txflow-trading.test.ts.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+// The release switch mocked OFF (trading ships on since 2026-10-28): this file is the gate test. Trading: txflow-trading.test.ts (switch mocked ON).
+vi.mock("../../exchanges/venues/txflow-release.js", () => ({ TXFLOW_TRADING_ENABLED: false }));
 import "../../exchanges/venues/index.js";
 import { PerpError } from "../../errors.js";
 import { getVenue, requireCapabilities, resolveVenueId } from "../../exchanges/venue.js";
@@ -13,7 +18,7 @@ import {
   fetchTxflowFundingRates, fetchTxflowMarkets, joinSnapshot, percentToFraction, stepFromSzDecimals, toTxflowMarketMeta,
   type TxflowMarketMeta,
 } from "../../exchanges/txflow/public.js";
-import { TxflowPublicAdapter } from "../../exchanges/txflow/adapter.js";
+import { TxflowAdapter } from "../../exchanges/txflow/adapter.js";
 import { TXFLOW_API_VERSION } from "../../exchanges/venues/txflow.js";
 import { buildProgram } from "../../cli-program.js";
 import { parseVenueList, resolveSetupVenue } from "../../commands/init.js";
@@ -88,27 +93,31 @@ afterEach(() => {
 });
 
 describe("TxFlow venue definition", () => {
-  it("is market-data only, official API, unverified funding, alias txf", () => {
+  it("switch OFF: market data + account reads; trading gated with the uniform reason; official API, unverified funding, mainnet + testnet", () => {
     const def = getVenue("txflow");
-    expect(def.roles).toEqual(["marketData"]);
-    expect(def.capabilities).toBeNull();
+    expect(def.roles).toEqual(["marketData", "account"]);
+    expect(def.gatedRoles).toMatchObject({ roles: ["trading"], reason: "TxFlow trading is switched off in this build" });
+    expect([def.masterKeyKind, def.agentKeyKind, def.secretStorage.kind]).toEqual(["evm", "evm", "ows-wallet"]);
     expect(def.fundingVerified).toBe(false);
     expect(def.apiStatus.kind).toBe("official");
     expect(def.networks.mainnet?.restUrl).toBe("https://rpc.txflow.com");
     expect(def.networks.mainnet?.wsUrl).toBe("wss://rpc.txflow.com/ws");
+    expect(def.networks.testnet?.restUrl).toBe("https://rpc.txflow-testnet.xyz");
+    expect(def.networks.testnet?.wsUrl).toBe("wss://rpc.txflow-testnet.xyz/ws");
+    expect([def.networks.mainnet?.signingChainId, def.networks.testnet?.signingChainId]).toEqual([869, 2511]);
     expect(resolveVenueId("txf")).toBe("txflow");
-    expect(def.networks.testnet).toBeNull();
+    expect(def.builderFee).toBeNull();
   });
 
-  it("requireCapabilities refuses with CAPABILITY_UNSUPPORTED (role-based), not NOT_IMPLEMENTED", () => {
-    try {
-      requireCapabilities(getVenue("txflow"));
-      throw new Error("no throw");
-    } catch (e) {
-      expect((e as PerpError).structured.code).toBe("CAPABILITY_UNSUPPORTED");
-      expect((e as PerpError).structured.details).toMatchObject({ venue: "txflow", feature: "trading" });
-      expect((e as PerpError).message).toMatch(/market data only/);
-    }
+  it("requireCapabilities refuses with the gate (CAPABILITY_UNSUPPORTED); the declared capabilities describe the implemented path", () => {
+    expect(() => requireCapabilities(getVenue("txflow"))).toThrow(expect.objectContaining({
+      structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED", message: expect.stringMatching(/TxFlow trading is switched off in this build/) }),
+    }));
+    expect(getVenue("txflow").capabilities).toEqual({
+      marketOrder: "slippageBounded", timeInForce: ["GTC", "IOC", "ALO"], reduceOnlyTif: null, clientOrderId: true,
+      orderAck: "async", tpsl: "separateOrders", amend: "native", batchPlaceMax: null, marginModes: ["cross", "isolated"], withdrawAssets: null,
+    });
+    expect(getVenue("txflow").maxSlippageBps).toBe(500);
   });
 });
 
@@ -263,8 +272,10 @@ describe("markets and funding (fixture)", () => {
     expect(await fetchTxflowFundingRates("mainnet", d2)).toEqual([]);
   });
 
-  it("testnet → NOT_IMPLEMENTED (no testnet)", async () => {
-    await expect(fetchTxflowMarkets("testnet", deps())).rejects.toMatchObject({ structured: { code: "NOT_IMPLEMENTED" } });
+  it("testnet reads the testnet host", async () => {
+    fetchMock.mockImplementation(routeInfo());
+    await fetchTxflowMarkets("testnet", deps());
+    expect(fetchMock.mock.calls.every(c => String(c[0]).startsWith("https://rpc.txflow-testnet.xyz/"))).toBe(true);
   });
 });
 
@@ -300,7 +311,7 @@ describe("24 h volume from webData2 assetCtxs (QA 0.15.0: volume24h was always n
 describe("klines (QA 0.15.0, perp_app)", () => {
   const candle = (t: number, i = "1h") => ({ t, o: "1", h: "2", l: "0.5", c: "1.5", v: "3", n: 4, s: "1", i, T: t + 3_599_999 });
   const adapterWith = (info: (body: { req: { startTime: number; endTime: number; interval: string } }) => unknown) => {
-    const a = new TxflowPublicAdapter(getVenue("txflow"), "mainnet");
+    const a = new TxflowAdapter(getVenue("txflow"), "mainnet");
     const spy = vi.fn(async (b: { req: { startTime: number; endTime: number; interval: string } }) => info(b));
     Object.assign(a as object, { market: vi.fn(async () => ({ index: 1, symbol: "BTC" })), client: { info: spy } });
     return { a, spy };
@@ -331,28 +342,30 @@ describe("klines (QA 0.15.0, perp_app)", () => {
   });
 });
 
-describe("public-only adapter", () => {
-  it("every account / trading method refuses with CAPABILITY_UNSUPPORTED and sends nothing", async () => {
-    const a = new TxflowPublicAdapter(getVenue("txflow"), "mainnet");
-    const calls: Array<() => Promise<unknown>> = [
-      () => a.getBalance(), () => a.getPositions(), () => a.getOpenOrders(), () => a.getOrderHistory(), () => a.getTradeHistory(),
-      () => a.getFundingPayments(), () => a.marketOrder(), () => a.limitOrder(), () => a.editOrder(), () => a.cancelOrder(),
-      () => a.cancelAllOrders(), () => a.setLeverage(), () => a.stopOrder(), () => a.getFundingHistory(),
-    ];
-    for (const c of calls) await expect(c()).rejects.toMatchObject({ structured: { code: "CAPABILITY_UNSUPPORTED" } });
+describe("keyless adapter", () => {
+  it("account reads need an address and writes an agent — refused before any request; funding history is unsupported", async () => {
+    const a = new TxflowAdapter(getVenue("txflow"), "mainnet");
+    const slippage = { bps: 50, source: "flag" as const };
+    for (const c of [() => a.getBalance(), () => a.getPositions(), () => a.getOpenOrders(), () => a.getOrderHistory(), () => a.getTradeHistory(), () => a.getFundingPayments()]) {
+      await expect(c()).rejects.toMatchObject({ structured: { code: "NO_SIGNER_AVAILABLE" } });
+    }
+    for (const c of [() => a.marketOrder("BTC", "buy", "0.01", { reduceOnly: false, slippage }), () => a.cancelOrder("BTC", "1"), () => a.cancelAllOrders(), () => a.setLeverage("BTC", 5)]) {
+      await expect(c()).rejects.toMatchObject({ structured: { code: "CAPABILITY_UNSUPPORTED" } });
+    }
+    await expect(a.getFundingHistory()).rejects.toMatchObject({ structured: { code: "CAPABILITY_UNSUPPORTED" } });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("market rows carry fundingVerified: false and no venueApi tag (official API)", async () => {
     fetchMock.mockImplementation(routeInfo());
-    const a = new TxflowPublicAdapter(getVenue("txflow"), "mainnet");
+    const a = new TxflowAdapter(getVenue("txflow"), "mainnet");
     vi.spyOn(a, "getVenueMarkets").mockResolvedValue(await fetchTxflowMarkets("mainnet", { wsFactory: fakeWs([{ channel: "allAssetCtxs", data: { ctxs: CTXS } }]).factory, warn: vi.fn() }));
     const rows = await a.getMarkets();
     expect(rows.every(r => r.fundingVerified === false && !("venueApi" in r))).toBe(true);
   });
 });
 
-describe("write-refusal table: -e txflow writes refuse before any I/O", () => {
+describe("refusal table: -e txflow paths that must refuse before any I/O", () => {
   type Env = { ok: boolean; error?: { code: string; message: string; details?: Record<string, unknown> } };
   const run = async (args: string[]): Promise<{ env: Env; docs: number }> => {
     const out: string[] = [];
@@ -377,27 +390,25 @@ describe("write-refusal table: -e txflow writes refuse before any I/O", () => {
     return { env: JSON.parse(out.join("").trim()) as Env, docs: 1 };
   };
 
-  const CASES: string[][] = [
-    ["-e", "txflow", "trade", "market", "BTC", "buy", "0.001"],
-    ["-e", "txflow", "trade", "buy", "BTC", "0.001"],
-    ["-e", "txflow", "trade", "limit", "BTC", "buy", "50000", "0.001"],
-    ["-e", "txflow", "trade", "cancel", "BTC", "123"],
-    ["-e", "txflow", "trade", "cancel-all"],
-    ["-e", "txflow", "trade", "leverage", "BTC", "5"],
-    ["-e", "txflow", "trade", "close", "BTC"],
-    ["-e", "txflow", "portfolio"],
-    ["-e", "txflow", "account", "trades"],
-    ["-e", "txflow", "account", "positions"],
-    ["-e", "txflow", "account", "orders"],
+  // A bot config on TxFlow (strategy start).
+  const botDir = mkdtempSync(join(tmpdir(), "txflow-gate-"));
+  const botConfig = join(botDir, "bot.json");
+  writeFileSync(botConfig, JSON.stringify({ exchange: "txflow", symbol: "BTC", strategy: { type: "grid" } }));
+
+  /** Still unsupported on TxFlow: funds (web app), builder codes, TWAP / bots (automation gate), funding arb. */
+  const UNSUPPORTED: string[][] = [
+    // trade multi: refused while the legs are parsed — the Hyperliquid leg is never sent.
+    ["trade", "multi", "hyperliquid:BTC:buy:0.001", "txflow:BTC:sell:0.001"],
+    ["trade", "multi", "txflow:BTC:buy:0.001", "hyperliquid:BTC:sell:0.001"],
+    ["strategy", "start", botConfig, "--headless"],
+    ["strategy", "start", botConfig, "--background"],
+    ["-e", "txflow", "strategy", "run", "grid", "BTC", "--headless"],
+    ["wallet", "agent", "revoke", "txflow", "perp-cli-txflow"],
     ["funds", "deposit", "txflow", "10"],
     ["funds", "withdraw", "txflow", "10"],
     ["--dry-run", "funds", "withdraw", "txflow", "10"],
-    ["wallet", "agent", "approve", "txflow"],
-    ["wallet", "agent", "import", "txflow"],
+    ["--dry-run", "funds", "deposit", "txflow", "10"],
     ["wallet", "builder", "approve", "txflow"],
-    ["wallet", "agent", "revoke", "txflow", "x"],
-    ["-e", "txflow", "trade", "tpsl", "BTC", "long", "--tp", "90000"],
-    ["-e", "txflow", "trade", "stop", "BTC", "sell", "0.001", "70000"],
     ["-e", "txflow", "funds", "transfer", "10", "0x0000000000000000000000000000000000000001"],
     ["funds", "rebalance", "execute", "--exchanges", "txflow,hyperliquid"],
     ["-e", "txflow", "strategy", "twap", "BTC", "buy", "0.01", "10m"],
@@ -406,21 +417,55 @@ describe("write-refusal table: -e txflow writes refuse before any I/O", () => {
     ["-e", "txflow", "strategy", "trailing-stop", "BTC", "--trail", "1"],
     ["-e", "txflow", "strategy", "quick-grid", "BTC"],
     ["arb", "exec", "BTC", "txflow", "hyperliquid", "10"],
+    // Trading / agent writes: implemented, switched off (txflow-release.ts).
+    ["-e", "txflow", "trade", "market", "BTC", "buy", "0.001"],
+    ["-e", "txflow", "trade", "buy", "BTC", "0.001"],
+    ["-e", "txflow", "trade", "limit", "BTC", "buy", "50000", "0.001"],
+    ["-e", "txflow", "trade", "cancel", "BTC", "123"],
+    ["-e", "txflow", "trade", "cancel-all"],
+    ["-e", "txflow", "trade", "leverage", "BTC", "5"],
+    ["-e", "txflow", "trade", "close", "BTC"],
+    ["-e", "txflow", "trade", "tpsl", "BTC", "long", "--tp", "90000"],
+    ["-e", "txflow", "trade", "stop", "BTC", "sell", "0.001", "70000"],
+    ["-e", "txflow", "trade", "edit", "BTC", "123", "50000", "0.001"],
+    ["wallet", "agent", "approve", "txflow"],
+    ["wallet", "agent", "import", "txflow"],
   ];
 
-  for (const args of CASES) {
+  for (const args of UNSUPPORTED) {
     it(`perp ${args.join(" ")} → CAPABILITY_UNSUPPORTED, one JSON document, zero fetch`, async () => {
       const { env, docs } = await run(args);
       expect(env.ok).toBe(false);
       expect(env.error!.code).toBe("CAPABILITY_UNSUPPORTED");
+      if (args[1] === "multi") expect(env.error!.message).toMatch(/^trade multi refused before any leg was sent: leg "txflow:BTC:(buy|sell):0\.001"/);
       expect(docs).toBe(1);
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+  }
+
+  /**
+   * Supported, but this computer has no TxFlow credentials: a typed refusal (no account address /
+   * no agent key) and NOTHING sent to /exchange. Market orders read the market first (public).
+   */
+  const NO_CREDENTIALS: string[][] = [
+    ["-e", "txflow", "account", "trades"],
+    ["-e", "txflow", "account", "positions"],
+    ["-e", "txflow", "account", "orders"],
+  ];
+
+  for (const args of NO_CREDENTIALS) {
+    it(`perp ${args.join(" ")} (no credentials) → NO_SIGNER_AVAILABLE / AGENT_NOT_REGISTERED, one JSON document, nothing sent`, async () => {
+      const { env, docs } = await run(args);
+      expect(env.ok).toBe(false);
+      expect(["NO_SIGNER_AVAILABLE", "AGENT_NOT_REGISTERED", "EXCHANGE_UNREACHABLE"]).toContain(env.error!.code);
+      expect(docs).toBe(1);
+      expect(fetchMock.mock.calls.filter(c => String(c[0]).endsWith("/exchange"))).toEqual([]);
     });
   }
 });
 
 describe("setup venue selection", () => {
-  it("txflow / txf is a capability refusal (CAPABILITY_UNSUPPORTED), not an unknown venue", () => {
+  it("txflow / txf is a capability refusal while trading is switched off, not an unknown venue", () => {
     for (const v of ["txflow", "txf"]) {
       expect(() => resolveSetupVenue(v, "mainnet")).toThrow(expect.objectContaining({
         structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED", details: expect.objectContaining({ venue: "txflow", feature: "setup" }) }),
