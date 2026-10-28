@@ -3,10 +3,10 @@ name: perp-cli
 description: "Multi-DEX perpetual futures trading via the perp-cli command-line tool. Use when user asks to: trade perps, check funding rates, scan/execute arbitrage (perp-perp or spot-perp), run delta-neutral strategies, bridge USDC across chains, manage positions/orders/leverage, deposit/withdraw, hedge spot+perp, trade HIP-3 DEXes, read Derive options chains, use Pacifica Print or Pacifica vaults, or mentions perp-cli, hypurrquant, Pacifica, Hyperliquid, Lighter, Aster, Lighter RH, Ondo Perps, Arcus, QFEX, RISEx, TxFlow, Variational, GRVT, Extended, Derive, HyperEVM, funding arb, or U-tokens (UBTC/UETH/USOL). Covers Pacifica (Solana), Hyperliquid (HyperEVM), Lighter (Ethereum), Aster (BNB Chain), Lighter RH and Arcus (Robinhood chain), Ondo Perps and QFEX (off-chain), RISEx (RISE chain), TxFlow (manual trading; mainnet whitelisted; official API in Beta), Variational Omni (market data only, official API), GRVT and Extended (Starknet) (market data only for now, official API), Derive options (read-only), and Pacifica Print / vaults."
 license: MIT
 allowed-tools: "Bash(perp:*), Bash(bash scripts/preflight.sh:*), Bash(bash scripts/arb-monitor.sh:*), Bash(bash scripts/funding-analysis.sh:*), Bash(bash scripts/spot-perp-scan.sh:*), Bash(bash scripts/validate-arb.sh:*)"
-compatibility: "Requires Node.js 20 or newer and the perp-cli npm package installed by the user (version must be >= 0.16.0; the user runs `npm install -g perp-cli` — never install it yourself). Network access required for exchange APIs and bridge providers. Mutating commands need a wallet key imported into the OWS vault via 'perp wallet set EXCHANGE' (key on stdin or hidden prompt — never argv). Skill is portable across Claude Code, Claude.ai, Cursor, Codex, and Gemini CLI — no platform-specific features."
+compatibility: "Requires Node.js 20 or newer and the perp-cli npm package installed by the user (version must be >= 0.17.0; the user runs `npm install -g perp-cli` — never install it yourself). Network access required for exchange APIs and bridge providers. Mutating commands need a wallet key imported into the OWS vault via 'perp wallet set EXCHANGE' (key on stdin or hidden prompt — never argv). Skill is portable across Claude Code, Claude.ai, Cursor, Codex, and Gemini CLI — no platform-specific features."
 metadata:
   author: hypurrquant
-  version: "0.16.0"
+  version: "0.17.0"
 ---
 
 # perp-cli
@@ -47,7 +47,7 @@ Also bundled under `scripts/`: `preflight.sh`, `arb-monitor.sh`, `funding-analys
 ### Step 1: Verify install, version, venue health
 
 ```bash
-perp --version         # must be >= 0.16.0
+perp --version         # must be >= 0.17.0
 perp --json health     # keyless venue connectivity
 ```
 

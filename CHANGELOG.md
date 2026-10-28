@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-10-28
+
+> **Minor bump:** RISEx and TxFlow trading are switched on (new features), and "JSON contract changes" below changes documented `--json` / MCP fields (TxFlow rows drop `venueApi`; TxFlow `roles` / `apiStatus` values change) — `docs/TESTING.md` §5 invariant 12. Both packages move together (`RELEASING.md`, lockstep). Neither venue has run a mainnet order yet (testnet only; `docs/verification.md`).
+
 ### Added — TxFlow trading (manual only) and account reads
 
 - **TxFlow trading is on (manual trading only), verified on testnet** (2026-10-27; owner request 2026-10-28 to switch it on). No mainnet TxFlow order has been run yet: mainnet trading needs a whitelisted account. TxFlow has the roles `marketData, account, trading`. One flag switches trading off again (`TXFLOW_TRADING_ENABLED` in `src/exchanges/venues/txflow-release.ts`, the RISEx release-switch pattern): with it false, every trade, `wallet agent approve|import txflow`, `perp setup --venues txflow`, bot / job and MCP trading tool refuses with `CAPABILITY_UNSUPPORTED` before any key is read; the gate stays tested (`txflow.test.ts`, `txflow-mcp.test.ts` mock it off).
@@ -57,6 +61,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - `cancel-all` reported cancelled orders as pending (the open list lags the tx); it now re-reads and proves each order cancelled by id.
 - The testnet router implementation is re-pinned after its 2026-10-27 upgrade (bytecode review: only batch place / cancel entries added, still permission 2).
 - RISEx TP/SL stays unsupported, now with the reason: the venue executes TP/SL against an account-signed OperatorHub spending allowance, outside the trading-only signer.
+
+### Testing (no runtime change)
+
+- **A request missing from a conformance fixture now fails the replay.** A replay miss used to fail only that request, and the command reported the venue as failed. When the CLI and the MCP side both failed the same way, the comparison passed without comparing that venue (TxFlow, after its API change). Every recorded session now has a `…:fixture-complete` check through `KNOWN_FAILURES`, and the hidden `console.warn` is gone.
+- The cross / parity fixtures record TxFlow's official API and the Lighter RH stream the `arb-rates` cell opens; the other venues' recordings are unchanged.
 
 ## [0.16.0] — 2026-10-26
 
