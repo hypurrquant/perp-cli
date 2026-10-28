@@ -8,7 +8,7 @@
  * unverified, still has a price), groups by canonical symbol with the perp-perp scan's median
  * price-outlier drop, and requires the cheap / rich pair to agree within MAX_PRICE_DEVIATION_PCT.
  * Venue scope: venues with the "trading" role (both legs must be executable) — TxFlow (market
- * data only, unofficial API) is out.
+ * data only) is out.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 

@@ -11,7 +11,7 @@
 一个 CLI 搞定多个 DEX 的永续合约 — 在终端中交易、比较资金费率、调拨资金和运行机器人，或交给 AI agent 使用（JSON 输出、MCP 服务器、agent 技能）。
 
 - **8 个可交易场所：** Hyperliquid（含 HIP-3 dex）、Pacifica、Lighter、Lighter RH、Aster、Ondo Perps、Arcus、QFEX（跨链桥和永续-永续套利覆盖最初的四个：Pacifica、Hyperliquid、Lighter、Aster）
-- **仅市场数据：** RISEx、GRVT、Extended、Variational、TxFlow（非官方 API）— 另有 Derive 期权数据
+- **仅市场数据：** RISEx、GRVT、Extended、Variational、TxFlow — 另有 Derive 期权数据
 
 ## 安装
 
@@ -119,7 +119,7 @@ ls "$(npm root -g)/perp-cli/skills/perp-cli"
 | GRVT | `grvt` | 仅市场数据 | USDT |
 | Extended | `extended` (`ext`) | 仅市场数据 | Starknet；加密货币 + 股票 / 外汇 |
 | Variational | `variational` (`var`) | 仅市场数据 | RFQ 交易场所 |
-| TxFlow | `txflow` (`txf`) | 仅市场数据 | **非官方** API |
+| TxFlow | `txflow` (`txf`) | 仅市场数据 | 官方 API（Beta） |
 | Derive | `derive` | 仅期权数据 | — |
 
 - **[支持矩阵及各交易场所说明](docs/venues.md)** — 资金费率、WebSocket、充值 / 提现、按地址查询、限制地区

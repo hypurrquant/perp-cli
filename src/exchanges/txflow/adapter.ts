@@ -1,9 +1,10 @@
 /**
- * TxFlow public-only adapter — UNOFFICIAL read-only API (see venues/txflow.ts).
+ * TxFlow public-only adapter — official API (Beta), read-only in perp-cli (see venues/txflow.ts).
  *
- * Market data (markets, orderbook, trades, klines) is implemented. Funding history is not
- * readable (the unofficial API refuses it) and every account / trading method refuses with
- * CAPABILITY_UNSUPPORTED before any request — there is no TxFlow account or order code.
+ * Market data (markets, orderbook, trades, klines) is implemented. Market funding history is not
+ * readable (the API documents no such read and refuses `fundingHistory` with HTTP 403) and every
+ * account / trading method refuses with CAPABILITY_UNSUPPORTED before any request — there is no
+ * TxFlow account or order code.
  */
 
 import { PerpError } from "../../errors.js";
@@ -20,8 +21,8 @@ import { txflowShapeError, TxflowClient } from "./client.js";
 import { fetchTxflowDirectory, fetchTxflowMarkets, resolveTxflowMarket, type TxflowMarketMeta } from "./public.js";
 
 /**
- * Candle intervals that return bars (verified live 2026-10-19, coin 1). 3d / 1w / 1M are
- * accepted by the API but answer [] for every window, so they are not offered.
+ * Candle intervals the docs list for candleSnapshot (1m … 1d; verified live 2026-10-19, coin 1).
+ * 3d / 1w / 1M are accepted by the API but answer [] for every window, so they are not offered.
  */
 export const TXFLOW_KLINE_MS: Readonly<Record<string, number>> = {
   "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000, "1h": 3_600_000,
@@ -29,15 +30,15 @@ export const TXFLOW_KLINE_MS: Readonly<Record<string, number>> = {
 };
 export const TXFLOW_KLINE_INTERVALS: ReadonlySet<string> = new Set(Object.keys(TXFLOW_KLINE_MS));
 /**
- * candleSnapshot answers `200 []` (no error) when the window spans more than ~3000 bars
- * (measured 2026-10-19: 3000 bars OK, 3050 → [] at 1h; same at 1m / 5m / 1d), so ranges are
- * read in windows of at most 2900 bars and merged.
+ * candleSnapshot answers an empty list (no error) when the window spans more than 3000 bars (docs;
+ * measured 2026-10-19: 3000 bars OK, 3050 → [] at 1h; same at 1m / 5m / 1d), so ranges are read
+ * in windows of at most 2900 bars and merged.
  */
 export const TXFLOW_KLINE_WINDOW_BARS = 2900;
 export const TXFLOW_KLINE_MAX_WINDOWS = 50;
 
-/** Legacy market row plus the labels every TxFlow row carries in JSON output. */
-export type TxflowMarketInfo = ExchangeMarketInfo & { venueApi: "unofficial"; fundingVerified: false };
+/** Legacy market row plus the label every TxFlow row carries in JSON output. */
+export type TxflowMarketInfo = ExchangeMarketInfo & { fundingVerified: false };
 
 function dec(v: unknown, what: string): string {
   if (typeof v !== "string" || !/^-?\d+(\.\d+)?$/.test(v)) throw txflowShapeError(`${what} is not a decimal string`);
@@ -69,7 +70,7 @@ export class TxflowPublicAdapter implements ExchangeAdapter {
   }
 
   async getMarkets(): Promise<TxflowMarketInfo[]> {
-    return (await this.getVenueMarkets()).map(m => ({ ...toLegacyMarketInfo(m), venueApi: "unofficial", fundingVerified: false }));
+    return (await this.getVenueMarkets()).map(m => ({ ...toLegacyMarketInfo(m), fundingVerified: false }));
   }
 
   async getOrderbook(symbol: string): Promise<{ bids: [string, string][]; asks: [string, string][] }> {
@@ -100,7 +101,7 @@ export class TxflowPublicAdapter implements ExchangeAdapter {
   }
 
   async getFundingHistory(): Promise<FundingHistoryRow[]> {
-    throw unsupported("txflow", "fundingHistory", "TxFlow's unofficial API refuses funding-history reads (HTTP 403)",
+    throw unsupported("txflow", "fundingHistory", "TxFlow publishes no market funding-history read (its API refuses fundingHistory with HTTP 403)",
       "Current TxFlow funding (unverified, per hour): perp -e txflow market info <symbol>, or perp arb scan --rates --include-unverified");
   }
 
@@ -143,7 +144,7 @@ export class TxflowPublicAdapter implements ExchangeAdapter {
   }
 
 
-  // ── Account / trading: refused (market-data-only venue, unofficial API) ──
+  // ── Account / trading: refused (market-data-only venue in perp-cli) ──
 
   private refuse(feature: string): never {
     throw roleUnsupported(this.venue, feature);

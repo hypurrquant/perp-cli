@@ -11,7 +11,7 @@
 多数の DEX の無期限先物を 1 つの CLI で — ターミナルから取引、ファンディングの比較、資金移動、ボットの実行ができ、AI エージェントにもそのまま渡せます（JSON 出力、MCP サーバー、エージェントスキル）。
 
 - **8 つの取引所で取引可能:** Hyperliquid（HIP-3 dex を含む）、Pacifica、Lighter、Lighter RH、Aster、Ondo Perps、Arcus、QFEX（ブリッジと perp-perp アービトラージは当初の 4 取引所が対象: Pacifica、Hyperliquid、Lighter、Aster）
-- **マーケットデータのみ:** RISEx、GRVT、Extended、Variational、TxFlow（非公式 API）— さらに Derive のオプションデータ
+- **マーケットデータのみ:** RISEx、GRVT、Extended、Variational、TxFlow — さらに Derive のオプションデータ
 
 ## インストール
 
@@ -119,7 +119,7 @@ ls "$(npm root -g)/perp-cli/skills/perp-cli"
 | GRVT | `grvt` | マーケットデータのみ | USDT |
 | Extended | `extended` (`ext`) | マーケットデータのみ | Starknet。暗号資産 + 株式 / FX |
 | Variational | `variational` (`var`) | マーケットデータのみ | RFQ 取引所 |
-| TxFlow | `txflow` (`txf`) | マーケットデータのみ | **非公式** API |
+| TxFlow | `txflow` (`txf`) | マーケットデータのみ | 公式 API（Beta） |
 | Derive | `derive` | オプションデータのみ | — |
 
 - **[サポートマトリクスと取引所ごとの注意点](docs/venues.md)** — ファンディング、WebSocket、入金 / 出金、アドレス指定の照会、制限地域

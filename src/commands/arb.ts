@@ -387,7 +387,7 @@ export async function handleRates(isJson: () => boolean, opts: { symbol?: string
  * Cross-venue price basis — a PRICE comparison, independent of funding.
  *
  * Venue scope: every venue with the "trading" role (both legs must be executable), whether or not
- * its funding rate is verified; market-data-only venues (TxFlow, unofficial API) are out. Prices
+ * its funding rate is verified; market-data-only venues (e.g. TxFlow) are out. Prices
  * come from each venue's market directory and are grouped by `canonical` symbol with the funding
  * scan's guards (fetchCanonicalPriceGroups): unclassified / ambiguous tickers have no canonical and
  * never pair, and a venue whose mark deviates more than MAX_PRICE_DEVIATION_PCT from the group

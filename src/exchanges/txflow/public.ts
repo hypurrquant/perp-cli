@@ -1,23 +1,26 @@
 /**
- * TxFlow public market data — UNOFFICIAL API (see venues/txflow.ts).
+ * TxFlow public market data — official API (Beta), docs https://docs.txflow.com/api.
  *
  * Sources:
  *   POST /info {type:"perpMeta", dex:""}   market directory: index (numeric coin id, with gaps),
  *                                         name "BTC-USDC", baseCurrency, szDecimals (can be
  *                                         NEGATIVE: lot 10, 100 …), priceTick, maxLeverage,
  *                                         haltTrading, delisted, tagIds
- *   POST /info {type:"allMarketTickers"}  per instrument: dayNtlVlm (24 h USD notional), prevDayPx …;
- *                                         `instrumentId` == perpMeta `index` (spot rows ≥ 10000),
- *                                         empty fields are "" (→ null). `market list|prices` only.
- *   WS allAssetCtxs (one-shot snapshot)   per coin: markPx, oraclePx, funding, openInterest,
+ *   POST /info {type:"webData2", user}     `assetCtxs`: one row per listed instrument with
+ *                                         dayNtlVlm (24 h USDC notional); `instrumentId` == perpMeta
+ *                                         `index` (spot rows ≥ 10000), "" (no trades) → null.
+ *                                         `user` is required by the API and only selects
+ *                                         `openOrders`, which is ignored: the zero address is sent.
+ *                                         `market list|prices` only.
+ *   WS /ws allAssetCtxs (one-shot)         per perp: markPx, oraclePx, funding, openInterest,
  *                                         nextFundingTime, prevFundingTime. `coin` == perpMeta
  *                                         `index` (as a string) — joined by id, never by position.
  *
- * Funding: `funding` is PERCENT per hour (settlementIntervalMs 3600000 on every market; 0.00125 is
- * the HL-style 0.00125 %/h baseline). Converted to a fraction per hour by an exact two-place decimal
- * shift (no float maths). The value moves every tick: an accruing / predicted estimate, not a
- * settled print — the venue is fundingVerified false. A market whose next − prev funding time is
- * not one hour gets no funding row.
+ * Funding: `funding` is PERCENT per settlement interval (docs: Funding, marketTicker `fundingRate`;
+ * the interval is one hour on every market, 0.00125 is the HL-style 0.00125 %/h baseline).
+ * Converted to a fraction per hour by an exact two-place decimal shift (no float maths). Whether it
+ * is the next settlement's estimate or the last settled print is undocumented — the venue is
+ * fundingVerified false. A market whose next − prev funding time is not one hour gets no funding row.
  */
 
 import { PerpError } from "../../errors.js";
@@ -172,6 +175,8 @@ export function toTxflowMarketMeta(raw: unknown): TxflowMarketMeta | null {
 }
 
 export async function fetchTxflowDirectory(client: TxflowClient): Promise<TxflowMarketMeta[]> {
+  // `dex: ""` (documented: the exchange name, "" = system instruments) is required for the listing
+  // fields: without it perpMeta also returns delisted rows and omits tagIds / fullName / description.
   const res = await client.info<{ universe?: unknown }>({ type: "perpMeta", dex: "" });
   if (res === null || typeof res !== "object" || !Array.isArray(res.universe)) throw txflowShapeError("perpMeta has no universe array");
   const out: TxflowMarketMeta[] = [];
@@ -248,20 +253,22 @@ export function hourlyFundingOf(ctx: TxflowCtx): string | null {
 
 // ── Mapping ──
 
-/** First spot instrumentId in allMarketTickers (perp ids are the perpMeta index, below it). */
+/** First spot instrumentId in webData2 assetCtxs (perp ids are the perpMeta index, below it). */
 export const TXFLOW_SPOT_ID_BASE = 10_000;
+/** webData2 requires `user`; it only selects the (ignored) openOrders, so no account is implied. */
+export const TXFLOW_NO_USER = "0x0000000000000000000000000000000000000000";
 
 /**
- * 24 h USD notional volume per perp coin id from allMarketTickers. "" (no trades) → null, never
- * "0"; a non-list answer or a row without a numeric instrumentId is EXCHANGE_ERROR.
+ * 24 h USDC notional volume per perp coin id from webData2 `assetCtxs`. "" (no trades) → null,
+ * never "0"; a missing assetCtxs list or a row without a numeric instrumentId is EXCHANGE_ERROR.
  */
 export async function fetchTxflowDayVolumes(client: TxflowClient): Promise<Map<number, string | null>> {
-  const res = await client.info<unknown>({ type: "allMarketTickers" });
-  if (!Array.isArray(res)) throw txflowShapeError("allMarketTickers is not an array");
+  const res = await client.info<{ assetCtxs?: unknown }>({ type: "webData2", user: TXFLOW_NO_USER });
+  if (res === null || typeof res !== "object" || !Array.isArray(res.assetCtxs)) throw txflowShapeError("webData2 has no assetCtxs array");
   const out = new Map<number, string | null>();
-  for (const r of res) {
+  for (const r of res.assetCtxs) {
     const x = r as { instrumentId?: unknown; dayNtlVlm?: unknown };
-    if (typeof x.instrumentId !== "number" || !Number.isInteger(x.instrumentId)) throw txflowShapeError("allMarketTickers row without a numeric instrumentId");
+    if (typeof x.instrumentId !== "number" || !Number.isInteger(x.instrumentId)) throw txflowShapeError("webData2 assetCtxs row without a numeric instrumentId");
     if (x.instrumentId >= TXFLOW_SPOT_ID_BASE) continue;
     out.set(x.instrumentId, decOrNull(x.dayNtlVlm));
   }
@@ -331,7 +338,10 @@ async function fetchJoined(net: Network, deps: TxflowPublicDeps): Promise<Array<
 export async function fetchTxflowMarkets(net: Network, deps: TxflowPublicDeps = DEFAULT_DEPS): Promise<VenueMarket[]> {
   const { client } = clientFor(net); // testnet → NOT_IMPLEMENTED before any request
   const [joined, volumes] = await Promise.all([fetchJoined(net, deps), fetchTxflowDayVolumes(client)]);
-  // A market absent from allMarketTickers has no published volume → null.
+  // webData2 lists every instrument (docs), so a listed perp without a row is reported, not hidden;
+  // its volume is unknown (null).
+  const noRow = joined.filter(({ meta }) => !volumes.has(meta.index)).map(({ meta }) => meta.symbol);
+  if (noRow.length > 0) deps.warn(`[txflow] ${noRow.length} listed market(s) had no webData2 assetCtxs row (24 h volume unknown): ${noRow.join(", ")}`);
   return joined.map(({ meta, ctx }) => toTxflowVenueMarket(meta, ctx, volumes.has(meta.index) ? volumes.get(meta.index) as string | null : null));
 }
 

@@ -1158,9 +1158,9 @@ export function registerFundsCommands(
     .action(async () => {
       throw unsupported("risex", "withdraw", RISEX_FUNDS_APP_ONLY.reason, RISEX_FUNDS_APP_ONLY.remediation);
     });
-  // TxFlow: market data only (unofficial read-only API).
+  // TxFlow: market data only in perp-cli.
   supportsDryRun(withdraw.command("txflow [amount]"))
-    .description("Not available: TxFlow is market data only in perp-cli (unofficial read-only API) — refused")
+    .description("Not available: TxFlow is market data only in perp-cli — refused")
     .option("--to <address>", "Ignored")
     .action(async () => {
       throw roleUnsupported(getVenue("txflow"), "withdraw");
@@ -1336,7 +1336,7 @@ export function registerFundsCommands(
       throw unsupported("risex", "deposit", RISEX_FUNDS_APP_ONLY.reason, RISEX_FUNDS_APP_ONLY.remediation);
     });
   supportsDryRun(deposit.command("txflow [amount]"))
-    .description("Not available: TxFlow is market data only in perp-cli (unofficial read-only API) — refused")
+    .description("Not available: TxFlow is market data only in perp-cli — refused")
     .action(async () => {
       throw roleUnsupported(getVenue("txflow"), "deposit");
     });
@@ -1506,7 +1506,7 @@ export function registerFundsCommands(
             aster: { chain: "BNB Chain (default) / Arbitrum", token: "USDT (default) / USDC", min: null, gas: "BNB / Arbitrum ETH", method: "approve + vault depositFor(token, forAddress, amount, broker 1) (mainnet only)", command: "perp funds deposit aster <amount> [--chain bsc|arbitrum] [--asset USDT|USDC]" },
             ondo: { chain: "Arbitrum (default) / Ethereum", token: "USDC", min: null, gas: "ETH", method: "USDC transfer to the account's funding address (mainnet only)", command: "perp funds deposit ondo <amount> [--chain arbitrum|ethereum] [--probe <amount>]" },
             risex: { supported: false, note: `${RISEX_FUNDS_APP_ONLY.reason} — ${RISEX_FUNDS_APP_ONLY.remediation}`, testnet: getVenue("risex").roles.includes("trading") ? "perp -n testnet funds faucet risex (1000 test USDC, once)" : null },
-            txflow: { supported: false, note: "TxFlow is market data only in perp-cli (unofficial read-only API)" },
+            txflow: { supported: false, note: "TxFlow is market data only in perp-cli" },
             variational: { supported: false, note: VARIATIONAL_READ_ONLY_REMEDIATION },
             grvt: { supported: false, note: "GRVT is read-only (market data) in this version; trading is planned for a later release" },
             extended: { supported: false, note: EXTENDED_READ_ONLY_REMEDIATION },
@@ -1522,7 +1522,7 @@ export function registerFundsCommands(
               : { supported: false, note: `${QFEX_WITHDRAW_DISABLED.reason} — ${QFEX_WITHDRAW_DISABLED.remediation}` },
             arcus: { chain: "Robinhood Chain", token: "USDG", command: "perp funds withdraw arcus <amount>" },
             risex: { supported: false, note: `${RISEX_FUNDS_APP_ONLY.reason} — ${RISEX_FUNDS_APP_ONLY.remediation}` },
-            txflow: { supported: false, note: "TxFlow is market data only in perp-cli (unofficial read-only API)" },
+            txflow: { supported: false, note: "TxFlow is market data only in perp-cli" },
             variational: { supported: false, note: VARIATIONAL_READ_ONLY_REMEDIATION },
             grvt: { supported: false, note: "GRVT is read-only (market data) in this version; trading is planned for a later release" },
             extended: { supported: false, note: EXTENDED_READ_ONLY_REMEDIATION },

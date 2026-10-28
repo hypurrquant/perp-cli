@@ -40,7 +40,7 @@ import {
   ArbBasis, ArbGaps, ArbRates, ArbScan, Health, issues, MarketList, MarketListAll, MarketRow, RateRow, RateSymbol,
 } from "./contracts.js";
 import { baseOf } from "./checks.js";
-import { hasFixture, IS_LIVE, MODE, runCli, Session, type CliRun, type Envelope } from "./harness.js";
+import { hasFixture, IS_LIVE, missesFailure, MODE, runCli, Session, type CliRun, type Envelope } from "./harness.js";
 import { expectCheck, staleKnownFailures } from "./known-failures.js";
 import type { z } from "zod";
 
@@ -79,6 +79,7 @@ const cli = new Map<string, CliRun>();
 const mcp = new Map<string, Envelope>();
 
 const runnable = IS_LIVE || (hasFixture("cross") && hasFixture("parity"));
+const misses: Record<"cross" | "parity", readonly string[]> = { cross: [], parity: [] };
 
 describe(`cross-venue + CLI ⇄ MCP parity (${MODE})`, () => {
   it("has a recorded fixture (pnpm conformance:record --cross)", () => {
@@ -101,8 +102,8 @@ describe(`cross-venue + CLI ⇄ MCP parity (${MODE})`, () => {
         mcp.set(cell, JSON.parse(r.content[0].text) as Envelope);
       }
       session.finalize();
-      if (session.misses.length > 0) console.warn(`[conformance] cross: requests missing from the fixture:\n  ${session.misses.join("\n  ")}`);
     } finally {
+      misses.cross = session.misses;
       session.stop();
     }
     const parity = new Session("parity", [], { trim: false });
@@ -118,11 +119,15 @@ describe(`cross-venue + CLI ⇄ MCP parity (${MODE})`, () => {
         mcp.set(cell, JSON.parse(r.content[0].text) as Envelope);
       }
       parity.finalize();
-      if (parity.misses.length > 0) console.warn(`[conformance] parity: requests missing from the fixture:\n  ${parity.misses.join("\n  ")}`);
     } finally {
+      misses.parity = parity.misses;
       parity.stop();
     }
   }, IS_LIVE ? 900_000 : 180_000);
+
+  for (const name of ["cross", "parity"] as const) {
+    it(`replay: every ${name} request is in the fixture`, () => expectCheck(`${name}:replay:fixture-complete`, missesFailure(misses[name])));
+  }
 
   const data = (cell: string): unknown => cli.get(cell)!.envelope.data;
   const schema = (id: string, cell: string, s: z.ZodType) => it(`${cell}: schema`, () => {

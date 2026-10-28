@@ -116,7 +116,7 @@ const MARK_PRICE_PREFERENCE: readonly VenueId[] = [
   "hyperliquid", "pacifica", "lighter", "aster", "lighter-rh", "ondo", "arcus", "risex", "qfex", "grvt", "extended",
   // RFQ venue: the mark is the single maker's (OLP) price.
   "variational",
-  // Unofficial API: last resort as a mark-price source.
+  // Last-resort mark-price source (venue API in Beta).
   "txflow",
 ];
 

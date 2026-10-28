@@ -85,7 +85,7 @@ async function getOrCreateAdapter(exchange: string): Promise<ExchangeAdapter> {
   const def = getVenue(exchange);
   const cached = adapters.get(def.id);
   if (cached) return cached;
-  // Market-data-only venue (TxFlow: unofficial read-only API): every account / trading tool refuses here.
+  // Market-data-only venue (e.g. TxFlow): every account / trading tool refuses here.
   if (!def.roles.includes("account")) throw roleUnsupported(def, "account");
   const create = requireCreate(def);
   if (!(await hasCredentials(def.id, NO_CLI_CREDENTIAL_OPTS))) {
@@ -355,7 +355,7 @@ server.tool(
 
 server.tool(
   "get_funding_rates",
-  "Compare funding rates across every market-data venue whose funding rate is verified. Returns rates per symbol with spread analysis. includeUnverified also returns venues whose rate is unverified (QFEX; TxFlow — unofficial API; Variational — a predicted rate not checked against settled payments; GRVT — indicative rate; Extended — not checked against settled payments), each row tagged fundingVerified / apiStatus — display only, never a basis for trading (mirrors the CLI `arb scan --include-unverified`).",
+  "Compare funding rates across every market-data venue whose funding rate is verified. Returns rates per symbol with spread analysis. includeUnverified also returns venues whose rate is unverified (QFEX; TxFlow — rate not checked against settled payments; Variational — a predicted rate not checked against settled payments; GRVT — indicative rate; Extended — not checked against settled payments), each row tagged fundingVerified / apiStatus — display only, never a basis for trading (mirrors the CLI `arb scan --include-unverified`).",
   {
     symbols: z
       .array(z.string())
@@ -381,7 +381,7 @@ server.tool(
 
 server.tool(
   "get_prices",
-  "Get cross-exchange prices for symbols. Fetches mark prices from every market-data venue for comparison; a venue appears in a row only when it lists that symbol (e.g. QFEX lists no BTC). Each row's unofficialApiVenues names the venues in it read through an undocumented API (TxFlow) — like get_markets' venueApi tag.",
+  "Get cross-exchange prices for symbols. Fetches mark prices from every market-data venue for comparison; a venue appears in a row only when it lists that symbol (e.g. QFEX lists no BTC). Each row's unofficialApiVenues names the venues in it read through an undocumented API (none at present) — like get_markets' venueApi tag.",
   {
     symbols: z
       .array(z.string())

@@ -38,7 +38,7 @@ import "../../exchanges/venues/index.js";
 import { listPublicPositionVenues } from "../../exchanges/venue.js";
 import { issues, PositionList } from "./contracts.js";
 import type { Json } from "./fixture-tools.js";
-import { hasFixture, IS_LIVE, MODE, runCli, Session, type CliRun, type Envelope } from "./harness.js";
+import { hasFixture, IS_LIVE, missesFailure, MODE, runCli, Session, type CliRun, type Envelope } from "./harness.js";
 import { expectCheck } from "./known-failures.js";
 
 const NAME = "positions-by-address";
@@ -119,6 +119,7 @@ const mcp = new Map<string, Envelope>();
 const addressOf = new Map<string, string>();
 
 const runnable = IS_LIVE || hasFixture(NAME);
+let misses: readonly string[] = [];
 
 describe(`public-address positions (${MODE})`, () => {
   it("has a recorded fixture (pnpm conformance:record --positions)", () => expect(runnable).toBe(true));
@@ -143,11 +144,13 @@ describe(`public-address positions (${MODE})`, () => {
         mcp.set(v, JSON.parse(r.content[0].text) as Envelope);
       }
       session.finalize();
-      if (session.misses.length > 0) console.warn(`[conformance] ${NAME}: requests missing from the fixture:\n  ${session.misses.join("\n  ")}`);
     } finally {
+      misses = session.misses;
       session.stop();
     }
   }, IS_LIVE ? 900_000 : 120_000);
+
+  it("replay: every request is in the fixture", () => expectCheck("positions:replay:fixture-complete", missesFailure(misses)));
 
   type Row = { symbol: string; side: string; size: string; dex?: string | null; accountIndex?: number; [k: string]: unknown };
   const rows = (e: Envelope | undefined): Row[] => (e?.ok === true && Array.isArray(e.data) ? e.data as Row[] : []);

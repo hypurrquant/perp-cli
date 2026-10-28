@@ -233,7 +233,7 @@ function redacted(err: unknown, secrets: readonly string[], venue: VenueId): Per
 }
 
 /**
- * Venues whose keys cannot be imported. TxFlow: market-data-only (unofficial read-only API).
+ * Venues whose keys cannot be imported. TxFlow: market-data-only.
  * RISEx: perp-cli trades only with a signer it registered itself and then restricted ON-CHAIN to
  * the trading permission; a signer created in the RISEx app keeps every permission (including
  * deposit / withdraw), so it is never stored here.
