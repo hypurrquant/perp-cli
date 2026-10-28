@@ -70,7 +70,7 @@ describe("RISEx signer-permission evidence", () => {
   it("permission ids: 0..4 exist, trading = 2, perp-cli disables the rest; only the account can re-enable", () => {
     expect(Object.keys(perms.permissionIds.result).filter(k => /^\d$/.test(k)).map(Number)).toEqual([...RISEX_PERMISSION_IDS]);
     expect(perms.tradingPermission.id).toBe(RISEX_TRADING_PERMISSION);
-    expect([...RISEX_NON_TRADING_PERMISSIONS]).toEqual([0, 1, 3, 4]);
+    expect([...RISEX_NON_TRADING_PERMISSIONS]).toEqual([0, 3, 4]); // 1 = "all" mask: never disabled
     expect(perms.signerOnlyDisable["disablePermission(account, signer, anchor, bit, permission=4, sig)"]["signed by account (master)"]).toMatch(/^revert 0x3492c099/);
     expect(perms.signerOnlyDisable["enablePermission(account, signer, 2, 7, permission=4, sig)"]["signed by signer"]).toMatch(/^revert/);
     expect(id("InvalidSignerSignature(address,address)").slice(0, 10)).toBe("0x3492c099");
@@ -81,7 +81,7 @@ describe("RISEx signer-permission evidence", () => {
 describe("RISEx sessionKeys bitmap evidence (M1)", () => {
   it("layout decodes as (expiration, bitmap, status) and the recorded ids ≥5 are unaddressable", async () => {
     const { decodeSessionKey } = await import("../../exchanges/risex/session.js");
-    const { RISEX_PINS, RISEX_PERMISSION_ID_MASK, RISEX_TRADING_ONLY_BITS } = await import("../../exchanges/risex/typed-data.js");
+    const { RISEX_PINS, RISEX_FORBIDDEN_BITS, RISEX_TRADING_BIT } = await import("../../exchanges/risex/typed-data.js");
     const ev = perms.sessionKeysBitmap;
     expect(decodeSessionKey(ev.sampleReturn)).toEqual({ expiration: ev.sampleRegisterSignerExpiration, bitmap: 0xffffffffn, status: 1 });
     expect(ev.idsAbove4["permission=5"]).toMatch(/revert/);
@@ -93,7 +93,8 @@ describe("RISEx sessionKeys bitmap evidence (M1)", () => {
       expect(ev.implementations.accountRegistry[net].implementation.toLowerCase()).toBe(RISEX_PINS[net].accountRegistryImplementation.toLowerCase());
     }
     expect(ev.residual).toMatch(/refuses every signed action/);
-    // After disabling 0,1,3,4 the permission bits are exactly {2}; bits 5–31 stay set (cannot be cleared).
-    expect(0xffffffe4n & RISEX_PERMISSION_ID_MASK).toBe(RISEX_TRADING_ONLY_BITS);
+    // After disabling 0, 3, 4 (live testnet result 0xffffffe6): bits 0, 3, 4 clear, bit 2 set; bit 1 and 5–31 stay set.
+    expect(0xffffffe6n & RISEX_FORBIDDEN_BITS).toBe(0n);
+    expect(0xffffffe6n & RISEX_TRADING_BIT).toBe(RISEX_TRADING_BIT);
   });
 });

@@ -1,6 +1,6 @@
 /**
  * RISEx read-only release phase (0.15.0, owner decision 2026-10-19): with RISEX_TRADING_ENABLED
- * false (the shipped value — NOT mocked here), every trading / signer / agent / bot / MCP-write /
+ * false (mocked here — trading ships on since 2026-10-27; the gate must still hold if it is switched off again), every trading / signer / agent / bot / MCP-write /
  * setup entry point refuses with CAPABILITY_UNSUPPORTED (also under --dry-run) before any request,
  * while market data and public-by-address account reads keep working. No network: fetch is mocked.
  */
@@ -17,6 +17,7 @@ vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
   },
 }));
 vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({ StdioServerTransport: class {} }));
+vi.mock("../../exchanges/venues/risex-release.js", () => ({ RISEX_TRADING_ENABLED: false }));
 const owsCreate = vi.fn((name: string) => ({ getAddress: () => (name === "main" ? "0x00000000000000000000000000000000000000c3" : "0x00000000000000000000000000000000000000a1") }));
 vi.mock("../../signer/ows-evm.js", () => ({ OwsEvmSigner: { create: (name: string, _p: string) => owsCreate(name) } }));
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -269,7 +270,7 @@ describe("CLI entry points (with and without --dry-run)", () => {
       kind: "risex", agentName: "perp-cli-risex", agentWalletName: "agent-risex-main",
       signerAddress: "0x00000000000000000000000000000000000000a1", accountAddress: ACCOUNT,
       expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-      permissions: { tradingOnly: true, disabled: [0, 1, 3, 4], verifiedAt: "2026-10-14T00:00:00Z" },
+      permissions: { tradingOnly: true, disabled: [0, 3, 4], verifiedAt: "2026-10-14T00:00:00Z" },
       network: "mainnet", approvedAt: "2026-10-14T00:00:00Z", source: "approved",
     };
     const writeMeta = () => {
@@ -334,7 +335,7 @@ describe("RisexAdapter.create while trading is gated", () => {
     kind: "risex", agentName: "perp-cli-risex", agentWalletName: "agent-risex-stale",
     signerAddress: "0x00000000000000000000000000000000000000a1", accountAddress: ACCOUNT,
     expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-    permissions: { tradingOnly: true, disabled: [0, 1, 3, 4], verifiedAt: "2026-10-14T00:00:00Z" },
+    permissions: { tradingOnly: true, disabled: [0, 3, 4], verifiedAt: "2026-10-14T00:00:00Z" },
     network: "mainnet", approvedAt: "2026-10-14T00:00:00Z", source: "approved",
   };
   const ctx = (owsWallet: string | null) => ({

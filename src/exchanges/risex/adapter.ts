@@ -18,6 +18,7 @@
  *    The permit deadline is short (RISEX_PERMIT_TTL_S), so an unproven permit expires quickly.
  */
 
+import type { IocOutcome } from "../ioc-outcome.js";
 import { PerpError, extractErrorMessage } from "../../errors.js";
 import { quarantineSymbol } from "../../bot/quarantine.js";
 import type { RisexAgentMeta } from "../../settings.js";
@@ -56,6 +57,8 @@ export const RISEX_PERMIT_TTL_S = 120;
 export const RISEX_TRADING_ONLY_TTL_MS = 60_000;
 const ORDER_READ_ATTEMPTS = 3;
 const ORDER_READ_DELAY_MS = 700;
+/** Extra open-list reads (× ORDER_READ_DELAY_MS) after a cancel-all before an order counts as pending. */
+const CANCEL_SETTLE_READS = 15;
 
 export interface RisexAdapterDeps {
   /** Account the reads and permits are for; null = public market data only. */
@@ -532,7 +535,7 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
   async placeOrder(req: OrderRequest): Promise<OrderResult> {
     validateOrderRequest(this.venue, this.caps, req);
     if (req.type !== "market" && req.type !== "limit") {
-      throw unsupported(this.venue.displayName, "stopOrders", "TP/SL and stop orders are not implemented for RISEx yet", "Use market / limit orders; set protection in the RISEx app");
+      throw unsupported(this.venue.displayName, "stopOrders", "RISEx TP/SL orders are executed by the venue backend against an account-signed OperatorHub spending allowance (docs: approve-single, required for TP/SL), outside the trading-only session signer — perp-cli does not grant it", "Set TP/SL in the RISEx app (it grants that allowance), or use reduce-only limit orders");
     }
     const { account, signer } = this.requireSigner();
     const m = await this.market(req.symbol, true);
@@ -581,7 +584,9 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
     }
     const fields = {
       marketId: Number(m.market_id), sizeSteps, priceTicks, side: SIDE[req.side], postOnly: tif === "ALO", reduceOnly: req.reduceOnly,
-      stpMode: STP_EXPIRE_MAKER, orderType: req.type === "market" ? ORDER_TYPE.market : ORDER_TYPE.limit, tif: tifCode,
+      // A market order goes out as LIMIT IOC at the protection price: the venue's MARKET type ignores
+      // the price (testnet 2026-10-28: a 1 bps bound at 2336.30 filled at 2353.17), LIMIT IOC honors it.
+      stpMode: STP_EXPIRE_MAKER, orderType: ORDER_TYPE.limit, tif: tifCode,
     } as const;
     const actionHash = placeOrderHash(packOrder(fields), BigInt(clientOrderId));
     const { permit, slot } = await this.permit(account, signer, actionHash);
@@ -621,9 +626,19 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
         : filledSteps === 0n ? "cancelled"
         : filledSteps !== null && filledSteps >= sizeSteps ? "filled" : "partiallyFilled";
       if (status === "partiallyFilled") notes.push(`${tif}: the unfilled remainder was cancelled`);
+      // The tx response has no fill price: one by-id read for avg_price (the fill itself is already final).
+      let avgPrice: string | null = null;
+      if (orderId !== null && filledSteps !== null && filledSteps > 0n) {
+        try {
+          avgPrice = (await this.getOrderStatus(sym, { kind: "orderId", value: orderId })).avgPrice;
+          if (avgPrice === null) notes.push(`average fill price not published yet — see perp${this.network === "testnet" ? " -n testnet" : ""} -e risex trade fills ${sym}`);
+        } catch (e) {
+          notes.push(`average fill price unread (${extractErrorMessage(e)})`);
+        }
+      }
       return withExecution({
         venue: "risex", symbol: sym, status, finality: filledSize === null ? "pending" : "final", orderId, clientOrderId,
-        filledSize, avgPrice: null, venueRaw: res,
+        filledSize, avgPrice, venueRaw: res,
       }, method, { ...exec, notes });
     }
     // Resting TIF: read the order back (status / immediate fills).
@@ -710,10 +725,22 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
           for (const r of refs) result.failed.push({ ref: r, error: `cancel-all answered success=${String(res.success)}` });
           continue;
         }
-        const still = new Set((await this.openOrdersRaw(id)).map(o => lower(o.order_id)));
+        // The open list lags the cancel-all tx (testnet 2026-10-28: both orders CANCELLED by id while
+        // still listed right after): re-read for a short window, then prove each gone order by id.
+        let still = new Set((await this.openOrdersRaw(id)).map(o => lower(o.order_id)));
+        for (let i = 0; i < CANCEL_SETTLE_READS && refs.some(r => still.has(lower(r.value))); i++) {
+          await this.sleep(ORDER_READ_DELAY_MS);
+          still = new Set((await this.openOrdersRaw(id)).map(o => lower(o.order_id)));
+        }
+        const sym = await this.symbolOfId(id);
         for (const r of refs) {
-          if (still.has(lower(r.value))) (result.pending as NonNullable<CancelResult["pending"]>).push({ ref: r, reason: "still listed after cancel-all", remediation: "Check perp -e risex account orders" });
-          else result.cancelled.push(r);
+          if (still.has(lower(r.value))) {
+            (result.pending as NonNullable<CancelResult["pending"]>).push({ ref: r, reason: "still listed after cancel-all", remediation: "Check perp -e risex account orders" });
+            continue;
+          }
+          const st = await this.getOrderStatus(sym, r);
+          if (st.status === "cancelled") result.cancelled.push(r);
+          else result.failed.push({ ref: r, error: `left the open list ${st.status} (not cancelled)` });
         }
       } catch (e) {
         if (!(e instanceof RisexSendUnknown)) {
@@ -809,6 +836,18 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
 
   // ── Legacy trading shims ──
 
+  /**
+   * Venue-final outcome of a market order (LIMIT IOC): its filled size comes from the place tx's
+   * `filled_quantity` (finality "final") — filled, partially filled (remainder cancelled) or cancelled.
+   */
+  iocOutcomeOf(raw: unknown): IocOutcome | null {
+    if (raw === null || typeof raw !== "object") return null;
+    const r = raw as Partial<OrderResult>;
+    if (r.venue !== "risex" || r.finality !== "final" || r.execution?.method !== "protectedIoc") return null;
+    if (r.status !== "filled" && r.status !== "cancelled" && r.status !== "partiallyFilled") return null;
+    return typeof r.filledSize === "string" ? { filledSize: r.filledSize, final: true } : null;
+  }
+
   async marketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { reduceOnly: boolean; slippage: ResolvedSlippage; clientOrderId?: string }): Promise<unknown> {
     return this.placeOrder({
       symbol, side, type: "market", size, price: null, triggerPrice: null, triggerSource: null, tif: null,
@@ -841,12 +880,12 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   async stopOrder(): Promise<unknown> {
-    throw unsupported(this.venue.displayName, "stopOrders", "TP/SL and stop orders are not implemented for RISEx yet", "Set TP/SL in the RISEx app");
+    throw unsupported(this.venue.displayName, "stopOrders", "RISEx TP/SL orders are executed by the venue backend against an account-signed OperatorHub spending allowance (docs: approve-single, required for TP/SL), outside the trading-only session signer — perp-cli does not grant it", "Set TP/SL in the RISEx app (it grants that allowance), or use reduce-only limit orders");
   }
 
   /** TP/SL entries are refused before the entry is sent (not implemented yet). */
   stopOrderGate(): PerpError {
-    return unsupported(this.venue.displayName, "stopOrders", "TP/SL and stop orders are not implemented for RISEx yet", "Set TP/SL in the RISEx app");
+    return unsupported(this.venue.displayName, "stopOrders", "RISEx TP/SL orders are executed by the venue backend against an account-signed OperatorHub spending allowance (docs: approve-single, required for TP/SL), outside the trading-only session signer — perp-cli does not grant it", "Set TP/SL in the RISEx app (it grants that allowance), or use reduce-only limit orders");
   }
 
   /** Bots / TWAP / grid / funding-arb legs stay off until RISEx trading is verified on mainnet. */

@@ -16,7 +16,7 @@ What each venue supports in this release, derived from the code (venue definitio
 | Ondo Perps | ✅ | ✅ hourly | — | — | — | ✅ | ✅ (USDC, mainnet) | — (the API allows none; web app)⁴ | spot, client-side TWAP | official |
 | Arcus | ✅ | ✅ hourly | ✅ public + user | — | — | ✅ | — (web app) | ✅ (to the account owner) | spot (on-chain swaps), client-side TWAP | official |
 | QFEX | ✅ | unverified (display only, `--include-unverified`) | — | — | — | ✅ (no resting reduce-only, no automation — see [QFEX](#qfex)) | address only | — (disabled for now; web app)⁵ | — | official |
-| RISEx | ✅ | ✅ hourly | — | ✅ | ✅ | — (**read-only**; trading planned, not yet available) | — (app only) | — (app only) | account reads by address | official |
+| RISEx | ✅ | ✅ hourly | — | ✅ | ✅ | ✅ (manual only, no TP/SL / amend; not yet verified on mainnet — see [RISEx](#risex)) | — (app only) | — (app only) | account reads by address; testnet faucet | official |
 | TxFlow | ✅ | unverified (display only, `--include-unverified`) | — | — | — | ✅ (manual only; mainnet whitelist; not yet verified on mainnet — see [TxFlow](#txflow)) | — (web app) | — (web app) | — | official (Beta) |
 | Variational | ✅ (`market book` = RFQ quotes, not an order book) | unverified (display only, `--include-unverified`); interval per market (1h / 4h / 8h) | — | — | — | — (market data only) | — | — | equities / ETFs / commodities; pre-IPO (not matched) | official |
 | GRVT | ✅ | unverified (display only, `--include-unverified`); interval per market (4h / 8h) | — (per-instrument streams only) | — | — | — (market data only in this version; trading planned, not yet available) | — | — | equities / ETFs, commodities; pre-IPO not matched | official |
@@ -41,7 +41,7 @@ What each venue supports in this release, derived from the code (venue definitio
 | Ondo Perps | `ondo` (`ondo-perps`) | yes | Off-chain engine; limit TIF GTC (default) / IOC / ALO; restricted: US, PA |
 | QFEX | `qfex` (`qf`) | yes (see **QFEX** below) | Custodial, off-chain engine; equities / indices / commodities, cross margin, USDC; limit TIF GTC (default) / IOC / FOK / ALO; testnet = QFEX UAT; restricted: US, GB, ES and others |
 | Arcus | `arcus` | yes | Robinhood chain, USDG collateral; limit TIF GTC (default, sent as GTT) / IOC / FOK / ALO; restricted: US, CA, GB; **access whitelist** — unlisted addresses are rejected (request access at arcus.xyz) |
-| RISEx | `risex` (`rise`) | **no — read-only** (trading planned, not yet available; see **RISEx** below) | Fully on-chain order book on RISE chain, USDC; official API. Market data, funding and account reads by address; every trade / agent / bot path → `CAPABILITY_UNSUPPORTED`; deposits / withdrawals in the RISEx app only |
+| RISEx | `risex` (`rise`) | yes — manual only (see **RISEx** below) | Fully on-chain order book on RISE chain, USDC; official API. Orders through a session signer restricted on-chain to trading only; limit TIF GTC / IOC / FOK / ALO; no TP/SL, amend or bots yet; deposits / withdrawals in the RISEx app only; mainnet trading not yet verified with real funds |
 | Variational | `variational` (`var`, `omni`) | **no — market data only** (see **Variational** below) | Variational Omni, an RFQ venue (one market maker, no order book); official read-only API, no public trading API yet. Funding is unverified (shown only with `--include-unverified`); restricted: US, CA and others |
 | GRVT | `grvt` (`grv`) | **no — market data only in this version** (trading planned, not yet available; see **GRVT** below) | Hybrid perps exchange, USDT collateral; official Market Data API. Funding is unverified (shown only with `--include-unverified`); testnet = `-n testnet`; trading needs KYC; restricted: US, CA, SG, HK and others |
 | Extended | `extended` (`ext`, `x10`) | **no — market data only in this version** (trading planned, not yet available; see **Extended** below) | Perps order book on Starknet (formerly X10), USD collateral; official public API. Crypto plus RWA (equities, ETFs, indices, commodities, FX). Funding is unverified (shown only with `--include-unverified`); testnet = Sepolia (`-n testnet`); restricted: US, GB, CA, HK and others |
@@ -83,9 +83,9 @@ Order outcomes are never guessed: an IOC / market order is final only on a venue
 
 **Withdrawals** are disabled in perp-cli for now (`funds withdraw qfex` → `CAPABILITY_UNSUPPORTED`, also under `--dry-run`); withdraw in the QFEX web app. Subaccounts: `perp -e qfex funds transfer <amount> primary --from <account uuid>`.
 
-## RISEx (read-only — trading planned, not yet available)
+## RISEx
 
-RISEx is a fully on-chain perps order book on RISE chain (USDC collateral), reached through its **official** API. New venues ship in phases: in this release perp-cli reads RISEx data only; trading comes in a later release.
+RISEx is a fully on-chain perps order book on RISE chain (USDC collateral), reached through its **official** API. Trading is on since 2026-10-27 (shipped switched off in 0.15.0). It was verified on **testnet** (2026-10-14, again 2026-10-28 after the signer-restriction and market-order fixes); no mainnet RISEx order has been run yet.
 
 ```bash
 perp -e risex market list                     # public; funding = last settled hourly rate (verified)
@@ -93,11 +93,16 @@ perp -e risex market book BTC                 # also: prices | info | trades | k
 perp arb scan --rates                         # RISEx rows in the funding comparison
 perp health                                   # RISEx is probed as an official venue
 perp -e risex account positions --ows <master>   # account reads are public by address — nothing is signed
+perp -e risex wallet agent approve risex --master <ows-wallet>   # session signer, restricted on-chain to trading only
+perp -e risex trade limit BTC buy <price> <size> --tif ALO
+perp -n testnet funds faucet risex            # testnet only: 1000 test USDC, once
 ```
 
-- **Refused in this release** (`CAPABILITY_UNSUPPORTED`, "RISEx trading is planned for a later perp-cli release", before any key is read or request is sent — also under `--dry-run`): every `perp -e risex trade …` write, `trade multi` / `arb exec` / `arb auto` legs, every `strategy …` command (bots, plans, TWAP / grid / DCA, `--exchanges` legs), `wallet agent approve|import|revoke|rotate risex` (`revoke --force` only clears the local record), `perp setup --venues risex`, `funds faucet risex`, and the MCP `trade_preview` / `trade_execute` / `trade_close` tools. `arb scan --basis` covers trading venues only, so RISEx is not in it; in `arb scan` a pair with a RISEx leg is marked `executable: false` / "(read-only)".
+- **Signer:** `wallet agent approve risex --master <w>` registers a session signer (default `--expires-in 30d`). The signer is then restricted ON-CHAIN to trading only: the master sends the DisablePermission transactions and needs a little RISE-chain ETH for gas. Never interrupt the approve: until the last DisablePermission lands, the signer briefly holds full permissions. `wallet agent import risex` is refused, because an app-created signer keeps fund-movement permissions. Trading-only is re-proven from the on-chain permission bitmap and the reviewed contract versions before signed actions. After a contract upgrade or a new permission id, every signed action is refused (`POLICY_DENIED`) until perp-cli is updated.
+- **Orders:** market (sent as LIMIT IOC at the slippage-bounded protection price — the venue's MARKET type ignores the price, testnet 2026-10-28 — within the market's match price band, 2 % on mainnet today), limit GTC / IOC / FOK / ALO, reduce-only, cancel, cancel-all, leverage, margin mode (refused while a position is open), `trade status c:<id>`. Sizes and prices must sit on the step / tick grid (`INVALID_TICK`, never rounded).
+- **Not supported** (`CAPABILITY_UNSUPPORTED`): TP/SL / stops — RISEx executes them from its backend against an account-signed OperatorHub spending allowance (`approve-single`, "Required for TPSL"; overwriting it needs an on-chain lockdown), outside the trading-only session signer, so perp-cli does not grant it (set TP/SL in the RISEx app); amend; builder fee. Bots, TWAP, grid, background jobs and `strategy …` on RISEx are refused too ("unattended trading on RISEx is not enabled until its trading path is verified on mainnet").
 - **Funds:** deposits and withdrawals are done in the RISEx app (app.rise.trade). `funds deposit|withdraw risex`, `funds transfer -e risex` and `funds rebalance execute` with risex refuse with `CAPABILITY_UNSUPPORTED` (also under `--dry-run`).
-- The trading code (session signer restricted on-chain to trading only, EIP-712 permits) ships with its tests but is switched off by one flag (`RISEX_TRADING_ENABLED` in `src/exchanges/venues/risex-release.ts`).
+- One flag still switches trading off again (`RISEX_TRADING_ENABLED` in `src/exchanges/venues/risex-release.ts`): with it false, every trade / agent / bot path refuses with `CAPABILITY_UNSUPPORTED` before any key is read.
 
 ## TxFlow
 

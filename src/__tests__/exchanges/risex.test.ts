@@ -25,6 +25,7 @@ import { RisexClient, RisexSendUnknown, revertNameOf } from "../../exchanges/ris
 import { toRisexFundingRates, toRisexVenueMarkets, type RisexRawMarket } from "../../exchanges/risex/public.js";
 import { RisexAdapter } from "../../exchanges/risex/adapter.js";
 import { restrictSignerToTrading } from "../../exchanges/risex/agent.js";
+import { assertTradingOnlyOnChain } from "../../exchanges/risex/session.js";
 import { newVenueClientOrderId } from "../../exchanges/trading-v2.js";
 
 
@@ -35,7 +36,8 @@ const chainExtras = (low: () => number) => ({
   implementationOf: async (proxy: string) => ({ [RISEX_PINS.mainnet.auth.toLowerCase()]: RISEX_PINS.mainnet.authImplementation, [RISEX_PINS.mainnet.router.toLowerCase()]: RISEX_PINS.mainnet.routerImplementation, [RISEX_PINS.mainnet.accountRegistry.toLowerCase()]: RISEX_PINS.mainnet.accountRegistryImplementation } as Record<string, string>)[proxy.toLowerCase()] as string,
   accountRegistry: async () => RISEX_PINS.mainnet.accountRegistry,
 });
-const bitsOf = (perms: Map<number, boolean>) => [...perms].reduce((acc, [p, on]) => acc | (on ? 1 << p : 0), 0);
+/** The live permission model (Authorization bytecode 0x4252): mask(1) = every bit ("all"), else 1 << p. */
+const maskOf = (p: number) => (p === 1 ? 0x1f : 1 << p);
 
 const MAINNET = "https://api.rise.trade";
 const DOMAIN = { name: "RISEx", version: "1", chainId: 4153, verifyingContract: RISEX_PINS.mainnet.auth };
@@ -378,10 +380,12 @@ describe("adapter: placeOrder", () => {
     let placed: Record<string, unknown> | null = null;
     routeFetch([...base,
       (url, init) => url.pathname === "/v1/orders/place" ? (placed = bodyOf(init), ok({ order_id: "0xdef", block_number: "1", filled_quantity: "200000000000000" })) : undefined,
+      url => url.pathname === "/v1/orders/by-id/0xdef" ? ok({ order: { id: "0xdef", price: "84259.9", size: "0.0002", market_id: "1", side: "BUY", type: "LIMIT", time_in_force: "IOC", post_only: false, reduce_only: false, filled_size: "0.0002", status: "ORDER_STATUS_FILLED", avg_price: "83430.1", client_order_id: "1", created_at: "1" } }) : undefined,
     ]);
     const a = await adapter();
     const r = await a.placeOrder(req({ type: "market", price: null, tif: null, clientOrderId: null, slippage: { bps: 100, source: "flag" } }));
-    expect(placed).toMatchObject({ order_type: 0, time_in_force: 3, post_only: false });
+    expect(r.avgPrice).toBe("83430.1"); // the tx response has no fill price: read by id once
+    expect(placed).toMatchObject({ order_type: 1, time_in_force: 3, post_only: false }); // LIMIT IOC: the venue's MARKET type ignores the price (live testnet)
     // mark 83425.59… × 1.01 = 84259.85 → ceil to the 0.1 tick = 84259.9
     expect((placed as unknown as Record<string, unknown>).price_ticks).toBe(842599);
     expect(String((placed as unknown as Record<string, unknown>).client_order_id)).toMatch(/^[1-9]\d+$/);
@@ -507,16 +511,44 @@ describe("adapter: cancel / cancel-all / leverage", () => {
     await expect(a.cancelByRef("BTC", { kind: "orderId", value: "0xnope" })).rejects.toMatchObject({ structured: { code: "ORDER_NOT_FOUND" } });
   });
 
-  it("cancel-all per market; proven only when the order is gone afterwards", async () => {
+  const byId = (status: string, filled = "0") => (url: URL) => url.pathname === "/v1/orders/by-id/0xa1"
+    ? ok({ order: { id: "0xa1", price: "55024.8", size: "0.0002", market_id: "1", side: "BUY", type: "LIMIT", time_in_force: "GTC", post_only: true, reduce_only: false, filled_size: filled, status, avg_price: "0", client_order_id: "77", created_at: "1" } })
+    : undefined;
+
+  it("cancel-all per market; proven only when the order is gone afterwards AND cancelled by id", async () => {
     let lists = 0;
     routeFetch([...base,
       url => url.pathname === "/v1/orders/open" ? ok({ orders: lists++ === 0 ? OPEN : [] }) : undefined,
       url => url.pathname === "/v1/orders/cancel-all" ? ok({ tx_hash: "0x2", block_number: "2", success: true }) : undefined,
+      byId("ORDER_STATUS_CANCELLED"),
     ]);
     const a = await adapter();
     const r = await a.cancelAllV2(null);
     expect(r.cancelled).toEqual([{ kind: "orderId", value: "0xa1" }]);
     expect(r.pending).toEqual([]);
+  });
+
+  it("cancel-all: the open list lagging the tx (live testnet) is re-read, not reported pending; a fill instead of a cancel → failed", async () => {
+    let lists = 0;
+    routeFetch([...base,
+      // listed before + 3 lagging reads after the cancel-all, then gone
+      url => url.pathname === "/v1/orders/open" ? ok({ orders: lists++ <= 3 ? OPEN : [] }) : undefined,
+      url => url.pathname === "/v1/orders/cancel-all" ? ok({ tx_hash: "0x2", block_number: "2", success: true }) : undefined,
+      byId("ORDER_STATUS_CANCELLED"),
+    ]);
+    const r = await (await adapter()).cancelAllV2(null);
+    expect(r.cancelled).toEqual([{ kind: "orderId", value: "0xa1" }]);
+    expect(r.pending).toEqual([]);
+
+    lists = 0;
+    routeFetch([...base,
+      url => url.pathname === "/v1/orders/open" ? ok({ orders: lists++ === 0 ? OPEN : [] }) : undefined,
+      url => url.pathname === "/v1/orders/cancel-all" ? ok({ tx_hash: "0x2", block_number: "2", success: true }) : undefined,
+      byId("ORDER_STATUS_FILLED", "0.0002"),
+    ]);
+    const f = await (await adapter()).cancelAllV2(null);
+    expect(f.cancelled).toEqual([]);
+    expect(f.failed).toEqual([{ ref: { kind: "orderId", value: "0xa1" }, error: "left the open list filled (not cancelled)" }]);
   });
 
   it("margin-mode switch with an open position is refused before sending; leverage bounded by the market", async () => {
@@ -533,28 +565,66 @@ describe("adapter: cancel / cancel-all / leverage", () => {
   });
 });
 
+describe("iocOutcomeOf (market orders are LIMIT IOC read back by id)", () => {
+  const res = (status: string, method = "protectedIoc", finality = "final") => ({ venue: "risex", status, finality, filledSize: status === "filled" ? "0.1" : status === "partiallyFilled" ? "0.07" : "0", execution: { method } });
+  it("filled / partiallyFilled / cancelled from the place tx are venue-final; limits and pending results are not", async () => {
+    const a = await adapter();
+    expect(a.iocOutcomeOf(res("filled"))).toEqual({ filledSize: "0.1", final: true });
+    // Live testnet 2026-10-28: a close with no liquidity inside the bound — cancelled, nothing filled.
+    expect(a.iocOutcomeOf(res("cancelled"))).toEqual({ filledSize: "0", final: true });
+    expect(a.iocOutcomeOf(res("partiallyFilled"))).toEqual({ filledSize: "0.07", final: true });
+    expect(a.iocOutcomeOf(res("cancelled", "limit"))).toBeNull();
+    expect(a.iocOutcomeOf(res("cancelled", "protectedIoc", "pending"))).toBeNull();
+    expect(a.iocOutcomeOf({ status: "ok" })).toBeNull();
+  });
+});
+
+describe("trading-only proof (permission masks: 1 = all)", () => {
+  /** Chain reader for a raw bitmap under the live mask model (mask(1) = every bit). */
+  const chainFor = (bitmap: bigint, expiration = 2_000_000_000) => {
+    const mask = (p: number) => (p === 1 ? 0xffffffffn : 1n << BigInt(p));
+    return {
+      hasPermission: async (_a: string, _s: string, p: number) => (bitmap & mask(p)) === mask(p), isNonceUsed: async () => false,
+      ...chainExtras(() => 0), sessionKey: async () => ({ expiration, bitmap, status: 1 }),
+    };
+  };
+  const S = "0x97Aff841E119524bC015BE9C062D4697FeE2a2A1";
+
+  it("accepts the live restricted state 0xffffffe6 (bit 1 and bits 5–31 set, hasPermission {2})", async () => {
+    await expect(assertTradingOnlyOnChain(chainFor(0xffffffe6n), "mainnet", ACCOUNT, S)).resolves.toMatchObject({ bitmap: 0xffffffe6n });
+  });
+
+  it("refuses a wiped bitmap (disable 1), a leftover bit 0 / 3 / 4, and an expired key", async () => {
+    for (const bm of [0x0n, 0xffffffe7n, 0xffffffeen, 0xfffffff6n]) {
+      await expect(assertTradingOnlyOnChain(chainFor(bm), "mainnet", ACCOUNT, S)).rejects.toMatchObject({ structured: { code: "POLICY_DENIED" } });
+    }
+    await expect(assertTradingOnlyOnChain(chainFor(0xffffffe6n, 1_000), "mainnet", ACCOUNT, S)).rejects.toThrow(/expired/);
+  });
+});
+
 describe("signer restriction (on-chain, trading-only)", () => {
   it("the SIGNER signs DisablePermission for every non-trading permission; final state proven", async () => {
     routeFetch(base);
     const signer = await LocalEvmSigner.create(Wallet.createRandom().privateKey);
-    const perms = new Map<number, boolean>([[0, true], [1, true], [2, true], [3, true], [4, true]]);
+    let low = 0x1f;
     const sent: Array<{ permission: number; signer: string }> = [];
     const r = await restrictSignerToTrading({
       client: new RisexClient(MAINNET, getVenue("risex").rateLimit, "risex:test"), network: "mainnet",
       ctx: { domain: DOMAIN, router: RISEX_PINS.mainnet.router, auth: RISEX_PINS.mainnet.auth },
       account: ACCOUNT, signer, nonceDir,
-      chain: { hasPermission: async (_a, _s, p) => perms.get(p) as boolean, isNonceUsed: async () => false, ...chainExtras(() => bitsOf(perms)) },
+      chain: { hasPermission: async (_a, _s, p) => (low & maskOf(p)) === maskOf(p), isNonceUsed: async () => false, ...chainExtras(() => low) },
       send: async (permission, slot, signature) => {
         const rec = verifyTypedData({ ...DOMAIN, verifyingContract: getAddress(DOMAIN.verifyingContract) }, { DisablePermission: RISEX_TYPES.DisablePermission },
           { account: ACCOUNT, signer: signer.getAddress(), permission, nonceAnchor: slot.anchor, nonceBitmap: slot.bit }, signature);
         sent.push({ permission, signer: rec });
-        perms.set(permission, false);
+        low &= ~maskOf(permission);
         return `0xtx${permission}`;
       },
     });
-    expect(sent.map(s => s.permission)).toEqual([...RISEX_NON_TRADING_PERMISSIONS]);
+    expect(sent.map(s => s.permission)).toEqual([0, 3, 4]); // never 1: the "all" mask would clear trading too
     expect(sent.every(s => s.signer === signer.getAddress())).toBe(true);
-    expect(r.disabled.map(d => d.permission)).toEqual([0, 1, 3, 4]);
+    expect(r.disabled.map(d => d.permission)).toEqual([0, 3, 4]);
+    expect(low).toBe(0b00110);
   });
 
   it("a state that is not trading-only after the sends is a failure (never stored as restricted)", async () => {

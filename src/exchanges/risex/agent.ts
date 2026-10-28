@@ -118,7 +118,7 @@ export type DisablePermissionSender = (permission: number, slot: NonceSlot, sign
 
 /**
  * Restrict an ACTIVE signer to the trading permission and prove the final on-chain state.
- * Returns the permissions disabled by this call (already-disabled ones are skipped).
+ * Returns the permissions disabled by this call (ids whose bitmap bit is already clear are skipped).
  */
 export async function restrictSignerToTrading(p: {
   client: RisexClient; network: Network; ctx: RisexSigningContext; account: string; signer: EvmSigner;
@@ -127,8 +127,11 @@ export async function restrictSignerToTrading(p: {
   const account = getAddress(p.account);
   const signer = getAddress(p.signer.getAddress());
   const disabled: Array<{ permission: number; txHash: string }> = [];
+  // Skip from the raw bitmap (the proof's source): hasPermission(1) is the "all" mask and reads
+  // false as soon as any bit is clear. Ids 0, 3, 4 are single bits — order does not matter.
   for (const permission of RISEX_NON_TRADING_PERMISSIONS) {
-    if (!(await p.chain.hasPermission(account, signer, permission))) continue;
+    const { bitmap } = await p.chain.sessionKey(account, signer);
+    if (((bitmap >> BigInt(permission)) & 1n) === 0n) continue;
     const slot = await allocateAccountNonce(p.client, p.network, account, p.nonceDir);
     const signature = await signChecked(p.signer, p.ctx.domain, "DisablePermission", {
       account, signer, permission, nonceAnchor: slot.anchor, nonceBitmap: slot.bit,

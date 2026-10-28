@@ -52,7 +52,8 @@ export class OwsEvmSigner implements EvmSigner {
       primaryType: Object.keys(types)[0],
       domain,
       message: value,
-    });
+    // uint values held as bigint (e.g. RISEx nonce anchors) go as decimal strings, the EIP-712 JSON form.
+    }, (_key, v: unknown) => (typeof v === "bigint" ? v.toString() : v));
 
     const result = ows.signTypedData(this._walletName, "ethereum", typedData, this._passphrase);
     return canonicalizeOwsSignature(result);

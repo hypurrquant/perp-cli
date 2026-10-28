@@ -10,8 +10,8 @@
 
 一个 CLI 搞定多个 DEX 的永续合约 — 在终端中交易、比较资金费率、调拨资金和运行机器人，或交给 AI agent 使用（JSON 输出、MCP 服务器、agent 技能）。
 
-- **9 个可交易场所：** Hyperliquid（含 HIP-3 dex）、Pacifica、Lighter、Lighter RH、Aster、Ondo Perps、Arcus、QFEX、TxFlow（跨链桥和永续-永续套利覆盖最初的四个：Pacifica、Hyperliquid、Lighter、Aster）
-- **仅市场数据：** RISEx、GRVT、Extended、Variational — 另有 Derive 期权数据
+- **10 个可交易场所：** Hyperliquid（含 HIP-3 dex）、Pacifica、Lighter、Lighter RH、Aster、Ondo Perps、Arcus、QFEX、RISEx、TxFlow（跨链桥和永续-永续套利覆盖最初的四个：Pacifica、Hyperliquid、Lighter、Aster）
+- **仅市场数据：** GRVT、Extended、Variational — 另有 Derive 期权数据
 
 ## 安装
 
@@ -115,7 +115,7 @@ ls "$(npm root -g)/perp-cli/skills/perp-cli"
 | Ondo Perps | `ondo` | ✅ | 链下，USDC |
 | Arcus | `arcus` | ✅（访问白名单） | Robinhood chain，USDG |
 | QFEX | `qfex` (`qf`) | ✅（仅限手动交易） | 托管；股票、指数、大宗商品 |
-| RISEx | `risex` | 只读 | RISE chain，USDC |
+| RISEx | `risex` | ✅（仅手动交易；主网未验证） | RISE chain，USDC |
 | GRVT | `grvt` | 仅市场数据 | USDT |
 | Extended | `extended` (`ext`) | 仅市场数据 | Starknet；加密货币 + 股票 / 外汇 |
 | Variational | `variational` (`var`) | 仅市场数据 | RFQ 交易场所 |

@@ -35,6 +35,29 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - Because TxFlow now counts as an official-API venue, a TxFlow outage turns `health` / `health_check` `healthy` false (it used to count only toward `allHealthy`).
 - TxFlow error text: `EXCHANGE_ERROR` messages are `TxFlow <type>: <venue message> (code N[, HTTP s])`; shape drift reads `TxFlow API shape changed: …` (was `TxFlow unofficial API shape changed: …`); the `CAPABILITY_UNSUPPORTED` reason for TxFlow is `TxFlow is available for market data only (no trading role)` (was `… integrated through an unofficial read-only API …`), and its remediation no longer lists `market funding` (TxFlow's funding-history read is refused as well).
 
+### Changed — RISEx trading switched on (manual trading only)
+
+- `RISEX_TRADING_ENABLED` is now `true` (owner request 2026-10-27). The trading path shipped switched off in 0.15.0: a session signer restricted on-chain to trading only, plus EIP-712 permits.
+  - Back on: `perp -e risex trade …` (market, limit GTC / IOC / FOK / ALO, reduce-only, cancel, cancel-all, leverage, margin mode, status).
+  - Also back on: `trade multi` / `arb exec` legs, `wallet agent approve|revoke|rotate risex`, `perp setup --venues risex`, `perp -n testnet funds faucet risex`, and the MCP `trade_preview` / `trade_execute` / `trade_close` tools.
+  - In `arb scan`, a pair with a RISEx leg is executable again.
+- Still refused (`CAPABILITY_UNSUPPORTED`):
+  - TP/SL / stops, amend and builder fee;
+  - unattended trading: bots, TWAP, grid, background jobs and `strategy …` on RISEx;
+  - `wallet agent import risex`;
+  - deposits and withdrawals (RISEx app only).
+- Mainnet RISEx trading was verified on testnet only (2026-10-14). No mainnet RISEx order has been run yet (`docs/verification.md`).
+- The read-only gate stays in the code and is still tested: `risex-read-only.test.ts` now mocks the switch off.
+
+### Fixed — RISEx (testnet 2026-10-28)
+
+- **Market orders ignored the slippage bound.** The venue's MARKET order type ignores the price: a buy with a 1 bps bound filled 0.7 % above the mark. Market orders (and closes) now go out as LIMIT IOC at the protection price; an IOC that fills nothing reports `ORDER_REJECTED` "IOC filled nothing" instead of `ORDER_PENDING`, and fills carry the average price.
+- **Signer restriction.** Permission 1 is the "all bits" mask on the Authorization contract (bytecode-verified, identical on testnet and mainnet): disabling it wipes trading too, and the old proof wrongly required its bit clear, so every approve failed (fail-closed — the signer was revoked). perp-cli now disables 0, 3, 4 only and proves trading-only from the masks (bits 0 / 3 / 4 clear, bit 2 set, `hasPermission` = {2}, Active, unexpired).
+- `wallet agent approve risex` with an OWS master failed with "Do not know how to serialize a BigInt" before signing.
+- `cancel-all` reported cancelled orders as pending (the open list lags the tx); it now re-reads and proves each order cancelled by id.
+- The testnet router implementation is re-pinned after its 2026-10-27 upgrade (bytecode review: only batch place / cancel entries added, still permission 2).
+- RISEx TP/SL stays unsupported, now with the reason: the venue executes TP/SL against an account-signed OperatorHub spending allowance, outside the trading-only signer.
+
 ## [0.16.0] — 2026-10-26
 
 > **Renumbered from 0.15.1, which was never released** (npm's latest is 0.15.0; there is no `v0.15.1`

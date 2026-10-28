@@ -8,8 +8,8 @@
 
 One CLI for perpetual futures across many DEXs — trade, compare funding, move funds and run bots from the terminal, or hand it to an AI agent (JSON output, MCP server, agent skill).
 
-- **Trade on 9 venues:** Hyperliquid (incl. HIP-3 dexes), Pacifica, Lighter, Lighter RH, Aster, Ondo Perps, Arcus, QFEX, TxFlow (bridge and perp-perp arb cover the original four: Pacifica, Hyperliquid, Lighter, Aster)
-- **Market data only:** RISEx, GRVT, Extended, Variational — plus Derive options data
+- **Trade on 10 venues:** Hyperliquid (incl. HIP-3 dexes), Pacifica, Lighter, Lighter RH, Aster, Ondo Perps, Arcus, QFEX, RISEx, TxFlow (bridge and perp-perp arb cover the original four: Pacifica, Hyperliquid, Lighter, Aster)
+- **Market data only:** GRVT, Extended, Variational — plus Derive options data
 
 ## Install
 
@@ -113,7 +113,7 @@ See [`skills/perp-cli/SKILL.md`](skills/perp-cli/SKILL.md) for the full agent gu
 | Ondo Perps | `ondo` | ✅ | off-chain, USDC |
 | Arcus | `arcus` | ✅ (access whitelist) | Robinhood chain, USDG |
 | QFEX | `qfex` (`qf`) | ✅ (manual trading only) | custodial; equities, indices, commodities |
-| RISEx | `risex` | read-only | RISE chain, USDC |
+| RISEx | `risex` | ✅ (manual trading only; mainnet not yet verified) | RISE chain, USDC |
 | GRVT | `grvt` | market data only | USDT |
 | Extended | `extended` (`ext`) | market data only | Starknet; crypto + equities / FX |
 | Variational | `variational` (`var`) | market data only | RFQ venue |

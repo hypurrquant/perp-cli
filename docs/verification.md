@@ -24,7 +24,7 @@ Every mark below comes from a real-money mainnet run, not from code reading — 
 | Deposit via perp-cli | ✅ | (HL) | ✅ | ✅ | ✅ | ✅ | ✅ | — (web app) | — (address only) |
 | Withdraw (to your own address)⁶ | ✅ | (HL) | ✅ | ✅ | ✅ | ✅ (`--asset USDC`) | ⛔⁴ | ✅ | ⛔⁵ |
 
-RISEx, Variational, GRVT and Extended are not in this table: none trades in this release. RISEx trading (shipped but disabled since 0.15.0) was exercised on **testnet** only (2026-10-14); no mainnet RISEx order has been run.
+RISEx, TxFlow, Variational, GRVT and Extended are not in this table: Variational, GRVT and Extended do not trade; RISEx and TxFlow trade, verified on testnet only. RISEx trading (switched on 2026-10-27; shipped but disabled in 0.15.0) was exercised on **testnet** only (2026-10-14); no mainnet RISEx order has been run.
 
 **TxFlow** trading is on since 2026-10-28 and was verified on **testnet** only (2026-10-27, `-n testnet`):
 
