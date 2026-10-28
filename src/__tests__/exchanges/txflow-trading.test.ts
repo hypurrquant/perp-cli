@@ -567,7 +567,7 @@ describe("review fixes: client-id reuse, cancel races, paging, mixed groupings, 
     const r = await adapter().cancelByRef("BTC", { kind: "orderId", value: "502" });
     expect(await sentAction()).toEqual({ type: "cancel", cancels: [{ grouping: "tpsl", a: 1, o: 501 }] });
     expect(r.cancelled).toEqual([]);
-    expect(r.failed.map(f => f.ref.value)).toEqual(["501", "502"]);
+    expect(r.failed.map(f => f.ref?.value)).toEqual(["501", "502"]);
     expect(r.failed[0].error).toMatch(/triggered \(fired before the cancel\)/);
   });
 
