@@ -69,9 +69,9 @@ describe("candle interval guard on the other venues whose rows state their inter
   });
 
   it("txflow: same guard on candleSnapshot `i`", async () => {
-    const { TxflowPublicAdapter } = await import("../../exchanges/txflow/adapter.js") as unknown as { TxflowPublicAdapter: new (...a: unknown[]) => object };
+    const { TxflowAdapter } = await import("../../exchanges/txflow/adapter.js") as unknown as { TxflowAdapter: new (...a: unknown[]) => object };
     const row = { t: 1792400400000, o: "82707.4", h: "82988", l: "82621.7", c: "82650", v: "25.2125", n: 883, s: "1", i: "1h", T: 1792403999999 };
-    const a = Object.create(TxflowPublicAdapter.prototype) as { getKlines: (s: string, i: string, a: number, b: number) => Promise<unknown[]> };
+    const a = Object.create(TxflowAdapter.prototype) as { getKlines: (s: string, i: string, a: number, b: number) => Promise<unknown[]> };
     Object.assign(a, { market: vi.fn(async () => ({ index: 1 })), client: { info: vi.fn(async () => [row]) } });
     expect(await a.getKlines("BTC", "1h", 0, 1)).toHaveLength(1);
     await expect(a.getKlines("BTC", "4h", 0, 1)).rejects.toMatchObject({ structured: expect.objectContaining({ code: "EXCHANGE_ERROR" }) });

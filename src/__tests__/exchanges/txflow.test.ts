@@ -1,10 +1,15 @@
 /**
- * TxFlow (market data only, UNOFFICIAL API): exact unit conversions, the id → symbol join,
- * error mapping of the undocumented endpoint, the one-shot WS snapshot, the "unofficial" label,
- * and the write-refusal table (every write path refuses with CAPABILITY_UNSUPPORTED and makes
- * zero network calls).
+ * TxFlow market data (official API in Beta): exact unit conversions, the id → symbol join, the
+ * `{success, code, data}` envelope and its error mapping, the `x-api-version` header, the one-shot
+ * WS snapshot, and the refusal table of what stays unsupported (funds, builder codes, automation —
+ * CAPABILITY_UNSUPPORTED with zero network calls). Trading: txflow-trading.test.ts.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+// The release switch mocked OFF (trading ships on since 2026-10-28): this file is the gate test. Trading: txflow-trading.test.ts (switch mocked ON).
+vi.mock("../../exchanges/venues/txflow-release.js", () => ({ TXFLOW_TRADING_ENABLED: false }));
 import "../../exchanges/venues/index.js";
 import { PerpError } from "../../errors.js";
 import { getVenue, requireCapabilities, resolveVenueId } from "../../exchanges/venue.js";
@@ -13,7 +18,8 @@ import {
   fetchTxflowFundingRates, fetchTxflowMarkets, joinSnapshot, percentToFraction, stepFromSzDecimals, toTxflowMarketMeta,
   type TxflowMarketMeta,
 } from "../../exchanges/txflow/public.js";
-import { TxflowPublicAdapter } from "../../exchanges/txflow/adapter.js";
+import { TxflowAdapter } from "../../exchanges/txflow/adapter.js";
+import { TXFLOW_API_VERSION } from "../../exchanges/venues/txflow.js";
 import { buildProgram } from "../../cli-program.js";
 import { parseVenueList, resolveSetupVenue } from "../../commands/init.js";
 
@@ -54,18 +60,21 @@ function fakeWs(frames: unknown[] | null, opts: { error?: boolean } = {}): { fac
   return { factory, sent, closed: () => closed };
 }
 
-/** allMarketTickers rows in the live shape (2026-10-19): BTC traded, DOGE "" (no volume), a spot row ≥ 10000. */
-const TICKERS = [
-  { coin: "BTC", instrumentId: 1, lastPrice: "82089.2", markPx: "82106.5", oraclePx: "82140.2", openInterest: "182.0786", fundingRate: "0.00095808", nextFundingTime: 1792407600000, blockTime: 1792406000324, dayNtlVlm: "70157052.3703057", prevDayPx: "82107.2", change24h: "-18.0", change24hPct: "-0.02" },
-  { coin: "DOGE", instrumentId: 10, lastPrice: "", markPx: "", oraclePx: "", openInterest: "", fundingRate: "", nextFundingTime: 0, blockTime: 0, dayNtlVlm: "", prevDayPx: "", change24h: "", change24hPct: "" },
-  { coin: "BTC/USDC", instrumentId: 10000, lastPrice: "82149.72", markPx: "", oraclePx: "", openInterest: "", fundingRate: "", nextFundingTime: 0, blockTime: 0, dayNtlVlm: "514808.5476593", prevDayPx: "82144.14", change24h: "5.58", change24hPct: "0.01" },
+/** webData2 `assetCtxs` rows in the live shape (2026-10-27): BTC traded, DOGE "" (no volume), a spot row ≥ 10000. */
+const ASSET_CTXS = [
+  { coin: "BTC", instrumentId: 1, dayNtlVlm: "70157052.3703057", coinVlm: "651.3696", prevDayPx: "82107.2", lastPrice: "82089.2", dayHighPx: "83177.4", dayLowPx: "80865.1", openInterest: "", oraclePx: "", markPx: "", blockTime: 0, tagIds: [1] },
+  { coin: "DOGE", instrumentId: 10, dayNtlVlm: "", coinVlm: "", prevDayPx: "", lastPrice: "", dayHighPx: "", dayLowPx: "", openInterest: "", oraclePx: "", markPx: "", blockTime: 0, tagIds: [7] },
+  { coin: "BTC/USDC", instrumentId: 10000, dayNtlVlm: "514808.5476593", coinVlm: "7.01434", prevDayPx: "82144.14", lastPrice: "82149.72", dayHighPx: "", dayLowPx: "", openInterest: "", oraclePx: "", markPx: "", blockTime: 0, tagIds: [] },
 ];
 
-/** /info answers by request type: perpMeta → META, allMarketTickers → TICKERS. */
-function routeInfo(tickers: unknown = TICKERS) {
+/** The documented success envelope. */
+const ok = (data: unknown) => ({ success: true, code: 0, data });
+
+/** /info answers by request type: perpMeta → META, webData2 → { openOrders, assetCtxs }. */
+function routeInfo(webData2: unknown = { openOrders: [], assetCtxs: ASSET_CTXS }) {
   return async (_url: string, init?: RequestInit) => {
     const type = (JSON.parse(String(init?.body)) as { type: string }).type;
-    return jsonResponse(200, type === "allMarketTickers" ? tickers : META);
+    return jsonResponse(200, ok(type === "webData2" ? webData2 : META));
   };
 }
 
@@ -84,25 +93,31 @@ afterEach(() => {
 });
 
 describe("TxFlow venue definition", () => {
-  it("is market-data only, unofficial, unverified funding, alias txf", () => {
+  it("switch OFF: market data + account reads; trading gated with the uniform reason; official API, unverified funding, mainnet + testnet", () => {
     const def = getVenue("txflow");
-    expect(def.roles).toEqual(["marketData"]);
-    expect(def.capabilities).toBeNull();
+    expect(def.roles).toEqual(["marketData", "account"]);
+    expect(def.gatedRoles).toMatchObject({ roles: ["trading"], reason: "TxFlow trading is switched off in this build" });
+    expect([def.masterKeyKind, def.agentKeyKind, def.secretStorage.kind]).toEqual(["evm", "evm", "ows-wallet"]);
     expect(def.fundingVerified).toBe(false);
-    expect(def.apiStatus.kind).toBe("unofficial");
+    expect(def.apiStatus.kind).toBe("official");
+    expect(def.networks.mainnet?.restUrl).toBe("https://rpc.txflow.com");
+    expect(def.networks.mainnet?.wsUrl).toBe("wss://rpc.txflow.com/ws");
+    expect(def.networks.testnet?.restUrl).toBe("https://rpc.txflow-testnet.xyz");
+    expect(def.networks.testnet?.wsUrl).toBe("wss://rpc.txflow-testnet.xyz/ws");
+    expect([def.networks.mainnet?.signingChainId, def.networks.testnet?.signingChainId]).toEqual([869, 2511]);
     expect(resolveVenueId("txf")).toBe("txflow");
-    expect(def.networks.testnet).toBeNull();
+    expect(def.builderFee).toBeNull();
   });
 
-  it("requireCapabilities refuses with CAPABILITY_UNSUPPORTED (role-based), not NOT_IMPLEMENTED", () => {
-    try {
-      requireCapabilities(getVenue("txflow"));
-      throw new Error("no throw");
-    } catch (e) {
-      expect((e as PerpError).structured.code).toBe("CAPABILITY_UNSUPPORTED");
-      expect((e as PerpError).structured.details).toMatchObject({ venue: "txflow", feature: "trading" });
-      expect((e as PerpError).message).toMatch(/unofficial read-only API/);
-    }
+  it("requireCapabilities refuses with the gate (CAPABILITY_UNSUPPORTED); the declared capabilities describe the implemented path", () => {
+    expect(() => requireCapabilities(getVenue("txflow"))).toThrow(expect.objectContaining({
+      structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED", message: expect.stringMatching(/TxFlow trading is switched off in this build/) }),
+    }));
+    expect(getVenue("txflow").capabilities).toEqual({
+      marketOrder: "slippageBounded", timeInForce: ["GTC", "IOC", "ALO"], reduceOnlyTif: null, clientOrderId: true,
+      orderAck: "async", tpsl: "separateOrders", amend: "native", batchPlaceMax: null, marginModes: ["cross", "isolated"], withdrawAssets: null,
+    });
+    expect(getVenue("txflow").maxSlippageBps).toBe(500);
   });
 });
 
@@ -150,17 +165,53 @@ describe("snapshot join (by coin id, never by position)", () => {
 describe("TxflowClient error mapping", () => {
   const client = () => new TxflowClient("https://api.txflow.test", { capacity: 100, refillPerSec: 100, weights: null });
 
-  it("HTTP 200 with {message} is EXCHANGE_ERROR", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { message: "Orderbook for coin '99999' not found" }));
-    await expect(client().info({ type: "l2Book", coin: "99999" })).rejects.toMatchObject({ structured: { code: "EXCHANGE_ERROR" } });
+  it("sends x-api-version and returns the envelope's data", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, ok({ universe: [] })));
+    await expect(client().info({ type: "perpMeta", dex: "" })).resolves.toEqual({ universe: [] });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.txflow.test/info");
+    expect(init.headers).toMatchObject({ "content-type": "application/json", "x-api-version": TXFLOW_API_VERSION });
   });
 
-  it("HTTP 403 (allowlist) is EXCHANGE_ERROR with the unofficial remediation, no fallback", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(403, { message: "This action is not allowed." }));
-    const e = await client().info({ type: "meta" }).catch((x: unknown) => x as PerpError) as PerpError;
+  it("HTTP 200 with success:false is EXCHANGE_ERROR carrying the venue message and code", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { success: false, code: 21001, message: "Orderbook for coin '99999' not found" }));
+    await expect(client().info({ type: "l2Book", coin: "99999" })).rejects.toMatchObject({
+      structured: { code: "EXCHANGE_ERROR", message: "TxFlow l2Book: Orderbook for coin '99999' not found (code 21001)" },
+    });
+  });
+
+  it("HTTP 403 (a read the venue does not allow) is EXCHANGE_ERROR, no fallback", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(403, { success: false, code: 10000, message: "This action is not allowed." }));
+    const e = await client().info({ type: "fundingHistory" }).catch((x: unknown) => x as PerpError) as PerpError;
     expect(e.structured.code).toBe("EXCHANGE_ERROR");
-    expect(e.structured.remediation).toMatch(/unofficial API refused "meta"/);
+    expect(e.message).toBe("TxFlow fundingHistory: This action is not allowed. (code 10000, HTTP 403)");
+    expect(e.structured.remediation).toMatch(/TxFlow does not allow the "fundingHistory" read/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("envelope edge cases: code ≠ 0, missing data, 5xx error envelope, 429, no message", async () => {
+    const err = async (status: number, body: unknown, type = "perpMeta") =>
+      client().info({ type }).catch((x: unknown) => x as PerpError) as Promise<PerpError>;
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { success: true, code: 7, data: {} }));
+    expect((await err(200, null)).message).toMatch(/success:true with code 7/);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { success: true, code: 0 }));
+    expect((await err(200, null)).message).toMatch(/success:true without data/);
+    fetchMock.mockResolvedValueOnce(jsonResponse(502, { success: false, code: 1, message: "upstream" }));
+    const e5 = await err(502, null);
+    expect(e5.message).toBe("TxFlow perpMeta: upstream (code 1, HTTP 502)");
+    expect(e5.structured.remediation).toBe("TxFlow had a server error; try again later");
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ success: false, code: 429, message: "slow down" }), { status: 429, headers: { "retry-after": "2" } }));
+    expect((await err(429, null)).structured.code).toBe("RATE_LIMITED");
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { success: false, code: 3 }));
+    const eNoMsg = await err(200, null, "webData2");
+    expect(eNoMsg.message).toBe("TxFlow webData2: request failed (code 3)");
+    // No symbol in the request → no "check the symbol" hint.
+    expect(eNoMsg.structured.remediation).toBe(`TxFlow refused "webData2"; the venue's message is above`);
+  });
+
+  it("a body without the envelope (the pre-versioned shape) is shape drift, never read as data", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, META));
+    await expect(client().info({ type: "perpMeta" })).rejects.toMatchObject({ structured: { code: "EXCHANGE_ERROR", message: expect.stringMatching(/envelope/) } });
   });
 
   it("a network failure is EXCHANGE_UNREACHABLE; a non-JSON body is shape drift", async () => {
@@ -205,29 +256,30 @@ describe("markets and funding (fixture)", () => {
   });
 
   it("funding rows: percent per hour → fraction per hour, basis 1h, unknown-interval rows omitted", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(200, META));
+    fetchMock.mockResolvedValue(jsonResponse(200, ok(META)));
     const rates = await fetchTxflowFundingRates("mainnet", deps());
     expect(rates.map(r => [r.symbol, r.rate])).toEqual([["BTC", "0.0000125"], ["DOGE", "-0.0000310218"]]);
     expect(rates[0]).toMatchObject({ basis: { kind: "perHours", hours: 1 }, nextFundingTime: 1_791_907_200_000 });
   });
 
   it("a missing next / prev funding time leaves the interval unproven → funding null, no funding row", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(200, META));
     const ctxs = [{ coin: "1", ctx: ctx("0.00125000", "83263.0", { prevFundingTime: undefined }) }];
     fetchMock.mockImplementation(routeInfo());
     const d = { wsFactory: fakeWs([{ channel: "allAssetCtxs", data: { ctxs } }]).factory, warn: vi.fn() };
     expect((await fetchTxflowMarkets("mainnet", d)).find(m => m.symbol === "BTC")?.fundingRate).toBeNull();
-    fetchMock.mockResolvedValue(jsonResponse(200, META));
+    fetchMock.mockResolvedValue(jsonResponse(200, ok(META)));
     const d2 = { wsFactory: fakeWs([{ channel: "allAssetCtxs", data: { ctxs } }]).factory, warn: vi.fn() };
     expect(await fetchTxflowFundingRates("mainnet", d2)).toEqual([]);
   });
 
-  it("testnet → NOT_IMPLEMENTED (no testnet)", async () => {
-    await expect(fetchTxflowMarkets("testnet", deps())).rejects.toMatchObject({ structured: { code: "NOT_IMPLEMENTED" } });
+  it("testnet reads the testnet host", async () => {
+    fetchMock.mockImplementation(routeInfo());
+    await fetchTxflowMarkets("testnet", deps());
+    expect(fetchMock.mock.calls.every(c => String(c[0]).startsWith("https://rpc.txflow-testnet.xyz/"))).toBe(true);
   });
 });
 
-describe("24 h volume from allMarketTickers (QA 0.15.0: volume24h was always null)", () => {
+describe("24 h volume from webData2 assetCtxs (QA 0.15.0: volume24h was always null)", () => {
   const deps = () => ({ wsFactory: fakeWs([{ channel: "allAssetCtxs", data: { ctxs: CTXS } }]).factory, warn: vi.fn() });
 
   it("joined by instrumentId = perpMeta index; \"\" → null; spot ids ≥ 10000 ignored", async () => {
@@ -235,11 +287,23 @@ describe("24 h volume from allMarketTickers (QA 0.15.0: volume24h was always nul
     const by = Object.fromEntries((await fetchTxflowMarkets("mainnet", deps())).map(m => [m.symbol, m]));
     expect(by.BTC.volume24h).toBe("70157052.3703057");
     expect(by.DOGE.volume24h).toBeNull();
-    expect(by.XAU.volume24h).toBeNull(); // no ticker row
+    expect(by.XAU.volume24h).toBeNull(); // no assetCtxs row
+    // webData2 requires `user`; it only selects openOrders, so the zero address is sent.
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>);
+    expect(bodies).toContainEqual({ type: "webData2", user: "0x0000000000000000000000000000000000000000" });
+    expect(bodies).toContainEqual({ type: "perpMeta", dex: "" });
   });
 
-  it("a non-list answer → EXCHANGE_ERROR (never all-null volumes)", async () => {
-    fetchMock.mockImplementation(routeInfo({ message: "nope" }));
+  it("a listed perp without a webData2 row is reported, its volume null", async () => {
+    fetchMock.mockImplementation(routeInfo({ openOrders: [], assetCtxs: ASSET_CTXS.filter(r => r.instrumentId !== 10) }));
+    const d = deps();
+    const by = Object.fromEntries((await fetchTxflowMarkets("mainnet", d)).map(m => [m.symbol, m]));
+    expect(by.DOGE.volume24h).toBeNull();
+    expect(d.warn).toHaveBeenCalledWith(expect.stringContaining("had no webData2 assetCtxs row (24 h volume unknown): DOGE, XAU"));
+  });
+
+  it("an answer without assetCtxs → EXCHANGE_ERROR (never all-null volumes)", async () => {
+    fetchMock.mockImplementation(routeInfo({ openOrders: [] }));
     await expect(fetchTxflowMarkets("mainnet", deps())).rejects.toMatchObject({ structured: { code: "EXCHANGE_ERROR" } });
   });
 });
@@ -247,7 +311,7 @@ describe("24 h volume from allMarketTickers (QA 0.15.0: volume24h was always nul
 describe("klines (QA 0.15.0, perp_app)", () => {
   const candle = (t: number, i = "1h") => ({ t, o: "1", h: "2", l: "0.5", c: "1.5", v: "3", n: 4, s: "1", i, T: t + 3_599_999 });
   const adapterWith = (info: (body: { req: { startTime: number; endTime: number; interval: string } }) => unknown) => {
-    const a = new TxflowPublicAdapter(getVenue("txflow"), "mainnet");
+    const a = new TxflowAdapter(getVenue("txflow"), "mainnet");
     const spy = vi.fn(async (b: { req: { startTime: number; endTime: number; interval: string } }) => info(b));
     Object.assign(a as object, { market: vi.fn(async () => ({ index: 1, symbol: "BTC" })), client: { info: spy } });
     return { a, spy };
@@ -278,28 +342,30 @@ describe("klines (QA 0.15.0, perp_app)", () => {
   });
 });
 
-describe("public-only adapter", () => {
-  it("every account / trading method refuses with CAPABILITY_UNSUPPORTED and sends nothing", async () => {
-    const a = new TxflowPublicAdapter(getVenue("txflow"), "mainnet");
-    const calls: Array<() => Promise<unknown>> = [
-      () => a.getBalance(), () => a.getPositions(), () => a.getOpenOrders(), () => a.getOrderHistory(), () => a.getTradeHistory(),
-      () => a.getFundingPayments(), () => a.marketOrder(), () => a.limitOrder(), () => a.editOrder(), () => a.cancelOrder(),
-      () => a.cancelAllOrders(), () => a.setLeverage(), () => a.stopOrder(), () => a.getFundingHistory(),
-    ];
-    for (const c of calls) await expect(c()).rejects.toMatchObject({ structured: { code: "CAPABILITY_UNSUPPORTED" } });
+describe("keyless adapter", () => {
+  it("account reads need an address and writes an agent — refused before any request; funding history is unsupported", async () => {
+    const a = new TxflowAdapter(getVenue("txflow"), "mainnet");
+    const slippage = { bps: 50, source: "flag" as const };
+    for (const c of [() => a.getBalance(), () => a.getPositions(), () => a.getOpenOrders(), () => a.getOrderHistory(), () => a.getTradeHistory(), () => a.getFundingPayments()]) {
+      await expect(c()).rejects.toMatchObject({ structured: { code: "NO_SIGNER_AVAILABLE" } });
+    }
+    for (const c of [() => a.marketOrder("BTC", "buy", "0.01", { reduceOnly: false, slippage }), () => a.cancelOrder("BTC", "1"), () => a.cancelAllOrders(), () => a.setLeverage("BTC", 5)]) {
+      await expect(c()).rejects.toMatchObject({ structured: { code: "CAPABILITY_UNSUPPORTED" } });
+    }
+    await expect(a.getFundingHistory()).rejects.toMatchObject({ structured: { code: "CAPABILITY_UNSUPPORTED" } });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("market rows carry venueApi: unofficial and fundingVerified: false", async () => {
+  it("market rows carry fundingVerified: false and no venueApi tag (official API)", async () => {
     fetchMock.mockImplementation(routeInfo());
-    const a = new TxflowPublicAdapter(getVenue("txflow"), "mainnet");
+    const a = new TxflowAdapter(getVenue("txflow"), "mainnet");
     vi.spyOn(a, "getVenueMarkets").mockResolvedValue(await fetchTxflowMarkets("mainnet", { wsFactory: fakeWs([{ channel: "allAssetCtxs", data: { ctxs: CTXS } }]).factory, warn: vi.fn() }));
     const rows = await a.getMarkets();
-    expect(rows.every(r => r.venueApi === "unofficial" && r.fundingVerified === false)).toBe(true);
+    expect(rows.every(r => r.fundingVerified === false && !("venueApi" in r))).toBe(true);
   });
 });
 
-describe("write-refusal table: -e txflow writes refuse before any I/O", () => {
+describe("refusal table: -e txflow paths that must refuse before any I/O", () => {
   type Env = { ok: boolean; error?: { code: string; message: string; details?: Record<string, unknown> } };
   const run = async (args: string[]): Promise<{ env: Env; docs: number }> => {
     const out: string[] = [];
@@ -324,27 +390,25 @@ describe("write-refusal table: -e txflow writes refuse before any I/O", () => {
     return { env: JSON.parse(out.join("").trim()) as Env, docs: 1 };
   };
 
-  const CASES: string[][] = [
-    ["-e", "txflow", "trade", "market", "BTC", "buy", "0.001"],
-    ["-e", "txflow", "trade", "buy", "BTC", "0.001"],
-    ["-e", "txflow", "trade", "limit", "BTC", "buy", "50000", "0.001"],
-    ["-e", "txflow", "trade", "cancel", "BTC", "123"],
-    ["-e", "txflow", "trade", "cancel-all"],
-    ["-e", "txflow", "trade", "leverage", "BTC", "5"],
-    ["-e", "txflow", "trade", "close", "BTC"],
-    ["-e", "txflow", "portfolio"],
-    ["-e", "txflow", "account", "trades"],
-    ["-e", "txflow", "account", "positions"],
-    ["-e", "txflow", "account", "orders"],
+  // A bot config on TxFlow (strategy start).
+  const botDir = mkdtempSync(join(tmpdir(), "txflow-gate-"));
+  const botConfig = join(botDir, "bot.json");
+  writeFileSync(botConfig, JSON.stringify({ exchange: "txflow", symbol: "BTC", strategy: { type: "grid" } }));
+
+  /** Still unsupported on TxFlow: funds (web app), builder codes, TWAP / bots (automation gate), funding arb. */
+  const UNSUPPORTED: string[][] = [
+    // trade multi: refused while the legs are parsed — the Hyperliquid leg is never sent.
+    ["trade", "multi", "hyperliquid:BTC:buy:0.001", "txflow:BTC:sell:0.001"],
+    ["trade", "multi", "txflow:BTC:buy:0.001", "hyperliquid:BTC:sell:0.001"],
+    ["strategy", "start", botConfig, "--headless"],
+    ["strategy", "start", botConfig, "--background"],
+    ["-e", "txflow", "strategy", "run", "grid", "BTC", "--headless"],
+    ["wallet", "agent", "revoke", "txflow", "perp-cli-txflow"],
     ["funds", "deposit", "txflow", "10"],
     ["funds", "withdraw", "txflow", "10"],
     ["--dry-run", "funds", "withdraw", "txflow", "10"],
-    ["wallet", "agent", "approve", "txflow"],
-    ["wallet", "agent", "import", "txflow"],
+    ["--dry-run", "funds", "deposit", "txflow", "10"],
     ["wallet", "builder", "approve", "txflow"],
-    ["wallet", "agent", "revoke", "txflow", "x"],
-    ["-e", "txflow", "trade", "tpsl", "BTC", "long", "--tp", "90000"],
-    ["-e", "txflow", "trade", "stop", "BTC", "sell", "0.001", "70000"],
     ["-e", "txflow", "funds", "transfer", "10", "0x0000000000000000000000000000000000000001"],
     ["funds", "rebalance", "execute", "--exchanges", "txflow,hyperliquid"],
     ["-e", "txflow", "strategy", "twap", "BTC", "buy", "0.01", "10m"],
@@ -353,21 +417,55 @@ describe("write-refusal table: -e txflow writes refuse before any I/O", () => {
     ["-e", "txflow", "strategy", "trailing-stop", "BTC", "--trail", "1"],
     ["-e", "txflow", "strategy", "quick-grid", "BTC"],
     ["arb", "exec", "BTC", "txflow", "hyperliquid", "10"],
+    // Trading / agent writes: implemented, switched off (txflow-release.ts).
+    ["-e", "txflow", "trade", "market", "BTC", "buy", "0.001"],
+    ["-e", "txflow", "trade", "buy", "BTC", "0.001"],
+    ["-e", "txflow", "trade", "limit", "BTC", "buy", "50000", "0.001"],
+    ["-e", "txflow", "trade", "cancel", "BTC", "123"],
+    ["-e", "txflow", "trade", "cancel-all"],
+    ["-e", "txflow", "trade", "leverage", "BTC", "5"],
+    ["-e", "txflow", "trade", "close", "BTC"],
+    ["-e", "txflow", "trade", "tpsl", "BTC", "long", "--tp", "90000"],
+    ["-e", "txflow", "trade", "stop", "BTC", "sell", "0.001", "70000"],
+    ["-e", "txflow", "trade", "edit", "BTC", "123", "50000", "0.001"],
+    ["wallet", "agent", "approve", "txflow"],
+    ["wallet", "agent", "import", "txflow"],
   ];
 
-  for (const args of CASES) {
+  for (const args of UNSUPPORTED) {
     it(`perp ${args.join(" ")} → CAPABILITY_UNSUPPORTED, one JSON document, zero fetch`, async () => {
       const { env, docs } = await run(args);
       expect(env.ok).toBe(false);
       expect(env.error!.code).toBe("CAPABILITY_UNSUPPORTED");
+      if (args[1] === "multi") expect(env.error!.message).toMatch(/^trade multi refused before any leg was sent: leg "txflow:BTC:(buy|sell):0\.001"/);
       expect(docs).toBe(1);
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+  }
+
+  /**
+   * Supported, but this computer has no TxFlow credentials: a typed refusal (no account address /
+   * no agent key) and NOTHING sent to /exchange. Market orders read the market first (public).
+   */
+  const NO_CREDENTIALS: string[][] = [
+    ["-e", "txflow", "account", "trades"],
+    ["-e", "txflow", "account", "positions"],
+    ["-e", "txflow", "account", "orders"],
+  ];
+
+  for (const args of NO_CREDENTIALS) {
+    it(`perp ${args.join(" ")} (no credentials) → NO_SIGNER_AVAILABLE / AGENT_NOT_REGISTERED, one JSON document, nothing sent`, async () => {
+      const { env, docs } = await run(args);
+      expect(env.ok).toBe(false);
+      expect(["NO_SIGNER_AVAILABLE", "AGENT_NOT_REGISTERED", "EXCHANGE_UNREACHABLE"]).toContain(env.error!.code);
+      expect(docs).toBe(1);
+      expect(fetchMock.mock.calls.filter(c => String(c[0]).endsWith("/exchange"))).toEqual([]);
     });
   }
 });
 
 describe("setup venue selection", () => {
-  it("txflow / txf is a capability refusal (CAPABILITY_UNSUPPORTED), not an unknown venue", () => {
+  it("txflow / txf is a capability refusal while trading is switched off, not an unknown venue", () => {
     for (const v of ["txflow", "txf"]) {
       expect(() => resolveSetupVenue(v, "mainnet")).toThrow(expect.objectContaining({
         structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED", details: expect.objectContaining({ venue: "txflow", feature: "setup" }) }),
@@ -408,10 +506,10 @@ describe("TxFlow asset class, size decimals, error text (audit 0.15.0)", () => {
   });
 
   it("a 5xx HTML error page is reported without its markup", async () => {
-    fetchMock.mockResolvedValueOnce(new Response("<!DOCTYPE html><html><head><title>Internal error | api.txflow.com | Cloudflare</title><style>x{}</style></head><body><h1>Internal server error</h1></body></html>", { status: 500 }));
-    const c = new TxflowClient("https://api.txflow.com", getVenue("txflow").rateLimit);
+    fetchMock.mockResolvedValueOnce(new Response("<!DOCTYPE html><html><head><title>Internal error | rpc.txflow.com | Cloudflare</title><style>x{}</style></head><body><h1>Internal server error</h1></body></html>", { status: 500 }));
+    const c = new TxflowClient("https://rpc.txflow.com", getVenue("txflow").rateLimit);
     const err = await c.info({ type: "candleSnapshot" }).catch(e => e) as { message: string };
-    expect(err.message).toMatch(/HTTP 500 Internal error \| api\.txflow\.com \| Cloudflare Internal server error/);
+    expect(err.message).toMatch(/HTTP 500 Internal error \| rpc\.txflow\.com \| Cloudflare Internal server error/);
     expect(err.message).not.toMatch(/</);
   });
 });

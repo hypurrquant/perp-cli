@@ -16,7 +16,7 @@ interface HealthResult {
   error: string | null;
   /** "ping" = REST ping; "markets" = the venue's public market-data read (read-only venues included) */
   probe: "ping" | "markets";
-  /** "unofficial" = read through an undocumented venue API (e.g. TxFlow) */
+  /** "unofficial" = read through an undocumented venue API (none at present) */
   apiStatus: "official" | "unofficial";
 }
 

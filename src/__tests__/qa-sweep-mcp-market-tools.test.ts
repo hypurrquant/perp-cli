@@ -1,8 +1,9 @@
 /**
  * Pre-release QA sweep (0.15.0) — MCP market-data tools.
  *  1. get_prices: each row tags the venues in it that are read through an undocumented API
- *     (unofficialApiVenues — TxFlow), like get_markets' venueApi tag; a venue (QFEX) appears in
- *     every row whose symbol it lists.
+ *     (unofficialApiVenues), like get_markets' venueApi tag; a venue (QFEX) appears in every row
+ *     whose symbol it lists. No registered venue is unofficial since TxFlow published its official
+ *     API, so the tag is exercised by relabelling TxFlow for that test.
  *  2. get_funding_rates: includeUnverified (default false) mirrors the CLI
  *     `arb scan --include-unverified` — unverified venues (QFEX, TxFlow) only on request, tagged.
  */
@@ -45,12 +46,25 @@ describe("get_prices", () => {
       txflow: [market("txflow", "BTC", "82990"), market("txflow", "CL", "93.98")],
     };
     for (const v of listVenues()) vi.spyOn(v.publicData, "fetchMarkets").mockResolvedValue(rows[v.id] ?? []);
-    const env = parse(await tools.get("get_prices")!({ symbols: ["BTC", "CL"] }));
-    expect(env.ok).toBe(true);
-    expect(env.data).toEqual([
-      { symbol: "BTC", prices: { hyperliquid: 83000, txflow: 82990 }, unofficialApiVenues: ["txflow"] },
-      { symbol: "CL", prices: { hyperliquid: 94, qfex: 94.01, txflow: 93.98 }, unofficialApiVenues: ["txflow"] },
+    const prices = async () => parse(await tools.get("get_prices")!({ symbols: ["BTC", "CL"] }));
+    // TxFlow is an official API now: no row is tagged.
+    expect((await prices()).data).toEqual([
+      { symbol: "BTC", prices: { hyperliquid: 83000, txflow: 82990 }, unofficialApiVenues: [] },
+      { symbol: "CL", prices: { hyperliquid: 94, qfex: 94.01, txflow: 93.98 }, unofficialApiVenues: [] },
     ]);
+    const txflow = listVenues().find(v => v.id === "txflow")!;
+    const saved = txflow.apiStatus;
+    (txflow as { apiStatus: typeof saved }).apiStatus = { kind: "unofficial", note: "test", docs: null };
+    try {
+      const env = await prices();
+      expect(env.ok).toBe(true);
+      expect(env.data).toEqual([
+        { symbol: "BTC", prices: { hyperliquid: 83000, txflow: 82990 }, unofficialApiVenues: ["txflow"] },
+        { symbol: "CL", prices: { hyperliquid: 94, qfex: 94.01, txflow: 93.98 }, unofficialApiVenues: ["txflow"] },
+      ]);
+    } finally {
+      (txflow as { apiStatus: typeof saved }).apiStatus = saved;
+    }
   });
 
   it("a row with only official venues has an empty tag list", async () => {
@@ -86,6 +100,6 @@ describe("get_funding_rates includeUnverified", () => {
     venues();
     const env = parse(await tools.get("get_funding_rates")!({ symbols: ["BTC"], includeUnverified: true }));
     const tx = venuesOf(env).find((r) => r.exchange === "txflow");
-    expect(tx).toMatchObject({ fundingVerified: false, apiStatus: "unofficial" });
+    expect(tx).toMatchObject({ fundingVerified: false, apiStatus: "official" });
   });
 });

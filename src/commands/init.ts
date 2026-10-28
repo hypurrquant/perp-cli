@@ -144,8 +144,8 @@ export function setupVenues(): VenueDefinition[] {
 /** Resolve one venue id/alias for setup: must be a trading venue with an environment on `network`. */
 export function resolveSetupVenue(input: string, network: Network): VenueId {
   const id = tryResolveVenueId(input.trim());
-  // A registered venue without the trading role (release-gated RISEx, market-data-only TxFlow /
-  // Variational / GRVT) is a capability refusal, not an unknown name.
+  // A registered venue without the trading role (release-gated RISEx, market-data-only Variational /
+  // GRVT / Extended) is a capability refusal, not an unknown name.
   if (id !== null && !getVenue(id).roles.includes("trading")) throw roleUnsupported(getVenue(id), "setup");
   if (id === null) {
     throw new PerpError("INVALID_PARAMS", `Unknown trading venue "${input}"`, {
@@ -209,7 +209,7 @@ export function applySetupSettings(change: SetupSettingsChange): Settings {
 
 /** Agent names already registered for `venue` on `network` in settings. */
 function registeredAgentNames(venue: VenueId, network: Network): string[] {
-  if (venue === "ondo" || venue === "arcus" || venue === "qfex" || venue === "risex") {
+  if (venue === "ondo" || venue === "arcus" || venue === "qfex" || venue === "risex" || venue === "txflow") {
     const map = loadSettings().agents?.[venue];
     return map ? Object.values(map).filter(m => m.network === network).map(m => m.agentName) : [];
   }
@@ -218,7 +218,7 @@ function registeredAgentNames(venue: VenueId, network: Network): string[] {
 
 function rotateHint(venue: VenueId): string {
   if (venue === "qfex") return "perp wallet agent import qfex --replace";
-  return venue === "ondo" || venue === "arcus" || venue === "risex"
+  return venue === "ondo" || venue === "arcus" || venue === "risex" || venue === "txflow"
     ? `perp wallet agent approve ${venue} --rotate`
     : `perp wallet agent rotate ${venue}`;
 }
@@ -299,7 +299,7 @@ function signingSummary(p: ApproveAgentParams, master: { evm: string | null; sol
         `Then the new signer signs DisablePermission for every permission except trading, and ${master.evm} sends those transactions ON-CHAIN on RISE chain (needs RISE-chain ETH for gas): the signer can trade but never move funds, and only the master could re-enable a permission.`,
       ];
     case "txflow":
-      return ["Nothing — TxFlow is market data only (unofficial read-only API)."];
+      return [`EIP-712 ApproveAgent signed by master EVM ${master.evm}: authorizes a new agent key to sign TxFlow trading actions. An agent cannot move funds; TxFlow agents do not expire. Mainnet trading needs a whitelisted account (txflow.com/apply).`];
     case "variational":
       return [`Nothing — ${VARIATIONAL_READ_ONLY_REMEDIATION}.`];
     case "grvt":

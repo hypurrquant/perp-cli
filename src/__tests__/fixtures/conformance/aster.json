@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "name": "aster",
- "capturedAt": 1792426847490,
+ "capturedAt": 1793071054000,
  "recordedWith": "scripts/conformance/record.ts (live public mainnet, read-only)",
  "keep": [
   "BTC",
@@ -18,7 +18,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "serverTime": 1792426845673
+    "serverTime": 1793071052069
    },
    "text": null
   },
@@ -30,127 +30,8 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a6f785922ba7dd0a"
+    "$body": "a3a050cfc1b8a791"
    },
-   "text": null
-  },
-  {
-   "cell": "list",
-   "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v3/ticker/24hr",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json",
-   "response": [
-    {
-     "symbol": "BTCUSDT",
-     "priceChange": "945.6",
-     "priceChangePercent": "1.166",
-     "weightedAvgPrice": "82098.5",
-     "lastPrice": "82045.5",
-     "lastQty": "0.001",
-     "openPrice": "81099.9",
-     "highPrice": "83133.3",
-     "lowPrice": "80646.4",
-     "volume": "4987.293",
-     "quoteVolume": "409449499.34",
-     "openTime": 1792340400000,
-     "closeTime": 1792426844250,
-     "firstId": 148932685,
-     "lastId": 148963213,
-     "count": 30528
-    },
-    {
-     "symbol": "ETHUSD1",
-     "priceChange": "37.64",
-     "priceChangePercent": "1.591",
-     "weightedAvgPrice": "2397.26",
-     "lastPrice": "2403.69",
-     "lastQty": "0.004",
-     "openPrice": "2366.05",
-     "highPrice": "2444.91",
-     "lowPrice": "2327.22",
-     "volume": "1104.174",
-     "quoteVolume": "2646996.80",
-     "openTime": 1792340400000,
-     "closeTime": 1792426842350,
-     "firstId": 5803932,
-     "lastId": 5807081,
-     "count": 3150
-    },
-    {
-     "symbol": "SOLUSD1",
-     "priceChange": "2.7300",
-     "priceChangePercent": "2.677",
-     "weightedAvgPrice": "102.9404",
-     "lastPrice": "104.7100",
-     "lastQty": "0.19",
-     "openPrice": "101.9800",
-     "highPrice": "106.1300",
-     "lowPrice": "100.3700",
-     "volume": "42033.44",
-     "quoteVolume": "4326938.1500",
-     "openTime": 1792339860000,
-     "closeTime": 1792426311050,
-     "firstId": 3938402,
-     "lastId": 3939952,
-     "count": 1551
-    },
-    {
-     "symbol": "ETHUSDT",
-     "priceChange": "37.44",
-     "priceChangePercent": "1.582",
-     "weightedAvgPrice": "2399.32",
-     "lastPrice": "2403.90",
-     "lastQty": "0.011",
-     "openPrice": "2366.46",
-     "highPrice": "2445.47",
-     "lowPrice": "2326.98",
-     "volume": "120764.613",
-     "quoteVolume": "289752762.30",
-     "openTime": 1792340400000,
-     "closeTime": 1792426844050,
-     "firstId": 86893193,
-     "lastId": 86921466,
-     "count": 28272
-    },
-    {
-     "symbol": "SOLUSDT",
-     "priceChange": "2.6900",
-     "priceChangePercent": "2.639",
-     "weightedAvgPrice": "103.9472",
-     "lastPrice": "104.6400",
-     "lastQty": "0.06",
-     "openPrice": "101.9500",
-     "highPrice": "106.1500",
-     "lowPrice": "100.3600",
-     "volume": "642373.98",
-     "quoteVolume": "66772956.9700",
-     "openTime": 1792340400000,
-     "closeTime": 1792426830500,
-     "firstId": 44542725,
-     "lastId": 44561154,
-     "count": 18430
-    },
-    {
-     "symbol": "BTCUSD1",
-     "priceChange": "1003.20",
-     "priceChangePercent": "1.238",
-     "weightedAvgPrice": "82300.17",
-     "lastPrice": "82033.50",
-     "lastQty": "0.005",
-     "openPrice": "81030.30",
-     "highPrice": "83071.80",
-     "lowPrice": "80627.90",
-     "volume": "51.218",
-     "quoteVolume": "4215250.18",
-     "openTime": 1792340220000,
-     "closeTime": 1792426640000,
-     "firstId": 4946799,
-     "lastId": 4949602,
-     "count": 2804
-    }
-   ],
    "text": null
   },
   {
@@ -161,7 +42,19 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "202a34bbe0f043a1"
+    "$body": "8529eddeb94a5c47"
+   },
+   "text": null
+  },
+  {
+   "cell": "list",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/ticker/24hr",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "02f0824e7d672ee1"
    },
    "text": null
   },
@@ -173,7 +66,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "2e59c8d327bb829e"
+    "$body": "456c97d2a3fa550f"
    },
    "text": null
   },
@@ -185,7 +78,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "serverTime": 1792426845841
+    "serverTime": 1793071052232
    },
    "text": null
   },
@@ -197,7 +90,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a6f785922ba7dd0a"
+    "$body": "a3a050cfc1b8a791"
    },
    "text": null
   },
@@ -209,7 +102,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "3e236853d010cdda"
+    "$body": "02f0824e7d672ee1"
    },
    "text": null
   },
@@ -221,7 +114,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "202a34bbe0f043a1"
+    "$body": "8529eddeb94a5c47"
    },
    "text": null
   },
@@ -233,7 +126,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "2e59c8d327bb829e"
+    "$body": "456c97d2a3fa550f"
    },
    "text": null
   },
@@ -245,7 +138,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "serverTime": 1792426845999
+    "serverTime": 1793071052421
    },
    "text": null
   },
@@ -257,7 +150,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a6f785922ba7dd0a"
+    "$body": "a3a050cfc1b8a791"
    },
    "text": null
   },
@@ -269,7 +162,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "3e236853d010cdda"
+    "$body": "02f0824e7d672ee1"
    },
    "text": null
   },
@@ -281,7 +174,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "42357450db976889"
+    "$body": "8529eddeb94a5c47"
    },
    "text": null
   },
@@ -293,7 +186,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "2e59c8d327bb829e"
+    "$body": "0e5e53efd482577d"
    },
    "text": null
   },
@@ -305,7 +198,19 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "serverTime": 1792426846157
+    "serverTime": 1793071052603
+   },
+   "text": null
+  },
+  {
+   "cell": "funding",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "754947c0cdf1b7fa"
    },
    "text": null
   },
@@ -319,28 +224,28 @@
    "response": [
     {
      "symbol": "BTCUSDT",
-     "fundingTime": 1792310400000,
-     "fundingRate": "0.00008017"
+     "fundingTime": 1792944000000,
+     "fundingRate": "0.00010000"
     },
     {
      "symbol": "BTCUSDT",
-     "fundingTime": 1792339200000,
-     "fundingRate": "0.00006036"
+     "fundingTime": 1792972800001,
+     "fundingRate": "0.00010000"
     },
     {
      "symbol": "BTCUSDT",
-     "fundingTime": 1792368000000,
-     "fundingRate": "0.00007133"
+     "fundingTime": 1793001600001,
+     "fundingRate": "0.00010000"
     },
     {
      "symbol": "BTCUSDT",
-     "fundingTime": 1792396800000,
-     "fundingRate": "0.00007480"
+     "fundingTime": 1793030400000,
+     "fundingRate": "0.00010000"
     },
     {
      "symbol": "BTCUSDT",
-     "fundingTime": 1792425600000,
-     "fundingRate": "0.00007388"
+     "fundingTime": 1793059200001,
+     "fundingRate": "0.00010000"
     }
    ],
    "text": null
@@ -353,7 +258,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a6f785922ba7dd0a"
+    "$body": "a3a050cfc1b8a791"
    },
    "text": null
   },
@@ -365,7 +270,19 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "serverTime": 1792426846303
+    "serverTime": 1793071052791
+   },
+   "text": null
+  },
+  {
+   "cell": "book",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8529eddeb94a5c47"
    },
    "text": null
   },
@@ -377,107 +294,107 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "lastUpdateId": 610709564564,
-    "E": 1792426846343,
-    "T": 1792426846300,
+    "lastUpdateId": 622335248517,
+    "E": 1793071052820,
+    "T": 1793071052800,
     "bids": [
      [
-      "82047.0",
-      "11.518"
+      "79647.7",
+      "0.001"
      ],
      [
-      "82045.4",
-      "0.863"
+      "79647.6",
+      "1.426"
      ],
      [
-      "82045.1",
-      "0.389"
+      "79646.8",
+      "0.115"
      ],
      [
-      "82043.2",
-      "1.336"
+      "79645.7",
+      "0.012"
      ],
      [
-      "82043.1",
-      "3.862"
+      "79644.6",
+      "0.281"
      ],
      [
-      "82042.2",
-      "0.614"
+      "79644.5",
+      "0.800"
      ],
      [
-      "82012.6",
-      "0.059"
+      "79619.6",
+      "3.349"
      ],
      [
-      "82012.3",
-      "0.008"
+      "79619.5",
+      "7.688"
      ],
      [
-      "82011.9",
-      "0.008"
+      "79619.3",
+      "0.056"
      ],
      [
-      "82011.3",
-      "0.112"
+      "79619.1",
+      "1.296"
      ],
      [
-      "82011.1",
-      "1.231"
+      "79619.0",
+      "0.056"
      ],
      [
-      "82011.0",
-      "3.990"
+      "79618.5",
+      "0.054"
      ]
     ],
     "asks": [
      [
-      "82047.1",
-      "0.428"
+      "79647.8",
+      "1.017"
      ],
      [
-      "82049.6",
-      "0.004"
+      "79647.9",
+      "0.062"
      ],
      [
-      "82050.4",
-      "0.012"
+      "79648.1",
+      "0.122"
      ],
      [
-      "82052.9",
-      "0.001"
+      "79650.0",
+      "1.626"
      ],
      [
-      "82053.6",
-      "0.001"
+      "79650.1",
+      "1.346"
      ],
      [
-      "82054.3",
-      "0.274"
+      "79651.3",
+      "0.017"
      ],
      [
-      "82072.9",
-      "0.226"
+      "79675.7",
+      "0.402"
      ],
      [
-      "82073.1",
-      "0.061"
+      "79675.8",
+      "1.346"
      ],
      [
-      "82074.8",
-      "0.008"
+      "79676.4",
+      "0.026"
      ],
      [
-      "82076.0",
-      "1.507"
+      "79677.3",
+      "0.026"
      ],
      [
-      "82076.1",
-      "5.033"
+      "79677.5",
+      "1.366"
      ],
      [
-      "82076.8",
-      "0.001"
+      "79678.9",
+      "3.009"
      ]
     ]
    },
@@ -491,7 +408,19 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "serverTime": 1792426846392
+    "serverTime": 1793071052932
+   },
+   "text": null
+  },
+  {
+   "cell": "trades",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8529eddeb94a5c47"
    },
    "text": null
   },
@@ -504,43 +433,43 @@
    "contentType": "application/json",
    "response": [
     {
-     "id": 148963211,
-     "price": "82037.0",
+     "id": 149238494,
+     "price": "79647.7",
      "qty": "0.001",
-     "quoteQty": "82.0",
-     "time": 1792426834150,
+     "quoteQty": "79.6",
+     "time": 1793071031750,
      "isBuyerMaker": false
     },
     {
-     "id": 148963212,
-     "price": "82045.4",
-     "qty": "0.135",
-     "quoteQty": "11076.1",
-     "time": 1792426844250,
+     "id": 149238495,
+     "price": "79647.6",
+     "qty": "0.748",
+     "quoteQty": "59576.3",
+     "time": 1793071032050,
+     "isBuyerMaker": true
+    },
+    {
+     "id": 149238496,
+     "price": "79647.7",
+     "qty": "0.003",
+     "quoteQty": "238.9",
+     "time": 1793071036850,
      "isBuyerMaker": false
     },
     {
-     "id": 148963213,
-     "price": "82045.5",
+     "id": 149238497,
+     "price": "79647.7",
      "qty": "0.001",
-     "quoteQty": "82.0",
-     "time": 1792426844250,
+     "quoteQty": "79.6",
+     "time": 1793071040400,
      "isBuyerMaker": false
     },
     {
-     "id": 148963214,
-     "price": "82045.5",
+     "id": 149238498,
+     "price": "79647.8",
      "qty": "0.001",
-     "quoteQty": "82.0",
-     "time": 1792426844950,
-     "isBuyerMaker": false
-    },
-    {
-     "id": 148963215,
-     "price": "82045.5",
-     "qty": "0.014",
-     "quoteQty": "1148.6",
-     "time": 1792426844950,
+     "quoteQty": "79.6",
+     "time": 1793071049050,
      "isBuyerMaker": false
     }
    ],
@@ -554,184 +483,196 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "serverTime": 1792426846481
+    "serverTime": 1793071053111
    },
    "text": null
   },
   {
    "cell": "kline",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=1h&startTime=1792340446493&endTime=1792426846493&limit=1500",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "8529eddeb94a5c47"
+   },
+   "text": null
+  },
+  {
+   "cell": "kline",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=BTCUSDT&interval=1h&startTime=1792984653130&endTime=1793071053130&limit=1500",
    "body": null,
    "status": 200,
    "contentType": "application/json",
    "response": [
     [
-     1792342800000,
-     "81049.2",
-     "81186.4",
-     "81049.2",
-     "81147.7",
-     "64.618",
-     1792346399999,
-     "5243035.4595",
-     625,
-     "29.419",
-     "2387055.8812",
+     1792987200000,
+     "79571.1",
+     "80134.0",
+     "79555.2",
+     "80110.7",
+     "197.911",
+     1792990799999,
+     "15822945.9387",
+     1315,
+     "114.227",
+     "9132204.4240",
      "0"
     ],
     [
-     1792346400000,
-     "81147.8",
-     "81244.1",
-     "81043.1",
-     "81154.2",
-     "48.010",
-     1792349999999,
-     "3894594.1898",
-     695,
-     "25.469",
-     "2065999.1293",
+     1792990800000,
+     "80110.7",
+     "80276.2",
+     "80042.6",
+     "80237.9",
+     "82.359",
+     1792994399999,
+     "6600657.0496",
+     765,
+     "42.444",
+     "3401735.5698",
      "0"
     ],
     [
-     1792350000000,
-     "81154.2",
-     "81157.3",
-     "80756.8",
-     "80838.3",
-     "253.493",
-     1792353599999,
-     "20511970.1235",
-     1360,
-     "114.450",
-     "9260033.8935",
+     1792994400000,
+     "80237.9",
+     "80274.7",
+     "79937.2",
+     "80090.4",
+     "44.761",
+     1792997999999,
+     "3583534.1595",
+     664,
+     "24.760",
+     "1982342.3169",
      "0"
     ],
     [
-     1792353600000,
-     "80849.9",
-     "80958.0",
-     "80646.4",
-     "80930.0",
-     "198.134",
-     1792357199999,
-     "16014445.9819",
-     1281,
-     "100.016",
-     "8083123.2483",
+     1792998000000,
+     "80098.8",
+     "80209.6",
+     "79919.0",
+     "79999.1",
+     "42.639",
+     1793001599999,
+     "3413608.3639",
+     707,
+     "18.656",
+     "1493808.7104",
      "0"
     ],
     [
-     1792357200000,
-     "80930.0",
-     "81215.8",
-     "80870.3",
-     "81178.7",
-     "118.659",
-     1792360799999,
-     "9614173.9025",
-     894,
-     "62.369",
-     "5053665.8656",
+     1793001600000,
+     "80017.3",
+     "80427.1",
+     "79640.1",
+     "80218.3",
+     "232.343",
+     1793005199999,
+     "18601979.8957",
+     1749,
+     "139.320",
+     "11159789.4626",
      "0"
     ],
     [
-     1792360800000,
-     "81178.6",
-     "81799.9",
-     "81178.6",
-     "81725.9",
-     "432.992",
-     1792364399999,
-     "35318324.6298",
-     2322,
-     "217.444",
-     "17738554.0747",
+     1793005200000,
+     "80212.8",
+     "80553.2",
+     "80159.5",
+     "80511.4",
+     "140.687",
+     1793008799999,
+     "11312652.8974",
+     1217,
+     "91.988",
+     "7396854.7901",
      "0"
     ],
     [
-     1792407600000,
-     "82378.3",
-     "82378.3",
-     "82087.9",
-     "82313.2",
-     "166.381",
-     1792411199999,
-     "13680741.5326",
-     1128,
-     "72.027",
-     "5923252.0395",
+     1793052000000,
+     "80075.5",
+     "80108.7",
+     "79871.4",
+     "79977.4",
+     "42.358",
+     1793055599999,
+     "3387723.5452",
+     1025,
+     "13.611",
+     "1088602.2108",
      "0"
     ],
     [
-     1792411200000,
-     "82313.2",
-     "82649.9",
-     "82284.8",
-     "82566.2",
-     "262.773",
-     1792414799999,
-     "21673298.0416",
-     1478,
-     "166.821",
-     "13757520.8066",
+     1793055600000,
+     "79979.0",
+     "80158.6",
+     "79691.7",
+     "80124.0",
+     "97.788",
+     1793059199999,
+     "7813641.8589",
+     1298,
+     "36.626",
+     "2925615.3196",
      "0"
     ],
     [
-     1792414800000,
-     "82566.1",
-     "82727.0",
-     "82016.0",
-     "82084.8",
-     "264.715",
-     1792418399999,
-     "21800713.9932",
-     2173,
-     "129.786",
-     "10691110.2606",
+     1793059200000,
+     "80124.0",
+     "80365.1",
+     "80105.0",
+     "80202.7",
+     "99.305",
+     1793062799999,
+     "7967916.3911",
+     1129,
+     "38.013",
+     "3050453.5643",
      "0"
     ],
     [
-     1792418400000,
-     "82087.9",
-     "82518.4",
-     "81719.5",
-     "82264.0",
-     "533.605",
-     1792421999999,
-     "43775224.8955",
-     3235,
-     "257.104",
-     "21095683.0408",
+     1793062800000,
+     "80200.9",
+     "80342.8",
+     "80005.2",
+     "80049.0",
+     "66.077",
+     1793066399999,
+     "5297191.9471",
+     1377,
+     "28.934",
+     "2319346.3794",
      "0"
     ],
     [
-     1792422000000,
-     "82269.3",
-     "82515.2",
-     "81880.0",
-     "81903.9",
-     "197.896",
-     1792425599999,
-     "16267390.0742",
-     1452,
-     "96.011",
-     "7893111.9155",
+     1793066400000,
+     "80049.0",
+     "80096.8",
+     "79728.7",
+     "79799.2",
+     "109.804",
+     1793069999999,
+     "8775527.0374",
+     1227,
+     "35.258",
+     "2818594.6601",
      "0"
     ],
     [
-     1792425600000,
-     "81903.8",
-     "82027.5",
-     "81710.7",
-     "82021.0",
-     "130.815",
-     1792429199999,
-     "10709329.1917",
-     710,
-     "38.622",
-     "3162078.8567",
+     1793070000000,
+     "79799.1",
+     "79813.0",
+     "79663.4",
+     "79663.4",
+     "37.254",
+     1793073599999,
+     "2969768.3766",
+     406,
+     "12.585",
+     "1003259.8560",
      "0"
     ]
    ],
@@ -745,7 +686,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "serverTime": 1792426846630
+    "serverTime": 1793071053281
    },
    "text": null
   },
@@ -757,19 +698,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "a6f785922ba7dd0a"
-   },
-   "text": null
-  },
-  {
-   "cell": "unknown:info",
-   "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v3/ticker/24hr",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "3e236853d010cdda"
+    "$body": "a3a050cfc1b8a791"
    },
    "text": null
   },
@@ -781,58 +710,12 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "42357450db976889"
+    "$body": "8529eddeb94a5c47"
    },
    "text": null
   },
   {
    "cell": "unknown:info",
-   "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v3/premiumIndex",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "d5279f4c551d139f"
-   },
-   "text": null
-  },
-  {
-   "cell": "unknown:funding",
-   "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v3/time",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "serverTime": 1792426846829
-   },
-   "text": null
-  },
-  {
-   "cell": "unknown:funding",
-   "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v3/fundingRate?symbol=NOPEXYZUSDT&limit=5",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json;charset=UTF-8",
-   "response": [],
-   "text": null
-  },
-  {
-   "cell": "unknown:funding",
-   "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v3/fundingInfo",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "a6f785922ba7dd0a"
-   },
-   "text": null
-  },
-  {
-   "cell": "unknown:funding",
    "method": "GET",
    "url": "https://fapi.asterdex.com/fapi/v3/ticker/24hr",
    "body": null,
@@ -840,114 +723,192 @@
    "contentType": "application/json",
    "response": [
     {
-     "symbol": "SOLUSD1",
-     "priceChange": "2.7300",
-     "priceChangePercent": "2.677",
-     "weightedAvgPrice": "102.9404",
-     "lastPrice": "104.7100",
-     "lastQty": "0.19",
-     "openPrice": "101.9800",
-     "highPrice": "106.1300",
-     "lowPrice": "100.3700",
-     "volume": "42033.44",
-     "quoteVolume": "4326938.1500",
-     "openTime": 1792339860000,
-     "closeTime": 1792426311050,
-     "firstId": 3938402,
-     "lastId": 3939952,
-     "count": 1551
-    },
-    {
-     "symbol": "ETHUSDT",
-     "priceChange": "37.44",
-     "priceChangePercent": "1.582",
-     "weightedAvgPrice": "2399.32",
-     "lastPrice": "2403.90",
-     "lastQty": "0.011",
-     "openPrice": "2366.46",
-     "highPrice": "2445.47",
-     "lowPrice": "2326.98",
-     "volume": "120764.613",
-     "quoteVolume": "289752762.30",
-     "openTime": 1792340400000,
-     "closeTime": 1792426844050,
-     "firstId": 86893193,
-     "lastId": 86921466,
-     "count": 28272
-    },
-    {
-     "symbol": "SOLUSDT",
-     "priceChange": "2.7000",
-     "priceChangePercent": "2.648",
-     "weightedAvgPrice": "103.9472",
-     "lastPrice": "104.6500",
-     "lastQty": "13.27",
-     "openPrice": "101.9500",
-     "highPrice": "106.1500",
-     "lowPrice": "100.3600",
-     "volume": "642387.25",
-     "quoteVolume": "66774345.6700",
-     "openTime": 1792340400000,
-     "closeTime": 1792426846550,
-     "firstId": 44542725,
-     "lastId": 44561155,
-     "count": 18431
-    },
-    {
      "symbol": "BTCUSDT",
-     "priceChange": "945.6",
-     "priceChangePercent": "1.166",
-     "weightedAvgPrice": "82098.5",
-     "lastPrice": "82045.5",
-     "lastQty": "0.014",
-     "openPrice": "81099.9",
-     "highPrice": "83133.3",
-     "lowPrice": "80646.4",
-     "volume": "4987.308",
-     "quoteVolume": "409450730.03",
-     "openTime": 1792340400000,
-     "closeTime": 1792426844950,
-     "firstId": 148932685,
-     "lastId": 148963215,
-     "count": 30530
-    },
-    {
-     "symbol": "BTCUSD1",
-     "priceChange": "1003.20",
-     "priceChangePercent": "1.238",
-     "weightedAvgPrice": "82300.17",
-     "lastPrice": "82033.50",
-     "lastQty": "0.005",
-     "openPrice": "81030.30",
-     "highPrice": "83071.80",
-     "lowPrice": "80627.90",
-     "volume": "51.218",
-     "quoteVolume": "4215250.18",
-     "openTime": 1792340220000,
-     "closeTime": 1792426640000,
-     "firstId": 4946799,
-     "lastId": 4949602,
-     "count": 2804
+     "priceChange": "-70.0",
+     "priceChangePercent": "-0.088",
+     "weightedAvgPrice": "80079.4",
+     "lastPrice": "79647.8",
+     "lastQty": "0.001",
+     "openPrice": "79717.8",
+     "highPrice": "80820.4",
+     "lowPrice": "79342.9",
+     "volume": "4218.680",
+     "quoteVolume": "337829185.49",
+     "openTime": 1792984620000,
+     "closeTime": 1793071049050,
+     "firstId": 149203871,
+     "lastId": 149238498,
+     "count": 34628
     },
     {
      "symbol": "ETHUSD1",
-     "priceChange": "37.64",
-     "priceChangePercent": "1.591",
-     "weightedAvgPrice": "2397.26",
-     "lastPrice": "2403.69",
-     "lastQty": "0.004",
-     "openPrice": "2366.05",
-     "highPrice": "2444.91",
-     "lowPrice": "2327.22",
-     "volume": "1104.174",
-     "quoteVolume": "2646996.80",
-     "openTime": 1792340400000,
-     "closeTime": 1792426842350,
-     "firstId": 5803932,
-     "lastId": 5807081,
-     "count": 3150
+     "priceChange": "0.15",
+     "priceChangePercent": "0.006",
+     "weightedAvgPrice": "2319.02",
+     "lastPrice": "2309.34",
+     "lastQty": "0.321",
+     "openPrice": "2309.19",
+     "highPrice": "2342.72",
+     "lowPrice": "2292.78",
+     "volume": "737.389",
+     "quoteVolume": "1710016.19",
+     "openTime": 1792984500000,
+     "closeTime": 1793070946250,
+     "firstId": 5826666,
+     "lastId": 5829209,
+     "count": 2544
+    },
+    {
+     "symbol": "SOLUSD1",
+     "priceChange": "-0.6200",
+     "priceChangePercent": "-0.616",
+     "weightedAvgPrice": "100.8197",
+     "lastPrice": "99.9500",
+     "lastQty": "1.10",
+     "openPrice": "100.5700",
+     "highPrice": "102.6200",
+     "lowPrice": "99.9200",
+     "volume": "3329.44",
+     "quoteVolume": "335673.0100",
+     "openTime": 1792985400000,
+     "closeTime": 1793071033250,
+     "firstId": 3942233,
+     "lastId": 3942472,
+     "count": 240
+    },
+    {
+     "symbol": "ETHUSDT",
+     "priceChange": "-0.34",
+     "priceChangePercent": "-0.015",
+     "weightedAvgPrice": "2319.91",
+     "lastPrice": "2308.82",
+     "lastQty": "5.736",
+     "openPrice": "2309.16",
+     "highPrice": "2343.54",
+     "lowPrice": "2292.05",
+     "volume": "159219.501",
+     "quoteVolume": "369375645.25",
+     "openTime": 1792984620000,
+     "closeTime": 1793071047100,
+     "firstId": 87094429,
+     "lastId": 87119986,
+     "count": 25558
+    },
+    {
+     "symbol": "SOLUSDT",
+     "priceChange": "-0.8500",
+     "priceChangePercent": "-0.843",
+     "weightedAvgPrice": "100.9887",
+     "lastPrice": "99.9700",
+     "lastQty": "1.26",
+     "openPrice": "100.8200",
+     "highPrice": "102.6700",
+     "lowPrice": "99.8400",
+     "volume": "363424.23",
+     "quoteVolume": "36701734.2300",
+     "openTime": 1792984620000,
+     "closeTime": 1793071049400,
+     "firstId": 44667858,
+     "lastId": 44684426,
+     "count": 16569
+    },
+    {
+     "symbol": "BTCUSDC",
+     "priceChange": "-78.70",
+     "priceChangePercent": "-0.098",
+     "weightedAvgPrice": "80048.83",
+     "lastPrice": "80000.00",
+     "lastQty": "0.002",
+     "openPrice": "80078.70",
+     "highPrice": "80274.70",
+     "lowPrice": "79864.70",
+     "volume": "2.593",
+     "quoteVolume": "207566.61",
+     "openTime": 1792975440000,
+     "closeTime": 1793051203700,
+     "firstId": 6,
+     "lastId": 25,
+     "count": 20
+    },
+    {
+     "symbol": "ETHUSDC",
+     "priceChange": "-41.02",
+     "priceChangePercent": "-1.700",
+     "weightedAvgPrice": "2397.37",
+     "lastPrice": "2372.46",
+     "lastQty": "0.003",
+     "openPrice": "2413.48",
+     "highPrice": "2413.48",
+     "lowPrice": "2372.46",
+     "volume": "0.052",
+     "quoteVolume": "124.66",
+     "openTime": 1792764180000,
+     "closeTime": 1792801889050,
+     "firstId": 1,
+     "lastId": 7,
+     "count": 7
+    },
+    {
+     "symbol": "BTCUSD1",
+     "priceChange": "-60.20",
+     "priceChangePercent": "-0.076",
+     "weightedAvgPrice": "80006.80",
+     "lastPrice": "79630.80",
+     "lastQty": "0.006",
+     "openPrice": "79691.00",
+     "highPrice": "80778.10",
+     "lowPrice": "79357.30",
+     "volume": "31.172",
+     "quoteVolume": "2493971.91",
+     "openTime": 1792984620000,
+     "closeTime": 1793071030750,
+     "firstId": 4964470,
+     "lastId": 4966874,
+     "count": 2405
+    },
+    {
+     "symbol": "SOLUSDC",
+     "priceChange": "-0.6700",
+     "priceChangePercent": "-0.666",
+     "weightedAvgPrice": "101.2833",
+     "lastPrice": "99.8800",
+     "lastQty": "0.450",
+     "openPrice": "100.5500",
+     "highPrice": "101.4100",
+     "lowPrice": "99.8800",
+     "volume": "307.370",
+     "quoteVolume": "31131.4600",
+     "openTime": 1792984680000,
+     "closeTime": 1793070182250,
+     "firstId": 25,
+     "lastId": 35,
+     "count": 11
     }
    ],
+   "text": null
+  },
+  {
+   "cell": "unknown:info",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/premiumIndex",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "$body": "0e5e53efd482577d"
+   },
+   "text": null
+  },
+  {
+   "cell": "unknown:funding",
+   "method": "GET",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
+   "body": null,
+   "status": 200,
+   "contentType": "application/json",
+   "response": {
+    "serverTime": 1793071053439
+   },
    "text": null
   },
   {
@@ -958,19 +919,7 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "$body": "202a34bbe0f043a1"
-   },
-   "text": null
-  },
-  {
-   "cell": "unknown:funding",
-   "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v3/premiumIndex",
-   "body": null,
-   "status": 200,
-   "contentType": "application/json",
-   "response": {
-    "$body": "d5279f4c551d139f"
+    "$body": "754947c0cdf1b7fa"
    },
    "text": null
   },
@@ -982,20 +931,19 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "serverTime": 1792426847179
+    "serverTime": 1793071053539
    },
    "text": null
   },
   {
    "cell": "unknown:book",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v3/depth?symbol=NOPEXYZUSDT&limit=50",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
    "body": null,
-   "status": 400,
+   "status": 200,
    "contentType": "application/json",
    "response": {
-    "code": -1121,
-    "msg": "Invalid symbol."
+    "$body": "8529eddeb94a5c47"
    },
    "text": null
   },
@@ -1007,20 +955,19 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "serverTime": 1792426847264
+    "serverTime": 1793071053636
    },
    "text": null
   },
   {
    "cell": "unknown:trades",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v3/trades?symbol=NOPEXYZUSDT&limit=5",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
    "body": null,
-   "status": 400,
+   "status": 200,
    "contentType": "application/json",
    "response": {
-    "code": -1121,
-    "msg": "Invalid symbol."
+    "$body": "8529eddeb94a5c47"
    },
    "text": null
   },
@@ -1032,31 +979,30 @@
    "status": 200,
    "contentType": "application/json",
    "response": {
-    "serverTime": 1792426847348
+    "serverTime": 1793071053776
    },
    "text": null
   },
   {
    "cell": "unknown:kline",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v3/klines?symbol=NOPEXYZUSDT&interval=1h&startTime=1792340447361&endTime=1792426847361&limit=1500",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
    "body": null,
-   "status": 400,
+   "status": 200,
    "contentType": "application/json",
    "response": {
-    "code": -1121,
-    "msg": "Invalid symbol."
+    "$body": "8529eddeb94a5c47"
    },
    "text": null
   }
  ],
  "ws": [],
  "bodies": {
-  "a6f785922ba7dd0a": [
+  "a3a050cfc1b8a791": [
    {
     "symbol": "BTCUSD",
     "interestRate": "0",
-    "time": 1792426799000,
+    "time": 1793071019000,
     "fundingIntervalHours": 2,
     "fundingFeeCap": 0.02,
     "fundingFeeFloor": -0.02
@@ -1064,7 +1010,15 @@
    {
     "symbol": "ETHUSD1",
     "interestRate": "0.00010000",
-    "time": 1792426799000,
+    "time": 1793071019000,
+    "fundingIntervalHours": 8,
+    "fundingFeeCap": 0.003,
+    "fundingFeeFloor": -0.003
+   },
+   {
+    "symbol": "ETHUSDC",
+    "interestRate": "0.00010000",
+    "time": 1793071019000,
     "fundingIntervalHours": 8,
     "fundingFeeCap": 0.003,
     "fundingFeeFloor": -0.003
@@ -1072,7 +1026,7 @@
    {
     "symbol": "ETHUSDT",
     "interestRate": "0.00010000",
-    "time": 1792426799000,
+    "time": 1793071019000,
     "fundingIntervalHours": 8,
     "fundingFeeCap": 0.003,
     "fundingFeeFloor": -0.003
@@ -1080,15 +1034,23 @@
    {
     "symbol": "BTCUSD1",
     "interestRate": "0.00010000",
-    "time": 1792426799000,
+    "time": 1793071019000,
     "fundingIntervalHours": 8,
     "fundingFeeCap": 0.00375,
     "fundingFeeFloor": -0.00375
    },
    {
+    "symbol": "BTCUSDC",
+    "interestRate": "0.00010000",
+    "time": 1793071019000,
+    "fundingIntervalHours": 8,
+    "fundingFeeCap": 0.003,
+    "fundingFeeFloor": -0.003
+   },
+   {
     "symbol": "BTCUSDT",
     "interestRate": "0.00010000",
-    "time": 1792426799000,
+    "time": 1793071019000,
     "fundingIntervalHours": 8,
     "fundingFeeCap": 0.003,
     "fundingFeeFloor": -0.003
@@ -1096,15 +1058,23 @@
    {
     "symbol": "SOLUSD",
     "interestRate": "0",
-    "time": 1792426799000,
+    "time": 1793071019000,
     "fundingIntervalHours": 8,
     "fundingFeeCap": 0.02,
     "fundingFeeFloor": -0.02
    },
    {
+    "symbol": "SOLUSDC",
+    "interestRate": "0.00010000",
+    "time": 1793071019000,
+    "fundingIntervalHours": 8,
+    "fundingFeeCap": 0.00375,
+    "fundingFeeFloor": -0.00375
+   },
+   {
     "symbol": "SOLUSDT",
     "interestRate": "0.00010000",
-    "time": 1792426799000,
+    "time": 1793071019000,
     "fundingIntervalHours": 8,
     "fundingFeeCap": 0.00375,
     "fundingFeeFloor": -0.00375
@@ -1112,7 +1082,7 @@
    {
     "symbol": "SOLUSD1",
     "interestRate": "0.00010000",
-    "time": 1792426799000,
+    "time": 1793071019000,
     "fundingIntervalHours": 8,
     "fundingFeeCap": 0.00375,
     "fundingFeeFloor": -0.00375
@@ -1120,15 +1090,15 @@
    {
     "symbol": "ETHUSD",
     "interestRate": "0",
-    "time": 1792426799000,
+    "time": 1793071019000,
     "fundingIntervalHours": 2,
     "fundingFeeCap": 0.02,
     "fundingFeeFloor": -0.02
    }
   ],
-  "202a34bbe0f043a1": {
+  "8529eddeb94a5c47": {
    "timezone": "UTC",
-   "serverTime": 1792426189077,
+   "serverTime": 1793064600347,
    "futuresType": "U_MARGINED",
    "rateLimits": [
     {
@@ -1473,8 +1443,8 @@
        "filterType": "MIN_NOTIONAL"
       },
       {
-       "multiplierDown": "0.9800",
-       "multiplierUp": "1.0200",
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
        "ltMultiplierDown": "0.9800",
        "multiplierDecimal": "4",
        "filterType": "PERCENT_PRICE",
@@ -1560,8 +1530,8 @@
        "filterType": "MIN_NOTIONAL"
       },
       {
-       "multiplierDown": "0.9800",
-       "multiplierUp": "1.0200",
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
        "ltMultiplierDown": "0.9800",
        "multiplierDecimal": "4",
        "filterType": "PERCENT_PRICE",
@@ -1647,8 +1617,8 @@
        "filterType": "MIN_NOTIONAL"
       },
       {
-       "multiplierDown": "0.9800",
-       "multiplierUp": "1.0200",
+       "multiplierDown": "0.9700",
+       "multiplierUp": "1.0300",
        "ltMultiplierDown": "0.9800",
        "multiplierDecimal": "4",
        "filterType": "PERCENT_PRICE",
@@ -1734,8 +1704,8 @@
        "filterType": "MIN_NOTIONAL"
       },
       {
-       "multiplierDown": "0.9800",
-       "multiplierUp": "1.0200",
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
        "ltMultiplierDown": "0.9800",
        "multiplierDecimal": "4",
        "filterType": "PERCENT_PRICE",
@@ -1823,8 +1793,8 @@
        "filterType": "MIN_NOTIONAL"
       },
       {
-       "multiplierDown": "0.9800",
-       "multiplierUp": "1.0200",
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
        "ltMultiplierDown": "0.9800",
        "multiplierDecimal": "4",
        "filterType": "PERCENT_PRICE",
@@ -1877,214 +1847,681 @@
      "triggerProtect": "0.0200",
      "liquidationFee": "0.025000",
      "marketTakeBound": "0.02"
+    },
+    {
+     "symbol": "BTCUSDC",
+     "filters": [
+      {
+       "minPrice": "0.10",
+       "maxPrice": "500000",
+       "filterType": "PRICE_FILTER",
+       "tickSize": "0.10"
+      },
+      {
+       "stepSize": "0.001",
+       "filterType": "LOT_SIZE",
+       "maxQty": "800",
+       "minQty": "0.001"
+      },
+      {
+       "stepSize": "0.001",
+       "filterType": "MARKET_LOT_SIZE",
+       "maxQty": "50",
+       "minQty": "0.001"
+      },
+      {
+       "limit": 200,
+       "filterType": "MAX_NUM_ORDERS"
+      },
+      {
+       "limit": 10,
+       "filterType": "MAX_NUM_ALGO_ORDERS"
+      },
+      {
+       "notional": "5",
+       "filterType": "MIN_NOTIONAL"
+      },
+      {
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
+       "ltMultiplierDown": "0.9800",
+       "multiplierDecimal": "4",
+       "filterType": "PERCENT_PRICE",
+       "ltMultiplierUp": "1.0200"
+      }
+     ],
+     "orderTypes": [
+      "LIMIT",
+      "MARKET",
+      "STOP",
+      "STOP_MARKET",
+      "TAKE_PROFIT",
+      "TAKE_PROFIT_MARKET",
+      "TRAILING_STOP_MARKET"
+     ],
+     "timeInForce": [
+      "GTC",
+      "IOC",
+      "GTX",
+      "HIDDEN"
+     ],
+     "createTime": 1792756285162,
+     "pair": "BTCUSDC",
+     "contractType": "PERPETUAL",
+     "deliveryDate": 4133404800000,
+     "onboardDate": 1792764000000,
+     "status": "TRADING",
+     "maintMarginPercent": "16.6600",
+     "requiredMarginPercent": "33.3300",
+     "baseAsset": "BTC",
+     "quoteAsset": "USDC",
+     "marginAsset": "USDC",
+     "pricePrecision": 2,
+     "quantityPrecision": 3,
+     "baseAssetPrecision": 8,
+     "quotePrecision": 8,
+     "underlyingType": "COIN",
+     "underlyingSubType": [],
+     "symbolType": 0,
+     "tradingMode": 0,
+     "name": "",
+     "channel": "{}",
+     "sequenceNo": 0,
+     "twapMinNotional": "1000",
+     "imn": null,
+     "tags": [],
+     "settlePlan": 0,
+     "triggerProtect": "0.0200",
+     "liquidationFee": "0.025000",
+     "marketTakeBound": "0.02"
+    },
+    {
+     "symbol": "ETHUSDC",
+     "filters": [
+      {
+       "minPrice": "0.01",
+       "maxPrice": "100000",
+       "filterType": "PRICE_FILTER",
+       "tickSize": "0.01"
+      },
+      {
+       "stepSize": "0.001",
+       "filterType": "LOT_SIZE",
+       "maxQty": "8000",
+       "minQty": "0.001"
+      },
+      {
+       "stepSize": "0.001",
+       "filterType": "MARKET_LOT_SIZE",
+       "maxQty": "700",
+       "minQty": "0.001"
+      },
+      {
+       "limit": 200,
+       "filterType": "MAX_NUM_ORDERS"
+      },
+      {
+       "limit": 10,
+       "filterType": "MAX_NUM_ALGO_ORDERS"
+      },
+      {
+       "notional": "5",
+       "filterType": "MIN_NOTIONAL"
+      },
+      {
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
+       "ltMultiplierDown": "0.9800",
+       "multiplierDecimal": "4",
+       "filterType": "PERCENT_PRICE",
+       "ltMultiplierUp": "1.0200"
+      }
+     ],
+     "orderTypes": [
+      "LIMIT",
+      "MARKET",
+      "STOP",
+      "STOP_MARKET",
+      "TAKE_PROFIT",
+      "TAKE_PROFIT_MARKET",
+      "TRAILING_STOP_MARKET"
+     ],
+     "timeInForce": [
+      "GTC",
+      "IOC",
+      "GTX",
+      "HIDDEN"
+     ],
+     "createTime": 1792756363562,
+     "pair": "ETHUSDC",
+     "contractType": "PERPETUAL",
+     "deliveryDate": 4133404800000,
+     "onboardDate": 1792764000000,
+     "status": "TRADING",
+     "maintMarginPercent": "16.6600",
+     "requiredMarginPercent": "33.3300",
+     "baseAsset": "ETH",
+     "quoteAsset": "USDC",
+     "marginAsset": "USDC",
+     "pricePrecision": 2,
+     "quantityPrecision": 3,
+     "baseAssetPrecision": 8,
+     "quotePrecision": 8,
+     "underlyingType": "COIN",
+     "underlyingSubType": [],
+     "symbolType": 0,
+     "tradingMode": 0,
+     "name": "",
+     "channel": "{}",
+     "sequenceNo": 0,
+     "twapMinNotional": "1000",
+     "imn": null,
+     "tags": [],
+     "settlePlan": 0,
+     "triggerProtect": "0.0200",
+     "liquidationFee": "0.025000",
+     "marketTakeBound": "0.02"
+    },
+    {
+     "symbol": "SOLUSDC",
+     "filters": [
+      {
+       "minPrice": "0.1000",
+       "maxPrice": "100000",
+       "filterType": "PRICE_FILTER",
+       "tickSize": "0.0100"
+      },
+      {
+       "stepSize": "0.010",
+       "filterType": "LOT_SIZE",
+       "maxQty": "800000",
+       "minQty": "0.010"
+      },
+      {
+       "stepSize": "0.010",
+       "filterType": "MARKET_LOT_SIZE",
+       "maxQty": "10000",
+       "minQty": "0.010"
+      },
+      {
+       "limit": 200,
+       "filterType": "MAX_NUM_ORDERS"
+      },
+      {
+       "limit": 10,
+       "filterType": "MAX_NUM_ALGO_ORDERS"
+      },
+      {
+       "notional": "5",
+       "filterType": "MIN_NOTIONAL"
+      },
+      {
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
+       "ltMultiplierDown": "0.9700",
+       "multiplierDecimal": "4",
+       "filterType": "PERCENT_PRICE",
+       "ltMultiplierUp": "1.0300"
+      }
+     ],
+     "orderTypes": [
+      "LIMIT",
+      "MARKET",
+      "STOP",
+      "STOP_MARKET",
+      "TAKE_PROFIT",
+      "TAKE_PROFIT_MARKET",
+      "TRAILING_STOP_MARKET"
+     ],
+     "timeInForce": [
+      "GTC",
+      "IOC",
+      "GTX",
+      "HIDDEN"
+     ],
+     "createTime": 1792756719888,
+     "pair": "SOLUSDC",
+     "contractType": "PERPETUAL",
+     "deliveryDate": 4133404800000,
+     "onboardDate": 1792764000000,
+     "status": "TRADING",
+     "maintMarginPercent": "16.6600",
+     "requiredMarginPercent": "33.3300",
+     "baseAsset": "SOL",
+     "quoteAsset": "USDC",
+     "marginAsset": "USDC",
+     "pricePrecision": 4,
+     "quantityPrecision": 3,
+     "baseAssetPrecision": 8,
+     "quotePrecision": 8,
+     "underlyingType": "COIN",
+     "underlyingSubType": [],
+     "symbolType": 0,
+     "tradingMode": 0,
+     "name": "",
+     "channel": "{}",
+     "sequenceNo": 0,
+     "twapMinNotional": "1000",
+     "imn": null,
+     "tags": [],
+     "settlePlan": 0,
+     "triggerProtect": "0.0300",
+     "liquidationFee": "0.025000",
+     "marketTakeBound": "0.03"
     }
    ]
   },
-  "2e59c8d327bb829e": [
+  "02f0824e7d672ee1": [
    {
-    "symbol": "BTCUSD",
-    "markPrice": "81977.17806246",
-    "indexPrice": "81977.17806246",
-    "estimatedSettlePrice": "82006.80203110",
-    "lastFundingRate": "0",
-    "interestRate": "0",
-    "nextFundingTime": 1792432800000,
-    "time": 1792426845000
-   },
-   {
-    "symbol": "ETHUSD1",
-    "markPrice": "2403.75736994",
-    "indexPrice": "2404.60649536",
-    "estimatedSettlePrice": "2403.26330120",
-    "lastFundingRate": "0.00000286",
-    "interestRate": "0.00010000",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426845000
+    "symbol": "SOLUSD1",
+    "priceChange": "-0.6200",
+    "priceChangePercent": "-0.616",
+    "weightedAvgPrice": "100.8197",
+    "lastPrice": "99.9500",
+    "lastQty": "1.10",
+    "openPrice": "100.5700",
+    "highPrice": "102.6200",
+    "lowPrice": "99.9200",
+    "volume": "3329.44",
+    "quoteVolume": "335673.0100",
+    "openTime": 1792985400000,
+    "closeTime": 1793071033250,
+    "firstId": 3942233,
+    "lastId": 3942472,
+    "count": 240
    },
    {
     "symbol": "ETHUSDT",
-    "markPrice": "2403.89000000",
-    "indexPrice": "2404.05325581",
-    "estimatedSettlePrice": "2402.66854897",
-    "lastFundingRate": "0.00006480",
-    "interestRate": "0.00010000",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426845000
+    "priceChange": "-0.34",
+    "priceChangePercent": "-0.015",
+    "weightedAvgPrice": "2319.91",
+    "lastPrice": "2308.82",
+    "lastQty": "5.736",
+    "openPrice": "2309.16",
+    "highPrice": "2343.54",
+    "lowPrice": "2292.05",
+    "volume": "159219.501",
+    "quoteVolume": "369375645.25",
+    "openTime": 1792984620000,
+    "closeTime": 1793071047100,
+    "firstId": 87094429,
+    "lastId": 87119986,
+    "count": 25558
    },
    {
-    "symbol": "BTCUSD1",
-    "markPrice": "82048.97186683",
-    "indexPrice": "82071.62442667",
-    "estimatedSettlePrice": "82125.30124488",
-    "lastFundingRate": "0.00009699",
-    "interestRate": "0.00010000",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426845000
+    "symbol": "SOLUSDT",
+    "priceChange": "-0.8500",
+    "priceChangePercent": "-0.843",
+    "weightedAvgPrice": "100.9887",
+    "lastPrice": "99.9700",
+    "lastQty": "1.26",
+    "openPrice": "100.8200",
+    "highPrice": "102.6700",
+    "lowPrice": "99.8400",
+    "volume": "363424.23",
+    "quoteVolume": "36701734.2300",
+    "openTime": 1792984620000,
+    "closeTime": 1793071049400,
+    "firstId": 44667858,
+    "lastId": 44684426,
+    "count": 16569
+   },
+   {
+    "symbol": "ETHUSDC",
+    "priceChange": "-41.02",
+    "priceChangePercent": "-1.700",
+    "weightedAvgPrice": "2397.37",
+    "lastPrice": "2372.46",
+    "lastQty": "0.003",
+    "openPrice": "2413.48",
+    "highPrice": "2413.48",
+    "lowPrice": "2372.46",
+    "volume": "0.052",
+    "quoteVolume": "124.66",
+    "openTime": 1792764180000,
+    "closeTime": 1792801889050,
+    "firstId": 1,
+    "lastId": 7,
+    "count": 7
    },
    {
     "symbol": "BTCUSDT",
-    "markPrice": "82037",
-    "indexPrice": "82050.28978261",
-    "estimatedSettlePrice": "82104.77936347",
-    "lastFundingRate": "0.00008684",
+    "priceChange": "-70.0",
+    "priceChangePercent": "-0.088",
+    "weightedAvgPrice": "80079.4",
+    "lastPrice": "79647.8",
+    "lastQty": "0.001",
+    "openPrice": "79717.8",
+    "highPrice": "80820.4",
+    "lowPrice": "79342.9",
+    "volume": "4218.680",
+    "quoteVolume": "337829185.49",
+    "openTime": 1792984620000,
+    "closeTime": 1793071049050,
+    "firstId": 149203871,
+    "lastId": 149238498,
+    "count": 34628
+   },
+   {
+    "symbol": "BTCUSD1",
+    "priceChange": "-60.20",
+    "priceChangePercent": "-0.076",
+    "weightedAvgPrice": "80006.80",
+    "lastPrice": "79630.80",
+    "lastQty": "0.006",
+    "openPrice": "79691.00",
+    "highPrice": "80778.10",
+    "lowPrice": "79357.30",
+    "volume": "31.172",
+    "quoteVolume": "2493971.91",
+    "openTime": 1792984620000,
+    "closeTime": 1793071030750,
+    "firstId": 4964470,
+    "lastId": 4966874,
+    "count": 2405
+   },
+   {
+    "symbol": "ETHUSD1",
+    "priceChange": "0.15",
+    "priceChangePercent": "0.006",
+    "weightedAvgPrice": "2319.02",
+    "lastPrice": "2309.34",
+    "lastQty": "0.321",
+    "openPrice": "2309.19",
+    "highPrice": "2342.72",
+    "lowPrice": "2292.78",
+    "volume": "737.389",
+    "quoteVolume": "1710016.19",
+    "openTime": 1792984500000,
+    "closeTime": 1793070946250,
+    "firstId": 5826666,
+    "lastId": 5829209,
+    "count": 2544
+   },
+   {
+    "symbol": "BTCUSDC",
+    "priceChange": "-78.70",
+    "priceChangePercent": "-0.098",
+    "weightedAvgPrice": "80048.83",
+    "lastPrice": "80000.00",
+    "lastQty": "0.002",
+    "openPrice": "80078.70",
+    "highPrice": "80274.70",
+    "lowPrice": "79864.70",
+    "volume": "2.593",
+    "quoteVolume": "207566.61",
+    "openTime": 1792975440000,
+    "closeTime": 1793051203700,
+    "firstId": 6,
+    "lastId": 25,
+    "count": 20
+   },
+   {
+    "symbol": "SOLUSDC",
+    "priceChange": "-0.6700",
+    "priceChangePercent": "-0.666",
+    "weightedAvgPrice": "101.2833",
+    "lastPrice": "99.8800",
+    "lastQty": "0.450",
+    "openPrice": "100.5500",
+    "highPrice": "101.4100",
+    "lowPrice": "99.8800",
+    "volume": "307.370",
+    "quoteVolume": "31131.4600",
+    "openTime": 1792984680000,
+    "closeTime": 1793070182250,
+    "firstId": 25,
+    "lastId": 35,
+    "count": 11
+   }
+  ],
+  "456c97d2a3fa550f": [
+   {
+    "symbol": "BTCUSD",
+    "markPrice": "79535.64565466",
+    "indexPrice": "79535.64565466",
+    "estimatedSettlePrice": "79758.30725235",
+    "lastFundingRate": "0",
+    "interestRate": "0",
+    "nextFundingTime": 1793073600000,
+    "time": 1793071051000
+   },
+   {
+    "symbol": "ETHUSD1",
+    "markPrice": "2309.34000000",
+    "indexPrice": "2309.71190325",
+    "estimatedSettlePrice": "2315.97509230",
+    "lastFundingRate": "0.00006955",
     "interestRate": "0.00010000",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426845000
+    "nextFundingTime": 1793088000000,
+    "time": 1793071051000
+   },
+   {
+    "symbol": "ETHUSDC",
+    "markPrice": "2306.33539277",
+    "indexPrice": "2306.81374652",
+    "estimatedSettlePrice": "2313.03521290",
+    "lastFundingRate": "0.00010000",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071051000
+   },
+   {
+    "symbol": "ETHUSDT",
+    "markPrice": "2308.86329457",
+    "indexPrice": "2309.96744186",
+    "estimatedSettlePrice": "2316.22314058",
+    "lastFundingRate": "0.00007925",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071051000
+   },
+   {
+    "symbol": "BTCUSD1",
+    "markPrice": "79630.80000000",
+    "indexPrice": "79664.56770867",
+    "estimatedSettlePrice": "79886.95031720",
+    "lastFundingRate": "0.00010000",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071051000
+   },
+   {
+    "symbol": "BTCUSDC",
+    "markPrice": "79547.10873347",
+    "indexPrice": "79562.70766704",
+    "estimatedSettlePrice": "79786.95828814",
+    "lastFundingRate": "0.00010000",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071051000
+   },
+   {
+    "symbol": "BTCUSDT",
+    "markPrice": "79649.48492754",
+    "indexPrice": "79673.10630435",
+    "estimatedSettlePrice": "79895.51631492",
+    "lastFundingRate": "0.00010000",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071051000
    },
    {
     "symbol": "SOLUSD",
-    "markPrice": "104.65642282",
-    "indexPrice": "104.65642282",
-    "estimatedSettlePrice": "104.45207190",
+    "markPrice": "99.92549315",
+    "indexPrice": "99.92549315",
+    "estimatedSettlePrice": "100.24036582",
     "lastFundingRate": "0",
     "interestRate": "0",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426845000
+    "nextFundingTime": 1793088000000,
+    "time": 1793071051000
+   },
+   {
+    "symbol": "SOLUSDC",
+    "markPrice": "99.87467133",
+    "indexPrice": "99.86879364",
+    "estimatedSettlePrice": "100.18310556",
+    "lastFundingRate": "0.00010000",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071051000
    },
    {
     "symbol": "SOLUSDT",
-    "markPrice": "104.64483562",
-    "indexPrice": "104.70293927",
-    "estimatedSettlePrice": "104.50615200",
-    "lastFundingRate": "0.00005791",
+    "markPrice": "99.96489678",
+    "indexPrice": "100.01267837",
+    "estimatedSettlePrice": "100.32025903",
+    "lastFundingRate": "0.00010000",
     "interestRate": "0.00010000",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426845000
+    "nextFundingTime": 1793088000000,
+    "time": 1793071051000
    },
    {
     "symbol": "SOLUSD1",
-    "markPrice": "104.71000000",
-    "indexPrice": "104.70224574",
-    "estimatedSettlePrice": "104.53271413",
+    "markPrice": "99.95000000",
+    "indexPrice": "99.98353317",
+    "estimatedSettlePrice": "100.33207135",
     "lastFundingRate": "0.00010000",
     "interestRate": "0.00010000",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426845000
+    "nextFundingTime": 1793088000000,
+    "time": 1793071051000
    },
    {
     "symbol": "ETHUSD",
-    "markPrice": "2402.73284862",
-    "indexPrice": "2402.73284862",
-    "estimatedSettlePrice": "2401.05231404",
+    "markPrice": "2307.89001804",
+    "indexPrice": "2307.89001804",
+    "estimatedSettlePrice": "2313.96172834",
     "lastFundingRate": "0",
     "interestRate": "0",
-    "nextFundingTime": 1792432800000,
-    "time": 1792426845000
+    "nextFundingTime": 1793073600000,
+    "time": 1793071051000
    }
   ],
-  "3e236853d010cdda": [
+  "0e5e53efd482577d": [
    {
-    "symbol": "BTCUSDT",
-    "priceChange": "945.6",
-    "priceChangePercent": "1.166",
-    "weightedAvgPrice": "82098.5",
-    "lastPrice": "82045.5",
-    "lastQty": "0.014",
-    "openPrice": "81099.9",
-    "highPrice": "83133.3",
-    "lowPrice": "80646.4",
-    "volume": "4987.308",
-    "quoteVolume": "409450730.03",
-    "openTime": 1792340400000,
-    "closeTime": 1792426844950,
-    "firstId": 148932685,
-    "lastId": 148963215,
-    "count": 30530
+    "symbol": "BTCUSD",
+    "markPrice": "79535.80450876",
+    "indexPrice": "79535.80450876",
+    "estimatedSettlePrice": "79758.19766352",
+    "lastFundingRate": "0",
+    "interestRate": "0",
+    "nextFundingTime": 1793073600000,
+    "time": 1793071052000
    },
    {
     "symbol": "ETHUSD1",
-    "priceChange": "37.64",
-    "priceChangePercent": "1.591",
-    "weightedAvgPrice": "2397.26",
-    "lastPrice": "2403.69",
-    "lastQty": "0.004",
-    "openPrice": "2366.05",
-    "highPrice": "2444.91",
-    "lowPrice": "2327.22",
-    "volume": "1104.174",
-    "quoteVolume": "2646996.80",
-    "openTime": 1792340400000,
-    "closeTime": 1792426842350,
-    "firstId": 5803932,
-    "lastId": 5807081,
-    "count": 3150
+    "markPrice": "2309.34000000",
+    "indexPrice": "2309.70608882",
+    "estimatedSettlePrice": "2315.97170913",
+    "lastFundingRate": "0.00006955",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071052000
    },
    {
-    "symbol": "SOLUSD1",
-    "priceChange": "2.7300",
-    "priceChangePercent": "2.677",
-    "weightedAvgPrice": "102.9404",
-    "lastPrice": "104.7100",
-    "lastQty": "0.19",
-    "openPrice": "101.9800",
-    "highPrice": "106.1300",
-    "lowPrice": "100.3700",
-    "volume": "42033.44",
-    "quoteVolume": "4326938.1500",
-    "openTime": 1792339860000,
-    "closeTime": 1792426311050,
-    "firstId": 3938402,
-    "lastId": 3939952,
-    "count": 1551
+    "symbol": "ETHUSDC",
+    "markPrice": "2306.33538876",
+    "indexPrice": "2306.81374652",
+    "estimatedSettlePrice": "2313.03179349",
+    "lastFundingRate": "0.00010000",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071052000
    },
    {
     "symbol": "ETHUSDT",
-    "priceChange": "37.44",
-    "priceChangePercent": "1.582",
-    "weightedAvgPrice": "2399.32",
-    "lastPrice": "2403.90",
-    "lastQty": "0.011",
-    "openPrice": "2366.46",
-    "highPrice": "2445.47",
-    "lowPrice": "2326.98",
-    "volume": "120764.613",
-    "quoteVolume": "289752762.30",
-    "openTime": 1792340400000,
-    "closeTime": 1792426844050,
-    "firstId": 86893193,
-    "lastId": 86921466,
-    "count": 28272
-   },
-   {
-    "symbol": "SOLUSDT",
-    "priceChange": "2.6900",
-    "priceChangePercent": "2.639",
-    "weightedAvgPrice": "103.9472",
-    "lastPrice": "104.6400",
-    "lastQty": "0.06",
-    "openPrice": "101.9500",
-    "highPrice": "106.1500",
-    "lowPrice": "100.3600",
-    "volume": "642373.98",
-    "quoteVolume": "66772956.9700",
-    "openTime": 1792340400000,
-    "closeTime": 1792426830500,
-    "firstId": 44542725,
-    "lastId": 44561154,
-    "count": 18430
+    "markPrice": "2308.85864341",
+    "indexPrice": "2309.96279070",
+    "estimatedSettlePrice": "2316.21976571",
+    "lastFundingRate": "0.00007925",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071052000
    },
    {
     "symbol": "BTCUSD1",
-    "priceChange": "1003.20",
-    "priceChangePercent": "1.238",
-    "weightedAvgPrice": "82300.17",
-    "lastPrice": "82033.50",
-    "lastQty": "0.005",
-    "openPrice": "81030.30",
-    "highPrice": "83071.80",
-    "lowPrice": "80627.90",
-    "volume": "51.218",
-    "quoteVolume": "4215250.18",
-    "openTime": 1792340220000,
-    "closeTime": 1792426640000,
-    "firstId": 4946799,
-    "lastId": 4949602,
-    "count": 2804
+    "markPrice": "79630.80000000",
+    "indexPrice": "79664.56479607",
+    "estimatedSettlePrice": "79886.84035549",
+    "lastFundingRate": "0.00010000",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071052000
+   },
+   {
+    "symbol": "BTCUSDC",
+    "markPrice": "79546.97411127",
+    "indexPrice": "79562.57318693",
+    "estimatedSettlePrice": "79786.84841778",
+    "lastFundingRate": "0.00010000",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071052000
+   },
+   {
+    "symbol": "BTCUSDT",
+    "markPrice": "79649.48927536",
+    "indexPrice": "79673.11065217",
+    "estimatedSettlePrice": "79895.40688979",
+    "lastFundingRate": "0.00010000",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071052000
+   },
+   {
+    "symbol": "SOLUSD",
+    "markPrice": "99.92549315",
+    "indexPrice": "99.92549315",
+    "estimatedSettlePrice": "100.24019609",
+    "lastFundingRate": "0",
+    "interestRate": "0",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071052000
+   },
+   {
+    "symbol": "SOLUSDC",
+    "markPrice": "99.87467099",
+    "indexPrice": "99.86879364",
+    "estimatedSettlePrice": "100.18293835",
+    "lastFundingRate": "0.00010000",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071052000
+   },
+   {
+    "symbol": "SOLUSDT",
+    "markPrice": "99.97000000",
+    "indexPrice": "100.01267764",
+    "estimatedSettlePrice": "100.32009612",
+    "lastFundingRate": "0.00010000",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071052000
+   },
+   {
+    "symbol": "SOLUSD1",
+    "markPrice": "99.95000000",
+    "indexPrice": "99.98377647",
+    "estimatedSettlePrice": "100.33190353",
+    "lastFundingRate": "0.00010000",
+    "interestRate": "0.00010000",
+    "nextFundingTime": 1793088000000,
+    "time": 1793071052000
+   },
+   {
+    "symbol": "ETHUSD",
+    "markPrice": "2307.82668470",
+    "indexPrice": "2307.82668470",
+    "estimatedSettlePrice": "2313.95826020",
+    "lastFundingRate": "0",
+    "interestRate": "0",
+    "nextFundingTime": 1793073600000,
+    "time": 1793071052000
    }
   ],
-  "42357450db976889": {
+  "754947c0cdf1b7fa": {
    "timezone": "UTC",
-   "serverTime": 1792426189065,
+   "serverTime": 1793064600383,
    "futuresType": "U_MARGINED",
    "rateLimits": [
     {
@@ -2429,8 +2866,8 @@
        "filterType": "MIN_NOTIONAL"
       },
       {
-       "multiplierDown": "0.9800",
-       "multiplierUp": "1.0200",
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
        "ltMultiplierDown": "0.9800",
        "multiplierDecimal": "4",
        "filterType": "PERCENT_PRICE",
@@ -2516,8 +2953,8 @@
        "filterType": "MIN_NOTIONAL"
       },
       {
-       "multiplierDown": "0.9800",
-       "multiplierUp": "1.0200",
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
        "ltMultiplierDown": "0.9800",
        "multiplierDecimal": "4",
        "filterType": "PERCENT_PRICE",
@@ -2603,8 +3040,8 @@
        "filterType": "MIN_NOTIONAL"
       },
       {
-       "multiplierDown": "0.9800",
-       "multiplierUp": "1.0200",
+       "multiplierDown": "0.9700",
+       "multiplierUp": "1.0300",
        "ltMultiplierDown": "0.9800",
        "multiplierDecimal": "4",
        "filterType": "PERCENT_PRICE",
@@ -2690,8 +3127,8 @@
        "filterType": "MIN_NOTIONAL"
       },
       {
-       "multiplierDown": "0.9800",
-       "multiplierUp": "1.0200",
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
        "ltMultiplierDown": "0.9800",
        "multiplierDecimal": "4",
        "filterType": "PERCENT_PRICE",
@@ -2779,8 +3216,8 @@
        "filterType": "MIN_NOTIONAL"
       },
       {
-       "multiplierDown": "0.9800",
-       "multiplierUp": "1.0200",
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
        "ltMultiplierDown": "0.9800",
        "multiplierDecimal": "4",
        "filterType": "PERCENT_PRICE",
@@ -2833,100 +3270,269 @@
      "triggerProtect": "0.0200",
      "liquidationFee": "0.025000",
      "marketTakeBound": "0.02"
+    },
+    {
+     "symbol": "BTCUSDC",
+     "filters": [
+      {
+       "minPrice": "0.10",
+       "maxPrice": "500000",
+       "filterType": "PRICE_FILTER",
+       "tickSize": "0.10"
+      },
+      {
+       "stepSize": "0.001",
+       "filterType": "LOT_SIZE",
+       "maxQty": "800",
+       "minQty": "0.001"
+      },
+      {
+       "stepSize": "0.001",
+       "filterType": "MARKET_LOT_SIZE",
+       "maxQty": "50",
+       "minQty": "0.001"
+      },
+      {
+       "limit": 200,
+       "filterType": "MAX_NUM_ORDERS"
+      },
+      {
+       "limit": 10,
+       "filterType": "MAX_NUM_ALGO_ORDERS"
+      },
+      {
+       "notional": "5",
+       "filterType": "MIN_NOTIONAL"
+      },
+      {
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
+       "ltMultiplierDown": "0.9800",
+       "multiplierDecimal": "4",
+       "filterType": "PERCENT_PRICE",
+       "ltMultiplierUp": "1.0200"
+      }
+     ],
+     "orderTypes": [
+      "LIMIT",
+      "MARKET",
+      "STOP",
+      "STOP_MARKET",
+      "TAKE_PROFIT",
+      "TAKE_PROFIT_MARKET",
+      "TRAILING_STOP_MARKET"
+     ],
+     "timeInForce": [
+      "GTC",
+      "IOC",
+      "GTX",
+      "HIDDEN"
+     ],
+     "createTime": 1792756285163,
+     "pair": "BTCUSDC",
+     "contractType": "PERPETUAL",
+     "deliveryDate": 4133404800000,
+     "onboardDate": 1792764000000,
+     "status": "TRADING",
+     "maintMarginPercent": "16.6600",
+     "requiredMarginPercent": "33.3300",
+     "baseAsset": "BTC",
+     "quoteAsset": "USDC",
+     "marginAsset": "USDC",
+     "pricePrecision": 2,
+     "quantityPrecision": 3,
+     "baseAssetPrecision": 8,
+     "quotePrecision": 8,
+     "underlyingType": "COIN",
+     "underlyingSubType": [],
+     "symbolType": 0,
+     "tradingMode": 0,
+     "name": "",
+     "channel": "{}",
+     "sequenceNo": 0,
+     "twapMinNotional": "1000",
+     "imn": null,
+     "tags": [],
+     "settlePlan": 0,
+     "triggerProtect": "0.0200",
+     "liquidationFee": "0.025000",
+     "marketTakeBound": "0.02"
+    },
+    {
+     "symbol": "ETHUSDC",
+     "filters": [
+      {
+       "minPrice": "0.01",
+       "maxPrice": "100000",
+       "filterType": "PRICE_FILTER",
+       "tickSize": "0.01"
+      },
+      {
+       "stepSize": "0.001",
+       "filterType": "LOT_SIZE",
+       "maxQty": "8000",
+       "minQty": "0.001"
+      },
+      {
+       "stepSize": "0.001",
+       "filterType": "MARKET_LOT_SIZE",
+       "maxQty": "700",
+       "minQty": "0.001"
+      },
+      {
+       "limit": 200,
+       "filterType": "MAX_NUM_ORDERS"
+      },
+      {
+       "limit": 10,
+       "filterType": "MAX_NUM_ALGO_ORDERS"
+      },
+      {
+       "notional": "5",
+       "filterType": "MIN_NOTIONAL"
+      },
+      {
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
+       "ltMultiplierDown": "0.9800",
+       "multiplierDecimal": "4",
+       "filterType": "PERCENT_PRICE",
+       "ltMultiplierUp": "1.0200"
+      }
+     ],
+     "orderTypes": [
+      "LIMIT",
+      "MARKET",
+      "STOP",
+      "STOP_MARKET",
+      "TAKE_PROFIT",
+      "TAKE_PROFIT_MARKET",
+      "TRAILING_STOP_MARKET"
+     ],
+     "timeInForce": [
+      "GTC",
+      "IOC",
+      "GTX",
+      "HIDDEN"
+     ],
+     "createTime": 1792756363562,
+     "pair": "ETHUSDC",
+     "contractType": "PERPETUAL",
+     "deliveryDate": 4133404800000,
+     "onboardDate": 1792764000000,
+     "status": "TRADING",
+     "maintMarginPercent": "16.6600",
+     "requiredMarginPercent": "33.3300",
+     "baseAsset": "ETH",
+     "quoteAsset": "USDC",
+     "marginAsset": "USDC",
+     "pricePrecision": 2,
+     "quantityPrecision": 3,
+     "baseAssetPrecision": 8,
+     "quotePrecision": 8,
+     "underlyingType": "COIN",
+     "underlyingSubType": [],
+     "symbolType": 0,
+     "tradingMode": 0,
+     "name": "",
+     "channel": "{}",
+     "sequenceNo": 0,
+     "twapMinNotional": "1000",
+     "imn": null,
+     "tags": [],
+     "settlePlan": 0,
+     "triggerProtect": "0.0200",
+     "liquidationFee": "0.025000",
+     "marketTakeBound": "0.02"
+    },
+    {
+     "symbol": "SOLUSDC",
+     "filters": [
+      {
+       "minPrice": "0.1000",
+       "maxPrice": "100000",
+       "filterType": "PRICE_FILTER",
+       "tickSize": "0.0100"
+      },
+      {
+       "stepSize": "0.010",
+       "filterType": "LOT_SIZE",
+       "maxQty": "800000",
+       "minQty": "0.010"
+      },
+      {
+       "stepSize": "0.010",
+       "filterType": "MARKET_LOT_SIZE",
+       "maxQty": "10000",
+       "minQty": "0.010"
+      },
+      {
+       "limit": 200,
+       "filterType": "MAX_NUM_ORDERS"
+      },
+      {
+       "limit": 10,
+       "filterType": "MAX_NUM_ALGO_ORDERS"
+      },
+      {
+       "notional": "5",
+       "filterType": "MIN_NOTIONAL"
+      },
+      {
+       "multiplierDown": "0.9500",
+       "multiplierUp": "1.0500",
+       "ltMultiplierDown": "0.9700",
+       "multiplierDecimal": "4",
+       "filterType": "PERCENT_PRICE",
+       "ltMultiplierUp": "1.0300"
+      }
+     ],
+     "orderTypes": [
+      "LIMIT",
+      "MARKET",
+      "STOP",
+      "STOP_MARKET",
+      "TAKE_PROFIT",
+      "TAKE_PROFIT_MARKET",
+      "TRAILING_STOP_MARKET"
+     ],
+     "timeInForce": [
+      "GTC",
+      "IOC",
+      "GTX",
+      "HIDDEN"
+     ],
+     "createTime": 1792756719887,
+     "pair": "SOLUSDC",
+     "contractType": "PERPETUAL",
+     "deliveryDate": 4133404800000,
+     "onboardDate": 1792764000000,
+     "status": "TRADING",
+     "maintMarginPercent": "16.6600",
+     "requiredMarginPercent": "33.3300",
+     "baseAsset": "SOL",
+     "quoteAsset": "USDC",
+     "marginAsset": "USDC",
+     "pricePrecision": 4,
+     "quantityPrecision": 3,
+     "baseAssetPrecision": 8,
+     "quotePrecision": 8,
+     "underlyingType": "COIN",
+     "underlyingSubType": [],
+     "symbolType": 0,
+     "tradingMode": 0,
+     "name": "",
+     "channel": "{}",
+     "sequenceNo": 0,
+     "twapMinNotional": "1000",
+     "imn": null,
+     "tags": [],
+     "settlePlan": 0,
+     "triggerProtect": "0.0300",
+     "liquidationFee": "0.025000",
+     "marketTakeBound": "0.03"
     }
    ]
-  },
-  "d5279f4c551d139f": [
-   {
-    "symbol": "BTCUSD",
-    "markPrice": "81978.96504534",
-    "indexPrice": "81978.96504534",
-    "estimatedSettlePrice": "82006.72983881",
-    "lastFundingRate": "0",
-    "interestRate": "0",
-    "nextFundingTime": 1792432800000,
-    "time": 1792426846000
-   },
-   {
-    "symbol": "ETHUSD1",
-    "markPrice": "2403.83628827",
-    "indexPrice": "2404.68541369",
-    "estimatedSettlePrice": "2403.26095630",
-    "lastFundingRate": "0.00000286",
-    "interestRate": "0.00010000",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426846000
-   },
-   {
-    "symbol": "ETHUSDT",
-    "markPrice": "2403.90000000",
-    "indexPrice": "2404.05325581",
-    "estimatedSettlePrice": "2402.66626279",
-    "lastFundingRate": "0.00006480",
-    "interestRate": "0.00010000",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426846000
-   },
-   {
-    "symbol": "BTCUSD1",
-    "markPrice": "82048.94656722",
-    "indexPrice": "82071.59912706",
-    "estimatedSettlePrice": "82125.21957097",
-    "lastFundingRate": "0.00009699",
-    "interestRate": "0.00010000",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426846000
-   },
-   {
-    "symbol": "BTCUSDT",
-    "markPrice": "82045.50000000",
-    "indexPrice": "82050.28978261",
-    "estimatedSettlePrice": "82104.69789287",
-    "lastFundingRate": "0.00008684",
-    "interestRate": "0.00010000",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426846000
-   },
-   {
-    "symbol": "SOLUSD",
-    "markPrice": "104.65648406",
-    "indexPrice": "104.65648406",
-    "estimatedSettlePrice": "104.45201604",
-    "lastFundingRate": "0",
-    "interestRate": "0",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426846000
-   },
-   {
-    "symbol": "SOLUSDT",
-    "markPrice": "104.64485247",
-    "indexPrice": "104.70295612",
-    "estimatedSettlePrice": "104.50609418",
-    "lastFundingRate": "0.00005791",
-    "interestRate": "0.00010000",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426846000
-   },
-   {
-    "symbol": "SOLUSD1",
-    "markPrice": "104.71000000",
-    "indexPrice": "104.70263794",
-    "estimatedSettlePrice": "104.53265305",
-    "lastFundingRate": "0.00010000",
-    "interestRate": "0.00010000",
-    "nextFundingTime": 1792454400000,
-    "time": 1792426846000
-   },
-   {
-    "symbol": "ETHUSD",
-    "markPrice": "2402.73402022",
-    "indexPrice": "2402.73402022",
-    "estimatedSettlePrice": "2401.05009985",
-    "lastFundingRate": "0",
-    "interestRate": "0",
-    "nextFundingTime": 1792432800000,
-    "time": 1792426846000
-   }
-  ]
+  }
  }
 }

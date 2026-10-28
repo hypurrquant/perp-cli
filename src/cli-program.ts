@@ -196,7 +196,7 @@ export function buildProgram(opts: { defaultExchange: string; version: string })
         remediation: `${def.id} is market-data only — use the funding/market public commands (e.g. perp arb scan)`,
       });
     }
-    // A market-data-only venue (TxFlow: unofficial read-only API) never gets a credentialed adapter:
+    // A market-data-only venue (e.g. TxFlow) never gets a credentialed adapter:
     // every account / trading / funds / bot path refuses here, before any credential or request.
     if (!publicOnly && !def.roles.includes("account")) throw roleUnsupported(def, "account");
     const network = currentNetwork();
@@ -407,9 +407,17 @@ export function assertCommandVenueRole(actionCommand: Command, exchangeOpt: stri
   } else {
     return;
   }
-  for (const v of venueArgs) {
+  for (const [i, v] of venueArgs.entries()) {
     const id = tryResolveVenueId(v);
-    if (id !== null && !getVenue(id).roles.includes("trading")) throw roleUnsupported(getVenue(id), feature);
+    if (id === null || getVenue(id).roles.includes("trading")) continue;
+    const r = roleUnsupported(getVenue(id), feature);
+    if (leaf !== "multi" || path[0] === "strategy") throw r;
+    // trade multi: the whole multi is refused here, before any leg's adapter or order — naming the leg.
+    const leg = actionCommand.args[i];
+    throw new PerpError("CAPABILITY_UNSUPPORTED", `trade multi refused before any leg was sent: leg "${leg}" — ${r.message}`, {
+      ...(r.structured.details ?? {}), leg,
+      ...(r.structured.remediation !== undefined ? { remediation: r.structured.remediation } : {}),
+    });
   }
 }
 

@@ -89,11 +89,6 @@ describe("Extended venue definition", () => {
     expect(e.structured.remediation).toMatch(/^Extended is read-only \(market data\) in this version; trading is planned for a later release/);
     expect(() => requireCapabilities(getVenue("extended"))).toThrow(expect.objectContaining({ structured: expect.objectContaining({ code: "CAPABILITY_UNSUPPORTED" }) }));
   });
-
-  it("other venues keep the generic wording", () => {
-    expect(getVenue("txflow").readOnlyRemediation).toBeUndefined();
-    expect(roleUnsupported(getVenue("txflow"), "trading").structured.remediation).toMatch(/Trade on the TxFlow website/);
-  });
 });
 
 describe("market parsing (recorded /info/markets)", () => {

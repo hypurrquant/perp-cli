@@ -118,7 +118,7 @@ export const BUILDER_FEE_UNSUPPORTED: { readonly [K in VenueId]?: string } = {
   lighter: "not yet implemented in perp-cli — the official lighter-go signer can sign ApproveIntegrator and the per-order integrator fields, but perp-cli sends them as 0 (https://apidocs.lighter.xyz/docs/partner-integration)",
   "lighter-rh": "not yet implemented in perp-cli — Lighter RH uses the same official lighter-go signer; partner-attribution fields are sent as 0 (https://apidocs.rh.lighter.xyz/docs/partner-attribution.md)",
   risex: "not implemented yet in perp-cli (RISEx builder codes are planned; note the venue's \"bps\" field is parts-per-million)",
-  txflow: "TxFlow is integrated through an unofficial read-only API (market data only)",
+  txflow: "not implemented in perp-cli — TxFlow builder codes (approveBuilderFee + an order `builder` object, https://docs.txflow.com/api/exchange/approveBuilderFee) are not wired; orders carry no builder",
   variational: VARIATIONAL_READ_ONLY_REMEDIATION,
   grvt: "GRVT is read-only (market data) in this version; trading is planned for a later release",
   extended: "Extended is available for market data only in this version (trading is planned for a later release)",

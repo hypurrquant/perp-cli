@@ -46,7 +46,7 @@ import {
   ARCUS_ROUTES, ASTER_ROUTES, HL_ROUTES, LIGHTER_RH_ROUTES, LIGHTER_ROUTES, PACIFICA_ROUTES, fakeFetch, fakeTransport, fixtureFrames, flush,
 } from "../ws/helpers.js";
 import { baseOf } from "./checks.js";
-import { hasFixture, IS_LIVE, loadFixture, MODE, runCli, Session, VENUE_FILTER, type CliRun } from "./harness.js";
+import { hasFixture, IS_LIVE, loadFixture, missesFailure, MODE, runCli, Session, VENUE_FILTER, type CliRun } from "./harness.js";
 import type { Json } from "./fixture-tools.js";
 import { expectCheck, staleKnownFailures } from "./known-failures.js";
 
@@ -287,6 +287,7 @@ for (const c of CASES.filter(x => VENUE_FILTER === null || VENUE_FILTER.has(x.ve
     let nonTradable: string[] = [];
     let publicRows: Array<{ venueSymbol: string; symbol: string; canonical: string | null }> = [];
     let publicError: string | null = null;
+    let misses: readonly string[] = [];
 
     beforeAll(async () => {
       const session = new Session(name, [], { trim: false });
@@ -314,6 +315,7 @@ for (const c of CASES.filter(x => VENUE_FILTER === null || VENUE_FILTER.has(x.ve
         }
         session.finalize();
       } finally {
+        misses = session.misses;
         session.stop();
       }
       if (!IS_LIVE || MODE === "record") {
@@ -321,6 +323,8 @@ for (const c of CASES.filter(x => VENUE_FILTER === null || VENUE_FILTER.has(x.ve
         nonTradable = f === null ? [] : [...new Set(NON_TRADABLE[c.venue](f.http))];
       }
     }, IS_LIVE ? 600_000 : 60_000);
+
+    it("replay: every request is in the fixture", () => expectCheck(id("fixture-complete"), missesFailure(misses)));
 
     const cliRows = () => (list.envelope.data ?? []) as Array<{ symbol: string; venueSymbol?: unknown }>;
     /** CLI rows that name their venue symbol (Aster: one row per venue market, any quote) are compared by it. */

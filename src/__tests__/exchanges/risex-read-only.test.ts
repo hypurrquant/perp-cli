@@ -94,10 +94,6 @@ describe("release switch + venue definition", () => {
     expect(e.structured.remediation).toMatch(/app\.rise\.trade/);
     expect(() => requireCapabilities(getVenue("risex"))).toThrow(GATED);
   });
-
-  it("TxFlow keeps its own unofficial-API refusal", () => {
-    expect(roleUnsupported(getVenue("txflow"), "trading").message).toMatch(/unofficial read-only API/);
-  });
 });
 
 describe("adapter: reads work, every write refuses before any request", () => {

@@ -14,10 +14,10 @@ import { quarantineEntryFor, quarantineSymbol } from "../bot/quarantine.js";
 import { fillSizeString, sizeDecimalsOf } from "../exchanges/spot-result.js";
 import chalk from "chalk";
 import { hasPacificaSdk, isTwapCapable, isQueryOrderCapable } from "../exchanges/capabilities.js";
-import { getVenue, listVenuesWithRole, requireCapabilities, type VenueCapabilities, type VenueDefinition } from "../exchanges/venue.js";
+import { getVenue, listVenuesWithRole, requireCapabilities, roleUnsupported, tryResolveVenueId, type VenueCapabilities, type VenueDefinition } from "../exchanges/venue.js";
 import "../exchanges/venues/index.js";
 import { isTradingV2, newVenueClientOrderId, placeAndConfirm, reduceOnlyGateOf, stopOrderGateOf, unsupported, validateLegacyTif, validateOrderRequest, type PlacedOrder, type TradingV2 } from "../exchanges/trading-v2.js";
-import { placeTpSlLeg, tradingV2Of } from "../exchanges/legacy-trading-v2.js";
+import { placeTpSlLeg, tpSlPairOf, tradingV2Of } from "../exchanges/legacy-trading-v2.js";
 import type { AsterAdapter } from "../exchanges/aster.js";
 import type { PacificaAdapter } from "../exchanges/pacifica.js";
 import { PACIFICA_UUID_RE } from "../exchanges/venues/pacifica.js";
@@ -81,6 +81,8 @@ const V2_CLIENT_ID_RULES: Readonly<Partial<Record<VenueDefinition["id"], { re: R
   aster: { re: ASTER_CLIENT_ID_RE, desc: "1-36 chars of A-Z a-z 0-9 . : / _ -" },
   // uint64 decimal (range checked by the adapter).
   risex: { re: /^[1-9][0-9]{0,19}$/, desc: "a decimal integer from 1 to 2^64 - 1" },
+  // docs (order `c`): any string up to 64 bytes; the "0x" prefix is reserved.
+  txflow: { re: /^(?!0[xX])[A-Za-z0-9._:-]{1,64}$/, desc: "1-64 chars of A-Z a-z 0-9 . _ : - (not starting with 0x)" },
 };
 
 /**
@@ -684,7 +686,8 @@ export function registerTradeCommands(
    * verified fill.
    *  - attached (ondo) / batchGroup (arcus): the venue attaches the legs to the entry.
    *  - separateOrders (hl, lighter, aster): entry fill VERIFIED (placePerpVerified: venue-final
-   *    report cross-checked with the position delta), then reduce-only TP/SL triggers sized to it.
+   *    report cross-checked with the position delta), then reduce-only TP/SL triggers sized to it
+   *    (txflow: both legs in one venue action — a position TP/SL pair, tpSlPairOf).
    *  - positionLevel (pacifica): entry fill verified, then position TP/SL (refused when TP/SL
    *    or a position already exists — the position-level TP/SL would cover more than this fill).
    * Entry outcome unknown → ORDER_PENDING, no legs ("position may be unprotected"); entry ok and
@@ -771,6 +774,15 @@ export function registerTradeCommands(
         throw partial(`position TP/SL (${label})`, e);
       }
       return { entry, filledSize: filled, method: "positionLevel", legs };
+    }
+    const pair = tpSlPairOf(adapter);
+    if (pair !== null) {
+      try {
+        for (const l of await pair({ symbol: sym, closeSide, size: filled, tp: prices.tp, tpLimit: null, sl: prices.sl })) legs.push({ ...l, venueRaw: l.result.venueRaw });
+      } catch (e) {
+        throw partial(`TP/SL pair (tp ${prices.tp ?? "-"} / sl ${prices.sl ?? "-"})`, e);
+      }
+      return { entry, filledSize: filled, method: "positionTpsl", legs };
     }
     for (const [kind, trigger] of [["tp", prices.tp], ["sl", prices.sl]] as const) {
       if (trigger === null) continue;
@@ -1305,7 +1317,7 @@ export function registerTradeCommands(
     .option("--limit-price <price>", "Limit price (makes it stop-limit)")
     .option("--no-reduce-only", "Allow the triggered order to open or flip a position (default: reduce-only)")
     .option("--trigger-type <type>", "Trigger price source: mark | last | mid (pacifica; aster mark | last; other venues: unsupported)")
-    .option("--slippage-bps <n>", "Bound for protection-priced market triggers (lighter, arcus) in bps, around the trigger price (default: settings)")
+    .option("--slippage-bps <n>", "Bound for protection-priced market triggers (lighter, arcus, txflow) in bps, around the trigger price (default: settings)")
     .option("--force", "With --no-reduce-only: bypass local risk-limit checks (maxPosition / total exposure)")
     .action(async (symbol: string, side: string, rawSize: string, stopPrice: string, opts: { limitPrice?: string; reduceOnly: boolean; triggerType?: string; slippageBps?: string; force?: boolean }) => {
       const s = side.toLowerCase();
@@ -1322,7 +1334,7 @@ export function registerTradeCommands(
       const slippageFlag = parseSlippageBpsFlag(opts.slippageBps);
       if (slippageFlag !== null) {
         if (isLimit) throw new PerpError("INVALID_PARAMS", "--slippage-bps applies to market triggers only; a stop-limit executes at --limit-price");
-        if (venueDef.family !== "lighter" && venueDef.id !== "arcus") {
+        if (venueDef.family !== "lighter" && venueDef.id !== "arcus" && venueDef.id !== "txflow") {
           throw unsupported(venueDef.displayName, "stopSlippage", "market triggers on this venue are venue-native market orders (no slippage bound)", "Omit --slippage-bps, or use --limit-price");
         }
       }
@@ -1427,11 +1439,17 @@ export function registerTradeCommands(
           remediation: `The position is protected on one side only. Inspect with: ${hint}, then place the missing leg or cancel the placed one.`,
         });
 
+      const pair = tpSlPairOf(adapter);
+      let method: string = caps.tpsl;
       if (caps.tpsl === "positionLevel") {
         const pac = positionTpSlAdapter(adapter);
         await refuseExistingPositionTpSl(pac, def, sym);
         const raw = await pac.setPositionTpSl(sym, ps, { tp: prices.tp, tpLimit, sl: prices.sl });
         legs.push({ kind: "tpsl", trigger: `tp ${prices.tp ?? "-"} / sl ${prices.sl ?? "-"}`, result: null, venueRaw: raw });
+      } else if (pair !== null) {
+        // Both legs in ONE venue action (txflow positionTpsl: an OCO pair) — all or nothing.
+        for (const l of await pair({ symbol: sym, closeSide, size, tp: prices.tp, tpLimit, sl: prices.sl })) legs.push({ ...l, venueRaw: l.result.venueRaw });
+        method = "positionTpsl";
       } else {
         for (const [kind, trigger] of [["tp", prices.tp], ["sl", prices.sl]] as const) {
           if (trigger === null) continue;
@@ -1462,11 +1480,11 @@ export function registerTradeCommands(
 
       if (isJson()) {
         return printJson(jsonOk({
-          symbol: sym, positionSide: ps, size, method: caps.tpsl,
+          symbol: sym, positionSide: ps, size, method,
           legs: legs.map(l => ({ kind: l.kind, trigger: l.trigger, ...(l.result !== null ? orderResultJson(l.result) : { venueRaw: l.venueRaw }) })),
         }));
       }
-      console.log(chalk.green(`\n  TP/SL set for ${ps} ${size} ${sym} on ${def.displayName} (${caps.tpsl}, reduce-only):`));
+      console.log(chalk.green(`\n  TP/SL set for ${ps} ${size} ${sym} on ${def.displayName} (${method}, reduce-only):`));
       for (const l of legs) {
         console.log(chalk.green(`  ${legLabel(l)}`));
         if (l.result !== null) for (const line of formatOrderResult(l.result)) console.log(line);
@@ -2647,6 +2665,18 @@ function parseMultiLeg(spec: string): MultiLeg {
   const exRef = exchange.toLowerCase() === "lit" ? "lighter" : exchange;
   const trading = listVenuesWithRole("trading");
   const def = trading.find(v => v.id === exRef.toLowerCase() || v.aliases.includes(exRef.toLowerCase()));
+  // A registered venue without the trading role (switched-off TxFlow / RISEx, read-only GRVT,
+  // Extended, Variational) refuses the WHOLE multi here, while legs are parsed — before any adapter
+  // is created or any leg is sent — naming the leg.
+  const registered = tryResolveVenueId(exRef);
+  if (!def && registered !== null) {
+    const venueDef = getVenue(registered);
+    const r = roleUnsupported(venueDef, "trading");
+    throw new PerpError("CAPABILITY_UNSUPPORTED", `trade multi refused before any leg was sent: leg "${spec}" — ${r.message}`, {
+      ...(r.structured.details ?? {}), leg: spec,
+      ...(r.structured.remediation !== undefined ? { remediation: r.structured.remediation } : {}),
+    });
+  }
   if (!def) {
     throw new Error(`Unknown exchange "${exchange}" in leg spec — valid: ${trading.map(v => v.id).join(", ")}`);
   }
