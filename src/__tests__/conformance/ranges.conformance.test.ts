@@ -27,7 +27,7 @@ import "../../exchanges/venues/index.js";
 import { listVenues } from "../../exchanges/venue.js";
 import type { VenueId } from "../../exchanges/venue-types.js";
 import { VENUE_CONFORMANCE } from "./capabilities.js";
-import { hasFixture, IS_LIVE, MODE, runCli, Session, VENUE_FILTER, type CliRun } from "./harness.js";
+import { hasFixture, IS_LIVE, missesFailure, MODE, runCli, Session, VENUE_FILTER, type CliRun } from "./harness.js";
 import { expectCheck, staleKnownFailures } from "./known-failures.js";
 import { CAP_TABLE_AGREEMENT, intervalMs, KLINE_INTERVALS, REFUSED_CAPS, SERVER_CAPS, UNSUPPORTED_INTERVAL, UNMEASURED_CAPS, type ServerCap } from "./server-caps.js";
 
@@ -111,6 +111,7 @@ for (const venue of VENUES) {
     const runs = new Map<string, CliRun>();
     const calls = new Map<string, number>();
     const symbol = VENUE_CONFORMANCE[venue as VenueId].symbol;
+    let misses: readonly string[] = [];
 
     beforeAll(async () => {
       const session = new Session(name, VENUE_CONFORMANCE[venue as VenueId].keep);
@@ -146,11 +147,13 @@ for (const venue of VENUES) {
         const startup = new Set(session.requestKeys.get("warm") ?? []);
         calls.set("kline:unsupported", (session.requestKeys.get("kline:unsupported") ?? []).filter(k => !startup.has(k)).length);
         session.finalize();
-        if (session.misses.length > 0) console.warn(`[conformance] ${name}: requests missing from the fixture:\n  ${session.misses.join("\n  ")}`);
       } finally {
+        misses = session.misses;
         session.stop();
       }
     }, IS_LIVE ? 900_000 : 120_000);
+
+    it("replay: every request is in the fixture", () => expectCheck(`ranges:${venue}:fixture-complete`, missesFailure(misses)));
 
     for (const iv of intervals) {
       describe(`kline ${iv}`, () => {
@@ -194,5 +197,5 @@ for (const venue of VENUES) {
 
 afterAll(() => {
   if (VENUE_FILTER !== null) return;
-  expect(staleKnownFailures(ALL.flatMap(v => [`${v}:kline-`, `${v}:cap:`])), "stale KNOWN_FAILURES entries").toEqual([]);
+  expect(staleKnownFailures([...ALL.flatMap(v => [`${v}:kline-`, `${v}:cap:`]), "ranges:"]), "stale KNOWN_FAILURES entries").toEqual([]);
 });

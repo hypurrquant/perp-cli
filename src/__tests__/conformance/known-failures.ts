@@ -9,7 +9,9 @@
  * that is reported as a warning, not a failure. New failures fail the live run.
  *
  * Id format: `<venue>:<command>:<check>` (venues.conformance.test.ts), `cross:<cell>:<check>` and
- * `parity:<tool>:<check>` (cross.conformance.test.ts), `ws:<venue>:<check>` (ws.conformance.test.ts).
+ * `parity:<tool>:<check>` (cross.conformance.test.ts), `ws:<venue>:<check>` (ws.conformance.test.ts),
+ * `ranges:<venue>:<check>` (ranges.conformance.test.ts), `positions:<check>` (positions.conformance.test.ts).
+ * Each recorded session also has a `…:fixture-complete` check (replay: no request missing from its fixture).
  */
 import { expect } from "vitest";
 import { IS_LIVE } from "./harness.js";

@@ -29,7 +29,7 @@ import {
   argvOf, expectOf, OPT_OUT, READ_COMMANDS, SYMBOL_COMMANDS, UNKNOWN_SYMBOL, VENUE_CONFORMANCE, type ReadCommand,
 } from "./capabilities.js";
 import { baseOf, cellChecks, unknownSymbolCheck } from "./checks.js";
-import { hasFixture, IS_LIVE, MODE, runCli, Session, VENUE_FILTER, type CliRun } from "./harness.js";
+import { hasFixture, IS_LIVE, missesFailure, MODE, runCli, Session, VENUE_FILTER, type CliRun } from "./harness.js";
 import { expectCheck, staleKnownFailures } from "./known-failures.js";
 
 const ALL = listVenues();
@@ -76,6 +76,7 @@ for (const def of VENUES.filter(runnable)) {
   describe(`venue ${def.id} (${MODE})`, () => {
     const runs = new Map<string, CliRun>();
     let now = 0;
+    let misses: readonly string[] = [];
 
     beforeAll(async () => {
       const session = new Session(def.id, conf.keep);
@@ -92,12 +93,14 @@ for (const def of VENUES.filter(runnable)) {
         }
         now = Date.now();
         session.finalize();
-        if (session.misses.length > 0) console.warn(`[conformance] ${def.id}: requests missing from the fixture:\n  ${session.misses.join("\n  ")}`);
       } finally {
+        misses = session.misses;
         session.stop();
       }
       RESULTS.set(def.id, { runs, now });
     }, CELL_TIMEOUT);
+
+    it("replay: every request is in the fixture", () => expectCheck(`${def.id}:replay:fixture-complete`, missesFailure(misses)));
 
     for (const cmd of READ_COMMANDS) {
       const exp = expectOf(def.id, cmd);

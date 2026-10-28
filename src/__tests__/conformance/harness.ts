@@ -32,6 +32,15 @@ export const MODE: Mode = process.env.PERP_RECORD === "1" ? "record"
   : "replay";
 export const IS_LIVE = MODE === "live" || MODE === "record";
 
+/**
+ * Replay: a request the fixture does not hold fails that request, and a venue that fails the same
+ * way on both sides of a comparison passes it unseen — so every session asserts it missed nothing.
+ */
+export function missesFailure(misses: readonly string[]): string | null {
+  return misses.length === 0 ? null
+    : `${misses.length} request(s) not in the fixture — re-record it: ${misses.slice(0, 5).join("; ")}${misses.length > 5 ? "; …" : ""}`;
+}
+
 export const FIXTURE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "conformance");
 
 /** Optional venue filter for record / live runs (comma-separated ids). */
