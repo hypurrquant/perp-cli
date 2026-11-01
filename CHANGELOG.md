@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — the shared cache stopped working once its directory was removed
+
+- **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).
+
 ### Fixed — Lighter / Lighter RH WebSocket refused in restricted regions
 
 - **Lighter WebSockets now connect read-only (`?readonly=true`).** The plain URL answered HTTP 400 to the nightly conformance's US runners on every run since 2026-10-27, while REST worked. There, `market list` / MCP `get_markets` / funding showed Lighter and Lighter RH with `fundingRate` and `fundingRateKind` null (stderr: "settled funding rate unavailable … Unexpected server response: 400"), and perp-ws Lighter streams reconnect-looped to `closed` with no event. docs.lighter.xyz/api/websocket gives the read-only URL for "a restricted region"; perp-cli only reads over WS (orders go through REST `/sendTx`), and the read-only socket serves the same channels and frames (side-by-side probe 2026-11-01). Affects the CLI funding reader, the `portfolio --serve` Lighter feed and the perp-ws `lighter` / `lighterRh` codecs (`codec.url()` now returns the read-only URL). Fixtures: the WS URL keys gain the query (frames unchanged).

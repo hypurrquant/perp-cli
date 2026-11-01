@@ -15,7 +15,7 @@ vi.mock("fs", async (importOriginal) => {
   };
 });
 
-import { existsSync, readdirSync } from "fs";
+import { existsSync, readdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { getCached, setCached, invalidateCache } from "../cache.js";
@@ -47,5 +47,19 @@ describe("setCached tmp files", () => {
     expect(existsSync(tmp)).toBe(false);
     expect(readdirSync(join(tmpdir(), "perp-cli-cache")).filter(f => f.startsWith(key))).toEqual([]);
     expect(getCached(key)).toBeNull();
+  });
+});
+
+describe("cache directory", () => {
+  it("a cache directory removed under a running process is recreated by the next write", () => {
+    // A tmp cleaner, `rm -rf /tmp/perp-cli-cache` or the conformance harness (Session.start)
+    // removes it while an MCP server / dashboard / bot keeps running: every later write used to
+    // fail silently, so that process never cached again (each read went to the venue).
+    const key = `cache-dir-test-${process.pid}`;
+    setCached(`${key}-first`, { a: "1" }, 60_000);
+    rmSync(join(tmpdir(), "perp-cli-cache"), { recursive: true, force: true });
+    setCached(key, { a: "2" }, 60_000);
+    expect(getCached<{ a: string }>(key)).toEqual({ a: "2" });
+    invalidateCache(key);
   });
 });
