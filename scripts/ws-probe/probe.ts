@@ -28,8 +28,8 @@ const REPO = resolve(import.meta.dirname, "../..");
 const URLS = {
   hyperliquid: "wss://api.hyperliquid.xyz/ws",
   pacifica: "wss://ws.pacifica.fi/ws",
-  lighter: "wss://mainnet.zklighter.elliot.ai/stream",
-  "lighter-rh": "wss://api.rh.lighter.xyz/stream",
+  lighter: "wss://mainnet.zklighter.elliot.ai/stream?readonly=true",
+  "lighter-rh": "wss://api.rh.lighter.xyz/stream?readonly=true",
   aster: "wss://fstream.asterdex.com/ws",
   arcus: "wss://api.arcus.xyz/v1/ws",
 } as const;

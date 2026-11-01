@@ -983,7 +983,7 @@
  "ws": [
   {
    "cell": "warm",
-   "url": "wss://api.rh.lighter.xyz/stream",
+   "url": "wss://api.rh.lighter.xyz/stream?readonly=true",
    "sent": [
     "{\"type\":\"subscribe\",\"channel\":\"market_stats/all\"}"
    ],
