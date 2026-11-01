@@ -154,7 +154,7 @@ describe("lighter / lighter-rh codec", () => {
     const btc = r.markets.find(m => m.symbol === "BTC")!;
     expect(btc).toMatchObject({ venue: "lighter-rh", quote: "USDG", canonical: "BTC" });
     expect(btc.funding).toMatchObject({ rate: "0.000001", predictedRate: "-0.000004" });
-    expect(r.ws.url).toBe("wss://api.rh.lighter.xyz/stream");
+    expect(r.ws.url).toBe("wss://api.rh.lighter.xyz/stream?readonly=true");
   });
 
   it("lighter-rh testnet → CAPABILITY_UNSUPPORTED (WS answers 403)", async () => {

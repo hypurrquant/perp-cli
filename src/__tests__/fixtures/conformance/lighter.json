@@ -839,7 +839,7 @@
  "ws": [
   {
    "cell": "list",
-   "url": "wss://mainnet.zklighter.elliot.ai/stream",
+   "url": "wss://mainnet.zklighter.elliot.ai/stream?readonly=true",
    "sent": [
     "{\"type\":\"subscribe\",\"channel\":\"market_stats/all\"}"
    ],

@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — Lighter / Lighter RH WebSocket refused in restricted regions
+
+- **Lighter WebSockets now connect read-only (`?readonly=true`).** The plain URL answered HTTP 400 to the nightly conformance's US runners on every run since 2026-10-27, while REST worked. There, `market list` / MCP `get_markets` / funding showed Lighter and Lighter RH with `fundingRate` and `fundingRateKind` null (stderr: "settled funding rate unavailable … Unexpected server response: 400"), and perp-ws Lighter streams reconnect-looped to `closed` with no event. docs.lighter.xyz/api/websocket gives the read-only URL for "a restricted region"; perp-cli only reads over WS (orders go through REST `/sendTx`), and the read-only socket serves the same channels and frames (side-by-side probe 2026-11-01). Affects the CLI funding reader, the `portfolio --serve` Lighter feed and the perp-ws `lighter` / `lighterRh` codecs (`codec.url()` now returns the read-only URL). Fixtures: the WS URL keys gain the query (frames unchanged).
+
 ## [0.17.0] — 2026-10-28
 
 > **Minor bump:** RISEx and TxFlow trading are switched on (new features), and "JSON contract changes" below changes documented `--json` / MCP fields (TxFlow rows drop `venueApi`; TxFlow `roles` / `apiStatus` values change) — `docs/TESTING.md` §5 invariant 12. Both packages move together (`RELEASING.md`, lockstep). Neither venue has run a mainnet order yet (testnet only; `docs/verification.md`).

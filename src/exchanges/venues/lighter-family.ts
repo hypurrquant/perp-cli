@@ -14,6 +14,13 @@ export type LighterVenueId = "lighter" | "lighter-rh";
  * Lighter (main). REST hosts are the values LighterAdapter used before
  * venue-parameterization. Mainnet WS is the one ws-feeds.ts connects to.
  * Testnet WS per apidocs.lighter.xyz websocket-reference (opened in the 2026-10-13 ws probe).
+ * Every Lighter-family WS URL carries `?readonly=true`: perp-cli only reads over WS (orders and
+ * account actions go through REST /sendTx), and docs.lighter.xyz/api/websocket gives the read-only
+ * URL for "a restricted region". The plain URL answered HTTP 400 to the nightly conformance's US
+ * runners on every run 2026-10-27..31 (REST worked): market list fundingRate null, perp-ws
+ * reconnect loop. Same channels and frames as the plain URL (side-by-side probe 2026-11-01:
+ * market_stats/all, ticker, user_stats, account_all_positions / _trades, and account_all_orders
+ * auth-checked alike).
  * explorerUrl is the explorer API host; callers append `/api/...`
  * (lighter-spot.ts uses `${explorerUrl}/api/markets`). The testnet explorer host
  * is the one lighter-ts-sdk documented (`https://testnet.explorer.elliot.ai/api`).
@@ -21,7 +28,7 @@ export type LighterVenueId = "lighter" | "lighter-rh";
 export const LIGHTER_NETWORKS: { mainnet: VenueNetworkConfig; testnet: VenueNetworkConfig } = {
   mainnet: {
     restUrl: "https://mainnet.zklighter.elliot.ai",
-    wsUrl: "wss://mainnet.zklighter.elliot.ai/stream",
+    wsUrl: "wss://mainnet.zklighter.elliot.ai/stream?readonly=true",
     explorerUrl: "https://explorer.elliot.ai",
     signingChainId: 304,
     settlementChain: "ethereum",
@@ -32,7 +39,7 @@ export const LIGHTER_NETWORKS: { mainnet: VenueNetworkConfig; testnet: VenueNetw
   },
   testnet: {
     restUrl: "https://testnet.zklighter.elliot.ai",
-    wsUrl: "wss://testnet.zklighter.elliot.ai/stream",
+    wsUrl: "wss://testnet.zklighter.elliot.ai/stream?readonly=true",
     explorerUrl: "https://testnet.explorer.elliot.ai",
     signingChainId: 300,
     settlementChain: "ethereum",
@@ -51,6 +58,7 @@ export const LIGHTER_NETWORKS: { mainnet: VenueNetworkConfig; testnet: VenueNetw
  * 3 USDC l1_decimals 6 / decimals 6; no USDG listed).
  * explorerUrl is the explorer **API** host (`https://explorerapi.rh.lighter.xyz/api/`,
  * rate-limits.md); no UI explorer URL is documented.
+ * Mainnet WS: read-only URL, as LIGHTER_NETWORKS.
  * Testnet WS is not documented → null (a WS upgrade on
  * wss://api.rh-testnet.lighter.xyz/stream answered 101 on 2026-09-30, but HTTP 403 from
  * CloudFront in the 2026-10-13 ws probe).
@@ -63,7 +71,7 @@ export const LIGHTER_NETWORKS: { mainnet: VenueNetworkConfig; testnet: VenueNetw
 export const LIGHTER_RH_NETWORKS: { mainnet: VenueNetworkConfig; testnet: VenueNetworkConfig } = {
   mainnet: {
     restUrl: "https://api.rh.lighter.xyz",
-    wsUrl: "wss://api.rh.lighter.xyz/stream",
+    wsUrl: "wss://api.rh.lighter.xyz/stream?readonly=true",
     explorerUrl: "https://explorerapi.rh.lighter.xyz",
     signingChainId: 466324,
     settlementChain: "robinhood",

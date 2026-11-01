@@ -58,7 +58,9 @@ export const VENUE_STATIC: Record<"hyperliquid" | "pacifica" | "lighter" | "ligh
     },
   },
   lighter: {
-    wsUrl: { mainnet: "wss://mainnet.zklighter.elliot.ai/stream", testnet: "wss://testnet.zklighter.elliot.ai/stream" },
+    // Read-only URLs (?readonly=true): the plain URL answers HTTP 400 from regions Lighter
+    // restricts; same channels and frames (LIGHTER_NETWORKS, src/exchanges/venues/lighter-family.ts).
+    wsUrl: { mainnet: "wss://mainnet.zklighter.elliot.ai/stream?readonly=true", testnet: "wss://testnet.zklighter.elliot.ai/stream?readonly=true" },
     restUrl: { mainnet: "https://mainnet.zklighter.elliot.ai", testnet: "https://testnet.zklighter.elliot.ai" },
     // WS funding_rate / current_funding_rate are PERCENT per 1 h (Phase 0); the CLI REST basis
     // (perHours 8) applies to REST /api/v1/funding-rates only.
@@ -70,8 +72,8 @@ export const VENUE_STATIC: Record<"hyperliquid" | "pacifica" | "lighter" | "ligh
     limits: { subscriptionsPerSocket: 500, newConnectionsPerMin: 255, outboundPerMin: 200 },
   },
   "lighter-rh": {
-    // Testnet WS answers HTTP 403 (CloudFront, Phase 0) → unsupported.
-    wsUrl: { mainnet: "wss://api.rh.lighter.xyz/stream", testnet: null },
+    // Testnet WS answers HTTP 403 (CloudFront, Phase 0) → unsupported. Mainnet: read-only URL, as lighter.
+    wsUrl: { mainnet: "wss://api.rh.lighter.xyz/stream?readonly=true", testnet: null },
     restUrl: { mainnet: "https://api.rh.lighter.xyz", testnet: "https://api.rh-testnet.lighter.xyz" },
     rateIntervalHours: 1,
     settlementIntervalHours: 1,
