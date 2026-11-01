@@ -284,6 +284,20 @@ describe("public mapping", () => {
     expect(rates.find(r => r.symbol === "BTC")).toMatchObject({ rate: "0.000014990672003283", basis: { kind: "perHours", hours: 1 }, nextFundingTime: 1791910800000 });
     expect(rates.find(r => r.symbol === "ODD")).toBeUndefined();
   });
+
+  it("a mark of \"0\" is no mark (not listed); an index of \"0\" is null — never a \"0\" price", () => {
+    // Live 2026-10-28: the last three markets of the list (the newest ids) were listed with
+    // markPrice / indexPrice "0" (nightly risex:list:schema / prices:schema, rows 45–47).
+    const warn = vi.fn();
+    const ms = toRisexVenueMarkets([...MARKETS,
+      market({ market_id: "45", name: "FRESH/USDC", mark_price: "0", index_price: "0" }),
+      market({ market_id: "46", name: "NOIDX/USDC", index_price: "0" }),
+    ], warn);
+    const by = Object.fromEntries(ms.map(m => [m.symbol, m]));
+    expect(by.FRESH).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("FRESH/USDC): no mark price"));
+    expect(by.NOIDX).toMatchObject({ markPrice: "83425.59225976700009225", indexPrice: null });
+  });
 });
 
 // ── Adapter with mocked HTTP ──
@@ -391,6 +405,17 @@ describe("adapter: placeOrder", () => {
     expect(String((placed as unknown as Record<string, unknown>).client_order_id)).toMatch(/^[1-9]\d+$/);
     expect(r).toMatchObject({ status: "filled", filledSize: "0.0002", finality: "final" });
     expect(r.execution).toMatchObject({ method: "protectedIoc", protectionPrice: "84259.9", slippageBps: 100 });
+  });
+
+  it("market order: a mark of \"0\" is no reference price → PRICE_STALE, nothing sent", async () => {
+    // The venue can answer mark "0" (live 2026-10-28). The band check alone would pass at mark 0
+    // (|0 − 0| ≤ band × 0); slippagePrice refuses the non-positive mark first.
+    const zero = MARKETS.map(m => m.market_id === "1" ? { ...m, mark_price: "0" } : m);
+    routeFetch([url => url.pathname === "/v1/markets" ? ok({ markets: zero }) : undefined, ...base]);
+    const a = await adapter();
+    await expect(a.placeOrder(req({ side: "sell", type: "market", price: null, tif: null, slippage: { bps: 100, source: "flag" } })))
+      .rejects.toMatchObject({ structured: { code: "PRICE_STALE" } });
+    expect(fetchMock.mock.calls.map(c => new URL(String(c[0])).pathname)).not.toContain("/v1/orders/place");
   });
 
   it("the match band is checked on the tick-aligned price actually sent", async () => {

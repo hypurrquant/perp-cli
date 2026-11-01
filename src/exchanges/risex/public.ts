@@ -20,7 +20,7 @@ import { networkConfig, type VenuePublicData } from "../venue.js";
 import type { AssetClass, FundingRateBasis, Network, VenueFundingRate, VenueMarket } from "../venue-types.js";
 import { risexVenue } from "../venues/risex.js";
 import { RisexClient } from "./client.js";
-import { decOrNull, nsToMsOrNull, trimDecimal } from "./units.js";
+import { decOrNull, nsToMsOrNull, positiveOrNull, trimDecimal } from "./units.js";
 import { PerpError } from "../../errors.js";
 
 export const RISEX_FUNDING_BASIS: FundingRateBasis = { kind: "perHours", hours: 1 };
@@ -113,7 +113,8 @@ export function toRisexVenueMarkets(raw: readonly RisexRawMarket[], warn: (msg: 
       warn(`[risex] skipped market ${m.market_id} (${m.config.name}): unknown category "${m.category}"`);
       continue;
     }
-    const mark = decOrNull(m.mark_price);
+    // "0" is RISEx's "none" (positiveOrNull): no price, never a "0" price.
+    const mark = positiveOrNull(m.mark_price);
     if (mark === null) {
       warn(`[risex] skipped market ${m.market_id} (${m.config.name}): no mark price`);
       continue;
@@ -123,7 +124,7 @@ export function toRisexVenueMarkets(raw: readonly RisexRawMarket[], warn: (msg: 
     }
     const symbol = risexSymbolOf(m);
     const maxLev = Number(m.config.max_leverage);
-    const idx = decOrNull(m.index_price);
+    const idx = positiveOrNull(m.index_price);
     out.push({
       venue: "risex",
       venueSymbol: m.market_id,
@@ -132,8 +133,8 @@ export function toRisexVenueMarkets(raw: readonly RisexRawMarket[], warn: (msg: 
       assetClass,
       settle: "USDC",
       quoteAsset: "USDC",
-      markPrice: trimDecimal(mark),
-      indexPrice: idx === null ? null : trimDecimal(idx),
+      markPrice: mark,
+      indexPrice: idx,
       fundingRate: risexHourlyFunding(m),
       fundingRateBasis: RISEX_FUNDING_BASIS,
       settlementIntervalHours: 1,
