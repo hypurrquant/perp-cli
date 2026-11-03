@@ -22,13 +22,14 @@ interface CacheEntry<T = unknown> {
   data: T;
 }
 
-let dirReady = false;
-
+/**
+ * On every write, never memoized: the directory can disappear under a running process (a tmp
+ * cleaner, `rm -rf`, the conformance harness's Session.start). A remembered "ready" flag made every
+ * later write fail silently, so an MCP server / dashboard / bot never cached again.
+ */
 function ensureDir(): void {
-  if (dirReady) return;
   try {
     mkdirSync(CACHE_DIR, { recursive: true });
-    dirReady = true;
   } catch {
     // ignore — reads/writes will fail gracefully
   }

@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — the shared cache stopped working once its directory was removed
+
+- **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).
+
 ### Fixed — RISEx markets listed with a "0" price
 
 - **A RISEx market with mark price "0" is no longer listed; an index price of "0" is null.** RISEx publishes "0" for "none". On 2026-10-28 the three newest markets answered mark / index "0", and `market list` / `market prices` (and MCP `get_markets` / `get_prices`) listed them with `markPrice` / `indexPrice` "0" (nightly `risex:list:schema` / `prices:schema`). They are now left out with the stderr line "skipped market … no mark price", the rule already used for a missing mark. Market orders were not affected: a non-positive mark is refused (`PRICE_STALE`) before anything is sent; a regression test now pins that.
