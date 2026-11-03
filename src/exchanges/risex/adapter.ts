@@ -48,7 +48,7 @@ import {
   cancelAllHash, cancelOrderHash, leverageHash, marginModeHash, MARGIN_MODE_CODE, ORDER_TYPE, packOrder, placeOrderHash,
   SIDE, signPermit, STP_EXPIRE_MAKER, TIF_CODE, type NonceSlot, type RisexPermit,
 } from "./typed-data.js";
-import { compareDecimal, decOrNull, nsToMs, toPriceTicks, toSizeSteps, trimDecimal, UINT64_MAX, wadToDecimal } from "./units.js";
+import { compareDecimal, decOrNull, nsToMs, positiveOrNull, toPriceTicks, toSizeSteps, trimDecimal, UINT64_MAX, wadToDecimal } from "./units.js";
 
 const MARKETS_TTL_MS = 30_000;
 /** Permit lifetime: long enough for the server to submit, short enough that an unproven permit expires soon. */
@@ -91,12 +91,6 @@ function decReq(v: unknown, what: string): string {
   const d = decOrNull(v);
   if (d === null) throw new PerpError("EXCHANGE_ERROR", `RISEx: ${what} is not a decimal (${JSON.stringify(v)})`, { exchange: "risex" });
   return trimDecimal(d);
-}
-
-/** Positive decimal → null for "0" (RISEx publishes "0" for "none", e.g. liquidation_price, avg_price). */
-function positiveOrNull(v: unknown): string | null {
-  const d = decOrNull(v);
-  return d === null || !(Number(d) > 0) ? null : trimDecimal(d);
 }
 
 interface HistoryOrder {

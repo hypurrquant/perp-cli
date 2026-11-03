@@ -83,6 +83,15 @@ export function decOrNull(v: unknown): string | null {
   return /^-?\d+(\.\d+)?$/.test(s) ? s : null;
 }
 
+/**
+ * Positive decimal → null for "0" (RISEx publishes "0" for "none": liquidation_price, avg_price, and
+ * — live 2026-10-28 — the mark / index price of the three newest markets).
+ */
+export function positiveOrNull(v: unknown): string | null {
+  const d = decOrNull(v);
+  return d === null || !(Number(d) > 0) ? null : trimDecimal(d);
+}
+
 /** Exact comparison of two plain decimal strings: -1 | 0 | 1. */
 export function compareDecimal(a: string, b: string): -1 | 0 | 1 {
   const parse = (s: string) => {
