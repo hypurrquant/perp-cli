@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — RISEx markets listed with a "0" price
+
+- **A RISEx market with mark price "0" is no longer listed; an index price of "0" is null.** RISEx publishes "0" for "none". On 2026-10-28 the three newest markets answered mark / index "0", and `market list` / `market prices` (and MCP `get_markets` / `get_prices`) listed them with `markPrice` / `indexPrice` "0" (nightly `risex:list:schema` / `prices:schema`). They are now left out with the stderr line "skipped market … no mark price", the rule already used for a missing mark. Market orders were not affected: a non-positive mark is refused (`PRICE_STALE`) before anything is sent; a regression test now pins that.
+
 ### Fixed — Lighter / Lighter RH WebSocket refused in restricted regions
 
 - **Lighter WebSockets now connect read-only (`?readonly=true`).** The plain URL answered HTTP 400 to the nightly conformance's US runners on every run since 2026-10-27, while REST worked. There, `market list` / MCP `get_markets` / funding showed Lighter and Lighter RH with `fundingRate` and `fundingRateKind` null (stderr: "settled funding rate unavailable … Unexpected server response: 400"), and perp-ws Lighter streams reconnect-looped to `closed` with no event. docs.lighter.xyz/api/websocket gives the read-only URL for "a restricted region"; perp-cli only reads over WS (orders go through REST `/sendTx`), and the read-only socket serves the same channels and frames (side-by-side probe 2026-11-01). Affects the CLI funding reader, the `portfolio --serve` Lighter feed and the perp-ws `lighter` / `lighterRh` codecs (`codec.url()` now returns the read-only URL). Fixtures: the WS URL keys gain the query (frames unchanged).
