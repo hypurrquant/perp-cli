@@ -6,7 +6,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [0.17.1] — 2026-11-04
 
-> **Patch:** three fixes (#68, #69, #71) and no new features. No JSON contract change (`docs/TESTING.md` §5 invariant 12): the RISEx fix makes `indexPrice` meet its documented type (dec > 0 | null). Both packages move together (`RELEASING.md`, lockstep); `@hypurrquant/perp-ws` gets the read-only Lighter WebSocket URL.
+> **Patch:** four fixes (#68, #69, #71, and Aster's move off its removed V1 API) and no new features. No JSON contract change (`docs/TESTING.md` §5 invariant 12): the RISEx fix makes `indexPrice` meet its documented type (dec > 0 | null). Both packages move together (`RELEASING.md`, lockstep); `@hypurrquant/perp-ws` gets the read-only Lighter WebSocket URL.
+
+### Fixed — Aster market data came from Aster's removed V1 API
+
+- **Aster's public reads now use `/fapi/v3`.** Aster's API changelog removed the futures V1 API on 2026-11-02 ("Removed: `future v1 api`"). perp-cli still read `exchangeInfo`, `premiumIndex` and `ticker/24hr` from `/fapi/v1`, and `perp health` / MCP `health_check` pinged `/fapi/v1/time`. V1 still answered on 2026-11-04, so nothing had failed yet. Once Aster switches it off, Aster drops out of `market list` / `market prices` / funding / `arb scan` (and MCP `get_markets` / `get_prices`), and `trade split` / `scale-in` / `scale-tp` and the `arb` leg minimums can no longer read Aster's tick and order minimums. Plain market and limit orders were not affected: the adapter has used V3 since June. The V3 paths are documented and returned the same data side by side on 2026-11-04 (`exchangeInfo` identical apart from `serverTime`; `premiumIndex` 799 and `ticker/24hr` 638 rows with the same fields and symbols). The e2e runner (`scripts/e2e/run.ts`) reads the same V3 paths. Fixtures: the cross fixture's 27 Aster request URLs move from `/fapi/v1` to `/fapi/v3` (responses unchanged), so a V1 request now fails the replay check.
 
 ### Fixed — the shared cache stopped working once its directory was removed
 
