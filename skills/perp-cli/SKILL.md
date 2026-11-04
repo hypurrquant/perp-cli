@@ -186,6 +186,9 @@ perp --json -e hyperliquid --dex xyz --dry-run trade market GOLD buy 0.01
 - `portfolio --dexes` works only with `--serve` (web dashboard); for HIP-3 positions use `account positions --hip3` / `--dex <name>` or `--address`. Builder fees are never attached on HIP-3.
 - Symbols: input is bare (`BTC`; HIP-3 `TSLA` + `--dex xyz`). Output differs: market rows are plain, keyed HL native position / order rows show `<COIN>-PERP`, HIP-3 rows `xyz:TSLA` — pass the bare name back (`BTC`, `TSLA` + `--dex xyz`).
 - MCP tools cover native Hyperliquid perps only, except `get_positions_by_address` (reads every HIP-3 dex) — use the CLI for the rest of HIP-3.
+- Equity HIP-3 markets keep trading while the stock market is closed (weekends, holidays). Then `indexPrice` (the dex's `oraclePx`) and `markPrice` are not the last official close: on Sun 2026-11-01 09:53 UTC `xyz:MSTR` showed `indexPrice` 134.76, against MSTR's Nasdaq close of 130.51 on Fri 2026-10-30. Label any "since the close" figure with the price it uses and its time.
+- Read `markPrice / indexPrice - 1` together with `volume24h`. On a thin book the mark can sit well away from the oracle with almost no trading behind it (09:55 UTC: `io:GPRO` +62 bps on $1,038 of 24 h volume).
+- Closed-market funding moves hour to hour, and the same stock on two dexes funds differently. That morning's settled `xyz:SNDK` prints annualised to 85.1 %, 55.7 %, 63.7 %, 5.5 % and 43.2 % (05:00–09:00 UTC), while `io:SNDK` stayed between 1.4 % and 8.1 %. Before quoting a rate or acting on an `arb scan --hip3` row, read the settled history (`perp --json -e hyperliquid --dex xyz market funding SNDK -l 24`), not a single `fundingRate`.
 
 #### Options market data (Derive, read-only)
 
