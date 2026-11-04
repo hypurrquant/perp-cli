@@ -17,7 +17,7 @@ Every mark below comes from a real-money mainnet run, not from code reading — 
 | `trade scale-in` / `scale-tp` | ✅ | ✅ (position ≥ $20.5) | ✅ | ✅ | ✅ | ✅ | scale-in ✅ / scale-tp ⛔ — use partial `trade tpsl --size` ✅ | ✅ | scale-in ✅ / scale-tp ⛔ |
 | `trade split` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `trade multi` (legs on several venues) | ✅ | ✅ (global `--dex xyz`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Native TWAP (`trade twap`) | ✅ | ❌ (HL minimum $100) | ✅ master-signed / ⛔ agent-signed | —² | —² | —² | —² | —² | —² |
+| Native TWAP (`trade twap`) | ✅ | ✅⁷ | ✅ master-signed / ⛔ agent-signed | —² | —² | —² | —² | —² | —² |
 | Client-side TWAP (`trade twap` on other venues, `strategy twap`, `--background`) | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ⛔ (automation gate) |
 | `account margin` with a position | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Spot (`trade spot-*`) | ✅ | — | ✅ | ✅ | ✅ | ❌ (needs USDT) | ✅ | ❌ (needs an Arcus-issued key) | — |
@@ -57,7 +57,8 @@ The original TxFlow testnet checklist, kept for the mainnet run:
 ³ Verified in the session; no saved log file.  
 ⁴ Not available: the Ondo Perps API does not allow withdrawals (`funds withdraw ondo` → `CAPABILITY_UNSUPPORTED`). Withdraw in the Ondo web app.  
 ⁵ Disabled in perp-cli for now (`funds withdraw qfex` → `CAPABILITY_UNSUPPORTED`). Withdraw in the QFEX web app.  
-⁶ Mainnet, 2026-10-13: one withdrawal per venue to the account's own address, received amount checked on the destination chain — `funds withdraw hyperliquid 12.22` (Arbitrum USDC), `funds withdraw pacifica 12.98` (Solana USDC), `-e lighter funds withdraw lighter 15.95` (Ethereum USDC), `-e lighter-rh funds withdraw lighter 12.96` and `funds withdraw arcus 9.94` (Robinhood Chain USDG), `funds withdraw aster 8.74 --chain arbitrum --asset USDC` (Arbitrum USDC).
+⁶ Mainnet, 2026-10-13: one withdrawal per venue to the account's own address, received amount checked on the destination chain — `funds withdraw hyperliquid 12.22` (Arbitrum USDC), `funds withdraw pacifica 12.98` (Solana USDC), `-e lighter funds withdraw lighter 15.95` (Ethereum USDC), `-e lighter-rh funds withdraw lighter 12.96` and `funds withdraw arcus 9.94` (Robinhood Chain USDG), `funds withdraw aster 8.74 --chain arbitrum --asset USDC` (Arbitrum USDC).  
+⁷ Mainnet, 2026-10-27, about $105 a run at 3x leverage: `xyz:NVDA` 0.483 ran to the end (TWAP 2423981, `finished`), and a second run was cancelled mid-run (TWAP 2424002, `terminated` at 0.162). The TWAP state, the executed size, the sum of the slice fills and the position agreed on the Hyperliquid API, and each run was closed flat. The core TWAP was run again the same day (SOL 1.04: 2423950 `finished`; 2423974 cancelled at 0.24).
 
 Automation, verified live (bounded runs at minimum size, stopped and flattened afterwards):
 
