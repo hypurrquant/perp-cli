@@ -391,7 +391,9 @@ export function lighterIocOutcomeOf(raw: unknown): { filledSize: string; final: 
  */
 export function lighterSendTxRejection(venue: string, json: { code?: unknown; message?: string }, kind: "order" | "action"): PerpError {
   const message = `${venue} sendTx rejected (code ${String(json.code)}): ${json.message ?? JSON.stringify(json)}`;
-  const specific = classifyError(new Error(json.message ?? "")).code;
+  // docs.lighter.xyz data-structures-constants-and-errors: 21507 / 21508 "account is below
+  // maintenance / initial margin, can't execute transaction".
+  const specific = json.code === 21507 || json.code === 21508 ? "MARGIN_INSUFFICIENT" : classifyError(new Error(json.message ?? "")).code;
   const code = specific === "INSUFFICIENT_BALANCE" || specific === "MARGIN_INSUFFICIENT" ? specific
     : kind === "order" ? "ORDER_REJECTED" : "ACTION_REJECTED";
   return new PerpError(code, message, { exchange: venue, venueCode: json.code });
@@ -401,11 +403,15 @@ export function lighterSendTxRejection(venue: string, json: { code?: unknown; me
  * A /sendTx `code` that says the venue VALIDATED the tx and refused it (nothing executed): the
  * documented validation / rate-limit ranges 20000–28999 (apidocs "Data Structures, Constants and
  * Errors": 21xxx account / collateral / tx / order-book / order / asset errors, 23xxx rate limits).
+ * Also definite, the account-level refusals on docs.lighter.xyz developers/reference/
+ * data-structures-constants-and-errors: 52001 "Unauthorized use of the API", 52002 "You've reached
+ * the limit of Standard trading and can now only close or reduce positions", 62007 "maker-only api
+ * key can only send 0ms delay transactions".
  * NOT definite: a missing / non-numeric code, 29xxx (29500 internal server error, 29501 process
- * timeout — the tx may still execute) and anything outside the documented ranges.
+ * timeout — the tx may still execute) and anything else outside the documented ranges.
  */
 export function lighterSendTxCodeIsDefinite(code: unknown): boolean {
-  return typeof code === "number" && Number.isInteger(code) && code >= 20_000 && code <= 28_999;
+  return typeof code === "number" && Number.isInteger(code) && ((code >= 20_000 && code <= 28_999) || code === 52001 || code === 52002 || code === 62007);
 }
 
 /**

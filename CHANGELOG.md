@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — Lighter account-level refusals reported as an unknown outcome
+
+- **Lighter / Lighter RH `/sendTx` codes 52001 ("Unauthorized use of the API"), 52002 ("You've reached the limit of Standard trading and can now only close or reduce positions") and 62007 ("maker-only api key can only send 0ms delay transactions") are definite rejections** (`ORDER_REJECTED` / `ACTION_REJECTED` with the venue's message), as listed on docs.lighter.xyz "Data Structures, Constants and Errors". Only 20000–28999 counted as definite, so these were `ORDER_PENDING` ("do NOT resubmit", symbol quarantined) although nothing executed. 21507 / 21508 ("account is below maintenance / initial margin") are `MARGIN_INSUFFICIENT` (were `ORDER_REJECTED`).
+
 ### Fixed — QFEX `flatten` stopped at the first orphaned stop it could not cancel
 
 - **Every reduce-only / stop order left on a flat QFEX symbol is now tried.** When the venue had already removed one itself, its cancel threw `ORDER_NOT_FOUND` and that error replaced flatten's result: the remaining orphans were never cancelled and the close results were lost. A cancel that throws is now recorded (a venue refusal as failed, anything else as unproven / pending), the next orphan is cancelled, and flatten ends `ORDER_PARTIAL` carrying every cancel and close result.
