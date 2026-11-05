@@ -217,6 +217,26 @@ describe("Hyperliquid reads the funding window", () => {
     expect(meta.warnings).toEqual(expect.arrayContaining([expect.stringMatching(new RegExp(`^funding read back to ${ISO_NOTE} only — totals are a lower bound$`))]));
   });
 
+  it("window 0 on a 30-day, 7200-row history: complete (nothing older exists, no budget spent before the first funding)", async () => {
+    const { hl } = await hlAdapter(hlFunding(coins(10), 720));
+    const w = await hl.getFundingPaymentsSince(0);
+    expect(w.from).toBe(0);
+    expect(w.rows).toHaveLength(7200);
+  });
+
+  it("window 0 on a 30-day, 7200-row history reads it in 17 requests or fewer (was 20 and partial)", async () => {
+    const { hl, fundingRequests } = await hlAdapter(hlFunding(coins(10), 720));
+    await hl.getFundingPaymentsSince(0);
+    expect(fundingRequests()).toBeLessThanOrEqual(17);
+  });
+
+  it("window 0 on a 10-day, 720-row history reads it whole in 5 requests or fewer (was 16)", async () => {
+    const { hl, fundingRequests } = await hlAdapter(hlFunding(coins(3), 240));
+    const w = await hl.getFundingPaymentsSince(0);
+    expect(w).toMatchObject({ from: 0 });
+    expect(w.rows).toHaveLength(720);
+    expect(fundingRequests()).toBeLessThanOrEqual(5);
+  });
 });
 
 describe("Hyperliquid trades: userFills is the latest 2000 fills — fewer is the whole list", () => {

@@ -2348,23 +2348,25 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * `from` = the earliest time they cover without a gap (`startTime` = the whole window). One page
    * answers a window of fewer than 500 rows; a larger one is read backward in chunks [end − span,
    * end) with the span doubling from 24 h, each chunk whole, so when the HL_FUNDING_MAX_PAGES budget
-   * runs out the rows read still cover [from, now] — a partial newest stretch, never a hole.
+   * runs out the rows read still cover [from, now] — a partial newest stretch, never a hole. Chunks
+   * stop at the first page's earliest row (oldest first: nothing older exists in the window), so the
+   * budget is not spent on the empty stretch before the account's first funding.
    */
   async getFundingPaymentsSince(startTime: number): Promise<{ rows: ExchangeFundingPayment[]; from: number }> {
     this.ensureAddress();
     await this._historyScopeReady();
     const newestFirst = (rows: ExchangeFundingPayment[]) => rows.sort((a, b) => b.time - a.time);
-    const whole = await this._fundingBetween(startTime, null, { pages: 1 });
-    if (whole !== null) return { rows: newestFirst(whole), from: startTime };
+    const first = await this._fundingBetween(startTime, null, { pages: 1 });
+    if (first.done) return { rows: newestFirst(first.rows), from: startTime };
     const budget = { pages: HL_FUNDING_MAX_PAGES - 1 };
     const out: ExchangeFundingPayment[] = [];
     let end = Date.now();
-    for (let span = 24 * 60 * 60 * 1000; end > startTime; span *= 2) {
-      const from = Math.max(startTime, end - span);
+    for (let span = 24 * 60 * 60 * 1000; end > first.earliest; span *= 2) {
+      const from = Math.max(first.earliest, end - span);
       // startTime and endTime are both inclusive (docs userFunding): chunks [from, end − 1] do not overlap.
-      const rows = await this._fundingBetween(from, end - 1, budget);
-      if (rows === null) return { rows: newestFirst(out), from: end };
-      out.push(...rows);
+      const chunk = await this._fundingBetween(from, end - 1, budget);
+      if (!chunk.done) return { rows: newestFirst(out), from: end };
+      out.push(...chunk.rows);
       end = from;
     }
     return { rows: newestFirst(out), from: startTime };
@@ -2372,27 +2374,28 @@ export class HyperliquidAdapter implements ExchangeAdapter {
 
   /** Every userFunding row since `startTime` (see _fundingBetween); more than HL_FUNDING_MAX_PAGES pages → EXCHANGE_ERROR. */
   private async _fundingSince(startTime: number): Promise<ExchangeFundingPayment[]> {
-    const rows = await this._fundingBetween(startTime, null, { pages: HL_FUNDING_MAX_PAGES });
-    if (rows === null) {
+    const { rows, done } = await this._fundingBetween(startTime, null, { pages: HL_FUNDING_MAX_PAGES });
+    if (!done) {
       throw new PerpError("EXCHANGE_ERROR", `Hyperliquid funding history needs more than ${HL_FUNDING_MAX_PAGES} pages — the result would be incomplete`, { exchange: "hyperliquid" });
     }
     return rows;
   }
 
   /**
-   * Every userFunding row in [startTime, endTime] (null = now). The endpoint returns rows OLDEST
-   * first, at most 500 per response (live 2026-10-13), and every coin of a funding hour shares one
-   * millisecond — so pages continue from the last row's time INCLUSIVE and rows are deduped by
-   * time + coin (funding rows carry a zero hash). Each request spends one of `budget.pages`; a window
-   * that needs more → null (never a list with payments silently missing). A full page that adds
-   * nothing new → EXCHANGE_ERROR.
+   * The userFunding rows in [startTime, endTime] (null = now) in this adapter's scope; `earliest` =
+   * the earliest row of any coin. The endpoint returns rows OLDEST first, at most 500 per response
+   * (live 2026-10-13), and every coin of a funding hour shares one millisecond — so pages continue
+   * from the last row's time INCLUSIVE and rows are deduped by time + coin (funding rows carry a
+   * zero hash). Each request spends one of `budget.pages`; a window that needs more → done: false
+   * (callers never present those rows as the window). A full page that adds nothing new → EXCHANGE_ERROR.
    */
-  private async _fundingBetween(startTime: number, endTime: number | null, budget: { pages: number }): Promise<ExchangeFundingPayment[] | null> {
+  private async _fundingBetween(startTime: number, endTime: number | null, budget: { pages: number }): Promise<{ rows: ExchangeFundingPayment[]; earliest: number; done: boolean }> {
     const out: ExchangeFundingPayment[] = [];
     const seen = new Set<string>();
     let from = startTime;
+    let earliest = Infinity;
     for (;;) {
-      if (budget.pages <= 0) return null;
+      if (budget.pages <= 0) return { rows: out, earliest, done: false };
       budget.pages--;
       const rows = await this._infoPost({ type: "userFunding", user: this._address, startTime: from, ...(endTime !== null ? { endTime } : {}) });
       if (!Array.isArray(rows)) {
@@ -2407,6 +2410,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
           throw new PerpError("EXCHANGE_ERROR", `Hyperliquid userFunding row without time / delta.coin / delta.usdc: ${JSON.stringify(h).slice(0, 160)}`, { exchange: "hyperliquid" });
         }
         last = Math.max(last, time);
+        earliest = Math.min(earliest, time);
         const key = `${time}|${delta.coin}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -2419,7 +2423,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       }
       from = last;
     }
-    return out;
+    return { rows: out, earliest, done: true };
   }
 
   /** The asset map backs _displaySymbol / _inHistoryScope; load it before mapping history rows. */
