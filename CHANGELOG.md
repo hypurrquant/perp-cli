@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — `trade scale-tp` / `scale-in` accepted a percent that is no number
+
+- **Each `--levels` percent must be a positive decimal (`INVALID_PARAMS`, nothing sent).** `parseFloat` made "x50" NaN, and the "sum must be 100" check is false for NaN: "75000:x50" as the last level was placed with the remainder of the size, and as an earlier level it threw an untyped `RangeError`. "50abc" (read as 50) is refused too.
+
 ### Fixed — RISEx reduce-only markets refused market and IOC / FOK orders
 
 - **On a RISEx market in reduce-only mode, only resting (GTC / ALO) orders must be reduce-only.** perp-cli refused every non-reduce-only order there, market orders (sent as LIMIT IOC) included. The venue docs (`reduce_only`: "only accepts resting orders (GTC/GTT) that are marked reduce-only on this market; FOK and IOC orders are unaffected"; error E0706) refuse resting orders only. Market, IOC and FOK orders are now sent; a resting non-reduce-only order is still refused before signing.

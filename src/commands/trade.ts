@@ -1524,7 +1524,7 @@ export function registerTradeCommands(
       const levels = opts.levels.split(",").map(l => {
         const [price, pct] = l.trim().split(":");
         if (!price || !pct) errorAndExit(`Invalid level format: ${l}. Use price:percent (e.g., 72000:25)`);
-        return { price: price.trim(), pct: parseFloat(pct.trim()) };
+        return { price: price.trim(), pct: Number(parsePositiveDecimal(pct, `--levels percent of "${l.trim()}"`)) };
       });
 
       // Validate percentages sum to 100
@@ -2153,7 +2153,7 @@ export function registerTradeCommands(
       const levels = opts.levels.split(",").map(l => {
         const [price, pct] = l.trim().split(":");
         if (!price || !pct) errorAndExit(`Invalid level format: ${l}. Use price:percent (e.g., 65000:30)`);
-        return { price: price.trim(), pct: parseFloat(pct.trim()) };
+        return { price: price.trim(), pct: Number(parsePositiveDecimal(pct, `--levels percent of "${l.trim()}"`)) };
       });
 
       // Validate percentages sum to 100

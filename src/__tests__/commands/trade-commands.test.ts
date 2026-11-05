@@ -1360,6 +1360,19 @@ describe("scale-tp / scale-in — level sizing and outcome", () => {
   ]);
   const rejected = () => new PerpError("ORDER_REJECTED", "venue said no", { exchange: VENUE });
 
+  // parseFloat("x50") is NaN: `Math.abs(NaN - 100) > 0.01` is false, so the sum guard let it through.
+  it.each(["110:50,120:x50", "110:x50,120:50"])("scale-tp --levels %s (a percent that is no number) → INVALID_PARAMS, nothing sent", async (levels) => {
+    const adapter = mockAdapter({ ...longEth("1") });
+    await expect(run(adapter, ["trade", "scale-tp", "ETH", "--levels", levels])).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+    expect(adapter.limitOrder).not.toHaveBeenCalled();
+  });
+
+  it("scale-in --levels with a percent that is no number → INVALID_PARAMS, nothing sent", async () => {
+    const adapter = mockAdapter();
+    await expect(run(adapter, ["trade", "scale-in", "ETH", "buy", "--levels", "90:50,80:x50", "--size", "1"])).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+    expect(adapter.limitOrder).not.toHaveBeenCalled();
+  });
+
   it("floors every level to the lot and gives the remainder to the last (0.0041 split 50/50 → 0.002 + 0.0021)", async () => {
     const adapter = mockAdapter({ ...longEth("0.0041") });
     await run(adapter, ["trade", "scale-tp", "ETH", "--levels", "110:50,120:50"]);
