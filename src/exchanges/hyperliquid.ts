@@ -395,6 +395,8 @@ export function hlL1ActionRejection(type: string, e: unknown): unknown {
 const HL_FUNDING_PAGE = 500;
 /** 7 days of hourly funding = 168 rows per coin; 20 pages = 10 000 rows (~60 coins). */
 const HL_FUNDING_MAX_PAGES = 20;
+/** userFills answers at most this many of the account's most recent fills (live 2026-10-13). */
+export const HL_USER_FILLS_CAP = 2000;
 
 /**
  * candleSnapshot intervals (docs "Candle snapshot": "Supported intervals") with their nominal
@@ -2287,18 +2289,38 @@ export class HyperliquidAdapter implements ExchangeAdapter {
 
   /** Fills: POST /info {type:"userFills"} (at most 2000 most recent, newest first — live 2026-10-13). */
   async getTradeHistory(limit = 30): Promise<ExchangeTrade[]> {
+    const fills = await this._userFills();
+    return fills.filter((t) => this._inHistoryScope(t.coin)).slice(0, limit).map(({ coin: _coin, ...t }) => t);
+  }
+
+  /**
+   * Trades in this adapter's scope since `startTime`, newest first, for period totals. userFills is
+   * the account's latest HL_USER_FILLS_CAP fills: fewer than that (counted before the scope filter)
+   * is the whole list (`from` = startTime); a full list covers back to its oldest fill only.
+   */
+  async getTradesSince(startTime: number): Promise<{ rows: ExchangeTrade[]; from: number }> {
+    const fills = await this._userFills();
+    const from = fills.length < HL_USER_FILLS_CAP ? startTime : fills.reduce((m, t) => Math.min(m, t.time), Infinity);
+    const rows = fills.filter((t) => t.time >= startTime && this._inHistoryScope(t.coin)).map(({ coin: _coin, ...t }) => t);
+    return { rows, from };
+  }
+
+  /** Every userFills row (all coins, the venue's order), mapped; `coin` is the raw name for _inHistoryScope. */
+  private async _userFills(): Promise<Array<ExchangeTrade & { coin: string }>> {
     this.ensureAddress();
     const fills = await this._infoPost({ type: "userFills", user: this._address });
     if (!Array.isArray(fills)) {
       throw new PerpError("EXCHANGE_ERROR", `Hyperliquid userFills returned no list (${JSON.stringify(fills).slice(0, 120)})`, { exchange: "hyperliquid" });
     }
     await this._historyScopeReady();
-    return (fills as Array<Record<string, unknown>>).filter((f) => this._inHistoryScope(hlField(f, "coin", "userFills"))).slice(0, limit).map((f) => {
+    return (fills as Array<Record<string, unknown>>).map((f) => {
+      const coin = hlField(f, "coin", "userFills");
       const time = Number(hlField(f, "time", "userFills"));
       if (!Number.isFinite(time)) throw new PerpError("EXCHANGE_ERROR", "Hyperliquid userFills row with a non-numeric time", { exchange: "hyperliquid" });
       return {
+        coin,
         time,
-        symbol: this._displaySymbol(hlField(f, "coin", "userFills")),
+        symbol: this._displaySymbol(coin),
         side: hlSide(f.side, "userFills"),
         price: hlField(f, "px", "userFills"),
         size: hlField(f, "sz", "userFills"),

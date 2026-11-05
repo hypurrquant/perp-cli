@@ -17,7 +17,7 @@
 import type { Command } from "commander";
 import chalk from "chalk";
 import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "../exchanges/index.js";
-import { fundingPaymentsInWindow } from "../exchanges/interface.js";
+import { coverageNote, fundingPaymentsInWindow } from "../exchanges/interface.js";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import { isDexCapable } from "../exchanges/capabilities.js";
 import type { DashboardExchange } from "../dashboard/index.js";
@@ -370,9 +370,9 @@ async function fetchExchangeEntry(
       adapter.getBalance(),
       adapter.getPositions(),
       adapter.getOpenOrders(),
-      // A capped history that may end inside the 24 h is a lower bound: unknown (null), never the total.
+      // A history not proven to cover the 24 h is a lower bound: unknown (null), never the total.
       fundingPaymentsInWindow(adapter, cutoff24h).then(
-        (w) => (w.complete ? { rows: w.rows, error: null as string | null } : { rows: null, error: `funding history reaches back to ${new Date(w.from).toISOString()} only — the 24 h total is unknown` }),
+        (w) => (w.complete ? { rows: w.rows, error: null as string | null } : { rows: null, error: `${coverageNote("funding history", w.from)} — the 24 h total is unknown` }),
         (e: unknown) => ({ rows: null, error: e instanceof Error ? e.message : String(e) }),
       ),
     ]);

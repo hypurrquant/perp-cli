@@ -88,6 +88,7 @@ const day = 86400000;
 function mockAdapter(exchange: string): ExchangeAdapter {
   return {
     name: exchange,
+    historyReach: { funding: "all", trades: "all" },
     getMarkets: vi.fn().mockResolvedValue([]),
     getOrderbook: vi.fn().mockResolvedValue({ bids: [], asks: [] }),
     getRecentTrades: vi.fn().mockResolvedValue([]),
@@ -340,6 +341,17 @@ describe("analytics pnl — failed venue reads are reported, never counted as 0"
     const res = await run(["analytics", "pnl"]);
     expect(res.data).toMatchObject({ partial: false, errors: {} });
   });
+
+  it("--period with a history not proven to cover it: summed, listed in incomplete", async () => {
+    program = new Command();
+    addRootSafetyOptions(program);
+    program.option("--json", "JSON output");
+    registerHistoryCommands(program, () => program.opts().json ?? false, async (ex) => ({ ...mockAdapter(ex), historyReach: undefined }));
+    const res = await run(["analytics", "pnl", "--period", "30"]);
+    const back = (t: number) => `read back to ${new Date(t).toISOString()} only`;
+    expect(res.data.incomplete["hyperliquid.funding"]).toBe(`funding ${back(now - 2 * day)}`);
+    expect(res.data.incomplete["hyperliquid.trades"]).toBe(`trades ${back(now - 2 * day)}`);
+  });
 });
 
 describe("analytics funding — failed venue reads are reported, never counted as 0", () => {
@@ -371,6 +383,55 @@ describe("analytics funding — failed venue reads are reported, never counted a
   it("all venues answer → partial false, errors empty", async () => {
     const res = await run(["analytics", "funding"]);
     expect(res.data).toMatchObject({ partial: false, errors: {} });
+  });
+
+  it("pnl: an incomplete history alone leaves partial false (partial = a venue read failed)", async () => {
+    program = new Command();
+    addRootSafetyOptions(program);
+    program.option("--json", "JSON output");
+    registerHistoryCommands(program, () => program.opts().json ?? false, async (ex) => ({ ...mockAdapter(ex), historyReach: undefined }));
+    const res = await run(["analytics", "pnl", "--period", "30"]);
+    expect(Object.keys(res.data.incomplete).length).toBeGreaterThan(0);
+    expect(res.data.partial).toBe(false);
+  });
+
+  it("funding: an incomplete history alone leaves partial false (partial = a venue read failed)", async () => {
+    program = new Command();
+    addRootSafetyOptions(program);
+    program.option("--json", "JSON output");
+    registerHistoryCommands(program, () => program.opts().json ?? false, async (ex) => ({ ...mockAdapter(ex), historyReach: undefined }));
+    const res = await run(["analytics", "funding", "--period", "30"]);
+    expect(Object.keys(res.data.incomplete).length).toBeGreaterThan(0);
+    expect(res.data.partial).toBe(false);
+  });
+
+  it("--limit help says it applies only to venues without a period read", () => {
+    const analytics = program.commands.find(c => c.name() === "analytics")!;
+    for (const sub of ["pnl", "funding"]) {
+      const limit = analytics.commands.find(c => c.name() === sub)!.options.find(o => o.long === "--limit")!;
+      expect(limit.description).toMatch(/on venues without a period read/);
+    }
+  });
+
+  it("--period with a funding history not proven to cover it: summed, listed in incomplete", async () => {
+    program = new Command();
+    addRootSafetyOptions(program);
+    program.option("--json", "JSON output");
+    registerHistoryCommands(program, () => program.opts().json ?? false, async (ex) => ({ ...mockAdapter(ex), historyReach: undefined }));
+    const res = await run(["analytics", "funding", "--period", "30"]);
+    expect(res.data.incomplete["hyperliquid.funding"]).toBe(`funding read back to ${new Date(now - 2 * day).toISOString()} only`);
+  });
+
+  it("a venue's windowed read past its budget: rows beyond --limit still count, listed in incomplete with how far back", async () => {
+    program = new Command();
+    addRootSafetyOptions(program);
+    program.option("--json", "JSON output");
+    const from = now - 3 * day;
+    const rows = Array.from({ length: 300 }, (_, i) => ({ time: now - i * 1000, symbol: "ETH", payment: "1" }));
+    registerHistoryCommands(program, () => program.opts().json ?? false, async (ex) => ({ ...mockAdapter(ex), getFundingPaymentsSince: vi.fn().mockResolvedValue({ rows, from }) }));
+    const res = await run(["--json", "analytics", "funding", "--period", "30", "--limit", "200"].slice(1));
+    expect(res.data.totalFunding).toBe(300 * 3);
+    expect(res.data.incomplete["hyperliquid.funding"]).toBe(`funding read back to ${new Date(from).toISOString()} only`);
   });
 });
 

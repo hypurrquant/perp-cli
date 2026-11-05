@@ -23,7 +23,7 @@ import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { coversWindow, fundingPaymentsInWindow, type ExchangeAdapter } from "./exchanges/interface.js";
+import { coverageNote, fundingPaymentsInWindow, tradesInWindow, type ExchangeAdapter } from "./exchanges/interface.js";
 import { hasCredentials, listConfiguredAccountVenues, resolveCredentials, NO_CLI_CREDENTIAL_OPTS } from "./config.js";
 import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
 import { getVenue, listPublicBalanceVenues, listPublicPositionVenues, listVenues, listVenuesWithRole, networkConfig, READ_ONLY_CREDENTIALS, requireCapabilities, roleUnsupported, type VenueDefinition } from "./exchanges/venue.js";
@@ -2273,7 +2273,7 @@ server.tool(
       const posNotionals = new Map<string, number>();
 
       // Per-venue failures are reported in meta.errors (never silently dropped from the totals);
-      // a venue whose capped history may end inside the period is in meta.incomplete (a lower bound).
+      // a venue whose history is not proven to cover the period is in meta.incomplete (a lower bound).
       const errors: Record<string, string> = {};
       const incomplete: Record<string, string> = {};
       const settled = await Promise.allSettled(exchanges.map(async (ex) => {
@@ -2282,7 +2282,7 @@ server.tool(
           fundingPaymentsInWindow(adapter, sinceMs),
           adapter.getPositions(),
         ]);
-        if (!window.complete) incomplete[ex] = `funding read back to ${new Date(window.from).toISOString()} only — its funding is a lower bound`;
+        if (!window.complete) incomplete[ex] = `${coverageNote("funding", window.from)} — its funding is a lower bound`;
         for (const p of window.rows) {
           if (symFilter && !p.symbol.toUpperCase().includes(symFilter.toUpperCase())) continue;
           allFunding.push({ exchange: ex, symbol: p.symbol, payment: Number(p.payment), time: p.time });
@@ -2354,17 +2354,18 @@ server.tool(
       const dailyMap = new Map<string, { fees: number; funding: number }>();
 
       // Per-venue failures are reported in meta.errors (never silently dropped from the totals);
-      // a capped history that may end inside the period is in meta.incomplete (a lower bound).
+      // a history not proven to cover the period is in meta.incomplete (a lower bound).
       const errors: Record<string, string> = {};
       const incomplete: Record<string, string> = {};
       const settled = await Promise.allSettled(exchanges.map(async (ex) => {
         const adapter = await getOrCreateAdapter(ex);
-        const [trades, window] = await Promise.all([adapter.getTradeHistory(200), fundingPaymentsInWindow(adapter, sinceMs)]);
+        const [tradeWindow, window] = await Promise.all([tradesInWindow(adapter, sinceMs), fundingPaymentsInWindow(adapter, sinceMs)]);
+        const trades = tradeWindow.rows;
         const cut = [
-          coversWindow(trades, 200, sinceMs) ? null : `trades back to ${new Date(Math.min(...trades.map(t => t.time))).toISOString()}`,
-          window.complete ? null : `funding back to ${new Date(window.from).toISOString()}`,
+          tradeWindow.complete ? null : coverageNote("trades", tradeWindow.from),
+          window.complete ? null : coverageNote("funding", window.from),
         ].filter((c): c is string => c !== null);
-        if (cut.length > 0) incomplete[ex] = `read ${cut.join(", ")} only — a lower bound`;
+        if (cut.length > 0) incomplete[ex] = `${cut.join("; ")} — a lower bound`;
         const funding = window.rows;
         const exData = byExchange.get(ex) ?? { trades: 0, volume: 0, fees: 0, funding: 0 };
         for (const t of trades) {
@@ -2427,11 +2428,13 @@ server.tool(
       // A venue whose reads failed has unknown funding / prices: its rows report null, the reason is in meta.errors.
       const errors: Record<string, string> = {};
       const venues = [...exchangeSet];
+      // A venue whose funding history is not proven to cover the period is in meta.incomplete (a lower bound).
+      const incomplete: Record<string, string> = {};
       const settled = await Promise.allSettled(venues.map(async (ex) => {
         const adapter = await getOrCreateAdapter(ex);
-        const [funding, livePos] = await Promise.all([adapter.getFundingPayments(200), adapter.getPositions()]);
-        for (const f of funding) {
-          if (sinceMs && f.time < sinceMs) continue;
+        const [window, livePos] = await Promise.all([fundingPaymentsInWindow(adapter, sinceMs), adapter.getPositions()]);
+        if (!window.complete) incomplete[ex] = `${coverageNote("funding", window.from)} — its funding is a lower bound`;
+        for (const f of window.rows) {
           const key = `${ex}:${f.symbol}`;
           fundingByExSym.set(key, (fundingByExSym.get(key) ?? 0) + Number(f.payment));
         }
@@ -2467,7 +2470,7 @@ server.tool(
       const sumOrNull = (vals: (number | null)[]): number | null => (vals.some(v => v === null) ? null : (vals as number[]).reduce((s, v) => s + v, 0));
       const totals = { funding: sumOrNull(rows.map(r => r.funding)), pricePnl: sumOrNull(rows.map(r => r.pricePnl)), totalPnl: sumOrNull(rows.map(r => r.totalPnl)) };
 
-      return { content: [{ type: "text", text: ok({ period, positionCount: rows.length, positions: rows, unpricedPositions, totals }, { errors }) }] };
+      return { content: [{ type: "text", text: ok({ period, positionCount: rows.length, positions: rows, unpricedPositions, totals }, { errors, ...(Object.keys(incomplete).length > 0 ? { incomplete } : {}) }) }] };
     } catch (e) {
       return { content: [{ type: "text", text: errOf(e) }], isError: true };
     }

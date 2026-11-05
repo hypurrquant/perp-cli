@@ -37,6 +37,7 @@ vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({ StdioServerTranspo
 
 const fakeAdapter = {
   name: "hyperliquid",
+  historyReach: { funding: "all", trades: "all" } as { funding: "all" | null; trades: "all" | null },
   getPositions: vi.fn(async () => [] as unknown[]),
   getBalance: vi.fn(async () => ({ equity: "1000", available: "1000", marginUsed: "0", unrealizedPnl: "0" })),
   getOrderbook: vi.fn(async () => ({ bids: [["99", "1"]], asks: [["101", "1"]] })),
@@ -120,6 +121,7 @@ const BUY = { exchange: "hyperliquid", symbol: "BTC", side: "buy", size: "0.01",
 beforeEach(() => {
   placeAndConfirm.mockReset().mockResolvedValue(placed({}));
   enforceOrderRisk.mockReset().mockResolvedValue(undefined);
+  fakeAdapter.historyReach = { funding: "all", trades: "all" };
   fakeAdapter.getPositions.mockReset().mockResolvedValue([]);
   fakeAdapter.getFundingPayments.mockReset().mockResolvedValue([]);
   fakeAdapter.getTradeHistory.mockReset().mockResolvedValue([]);
@@ -390,14 +392,44 @@ describe("5. no silent per-venue skips", () => {
     expect(p.meta.errors).toEqual({ hyperliquid: expect.stringMatching(/funding endpoint 503/) });
   });
 
-  it("get_funding_analysis / get_pnl_analysis: a capped history ending inside the period is reported in meta.incomplete", async () => {
+  const cappedFunding = (now: number) => Array.from({ length: 200 }, (_, i) => ({ time: now - i * 60_000, symbol: "BTC", payment: "-1" }));
+
+  it("get_funding_analysis: a capped history ending inside the period is reported in meta.incomplete", async () => {
     await loadServer();
     const now = Date.now();
-    fakeAdapter.getFundingPayments.mockResolvedValue(Array.from({ length: 200 }, (_, i) => ({ time: now - i * 60_000, symbol: "BTC", payment: "-1" })));
+    fakeAdapter.getFundingPayments.mockResolvedValue(cappedFunding(now));
     const f = parse(await tools.get("get_funding_analysis")!({ period: "30d", exchange: "hyperliquid" }));
     expect(f.meta.incomplete).toEqual({ hyperliquid: `funding read back to ${new Date(now - 199 * 60_000).toISOString()} only — its funding is a lower bound` });
+  });
+
+  it("get_pnl_analysis: a capped history ending inside the period is reported in meta.incomplete", async () => {
+    await loadServer();
+    const now = Date.now();
+    fakeAdapter.getFundingPayments.mockResolvedValue(cappedFunding(now));
     const p = parse(await tools.get("get_pnl_analysis")!({ period: "30d", exchange: "hyperliquid" }));
-    expect(p.meta.incomplete).toEqual({ hyperliquid: `read funding back to ${new Date(now - 199 * 60_000).toISOString()} only — a lower bound` });
+    expect(p.meta.incomplete).toEqual({ hyperliquid: `funding read back to ${new Date(now - 199 * 60_000).toISOString()} only — a lower bound` });
+  });
+
+  it("get_pnl_analysis: trades of a venue whose range is not proven are reported in meta.incomplete, even when short", async () => {
+    await loadServer();
+    const time = Date.now() - 3_600_000;
+    fakeAdapter.historyReach = { funding: "all", trades: null };
+    fakeAdapter.getTradeHistory.mockResolvedValue([{ time, symbol: "BTC", side: "buy", price: "100", size: "1", fee: "0.1" }]);
+    const p = parse(await tools.get("get_pnl_analysis")!({ period: "30d", exchange: "hyperliquid" }));
+    expect(p.meta.incomplete).toEqual({ hyperliquid: `trades read back to ${new Date(time).toISOString()} only — a lower bound` });
+  });
+
+  it("get_arb_compare: a funding history not proven to cover the period is reported in meta.incomplete", async () => {
+    await loadServer();
+    const now = Date.now();
+    arbState.positions = [{
+      id: "a", symbol: "BTC", longExchange: "hyperliquid", shortExchange: "hyperliquid", longSize: 1, shortSize: 1,
+      entryTime: new Date(now - 86_400_000).toISOString(), entrySpread: 10, entryLongPrice: 100, entryShortPrice: 101,
+      accumulatedFunding: 0, lastCheckTime: new Date(now).toISOString(),
+    }];
+    fakeAdapter.getFundingPayments.mockResolvedValue(cappedFunding(now));
+    const e = parse(await tools.get("get_arb_compare")!({ period: "30d" }));
+    expect(e.meta.incomplete).toEqual({ hyperliquid: `funding read back to ${new Date(now - 199 * 60_000).toISOString()} only — its funding is a lower bound` });
   });
 
   it("get_arb_compare: failed venue reads → funding / pricePnl / totals null (never the entry price), reason in meta.errors", async () => {

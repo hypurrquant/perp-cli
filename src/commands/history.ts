@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { listConfiguredAccountVenues } from "../config.js";
 import chalk from "chalk";
 import type { ExchangeAdapter } from "../exchanges/index.js";
+import { coverageNote, fundingPaymentsInWindow, tradesInWindow } from "../exchanges/interface.js";
 import { printJson, jsonOk, jsonError, makeTable, formatUsd, formatPnl, withJsonErrors } from "../utils.js";
 import { readExecutionLog, getExecutionStats, pruneExecutionLog } from "../execution-log.js";
 import { loadArbState } from "../arb/index.js";
@@ -412,7 +413,7 @@ function registerAnalyticsSubcommands(
     .description("P&L analysis — trades, fees, funding income with daily breakdown — filter with the root -e <exchange> (comma-separated)")
     .option("--period <duration>", "Time period: 7d, 30d, 90d, all (default: all)")
     .option("--since <period>", "Alias for --period")
-    .option("--limit <n>", "History limit per exchange", "200")
+    .option("--limit <n>", "History rows per exchange on venues without a period read (Hyperliquid / Pacifica trades and Hyperliquid / Aster / Pacifica funding read the whole period)", "200")
     .action(async (opts: { period?: string; since?: string; limit: string }) => {
       const exchangeFilter = cliExchangeFilter(parent);
       await withJsonErrors(isJson(), async () => {
@@ -433,6 +434,8 @@ function registerAnalyticsSubcommands(
         // A venue whose adapter / trades / funding read failed is listed here and left out of the
         // totals (partial: true) — never counted as 0.
         const errors: Record<string, string> = {};
+        // A history not proven to cover the period: summed, but a lower bound (partial stays for read failures).
+        const incomplete: Record<string, string> = {};
         const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
         // Fetch trades + funding in parallel from all exchanges
@@ -445,16 +448,16 @@ function registerAnalyticsSubcommands(
               errors[`${ex}.adapter`] = errText(e);
               return;
             }
-            const [trades, funding] = await Promise.allSettled([adapter.getTradeHistory(limit), adapter.getFundingPayments(limit)]);
+            const [trades, funding] = await Promise.allSettled([tradesInWindow(adapter, sinceMs, limit), fundingPaymentsInWindow(adapter, sinceMs, limit)]);
             if (trades.status === "fulfilled") {
-              for (const t of trades.value) {
-                if (sinceMs && t.time < sinceMs) continue;
+              if (!trades.value.complete) incomplete[`${ex}.trades`] = coverageNote("trades", trades.value.from);
+              for (const t of trades.value.rows) {
                 allTrades.push({ exchange: ex, symbol: t.symbol, side: t.side, price: Number(t.price), size: Number(t.size), fee: Number(t.fee), time: t.time });
               }
             } else errors[`${ex}.trades`] = errText(trades.reason);
             if (funding.status === "fulfilled") {
-              for (const f of funding.value) {
-                if (sinceMs && f.time < sinceMs) continue;
+              if (!funding.value.complete) incomplete[`${ex}.funding`] = coverageNote("funding", funding.value.from);
+              for (const f of funding.value.rows) {
                 allFunding.push({ exchange: ex, symbol: f.symbol, payment: Number(f.payment), time: f.time });
               }
             } else errors[`${ex}.funding`] = errText(funding.reason);
@@ -518,6 +521,7 @@ function registerAnalyticsSubcommands(
           ),
           daily,
           errors,
+          incomplete,
           partial: Object.keys(errors).length > 0,
         };
 
@@ -531,6 +535,7 @@ function registerAnalyticsSubcommands(
         console.log(`  Funding Income:  ${formatPnl(totalFunding)}`);
         console.log(`  Net P&L:         ${formatPnl(netPnl)}`);
         for (const [k, msg] of Object.entries(errors)) console.log(chalk.yellow(`  ⚠ ${k} unavailable (left out of the totals): ${msg}`));
+        for (const [k, msg] of Object.entries(incomplete)) console.log(chalk.yellow(`  ⚠ ${k}: ${msg} — the totals are a lower bound`));
 
         if (byExchange.size > 0) {
           console.log(chalk.white.bold("\n  By Exchange:"));
@@ -564,7 +569,7 @@ function registerAnalyticsSubcommands(
     .option("-s, --symbol <symbol>", "Filter by symbol")
     .option("--period <duration>", "Time period: 7d, 30d, 90d, all (default: all)")
     .option("--daily", "Show daily funding breakdown")
-    .option("--limit <n>", "Funding history limit per exchange", "200")
+    .option("--limit <n>", "Funding rows per exchange on venues without a period read (Hyperliquid / Aster / Pacifica read the whole period)", "200")
     .action(async (opts: { symbol?: string; period?: string; daily?: boolean; limit: string }) => {
       const exchangeFilter = cliExchangeFilter(parent);
       await withJsonErrors(isJson(), async () => {
@@ -583,6 +588,8 @@ function registerAnalyticsSubcommands(
         // A venue whose adapter / funding / positions read failed is listed here; its funding is
         // left out of the totals (partial: true) — never counted as 0.
         const errors: Record<string, string> = {};
+        // A funding history not proven to cover the period: summed, but a lower bound (partial stays for read failures).
+        const incomplete: Record<string, string> = {};
         const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
         await Promise.allSettled(
@@ -595,12 +602,12 @@ function registerAnalyticsSubcommands(
               return;
             }
             const [payments, positions] = await Promise.allSettled([
-              adapter.getFundingPayments(parseInt(opts.limit)),
+              fundingPaymentsInWindow(adapter, sinceMs, parseInt(opts.limit)),
               adapter.getPositions(),
             ]);
             if (payments.status === "fulfilled") {
-              for (const p of payments.value) {
-                if (sinceMs && p.time < sinceMs) continue;
+              if (!payments.value.complete) incomplete[`${ex}.funding`] = coverageNote("funding", payments.value.from);
+              for (const p of payments.value.rows) {
                 if (opts.symbol && !p.symbol.toUpperCase().includes(opts.symbol.toUpperCase())) continue;
                 allFunding.push({ exchange: ex, symbol: p.symbol, payment: Number(p.payment), time: p.time });
               }
@@ -703,6 +710,7 @@ function registerAnalyticsSubcommands(
           arbPositions: arbRows,
           ...(opts.daily ? { daily } : {}),
           errors,
+          incomplete,
           partial: Object.keys(errors).length > 0,
         };
 
@@ -714,6 +722,7 @@ function registerAnalyticsSubcommands(
         console.log(`  Net Funding:     ${formatPnl(totalFunding)}`);
         console.log(`  Period:          ~${Math.round(periodDays)} days`);
         for (const [k, msg] of Object.entries(errors)) console.log(chalk.yellow(`  ⚠ ${k} unavailable (left out of the totals): ${msg}`));
+        for (const [k, msg] of Object.entries(incomplete)) console.log(chalk.yellow(`  ⚠ ${k}: ${msg} — the totals are a lower bound`));
 
         if (exSymRows.length > 0) {
           console.log(chalk.white.bold("\n  By Exchange × Symbol:"));

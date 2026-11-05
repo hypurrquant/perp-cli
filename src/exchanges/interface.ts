@@ -178,11 +178,51 @@ export interface ExchangeFundingPayment {
 }
 
 /**
+ * How far back an adapter's capped history read (getFundingPayments / getTradeHistory) reaches when
+ * it returns fewer rows than asked: "all" = the venue's whole list (a short list is all of it), a
+ * number = that many ms before now (the read's own window). null = not proven (a time window the
+ * docs leave open, rows filtered after a server cap): only the rows themselves show coverage.
+ */
+export type HistoryReach = number | "all" | null;
+
+/**
+ * The earliest time a capped newest-first history read (`limit` asked) covers without a gap: its
+ * oldest row when the list is full or the reach is not proven, else the declared reach (with a
+ * minute's slack: a caller's period starts seconds before the read). A window that starts earlier
+ * is not provably covered (Infinity when nothing was read and the reach is not proven).
+ */
+export function coveredFrom(rows: ReadonlyArray<{ time: number }>, limit: number, reach: HistoryReach, now = Date.now()): number {
+  const oldest = rows.reduce((m, r) => Math.min(m, r.time), Infinity);
+  if (rows.length >= limit || reach === null) return oldest;
+  return reach === "all" ? -Infinity : now - reach - 60_000;
+}
+
+/** How far back an incomplete history read reaches (`from` Infinity = no row proves any reach), for the labels of a period total. */
+export function coverageNote(what: string, from: number): string {
+  return Number.isFinite(from) ? `${what} read back to ${new Date(from).toISOString()} only` : `${what}: no row read proves how far back the venue's history reaches`;
+}
+
+/**
+ * Trades of [sinceMs, now] for a period total, like fundingPaymentsInWindow: a windowed read
+ * (getTradesSince) when the adapter has one, else the capped getTradeHistory(limit) with the
+ * adapter's declared historyReach.trades.
+ */
+export async function tradesInWindow(adapter: ExchangeAdapter, sinceMs: number, limit = 200): Promise<{ rows: ExchangeTrade[]; complete: boolean; from: number }> {
+  if (adapter.getTradesSince !== undefined) {
+    const w = await adapter.getTradesSince(sinceMs);
+    return { rows: w.rows.filter(r => r.time >= sinceMs), complete: w.from <= sinceMs, from: Math.max(w.from, sinceMs) };
+  }
+  const rows = await adapter.getTradeHistory(limit);
+  const from = coveredFrom(rows, limit, adapter.historyReach?.trades ?? null);
+  return { rows: rows.filter(r => r.time >= sinceMs), complete: from <= sinceMs, from: Math.max(from, sinceMs) };
+}
+
+/**
  * Funding payments of [sinceMs, now] for a period total; `from` = the earliest time the rows cover
- * without a gap. `complete` (from ≤ sinceMs) = the whole window: a windowed read
- * (getFundingPaymentsSince) that fit its budget, or a capped newest-first list that holds fewer than
- * `limit` rows or reaches past `sinceMs` (coversWindow). Otherwise the sum covers [from, now] only —
- * callers label it incomplete (with `from`), never present it as the total.
+ * without a gap. `complete` (from ≤ sinceMs) only when that is proven: a windowed read
+ * (getFundingPaymentsSince) that fit its budget, or a capped list whose coveredFrom (the adapter's
+ * declared historyReach.funding) reaches the window start. Otherwise the sum covers [from, now] only —
+ * callers label it incomplete (coverageNote), never present it as the total.
  */
 export async function fundingPaymentsInWindow(adapter: ExchangeAdapter, sinceMs: number, limit = 200): Promise<{ rows: ExchangeFundingPayment[]; complete: boolean; from: number }> {
   if (adapter.getFundingPaymentsSince !== undefined) {
@@ -190,13 +230,8 @@ export async function fundingPaymentsInWindow(adapter: ExchangeAdapter, sinceMs:
     return { rows: w.rows, complete: w.from <= sinceMs, from: Math.max(w.from, sinceMs) };
   }
   const rows = await adapter.getFundingPayments(limit);
-  const complete = coversWindow(rows, limit, sinceMs);
-  return { rows: rows.filter(r => r.time >= sinceMs), complete, from: complete ? sinceMs : rows.reduce((m, r) => Math.min(m, r.time), Infinity) };
-}
-
-/** A newest-first history read capped at `limit` holds every row since `sinceMs`. */
-export function coversWindow(rows: ReadonlyArray<{ time: number }>, limit: number, sinceMs: number): boolean {
-  return rows.length < limit || rows.some(r => r.time < sinceMs);
+  const from = coveredFrom(rows, limit, adapter.historyReach?.funding ?? null);
+  return { rows: rows.filter(r => r.time >= sinceMs), complete: from <= sinceMs, from: Math.max(from, sinceMs) };
 }
 
 /**
@@ -328,12 +363,20 @@ export interface ExchangeAdapter {
   getOrderHistory(limit?: number): Promise<ExchangeOrder[]>;
   getTradeHistory(limit?: number): Promise<ExchangeTrade[]>;
   getFundingPayments(limit?: number): Promise<ExchangeFundingPayment[]>;
+  /** How far back getFundingPayments / getTradeHistory reach when short (HistoryReach). Absent = not proven. */
+  readonly historyReach?: { funding: HistoryReach; trades: HistoryReach };
   /**
    * Funding payments since `startTime` (ms), newest first; `from` = the earliest time they cover
    * without a gap (`startTime` = the whole window, later = a read budget ran out). Absent = only the
    * capped getFundingPayments (fundingPaymentsInWindow).
    */
   getFundingPaymentsSince?(startTime: number): Promise<{ rows: ExchangeFundingPayment[]; from: number }>;
+  /**
+   * Trades since `startTime` (ms), newest first; `from` = the earliest time they are proven to cover
+   * (`startTime` = the venue ended the list inside the read, Infinity = nothing proven). Absent = only
+   * the capped getTradeHistory (tradesInWindow).
+   */
+  getTradesSince?(startTime: number): Promise<{ rows: ExchangeTrade[]; from: number }>;
 
   // ── Trading ──
   /**

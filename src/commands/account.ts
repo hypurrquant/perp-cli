@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { listConfiguredAccountVenues } from "../config.js";
 import type { ExchangeAdapter, ExchangePosition, ExchangeOrder } from "../exchanges/index.js";
-import { coversWindow, fundingPaymentsInWindow } from "../exchanges/interface.js";
+import { coverageNote, fundingPaymentsInWindow, tradesInWindow } from "../exchanges/interface.js";
 import type { PublicPosition } from "../exchanges/venue.js";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk, jsonError, symbolMatch, withJsonErrors } from "../utils.js";
 import chalk from "chalk";
@@ -669,20 +669,20 @@ export function registerAccountCommands(
 
       // Gather data in parallel
       const [trades, positions, funding, balance] = await Promise.all([
-        adapter.getTradeHistory(200),
+        tradesInWindow(adapter, cutoff),
         adapter.getPositions(),
         fundingPaymentsInWindow(adapter, cutoff),
         adapter.getBalance(),
       ]);
 
-      const filteredTrades = trades.filter(t => t.time >= cutoff);
+      const filteredTrades = trades.rows;
       const filteredFunding = funding.rows;
-      // A history that may end inside the period makes its totals a lower bound (labelled, never the total).
-      const tradesIncomplete = !coversWindow(trades, 200, cutoff);
+      // A history not proven to cover the period makes its totals a lower bound (labelled, never the total).
+      const tradesIncomplete = !trades.complete;
       const fundingIncomplete = !funding.complete;
       const incompleteNotes = [
-        tradesIncomplete ? `trades read back to ${new Date(Math.min(...trades.map(t => t.time))).toISOString()} only (the last 200)` : null,
-        fundingIncomplete ? `funding read back to ${new Date(funding.from).toISOString()} only` : null,
+        tradesIncomplete ? coverageNote("trades", trades.from) : null,
+        fundingIncomplete ? coverageNote("funding", funding.from) : null,
       ].filter((n): n is string => n !== null).map(n => `${n} — totals are a lower bound`);
 
       // Realized PnL: group trades by symbol, compute net P&L
