@@ -29,6 +29,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 - **The Lighter / Lighter RH account feed sends a keepalive ping.** Lighter closes a connection that sent no frame for 2 minutes (docs.lighter.xyz/api/websocket; live: closed at 120.2 s, code 1000 "i/o timeout"). The feed sent none after subscribing, so every 2 minutes it fell back to REST and reconnected. It now sends perp-ws's `{"type":"ping"}` every 10 s (perp-ws pings every 30 s); each pong also confirms that a quiet account's feed is live, since its channels push changes only.
 
+### Fixed — `portfolio --serve`: live feeds reconnected every second
+
+- **The reconnect backoff applies to every attempt.** After the first connect, a failed reconnect never settled (the error handler rejected only while the feed was still connecting), so the backoff never ran and each attempt's close scheduled the next one at the unchanged 1 s delay. A venue refusing the upgrade (HTTP 429) got one attempt per second, forever (15 reconnects in 15 s), each leaving a pending promise. Attempts now wait 1, 2, 4 … 30 s. The delay resets when the venue serves data on the socket, not on a bare open, so a socket that is accepted and then dropped backs off too.
+
 ### Fixed — the shared cache stopped working once its directory was removed
 
 - **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).

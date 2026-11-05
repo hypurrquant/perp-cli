@@ -152,6 +152,8 @@ abstract class ExchangeWsFeed {
       this.wsDataReceived = true;
       this.state.mode = "ws";
       this.stopRestFallback();
+      this.reconnectDelay = 1000; // the venue serves this socket: the next drop retries after 1 s
+      this.failureCounts.delete("ws-reconnect");
     }
     this.onUpdate(this.state);
     // Also write to file cache for CLI cross-process sharing
@@ -169,20 +171,21 @@ abstract class ExchangeWsFeed {
     } catch { /* non-fatal */ }
   }
 
+  /** One attempt pending at a time (a failed attempt's close and its rejection both ask). The delay
+   *  doubles per attempt until WS data resets it: a venue that refuses the upgrade, or accepts it
+   *  and drops the socket, is retried at 1, 2, 4 … 30 s, not every second. */
   protected scheduleReconnect() {
-    if (this.closed) return;
-    this.reconnectTimer = setTimeout(async () => {
-      try {
-        await this.connect();
-        this.reconnectDelay = 1000; // reset on success
-        this.failureCounts.delete("ws-reconnect");
-      } catch (e) {
+    if (this.closed || this.reconnectTimer) return;
+    const delay = this.reconnectDelay;
+    this.reconnectDelay = Math.min(delay * 2, MAX_RECONNECT_DELAY);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect().catch((e) => {
         // REST fallback keeps the data flowing; the reconnect failure is logged, not hidden.
         this.logFailure("ws-reconnect", e);
-        this.reconnectDelay = Math.min(this.reconnectDelay * 2, MAX_RECONNECT_DELAY);
         this.scheduleReconnect();
-      }
-    }, this.reconnectDelay);
+      });
+    }, delay);
   }
 
   protected startRestFallback() {
@@ -308,10 +311,9 @@ class HyperliquidFeed extends ExchangeWsFeed {
         });
 
         this.ws.on("error", (err) => {
-          if (this.state.mode === "connecting") {
-            this.startRestFallback();
-            reject(err);
-          }
+          // Settles a reconnect's connect() too (a no-op once open): it never hangs unsettled.
+          this.startRestFallback();
+          reject(err);
         });
       } catch (err) {
         this.startRestFallback();
@@ -489,10 +491,9 @@ class PacificaFeed extends ExchangeWsFeed {
         });
 
         this.ws.on("error", (err) => {
-          if (this.state.mode === "connecting") {
-            this.startRestFallback();
-            reject(err);
-          }
+          // Settles a reconnect's connect() too (a no-op once open): it never hangs unsettled.
+          this.startRestFallback();
+          reject(err);
         });
       } catch (err) {
         this.startRestFallback();
@@ -763,10 +764,9 @@ class LighterFeed extends ExchangeWsFeed {
         });
 
         this.ws.on("error", (err) => {
-          if (this.state.mode === "connecting") {
-            this.startRestFallback();
-            reject(err);
-          }
+          // Settles a reconnect's connect() too (a no-op once open): it never hangs unsettled.
+          this.startRestFallback();
+          reject(err);
         });
       } catch (err) {
         this.startRestFallback();

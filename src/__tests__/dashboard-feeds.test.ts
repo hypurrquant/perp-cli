@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 import type { AddressInfo } from "node:net";
@@ -454,5 +455,26 @@ describe("Lighter feed keepalive", () => {
     v.send((fixtureFrames("lighter", "control") as Frame[]).find(f => f.type === "pong"));
     await delivered;
     expect(isFeedStale(feed.getState())).toBe(true);
+  });
+});
+
+describe("reconnect backoff", () => {
+  it("a venue refusing every reconnect is retried at 1, 2, 4, 8 s, not every second", async () => {
+    const realTimeout = setTimeout;
+    const upgrades: number[] = [];
+    const http = createServer((_q, res) => res.end());
+    http.on("upgrade", (_q, socket) => { upgrades.push(Date.now()); socket.end("HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\n\r\n"); });
+    await new Promise<void>(r => http.listen(0, "127.0.0.1", () => r()));
+    cleanup.push(() => new Promise(r => http.close(r)));
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    cleanup.push(() => { vi.useRealTimers(); stderr.mockRestore(); });
+    const { mgr } = feedFor("pacifica", stubAdapter({ publicKey: PAC_ACCOUNT }).adapter, `ws://127.0.0.1:${(http.address() as AddressInfo).port}`);
+    const t0 = Date.now();
+    const scheduled = async () => { while (vi.getTimerCount() === 0) await new Promise(r => realTimeout(r, 5)); };
+    await mgr.start(); // refused (429)
+    for (let s = 0; s < 15; s++) { await scheduled(); vi.advanceTimersByTime(1000); } // 15 s of venue time
+    await scheduled();
+    expect(upgrades.map(t => t - t0)).toEqual([0, 1000, 3000, 7000, 15000]);
   });
 });
