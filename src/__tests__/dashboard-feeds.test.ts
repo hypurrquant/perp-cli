@@ -12,6 +12,7 @@ import type { AddressInfo } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { ExchangeAdapter, ExchangeBalance, ExchangeOrder } from "../exchanges/interface.js";
 import { WsFeedManager, isFeedStale, FEED_STALE_MS, type WsFeedState } from "../dashboard/ws-feeds.js";
+import { VENUE_STATIC } from "../ws/venue-static.js";
 import { fixtureFrames } from "./ws/helpers.js";
 
 type Frame = Record<string, unknown> & { channel?: string; data?: Record<string, unknown> };
@@ -412,5 +413,46 @@ describe("Pacifica feed: the open-orders snapshot and the updates around it", ()
     const pending = () => (feed as unknown as { pendingOrderUpdates: unknown[] }).pendingOrderUpdates.length;
     await expect.poll(pending).toBeGreaterThan(0);
     expect(pending()).toBe(1000);
+  });
+});
+
+describe("Lighter feed keepalive", () => {
+  it("pings within the venue's 2-minute idle window; the pong confirms a quiet account", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    cleanup.push(() => vi.useRealTimers());
+    const v = await venueSocket();
+    const { adapter } = stubAdapter({
+      _accountIndex: 1000001, network: { wsUrl: v.url }, signer: { createAuthToken: async () => ({ authToken: "test-token" }) },
+    });
+    const { mgr, feed } = feedFor("lighter", adapter, v.url);
+    await mgr.start();
+    const [stats] = fixtureFrames("lighter", "private-account") as Frame[]; // subscribed/user_stats
+    v.send(stats);
+    await expect.poll(() => feed.getState().mode).toBe("ws");
+    vi.advanceTimersByTime(VENUE_STATIC.lighter.ping!.everyMs);
+    await expect.poll(() => v.received).toContainEqual({ type: "ping" });
+    const quietSince = feed.getState().lastOkAt!;
+    vi.setSystemTime(quietSince + FEED_STALE_MS); // a quiet account: no account frame since
+    v.send((fixtureFrames("lighter", "control") as Frame[]).find(f => f.type === "pong"));
+    await expect.poll(() => isFeedStale(feed.getState(), quietSince + FEED_STALE_MS + 1)).toBe(false);
+  });
+
+  it("a pong does not make a feed fresh while its REST reads are failing", async () => {
+    const v = await venueSocket();
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    cleanup.push(() => stderr.mockRestore());
+    const { adapter } = stubAdapter({
+      _accountIndex: 1000001, network: { wsUrl: v.url }, signer: { createAuthToken: async () => ({ authToken: "test-token" }) },
+      getBalance: async () => { throw new Error("HTTP 503"); },
+    });
+    const { mgr, feed } = feedFor("lighter", adapter, v.url);
+    const internals = feed as unknown as { WS_DATA_TIMEOUT: number; ws: WebSocket };
+    internals.WS_DATA_TIMEOUT = 50;
+    await mgr.start();
+    await expect.poll(() => feed.getState().lastError).toBe("rest-poll: HTTP 503");
+    const delivered = new Promise(r => internals.ws.once("message", r)); // runs after the feed's own listener
+    v.send((fixtureFrames("lighter", "control") as Frame[]).find(f => f.type === "pong"));
+    await delivered;
+    expect(isFeedStale(feed.getState())).toBe(true);
   });
 });

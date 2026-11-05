@@ -13,6 +13,7 @@ import type { LighterAdapter } from "../exchanges/lighter.js";
 import type { PacificaAdapter } from "../exchanges/pacifica.js";
 import { hlOpenOrderRows } from "../exchanges/hyperliquid.js";
 import { formatComputedPrice } from "../exchanges/precision.js";
+import { VENUE_STATIC } from "../ws/venue-static.js";
 
 /** Balance as the dashboard knows it: unrealizedPnl null = the venue feed does not report it / unknown. */
 export type DashboardBalance = Omit<ExchangeBalance, "unrealizedPnl"> & { unrealizedPnl: string | null };
@@ -670,6 +671,7 @@ class PacificaFeed extends ExchangeWsFeed {
 
 class LighterFeed extends ExchangeWsFeed {
   private accountIndex: number;
+  private keepalive: ReturnType<typeof setInterval> | null = null;
 
   constructor(exchange: DashboardExchange, onUpdate: (state: WsFeedState) => void) {
     super(exchange, onUpdate);
@@ -734,6 +736,12 @@ class LighterFeed extends ExchangeWsFeed {
           }
           // Subscribe to public channel for balance (no auth needed)
           this.ws!.send(JSON.stringify({ type: "subscribe", channel: `user_stats/${this.accountIndex}` }));
+          // Keepalive: Lighter closes a socket after 2 minutes without a client frame. The pong also
+          // confirms the (change-only) account channels are live, so ping well within FEED_STALE_MS.
+          const ping = VENUE_STATIC[this.exchange.name === "lighter-rh" ? "lighter-rh" : "lighter"].ping!;
+          this.keepalive = setInterval(() => {
+            if (this.ws?.readyState === NodeWebSocket.OPEN) this.ws.send(ping.message);
+          }, Math.min(ping.everyMs, FEED_STALE_MS / 3));
           // Start data timeout — switch to REST if no data within 5s
           this.startWsDataTimeout();
           resolve();
@@ -747,6 +755,7 @@ class LighterFeed extends ExchangeWsFeed {
         });
 
         this.ws.on("close", () => {
+          this.stopKeepalive();
           if (!this.closed) {
             this.startRestFallback();
             this.scheduleReconnect();
@@ -766,11 +775,21 @@ class LighterFeed extends ExchangeWsFeed {
     });
   }
 
+  private stopKeepalive() {
+    if (this.keepalive) { clearInterval(this.keepalive); this.keepalive = null; }
+  }
+
+  close() {
+    this.stopKeepalive();
+    super.close();
+  }
+
   /** Cached position map: market_id → position data (for incremental updates) */
   private positionMap = new Map<string, Record<string, unknown>>();
 
   private handleMessage(msg: Record<string, unknown>) {
     const type = String(msg.type ?? "");
+    if (type === "pong" && this.state.mode === "ws") this.recordOk("ws-pong"); // confirms only the live source
 
     // Balance: user_stats channel (public, no auth) provides portfolio_value, available_balance, etc.
     if (type.includes("user_stats")) {
