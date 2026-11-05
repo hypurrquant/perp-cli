@@ -4,6 +4,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — security: the `portfolio --serve` dashboard served the account to any web page
+
+- **The dashboard's WebSocket now accepts only the dashboard's own page.** It accepted a connection from any Origin and pushed it the account snapshot (equity, positions with liquidation prices, open orders), so any web page open in the browser could read it from `ws://127.0.0.1:<port>` (cross-site WebSocket hijacking; a client sending `Origin: https://evil.example` received the snapshot). A handshake whose Origin is not `http://localhost:<port>` or `http://127.0.0.1:<port>` is now refused with HTTP 403. A client that sends no Origin is accepted: browsers always send one, so it is a local process, which can read `/api/snapshot` over plain HTTP anyway.
+- **The dashboard serves only its own host name (DNS rebinding).** `/api/snapshot` answered any `Host`, so a page whose domain re-resolves to 127.0.0.1 could read the account over plain HTTP (`Host: evil.example:<port>` got 200 with the snapshot). HTTP requests and WebSocket handshakes whose `Host` is not `localhost:<port>` or `127.0.0.1:<port>` (the served port) now get HTTP 403. **Note:** both the Origin and the Host check name the served port, so an SSH port-forward to a *different* local port (`ssh -L 9000:127.0.0.1:3456`) is refused; forward to the same port (`-L 3456:127.0.0.1:3456`).
+
 ### Fixed — the shared cache stopped working once its directory was removed
 
 - **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).

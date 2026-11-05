@@ -396,8 +396,15 @@ export async function startDashboard(
   const html = getUI();
   let feedMgr: WsFeedManager | undefined;
 
+  // DNS rebinding: a page on evil.example whose name re-resolves to 127.0.0.1 is same-origin to
+  // itself, so it can read this server over HTTP. Only the dashboard's own host names are served
+  // (an SSH port-forward to a different local port is refused too: use the same port).
+  const ownHosts = new Set([`localhost:${port}`, `127.0.0.1:${port}`]);
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    if (req.url === "/" || req.url === "/index.html") {
+    if (!ownHosts.has(String(req.headers.host ?? "").toLowerCase())) {
+      res.writeHead(403);
+      res.end("Host not allowed");
+    } else if (req.url === "/" || req.url === "/index.html") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(html);
     } else if (req.url === "/api/snapshot") {
@@ -414,7 +421,18 @@ export async function startDashboard(
     }
   });
 
-  const wss = new WebSocketServer({ server });
+  // The snapshot is the account (equity, positions, orders): only the dashboard's own page may
+  // read it. A browser sends Origin on every WebSocket handshake, so a page on any other origin
+  // (cross-site WebSocket hijacking) is refused. No Origin = not a browser: a local process, which
+  // can read /api/snapshot over plain HTTP anyway.
+  const ownOrigins = new Set([`http://localhost:${port}`, `http://127.0.0.1:${port}`]);
+  const wss = new WebSocketServer({
+    server,
+    verifyClient: ({ origin, req }, cb) => cb(
+      ownHosts.has(String(req.headers.host ?? "").toLowerCase()) && (origin === undefined || ownOrigins.has(origin)),
+      403, "Origin / Host not allowed",
+    ),
+  });
   const hasClients = () => wss.clients.size > 0;
 
   // ── WS Feed Manager: real-time account data via exchange WS APIs ──
