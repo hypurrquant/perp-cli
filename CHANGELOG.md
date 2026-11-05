@@ -4,6 +4,18 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.17.1] — 2026-11-05
+
+> **Patch:** five fixes (#68, #69, #71, Aster's move off its removed V1 API, and the RISEx mainnet router re-pin) and no new features. No JSON contract change (`docs/TESTING.md` §5 invariant 12): the RISEx fix makes `indexPrice` meet its documented type (dec > 0 | null). Both packages move together (`RELEASING.md`, lockstep); `@hypurrquant/perp-ws` gets the read-only Lighter WebSocket URL.
+
+### Fixed — RISEx refused every mainnet signature after its router upgrade
+
+- **perp-cli signs RISEx mainnet actions again.** On 2026-11-03 (block 26068740) RISEx upgraded its mainnet router (`0xaadde0ce…`) from implementation `0xe2da7a94…` to `0xce1be14b…`, without notice. perp-cli pins the reviewed implementations and refuses to sign when one changes. Since the upgrade, every mainnet RISEx order, cancel, cancel-all, leverage / margin change and `wallet agent approve risex` failed with `POLICY_DENIED` ("router was upgraded"); testnet was not affected. The new implementation is the one reviewed for testnet on 2026-10-28, which adds three batch place / cancel entries whose permits are checked with the trading permission. Its 29,683 bytes match testnet's `0x91916671…` except one 20-byte immutable: each network's USDC address from `GET /v1/system/config`. The replaced implementation was byte-identical to testnet's pre-upgrade one. The mainnet pin and the evidence fixture now name the new implementation. RISEx mainnet trading is still unverified with real funds. The read-only drift check (`PERP_RISEX_LIVE=1`, `src/__tests__/integration/risex-txflow-live.test.ts`) failed on mainnet before this change and passes after it; CI does not run it.
+
+### Fixed — Aster market data came from Aster's removed V1 API
+
+- **Aster's public reads now use `/fapi/v3`.** Aster's API changelog removed the futures V1 API on 2026-11-02 ("Removed: `future v1 api`"). perp-cli still read `exchangeInfo`, `premiumIndex` and `ticker/24hr` from `/fapi/v1`, and `perp health` / MCP `health_check` pinged `/fapi/v1/time`. V1 still answered on 2026-11-04, so nothing had failed yet. Once Aster switches it off, Aster drops out of `market list` / `market prices` / funding / `arb scan` (and MCP `get_markets` / `get_prices`), and `trade split` / `scale-in` / `scale-tp` and the `arb` leg minimums can no longer read Aster's tick and order minimums. Plain market and limit orders were not affected: the adapter has used V3 since June. The V3 paths are documented and returned the same data side by side on 2026-11-04 (`exchangeInfo` identical apart from `serverTime`; `premiumIndex` 799 and `ticker/24hr` 638 rows with the same fields and symbols). The e2e runner (`scripts/e2e/run.ts`) reads the same V3 paths. Fixtures: the cross fixture's 27 Aster request URLs move from `/fapi/v1` to `/fapi/v3` (responses unchanged), so a V1 request now fails the replay check.
+
 ### Fixed — the shared cache stopped working once its directory was removed
 
 - **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).
@@ -15,6 +27,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 ### Fixed — Lighter / Lighter RH WebSocket refused in restricted regions
 
 - **Lighter WebSockets now connect read-only (`?readonly=true`).** The plain URL answered HTTP 400 to the nightly conformance's US runners on every run since 2026-10-27, while REST worked. There, `market list` / MCP `get_markets` / funding showed Lighter and Lighter RH with `fundingRate` and `fundingRateKind` null (stderr: "settled funding rate unavailable … Unexpected server response: 400"), and perp-ws Lighter streams reconnect-looped to `closed` with no event. docs.lighter.xyz/api/websocket gives the read-only URL for "a restricted region"; perp-cli only reads over WS (orders go through REST `/sendTx`), and the read-only socket serves the same channels and frames (side-by-side probe 2026-11-01). Affects the CLI funding reader, the `portfolio --serve` Lighter feed and the perp-ws `lighter` / `lighterRh` codecs (`codec.url()` now returns the read-only URL). Fixtures: the WS URL keys gain the query (frames unchanged).
+
+### Docs
+
+- **`docs/verification.md`: Hyperliquid HIP-3 `xyz` native TWAP is now marked verified on mainnet.** It was run on 2026-10-27 (one run to the end, one cancelled mid-run, both read back on the Hyperliquid API) but was still marked ❌.
 
 ## [0.17.0] — 2026-10-28
 

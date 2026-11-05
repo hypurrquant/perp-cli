@@ -272,9 +272,9 @@ function asterFilter(filters: unknown, type: string, field: string): string | nu
 async function asterRows(net: Network): Promise<Row[]> {
   const base = legacyPublicBaseUrl("aster", net);
   const [infoJson, premiumJson, tickerJson, fundingInfoJson] = await Promise.all([
-    getJson("aster", `${base}/fapi/v1/exchangeInfo`, "exchangeInfo"),
-    getJson("aster", `${base}/fapi/v1/premiumIndex`, "premiumIndex"),
-    getJson("aster", `${base}/fapi/v1/ticker/24hr`, "ticker/24hr"),
+    getJson("aster", `${base}/fapi/v3/exchangeInfo`, "exchangeInfo"),
+    getJson("aster", `${base}/fapi/v3/premiumIndex`, "premiumIndex"),
+    getJson("aster", `${base}/fapi/v3/ticker/24hr`, "ticker/24hr"),
     getJson("aster", `${base}/fapi/v3/fundingInfo`, "fundingInfo"),
   ]);
   const symbols = arrayField("aster", "exchangeInfo.symbols", (infoJson as { symbols?: unknown }).symbols);

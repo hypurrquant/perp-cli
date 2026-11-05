@@ -65,7 +65,7 @@ function pingFor(id: VenueId, network: Network): (() => Promise<Result>) | null 
     case "pacifica": return helperPing(pingPacifica);
     case "hyperliquid": return helperPing(pingHyperliquid);
     case "lighter": return helperPing(pingLighter);
-    case "aster": return () => restPing(`${networkConfig(getVenue("aster"), network).restUrl}/fapi/v1/time`);
+    case "aster": return () => restPing(`${networkConfig(getVenue("aster"), network).restUrl}/fapi/v3/time`);
     // QFEX: public GET /refdata for one instrument.
     case "qfex": return () => restPing(`${networkConfig(getVenue("qfex"), network).restUrl}/refdata?ticker=AAPL-USD`);
     // GRVT: one public instrument read (the market-data probe would fan out over every ticker).

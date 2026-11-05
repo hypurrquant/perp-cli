@@ -242,8 +242,8 @@ async function hip3Markets(net: Net, dex: string, fallbackMinNotional: number): 
 async function asterMarkets(def: DistVenueDef, net: Net): Promise<Mkt[]> {
   // Same REST host the CLI uses (venue definition networks — fapi.asterdex-testnet.com on testnet).
   const base = def.networks[net].restUrl;
-  const info = await fetchJson(`${base}/fapi/v1/exchangeInfo`) as { symbols: Array<{ symbol: string; baseAsset: string; quoteAsset: string; status: string; filters: Array<Record<string, string>> }> };
-  const marks = await fetchJson(`${base}/fapi/v1/premiumIndex`) as Array<{ symbol: string; markPrice: string }>;
+  const info = await fetchJson(`${base}/fapi/v3/exchangeInfo`) as { symbols: Array<{ symbol: string; baseAsset: string; quoteAsset: string; status: string; filters: Array<Record<string, string>> }> };
+  const marks = await fetchJson(`${base}/fapi/v3/premiumIndex`) as Array<{ symbol: string; markPrice: string }>;
   const markOf = new Map(marks.map(m => [m.symbol, Number(m.markPrice)]));
   return info.symbols.filter(s => s.quoteAsset === "USDT").map(s => {
     const f = (t: string) => s.filters.find(x => x.filterType === t);
@@ -255,7 +255,7 @@ async function asterMarkets(def: DistVenueDef, net: Net): Promise<Mkt[]> {
       minNotional: mn?.notional !== undefined ? Number(mn.notional) : 5, minNotionalSource: mn?.notional !== undefined ? "exchangeInfo MIN_NOTIONAL" : "assumed 5",
       maxLeverage: null,
       percentPrice: pp !== undefined ? { up: Number(pp.multiplierUp), down: Number(pp.multiplierDown) } : null,
-      onlyIsolated: null, tradable: s.status === "TRADING", source: `${base}/fapi/v1/exchangeInfo`,
+      onlyIsolated: null, tradable: s.status === "TRADING", source: `${base}/fapi/v3/exchangeInfo`,
     };
   });
 }

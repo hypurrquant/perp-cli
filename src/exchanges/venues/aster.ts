@@ -171,7 +171,7 @@ export const asterVenue: VenueDefinition = {
     // USDC on chains 1 / 56 / 4663 / 5042 / 42161 with perpMaxWithdrawAmount + withdrawFee).
     withdrawAssets: ["USDT", "USDC"],
   },
-  // GET /fapi/v1/exchangeInfo rateLimits: REQUEST_WEIGHT 2400/min
+  // GET /fapi/v3/exchangeInfo rateLimits: REQUEST_WEIGHT 2400/min
   // (ORDERS 1200/min and 300/10s are separate order-count limits, not modeled).
   // Declared only — per the limiter is applied to new venues + lighter-rh.
   rateLimit: { capacity: 2400, refillPerSec: 40, weights: null },

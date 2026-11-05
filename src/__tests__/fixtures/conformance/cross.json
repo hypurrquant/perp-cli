@@ -8597,7 +8597,7 @@
   {
    "cell": "cli:health",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/time",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -11076,7 +11076,7 @@
   {
    "cell": "cli:arb-scan",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/premiumIndex",
+   "url": "https://fapi.asterdex.com/fapi/v3/premiumIndex",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -11325,7 +11325,7 @@
   {
    "cell": "cli:arb-scan",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/ticker/24hr",
+   "url": "https://fapi.asterdex.com/fapi/v3/ticker/24hr",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -11707,7 +11707,7 @@
   {
    "cell": "cli:arb-scan",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/exchangeInfo",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -13203,7 +13203,7 @@
   {
    "cell": "cli:arb-scan",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/premiumIndex",
+   "url": "https://fapi.asterdex.com/fapi/v3/premiumIndex",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -13311,7 +13311,7 @@
   {
    "cell": "cli:arb-rates",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/premiumIndex",
+   "url": "https://fapi.asterdex.com/fapi/v3/premiumIndex",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -13335,7 +13335,7 @@
   {
    "cell": "cli:arb-rates",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/exchangeInfo",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -13962,7 +13962,7 @@
   {
    "cell": "cli:arb-rates",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/ticker/24hr",
+   "url": "https://fapi.asterdex.com/fapi/v3/ticker/24hr",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -14733,7 +14733,7 @@
   {
    "cell": "cli:arb-rates-unverified",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/premiumIndex",
+   "url": "https://fapi.asterdex.com/fapi/v3/premiumIndex",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -15497,7 +15497,7 @@
   {
    "cell": "cli:arb-rates-unverified",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/ticker/24hr",
+   "url": "https://fapi.asterdex.com/fapi/v3/ticker/24hr",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -15712,7 +15712,7 @@
   {
    "cell": "cli:arb-rates-unverified",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/exchangeInfo",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -18088,7 +18088,7 @@
   {
    "cell": "cli:arb-compare",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/premiumIndex",
+   "url": "https://fapi.asterdex.com/fapi/v3/premiumIndex",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -18864,7 +18864,7 @@
   {
    "cell": "cli:arb-compare",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/ticker/24hr",
+   "url": "https://fapi.asterdex.com/fapi/v3/ticker/24hr",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -19055,7 +19055,7 @@
   {
    "cell": "cli:arb-compare",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/exchangeInfo",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -19762,7 +19762,7 @@
   {
    "cell": "cli:arb-compare-unverified",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/premiumIndex",
+   "url": "https://fapi.asterdex.com/fapi/v3/premiumIndex",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -19923,7 +19923,7 @@
   {
    "cell": "cli:arb-compare-unverified",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/ticker/24hr",
+   "url": "https://fapi.asterdex.com/fapi/v3/ticker/24hr",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -19935,7 +19935,7 @@
   {
    "cell": "cli:arb-compare-unverified",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/exchangeInfo",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -22750,7 +22750,7 @@
   {
    "cell": "cli:arb-basis",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/premiumIndex",
+   "url": "https://fapi.asterdex.com/fapi/v3/premiumIndex",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -22911,7 +22911,7 @@
   {
    "cell": "cli:arb-basis",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/ticker/24hr",
+   "url": "https://fapi.asterdex.com/fapi/v3/ticker/24hr",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -23102,7 +23102,7 @@
   {
    "cell": "cli:arb-basis",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/exchangeInfo",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -23696,7 +23696,7 @@
   {
    "cell": "mcp:get_funding_rates",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/premiumIndex",
+   "url": "https://fapi.asterdex.com/fapi/v3/premiumIndex",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -23857,7 +23857,7 @@
   {
    "cell": "mcp:get_funding_rates",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/ticker/24hr",
+   "url": "https://fapi.asterdex.com/fapi/v3/ticker/24hr",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -24942,7 +24942,7 @@
   {
    "cell": "mcp:get_funding_rates",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/exchangeInfo",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -26081,7 +26081,7 @@
   {
    "cell": "mcp:get_prices",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/premiumIndex",
+   "url": "https://fapi.asterdex.com/fapi/v3/premiumIndex",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -26933,7 +26933,7 @@
   {
    "cell": "mcp:get_prices",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/ticker/24hr",
+   "url": "https://fapi.asterdex.com/fapi/v3/ticker/24hr",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -27315,7 +27315,7 @@
   {
    "cell": "mcp:get_prices",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/exchangeInfo",
+   "url": "https://fapi.asterdex.com/fapi/v3/exchangeInfo",
    "body": null,
    "status": 200,
    "contentType": "application/json",
@@ -28953,7 +28953,7 @@
   {
    "cell": "mcp:health_check",
    "method": "GET",
-   "url": "https://fapi.asterdex.com/fapi/v1/time",
+   "url": "https://fapi.asterdex.com/fapi/v3/time",
    "body": null,
    "status": 200,
    "contentType": "application/json",
