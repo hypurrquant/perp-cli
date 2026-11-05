@@ -90,8 +90,8 @@ interface Totals {
   accountValueUsd: number;
   marginUsed: number;
   marginPct: number;
-  /** Sum over the venues whose funding was read (see fundingIncomplete). */
-  funding24h: number;
+  /** Sum over the venues whose funding was read (see fundingIncomplete); null when no venue's was. */
+  funding24h: number | null;
   /** true = at least one venue's funding24h is null and is left out of the sum. */
   fundingIncomplete: boolean;
 }
@@ -453,7 +453,7 @@ function buildTotals(entries: ExchangeEntry[]): { totals: Totals; risk: RiskBloc
   let equity = 0;
   let spotValueUsd = 0;
   let marginUsed = 0;
-  let funding24h = 0;
+  let funding24h: number | null = null;
   let fundingIncomplete = false;
   let accountValueUsd = 0;
 
@@ -463,7 +463,7 @@ function buildTotals(entries: ExchangeEntry[]): { totals: Totals; risk: RiskBloc
       marginUsed += Number(e.perp.marginUsed);
     }
     if (e.funding24h === null) fundingIncomplete = true;
-    else funding24h += e.funding24h;
+    else funding24h = (funding24h ?? 0) + e.funding24h;
 
     // Non-USDC spot value (for unified accounts USDC is already in equity)
     const exSpot = e.isUnified
@@ -889,7 +889,7 @@ async function runServe(
       scope: resolved.scope,
       mode: "serve",
       exchanges: [],
-      totals: { equity: 0, spotValueUsd: 0, accountValueUsd: 0, marginUsed: 0, marginPct: 0, funding24h: 0, fundingIncomplete: false },
+      totals: { equity: 0, spotValueUsd: 0, accountValueUsd: 0, marginUsed: 0, marginPct: 0, funding24h: null, fundingIncomplete: false },
       risk: { level: "LOW", marginPct: 0 },
       serve: {
         url: `http://localhost:${dashboard.port}`,

@@ -23,6 +23,9 @@ import HL_RECORDED from "../fixtures/hyperliquid/read-path-2026-10-19.json";
 import HL_ACCOUNT_FRAMES from "../fixtures/ws/hyperliquid/private-clearinghouseState.json";
 import PAC_MARKET_DATA from "../fixtures/pacifica/market-data-live.json";
 
+// portfolio --serve: the dashboard server itself is not started (its port is all the envelope needs).
+vi.mock("../../dashboard/index.js", async (importOriginal) => ({ ...(await importOriginal<object>()), startDashboard: vi.fn(async () => ({ port: 4567 })) }));
+
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const NOW = Date.now();
@@ -367,6 +370,11 @@ describe("a list longer than the read budget proves nothing (its order is not do
     expect((data.exchanges as Array<Record<string, unknown>>)[0]).toMatchObject({ funding24h: null, fundingError: `funding history: ${NOT_PROVEN} — the 24 h total is unknown` });
   });
 
+  it("portfolio: no venue's funding was read → totals.funding24h null (unknown), not 0", async () => {
+    const { data } = await portfolio("pacifica", pacificaAdapter(pacFunding(PAC_OVER_BUDGET, 1000)));
+    expect(data.totals).toMatchObject({ funding24h: null, fundingIncomplete: true });
+  });
+
   it("account pnl --period 30d: the rows read are summed and flagged fundingIncomplete", async () => {
     const { data } = await accountPnl("pacifica", pacificaAdapter(pacFunding(PAC_OVER_BUDGET, 1000)), "30d");
     expect(data).toMatchObject({ funding: -(PAC_OVER_BUDGET - 1), fundingPayments: PAC_OVER_BUDGET - 1, fundingIncomplete: true });
@@ -380,5 +388,23 @@ describe("coverage of an empty list does not depend on the clock", () => {
 
   it("coverageNote of an empty list's coverage says nothing proves the reach, however late it is written", () => {
     expect(coverageNote("funding", coveredFrom([], 200, null, 1_000))).toBe(`funding: ${NOT_PROVEN}`);
+  });
+});
+
+describe("portfolio --serve envelope", () => {
+  it("totals.funding24h is null (no venue's funding read yet), not 0", async () => {
+    const prog = new Command();
+    prog.exitOverride();
+    addRootSafetyOptions(prog).option("-e, --exchange <exchange>", "Exchange", "pacifica").option("--json", "JSON output");
+    registerPortfolioCommand(prog, async () => pacificaAdapter([]), () => true, "test");
+    const out: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { out.push(a.map(String).join(" ")); });
+    vi.spyOn(process.stdout, "write").mockImplementation((s: string | Uint8Array) => { out.push(String(s)); return true; });
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    void prog.parseAsync(["node", "perp", "-e", "pacifica", "--json", "portfolio", "--serve"]); // serves until stopped: never settles
+    await vi.waitFor(() => expect(out.join("")).toMatch(/"mode": ?"serve"/));
+    const joined = out.join("");
+    const env = JSON.parse(joined.slice(joined.indexOf("{"))) as { data: { totals: Record<string, unknown> } };
+    expect(env.data.totals.funding24h).toBeNull();
   });
 });
