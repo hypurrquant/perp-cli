@@ -4,6 +4,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — client-side TWAP sent off-lot slices and reported a refused run as a success
+
+- **Every slice of the client-side TWAP (`trade twap` on venues without a native TWAP, `strategy twap`) is on the market's lot grid.** A slice was `total / slices` unrounded ("0.0033333333333333335"); Aster sends the quantity as is, so the venue refused every slice. Each slice is now an equal share of what is left, floored to the lot step, and the remainder is carried to the later slices (0.01 in 3 on a 0.001 lot: 0.003, 0.003, 0.004). A slice below one lot (`SIZE_TOO_SMALL`), or an unknown lot step, is refused before anything is sent, and a background job refused so ends `error` (it read `done`). A reduce-only run on a market missing from the market list (`SYMBOL_NOT_FOUND`) points to closing the position directly: `perp trade close <symbol>`.
+- **A run whose slices were refused and that left at least one lot untraded is an error** (`ORDER_PARTIAL`, or `ORDER_REJECTED` when nothing filled; `details.twap` carries the run, the background job ends `error`). It returned the state as a success (`ok: true`, exit 0) even after aborting on too many errors.
+
 ### Fixed — Hyperliquid outcome (HIP-4) orders were listed and cancelled as perp orders
 
 - **Hyperliquid's perp open orders leave out HIP-4 outcome orders (coin `#<encoding>`)**, as they already left out spot orders. `frontendOpenOrders` lists them with the perp orders; `account orders -e hyperliquid` (and MCP `get_open_orders`) showed them as perps, and `trade cancel-all` / `flatten` tried to cancel them through the perp asset map, which has no `#…` coin (`SYMBOL_NOT_FOUND`, so the run ended `ORDER_PARTIAL`). The outcome commands read them from the same response (`getOutcomeOpenOrders`), so `perp outcome` orders and cancels are unchanged.

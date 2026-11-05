@@ -39,6 +39,9 @@ function mockAdapter(overrides?: Partial<Record<string, unknown>>) {
     name: "hyperliquid",
     getMarkets: vi.fn().mockResolvedValue([
       { symbol: "BTC", markPrice: "60000", indexPrice: "60000", fundingRate: "0.0001", volume24h: "1000000", openInterest: "500000", maxLeverage: 20, sizeDecimals: 5, stepSize: "0.00001", fundingHours: 1, marginTiers: null },
+      // TWAP sizes every slice on the market lot (lotStepOf).
+      { symbol: "ETH", markPrice: "3000", indexPrice: "3000", fundingRate: "0.0001", volume24h: "1000000", openInterest: "500000", maxLeverage: 20, sizeDecimals: 4, stepSize: "0.0001", fundingHours: 1, marginTiers: null },
+      { symbol: "SOL", markPrice: "120", indexPrice: "120", fundingRate: "0.0001", volume24h: "1000000", openInterest: "500000", maxLeverage: 20, sizeDecimals: 2, stepSize: "0.01", fundingHours: 1, marginTiers: null },
     ]),
     getBalance: vi.fn().mockResolvedValue({ equity: "10000", available: "8000", marginUsed: "2000", unrealizedPnl: "0" }),
     getPositions: vi.fn().mockResolvedValue([]),
@@ -174,25 +177,49 @@ describe("TWAP — runTWAP", () => {
     expect(result.slicesDone).toBe(3); // 4 attempts, 1 failed, 3 succeeded
   });
 
-  it("aborts when too many errors (>50% of slices)", async () => {
+  it("aborts when too many errors (>50% of slices) and reports the failed run as an error (ORDER_REJECTED), never a result", async () => {
     const { runTWAP } = await import("../strategies/twap.js");
     const adapter = mockAdapter({
       marketOrder: vi.fn().mockRejectedValue(new Error("always fails")),
     });
     const log = vi.fn();
 
-    const result = await runTWAP(adapter, {
+    // Should abort after 3rd error (3 > 4*0.5); nothing filled → ORDER_REJECTED carrying the run.
+    await expect(runTWAP(adapter, {
       symbol: "BTC",
       side: "buy",
       totalSize: 1.0,
       durationSec: 1,
       slices: 4,
-    }, undefined, log);
-
-    // Should abort after 3rd error (3 > 4*0.5)
-    expect(result.errors).toBeGreaterThan(0);
-    expect(result.slicesDone).toBe(0);
+    }, undefined, log)).rejects.toMatchObject({ structured: { code: "ORDER_REJECTED", details: { twap: { errors: 3, slicesDone: 0, remaining: 1 } } } });
     expect(log).toHaveBeenCalledWith(expect.stringContaining("Too many errors"));
+  });
+
+  // Aster sends the quantity as is: "0.0033333333333333335" is a definite refusal (not a lot multiple).
+  it("a refusal before any slice (lot below one per slice) marks the job error, not done", async () => {
+    const { runTWAP } = await import("../strategies/twap.js");
+    const { updateJobState } = await import("../jobs.js");
+    vi.mocked(updateJobState).mockClear();
+    const adapter = mockAdapter();
+    await expect(runTWAP(adapter, { symbol: "BTC", side: "buy", totalSize: 0.00001, durationSec: 1, slices: 3 }, "twap-presend", vi.fn()))
+      .rejects.toMatchObject({ structured: { code: "SIZE_TOO_SMALL" } });
+    expect(updateJobState).toHaveBeenCalledWith("twap-presend", { status: "error", result: { error: expect.stringContaining("nothing was sent") } });
+    expect(adapter.marketOrder).not.toHaveBeenCalled();
+  });
+
+  it("reduce-only on a market missing from the market list → refused, pointing to trade close", async () => {
+    const { runTWAP } = await import("../strategies/twap.js");
+    const adapter = mockAdapter();
+    await expect(runTWAP(adapter, { symbol: "DELISTED", side: "sell", totalSize: 1, durationSec: 1, slices: 2, reduceOnly: true }, undefined, vi.fn()))
+      .rejects.toMatchObject({ structured: { code: "SYMBOL_NOT_FOUND", remediation: expect.stringContaining("trade close DELISTED") } });
+    expect(adapter.marketOrder).not.toHaveBeenCalled();
+  });
+
+  it("every slice is floored to the market lot, the remainder carried to the last (0.01 in 3 on lot 0.00001 → 0.00333, 0.00333, 0.00334)", async () => {
+    const { runTWAP } = await import("../strategies/twap.js");
+    const adapter = mockAdapter();
+    await runTWAP(adapter, { symbol: "BTC", side: "buy", totalSize: 0.01, durationSec: 1, slices: 3 }, undefined, vi.fn());
+    expect(adapter.marketOrder.mock.calls.map((c: unknown[]) => c[2])).toEqual(["0.00333", "0.00333", "0.00334"]);
   });
 
   it("passes correct side to market orders", async () => {
