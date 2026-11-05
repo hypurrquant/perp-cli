@@ -287,7 +287,7 @@ function printSnapshotTable(snapshot: FundingRateSnapshot): void {
       }),
       // No ranked pair (< 2 verified rows): unverified rates are shown, never ranked.
       spread === null ? chalk.gray("n/a") : spreadColor(`${spread.toFixed(1)}%`), trend,
-      spread === null || s.longExchange === null || s.shortExchange === null ? chalk.gray("unranked (unverified)")
+      spread === null || s.longExchange === null || s.shortExchange === null ? chalk.gray(s.unverifiedLegs.length > 0 ? "unranked (unverified)" : "unranked (1 venue)")
         : spread >= 5 ? `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}${s.executable ? "" : chalk.gray(s.readOnlyLegs.length > 0 ? " (read-only)" : " (unverified)")}` : chalk.gray("-"),
       formatAvgRate(bestRate?.historicalAvg?.avg8h), formatAvgRate(bestRate?.historicalAvg?.avg24h), formatAvgRate(bestRate?.historicalAvg?.avg7d),
     ];
@@ -356,7 +356,7 @@ export async function handleRates(isJson: () => boolean, opts: { symbol?: string
   // With --include-unverified and no symbol filter, show every matched symbol: the default
   // TOP_SYMBOLS list is crypto-only and would hide every market of an equity venue.
   if (opts.includeUnverified === true && !opts.symbol && !opts.symbols) filterSymbols = undefined;
-  const snapshot = await fetchAllFundingRates({ symbols: filterSymbols, minSpread, includeUnverified: opts.includeUnverified === true });
+  const snapshot = await fetchAllFundingRates({ symbols: filterSymbols, minSpread, includeUnverified: opts.includeUnverified === true, explicitSymbols: Boolean(opts.symbol || opts.symbols) });
   warnUnverifiedFunding(snapshot.symbols.flatMap(s => s.rates));
   // Unverified rates are never written to the funding history (it feeds averages and bots).
   try { const allRates = snapshot.symbols.flatMap(s => s.rates).filter(r => r.fundingVerified); if (allRates.length > 0) saveFundingSnapshot(allRates); } catch { /* non-critical */ }

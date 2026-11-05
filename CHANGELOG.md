@@ -4,9 +4,21 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — funding symbol filters and alerts ignored venue tickers / aliases
+
+- **`arb scan --rates --symbol` / `--symbols` resolve venue tickers and aliases the way `--compare` does** (`XAU` → GOLD, `kPEPE` → 1000PEPE, `US500` → SPX). They matched canonical keys only, so `--symbol XAU` returned nothing (live 2026-11-04). The same resolution applies to MCP `get_funding_rates` / `arb_scan` `symbols` and to `arb scan --basis <symbol>`.
+- **The default top-symbol list carries `1000PEPE`** (was `PEPE`, which no canonical row has: Hyperliquid kPEPE and Lighter 1000PEPE are 1000PEPE), so `arb scan --rates` and the portfolio arb top-5 include it.
+- **A symbol named with `--symbol` / `--symbols` (or MCP `get_funding_rates` `symbols`) that one venue quotes is shown, not dropped.** `--symbols BTC,BMT` answered BTC only (BMT has a verified rate on Aster alone). It is now a display-only row: `longExchange` / `shortExchange` / `maxSpreadAnnual` null, as for fewer than two verified rates; the table's Direction reads "unranked (1 venue)". The default scan (top symbols), unfiltered scans and `--compare` (`available: false`) are unchanged.
+- **Alert rules on a venue ticker or alias match.** The daemon compares rules with the comparison's canonical symbols, while `alerts add` stored the symbol as typed (`XAU`, `KPEPE`), so such a rule matched no row. `alerts add` now stores the canonical key (XAU → GOLD, by the local alias tables — no network read); rules stored before this fix match by their canonical key, and `alerts remove XAU` removes the GOLD rule. The `--exchange` help no longer names qfex (unverified funding is not in the comparison the daemon reads).
+
 ### Fixed — closed Ondo markets ranked as funding arb legs
 
 - **A closed Ondo market is no longer compared.** The Ondo funding rows left out only disabled (delisted / paused) contracts, so a market with `isClosed: true` in `/v1/perps/contracts` (`-e ondo market info` shows `tradable: false`, `status: "closed"`) was ranked as a leg of an `executable: true` pair (live 2026-11-04: UNITREE aster/ondo 137.1 %/yr in `arb scan --rates`). Funding comparisons (`arb scan --rates` / `--compare`, MCP `get_funding_rates` / `arb_scan`, alerts, dashboard, and the perp legs of the spot-perp scan, `arb scan --mode spot-perp` / `all`) now take tradable ("active") Ondo markets only, the rule the other venues already apply; a reduce-only market is left out for the same reason. `market list` still lists closed markets with `tradable: false`.
+
+### JSON contract changes
+
+- `arb scan --rates --symbol` / `--symbols` and MCP `get_funding_rates` with `symbols`: a named symbol one venue quotes is now a row with `longExchange` / `shortExchange` / `maxSpreadAnnual` / `estHourlyIncomeUsd` null and `executable: false` (it was left out). Migration: rank only rows whose `longExchange` is not null (or `executable` is true), as for the `--include-unverified` display rows.
+- `alerts add` stores the canonical symbol: `alerts add XAU` stores `symbol: "GOLD"` (`alerts list` shows GOLD). Migration: look rules up by the canonical key (`perp arb scan --compare <ticker>` names it); `alerts remove` takes either form.
 
 ### Fixed — the shared cache stopped working once its directory was removed
 

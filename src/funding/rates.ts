@@ -103,11 +103,11 @@ export interface FundingRateSnapshot {
   exchangeErrors: Record<string, string>;
 }
 
-// ── Default top symbols to track ──
+// ── Default top symbols to track (canonical keys: Hyperliquid kPEPE / Lighter 1000PEPE are 1000PEPE) ──
 
 export const TOP_SYMBOLS = [
   "BTC", "ETH", "SOL", "DOGE", "SUI", "AVAX", "LINK", "ARB",
-  "WIF", "PEPE", "ONDO", "SEI", "TIA", "INJ", "NEAR",
+  "WIF", "1000PEPE", "ONDO", "SEI", "TIA", "INJ", "NEAR",
   "APT", "OP", "FIL", "AAVE", "MKR",
 ];
 
@@ -239,9 +239,12 @@ export function dropPriceOutliers<T extends { exchange: VenueId; markPrice: numb
 }
 
 function groupByCanonical<T extends { exchange: VenueId; canonical: string; markPrice: number }>(rates: T[], symbols: string[] | undefined, tag = "funding"): Map<string, T[]> {
+  // A requested venue ticker / denomination alias (XAU, kPEPE, US500) matches its canonical key,
+  // resolved the way `--compare` resolves it.
+  const wanted = symbols === undefined ? undefined : new Set(symbols.map(canonicalQuerySymbol));
   const out = new Map<string, T[]>();
   for (const r of rates) {
-    if (symbols && !symbols.includes(r.canonical)) continue;
+    if (wanted && !wanted.has(r.canonical)) continue;
     const list = out.get(r.canonical);
     if (list) list.push(r);
     else out.set(r.canonical, [r]);
@@ -333,6 +336,11 @@ export async function fetchAllFundingRates(opts?: {
   network?: Network;
   /** Also fetch venues whose funding rate is unverified (default false — see fetchVenuesRates). */
   includeUnverified?: boolean;
+  /**
+   * `symbols` were named by the user (`--symbol` / `--symbols`, MCP `symbols`): a symbol one venue
+   * quotes is a display-only row instead of being left out. A default list (TOP_SYMBOLS) leaves it out.
+   */
+  explicitSymbols?: boolean;
 }): Promise<FundingRateSnapshot> {
   ensureVenuesRegistered();
   const net = opts?.network ?? sharedApiNetwork();
@@ -357,8 +365,9 @@ export async function fetchAllFundingRates(opts?: {
   let belowMinSpread = 0;
 
   for (const [symbol, rates] of rateMap) {
-    // Need at least 2 exchanges to compare
-    if (rates.length < 2) continue;
+    // Need at least 2 exchanges to compare — except a symbol the user named: one venue's rate is a
+    // display-only row (no ranked pair), never silently dropped.
+    if (rates.length < 2 && opts?.explicitSymbols !== true) continue;
 
     // Sort by hourly rate (ascending)
     rates.sort((a, b) => a.hourlyRate - b.hourlyRate);

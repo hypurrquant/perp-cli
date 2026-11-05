@@ -366,7 +366,7 @@ server.tool(
   },
   async ({ symbols, minSpread, includeUnverified }) => {
     try {
-      const snapshot = await fetchAllFundingRates({ symbols, minSpread, includeUnverified: includeUnverified === true });
+      const snapshot = await fetchAllFundingRates({ symbols, minSpread, includeUnverified: includeUnverified === true, explicitSymbols: symbols !== undefined });
       return {
         content: [{
           type: "text",

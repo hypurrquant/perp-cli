@@ -8,6 +8,7 @@ import { printJson, jsonOk } from "../utils.js";
 import { fetchAllFundingRates } from "../funding-rates.js";
 import "../exchanges/venues/index.js";
 import { resolveVenueId, getVenue } from "../exchanges/venue.js";
+import { canonicalQuerySymbol } from "../exchanges/canonical-symbols.js";
 import { PerpError } from "../errors.js";
 import { scrubSecretEnv } from "../secret-env.js";
 import { networkOf } from "../cli-flags.js";
@@ -140,10 +141,12 @@ export function registerAlertCommands(program: Command, isJson: () => boolean) {
     .argument("[symbol]", "Symbol to monitor (e.g. ETH, BTC)")
     .argument("[threshold]", "Annual funding rate % threshold")
     .option("--all", "Monitor all symbols")
-    .option("--exchange <ex>", "Filter by venue id or alias (e.g. hl, pac, lt, ast, lighter-rh, ondo, arcus, qfex)")
+    .option("--exchange <ex>", "Filter by venue id or alias (e.g. hl, pac, lt, ast, lighter-rh, ondo, arcus)")
     .option("--below", "Alert when rate drops below threshold (default: above)")
     .action((symbol: string | undefined, thresholdStr: string | undefined, opts: { all?: boolean; exchange?: string; below?: boolean }) => {
-      const sym = opts.all ? "*" : symbol?.toUpperCase();
+      // A venue ticker / denomination alias (XAU, kPEPE) is stored as its canonical key (GOLD,
+      // 1000PEPE), the symbol of the funding comparison rows the daemon matches.
+      const sym = opts.all ? "*" : symbol === undefined ? undefined : canonicalQuerySymbol(symbol);
       const rawThreshold = opts.all && symbol && !thresholdStr ? symbol : thresholdStr;
       const threshold = parseFloat(rawThreshold || "30");
 
@@ -250,7 +253,8 @@ export function registerAlertCommands(program: Command, isJson: () => boolean) {
       if (sym === "ALL") {
         settings.alerts.rules = [];
       } else {
-        settings.alerts.rules = settings.alerts.rules.filter(r => r.symbol !== sym);
+        // By canonical key: `remove XAU` removes the GOLD rule `add XAU` stored.
+        settings.alerts.rules = settings.alerts.rules.filter(r => canonicalQuerySymbol(r.symbol) !== canonicalQuerySymbol(sym));
       }
 
       const removed = before - settings.alerts.rules.length;
@@ -344,7 +348,8 @@ export function registerAlertCommands(program: Command, isJson: () => boolean) {
               const annualPct = Math.abs(rate.annualizedPct);
 
               for (const rule of rules) {
-                if (rule.symbol !== "*" && rule.symbol !== comparison.symbol) continue;
+                // Rules stored before alias resolution (XAU, KPEPE) match their canonical row (GOLD, 1000PEPE).
+                if (rule.symbol !== "*" && canonicalQuerySymbol(rule.symbol) !== comparison.symbol) continue;
                 if (rule.exchange !== "*" && rule.exchange !== rate.exchange) continue;
 
                 const triggered = rule.direction === "above"
