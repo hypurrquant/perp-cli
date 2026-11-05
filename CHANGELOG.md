@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — Hyperliquid outcome (HIP-4) orders were listed and cancelled as perp orders
+
+- **Hyperliquid's perp open orders leave out HIP-4 outcome orders (coin `#<encoding>`)**, as they already left out spot orders. `frontendOpenOrders` lists them with the perp orders; `account orders -e hyperliquid` (and MCP `get_open_orders`) showed them as perps, and `trade cancel-all` / `flatten` tried to cancel them through the perp asset map, which has no `#…` coin (`SYMBOL_NOT_FOUND`, so the run ended `ORDER_PARTIAL`). The outcome commands read them from the same response (`getOutcomeOpenOrders`), so `perp outcome` orders and cancels are unchanged.
+
 ### Fixed — an Aster position without a mark price let orders past the local risk limits
 
 - **The local risk check refuses (`PRICE_STALE`) when an open position's notional cannot be computed.** Aster reports the mark as "N/A" when its `positionRisk` read fails; size × "N/A" made the total exposure NaN, `NaN > limit` is false, and the order passed `maxTotalExposureUsd`. A mark of "0", "" or null is no price either (RISEx publishes "0" for none and passes it through as the position mark, as QFEX, Ondo and Arcus pass the venue mark): the position counted as $0 exposure, so a 100 BTC position passed a $5,000 `maxTotalExposureUsd`. `assessRisk` now throws for both, naming the position, so the order gate (CLI and MCP orders), `perp risk status` and `perp risk check` fail closed instead of computing with NaN. `--force` still skips the local check for an order. The pre-trade validator (`trade check`, MCP `trade_preview`) reports it too: `risk_limits` fails with the reason for an opening order, and passes with a warning for a reduce-only one (the gate exempts reduce-only); it read the refusal as "Risk check skipped (no limits configured)".
