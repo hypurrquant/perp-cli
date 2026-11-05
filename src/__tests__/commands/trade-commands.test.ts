@@ -606,6 +606,16 @@ describe("trade close -- side mapping", () => {
     expect(adapter.marketOrder).toHaveBeenCalledWith("SOL", "sell", "100", closeOpts);
   });
 
+  // HL / Lighter / Aster print a 10.0 position as "10": flooring the residual to 0 decimals made 0.7 → 0 (reported closed).
+  it("a partial close's residual is floored to the market lot, not the decimals the size prints (10, 9.3 filled → closes 0.7)", async () => {
+    const venue = liveVenue([{ symbol: "SOL", side: "long", size: "10", entryPrice: "150", markPrice: "150", liquidationPrice: null, unrealizedPnl: "0", leverage: 3 }]);
+    const fill = venue.marketOrder.getMockImplementation()!;
+    venue.marketOrder.mockImplementationOnce(async (s: string, side: "buy" | "sell") => fill(s, side, "9.3")); // the venue fills 9.3 of 10
+    const adapter = mockAdapter({ ...venue, getMarkets: vi.fn().mockResolvedValue([{ ...market("SOL"), sizeDecimals: 1, stepSize: "0.1" }]) });
+    await run(adapter, ["trade", "close", "sol"]);
+    expect(adapter.marketOrder).toHaveBeenNthCalledWith(2, "SOL", "sell", "0.7", closeOpts);
+  });
+
   it("logs execution after closing", async () => {
     const adapter = mockAdapter({
       ...liveVenue([

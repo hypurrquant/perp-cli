@@ -32,9 +32,8 @@ import type { OrderRequest, VenueId } from "./exchanges/venue-types.js";
 import { venueMarketRow } from "./exchanges/venue-types.js";
 import { lighterFundingStatsWarning } from "./exchanges/lighter-public.js";
 import { newVenueClientOrderId, placeAndConfirm, validateLegacyTif, validateOrderRequest, type PlacedOrder } from "./exchanges/trading-v2.js";
-import { closePerpVerified, isOutcomeUnknown } from "./bot/perp-order.js";
+import { closePerpVerified, closeSizeText, isOutcomeUnknown } from "./bot/perp-order.js";
 import { quarantineSymbol } from "./bot/quarantine.js";
-import { fillSizeString, sizeDecimalsOf } from "./exchanges/spot-result.js";
 import { tradingV2Of } from "./exchanges/legacy-trading-v2.js";
 import { PerpError, classifyError, extractErrorMessage, isDefiniteOrderFailure, orderOutcomeUnknown, parsePositiveDecimal } from "./errors.js";
 import { invalidateCache } from "./cache.js";
@@ -2191,7 +2190,6 @@ server.tool(
       };
       const holder: { placed: PlacedOrder | null } = { placed: null };
       const nowIso = (): string => new Date().toISOString();
-      const dec = sizeDecimalsOf(closeSize);
       const qLog = (m: string) => process.stderr.write(`${m}\n`);
       const remediation = `Check ${pos.symbol} on ${adapter.name} (get_positions), close any residual by hand, then: perp strategy quarantine-clear ${pos.symbol}`;
       let c: Awaited<ReturnType<typeof closePerpVerified>>;
@@ -2199,7 +2197,6 @@ server.tool(
         // Verified close: the first leg is the TradingV2 reduce-only market order; the fill is
         // measured / venue-final, and one residual market close is attempted (closePerpVerified).
         c = await closePerpVerified(adapter, adapter.name, pos.symbol, closeSide, closeSize, {
-          decimals: dec,
           slippage: req.slippage ?? undefined,
           place: async () => {
             if (req.clientOrderId !== null) logClientId({ clientOrderId: req.clientOrderId, exchange: adapter.name, symbol: pos.symbol, side: closeSide, size: closeSize, type: "market", status: "pending", createdAt: nowIso(), updatedAt: nowIso() });
@@ -2215,8 +2212,8 @@ server.tool(
         logMcpExecution(MCP_NETWORK, { type: "market_order", exchange: adapter.name, symbol: pos.symbol, side: closeSide, size: closeSize, status: isOutcomeUnknown(e) ? "unverified" : "failed", error: extractErrorMessage(e), meta: { reduceOnly: true, action: "close" } });
         throw e;
       }
-      const closedSize = fillSizeString(c.closed, dec);
-      const residual = fillSizeString(c.residual, dec);
+      const closedSize = closeSizeText(c.closed);
+      const residual = closeSizeText(c.residual);
       if (req.clientOrderId !== null) logClientId({ clientOrderId: req.clientOrderId, exchange: adapter.name, symbol: pos.symbol, side: closeSide, size: closeSize, type: "market", status: "submitted", createdAt: nowIso(), updatedAt: nowIso() });
       logMcpExecution(MCP_NETWORK, { type: "market_order", exchange: adapter.name, symbol: pos.symbol, side: closeSide, size: closedSize, status: c.residual > 0 ? "failed" : "success", ...(c.residual > 0 ? { error: `residual ${residual} still open` } : {}), meta: { reduceOnly: true, action: "close", requested: closeSize } });
       const closedPosition = { side: pos.side, size: pos.size, entryPrice: pos.entryPrice, unrealizedPnl: pos.unrealizedPnl };

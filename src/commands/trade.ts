@@ -8,10 +8,9 @@ import { validateTrade, enforceOrderRisk } from "../trade-validator.js";
 import { generateClientId, logClientId, isOrderDuplicate } from "../client-id-tracker.js";
 import { smartOrder } from "../smart-order.js";
 import { invalidateCache } from "../cache.js";
-import { closePerpVerified, isOutcomeUnknown, placePerpVerified } from "../bot/perp-order.js";
+import { closePerpVerified, closeSizeText, isOutcomeUnknown, placePerpVerified } from "../bot/perp-order.js";
 import { iocLotTolerance, isIocOutcomeCapable } from "../exchanges/ioc-outcome.js";
 import { quarantineEntryFor, quarantineSymbol } from "../bot/quarantine.js";
-import { fillSizeString, sizeDecimalsOf } from "../exchanges/spot-result.js";
 import chalk from "chalk";
 import { hasPacificaSdk, isTwapCapable, isQueryOrderCapable } from "../exchanges/capabilities.js";
 import { getVenue, listVenuesWithRole, requireCapabilities, roleUnsupported, tryResolveVenueId, type VenueCapabilities, type VenueDefinition } from "../exchanges/venue.js";
@@ -1694,7 +1693,7 @@ export function registerTradeCommands(
     side: "buy" | "sell";
     originalSide: "long" | "short";
     requested: string;
-    /** Verified closed size (position delta / venue-final fill), floored to the requested precision. */
+    /** Verified closed size (position delta / venue-final fill), float noise dropped. */
     closed: string;
     /** Requested size still open after the close (and one residual retry); "0" = fully closed. */
     residual: string;
@@ -1713,7 +1712,6 @@ export function registerTradeCommands(
     opts: { smart: boolean; slippage: ResolvedSlippage; action: string },
   ): Promise<VerifiedCloseOutcome> {
     const side: "buy" | "sell" = originalSide === "long" ? "sell" : "buy";
-    const dec = sizeDecimalsOf(size);
     let smart: VerifiedCloseOutcome["smart"] = null;
     const place = opts.smart
       ? async () => {
@@ -1726,7 +1724,7 @@ export function registerTradeCommands(
     const meta = { action: opts.action, originalSide, smart: opts.smart };
     let c: Awaited<ReturnType<typeof closePerpVerified>>;
     try {
-      c = await closePerpVerified(adapter, adapter.name, symbol, side, size, { decimals: dec, slippage: opts.slippage, ...(place !== undefined ? { place } : {}) });
+      c = await closePerpVerified(adapter, adapter.name, symbol, side, size, { slippage: opts.slippage, ...(place !== undefined ? { place } : {}) });
     } catch (e) {
       logExecution({ type: "market_order", exchange: adapter.name, symbol, side, size, status: isOutcomeUnknown(e) ? "unverified" : "failed", dryRun: false, error: extractErrorMessage(e), meta });
       if (isOutcomeUnknown(e)) {
@@ -1735,8 +1733,8 @@ export function registerTradeCommands(
       }
       throw e;
     }
-    const closed = fillSizeString(c.closed, dec);
-    const residual = fillSizeString(c.residual, dec);
+    const closed = closeSizeText(c.closed);
+    const residual = closeSizeText(c.residual);
     if (c.residual > 0) {
       logExecution({ type: "market_order", exchange: adapter.name, symbol, side, size: closed, status: "failed", dryRun: false,
         error: `residual ${residual} of ${size} still open${c.note !== null ? ` (${c.note})` : ""}`, meta: { ...meta, requested: size, residual } });

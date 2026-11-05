@@ -690,3 +690,20 @@ describe("TWAP — slice calculation edge cases", () => {
     expect(result.filled).toBeCloseTo(1.0, 2);
   });
 });
+
+describe("Trailing stop — runTrailingStop", () => {
+  it("the close's residual is floored to the market lot, not the decimals the size prints (10, 9.3 filled → closes 0.7)", async () => {
+    const { runTrailingStop } = await import("../strategies/trailing-stop.js");
+    let held = 10;
+    const marks = ["100", "90"]; // peak 100, then a 10% drop ≥ trailPct 3 → trigger
+    const adapter = mockAdapter({
+      lotStepOf: () => "0.1", // HL-style lot step from the loaded meta
+      getMarkets: vi.fn(async () => [{ symbol: "BTC", markPrice: marks.shift() ?? "90" }]),
+      getPositions: vi.fn(async () => held > 0 ? [{ symbol: "BTC", side: "long", size: String(held), entryPrice: "100", markPrice: "100", liquidationPrice: null, unrealizedPnl: "0", leverage: 1 }] : []),
+      marketOrder: async (_s: string, _side: string, size: string) => { held = held === 10 ? 0.7 : held - Number(size); return {}; }, // fills 9.3 of the first 10
+    });
+    const r = await runTrailingStop(adapter, { symbol: "BTC", trailPct: 3, intervalSec: 0 }, undefined, vi.fn());
+    expect(adapter.marketOrder).toHaveBeenNthCalledWith(2, "BTC", "sell", "0.7", expect.objectContaining({ reduceOnly: true }));
+    expect(r.triggered).toBe(true);
+  });
+});
