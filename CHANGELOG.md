@@ -4,6 +4,14 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — `backtest funding-arb`: holding time, flipped spreads, positions open at the end
+
+- **Holding time is a number of hours** (every trade showed `NaNh`; `holdingHours` was null in `--json`): the hour keys (`2026-11-04T03`) were handed to `new Date()`, which cannot parse them.
+- **A flipped spread is a cost, not income.** Income was summed as `|rateA − rateB|` and the close test used the absolute spread too, so a position stayed open and kept "earning" after the spread turned against it. A trade now earns (rate of the venue it shorts − rate of the venue it longs, both fixed at entry) × size per hour and closes when that spread falls below `--spread-close`: a flip closes it, and with a negative `--spread-close` the flipped hours it holds through are costs.
+- **An N-hour hold sums N hourly samples** (entry hour up to the exit hour, not including it); the exit hour's spread was counted too.
+- **A position still open at the end of the data is reported** — closed at the last data point, labelled `openAtEnd: true` (Exit "(open)" in the table) and counted in the totals — instead of being dropped. Trades gain `openAtEnd` (additive).
+- Negative amounts read `-$3.70` (were `$-3.70`), and a negative funding total is no longer printed in green.
+
 ### Fixed — `arb status` showed funding a position pays as income
 
 - **A perp-perp pair's `currentSpread` is signed.** It was `|short − long|`, so a pair whose short leg now funds below its long leg (the pair pays funding) showed a positive spread, a positive `estimatedFundingIncome` / `dailyFundingEstimate` and a breakeven date. `currentSpread` is now short − long (annualized %): negative when the pair pays, and the funding estimates, `netPnl` and `breakeven` follow the sign (`daysToBreakeven` null: not reached at the current rates).
@@ -32,6 +40,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - `alerts add` stores the canonical symbol: `alerts add XAU` stores `symbol: "GOLD"` (`alerts list` shows GOLD). Migration: look rules up by the canonical key (`perp arb scan --compare <ticker>` names it); `alerts remove` takes either form.
 - `arb status`: perp-perp `currentSpread`, `estimatedFundingIncome`, `dailyFundingEstimate` and `netPnl`, spot-perp `dailyFundingEstimate` and recorded-position `currentSpread`, and the `aggregate` sums are negative when the position pays funding; they were absolute values. Migration: read a negative value as a cost, never take its absolute value.
 - `arb status` perp-perp rows: `dailyFundingEstimate` and `breakeven.dailyIncome` are null when a leg's funding rate is unknown (were 0); `aggregate.fundingUnknown` lists such pairs as `<long>/<short>:<symbol>` and `aggregate.dailyFundingIncomplete` is true. Migration: read null as unknown, not 0.
+- `backtest funding-arb`: `trades[].fundingCollected` and `totalFundingCollected` can be negative; `totalTrades` (and the cost / PnL totals) count a trade still open at the end of the data (`openAtEnd: true`); `trades[].holdingHours` is a number (was null — NaN in the process); negative money strings read `-$3.70` (were `$-3.70`). Migration: read a leading `-` before `$`; leave out `openAtEnd` trades to count closed trades only.
 
 ### Fixed — the shared cache stopped working once its directory was removed
 
