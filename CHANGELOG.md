@@ -4,6 +4,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — `arb scan` tables mixed funding intervals and hid legs
+
+- **The `arb scan --rates` table shows every venue's rate per hour** (`+0.001250%/h`: the rows' `hourlyRate`, 6 decimals like `--compare`). It printed each venue's raw rate per its own interval — Aster 8 h / 4 h next to Hyperliquid's 1 h, up to 8x apart — so a venue could look cheapest when it was not (live 2026-11-04: TRUMP on Aster at -0.0052 % per 4 h). `--json` is unchanged.
+- **The `arb scan` perp-perp Rates column lists every leg of the comparison, a 0 rate included, per hour** (`AST:0.001250%/h(accruing)`). It hid a leg whose rate is exactly 0 (Aster equity perps fund at 0), printed Aster per its interval, and `--live` listed Pacifica / Hyperliquid / Lighter only. `--json` is unchanged.
+
 ### Fixed — funding symbol filters and alerts ignored venue tickers / aliases
 
 - **`arb scan --rates --symbol` / `--symbols` resolve venue tickers and aliases the way `--compare` does** (`XAU` → GOLD, `kPEPE` → 1000PEPE, `US500` → SPX). They matched canonical keys only, so `--symbol XAU` returned nothing (live 2026-11-04). The same resolution applies to MCP `get_funding_rates` / `arb_scan` `symbols` and to `arb scan --basis <symbol>`.

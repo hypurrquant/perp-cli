@@ -281,9 +281,11 @@ function printSnapshotTable(snapshot: FundingRateSnapshot): void {
     const trend = trendMap.get(s.symbol) ?? chalk.gray("-");
     return [
       chalk.white.bold(s.symbol),
+      // Per hour (the rows' hourlyRate), 6 decimals like --compare: a raw rate covers 1 h to 8 h
+      // depending on the venue / market.
       ...columns.map(v => {
         const r = rateOf(v.id);
-        return r ? formatPercent(r.fundingRate) : chalk.gray("-");
+        return r ? `${formatPercent(r.hourlyRate, 6)}${chalk.gray("/h")}` : chalk.gray("-");
       }),
       // No ranked pair (< 2 verified rows): unverified rates are shown, never ranked.
       spread === null ? chalk.gray("n/a") : spreadColor(`${spread.toFixed(1)}%`), trend,
