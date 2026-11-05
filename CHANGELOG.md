@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — closed Ondo markets ranked as funding arb legs
+
+- **A closed Ondo market is no longer compared.** The Ondo funding rows left out only disabled (delisted / paused) contracts, so a market with `isClosed: true` in `/v1/perps/contracts` (`-e ondo market info` shows `tradable: false`, `status: "closed"`) was ranked as a leg of an `executable: true` pair (live 2026-11-04: UNITREE aster/ondo 137.1 %/yr in `arb scan --rates`). Funding comparisons (`arb scan --rates` / `--compare`, MCP `get_funding_rates` / `arb_scan`, alerts, dashboard, and the perp legs of the spot-perp scan, `arb scan --mode spot-perp` / `all`) now take tradable ("active") Ondo markets only, the rule the other venues already apply; a reduce-only market is left out for the same reason. `market list` still lists closed markets with `tradable: false`.
+
 ### Fixed — the shared cache stopped working once its directory was removed
 
 - **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).
