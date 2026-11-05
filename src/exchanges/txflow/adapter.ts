@@ -41,7 +41,7 @@ import type {
 import { assertCandleInterval } from "../interface.js";
 import { addDecimal, alignProtectionPrice, requireOnTick, slippagePrice, subDecimal, toUnitsExact, unitsToString } from "../precision.js";
 import type { ResolvedSlippage } from "../slippage.js";
-import { unsupported, validateLegacyTif, validateOrderRequest, type TradingV2 } from "../trading-v2.js";
+import { requireAllCancelled, unsupported, validateLegacyTif, validateOrderRequest, type TradingV2 } from "../trading-v2.js";
 import { networkConfig, requireCapabilities, roleUnsupported, type VenueCapabilities, type VenueCreateContext, type VenueDefinition } from "../venue.js";
 import {
   parseOrderRef, toLegacyMarketInfo, withExecution,
@@ -1320,7 +1320,7 @@ export class TxflowAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   async cancelAllOrders(symbol?: string): Promise<unknown> {
-    return this.cancelAllV2(symbol ?? null);
+    return requireAllCancelled(await this.cancelAllV2(symbol ?? null));
   }
 
   async setLeverage(symbol: string, leverage: number, marginMode?: "cross" | "isolated"): Promise<unknown> {

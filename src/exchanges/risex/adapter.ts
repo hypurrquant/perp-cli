@@ -32,7 +32,7 @@ import { assertCandleInterval } from "../interface.js";
 import { alignProtectionPrice, exactUnits, mulDecimal, slippagePrice, subDecimal } from "../precision.js";
 import type { ResolvedSlippage } from "../slippage.js";
 import {
-  newVenueClientOrderId, unsupported, validateLegacyTif, validateOrderRequest, type TradingV2,
+  newVenueClientOrderId, requireAllCancelled, unsupported, validateLegacyTif, validateOrderRequest, type TradingV2,
 } from "../trading-v2.js";
 import type { VenueCapabilities, VenueCreateContext, VenueDefinition } from "../venue.js";
 import { networkConfig, requireCapabilities, roleUnsupported } from "../venue.js";
@@ -866,7 +866,7 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   async cancelAllOrders(symbol?: string): Promise<unknown> {
-    return this.cancelAllV2(symbol ?? null);
+    return requireAllCancelled(await this.cancelAllV2(symbol ?? null));
   }
 
   async setLeverage(symbol: string, leverage: number, marginMode?: "cross" | "isolated"): Promise<unknown> {
