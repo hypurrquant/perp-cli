@@ -711,14 +711,17 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
     const result: CancelResult = { venue: "risex", cancelled: [], failed: [], pending: [], venueRaw: [] };
     for (const id of marketIds) {
       const refs = before.filter(o => String(o.market_id) === id).map(o => ({ kind: "orderId" as const, value: o.order_id }));
-      const { permit } = await this.permit(account, signer, cancelAllHash(Number(id)));
+      const settled = new Set<string>();
+      let accepted = false;
       try {
+        const { permit } = await this.permit(account, signer, cancelAllHash(Number(id)));
         const res = await this.client.post<{ success?: unknown }>("/v1/orders/cancel-all", { market_id: Number(id), permit }, "cancel all");
         (result.venueRaw as unknown[]).push(res);
         if (res.success !== true) {
           for (const r of refs) result.failed.push({ ref: r, error: `cancel-all answered success=${String(res.success)}` });
           continue;
         }
+        accepted = true;
         // The open list lags the cancel-all tx (testnet 2026-10-28: both orders CANCELLED by id while
         // still listed right after): re-read for a short window, then prove each gone order by id.
         let still = new Set((await this.openOrdersRaw(id)).map(o => lower(o.order_id)));
@@ -730,18 +733,22 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
         for (const r of refs) {
           if (still.has(lower(r.value))) {
             (result.pending as NonNullable<CancelResult["pending"]>).push({ ref: r, reason: "still listed after cancel-all", remediation: "Check perp -e risex account orders" });
-            continue;
+          } else {
+            const st = await this.getOrderStatus(sym, r);
+            if (st.status === "cancelled") result.cancelled.push(r);
+            else result.failed.push({ ref: r, error: `left the open list ${st.status} (not cancelled)` });
           }
-          const st = await this.getOrderStatus(sym, r);
-          if (st.status === "cancelled") result.cancelled.push(r);
-          else result.failed.push({ ref: r, error: `left the open list ${st.status} (not cancelled)` });
+          settled.add(r.value);
         }
       } catch (e) {
-        if (!(e instanceof RisexSendUnknown)) {
-          for (const r of refs) result.failed.push({ ref: r, error: extractErrorMessage(e) });
+        // Only the orders not settled yet: a failed permit / send refused them (failed); after an
+        // accepted (or unknown) cancel-all, a failed read leaves their state unproven (pending).
+        const open = refs.filter(r => !settled.has(r.value));
+        if (!accepted && !(e instanceof RisexSendUnknown)) {
+          for (const r of open) result.failed.push({ ref: r, error: extractErrorMessage(e) });
           continue;
         }
-        for (const r of refs) (result.pending as NonNullable<CancelResult["pending"]>).push({ ref: r, reason: extractErrorMessage(e.cause), remediation: "Do NOT resend blindly — check perp -e risex account orders" });
+        for (const r of open) (result.pending as NonNullable<CancelResult["pending"]>).push({ ref: r, reason: extractErrorMessage(e instanceof RisexSendUnknown ? e.cause : e), remediation: "Do NOT resend blindly — check perp -e risex account orders" });
       }
     }
     return result;

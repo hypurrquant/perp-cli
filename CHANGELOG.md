@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — RISEx cancel-all misreported orders when a read or permit failed
+
+- **A failed by-id read after an accepted cancel-all leaves only that order pending.** It marked every order of the market failed, including those already proven cancelled (listed twice, as cancelled and as failed). A failed permit now fails only its own market's orders; it threw out of the whole cancel-all, losing the other markets' results.
+
 ### Fixed — Lighter account-level refusals reported as an unknown outcome
 
 - **Lighter / Lighter RH `/sendTx` codes 52001 ("Unauthorized use of the API"), 52002 ("You've reached the limit of Standard trading and can now only close or reduce positions") and 62007 ("maker-only api key can only send 0ms delay transactions") are definite rejections** (`ORDER_REJECTED` / `ACTION_REJECTED` with the venue's message), as listed on docs.lighter.xyz "Data Structures, Constants and Errors". Only 20000–28999 counted as definite, so these were `ORDER_PENDING` ("do NOT resubmit", symbol quarantined) although nothing executed. 21507 / 21508 ("account is below maintenance / initial margin") are `MARGIN_INSUFFICIENT` (were `ORDER_REJECTED`).
