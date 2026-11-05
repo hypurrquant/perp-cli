@@ -373,9 +373,10 @@ const DEFAULTS: Settings = {
     hyperliquid: false,
     lighter: false,
   },
+  // The published base tiers of constants.ts TAKER_FEES / MAKER_FEES (sources and dates there).
   fees: {
-    hyperliquid: { taker: 0.00035, maker: 0.00002 },
-    pacifica: { taker: 0.00035, maker: 0.0001 },
+    hyperliquid: { taker: 0.00045, maker: 0.00015 },
+    pacifica: { taker: 0.0004, maker: 0.00015 },
     lighter: { taker: 0, maker: 0 },
   },
   alerts: {

@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { printJson, jsonOk, jsonError, makeTable, formatUsd } from "../utils.js";
 import { getHistoricalRates } from "../funding-history.js";
 import { HyperliquidAdapter, hlEarliestCandleStart } from "../exchanges/hyperliquid.js";
+import { getTakerFee } from "../constants.js";
 import chalk from "chalk";
 
 export function registerBacktestCommands(
@@ -321,7 +322,8 @@ export function registerBacktestCommands(
       // Calculate some stats
       const lastPrice = parseFloat(klines[klines.length - 1].c);
       const priceRange = `$${formatUsd(String(Math.min(...klines.map(k => parseFloat(k.l)))))} - $${formatUsd(String(Math.max(...klines.map(k => parseFloat(k.h)))))}`;
-      const tradingFees = totalTrades * sizePerGrid * lastPrice * 0.00035; // ~0.035% per trade
+      // The candles are Hyperliquid's: its taker fee per trade (settings.fees, else the published base tier).
+      const tradingFees = totalTrades * sizePerGrid * lastPrice * getTakerFee("hyperliquid");
       const netProfit = totalProfit - tradingFees;
 
       const summary = {

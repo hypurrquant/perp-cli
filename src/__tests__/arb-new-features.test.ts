@@ -531,8 +531,8 @@ describe("computeNetSpread", () => {
 describe("computeRoundTripCostPct", () => {
   it("computes standard costs for default exchanges", () => {
     const cost = computeRoundTripCostPct("hyperliquid", "pacifica", 0.05);
-    // 2 * (0.035 + 0.035) + 2 * 0.05 = 0.14 + 0.10 = 0.24%
-    expect(cost).toBeCloseTo(0.24, 2);
+    // 2 * (0.045 + 0.040) + 2 * 0.05 = 0.17 + 0.10 = 0.27%
+    expect(cost).toBeCloseTo(0.27, 2);
   });
 });
 
