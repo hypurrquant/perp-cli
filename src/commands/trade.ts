@@ -254,11 +254,21 @@ async function orphanedReduceOnly(adapter: ExchangeAdapter, symbol: string | nul
   if (!isTradingV2(adapter)) throw new PerpError("NOT_IMPLEMENTED", `${adapter.name}: orphaned reduce-only orders can only be cancelled on a TradingV2 adapter`);
   const v2 = adapter;
   const out: CancelResult = { venue: adapter.name as CancelResult["venue"], cancelled: [], failed: [], pending: [], venueRaw: [] };
+  const pending = out.pending as NonNullable<CancelResult["pending"]>;
   for (const o of left) {
-    const r = await v2.cancelByRef(o.symbol, { kind: "orderId", value: o.orderId });
-    out.cancelled.push(...r.cancelled);
-    out.failed.push(...r.failed);
-    (out.pending as NonNullable<CancelResult["pending"]>).push(...(r.pending ?? []));
+    const ref: OrderRef = { kind: "orderId", value: o.orderId };
+    try {
+      const r = await v2.cancelByRef(o.symbol, ref);
+      out.cancelled.push(...r.cancelled);
+      out.failed.push(...r.failed);
+      pending.push(...(r.pending ?? []));
+    } catch (e) {
+      // Every orphan is tried: a cancel that throws (QFEX ORDER_NOT_FOUND once the venue removed the
+      // order itself) is recorded, never aborting the rest or flatten's close results — a refusal →
+      // failed, anything else unproven → pending (the cancelAllV2 rule).
+      if (e instanceof PerpError && (e.structured.code === "ORDER_REJECTED" || e.structured.code === "INVALID_PARAMS")) out.failed.push({ ref, error: e.message });
+      else pending.push({ ref, reason: extractErrorMessage(e), remediation: `Check: perp account orders -e ${adapter.name}` });
+    }
   }
   return out;
 }

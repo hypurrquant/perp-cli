@@ -796,6 +796,31 @@ describe("trade flatten -- cancel + close", () => {
   });
 });
 
+describe("trade flatten -- QFEX orphaned reduce-only orders", () => {
+  it("an orphan cancel that throws (the venue removed the stop itself) does not stop the next orphan's cancel", async () => {
+    let flat = false;
+    const cancelByRef = vi.fn(async (_s: string, ref: { kind: "orderId"; value: string }) => {
+      if (ref.value === "stop-1") throw new PerpError("ORDER_NOT_FOUND", "QFEX: no open order stop-1 on GOLD-USD");
+      return { venue: "qfex", cancelled: [ref], failed: [], pending: [], venueRaw: null };
+    });
+    const adapter = {
+      name: "qfex", placeOrder: vi.fn(), getOrderStatus: vi.fn(), getVenueMarkets: vi.fn(async () => []), cancelByRef,
+      getMarkets: vi.fn(async () => [market("GOLD")]),
+      cancelAllV2: vi.fn(async () => ({ venue: "qfex", cancelled: [], failed: [], pending: [], venueRaw: null })),
+      getPositions: vi.fn(async () => flat ? [] : [{ symbol: "GOLD", side: "long", size: "0.003", entryPrice: "4000", markPrice: "4000", liquidationPrice: null, unrealizedPnl: "0", leverage: 5 }]),
+      marketOrder: vi.fn(async () => { flat = true; return {}; }),
+      orphanedReduceOnlyOrders: vi.fn(async () => ["stop-1", "stop-2"].map(orderId => ({ symbol: "GOLD", orderId, type: "STOP_LOSS", side: "SELL", price: "3900", quantity: "0.003" }))),
+    } as unknown as ExchangeAdapter;
+    try {
+      await run(adapter, ["trade", "flatten"]);
+      expect(cancelByRef).toHaveBeenCalledWith("GOLD", { kind: "orderId", value: "stop-2" });
+      expect(process.exitCode).toBe(1); // stop-1 unproven → flatten incomplete (ORDER_PARTIAL with the close results)
+    } finally {
+      process.exitCode = undefined;
+    }
+  });
+});
+
 // ══════════════════════════════════════════════════════════════
 // 11. Reduce -- percentage calculation
 // ══════════════════════════════════════════════════════════════

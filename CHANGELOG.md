@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — QFEX `flatten` stopped at the first orphaned stop it could not cancel
+
+- **Every reduce-only / stop order left on a flat QFEX symbol is now tried.** When the venue had already removed one itself, its cancel threw `ORDER_NOT_FOUND` and that error replaced flatten's result: the remaining orphans were never cancelled and the close results were lost. A cancel that throws is now recorded (a venue refusal as failed, anything else as unproven / pending), the next orphan is cancelled, and flatten ends `ORDER_PARTIAL` carrying every cancel and close result.
+
 ### Fixed — `--dex <dex> trade cancel <symbol>` cancelled nothing and reported success
 
 - **Cancelling by symbol on a HIP-3 dex now cancels that market's orders.** The command found the orders with the CLI's symbol match ("xyz:TSLA" for `TSLA`), but the per-order cancel-all (the legacy-adapter `cancelAllV2`) compared symbols exactly, so it cancelled 0 orders and printed "No order cancelled" with exit 0. It now selects with the same match.
