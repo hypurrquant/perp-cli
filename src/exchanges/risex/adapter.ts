@@ -535,8 +535,10 @@ export class RisexAdapter implements ExchangeAdapter, TradingV2 {
     const m = await this.market(req.symbol, true);
     const sym = risexSymbolOf(m);
     if (!m.config.unlocked) throw new PerpError("ORDER_REJECTED", `RISEx ${sym} is locked for trading`, { exchange: "risex", sent: false });
-    if (m.reduce_only && !req.reduceOnly) {
-      throw new PerpError("ORDER_REJECTED", `RISEx ${sym} is in reduce-only mode — only reduce-only orders are accepted`, { exchange: "risex", sent: false, remediation: "Close with a reduce-only order, or wait until the market reopens" });
+    // developer.rise.trade markets `reduce_only`: "only accepts resting orders (GTC/GTT) that are marked
+    // reduce-only on this market; FOK and IOC orders are unaffected" (market orders go out as LIMIT IOC).
+    if (m.reduce_only && !req.reduceOnly && req.type === "limit" && req.tif !== "IOC" && req.tif !== "FOK") {
+      throw new PerpError("ORDER_REJECTED", `RISEx ${sym} is in reduce-only mode — resting (GTC / ALO) orders must be reduce-only`, { exchange: "risex", sent: false, remediation: "Use a reduce-only order, or an IOC / FOK / market order" });
     }
     if (m.post_only && req.tif !== "ALO") {
       throw new PerpError("ORDER_REJECTED", `RISEx ${sym} is in post-only mode — only post-only (ALO) limit orders are accepted`, { exchange: "risex", sent: false, remediation: "Use --tif ALO" });

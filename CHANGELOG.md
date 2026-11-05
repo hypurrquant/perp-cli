@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — RISEx reduce-only markets refused market and IOC / FOK orders
+
+- **On a RISEx market in reduce-only mode, only resting (GTC / ALO) orders must be reduce-only.** perp-cli refused every non-reduce-only order there, market orders (sent as LIMIT IOC) included. The venue docs (`reduce_only`: "only accepts resting orders (GTC/GTT) that are marked reduce-only on this market; FOK and IOC orders are unaffected"; error E0706) refuse resting orders only. Market, IOC and FOK orders are now sent; a resting non-reduce-only order is still refused before signing.
+
 ### Fixed — RISEx cancel-all misreported orders when a read or permit failed
 
 - **A failed by-id read after an accepted cancel-all leaves only that order pending.** It marked every order of the market failed, including those already proven cancelled (listed twice, as cancelled and as failed). A failed permit now fails only its own market's orders; it threw out of the whole cancel-all, losing the other markets' results.

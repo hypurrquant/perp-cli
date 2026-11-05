@@ -452,6 +452,12 @@ describe("adapter: placeOrder", () => {
     expect(fetchMock.mock.calls.some(c => String(c[0]).includes("/v1/orders/place"))).toBe(false);
   });
 
+  it("a reduce-only market still takes a non-reduce-only market (IOC) order — only resting orders must be reduce-only", async () => {
+    routeFetch([...base, url => url.pathname === "/v1/orders/place" ? err(400, "FailedPrecondition", "FailedPrecondition: PlaceOrder reverted: X() => (0x1)") : undefined]);
+    await (await adapter()).placeOrder(req({ symbol: "NEW", type: "market", price: null, tif: null, slippage: { bps: 100, source: "flag" } })).catch(() => undefined);
+    expect(fetchMock.mock.calls.some(c => String(c[0]).includes("/v1/orders/place"))).toBe(true);
+  });
+
   it("venue revert → ORDER_REJECTED with the decoded error; the nonce bit stays burned", async () => {
     routeFetch([...base,
       url => url.pathname === "/v1/orders/place" ? err(400, "FailedPrecondition", "FailedPrecondition: PlaceOrder reverted: SignerNotAuthorized(address) => (0x1)") : undefined,
