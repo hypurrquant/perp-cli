@@ -503,7 +503,7 @@ export async function handleFundingHistory(isJson: () => boolean, opts: { symbol
     const rows = rates.map(r => { const color = r.rate > 0 ? chalk.red : r.rate < 0 ? chalk.green : chalk.white; return [chalk.gray(new Date(r.ts).toLocaleString()), color(formatPercent(r.rate)), `${(r.hourlyRate * 100).toFixed(6)}%/h`, `${annualizeHourlyRate(r.hourlyRate).toFixed(2)}%/yr`]; });
     console.log(makeTable(["Time", "Raw Rate", "Hourly", "Annualized"], rows)); console.log();
   }
-  if (!hasData) console.log(chalk.gray(`  No historical data. Run 'perp arb rates' to start collecting.\n`));
+  if (!hasData) console.log(chalk.gray(`  No historical data. Run 'perp arb scan --rates' to start collecting.\n`));
 }
 
 export async function handleFundingPositions(

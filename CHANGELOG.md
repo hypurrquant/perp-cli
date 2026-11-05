@@ -4,6 +4,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — `mixedKinds` counted unverified rows; the `--history` hint named a removed command
+
+- **`mixedKinds` (`arb scan --rates` / `--compare`, MCP `get_funding_rates`) is computed over the verified (ranked) rates.** With `--include-unverified` a display-only row of another kind (GRVT "predicted" next to Hyperliquid / Aster "accruing") set it, although every ranked rate was of one kind.
+- `arb scan --history` without recorded snapshots says `Run 'perp arb scan --rates' to start collecting` (it named `perp arb rates`, which no longer exists).
+
 ### Fixed — `backtest funding-arb`: holding time, flipped spreads, positions open at the end
 
 - **Holding time is a number of hours** (every trade showed `NaNh`; `holdingHours` was null in `--json`): the hour keys (`2026-11-04T03`) were handed to `new Date()`, which cannot parse them.
@@ -41,6 +46,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - `arb status`: perp-perp `currentSpread`, `estimatedFundingIncome`, `dailyFundingEstimate` and `netPnl`, spot-perp `dailyFundingEstimate` and recorded-position `currentSpread`, and the `aggregate` sums are negative when the position pays funding; they were absolute values. Migration: read a negative value as a cost, never take its absolute value.
 - `arb status` perp-perp rows: `dailyFundingEstimate` and `breakeven.dailyIncome` are null when a leg's funding rate is unknown (were 0); `aggregate.fundingUnknown` lists such pairs as `<long>/<short>:<symbol>` and `aggregate.dailyFundingIncomplete` is true. Migration: read null as unknown, not 0.
 - `backtest funding-arb`: `trades[].fundingCollected` and `totalFundingCollected` can be negative; `totalTrades` (and the cost / PnL totals) count a trade still open at the end of the data (`openAtEnd: true`); `trades[].holdingHours` is a number (was null — NaN in the process); negative money strings read `-$3.70` (were `$-3.70`). Migration: read a leading `-` before `$`; leave out `openAtEnd` trades to count closed trades only.
+- `arb scan --rates` / `--compare`, MCP `get_funding_rates`: `mixedKinds` counts verified rows only, so it is false on display-only rows (fewer than two verified rates) and no longer true because of an unverified row. Migration: compare the `rateKind` of the rows yourself when unverified rows matter.
 
 ### Fixed — the shared cache stopped working once its directory was removed
 

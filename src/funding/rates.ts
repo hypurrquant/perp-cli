@@ -70,8 +70,9 @@ export interface SymbolFundingComparison {
    */
   executable: boolean;
   /**
-   * true = the row's rates are of different kinds (e.g. Lighter lastSettled vs Hyperliquid
-   * accruing) — the perp-ws comparator's `mixedKinds`: the spread compares unlike quantities.
+   * true = the row's verified (ranked) rates are of different kinds (e.g. Lighter lastSettled vs
+   * Hyperliquid accruing) — the perp-ws comparator's `mixedKinds`: ranked rates of unlike quantities.
+   * An unverified display row does not count; a row with fewer than two verified rates is false.
    */
   mixedKinds: boolean;
   /** Venues of the long/short pair that perp-cli cannot trade (read-only); [] when executable. */
@@ -380,7 +381,7 @@ export async function fetchAllFundingRates(opts?: {
         symbol, rates, maxSpreadAnnual: null, longExchange: null, shortExchange: null,
         bestMarkPrice: bestMarkPrice(rates), estHourlyIncomeUsd: null,
         executable: false, readOnlyLegs: [], unverifiedLegs,
-        mixedKinds: new Set(rates.map(r => r.rateKind)).size > 1,
+        mixedKinds: new Set(ranked.map(r => r.rateKind)).size > 1,
       });
       continue;
     }
@@ -416,7 +417,7 @@ export async function fetchAllFundingRates(opts?: {
       bestMarkPrice: bestMarkPrice(rates),
       estHourlyIncomeUsd,
       ...pairExecutability(lowest.exchange, highest.exchange),
-      mixedKinds: new Set(rates.map(r => r.rateKind)).size > 1,
+      mixedKinds: new Set(ranked.map(r => r.rateKind)).size > 1,
     });
   }
 
