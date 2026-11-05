@@ -4,6 +4,12 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — `arb status` showed funding a position pays as income
+
+- **A perp-perp pair's `currentSpread` is signed.** It was `|short − long|`, so a pair whose short leg now funds below its long leg (the pair pays funding) showed a positive spread, a positive `estimatedFundingIncome` / `dailyFundingEstimate` and a breakeven date. `currentSpread` is now short − long (annualized %): negative when the pair pays, and the funding estimates, `netPnl` and `breakeven` follow the sign (`daysToBreakeven` null: not reached at the current rates).
+- **Spot-perp rows are signed from the short perp leg.** `dailyFundingEstimate` was `|rate| × notional × 24` and a recorded position's `currentSpread` was `|annual rate|`, so a negative perp rate (the short pays) read as income, and the aggregate / Summary added these absolute values to the signed perp-perp ones. A negative rate is now a negative `dailyFundingEstimate` / `currentSpread`.
+- **A perp-perp pair without a current funding rate has `dailyFundingEstimate` null** (was 0) and is listed in `aggregate.fundingUnknown`, left out of the daily / APR sums as spot-perp rows already were.
+
 ### Fixed — `arb scan` tables mixed funding intervals and hid legs
 
 - **The `arb scan --rates` table shows every venue's rate per hour** (`+0.001250%/h`: the rows' `hourlyRate`, 6 decimals like `--compare`). It printed each venue's raw rate per its own interval — Aster 8 h / 4 h next to Hyperliquid's 1 h, up to 8x apart — so a venue could look cheapest when it was not (live 2026-11-04: TRUMP on Aster at -0.0052 % per 4 h). `--json` is unchanged.
@@ -24,6 +30,8 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 - `arb scan --rates --symbol` / `--symbols` and MCP `get_funding_rates` with `symbols`: a named symbol one venue quotes is now a row with `longExchange` / `shortExchange` / `maxSpreadAnnual` / `estHourlyIncomeUsd` null and `executable: false` (it was left out). Migration: rank only rows whose `longExchange` is not null (or `executable` is true), as for the `--include-unverified` display rows.
 - `alerts add` stores the canonical symbol: `alerts add XAU` stores `symbol: "GOLD"` (`alerts list` shows GOLD). Migration: look rules up by the canonical key (`perp arb scan --compare <ticker>` names it); `alerts remove` takes either form.
+- `arb status`: perp-perp `currentSpread`, `estimatedFundingIncome`, `dailyFundingEstimate` and `netPnl`, spot-perp `dailyFundingEstimate` and recorded-position `currentSpread`, and the `aggregate` sums are negative when the position pays funding; they were absolute values. Migration: read a negative value as a cost, never take its absolute value.
+- `arb status` perp-perp rows: `dailyFundingEstimate` and `breakeven.dailyIncome` are null when a leg's funding rate is unknown (were 0); `aggregate.fundingUnknown` lists such pairs as `<long>/<short>:<symbol>` and `aggregate.dailyFundingIncomplete` is true. Migration: read null as unknown, not 0.
 
 ### Fixed — the shared cache stopped working once its directory was removed
 
