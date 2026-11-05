@@ -47,13 +47,14 @@ export interface WsFeedState {
 }
 
 /** A feed is stale when it has no data yet, its last failure is newer than its last success,
- *  or (polling mode) its last success is older than this. */
+ *  or its last success is older than this — in every mode: a live socket is fresh only while
+ *  the venue keeps confirming it. */
 export const FEED_STALE_MS = 30_000;
 
 export function isFeedStale(state: WsFeedState, now = Date.now()): boolean {
   if (state.lastOkAt === null) return true;
   if (state.lastErrorAt !== null && state.lastErrorAt > state.lastOkAt) return true;
-  return state.mode !== "ws" && now - state.lastOkAt > FEED_STALE_MS;
+  return now - state.lastOkAt > FEED_STALE_MS;
 }
 
 /** Log the first failure of a source, then every Nth consecutive one (avoid log spam). */
@@ -101,6 +102,13 @@ abstract class ExchangeWsFeed {
     this.failureCounts.delete(source);
   }
 
+  /** An auxiliary REST read (balance / mark poll) succeeded. In ws mode it does not make the feed
+   *  fresh: only the socket (data or pong) does, or a silent socket would never turn stale. */
+  protected recordAuxOk(source: string) {
+    if (this.state.mode !== "ws") this.state.lastOkAt = Date.now();
+    this.failureCounts.delete(source);
+  }
+
   /** A read / parse failed: record it on the state (the UI marks the feed stale) and log it
    *  on the first failure and every LOG_EVERY_N_FAILURES consecutive ones after that. */
   protected recordError(source: string, err: unknown) {
@@ -132,12 +140,14 @@ abstract class ExchangeWsFeed {
     }, this.WS_DATA_TIMEOUT);
   }
 
-  protected emitUpdate() {
+  /** New data was applied. Only data from the open socket makes it the live source (stops the
+   *  REST fallback): a REST read (fromWs false) never stops REST polling itself. */
+  protected emitUpdate(fromWs = true) {
     this.state.lastUpdate = Date.now();
-    this.state.lastOkAt = this.state.lastUpdate;
-    this.wsDataReceived = true;
-    // WS is delivering data — stop REST fallback if running
-    if (this.state.mode === "rest" && this.ws?.readyState === NodeWebSocket.OPEN) {
+    // In ws mode only socket data confirms the feed (a REST-side update does not).
+    if (fromWs || this.state.mode !== "ws") this.state.lastOkAt = this.state.lastUpdate;
+    if (fromWs && this.ws?.readyState === NodeWebSocket.OPEN) {
+      this.wsDataReceived = true;
       this.state.mode = "ws";
       this.stopRestFallback();
     }
@@ -184,17 +194,22 @@ abstract class ExchangeWsFeed {
           adapter.getPositions(),
           adapter.getOpenOrders(),
         ]);
+        // Polling stopped (socket data arrived) while this read was in flight: it is older than
+        // what the socket delivered — discarded, never applied over it.
+        if (this.restFallbackTimer !== timer) return;
         this.state.balance = balance;
         this.state.positions = positions.filter(p => Number(p.size) !== 0);
         this.state.orders = orders;
-        this.emitUpdate();
+        this.emitUpdate(false);
       } catch (e) {
+        if (this.restFallbackTimer !== timer) return; // an obsolete read's failure says nothing
         // Keep the last-read data but mark the feed stale (lastError) — never blank it to 0 / empty.
         this.recordError("rest-poll", e);
       }
     };
-    doRestPoll(); // immediate first fetch
-    this.restFallbackTimer = setInterval(doRestPoll, 5000);
+    const timer = setInterval(doRestPoll, 5000);
+    this.restFallbackTimer = timer;
+    void doRestPoll(); // immediate first fetch
   }
 
   protected stopRestFallback() {
@@ -250,7 +265,6 @@ class HyperliquidFeed extends ExchangeWsFeed {
         this.ws = new NodeWebSocket(this.wsUrl);
 
         this.ws.on("open", () => {
-          this.state.mode = "ws";
           this.refused = false;
           // Documented user channels (webData2 is refused by the venue): positions + open orders,
           // each a full snapshot on subscribe, re-pushed every few seconds.
@@ -310,7 +324,7 @@ class HyperliquidFeed extends ExchangeWsFeed {
     const poll = async () => {
       try {
         this.state.balance = await this.exchange.adapter.getBalance();
-        this.recordOk("balance-poll");
+        this.recordAuxOk("balance-poll");
       } catch (e) { this.recordError("balance-poll", e); }
     };
     poll(); // immediate
@@ -393,19 +407,19 @@ class PacificaFeed extends ExchangeWsFeed {
         this.ws = new NodeWebSocket(this.wsUrl);
 
         this.ws.on("open", () => {
-          this.state.mode = "ws";
           // Subscribe to private channels
           const sub = (source: string) =>
             this.ws!.send(JSON.stringify({ method: "subscribe", params: { source, account: this.account } }));
           sub("account_info");
           sub("account_positions");
           sub("account_order_updates");
-          // Heartbeat
+          // Heartbeat: Pacifica closes a socket after 60 s without a client message. The pong also
+          // confirms the (change-only) account channels are live, so ping well within FEED_STALE_MS.
           this._heartbeat = setInterval(() => {
             if (this.ws?.readyState === NodeWebSocket.OPEN) {
               this.ws.send(JSON.stringify({ method: "ping" }));
             }
-          }, 30000);
+          }, FEED_STALE_MS / 3);
           // Poll mark prices (WS positions don't include them)
           this.startMarkPricePolling();
           // Start data timeout — switch to REST if no data within 5s
@@ -417,7 +431,8 @@ class PacificaFeed extends ExchangeWsFeed {
           try {
             const msg = JSON.parse(String(raw));
             const ch = msg.channel || msg.source;
-            if (ch === "account_info") this.handleAccountInfo(msg.data ?? msg);
+            if (ch === "pong" && this.state.mode === "ws") this.recordOk("ws-pong"); // confirms only the live source
+            else if (ch === "account_info") this.handleAccountInfo(msg.data ?? msg);
             else if (ch === "account_positions") this.handlePositions(msg.data ?? msg);
             else if (ch === "account_order_updates") this.handleOrders(msg.data ?? msg);
           } catch (e) { this.recordError("ws-parse", e); }
@@ -460,7 +475,7 @@ class PacificaFeed extends ExchangeWsFeed {
         for (const p of positions) {
           this.markPrices.set(p.symbol, p.markPrice);
         }
-        this.recordOk("mark-poll");
+        this.recordAuxOk("mark-poll");
         // Update existing WS positions with mark prices + compute PnL
         if (this.state.positions && this.state.positions.length > 0) {
           let changed = false;
@@ -481,7 +496,7 @@ class PacificaFeed extends ExchangeWsFeed {
             }
           }
           if (changed && this.state.balance) this.state.balance = { ...this.state.balance, unrealizedPnl: this.positionsUpnl() };
-          if (changed) this.emitUpdate();
+          if (changed) this.emitUpdate(false);
         }
       } catch (e) { this.recordError("mark-poll", e); }
     };
@@ -648,7 +663,6 @@ class LighterFeed extends ExchangeWsFeed {
         this.ws = new NodeWebSocket(this.wsUrl);
 
         this.ws.on("open", () => {
-          this.state.mode = "ws";
           // Subscribe to authenticated channels (positions + orders)
           const authChannels = [
             `account_all_positions/${this.accountIndex}`,

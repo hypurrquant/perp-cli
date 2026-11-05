@@ -439,6 +439,14 @@ export async function startDashboard(
   let broadcastTimer: ReturnType<typeof setTimeout> | null = null;
   const BROADCAST_DEBOUNCE_MS = 1000;
 
+  /** Feed name → stale as last pushed: a feed going stale without any venue update is pushed by the tick below. */
+  const pushedStale = new Map<string, boolean>();
+  const pushSnapshot = () => {
+    const snap = buildSnapshotFromFeeds(feedMgr!, exchanges);
+    for (const [name, st] of feedMgr!.getAllStates()) pushedStale.set(name, isFeedStale(st));
+    broadcast(wss, { type: "snapshot", data: snap });
+  };
+
   feedMgr = new WsFeedManager(exchanges, {
     onUpdate: (_exchange, _state) => {
       // Debounce broadcasts: WS feeds fire rapidly, limit to 1/sec
@@ -446,17 +454,27 @@ export async function startDashboard(
       broadcastTimer = setTimeout(() => {
         broadcastTimer = null;
         if (!hasClients()) return;
-        const snap = buildSnapshotFromFeeds(feedMgr!, exchanges);
-        broadcast(wss, { type: "snapshot", data: snap });
+        pushSnapshot();
       }, BROADCAST_DEBOUNCE_MS);
     },
     signal: opts.signal,
   });
 
+  // A silent feed sends no update, so its turning stale (FEED_STALE_MS) would never reach the
+  // page (it has no timer of its own): re-send the snapshot when a feed's staleness changed.
+  const STALE_TICK_MS = 5000;
+  const staleTimer = setInterval(() => {
+    if (!hasClients()) return;
+    for (const [name, st] of feedMgr!.getAllStates()) {
+      if (pushedStale.get(name) !== isFeedStale(st)) { pushSnapshot(); return; }
+    }
+  }, STALE_TICK_MS);
+
   // Send initial snapshot on connect
   wss.on("connection", async (ws) => {
     try {
       const snap = await pollSnapshot(exchanges, feedMgr);
+      for (const ex of snap.exchanges) if (ex.feed) pushedStale.set(ex.name, ex.feed.stale);
       ws.send(JSON.stringify({ type: "snapshot", data: snap }));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -498,6 +516,7 @@ export async function startDashboard(
   if (opts.signal) {
     opts.signal.addEventListener("abort", () => {
       if (broadcastTimer) clearTimeout(broadcastTimer);
+      clearInterval(staleTimer);
       if (arbTimer) clearInterval(arbTimer);
       feedMgr?.close();
       wss.close();
@@ -515,6 +534,7 @@ export async function startDashboard(
         port,
         close: () => {
           if (broadcastTimer) clearTimeout(broadcastTimer);
+          clearInterval(staleTimer);
           if (arbTimer) clearInterval(arbTimer);
           feedMgr?.close();
           wss.close();

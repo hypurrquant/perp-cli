@@ -11,7 +11,7 @@ import { gunzipSync } from "node:zlib";
 import type { AddressInfo } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { ExchangeAdapter, ExchangeBalance } from "../exchanges/interface.js";
-import { WsFeedManager, type WsFeedState } from "../dashboard/ws-feeds.js";
+import { WsFeedManager, isFeedStale, FEED_STALE_MS, type WsFeedState } from "../dashboard/ws-feeds.js";
 import { fixtureFrames } from "./ws/helpers.js";
 
 type Frame = Record<string, unknown> & { channel?: string; data?: Record<string, unknown> };
@@ -31,12 +31,16 @@ async function venueSocket() {
   await new Promise(r => wss.once("listening", r));
   const received: unknown[] = [];
   let sock: WebSocket | null = null;
-  wss.on("connection", (s) => { sock = s; s.on("message", (m) => received.push(JSON.parse(String(m)))); });
+  let connections = 0;
+  wss.on("connection", (s) => { sock = s; connections++; s.on("message", (m) => received.push(JSON.parse(String(m)))); });
   cleanup.push(() => { for (const c of wss.clients) c.terminate(); return new Promise(r => wss.close(r)); });
   return {
     url: `ws://127.0.0.1:${(wss.address() as AddressInfo).port}`,
     received,
     send: (f: unknown) => sock!.send(JSON.stringify(f)),
+    /** The venue drops the current socket. */
+    drop: () => sock!.terminate(),
+    get connections() { return connections; },
   };
 }
 
@@ -46,10 +50,10 @@ const BAL: ExchangeBalance = { equity: "1000", available: "800", marginUsed: "20
 function stubAdapter(fields: Record<string, unknown>) {
   const calls = { getBalance: 0, getPositions: 0, getOpenOrders: 0 };
   const adapter = {
-    ...fields,
     getBalance: async () => { calls.getBalance++; return BAL; },
     getPositions: async () => { calls.getPositions++; return []; },
     getOpenOrders: async () => { calls.getOpenOrders++; return []; },
+    ...fields,
   } as unknown as ExchangeAdapter;
   return { adapter, calls };
 }
@@ -173,5 +177,103 @@ describe("leverage the venue frame does not carry is null (unknown), never 1", (
     const { initial_margin_fraction: _imf, ...eth } = (frame.positions as Record<string, Record<string, unknown>>)["0"];
     v.send({ ...frame, positions: { 0: { ...eth, position: "1.5", position_value: "4500" } } });
     await expect.poll(() => feed.getState().positions?.map(p => p.leverage)).toEqual([null]);
+  });
+});
+
+describe("REST fallback", () => {
+  it("keeps polling while the socket stays silent: its own reads never stop it", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] }); // the 5 s poll interval only
+    cleanup.push(() => vi.useRealTimers());
+    const v = await venueSocket(); // accepts the subscriptions, never sends a frame
+    const { adapter, calls } = stubAdapter({ _address: HL_USER });
+    const { mgr, feed } = feedFor("hyperliquid", adapter, v.url);
+    (feed as unknown as { WS_DATA_TIMEOUT: number }).WS_DATA_TIMEOUT = 50;
+    await mgr.start();
+    await expect.poll(() => calls.getOpenOrders).toBe(1); // REST after the WS data timeout
+    vi.advanceTimersByTime(2 * 5000);
+    await expect.poll(() => calls.getOpenOrders).toBe(3);
+    expect(feed.getState().mode).toBe("rest");
+  });
+});
+
+describe("freshness in ws mode comes from the socket only", () => {
+  const silentFor = async (ms: number) => { vi.setSystemTime(Date.now() + ms); await vi.advanceTimersByTimeAsync(ms); };
+
+  it("Hyperliquid: the balance poll does not keep a silent socket fresh (stale after FEED_STALE_MS)", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    cleanup.push(() => vi.useRealTimers());
+    const v = await venueSocket();
+    const { mgr, feed } = feedFor("hyperliquid", stubAdapter({ _address: HL_USER }).adapter, v.url);
+    await mgr.start();
+    v.send(fixtureFrames("hyperliquid", "private-openOrders")[0]);
+    await expect.poll(() => feed.getState().mode).toBe("ws");
+    await silentFor(FEED_STALE_MS + 5000); // the 5 s balance poll keeps succeeding meanwhile
+    expect(isFeedStale(feed.getState())).toBe(true);
+  });
+
+  it("Pacifica: the mark-price poll does not keep a silent socket fresh", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    cleanup.push(() => vi.useRealTimers());
+    const v = await venueSocket();
+    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: "DummyPacificaAccount111111111111111111111111" }).adapter, v.url);
+    await mgr.start();
+    v.send((fixtureFrames("pacifica", "private-account") as Frame[]).find(f => f.channel === "account_info"));
+    await expect.poll(() => feed.getState().mode).toBe("ws");
+    await silentFor(FEED_STALE_MS + 5000); // the venue answers no ping
+    expect(isFeedStale(feed.getState())).toBe(true);
+  });
+
+  it("Pacifica: pings every 10 s; the pong confirms a quiet account", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    cleanup.push(() => vi.useRealTimers());
+    const v = await venueSocket();
+    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: "DummyPacificaAccount111111111111111111111111" }).adapter, v.url);
+    await mgr.start();
+    v.send((fixtureFrames("pacifica", "private-account") as Frame[]).find(f => f.channel === "account_info"));
+    await expect.poll(() => feed.getState().mode).toBe("ws");
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect.poll(() => v.received).toContainEqual({ method: "ping" });
+    await silentFor(FEED_STALE_MS - 5000);
+    v.send((fixtureFrames("pacifica", "control") as Frame[]).find(f => f.channel === "pong"));
+    await silentFor(10_000); // 35 s after the last account frame, 10 s after the pong
+    await expect.poll(() => isFeedStale(feed.getState())).toBe(false);
+  });
+});
+
+describe("REST fallback hands over to the socket", () => {
+  it("socket data after a reconnect stops REST polling", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    cleanup.push(() => vi.useRealTimers());
+    const v = await venueSocket();
+    const { adapter, calls } = stubAdapter({ _address: HL_USER });
+    const { mgr, feed } = feedFor("hyperliquid", adapter, v.url);
+    await mgr.start();
+    v.send(fixtureFrames("hyperliquid", "private-openOrders")[0]);
+    await expect.poll(() => feed.getState().mode).toBe("ws");
+    v.drop(); // the venue drops the socket: REST at once, reconnect in 1 s
+    await expect.poll(() => feed.getState().mode).toBe("rest");
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect.poll(() => v.connections).toBe(2);
+    v.send(fixtureFrames("hyperliquid", "private-openOrders")[0]);
+    await expect.poll(() => feed.getState().mode).toBe("ws");
+    const restReads = calls.getOpenOrders;
+    await vi.advanceTimersByTimeAsync(3 * 5000);
+    expect(calls.getOpenOrders).toBe(restReads);
+  });
+
+  it("a REST read still in flight when socket data arrives is discarded (a cancelled order does not come back)", async () => {
+    let answer!: (o: ExchangeOrder[]) => void;
+    const v = await venueSocket();
+    const stale: ExchangeOrder = { orderId: "9", symbol: "BTC", side: "buy", price: "1", size: "1", filled: "0", status: "open", type: "limit", triggerPrice: null };
+    const { adapter } = stubAdapter({ _address: HL_USER, getOpenOrders: () => new Promise<ExchangeOrder[]>(r => { answer = r; }) });
+    const { mgr, feed } = feedFor("hyperliquid", adapter, v.url);
+    (feed as unknown as { WS_DATA_TIMEOUT: number }).WS_DATA_TIMEOUT = 50;
+    await mgr.start();
+    await expect.poll(() => typeof answer).toBe("function"); // the REST read is in flight
+    v.send(fixtureFrames("hyperliquid", "private-openOrders")[0]); // the socket: no open order
+    await expect.poll(() => feed.getState().orders).toEqual([]);
+    answer([stale]);
+    await new Promise(r => setImmediate(r)); // after every microtask: the REST read has been handled
+    expect(feed.getState().orders).toEqual([]);
   });
 });

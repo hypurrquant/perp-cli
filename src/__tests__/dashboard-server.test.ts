@@ -18,6 +18,7 @@ vi.mock("../dex-asset-map.js", () => ({
 }));
 
 import { startDashboard } from "../dashboard/server.js";
+import { FEED_STALE_MS } from "../dashboard/ws-feeds.js";
 
 const adapter = {
   name: "aster",
@@ -93,5 +94,31 @@ describe("dashboard HTTP + WebSocket: only the dashboard's own host name (DNS re
     const r = await firstMessage(dash.port, undefined, `evil.example:${dash.port}`);
     expect(r).toBeInstanceOf(Error);
     expect((r as Error).message).toContain("403");
+  });
+});
+
+describe("dashboard pushes a feed turning stale (no venue update needed)", () => {
+  it("a feed silent for FEED_STALE_MS is pushed as stale to the open page", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      let reads = 0;
+      const silent = {
+        ...adapter,
+        // The first read answers; every later one never does (the venue went quiet).
+        getBalance: () => (reads++ === 0 ? adapter.getBalance() : new Promise(() => {})),
+      } as unknown as ExchangeAdapter;
+      dash = await startDashboard([{ name: "aster", adapter: silent }], { port: 0 });
+      const snaps: Array<{ exchanges: Array<{ feed?: { stale: boolean } }> }> = [];
+      const ws = new WebSocket(`ws://127.0.0.1:${dash.port}`);
+      ws.on("message", (raw) => { const m = JSON.parse(String(raw)); if (m.type === "snapshot") snaps.push(m.data); });
+      await expect.poll(() => snaps.length).toBe(1);
+      expect(snaps[0].exchanges[0].feed?.stale).toBe(false);
+      vi.setSystemTime(Date.now() + FEED_STALE_MS + 5000);
+      await vi.advanceTimersByTimeAsync(FEED_STALE_MS + 5000);
+      await expect.poll(() => snaps.at(-1)?.exchanges[0].feed?.stale).toBe(true);
+      ws.close();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
