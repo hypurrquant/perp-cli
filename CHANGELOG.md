@@ -36,6 +36,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 ### JSON contract changes
 
 - **Lighter / Lighter RH classic accounts: `equity` no longer includes the spot USDC (USDG).** `portfolio` `exchanges[].perp.equity` (and `totals.equity`), MCP `get_balance` / `portfolio` `totalEquity`, `account balance --address` `accounts[].balance.equity`, `risk status` `totalEquity` and `history snapshot` `equity` are now the venue's perp `total_asset_value`. That USDC is counted once, as its own spot row (`spot[]`, `shared: false`; `portfolio` adds it to `totalAccountValueUsd` and `totals.spotValueUsd`). Unified accounts are unchanged. Migration: read `totalAccountValueUsd` for the whole account, or add the classic quote row's `total` to `equity` to rebuild the old figure; equity history recorded before this version includes the spot USDC, so expect a one-time step on such accounts.
+- **`spot[].shared` is `true` on more rows.** Every Pacifica spot row (`portfolio` `exchanges[].spot`, `trade spot-balance`, `account balance --address` / MCP `get_balance_by_address` `spot`), and on a Hyperliquid unified / portfolio-margin account (dexAbstraction with a non-USDC dex collateral) the HIP-3 dex-scoped spot rows that the dex balance reports as equity (`perp -e hyperliquid --dex <d> portfolio`). Migration: when adding `spot[]` values to `equity`, skip `shared` rows — they are already in it (`totalAccountValueUsd` does this).
 
 ## [0.17.0] — 2026-10-28
 
