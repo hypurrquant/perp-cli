@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { listConfiguredAccountVenues } from "../config.js";
 import type { ExchangeAdapter, ExchangePosition, ExchangeOrder } from "../exchanges/index.js";
+import { coversWindow, fundingPaymentsInWindow } from "../exchanges/interface.js";
 import type { PublicPosition } from "../exchanges/venue.js";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk, jsonError, symbolMatch, withJsonErrors } from "../utils.js";
 import chalk from "chalk";
@@ -656,14 +657,6 @@ export function registerAccountCommands(
     .action(async (opts: { period: string }) => {
       const adapter = await getAdapter();
 
-      // Gather data in parallel
-      const [trades, positions, fundingPayments, balance] = await Promise.all([
-        adapter.getTradeHistory(200),
-        adapter.getPositions(),
-        adapter.getFundingPayments(200),
-        adapter.getBalance(),
-      ]);
-
       // Period filter
       const now = Date.now();
       const periodMs: Record<string, number> = {
@@ -672,10 +665,25 @@ export function registerAccountCommands(
         "30d": 30 * 24 * 60 * 60 * 1000,
         all: Infinity,
       };
-      const cutoff = now - (periodMs[opts.period] ?? Infinity);
+      const cutoff = Math.max(0, now - (periodMs[opts.period] ?? Infinity));
+
+      // Gather data in parallel
+      const [trades, positions, funding, balance] = await Promise.all([
+        adapter.getTradeHistory(200),
+        adapter.getPositions(),
+        fundingPaymentsInWindow(adapter, cutoff),
+        adapter.getBalance(),
+      ]);
 
       const filteredTrades = trades.filter(t => t.time >= cutoff);
-      const filteredFunding = fundingPayments.filter(f => f.time >= cutoff);
+      const filteredFunding = funding.rows;
+      // A history that may end inside the period makes its totals a lower bound (labelled, never the total).
+      const tradesIncomplete = !coversWindow(trades, 200, cutoff);
+      const fundingIncomplete = !funding.complete;
+      const incompleteNotes = [
+        tradesIncomplete ? `trades read back to ${new Date(Math.min(...trades.map(t => t.time))).toISOString()} only (the last 200)` : null,
+        fundingIncomplete ? `funding read back to ${new Date(funding.from).toISOString()} only` : null,
+      ].filter((n): n is string => n !== null).map(n => `${n} — totals are a lower bound`);
 
       // Realized PnL: group trades by symbol, compute net P&L
       const symbolPnl = new Map<string, { buyCost: number; buyQty: number; sellRevenue: number; sellQty: number; fees: number }>();
@@ -755,7 +763,9 @@ export function registerAccountCommands(
           trades: filteredTrades.length,
           positions: positions.length,
           fundingPayments: filteredFunding.length,
-        }));
+          tradesIncomplete,
+          fundingIncomplete,
+        }, incompleteNotes.length > 0 ? { warnings: incompleteNotes } : undefined));
       }
 
       const periodLabel = opts.period === "all" ? "All Time" : opts.period === "today" ? "Today" : `Last ${opts.period}`;
@@ -784,6 +794,7 @@ export function registerAccountCommands(
       console.log(`  Net PnL:         ${netColor(`${netPnl >= 0 ? "+" : ""}$${Math.abs(netPnl).toFixed(2)}`)}`);
       console.log(`  Equity:          $${formatUsd(balance.equity)}`);
       console.log(`  Trades:          ${filteredTrades.length} | Positions: ${positions.length} | Funding: ${filteredFunding.length}`);
+      for (const n of incompleteNotes) console.log(chalk.yellow(`  ⚠ Incomplete: ${n}`));
       console.log();
     });
 

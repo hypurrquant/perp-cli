@@ -178,6 +178,28 @@ export interface ExchangeFundingPayment {
 }
 
 /**
+ * Funding payments of [sinceMs, now] for a period total; `from` = the earliest time the rows cover
+ * without a gap. `complete` (from ≤ sinceMs) = the whole window: a windowed read
+ * (getFundingPaymentsSince) that fit its budget, or a capped newest-first list that holds fewer than
+ * `limit` rows or reaches past `sinceMs` (coversWindow). Otherwise the sum covers [from, now] only —
+ * callers label it incomplete (with `from`), never present it as the total.
+ */
+export async function fundingPaymentsInWindow(adapter: ExchangeAdapter, sinceMs: number, limit = 200): Promise<{ rows: ExchangeFundingPayment[]; complete: boolean; from: number }> {
+  if (adapter.getFundingPaymentsSince !== undefined) {
+    const w = await adapter.getFundingPaymentsSince(sinceMs);
+    return { rows: w.rows, complete: w.from <= sinceMs, from: Math.max(w.from, sinceMs) };
+  }
+  const rows = await adapter.getFundingPayments(limit);
+  const complete = coversWindow(rows, limit, sinceMs);
+  return { rows: rows.filter(r => r.time >= sinceMs), complete, from: complete ? sinceMs : rows.reduce((m, r) => Math.min(m, r.time), Infinity) };
+}
+
+/** A newest-first history read capped at `limit` holds every row since `sinceMs`. */
+export function coversWindow(rows: ReadonlyArray<{ time: number }>, limit: number, sinceMs: number): boolean {
+  return rows.length < limit || rows.some(r => r.time < sinceMs);
+}
+
+/**
  * One row of `market funding` (getFundingHistory). `rate` is a fraction per `intervalHours`
  * (the hours one printed rate covers; null = unknown for that market), positive = longs pay.
  * `rateKind` "lastSettled" = a rate the venue applied at `time`; null = the venue does not say.
@@ -306,6 +328,12 @@ export interface ExchangeAdapter {
   getOrderHistory(limit?: number): Promise<ExchangeOrder[]>;
   getTradeHistory(limit?: number): Promise<ExchangeTrade[]>;
   getFundingPayments(limit?: number): Promise<ExchangeFundingPayment[]>;
+  /**
+   * Funding payments since `startTime` (ms), newest first; `from` = the earliest time they cover
+   * without a gap (`startTime` = the whole window, later = a read budget ran out). Absent = only the
+   * capped getFundingPayments (fundingPaymentsInWindow).
+   */
+  getFundingPaymentsSince?(startTime: number): Promise<{ rows: ExchangeFundingPayment[]; from: number }>;
 
   // ── Trading ──
   /**

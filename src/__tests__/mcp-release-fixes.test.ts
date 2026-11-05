@@ -390,6 +390,16 @@ describe("5. no silent per-venue skips", () => {
     expect(p.meta.errors).toEqual({ hyperliquid: expect.stringMatching(/funding endpoint 503/) });
   });
 
+  it("get_funding_analysis / get_pnl_analysis: a capped history ending inside the period is reported in meta.incomplete", async () => {
+    await loadServer();
+    const now = Date.now();
+    fakeAdapter.getFundingPayments.mockResolvedValue(Array.from({ length: 200 }, (_, i) => ({ time: now - i * 60_000, symbol: "BTC", payment: "-1" })));
+    const f = parse(await tools.get("get_funding_analysis")!({ period: "30d", exchange: "hyperliquid" }));
+    expect(f.meta.incomplete).toEqual({ hyperliquid: `funding read back to ${new Date(now - 199 * 60_000).toISOString()} only — its funding is a lower bound` });
+    const p = parse(await tools.get("get_pnl_analysis")!({ period: "30d", exchange: "hyperliquid" }));
+    expect(p.meta.incomplete).toEqual({ hyperliquid: `read funding back to ${new Date(now - 199 * 60_000).toISOString()} only — a lower bound` });
+  });
+
   it("get_arb_compare: failed venue reads → funding / pricePnl / totals null (never the entry price), reason in meta.errors", async () => {
     await loadServer();
     arbState.positions = [{

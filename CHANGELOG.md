@@ -4,6 +4,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — period funding totals summed a capped history as the total
+
+- **Hyperliquid funding totals now read the whole period.** `getFundingPayments(200)` returns at most 200 rows from the last 7 days, and `portfolio` `funding24h`, MCP `get_funding_analysis` / `get_pnl_analysis` and `account pnl --period` summed that list: 10 positions funded hourly gave `funding24h` −200 instead of −240 (`fundingIncomplete` false), and a "30d" total covered 7 days. They now read `userFunding` for the whole period: one request for a small window, else newest first in chunks. A period larger than the read budget (20 requests of 500 rows) gives the sum of the newest stretch that was read, labelled with how far back it reaches — never a cut-off sum presented as the total.
+- **A history that ends inside the period is labelled, never the total.** That is a Hyperliquid read past its budget, or another venue's capped list whose 200 rows all fall inside the period: `portfolio` `funding24h` is null with `fundingError` ("funding history reaches back to <time> only", `totals.fundingIncomplete` true), MCP `get_funding_analysis` / `get_pnl_analysis` list the venue in `meta.incomplete` with how far back funding (and, for the fees, trades) reach, and `account pnl` reports `fundingIncomplete` / `tradesIncomplete` (new fields) with the same note in `meta.warnings` and a warning line.
+
 ### Fixed — the shared cache stopped working once its directory was removed
 
 - **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).

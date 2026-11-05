@@ -2322,21 +2322,57 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   /**
-   * Every userFunding row since `startTime`. The endpoint returns rows OLDEST first, at most 500
-   * per response (live 2026-10-13), and every coin of a funding hour shares one millisecond — so
-   * pages continue from the last row's time INCLUSIVE and rows are deduped by time + coin (funding
-   * rows carry a zero hash). A full page that adds nothing new, or more than HL_FUNDING_MAX_PAGES
-   * pages → EXCHANGE_ERROR (never a list with payments silently missing).
+   * Funding payments in this adapter's scope since `startTime`, newest first, for period totals;
+   * `from` = the earliest time they cover without a gap (`startTime` = the whole window). One page
+   * answers a window of fewer than 500 rows; a larger one is read backward in chunks [end − span,
+   * end) with the span doubling from 24 h, each chunk whole, so when the HL_FUNDING_MAX_PAGES budget
+   * runs out the rows read still cover [from, now] — a partial newest stretch, never a hole.
    */
+  async getFundingPaymentsSince(startTime: number): Promise<{ rows: ExchangeFundingPayment[]; from: number }> {
+    this.ensureAddress();
+    await this._historyScopeReady();
+    const newestFirst = (rows: ExchangeFundingPayment[]) => rows.sort((a, b) => b.time - a.time);
+    const whole = await this._fundingBetween(startTime, null, { pages: 1 });
+    if (whole !== null) return { rows: newestFirst(whole), from: startTime };
+    const budget = { pages: HL_FUNDING_MAX_PAGES - 1 };
+    const out: ExchangeFundingPayment[] = [];
+    let end = Date.now();
+    for (let span = 24 * 60 * 60 * 1000; end > startTime; span *= 2) {
+      const from = Math.max(startTime, end - span);
+      // startTime and endTime are both inclusive (docs userFunding): chunks [from, end − 1] do not overlap.
+      const rows = await this._fundingBetween(from, end - 1, budget);
+      if (rows === null) return { rows: newestFirst(out), from: end };
+      out.push(...rows);
+      end = from;
+    }
+    return { rows: newestFirst(out), from: startTime };
+  }
+
+  /** Every userFunding row since `startTime` (see _fundingBetween); more than HL_FUNDING_MAX_PAGES pages → EXCHANGE_ERROR. */
   private async _fundingSince(startTime: number): Promise<ExchangeFundingPayment[]> {
+    const rows = await this._fundingBetween(startTime, null, { pages: HL_FUNDING_MAX_PAGES });
+    if (rows === null) {
+      throw new PerpError("EXCHANGE_ERROR", `Hyperliquid funding history needs more than ${HL_FUNDING_MAX_PAGES} pages — the result would be incomplete`, { exchange: "hyperliquid" });
+    }
+    return rows;
+  }
+
+  /**
+   * Every userFunding row in [startTime, endTime] (null = now). The endpoint returns rows OLDEST
+   * first, at most 500 per response (live 2026-10-13), and every coin of a funding hour shares one
+   * millisecond — so pages continue from the last row's time INCLUSIVE and rows are deduped by
+   * time + coin (funding rows carry a zero hash). Each request spends one of `budget.pages`; a window
+   * that needs more → null (never a list with payments silently missing). A full page that adds
+   * nothing new → EXCHANGE_ERROR.
+   */
+  private async _fundingBetween(startTime: number, endTime: number | null, budget: { pages: number }): Promise<ExchangeFundingPayment[] | null> {
     const out: ExchangeFundingPayment[] = [];
     const seen = new Set<string>();
     let from = startTime;
-    for (let page = 0; ; page++) {
-      if (page >= HL_FUNDING_MAX_PAGES) {
-        throw new PerpError("EXCHANGE_ERROR", `Hyperliquid funding history needs more than ${HL_FUNDING_MAX_PAGES} pages — the result would be incomplete`, { exchange: "hyperliquid" });
-      }
-      const rows = await this._infoPost({ type: "userFunding", user: this._address, startTime: from });
+    for (;;) {
+      if (budget.pages <= 0) return null;
+      budget.pages--;
+      const rows = await this._infoPost({ type: "userFunding", user: this._address, startTime: from, ...(endTime !== null ? { endTime } : {}) });
       if (!Array.isArray(rows)) {
         throw new PerpError("EXCHANGE_ERROR", `Hyperliquid userFunding returned no list (${JSON.stringify(rows).slice(0, 120)})`, { exchange: "hyperliquid" });
       }

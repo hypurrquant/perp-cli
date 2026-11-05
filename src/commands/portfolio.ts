@@ -17,6 +17,7 @@
 import type { Command } from "commander";
 import chalk from "chalk";
 import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "../exchanges/index.js";
+import { fundingPaymentsInWindow } from "../exchanges/interface.js";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import { isDexCapable } from "../exchanges/capabilities.js";
 import type { DashboardExchange } from "../dashboard/index.js";
@@ -364,12 +365,14 @@ async function fetchExchangeEntry(
 ): Promise<ExchangeEntry> {
   try {
     const adapter = await getAdapter(exName);
+    const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
     const [bal, positionsRaw, orders, fundingPayments] = await Promise.all([
       adapter.getBalance(),
       adapter.getPositions(),
       adapter.getOpenOrders(),
-      adapter.getFundingPayments(200).then(
-        (rows) => ({ rows, error: null as string | null }),
+      // A capped history that may end inside the 24 h is a lower bound: unknown (null), never the total.
+      fundingPaymentsInWindow(adapter, cutoff24h).then(
+        (w) => (w.complete ? { rows: w.rows, error: null as string | null } : { rows: null, error: `funding history reaches back to ${new Date(w.from).toISOString()} only — the 24 h total is unknown` }),
         (e: unknown) => ({ rows: null, error: e instanceof Error ? e.message : String(e) }),
       ),
     ]);
@@ -395,11 +398,8 @@ async function fetchExchangeEntry(
       warn(`${def.displayName} spot balances unavailable: ${e instanceof Error ? e.message : String(e)}`);
     }
 
-    const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
     if (fundingPayments.error !== null) warn(`${def.displayName} funding history unavailable (funding24h null): ${fundingPayments.error}`);
-    const funding24h = fundingPayments.rows === null
-      ? null
-      : fundingPayments.rows.filter(f => f.time >= cutoff24h).reduce((sum, f) => sum + Number(f.payment), 0);
+    const funding24h = fundingPayments.rows === null ? null : fundingPayments.rows.reduce((sum, f) => sum + Number(f.payment), 0);
 
     // Shared balances (Pacifica USDC, HL unified USDC) are already in perp equity.
     const nonUsdcSpotValue = spot.filter(b => !b.shared).reduce((s, b) => s + b.valueUsd, 0);

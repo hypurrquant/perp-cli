@@ -48,10 +48,10 @@ perp --json -e <EX> account trades             # trade fill history
 perp --json -e <EX> account funding-history    # funding payments
 perp --json -e <EX> account settings           # per-market leverage & margin mode
 perp --json -e <EX> account margin <SYMBOL>    # position margin info
-perp --json -e <EX> account pnl                # realized + unrealized + funding
+perp --json -e <EX> account pnl                # realized + unrealized + funding (tradesIncomplete / fundingIncomplete: the history read ends inside --period — a lower bound; meta.warnings says how far back)
 perp --json -e <EX> account twap-orders        # active TWAP orders
 perp --json portfolio                          # cross-exchange unified view
-# funding24h is null (with fundingError) when a venue's funding history is unreadable; totals.fundingIncomplete = true then
+# funding24h is null (with fundingError) when a venue's funding history is unreadable or capped inside the 24 h; totals.fundingIncomplete = true then
 # --address (public-address positions): hyperliquid / lighter / lighter-rh / risex take a 0x address, pacifica a base58
 #   Solana address (a wrong format → INVALID_PARAMS before any request); other venues → CAPABILITY_UNSUPPORTED
 #   (feature publicPositions). Rows = the account positions rows with plain symbols, plus:
