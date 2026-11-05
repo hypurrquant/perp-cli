@@ -46,7 +46,7 @@ interface SpotHolding {
   available: string;
   held?: string;
   valueUsd: number;
-  /** true = same money as perp equity (Pacifica USDC, HL unified USDC) — not added to totals. */
+  /** true = same money as perp equity (every Pacifica row, HL unified USDC) — not added to totals. */
   shared: boolean;
 }
 
@@ -402,7 +402,7 @@ async function fetchExchangeEntry(
       ? null
       : fundingPayments.rows.filter(f => f.time >= cutoff24h).reduce((sum, f) => sum + Number(f.payment), 0);
 
-    // Shared balances (Pacifica USDC, HL unified USDC) are already in perp equity.
+    // Shared balances (every Pacifica row, HL unified USDC) are already in perp equity.
     const nonUsdcSpotValue = spot.filter(b => !b.shared).reduce((s, b) => s + b.valueUsd, 0);
 
     return {

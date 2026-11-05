@@ -58,7 +58,9 @@ function decimalsOf(step: string): number {
 /**
  * Spot balances from Pacifica GET /account (USDC = the shared perp collateral, then
  * `spot_balances`) — the one mapper behind the keyed spot adapter and the keyless
- * `account balance --address`.
+ * `account balance --address`. Every row is `shared`: the perp equity (`account_equity`) is
+ * "Account balance + unrealized PnL + isolated margin + raw spot market value" (docs
+ * get-account-info), so the spot holdings are already in it — one account, no transfer.
  */
 export function pacificaSpotBalanceRows(info: Record<string, unknown>): SpotBalance[] {
   const rows = info.spot_balances;
@@ -73,7 +75,7 @@ export function pacificaSpotBalanceRows(info: Record<string, unknown>): SpotBala
   for (const r of rows as Array<Record<string, unknown>>) {
     const t = String(r.amount);
     const a = String(r.available_to_withdraw);
-    out.push({ token: String(r.symbol), total: t, available: a, held: subDecimal(t, a), shared: false });
+    out.push({ token: String(r.symbol), total: t, available: a, held: subDecimal(t, a), shared: true });
   }
   return out;
 }

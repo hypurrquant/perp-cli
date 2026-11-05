@@ -285,7 +285,7 @@ const PAC_ACCOUNT = { success: true, data: {
 }, error: null, code: null };
 
 describe("Pacifica and RISEx", () => {
-  it("Pacifica: the keyed balance with its extras, spot = USDC (shared) + spot_balances", async () => {
+  it("Pacifica: the keyed balance with its extras, spot = USDC + spot_balances, all shared (inside account_equity)", async () => {
     stubFetch(url => (url.includes("/account?account=") ? json(PAC_ACCOUNT)
       : url.includes("/positions?account=") ? json({ success: true, data: [] })
       : url.includes("/info/prices") ? json({ success: true, data: [] }) : null));
@@ -296,7 +296,7 @@ describe("Pacifica and RISEx", () => {
     });
     expect(r.spot).toEqual([
       { token: "USDC", total: "4730.207244", available: "2495.195745", held: "2235.011499", shared: true },
-      { token: "SOL", total: "0.96", available: "0.96", held: "0", shared: false },
+      { token: "SOL", total: "0.96", available: "0.96", held: "0", shared: true },
     ]);
     expect(issues(BalanceByAddress, (await readBalanceByAddress("pacifica", "mainnet", SOL_ADDR)).data)).toBe("");
   });

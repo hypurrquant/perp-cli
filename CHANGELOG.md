@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — Pacifica spot holdings counted twice in portfolio totals
+
+- **`perp portfolio` (and the landing page total) no longer adds Pacifica spot tokens on top of the account equity.** Pacifica's `account_equity`, which perp-cli reports as the equity, is "Account balance + unrealized PnL + isolated margin + raw spot market value" (docs get-account-info): the spot holdings are already in it. The spot rows (SOL, …) were marked `shared: false` and added again — an account with equity 1400 holding 2 SOL at 200 showed 1800. Every Pacifica spot row is now `shared: true` (`portfolio`, `trade spot-balance`, `account balance --address` / MCP `get_balance_by_address` `spot[].shared`).
+
 ### Fixed — HIP-3 dex portfolio counted unified spot collateral twice
 
 - **`perp -e hyperliquid --dex <d> portfolio` no longer adds the spot collateral on top of the dex equity.** On a unified / portfolio-margin account (and dexAbstraction with a dex whose collateral is not USDC) the dex balance reports the spot collateral row as the dex equity, but the dex-scoped spot rows were never marked `shared`, so `totalAccountValueUsd` / `totals.accountValueUsd` counted the same USDC twice (2000 for 1000 USDC). The dex spot rows now follow the same account mode and dex collateral token as the dex balance (`hlSpotBalanceRows`), and the portfolio totals (`spotValueUsd`, the text balance line) skip every `shared` row.
