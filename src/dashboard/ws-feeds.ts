@@ -7,9 +7,10 @@
  */
 
 import { WebSocket as NodeWebSocket } from "ws";
-import type { ExchangeBalance, ExchangePosition, ExchangeOrder } from "../exchanges/index.js";
+import type { ExchangeAdapter, ExchangeBalance, ExchangePosition, ExchangeOrder } from "../exchanges/index.js";
 import type { DashboardExchange } from "./server.js";
 import type { LighterAdapter } from "../exchanges/lighter.js";
+import type { PacificaAdapter } from "../exchanges/pacifica.js";
 import { hlOpenOrderRows } from "../exchanges/hyperliquid.js";
 import { formatComputedPrice } from "../exchanges/precision.js";
 
@@ -384,15 +385,52 @@ class HyperliquidFeed extends ExchangeWsFeed {
 
 // ── Pacifica WS Feed ──
 
+/** How often the Pacifica open orders are re-read over REST (reconciles an update the stream missed). */
+const ORDERS_RECONCILE_MS = 60_000;
+/** Order updates kept while the open-orders snapshot is unread / in flight. */
+const MAX_PENDING_ORDER_UPDATES = 1000;
+
 class PacificaFeed extends ExchangeWsFeed {
   private account: string;
   private markPriceTimer: ReturnType<typeof setInterval> | null = null;
   private markPrices = new Map<string, string>();
+  /** Open orders by id. account_order_updates is a change stream without a snapshot: the list is
+   *  read over REST at every (re)subscribe and again every ORDERS_RECONCILE_MS (an update missed
+   *  while the subscription became active is not left until the next reconnect), and each update is
+   *  applied to it. Updates that arrive while a read is in flight are replayed over its answer (an
+   *  upsert / removal by id is idempotent). null = not read yet. */
+  private orderMap: Map<string, ExchangeOrder> | null = null;
+  private pendingOrderUpdates: unknown[] = [];
+  private ordersLoading = false;
+  private ordersReadAt = 0;
+  /** Spot symbols (SOL-USDC …): their order updates are left out, as getOpenOrders leaves them out. */
+  private spotSymbols = new Set<string>();
 
   constructor(exchange: DashboardExchange, onUpdate: (state: WsFeedState) => void) {
     super(exchange, onUpdate);
     const adapter = exchange.adapter as unknown as Record<string, unknown>;
     this.account = String(adapter.publicKey ?? adapter.account ?? "");
+  }
+
+  /** The open-orders snapshot of socket `ws` (dropped when a newer socket replaced it). */
+  private async loadOpenOrders(ws: NodeWebSocket | null) {
+    if (this.ordersLoading) return;
+    this.ordersLoading = true;
+    try {
+      const adapter = this.exchange.adapter as ExchangeAdapter & Pick<PacificaAdapter, "nonPerpSymbols">;
+      const [orders, spot] = await Promise.all([adapter.getOpenOrders(), adapter.nonPerpSymbols()]);
+      if (ws !== this.ws) return;
+      this.spotSymbols = spot;
+      this.orderMap = new Map(orders.map(o => [o.orderId, o]));
+      this.ordersReadAt = Date.now();
+      this.ordersLoading = false; // the replay below applies, it is not buffered again
+      this.handleOrders(this.pendingOrderUpdates.splice(0), false);
+    } catch (e) {
+      if (this.orderMap !== null) this.pendingOrderUpdates = []; // a failed re-read: those updates are applied already
+      this.recordError("orders-snapshot", e);
+    } finally {
+      this.ordersLoading = false;
+    }
   }
 
   get wsUrl() { return "wss://ws.pacifica.fi/ws"; }
@@ -413,6 +451,9 @@ class PacificaFeed extends ExchangeWsFeed {
           sub("account_info");
           sub("account_positions");
           sub("account_order_updates");
+          this.orderMap = null;
+          this.pendingOrderUpdates = [];
+          void this.loadOpenOrders(this.ws);
           // Heartbeat: Pacifica closes a socket after 60 s without a client message. The pong also
           // confirms the (change-only) account channels are live, so ping well within FEED_STALE_MS.
           this._heartbeat = setInterval(() => {
@@ -469,6 +510,11 @@ class PacificaFeed extends ExchangeWsFeed {
   private startMarkPricePolling() {
     if (this.markPriceTimer) return;
     const poll = async () => {
+      // A failed open-orders snapshot is read again (the order updates cannot rebuild the list), and
+      // a read one is re-read every ORDERS_RECONCILE_MS.
+      if (this.ws?.readyState === NodeWebSocket.OPEN && (this.orderMap === null || Date.now() - this.ordersReadAt >= ORDERS_RECONCILE_MS)) {
+        void this.loadOpenOrders(this.ws);
+      }
       try {
         // Use adapter's getPositions which includes mark prices
         const positions = await this.exchange.adapter.getPositions();
@@ -570,28 +616,43 @@ class PacificaFeed extends ExchangeWsFeed {
     this.emitUpdate();
   }
 
-  private handleOrders(data: unknown) {
+  /** account_order_updates rows: one change per order (open / partially_filled rest on the book, any
+   *  other status left it); `ip` is the order price (`p` is the average fill price). */
+  private handleOrders(data: unknown, fromWs = true) {
     if (!Array.isArray(data)) return;
-    const open = data.filter((o: Record<string, unknown>) => String(o.os ?? o.order_status ?? "") === "open");
-    // A row without a readable price / size / filled amount is reported, never shown as "0".
-    const readable = open.filter((o: Record<string, unknown>) => {
-      const ok = numStr(o.p ?? o.price) !== null && numStr(o.a ?? o.amount) !== null && numStr(o.f ?? o.filled) !== null;
-      if (!ok) this.recordError("order-row", `order ${String(o.i ?? o.order_id ?? "?")} without price / amount / filled`);
-      return ok;
-    });
-    this.state.orders = readable
-      .map((o: Record<string, unknown>) => ({
-        orderId: String(o.i ?? o.order_id ?? ""),
+    if (this.orderMap === null || this.ordersLoading) {
+      this.pendingOrderUpdates.push(...data);
+      // Bounded: the oldest are the ones the snapshot (read after them) already reflects.
+      if (this.pendingOrderUpdates.length > MAX_PENDING_ORDER_UPDATES) this.pendingOrderUpdates.splice(0, this.pendingOrderUpdates.length - MAX_PENDING_ORDER_UPDATES);
+      if (this.orderMap === null) return;
+    }
+    for (const o of data as Record<string, unknown>[]) {
+      const id = String(o.i ?? o.order_id ?? "");
+      if (this.spotSymbols.has(String(o.s ?? o.symbol ?? ""))) continue;
+      const status = String(o.os ?? o.order_status ?? "");
+      if (status === "") {
+        // Unknown status: neither kept nor removed on a guess — reported (the order stays as last read).
+        this.recordError("order-row", `order ${id || "?"} without status`);
+        continue;
+      }
+      if (status !== "open" && status !== "partially_filled") { this.orderMap.delete(id); continue; }
+      // A row without a readable price / size / filled amount is reported, never shown as "0".
+      const price = numStr(o.ip ?? o.price), size = numStr(o.a ?? o.amount), filled = numStr(o.f ?? o.filled);
+      if (price === null || size === null || filled === null) {
+        this.recordError("order-row", `order ${id || "?"} without price / amount / filled`);
+        continue;
+      }
+      this.orderMap.set(id, {
+        orderId: id,
         symbol: String(o.s ?? o.symbol ?? ""),
-        side: (o.d ?? o.side) === "bid" ? "buy" as const : "sell" as const,
-        price: numStr(o.p ?? o.price)!,
-        size: numStr(o.a ?? o.amount)!,
-        filled: numStr(o.f ?? o.filled)!,
-        status: "open",
+        side: (o.d ?? o.side) === "bid" ? "buy" : "sell",
+        price, size, filled, status,
         type: String(o.ot ?? o.order_type ?? ""),
         triggerPrice: Number(o.sp ?? o.stop_price) > 0 ? String(o.sp ?? o.stop_price) : null,
-      }));
-    this.emitUpdate();
+      });
+    }
+    this.state.orders = [...this.orderMap.values()];
+    this.emitUpdate(fromWs);
   }
 
   close() {

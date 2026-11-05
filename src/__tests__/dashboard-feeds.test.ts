@@ -10,12 +10,13 @@ import { resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 import type { AddressInfo } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { ExchangeAdapter, ExchangeBalance } from "../exchanges/interface.js";
+import type { ExchangeAdapter, ExchangeBalance, ExchangeOrder } from "../exchanges/interface.js";
 import { WsFeedManager, isFeedStale, FEED_STALE_MS, type WsFeedState } from "../dashboard/ws-feeds.js";
 import { fixtureFrames } from "./ws/helpers.js";
 
 type Frame = Record<string, unknown> & { channel?: string; data?: Record<string, unknown> };
 const HL_USER = "0x000000000000000000000000000000000000dEaD"; // the recorded frames' (anonymized) user
+const PAC_ACCOUNT = "DummyPacificaAccount111111111111111111111111"; // the recorded frames' (anonymized) account
 
 /** The recorded REST clearinghouseState of an account with positions (live public mainnet, conformance fixture). */
 const HL_STATE = (JSON.parse(gunzipSync(readFileSync(resolve(import.meta.dirname, "fixtures/conformance/positions-by-address.json.gz"))).toString()) as {
@@ -46,13 +47,14 @@ async function venueSocket() {
 
 const BAL: ExchangeBalance = { equity: "1000", available: "800", marginUsed: "200", unrealizedPnl: "5" };
 
-/** A stub adapter counting REST reads, plus the account fields the feed reads. */
+/** A stub adapter counting REST reads, plus the account fields the feed reads (they may replace a read). */
 function stubAdapter(fields: Record<string, unknown>) {
   const calls = { getBalance: 0, getPositions: 0, getOpenOrders: 0 };
   const adapter = {
     getBalance: async () => { calls.getBalance++; return BAL; },
     getPositions: async () => { calls.getPositions++; return []; },
     getOpenOrders: async () => { calls.getOpenOrders++; return []; },
+    nonPerpSymbols: async () => new Set<string>(), // Pacifica: no spot market unless a test says so
     ...fields,
   } as unknown as ExchangeAdapter;
   return { adapter, calls };
@@ -159,7 +161,7 @@ describe("Hyperliquid feed: a computed mark keeps its precision", () => {
 describe("leverage the venue frame does not carry is null (unknown), never 1", () => {
   it("Pacifica: account_positions rows carry no leverage → null", async () => {
     const v = await venueSocket();
-    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: "DummyPacificaAccount111111111111111111111111" }).adapter, v.url);
+    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: PAC_ACCOUNT }).adapter, v.url);
     await mgr.start();
     // account_positions row (docs.pacifica.fi; the recorded frame of the probe account is empty).
     v.send({ channel: "account_positions", data: [{ s: "BTC", d: "bid", a: "0.1", p: "80000", m: "0", f: "0", i: false, l: null, t: 1 }], li: 900011 });
@@ -215,7 +217,7 @@ describe("freshness in ws mode comes from the socket only", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
     cleanup.push(() => vi.useRealTimers());
     const v = await venueSocket();
-    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: "DummyPacificaAccount111111111111111111111111" }).adapter, v.url);
+    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: PAC_ACCOUNT }).adapter, v.url);
     await mgr.start();
     v.send((fixtureFrames("pacifica", "private-account") as Frame[]).find(f => f.channel === "account_info"));
     await expect.poll(() => feed.getState().mode).toBe("ws");
@@ -227,7 +229,7 @@ describe("freshness in ws mode comes from the socket only", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
     cleanup.push(() => vi.useRealTimers());
     const v = await venueSocket();
-    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: "DummyPacificaAccount111111111111111111111111" }).adapter, v.url);
+    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: PAC_ACCOUNT }).adapter, v.url);
     await mgr.start();
     v.send((fixtureFrames("pacifica", "private-account") as Frame[]).find(f => f.channel === "account_info"));
     await expect.poll(() => feed.getState().mode).toBe("ws");
@@ -275,5 +277,140 @@ describe("REST fallback hands over to the socket", () => {
     answer([stale]);
     await new Promise(r => setImmediate(r)); // after every microtask: the REST read has been handled
     expect(feed.getState().orders).toEqual([]);
+  });
+});
+
+/** An account_order_updates row: the docs.pacifica.fi stream example (as in ws/pacifica-strategy-orders.test.ts).
+ *  Hand-copied from the docs: the repo holds no recorded account_order_updates data frame (the probe
+ *  fixture ws/pacifica/private-account.json records only the subscribe ack — the channel sends no
+ *  snapshot, so its rows are "not replayable"). */
+const pacOrder = (o: Record<string, unknown>) => ({
+  i: 1559665358, I: null, u: PAC_ACCOUNT, s: "BTC", d: "bid", p: "0", ip: "89501", lp: "0", a: "0.00061", f: "0", oe: "make",
+  os: "open", ot: "limit", sp: null, si: null, tp: null, r: false, ct: 1765017049008, ut: 1765017219639, li: 1559696133, ...o,
+});
+const pacUpdate = (o: Record<string, unknown>) => ({ channel: "account_order_updates", data: [pacOrder(o)] });
+
+describe("Pacifica feed: account_order_updates is a change stream", () => {
+  it("applies each update to the open orders (a new order adds, a partial fill updates) instead of replacing them", async () => {
+    const v = await venueSocket();
+    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: PAC_ACCOUNT }).adapter, v.url);
+    await mgr.start();
+    v.send(pacUpdate({ i: 5 }));
+    v.send(pacUpdate({ i: 6, s: "ETH", d: "ask", ip: "3000", a: "1" }));
+    v.send(pacUpdate({ i: 6, s: "ETH", d: "ask", ip: "3000", a: "1", f: "0.4", p: "3000", oe: "fulfill_limit", os: "partially_filled" }));
+    await expect.poll(() => feed.getState().orders?.map(o => `#${o.orderId} ${o.symbol} ${o.size}@${o.price} filled ${o.filled}`))
+      .toEqual(["#5 BTC 0.00061@89501 filled 0", "#6 ETH 1@3000 filled 0.4"]);
+  });
+
+  it("the orders read at subscribe stay listed until an update removes them", async () => {
+    const v = await venueSocket();
+    const rest: ExchangeOrder = { orderId: "7", symbol: "SOL", side: "buy", price: "150", size: "2", filled: "0", status: "open", type: "limit", triggerPrice: null };
+    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: PAC_ACCOUNT, getOpenOrders: async () => [rest] }).adapter, v.url);
+    await mgr.start();
+    await expect.poll(() => feed.getState().orders?.map(o => o.orderId)).toEqual(["7"]);
+    v.send(pacUpdate({ i: 8 }));
+    v.send(pacUpdate({ i: 7, s: "SOL", ip: "150", a: "2", f: "2", p: "150", oe: "fulfill_limit", os: "filled" }));
+    await expect.poll(() => feed.getState().orders?.map(o => o.orderId)).toEqual(["8"]);
+  });
+});
+
+/** A promise whose answer the test gives: makes the order of a REST answer vs a socket frame deterministic. */
+function deferred<T>() {
+  let resolve!: (v: T) => void, reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+const pacRest = (orderId: string, symbol = "SOL"): ExchangeOrder =>
+  ({ orderId, symbol, side: "buy", price: "150", size: "2", filled: "0", status: "open", type: "limit", triggerPrice: null });
+
+describe("Pacifica feed: the open-orders snapshot and the updates around it", () => {
+  it("updates received before the snapshot answers are applied over it", async () => {
+    const v = await venueSocket();
+    const snap = deferred<ExchangeOrder[]>();
+    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: PAC_ACCOUNT, getOpenOrders: () => snap.promise }).adapter, v.url);
+    await mgr.start();
+    v.send(pacUpdate({ i: 8 }));
+    v.send(pacUpdate({ i: 7, s: "SOL", ip: "150", a: "2", f: "2", os: "filled" }));
+    await expect.poll(() => v.received.length).toBe(3); // the socket is serving; the snapshot has not answered
+    expect(feed.getState().orders).toBeNull();
+    snap.resolve([pacRest("7"), pacRest("3")]);
+    await expect.poll(() => feed.getState().orders?.map(o => o.orderId)).toEqual(["3", "8"]);
+  });
+
+  it("a failed snapshot is read again; a read of a replaced socket (ordersLoading) does not block the new one", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    cleanup.push(() => vi.useRealTimers());
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    cleanup.push(() => stderr.mockRestore());
+    const v = await venueSocket();
+    const reads: Array<ReturnType<typeof deferred<ExchangeOrder[]>>> = []; // every getOpenOrders read, in order
+    const read = () => { const d = deferred<ExchangeOrder[]>(); reads.push(d); return d.promise; };
+    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: PAC_ACCOUNT, getOpenOrders: read }).adapter, v.url);
+    const info = (fixtureFrames("pacifica", "private-account") as Frame[]).find(f => f.channel === "account_info");
+    await mgr.start();
+    v.send(info); // the socket serves: no REST fallback read
+    await expect.poll(() => feed.getState().mode).toBe("ws");
+    reads[0].reject(new Error("HTTP 503"));
+    await expect.poll(() => feed.getState().lastError).toBe("orders-snapshot: HTTP 503");
+    await vi.advanceTimersByTimeAsync(5000); // the mark poll reads it again: read #2, left in flight
+    expect(reads).toHaveLength(2);
+    v.drop(); // REST fallback (read #3, never answered) + reconnect; the new socket's read is skipped (ordersLoading)
+    await expect.poll(() => feed.getState().mode).toBe("rest");
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect.poll(() => v.connections).toBe(2);
+    v.send(info);
+    await expect.poll(() => feed.getState().mode).toBe("ws");
+    expect(reads).toHaveLength(3);
+    reads[1].resolve([pacRest("1")]); // the replaced socket's answer: dropped
+    await vi.advanceTimersByTimeAsync(5000); // the mark poll reads it for the new socket
+    expect(reads).toHaveLength(4);
+    reads[3].resolve([pacRest("2")]);
+    await expect.poll(() => feed.getState().orders?.map(o => o.orderId)).toEqual(["2"]);
+  });
+
+  it("a row without a status is reported (order-row), the order is not removed", async () => {
+    const v = await venueSocket();
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    cleanup.push(() => stderr.mockRestore());
+    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: PAC_ACCOUNT }).adapter, v.url);
+    await mgr.start();
+    v.send(pacUpdate({ i: 5 }));
+    await expect.poll(() => feed.getState().orders?.map(o => o.orderId)).toEqual(["5"]);
+    v.send(pacUpdate({ i: 5, os: undefined }));
+    await expect.poll(() => feed.getState().lastError).toBe("order-row: order 5 without status");
+    expect(feed.getState().orders?.map(o => o.orderId)).toEqual(["5"]);
+  });
+
+  it("spot order rows are left out, as getOpenOrders leaves them out", async () => {
+    const v = await venueSocket();
+    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: PAC_ACCOUNT, nonPerpSymbols: async () => new Set(["SOL-USDC"]) }).adapter, v.url);
+    await mgr.start();
+    v.send(pacUpdate({ i: 5, s: "SOL-USDC" }));
+    v.send(pacUpdate({ i: 6 }));
+    await expect.poll(() => feed.getState().orders?.map(o => `${o.orderId} ${o.symbol}`)).toEqual(["6 BTC"]);
+  });
+
+  it("the open orders are re-read every minute: a change no update reported is reconciled", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    cleanup.push(() => vi.useRealTimers());
+    const v = await venueSocket();
+    let venueOrders: ExchangeOrder[] = [];
+    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: PAC_ACCOUNT, getOpenOrders: async () => venueOrders }).adapter, v.url);
+    await mgr.start();
+    await expect.poll(() => feed.getState().orders).toEqual([]);
+    venueOrders = [pacRest("7")]; // placed while the subscription was not yet active: no update came
+    vi.setSystemTime(Date.now() + 60_000);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await expect.poll(() => feed.getState().orders?.map(o => o.orderId)).toEqual(["7"]);
+  });
+
+  it("the updates buffered before the snapshot are bounded", async () => {
+    const v = await venueSocket();
+    const { mgr, feed } = feedFor("pacifica", stubAdapter({ publicKey: PAC_ACCOUNT, getOpenOrders: () => new Promise(() => {}) }).adapter, v.url);
+    await mgr.start();
+    v.send({ channel: "account_order_updates", data: Array.from({ length: 1500 }, (_, i) => pacOrder({ i })) });
+    const pending = () => (feed as unknown as { pendingOrderUpdates: unknown[] }).pendingOrderUpdates.length;
+    await expect.poll(pending).toBeGreaterThan(0);
+    expect(pending()).toBe(1000);
   });
 });
