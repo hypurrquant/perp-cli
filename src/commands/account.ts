@@ -5,7 +5,7 @@ import type { PublicPosition } from "../exchanges/venue.js";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk, jsonError, symbolMatch, withJsonErrors } from "../utils.js";
 import chalk from "chalk";
 import { hasPacificaSdk, isDexCapable } from "../exchanges/capabilities.js";
-import { PerpError } from "../errors.js";
+import { PerpError, classifyError } from "../errors.js";
 import { unsupported } from "../exchanges/trading-v2.js";
 
 
@@ -73,20 +73,27 @@ export function registerAccountCommands(
   async function fetchHip3Data<T>(
     hlAdapter: ExchangeAdapter & import("../exchanges/capabilities.js").DexCapable,
     fetcher: (dexAdapter: ExchangeAdapter & import("../exchanges/capabilities.js").DexCapable) => Promise<T[]>,
-  ): Promise<{ dex: string; items: T[] }[]> {
+  ): Promise<{ rows: { dex: string; items: T[] }[]; errors: Record<string, { code: string; message: string }> }> {
     const dexes = await hlAdapter.listDeployedDexes();
-    const results = await Promise.allSettled(
-      dexes.map(async (d) => {
+    const rows: { dex: string; items: T[] }[] = [];
+    // A dex whose read fails is an `errors` entry, never dropped as "nothing there" (SSOT Rule #2)
+    const errors: Record<string, { code: string; message: string }> = {};
+    await Promise.all(dexes.map(async (d) => {
+      try {
         // An independent per-dex adapter (a prototype copy + setDex emptied the native adapter's maps)
-        const dexAdapter = hlAdapter.forDex(d.name);
-        const items = await fetcher(dexAdapter);
-        return { dex: d.name, items };
-      }),
-    );
-    return results
-      .filter((r): r is PromiseFulfilledResult<{ dex: string; items: T[] }> => r.status === "fulfilled")
-      .map(r => r.value)
-      .filter(r => r.items.length > 0);
+        const items = await fetcher(hlAdapter.forDex(d.name));
+        if (items.length > 0) rows.push({ dex: d.name, items });
+      } catch (err) {
+        const { code, message } = classifyError(err, "hyperliquid");
+        errors[d.name] = { code, message };
+      }
+    }));
+    return { rows, errors };
+  }
+
+  /** Failed dexes of a single-venue --hip3 read as `meta.errors["hip3:<dex>"]` — `data` keeps its shape. */
+  function hip3ErrorsMeta(errors: Record<string, { code: string; message: string }>): { errors: Record<string, { code: string; message: string }> } | undefined {
+    return Object.keys(errors).length > 0 ? { errors: Object.fromEntries(Object.entries(errors).map(([d, e]) => [`hip3:${d}`, e])) } : undefined;
   }
 
   /** `account balance --address`: keyless public read (registry: VenuePublicData.fetchBalanceByAddress). */
@@ -257,7 +264,8 @@ export function registerAccountCommands(
             // --hip3: fetch HIP-3 dex positions for HL
             if (opts.hip3 && ex === "hyperliquid" && isDexCapable(adapter)) {
               const hip3 = await fetchHip3Data(adapter, a => a.getPositions());
-              for (const { dex, items } of hip3) {
+              for (const [dex, e] of Object.entries(hip3.errors)) errors[`hip3:${dex}`] = e.message;
+              for (const { dex, items } of hip3.rows) {
                 grouped[`hip3:${dex}`] = items;
                 for (const p of items) {
                   allRows.push([
@@ -300,21 +308,26 @@ export function registerAccountCommands(
 
       // --hip3: append HIP-3 dex positions
       const hip3Positions: { dex: string; items: ExchangePosition[] }[] = [];
+      let hip3Errors: Record<string, { code: string; message: string }> = {};
       if (opts.hip3 && isDexCapable(adapter)) {
-        hip3Positions.push(...await fetchHip3Data(adapter, a => a.getPositions()));
+        const hip3 = await fetchHip3Data(adapter, a => a.getPositions());
+        hip3Positions.push(...hip3.rows);
+        hip3Errors = hip3.errors;
       }
+      const printHip3Errors = () => { for (const [dex, e] of Object.entries(hip3Errors)) console.log(chalk.gray(`  hip3:${dex}: ${e.message}`)); };
 
       if (isJson()) {
         if (hip3Positions.length > 0) {
           const hip3Map: Record<string, ExchangePosition[]> = {};
           for (const { dex, items } of hip3Positions) hip3Map[dex] = items;
-          return printJson(jsonOk({ main: positions, hip3: hip3Map }));
+          return printJson(jsonOk({ main: positions, hip3: hip3Map }, hip3ErrorsMeta(hip3Errors)));
         }
-        return printJson(jsonOk(positions));
+        return printJson(jsonOk(positions, hip3ErrorsMeta(hip3Errors)));
       }
 
       if (positions.length === 0 && hip3Positions.length === 0) {
         console.log(chalk.gray("\n  No open positions.\n"));
+        printHip3Errors();
         return;
       }
 
@@ -346,6 +359,7 @@ export function registerAccountCommands(
         ]);
         console.log(makeTable(["Symbol", "Side", "Size", "Entry", "Mark", "Liq", "PnL", "Lev"], dexRows));
       }
+      printHip3Errors();
     });
 
   account
@@ -381,7 +395,8 @@ export function registerAccountCommands(
             // --hip3: fetch HIP-3 dex orders for HL
             if (opts.hip3 && ex === "hyperliquid" && isDexCapable(adapter)) {
               const hip3 = await fetchHip3Data(adapter, a => a.getOpenOrders());
-              for (const { dex, items } of hip3) {
+              for (const [dex, e] of Object.entries(hip3.errors)) errors[`hip3:${dex}`] = e.message;
+              for (const { dex, items } of hip3.rows) {
                 grouped[`hip3:${dex}`] = items;
                 for (const o of items) {
                   allRows.push([
@@ -422,21 +437,26 @@ export function registerAccountCommands(
 
       // --hip3: append HIP-3 dex orders
       const hip3Orders: { dex: string; items: ExchangeOrder[] }[] = [];
+      let hip3Errors: Record<string, { code: string; message: string }> = {};
       if (opts.hip3 && isDexCapable(adapter)) {
-        hip3Orders.push(...await fetchHip3Data(adapter, a => a.getOpenOrders()));
+        const hip3 = await fetchHip3Data(adapter, a => a.getOpenOrders());
+        hip3Orders.push(...hip3.rows);
+        hip3Errors = hip3.errors;
       }
+      const printHip3Errors = () => { for (const [dex, e] of Object.entries(hip3Errors)) console.log(chalk.gray(`  hip3:${dex}: ${e.message}`)); };
 
       if (isJson()) {
         if (hip3Orders.length > 0) {
           const hip3Map: Record<string, ExchangeOrder[]> = {};
           for (const { dex, items } of hip3Orders) hip3Map[dex] = items;
-          return printJson(jsonOk({ main: orders, hip3: hip3Map }));
+          return printJson(jsonOk({ main: orders, hip3: hip3Map }, hip3ErrorsMeta(hip3Errors)));
         }
-        return printJson(jsonOk(orders));
+        return printJson(jsonOk(orders, hip3ErrorsMeta(hip3Errors)));
       }
 
       if (orders.length === 0 && hip3Orders.length === 0) {
         console.log(chalk.gray("\n  No open orders.\n"));
+        printHip3Errors();
         return;
       }
 
@@ -466,6 +486,7 @@ export function registerAccountCommands(
         ]);
         console.log(makeTable(["ID", "Symbol", "Side", "Type", "Trigger", "Price", "Size", "Filled", "Status"], dexRows));
       }
+      printHip3Errors();
     });
 
   account

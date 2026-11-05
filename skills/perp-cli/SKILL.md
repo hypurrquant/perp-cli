@@ -182,6 +182,7 @@ perp --json -e hyperliquid --dex xyz --dry-run trade market GOLD buy 0.01
 ```
 
 - `--dex` with any other `-e` venue → `INVALID_PARAMS` (never ignored).
+- `--hip3` fan-outs (`market list`, `account positions|orders`): `data = { main, hip3: { <dex>: rows } }` when a dex has rows, else the venue's rows; a dex whose read failed → `meta.errors["hip3:<dex>"]` (`{ code, message }`; without `-e`: `data.errors["hip3:<dex>"]`) — its rows are missing (unknown, not empty); the others are kept.
 - A dex symbol without `--dex` (e.g. `-e hyperliquid market mid xyz:GOLD`) → `SYMBOL_NOT_FOUND` with remediation `--dex xyz`; it is never read from the native dex.
 - `portfolio --dexes` works only with `--serve` (web dashboard); for HIP-3 positions use `account positions --hip3` / `--dex <name>` or `--address`. Builder fees are never attached on HIP-3.
 - Symbols: input is bare (`BTC`; HIP-3 `TSLA` + `--dex xyz`). Output differs: market rows are plain, keyed HL native position / order rows show `<COIN>-PERP`, HIP-3 rows `xyz:TSLA` — pass the bare name back (`BTC`, `TSLA` + `--dex xyz`).

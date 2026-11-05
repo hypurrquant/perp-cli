@@ -3,7 +3,7 @@ import type { ExchangeAdapter } from "../exchanges/index.js";
 import { sortByTime, tapeSkippedOf, type CurrentFundingTerms, type ExchangeMarketInfo, type RfqQuotes } from "../exchanges/interface.js";
 import { makeTable, formatUsd, formatPercent, printJson, jsonOk, jsonError, withJsonErrors, normalizeSymbolArg } from "../utils.js";
 import chalk from "chalk";
-import { PerpError } from "../errors.js";
+import { PerpError, classifyError } from "../errors.js";
 import { midDecimal } from "../exchanges/precision.js";
 import { isDexCapable, klinesNeedAuth } from "../exchanges/capabilities.js";
 import { getVenue, listVenuesWithRole, tryResolveVenueId, unofficialApiNote, withFundingVerified } from "../exchanges/venue.js";
@@ -274,9 +274,14 @@ export function registerMarketCommands(
             // --hip3: fetch HIP-3 dex markets
             if (opts.hip3 && ex === "hyperliquid" && isDexCapable(adapter)) {
               const dexes = await adapter.listDeployedDexes();
-              await Promise.allSettled(dexes.map(async (d) => {
-                const markets = await adapter.forDex(d.name).getMarkets();
-                if (markets.length > 0) grouped[`hip3:${d.name}`] = markets;
+              // A dex that fails is an `errors` entry, never dropped (SSOT Rule #2)
+              await Promise.all(dexes.map(async (d) => {
+                try {
+                  const markets = await adapter.forDex(d.name).getMarkets();
+                  if (markets.length > 0) grouped[`hip3:${d.name}`] = markets;
+                } catch (err) {
+                  errors[`hip3:${d.name}`] = err instanceof Error ? err.message : String(err);
+                }
               }));
             }
           } catch (err) {
@@ -309,19 +314,27 @@ export function registerMarketCommands(
 
       // --hip3: fetch HIP-3 dex markets
       const hip3: Record<string, typeof markets> = {};
+      const hip3Errors: Record<string, { code: string; message: string }> = {};
       if (opts.hip3 && isDexCapable(adapter)) {
         const dexes = await adapter.listDeployedDexes();
-        await Promise.allSettled(dexes.map(async (d) => {
-          const m = await adapter.forDex(d.name).getMarkets();
-          if (m.length > 0) hip3[d.name] = m;
+        await Promise.all(dexes.map(async (d) => {
+          try {
+            const m = await adapter.forDex(d.name).getMarkets();
+            if (m.length > 0) hip3[d.name] = m;
+          } catch (err) {
+            const { code, message } = classifyError(err, "hyperliquid");
+            hip3Errors[d.name] = { code, message };
+          }
         }));
       }
+      // A failed dex is meta.errors["hip3:<dex>"]: `data` keeps its shape (the rows, or { main, hip3 } when a dex has rows).
+      const hip3Meta = Object.keys(hip3Errors).length > 0 ? { errors: Object.fromEntries(Object.entries(hip3Errors).map(([d, e]) => [`hip3:${d}`, e])) } : undefined;
 
       if (isJson()) {
         if (Object.keys(hip3).length > 0) {
-          return printJson(jsonOk({ main: withFundingVerified(adapter.name, markets), hip3: Object.fromEntries(Object.entries(hip3).map(([d, rows]) => [d, withFundingVerified(adapter.name, rows)])) }));
+          return printJson(jsonOk({ main: withFundingVerified(adapter.name, markets), hip3: Object.fromEntries(Object.entries(hip3).map(([d, rows]) => [d, withFundingVerified(adapter.name, rows)])) }, hip3Meta));
         }
-        return printJson(jsonOk(withFundingVerified(adapter.name, markets), fundingWarnings([adapter], markets)));
+        return printJson(jsonOk(withFundingVerified(adapter.name, markets), { ...fundingWarnings([adapter], markets), ...hip3Meta }));
       }
 
       const perMarket = perMarketFunding(adapter.name);
@@ -340,6 +353,7 @@ export function registerMarketCommands(
         console.log(chalk.magenta.bold(`\n  HIP-3: ${dex}`) + chalk.gray(` (${m.length} markets)`));
         console.log(makeTable(HEADERS, m.map(x => marketRow(x))));
       }
+      for (const [dex, e] of Object.entries(hip3Errors)) console.log(chalk.gray(`  hip3:${dex}: ${e.message}`));
     });
 
   market
