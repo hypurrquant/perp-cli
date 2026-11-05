@@ -7,6 +7,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 ### Fixed — Lighter classic accounts counted the spot USDC twice
 
 - **On a Lighter / Lighter RH classic account the spot USDC (USDG) is no longer part of the perp `equity`, so `portfolio` counts it once.** A classic account keeps "perpetual and spot balances … separately" (docs unified-trading-accounts), and perp-cli lists that balance as a spot row (`shared: false`, moved with `trade spot-transfer`), but the balance also added it to `equity`: `portfolio` showed 2000 for perp 1000 + spot 500, and a multi-venue bot's equity counted it twice the same way. `equity` is now the venue's perp `total_asset_value`; the spot quote stays a spot row that `portfolio`, the landing page and bot equity add once. Unified accounts are unchanged (their quote is the perp margin, inside `total_asset_value`). The lower `equity` on classic accounts holding spot USDC is listed under "JSON contract changes" below.
+- **A Lighter account answer without an `assets` list is an error, not "no spot assets".** It read as an empty spot list, so a classic account's spot USDC could drop out of the `portfolio` totals unseen. The spot read now fails with `EXCHANGE_ERROR`, and `portfolio` reports a failed or timed-out spot read in the entry's new `spotError` field (it went to stderr only); the totals leave that venue's spot out.
 
 ### Fixed — Pacifica spot holdings counted twice in portfolio totals
 

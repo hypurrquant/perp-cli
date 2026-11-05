@@ -74,6 +74,8 @@ interface ExchangeEntry {
   isUnified: boolean;
   perp: PerpSummary | null;
   spot: SpotHolding[];
+  /** The spot read failed or timed out: `spot` is empty and the totals leave the venue's spot out (unknown, not 0). */
+  spotError: string | null;
   positions: PositionEntry[];
   openOrders: number;
   /** Funding paid / received in the last 24 h; null = the venue's funding history could not be read. */
@@ -377,6 +379,7 @@ async function fetchExchangeEntry(
     // Spot balances for every venue with def.spot. Failures are surfaced on
     // stderr (the perp snapshot is still reported); unpriced tokens are excluded + warned.
     let spot: SpotHolding[] = [];
+    let spotError: string | null = null;
     let isUnified = false;
     const def = getVenue(exName);
     const warn = (msg: string) => process.stderr.write(`[warn] ${msg}\n`);
@@ -393,7 +396,8 @@ async function fetchExchangeEntry(
         isUnified = !dexScoped && spotSharesPerpMargin(def, adapter);
       }
     } catch (e) {
-      warn(`${def.displayName} spot balances unavailable: ${e instanceof Error ? e.message : String(e)}`);
+      spotError = e instanceof Error ? e.message : String(e);
+      warn(`${def.displayName} spot balances unavailable: ${spotError}`);
     }
 
     const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
@@ -416,6 +420,7 @@ async function fetchExchangeEntry(
         unrealizedPnl: bal.unrealizedPnl,
       },
       spot,
+      spotError,
       positions: positionsRaw.map(p => ({
         symbol: p.symbol,
         side: p.side,
@@ -439,6 +444,8 @@ async function fetchExchangeEntry(
       isUnified: false,
       perp: null,
       spot: [],
+      // The whole venue was unreadable: spot is unknown for the same reason.
+      spotError: err instanceof Error ? err.message : String(err),
       positions: [],
       openOrders: 0,
       funding24h: null,

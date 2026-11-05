@@ -14,6 +14,7 @@ import { PacificaAdapter } from "../../exchanges/pacifica.js";
 import { LighterAdapter } from "../../exchanges/lighter.js";
 import type { ExchangeAdapter } from "../../exchanges/interface.js";
 import type { AgentMeta } from "../../settings.js";
+import { invalidateCache } from "../../cache.js";
 import PAC_MARKET_DATA from "../fixtures/pacifica/market-data-live.json";
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -49,10 +50,10 @@ const LT_BOOKS = [
   { symbol: "ETH/USDC", market_id: 2048, market_type: "spot", status: "active", supported_size_decimals: 4, supported_price_decimals: 2 },
 ];
 
-function lighterVenue(input: string | URL | Request): Response {
+function lighterVenue(input: string | URL | Request, account: Record<string, unknown> = LT_ACCOUNT): Response {
   switch (pathOf(input)) {
     case "/orderBooks": return json({ code: 200, order_books: LT_BOOKS });
-    case "/account": return json({ code: 200, accounts: [LT_ACCOUNT] });
+    case "/account": return json({ code: 200, accounts: [account] });
     case "/accountActiveOrders": return json({ code: 200, orders: [] });
     case "/positionFunding": return json({ code: 200, position_fundings: [] });
     case "/orderBookOrders": return json({ code: 200, bids: [{ price: "3000.00", remaining_base_amount: "1.0000" }], asks: [{ price: "3000.10", remaining_base_amount: "1.0000" }] });
@@ -63,7 +64,8 @@ function lighterVenue(input: string | URL | Request): Response {
 /** An agent adapter built the way venues/create-helpers.ts builds one (signer faked: reads only need an auth token). */
 async function lighterAdapter(): Promise<LighterAdapter> {
   (LighterAdapter as unknown as { _wasmClients: Map<string, unknown> })._wasmClients.clear();
-  (LighterAdapter as unknown as { _createWasmClient: () => Promise<unknown> })._createWasmClient = async () => ({ createClient: () => undefined, createAuthToken: () => "auth-token" });
+  vi.spyOn(LighterAdapter as unknown as { _createWasmClient: () => Promise<unknown> }, "_createWasmClient")
+    .mockResolvedValue({ createClient: () => undefined, createAuthToken: () => "auth-token" });
   const agent = {
     agentName: "default", agentWalletName: "lt-agent", agentEvmAddress: "0x00000000000000000000000000000000000000aa",
     userEvmAddress: "0x00000000000000000000000000000000000000bb", apiKeyIndex: 4, accountIndex: 77,
@@ -78,7 +80,7 @@ async function lighterAdapter(): Promise<LighterAdapter> {
 }
 
 interface PortfolioData {
-  exchanges: Array<{ perp: { equity: string }; totalAccountValueUsd: number }>;
+  exchanges: Array<{ perp: { equity: string }; spot: unknown[]; spotError: string | null; totalAccountValueUsd: number }>;
   totals: { accountValueUsd: number };
 }
 
@@ -99,6 +101,7 @@ async function portfolio(venue: string, adapter: ExchangeAdapter): Promise<Portf
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  invalidateCache(); // the real account cache (isolated TMPDIR): every test reads its own answers
 });
 
 describe("portfolio: spot money is counted once", () => {
@@ -116,5 +119,13 @@ describe("portfolio: spot money is counted once", () => {
     expect(data.totals.accountValueUsd).toBe(1500);
     expect(data.exchanges[0].totalAccountValueUsd).toBe(1500);
     expect(data.exchanges[0].perp.equity).toBe("1000");
+  });
+
+  it("Lighter: an account answer without `assets` is the entry's spotError — not an empty spot list", async () => {
+    const { assets: _dropped, ...withoutAssets } = LT_ACCOUNT;
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => lighterVenue(input, withoutAssets)));
+    const data = await portfolio("lighter", await lighterAdapter());
+    expect(data.exchanges[0]).toMatchObject({ spot: [], spotError: expect.stringContaining("account.assets is missing") });
+    expect(data.totals.accountValueUsd).toBe(1000);
   });
 });
