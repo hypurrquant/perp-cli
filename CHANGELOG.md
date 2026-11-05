@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — `--dex <dex> trade cancel <symbol>` cancelled nothing and reported success
+
+- **Cancelling by symbol on a HIP-3 dex now cancels that market's orders.** The command found the orders with the CLI's symbol match ("xyz:TSLA" for `TSLA`), but the per-order cancel-all (the legacy-adapter `cancelAllV2`) compared symbols exactly, so it cancelled 0 orders and printed "No order cancelled" with exit 0. It now selects with the same match.
+
 ### Fixed — client-side TWAP sent off-lot slices and reported a refused run as a success
 
 - **Every slice of the client-side TWAP (`trade twap` on venues without a native TWAP, `strategy twap`) is on the market's lot grid.** A slice was `total / slices` unrounded ("0.0033333333333333335"); Aster sends the quantity as is, so the venue refused every slice. Each slice is now an equal share of what is left, floored to the lot step, and the remainder is carried to the later slices (0.01 in 3 on a 0.001 lot: 0.003, 0.003, 0.004). A slice below one lot (`SIZE_TOO_SMALL`), or an unknown lot step, is refused before anything is sent, and a background job refused so ends `error` (it read `done`). A reduce-only run on a market missing from the market list (`SYMBOL_NOT_FOUND`) points to closing the position directly: `perp trade close <symbol>`.

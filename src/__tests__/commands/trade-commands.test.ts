@@ -455,6 +455,14 @@ describe("trade cancel -- parameter correctness", () => {
 // 6. Cancel All Orders
 // ══════════════════════════════════════════════════════════════
 
+describe("trade cancel <symbol> on a HIP-3 dex", () => {
+  it("cancels the dex market's orders ('xyz:TSLA' for 'TSLA') — never '0 cancelled' reported as success", async () => {
+    const adapter = mockAdapter(liveVenue([], [openOrder("401", "xyz:TSLA")]));
+    await run(adapter, ["trade", "cancel", "TSLA"]);
+    expect(adapter.cancelOrder).toHaveBeenCalledWith("xyz:TSLA", "401");
+  });
+});
+
 describe("trade cancel-all", () => {
   // CHANGELOG: "flatten / cancel-all cancel through cancelAllV2" — one per-order cancel for each
   // order listed open (per-order proof), then a live re-list; the venue-wide cancelAllOrders()
