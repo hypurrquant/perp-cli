@@ -62,7 +62,11 @@ export const RISEX_PINS: Readonly<Record<Network, RisexPins>> = {
     rpcUrl: "https://rpc.risechain.com",
     // eth_getStorageAt(auth, EIP-1967 implementation slot), 2026-10-14.
     authImplementation: "0xCCCb0483342d77AbC4337f3e12514eC8E78b3e28",
-    routerImplementation: "0xe2da7a94a81fe9ee58f70ebce862a176280092ae",
+    // Re-pinned 2026-11-05 (bytecode): the router was upgraded on 2026-11-03 (block 26068740) to the
+    // testnet implementation reviewed 2026-10-28 (below), byte for byte except the 20-byte USDC address
+    // immutable (each network's `usdc` in GET /v1/system/config). The replaced implementation
+    // 0xe2da7a94… was byte-identical to testnet's pre-upgrade one: the same upgrade on both networks.
+    routerImplementation: "0xce1be14b2558ea6a473d7ad4e269c1f8b9dffff9",
     accountRegistry: "0x1238991cac4e65902c08213e79909a9c813eebc3",
     accountRegistryImplementation: "0x531a0c7687cbaf02383b21443619487eb18b91e5",
   },

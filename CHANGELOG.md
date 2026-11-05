@@ -4,9 +4,13 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
-## [0.17.1] — 2026-11-04
+## [0.17.1] — 2026-11-05
 
-> **Patch:** four fixes (#68, #69, #71, and Aster's move off its removed V1 API) and no new features. No JSON contract change (`docs/TESTING.md` §5 invariant 12): the RISEx fix makes `indexPrice` meet its documented type (dec > 0 | null). Both packages move together (`RELEASING.md`, lockstep); `@hypurrquant/perp-ws` gets the read-only Lighter WebSocket URL.
+> **Patch:** five fixes (#68, #69, #71, Aster's move off its removed V1 API, and the RISEx mainnet router re-pin) and no new features. No JSON contract change (`docs/TESTING.md` §5 invariant 12): the RISEx fix makes `indexPrice` meet its documented type (dec > 0 | null). Both packages move together (`RELEASING.md`, lockstep); `@hypurrquant/perp-ws` gets the read-only Lighter WebSocket URL.
+
+### Fixed — RISEx refused every mainnet signature after its router upgrade
+
+- **perp-cli signs RISEx mainnet actions again.** On 2026-11-03 (block 26068740) RISEx upgraded its mainnet router (`0xaadde0ce…`) from implementation `0xe2da7a94…` to `0xce1be14b…`, without notice. perp-cli pins the reviewed implementations and refuses to sign when one changes. Since the upgrade, every mainnet RISEx order, cancel, cancel-all, leverage / margin change and `wallet agent approve risex` failed with `POLICY_DENIED` ("router was upgraded"); testnet was not affected. The new implementation is the one reviewed for testnet on 2026-10-28, which adds three batch place / cancel entries whose permits are checked with the trading permission. Its 29,683 bytes match testnet's `0x91916671…` except one 20-byte immutable: each network's USDC address from `GET /v1/system/config`. The replaced implementation was byte-identical to testnet's pre-upgrade one. The mainnet pin and the evidence fixture now name the new implementation. RISEx mainnet trading is still unverified with real funds. The read-only drift check (`PERP_RISEX_LIVE=1`, `src/__tests__/integration/risex-txflow-live.test.ts`) failed on mainnet before this change and passes after it; CI does not run it.
 
 ### Fixed — Aster market data came from Aster's removed V1 API
 
