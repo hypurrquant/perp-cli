@@ -12,6 +12,7 @@
 
 // SSOT Rule #3: load only ~/.perp/.env, like the CLI (src/index.ts) — never a .env in the CWD
 // (a project tree's leftover dev keys would silently become this server's credentials).
+import { openOrdersForView } from "./exchanges/open-orders-view.js";
 import { setQuarantineNetwork } from "./bot/quarantine.js";
 import { config as loadDotenv } from "dotenv";
 import { resolve as resolvePath } from "node:path";
@@ -683,7 +684,9 @@ server.tool(
       connected: boolean;
       balance: { equity: string; available: string; marginUsed: string; unrealizedPnl: string } | null;
       positions: Awaited<ReturnType<ExchangeAdapter["getPositions"]>>;
-      openOrders: number;
+      /** null = unknown (the venue cannot list orders without a signer): see openOrdersError. */
+      openOrders: number | null;
+      openOrdersError?: string;
       error?: string;
     }
 
@@ -694,9 +697,11 @@ server.tool(
           const [balance, positions, orders] = await Promise.all([
             adapter.getBalance(),
             adapter.getPositions(),
-            adapter.getOpenOrders(),
+            openOrdersForView(adapter),
           ]);
-          return { exchange: name, connected: true, balance, positions, openOrders: orders.length };
+          return orders.orders === null
+            ? { exchange: name, connected: true, balance, positions, openOrders: null, openOrdersError: orders.error ?? undefined }
+            : { exchange: name, connected: true, balance, positions, openOrders: orders.orders.length };
         } catch (e) {
           return {
             exchange: name,
@@ -719,6 +724,8 @@ server.tool(
     let totalUnrealizedPnl = 0;
     let totalPositions = 0;
     let totalOpenOrders = 0;
+    /** Venues whose open orders are unknown: totalOpenOrders covers the others only. */
+    const openOrdersUnknown: string[] = [];
     const allPositions: (Awaited<ReturnType<ExchangeAdapter["getPositions"]>>[number] & { exchange: string })[] = [];
 
     for (const snap of snapshots) {
@@ -729,7 +736,8 @@ server.tool(
         totalUnrealizedPnl += Number(snap.balance.unrealizedPnl);
       }
       totalPositions += snap.positions.length;
-      totalOpenOrders += snap.openOrders;
+      if (snap.openOrders === null) openOrdersUnknown.push(snap.exchange);
+      else totalOpenOrders += snap.openOrders;
       for (const pos of snap.positions) {
         allPositions.push({ ...pos, exchange: snap.exchange });
       }
@@ -765,6 +773,7 @@ server.tool(
       totalUnrealizedPnl: known ? totalUnrealizedPnl : null,
       totalPositions,
       totalOpenOrders,
+      openOrdersUnknown,
       exchanges: snapshots,
       positions: allPositions,
       riskMetrics: { marginUtilization: known ? marginUtilization : null, largestPosition, exchangeConcentration },

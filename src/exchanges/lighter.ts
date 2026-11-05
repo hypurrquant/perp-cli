@@ -1625,7 +1625,11 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async getOpenOrders(): Promise<ExchangeOrder[]> {
     if (!this._address) throw noAccountKeyError(this.name);
-    if (this._accountIndex < 0 || this._readOnly) return [];
+    // The read takes an auth token signed with the account's API key: a read-only adapter (no
+    // API key, an expired agent, no account index) cannot list the orders, and an unknown list is
+    // never "no orders" (cancel-all / flatten would report success with orders live) — refused
+    // with the reason (ensureSigner).
+    if (this._accountIndex < 0 || this._readOnly) this.ensureSigner();
     // ONE request for every perp market. Docs (apidocs.lighter.xyz/reference/accountactiveorders):
     // market_id — "If not specified, returns active orders for all markets."; market_type —
     // "all" | "spot" | "perp". (The former per-market fan-out read every perp market — 235 on

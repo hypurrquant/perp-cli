@@ -4,6 +4,7 @@ import { addRootSafetyOptions } from "../../cli-flags.js";
 import { registerTradeCommands } from "../../commands/trade.js";
 import type { ExchangeAdapter } from "../../exchanges/interface.js";
 import { PerpError } from "../../errors.js";
+import { LighterAdapter } from "../../exchanges/lighter.js";
 
 // ── Mock dependencies to prevent file I/O ──
 
@@ -490,6 +491,12 @@ describe("trade cancel-all", () => {
 
     expect(adapter.marketOrder).not.toHaveBeenCalled();
     expect(adapter.limitOrder).not.toHaveBeenCalled();
+  });
+
+  it("a read-only Lighter adapter (no API key) fails with NO_SIGNER_AVAILABLE — never 'no order cancelled'", async () => {
+    const lt = new LighterAdapter("", false);
+    lt.setAddress("0x1111111111111111111111111111111111111111");
+    await expect(run(lt, ["trade", "cancel-all"])).rejects.toMatchObject({ structured: { code: "NO_SIGNER_AVAILABLE" } });
   });
 });
 

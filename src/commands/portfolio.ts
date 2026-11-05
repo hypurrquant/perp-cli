@@ -19,6 +19,7 @@ import chalk from "chalk";
 import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "../exchanges/index.js";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import { isDexCapable } from "../exchanges/capabilities.js";
+import { openOrdersForView } from "../exchanges/open-orders-view.js";
 import type { DashboardExchange } from "../dashboard/index.js";
 import { getVenue, listVenuesWithRole, roleUnsupported, tryResolveVenueId } from "../exchanges/venue.js";
 import { PerpError } from "../errors.js";
@@ -75,7 +76,9 @@ interface ExchangeEntry {
   perp: PerpSummary | null;
   spot: SpotHolding[];
   positions: PositionEntry[];
-  openOrders: number;
+  /** null = the venue cannot list orders without a signer (read-only / expired agent): see openOrdersError. */
+  openOrders: number | null;
+  openOrdersError: string | null;
   /** Funding paid / received in the last 24 h; null = the venue's funding history could not be read. */
   funding24h: number | null;
   fundingError: string | null;
@@ -358,7 +361,7 @@ function resolveOptions(
 
 // ── Per-exchange snapshot fetch ────────────────────────────────────────────
 
-async function fetchExchangeEntry(
+export async function fetchExchangeEntry(
   exName: string,
   getAdapter: (exchange: string) => Promise<ExchangeAdapter>,
 ): Promise<ExchangeEntry> {
@@ -367,7 +370,7 @@ async function fetchExchangeEntry(
     const [bal, positionsRaw, orders, fundingPayments] = await Promise.all([
       adapter.getBalance(),
       adapter.getPositions(),
-      adapter.getOpenOrders(),
+      openOrdersForView(adapter),
       adapter.getFundingPayments(200).then(
         (rows) => ({ rows, error: null as string | null }),
         (e: unknown) => ({ rows: null, error: e instanceof Error ? e.message : String(e) }),
@@ -425,7 +428,8 @@ async function fetchExchangeEntry(
         unrealizedPnl: p.unrealizedPnl,
         leverage: p.leverage,
       })),
-      openOrders: orders.length,
+      openOrders: orders.orders === null ? null : orders.orders.length,
+      openOrdersError: orders.error,
       funding24h,
       fundingError: fundingPayments.error,
       totalAccountValueUsd: Number(bal.equity) + nonUsdcSpotValue,
@@ -439,7 +443,9 @@ async function fetchExchangeEntry(
       perp: null,
       spot: [],
       positions: [],
-      openOrders: 0,
+      // The whole venue was unreadable: its open orders are unknown for the same reason (never 0).
+      openOrders: null,
+      openOrdersError: err instanceof Error ? err.message : String(err),
       funding24h: null,
       // The whole venue was unreadable: funding is unknown for the same reason.
       fundingError: err instanceof Error ? err.message : String(err),
