@@ -10,14 +10,17 @@ import { WebSocket as NodeWebSocket } from "ws";
 import type { ExchangeBalance, ExchangePosition, ExchangeOrder } from "../exchanges/index.js";
 import type { DashboardExchange } from "./server.js";
 import type { LighterAdapter } from "../exchanges/lighter.js";
+import { hlOpenOrderRows } from "../exchanges/hyperliquid.js";
+import { formatComputedPrice } from "../exchanges/precision.js";
 
 /** Balance as the dashboard knows it: unrealizedPnl null = the venue feed does not report it / unknown. */
 export type DashboardBalance = Omit<ExchangeBalance, "unrealizedPnl"> & { unrealizedPnl: string | null };
-/** Position as the dashboard knows it: a price / PnL the WS message did not carry is null (unknown), never "0". */
-export type DashboardPosition = Omit<ExchangePosition, "entryPrice" | "markPrice" | "unrealizedPnl"> & {
+/** Position as the dashboard knows it: a price / PnL / leverage the WS message did not carry is null (unknown), never "0" / 1. */
+export type DashboardPosition = Omit<ExchangePosition, "entryPrice" | "markPrice" | "unrealizedPnl" | "leverage"> & {
   entryPrice: string | null;
   markPrice: string | null;
   unrealizedPnl: string | null;
+  leverage: number | null;
 };
 
 /** Venue number → string, or null when the field is absent / not a finite number. */
@@ -219,6 +222,8 @@ class HyperliquidFeed extends ExchangeWsFeed {
   private address: string;
   private dex: string;
   private balanceTimer: ReturnType<typeof setInterval> | null = null;
+  /** The venue refused a subscription on the current socket (error frame): REST stays the source. */
+  private refused = false;
 
   constructor(exchange: DashboardExchange, onUpdate: (state: WsFeedState) => void) {
     super(exchange, onUpdate);
@@ -235,7 +240,7 @@ class HyperliquidFeed extends ExchangeWsFeed {
       this.startRestFallback();
       return;
     }
-    // HIP-3 dex accounts: webData2 doesn't support dex param — use REST
+    // HIP-3 dex accounts: REST polling (this feed subscribes the native dex only)
     if (this.dex) {
       this.startRestFallback();
       return;
@@ -246,12 +251,13 @@ class HyperliquidFeed extends ExchangeWsFeed {
 
         this.ws.on("open", () => {
           this.state.mode = "ws";
-          // Subscribe to webData2 (positions + orders in real-time)
-          this.ws!.send(JSON.stringify({
-            method: "subscribe",
-            subscription: { type: "webData2", user: this.address },
-          }));
-          // Balance via REST (webData2 clearinghouse doesn't include dex pool funds)
+          this.refused = false;
+          // Documented user channels (webData2 is refused by the venue): positions + open orders,
+          // each a full snapshot on subscribe, re-pushed every few seconds.
+          for (const type of ["clearinghouseState", "openOrders"]) {
+            this.ws!.send(JSON.stringify({ method: "subscribe", subscription: { type, user: this.address } }));
+          }
+          // Balance via REST (clearinghouseState doesn't include dex pool funds)
           this.startBalancePolling();
           // Start data timeout — switch to REST if no data within 5s
           this.startWsDataTimeout();
@@ -261,8 +267,18 @@ class HyperliquidFeed extends ExchangeWsFeed {
         this.ws.on("message", (raw) => {
           try {
             const msg = JSON.parse(String(raw));
-            if (msg.channel === "webData2" && msg.data) {
-              this.handleWebData2(msg.data);
+            if (msg.channel === "error") {
+              // A refused subscription: this socket will not carry the full state — REST at once,
+              // not after WS_DATA_TIMEOUT.
+              this.refused = true;
+              this.recordError("ws-error", new Error(String(msg.data)));
+              this.startRestFallback();
+            } else if (this.refused) {
+              return; // a partial state never replaces the REST data
+            } else if (msg.channel === "clearinghouseState" && msg.data?.clearinghouseState) {
+              this.handleClearinghouseState(msg.data.clearinghouseState);
+            } else if (msg.channel === "openOrders" && Array.isArray(msg.data?.orders)) {
+              this.handleOpenOrders(msg.data.orders);
             }
           } catch (e) { this.recordError("ws-parse", e); }
         });
@@ -288,7 +304,7 @@ class HyperliquidFeed extends ExchangeWsFeed {
     });
   }
 
-  /** Poll balance via REST (webData2 clearinghouse doesn't include dex pool funds) */
+  /** Poll balance via REST (clearinghouseState doesn't include dex pool funds) */
   private startBalancePolling() {
     if (this.balanceTimer) return;
     const poll = async () => {
@@ -305,56 +321,45 @@ class HyperliquidFeed extends ExchangeWsFeed {
     if (this.balanceTimer) { clearInterval(this.balanceTimer); this.balanceTimer = null; }
   }
 
-  private handleWebData2(data: Record<string, unknown>) {
+  /** clearinghouseState frame: positions (the balance is handled by REST polling, it includes dex pool funds). */
+  private handleClearinghouseState(chs: Record<string, unknown>) {
     try {
-      // Balance is handled by REST polling (includes dex pool funds)
-      // WS handles positions + orders only
-      const chs = data.clearinghouseState as Record<string, unknown> | undefined;
-      if (chs) {
-        const assetPositions = (chs.assetPositions ?? []) as Array<Record<string, unknown>>;
-        this.state.positions = assetPositions
-          .filter((ap) => {
-            const pos = (ap.position ?? ap) as Record<string, unknown>;
-            const szi = numStr(pos.szi);
-            if (szi === null) throw new Error(`webData2 position without szi: ${JSON.stringify(pos).slice(0, 200)}`);
-            return Number(szi) !== 0;
-          })
-          .map((ap) => {
-            const pos = (ap.position ?? ap) as Record<string, string>;
-            const szi = Number(pos.szi);
-            const posValue = numStr(pos.positionValue);
-            return {
-              symbol: String(pos.coin ?? ""),
-              side: (szi > 0 ? "long" : "short") as "long" | "short",
-              size: String(Math.abs(szi)),
-              // A field the message did not carry is unknown (null), never "0".
-              entryPrice: numStr(pos.entryPx),
-              markPrice: posValue !== null ? (Number(posValue) / Math.abs(szi)).toFixed(2) : null,
-              liquidationPrice: pos.liquidationPx ?? null, // HL sends null when there is no liquidation price
-              unrealizedPnl: numStr(pos.unrealizedPnl),
-              leverage: Number((ap.leverage as Record<string, { value?: number }>)?.value ?? 1),
-            };
-          });
-      }
-
-      // Open orders
-      const openOrders = data.openOrders as Array<Record<string, unknown>> | undefined;
-      if (openOrders) {
-        this.state.orders = openOrders.map((o) => ({
-          orderId: String(o.oid ?? ""),
-          symbol: String(o.coin ?? ""),
-          side: o.side === "B" ? "buy" as const : "sell" as const,
-          price: String(o.limitPx ?? "0"),
-          size: String(o.sz ?? ""),
-          filled: "0",
-          status: "open",
-          type: String(o.orderType ?? "limit"),
-          triggerPrice: o.isTrigger === true && Number(o.triggerPx) > 0 ? String(o.triggerPx) : null,
-        }));
-      }
-
+      const assetPositions = (chs.assetPositions ?? []) as Array<Record<string, unknown>>;
+      this.state.positions = assetPositions
+        .filter((ap) => {
+          const pos = (ap.position ?? ap) as Record<string, unknown>;
+          const szi = numStr(pos.szi);
+          if (szi === null) throw new Error(`clearinghouseState position without szi: ${JSON.stringify(pos).slice(0, 200)}`);
+          return Number(szi) !== 0;
+        })
+        .map((ap) => {
+          const pos = (ap.position ?? ap) as Record<string, string>;
+          const szi = Number(pos.szi);
+          const posValue = numStr(pos.positionValue);
+          const leverage = numStr((pos.leverage as unknown as { value?: number } | undefined)?.value);
+          return {
+            symbol: String(pos.coin ?? ""),
+            side: (szi > 0 ? "long" : "short") as "long" | "short",
+            size: String(Math.abs(szi)),
+            // A field the message did not carry is unknown (null), never "0".
+            entryPrice: numStr(pos.entryPx),
+            markPrice: posValue !== null ? formatComputedPrice(Number(posValue) / Math.abs(szi)) : null, // as hlPositionRows
+            liquidationPrice: pos.liquidationPx ?? null, // HL sends null when there is no liquidation price
+            unrealizedPnl: numStr(pos.unrealizedPnl),
+            leverage: leverage === null ? null : Number(leverage), // position.leverage {type, value}
+          };
+        });
       this.emitUpdate();
-    } catch (e) { this.recordError("ws-webData2", e); }
+    } catch (e) { this.recordError("ws-clearinghouseState", e); }
+  }
+
+  /** openOrders frame: the account's open orders (frontendOpenOrders rows). */
+  private handleOpenOrders(openOrders: Array<Record<string, unknown>>) {
+    try {
+      // The REST read's mapper: spot rows left out, an unreadable row throws (recorded below).
+      this.state.orders = hlOpenOrderRows(openOrders, (coin) => coin);
+      this.emitUpdate();
+    } catch (e) { this.recordError("ws-openOrders", e); }
   }
 
   close() {
@@ -542,7 +547,7 @@ class PacificaFeed extends ExchangeWsFeed {
         markPrice: mark,
         liquidationPrice: p.l != null ? String(p.l) : p.liquidation_price != null ? String(p.liquidation_price) : null,
         unrealizedPnl: pnl,
-        leverage: Number(p.leverage ?? 1),
+        leverage: numStr(p.leverage) === null ? null : Number(p.leverage), // not in account_positions: unknown
       });
     }
     this.state.positions = positions;
@@ -757,7 +762,7 @@ class LighterFeed extends ExchangeWsFeed {
               unrealizedPnl: numStr(p.unrealized_pnl),
               leverage: Number(p.initial_margin_fraction ?? 0) > 0
                 ? Math.round(10000 / Number(p.initial_margin_fraction))
-                : 1,
+                : null, // no margin fraction: unknown, never 1
             };
           });
         this.emitUpdate();

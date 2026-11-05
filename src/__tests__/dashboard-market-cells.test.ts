@@ -56,3 +56,17 @@ describe("dashboard escapes venue strings (B2-7)", () => {
     expect(() => new Function(script as string)).not.toThrow();
   });
 });
+
+describe("dashboard position figures: an unknown leverage (null) is shown as unknown", () => {
+  const html = getUI();
+  const line = html.split("\n").find(x => x.startsWith("function positionFigures("));
+  const figures = new Function(`${line}\nreturn positionFigures;`)() as (p: Record<string, unknown>) => { notional: number | null; roe: number | null; leverage: string };
+
+  it("leverage null → \"-\" and no ROE (not 1x, not \"nullx\")", () => {
+    expect(figures({ size: "2", markPrice: "100", unrealizedPnl: "10", leverage: null })).toEqual({ notional: 200, roe: null, leverage: "-" });
+  });
+
+  it("a known leverage gives margin = notional / leverage and the ROE on it", () => {
+    expect(figures({ size: "2", markPrice: "100", unrealizedPnl: "10", leverage: 5 })).toEqual({ notional: 200, roe: 25, leverage: "5x" });
+  });
+});
