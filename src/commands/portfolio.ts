@@ -387,7 +387,8 @@ async function fetchExchangeEntry(
         spot = (await fetchValuedSpotBalances(def, spotAdapter, warn)).map(b => ({
           token: b.token, total: b.total, available: b.available, held: b.held, valueUsd: b.valueUsd, shared: b.shared,
         }));
-        // HIP-3 dex accounts always run standard (non-unified) semantics. Codex v0.12.12 final QA #1.
+        // isUnified (USDC by name) is native-only: a HIP-3 dex's collateral may be another token; the
+        // dex spot rows already in its equity arrive marked `shared` (hlSpotBalanceRows).
         const dexScoped = isDexCapable(adapter) && !!adapter.dex;
         isUnified = !dexScoped && spotSharesPerpMargin(def, adapter);
       }
@@ -465,10 +466,8 @@ function buildTotals(entries: ExchangeEntry[]): { totals: Totals; risk: RiskBloc
     if (e.funding24h === null) fundingIncomplete = true;
     else funding24h += e.funding24h;
 
-    // Non-USDC spot value (for unified accounts USDC is already in equity)
-    const exSpot = e.isUnified
-      ? e.spot.filter(b => b.token.replace(/-SPOT$/i, "").toUpperCase() !== "USDC")
-      : e.spot;
+    // Spot value not already in perp equity (shared rows; unified accounts' USDC)
+    const exSpot = e.spot.filter(b => !b.shared && !(e.isUnified && b.token.replace(/-SPOT$/i, "").toUpperCase() === "USDC"));
     const exSpotVal = exSpot.reduce((s, b) => s + b.valueUsd, 0);
     spotValueUsd += exSpotVal;
     accountValueUsd += e.totalAccountValueUsd;
@@ -585,9 +584,7 @@ function renderSnapshotText(data: PortfolioEnvelopeData): void {
     }
     const equity = e.perp ? Number(e.perp.equity) : 0;
     const margin = e.perp ? Number(e.perp.marginUsed) : 0;
-    const exSpot = e.isUnified
-      ? e.spot.filter(b => b.token.replace(/-SPOT$/i, "").toUpperCase() !== "USDC")
-      : e.spot;
+    const exSpot = e.spot.filter(b => !b.shared && !(e.isUnified && b.token.replace(/-SPOT$/i, "").toUpperCase() === "USDC"));
     const exSpotVal = exSpot.reduce((s, b) => s + b.valueUsd, 0);
     const total = equity + exSpotVal;
     const usagePct = equity > 0 ? (margin / equity) * 100 : 0;

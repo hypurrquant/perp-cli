@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — HIP-3 dex portfolio counted unified spot collateral twice
+
+- **`perp -e hyperliquid --dex <d> portfolio` no longer adds the spot collateral on top of the dex equity.** On a unified / portfolio-margin account (and dexAbstraction with a dex whose collateral is not USDC) the dex balance reports the spot collateral row as the dex equity, but the dex-scoped spot rows were never marked `shared`, so `totalAccountValueUsd` / `totals.accountValueUsd` counted the same USDC twice (2000 for 1000 USDC). The dex spot rows now follow the same account mode and dex collateral token as the dex balance (`hlSpotBalanceRows`), and the portfolio totals (`spotValueUsd`, the text balance line) skip every `shared` row.
+
 ### Fixed — the shared cache stopped working once its directory was removed
 
 - **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).
