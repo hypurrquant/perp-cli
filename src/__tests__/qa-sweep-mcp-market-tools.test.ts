@@ -6,6 +6,8 @@
  *     API, so the tag is exercised by relabelling TxFlow for that test.
  *  2. get_funding_rates: includeUnverified (default false) mirrors the CLI
  *     `arb scan --include-unverified` — unverified venues (QFEX, TxFlow) only on request, tagged.
+ *  3. get_funding_rates symbols: a named symbol one venue quotes is a display-only row, like the CLI
+ *     `arb scan --rates --symbols` (it was left out).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -101,5 +103,13 @@ describe("get_funding_rates includeUnverified", () => {
     const env = parse(await tools.get("get_funding_rates")!({ symbols: ["BTC"], includeUnverified: true }));
     const tx = venuesOf(env).find((r) => r.exchange === "txflow");
     expect(tx).toMatchObject({ fundingVerified: false, apiStatus: "official" });
+  });
+});
+
+describe("get_funding_rates symbols", () => {
+  it("a named symbol one venue quotes is a display-only row (no ranked pair), not left out", async () => {
+    for (const v of listVenues()) vi.spyOn(v.publicData, "fetchFundingRates").mockResolvedValue(v.id === "aster" ? [rate("aster", "BMT", "0.05", "0.00005")] : []);
+    const env = parse(await tools.get("get_funding_rates")!({ symbols: ["BMT"] }));
+    expect((env.data as { symbols: unknown[] }).symbols).toEqual([expect.objectContaining({ symbol: "BMT", longExchange: null, shortExchange: null })]);
   });
 });

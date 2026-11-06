@@ -246,3 +246,48 @@ describe("arb close", () => {
     await expect(run("--dry-run", "arb", "close", "SOL")).rejects.toThrow(/Cannot read positions on hyperliquid/);
   });
 });
+
+describe("arb status funding estimates (a pair whose spread flipped was shown as income)", () => {
+  /** Current funding of the venues arb status reads: venue → symbol → hourly rate. */
+  async function stubRates(rates: Record<string, Record<string, string>>): Promise<void> {
+    const { getVenue } = await import("../exchanges/venue.js");
+    for (const v of ["pacifica", "hyperliquid", "lighter", "aster"]) {
+      vi.spyOn(getVenue(v).publicData, "fetchFundingRates").mockResolvedValue(Object.entries(rates[v] ?? {}).map(([symbol, rate]) => ({
+        venue: v as "hyperliquid", venueSymbol: symbol, symbol, canonical: symbol, rate,
+        basis: { kind: "perHours", hours: 1 }, markPrice: "121", nextFundingTime: null,
+      })));
+    }
+  }
+
+  it("perp-perp: long leg funding above the short leg's → negative spread and daily funding (a cost)", async () => {
+    // Long SOL on hyperliquid pays 0.00003 / h, short SOL on lighter receives 0.00001 / h: net -0.00002 / h.
+    await stubRates({ hyperliquid: { SOL: "0.00003" }, lighter: { SOL: "0.00001" } });
+    configured = ["hyperliquid", "lighter"];
+    logRecords = [{ ...SOL_ENTRY, exchange: "hyperliquid+lighter", meta: { longExchange: "hyperliquid", shortExchange: "lighter" } }];
+    positions.hyperliquid = async () => [pos("long", "1")];
+    positions.lighter = async () => [pos("short", "1")];
+    await run("arb", "status");
+    const [p] = lastJson().data.perpPerpPairs;
+    expect(p.currentSpread).toBeCloseTo(-0.00002 * 8760 * 100, 6);
+    expect(p.dailyFundingEstimate).toBeLessThan(0);
+  });
+
+  it("spot-perp: a negative rate on the short perp leg is a cost (negative currentSpread and daily funding)", async () => {
+    // The persisted PURR spot-perp entry (STALE) with its perp short still open on hyperliquid.
+    await stubRates({ hyperliquid: { PURR: "-0.0001" } });
+    configured = ["hyperliquid"];
+    positions.hyperliquid = async () => [{ ...pos("short", "100"), symbol: "PURR" }];
+    await run("arb", "status");
+    const [sp] = lastJson().data.spotPerpPairs;
+    expect(sp.currentSpread).toBeCloseTo(-0.0001 * 8760 * 100, 6);
+    expect(sp.dailyFundingEstimate).toBeLessThan(0);
+  });
+
+  it("a pair without a current funding rate: dailyFundingEstimate null (never 0), listed in fundingUnknown", async () => {
+    liveSolPair(); // aster / arcus: fetch throws, so neither leg has a rate
+    await run("arb", "status");
+    const d = lastJson().data;
+    expect(d.perpPerpPairs[0].dailyFundingEstimate).toBeNull();
+    expect(d.aggregate.fundingUnknown).toContain("aster/arcus:SOL");
+  });
+});

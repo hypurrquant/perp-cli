@@ -281,13 +281,15 @@ function printSnapshotTable(snapshot: FundingRateSnapshot): void {
     const trend = trendMap.get(s.symbol) ?? chalk.gray("-");
     return [
       chalk.white.bold(s.symbol),
+      // Per hour (the rows' hourlyRate), 6 decimals like --compare: a raw rate covers 1 h to 8 h
+      // depending on the venue / market.
       ...columns.map(v => {
         const r = rateOf(v.id);
-        return r ? formatPercent(r.fundingRate) : chalk.gray("-");
+        return r ? `${formatPercent(r.hourlyRate, 6)}${chalk.gray("/h")}` : chalk.gray("-");
       }),
       // No ranked pair (< 2 verified rows): unverified rates are shown, never ranked.
       spread === null ? chalk.gray("n/a") : spreadColor(`${spread.toFixed(1)}%`), trend,
-      spread === null || s.longExchange === null || s.shortExchange === null ? chalk.gray("unranked (unverified)")
+      spread === null || s.longExchange === null || s.shortExchange === null ? chalk.gray(s.unverifiedLegs.length > 0 ? "unranked (unverified)" : "unranked (1 venue)")
         : spread >= 5 ? `${exAbbr(s.shortExchange)}>${exAbbr(s.longExchange)}${s.executable ? "" : chalk.gray(s.readOnlyLegs.length > 0 ? " (read-only)" : " (unverified)")}` : chalk.gray("-"),
       formatAvgRate(bestRate?.historicalAvg?.avg8h), formatAvgRate(bestRate?.historicalAvg?.avg24h), formatAvgRate(bestRate?.historicalAvg?.avg7d),
     ];
@@ -356,7 +358,7 @@ export async function handleRates(isJson: () => boolean, opts: { symbol?: string
   // With --include-unverified and no symbol filter, show every matched symbol: the default
   // TOP_SYMBOLS list is crypto-only and would hide every market of an equity venue.
   if (opts.includeUnverified === true && !opts.symbol && !opts.symbols) filterSymbols = undefined;
-  const snapshot = await fetchAllFundingRates({ symbols: filterSymbols, minSpread, includeUnverified: opts.includeUnverified === true });
+  const snapshot = await fetchAllFundingRates({ symbols: filterSymbols, minSpread, includeUnverified: opts.includeUnverified === true, explicitSymbols: Boolean(opts.symbol || opts.symbols) });
   warnUnverifiedFunding(snapshot.symbols.flatMap(s => s.rates));
   // Unverified rates are never written to the funding history (it feeds averages and bots).
   try { const allRates = snapshot.symbols.flatMap(s => s.rates).filter(r => r.fundingVerified); if (allRates.length > 0) saveFundingSnapshot(allRates); } catch { /* non-critical */ }
@@ -501,7 +503,7 @@ export async function handleFundingHistory(isJson: () => boolean, opts: { symbol
     const rows = rates.map(r => { const color = r.rate > 0 ? chalk.red : r.rate < 0 ? chalk.green : chalk.white; return [chalk.gray(new Date(r.ts).toLocaleString()), color(formatPercent(r.rate)), `${(r.hourlyRate * 100).toFixed(6)}%/h`, `${annualizeHourlyRate(r.hourlyRate).toFixed(2)}%/yr`]; });
     console.log(makeTable(["Time", "Raw Rate", "Hourly", "Annualized"], rows)); console.log();
   }
-  if (!hasData) console.log(chalk.gray(`  No historical data. Run 'perp arb rates' to start collecting.\n`));
+  if (!hasData) console.log(chalk.gray(`  No historical data. Run 'perp arb scan --rates' to start collecting.\n`));
 }
 
 export async function handleFundingPositions(

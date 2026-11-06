@@ -50,10 +50,10 @@ export function formatPnl(value: string | number): string {
   return `$${formatted}`;
 }
 
-export function formatPercent(value: string | number): string {
+export function formatPercent(value: string | number, decimals = 4): string {
   const num = Number(value);
   if (isNaN(num)) return String(value);
-  const pct = (num * 100).toFixed(4);
+  const pct = (num * 100).toFixed(decimals);
   const prefix = num > 0 ? "+" : "";
   const color = num > 0 ? chalk.green : num < 0 ? chalk.red : chalk.white;
   return color(`${prefix}${pct}%`);

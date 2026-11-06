@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { Command, type Option } from "commander";
 import { registerBacktestCommands } from "../../commands/backtest.js";
+import { handleFundingHistory } from "../../commands/arb.js";
 
 const { buildProgram } = await import("../../cli-program.js");
 
@@ -47,5 +48,17 @@ describe("backtest no-data hint", () => {
     const { program: root } = buildProgram({ defaultExchange: "pacifica", version: "0.0.0-test" });
     expect(invalidReason(root, hint as string)).toBeNull();
     expect(invalidReason(root, "perp funding snapshot")).not.toBeNull(); // the 0.15.0 hint
+  });
+});
+
+describe("arb scan --history no-data hint", () => {
+  it("names a command that exists (perp arb scan --rates; `perp arb rates` was removed)", async () => {
+    const printed: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { printed.push(a.map(String).join(" ")); });
+    await handleFundingHistory(() => false, { symbol: "ETH", hours: "24" });
+    const hint = /Run '([^']+)'/.exec(printed.join("\n"))?.[1];
+    expect(hint).toBeDefined();
+    const { program: root } = buildProgram({ defaultExchange: "pacifica", version: "0.0.0-test" });
+    expect(invalidReason(root, hint as string)).toBeNull();
   });
 });
