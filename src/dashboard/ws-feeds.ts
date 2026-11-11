@@ -7,17 +7,22 @@
  */
 
 import { WebSocket as NodeWebSocket } from "ws";
-import type { ExchangeBalance, ExchangePosition, ExchangeOrder } from "../exchanges/index.js";
+import type { ExchangeAdapter, ExchangeBalance, ExchangePosition, ExchangeOrder } from "../exchanges/index.js";
 import type { DashboardExchange } from "./server.js";
 import type { LighterAdapter } from "../exchanges/lighter.js";
+import type { PacificaAdapter } from "../exchanges/pacifica.js";
+import { hlOpenOrderRows } from "../exchanges/hyperliquid.js";
+import { formatComputedPrice } from "../exchanges/precision.js";
+import { VENUE_STATIC } from "../ws/venue-static.js";
 
 /** Balance as the dashboard knows it: unrealizedPnl null = the venue feed does not report it / unknown. */
 export type DashboardBalance = Omit<ExchangeBalance, "unrealizedPnl"> & { unrealizedPnl: string | null };
-/** Position as the dashboard knows it: a price / PnL the WS message did not carry is null (unknown), never "0". */
-export type DashboardPosition = Omit<ExchangePosition, "entryPrice" | "markPrice" | "unrealizedPnl"> & {
+/** Position as the dashboard knows it: a price / PnL / leverage the WS message did not carry is null (unknown), never "0" / 1. */
+export type DashboardPosition = Omit<ExchangePosition, "entryPrice" | "markPrice" | "unrealizedPnl" | "leverage"> & {
   entryPrice: string | null;
   markPrice: string | null;
   unrealizedPnl: string | null;
+  leverage: number | null;
 };
 
 /** Venue number → string, or null when the field is absent / not a finite number. */
@@ -44,13 +49,14 @@ export interface WsFeedState {
 }
 
 /** A feed is stale when it has no data yet, its last failure is newer than its last success,
- *  or (polling mode) its last success is older than this. */
+ *  or its last success is older than this — in every mode: a live socket is fresh only while
+ *  the venue keeps confirming it. */
 export const FEED_STALE_MS = 30_000;
 
 export function isFeedStale(state: WsFeedState, now = Date.now()): boolean {
   if (state.lastOkAt === null) return true;
   if (state.lastErrorAt !== null && state.lastErrorAt > state.lastOkAt) return true;
-  return state.mode !== "ws" && now - state.lastOkAt > FEED_STALE_MS;
+  return now - state.lastOkAt > FEED_STALE_MS;
 }
 
 /** Log the first failure of a source, then every Nth consecutive one (avoid log spam). */
@@ -98,6 +104,13 @@ abstract class ExchangeWsFeed {
     this.failureCounts.delete(source);
   }
 
+  /** An auxiliary REST read (balance / mark poll) succeeded. In ws mode it does not make the feed
+   *  fresh: only the socket (data or pong) does, or a silent socket would never turn stale. */
+  protected recordAuxOk(source: string) {
+    if (this.state.mode !== "ws") this.state.lastOkAt = Date.now();
+    this.failureCounts.delete(source);
+  }
+
   /** A read / parse failed: record it on the state (the UI marks the feed stale) and log it
    *  on the first failure and every LOG_EVERY_N_FAILURES consecutive ones after that. */
   protected recordError(source: string, err: unknown) {
@@ -129,14 +142,18 @@ abstract class ExchangeWsFeed {
     }, this.WS_DATA_TIMEOUT);
   }
 
-  protected emitUpdate() {
+  /** New data was applied. Only data from the open socket makes it the live source (stops the
+   *  REST fallback): a REST read (fromWs false) never stops REST polling itself. */
+  protected emitUpdate(fromWs = true) {
     this.state.lastUpdate = Date.now();
-    this.state.lastOkAt = this.state.lastUpdate;
-    this.wsDataReceived = true;
-    // WS is delivering data — stop REST fallback if running
-    if (this.state.mode === "rest" && this.ws?.readyState === NodeWebSocket.OPEN) {
+    // In ws mode only socket data confirms the feed (a REST-side update does not).
+    if (fromWs || this.state.mode !== "ws") this.state.lastOkAt = this.state.lastUpdate;
+    if (fromWs && this.ws?.readyState === NodeWebSocket.OPEN) {
+      this.wsDataReceived = true;
       this.state.mode = "ws";
       this.stopRestFallback();
+      this.reconnectDelay = 1000; // the venue serves this socket: the next drop retries after 1 s
+      this.failureCounts.delete("ws-reconnect");
     }
     this.onUpdate(this.state);
     // Also write to file cache for CLI cross-process sharing
@@ -154,20 +171,21 @@ abstract class ExchangeWsFeed {
     } catch { /* non-fatal */ }
   }
 
+  /** One attempt pending at a time (a failed attempt's close and its rejection both ask). The delay
+   *  doubles per attempt until WS data resets it: a venue that refuses the upgrade, or accepts it
+   *  and drops the socket, is retried at 1, 2, 4 … 30 s, not every second. */
   protected scheduleReconnect() {
-    if (this.closed) return;
-    this.reconnectTimer = setTimeout(async () => {
-      try {
-        await this.connect();
-        this.reconnectDelay = 1000; // reset on success
-        this.failureCounts.delete("ws-reconnect");
-      } catch (e) {
+    if (this.closed || this.reconnectTimer) return;
+    const delay = this.reconnectDelay;
+    this.reconnectDelay = Math.min(delay * 2, MAX_RECONNECT_DELAY);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect().catch((e) => {
         // REST fallback keeps the data flowing; the reconnect failure is logged, not hidden.
         this.logFailure("ws-reconnect", e);
-        this.reconnectDelay = Math.min(this.reconnectDelay * 2, MAX_RECONNECT_DELAY);
         this.scheduleReconnect();
-      }
-    }, this.reconnectDelay);
+      });
+    }, delay);
   }
 
   protected startRestFallback() {
@@ -181,17 +199,22 @@ abstract class ExchangeWsFeed {
           adapter.getPositions(),
           adapter.getOpenOrders(),
         ]);
+        // Polling stopped (socket data arrived) while this read was in flight: it is older than
+        // what the socket delivered — discarded, never applied over it.
+        if (this.restFallbackTimer !== timer) return;
         this.state.balance = balance;
         this.state.positions = positions.filter(p => Number(p.size) !== 0);
         this.state.orders = orders;
-        this.emitUpdate();
+        this.emitUpdate(false);
       } catch (e) {
+        if (this.restFallbackTimer !== timer) return; // an obsolete read's failure says nothing
         // Keep the last-read data but mark the feed stale (lastError) — never blank it to 0 / empty.
         this.recordError("rest-poll", e);
       }
     };
-    doRestPoll(); // immediate first fetch
-    this.restFallbackTimer = setInterval(doRestPoll, 5000);
+    const timer = setInterval(doRestPoll, 5000);
+    this.restFallbackTimer = timer;
+    void doRestPoll(); // immediate first fetch
   }
 
   protected stopRestFallback() {
@@ -219,6 +242,8 @@ class HyperliquidFeed extends ExchangeWsFeed {
   private address: string;
   private dex: string;
   private balanceTimer: ReturnType<typeof setInterval> | null = null;
+  /** The venue refused a subscription on the current socket (error frame): REST stays the source. */
+  private refused = false;
 
   constructor(exchange: DashboardExchange, onUpdate: (state: WsFeedState) => void) {
     super(exchange, onUpdate);
@@ -235,7 +260,7 @@ class HyperliquidFeed extends ExchangeWsFeed {
       this.startRestFallback();
       return;
     }
-    // HIP-3 dex accounts: webData2 doesn't support dex param — use REST
+    // HIP-3 dex accounts: REST polling (this feed subscribes the native dex only)
     if (this.dex) {
       this.startRestFallback();
       return;
@@ -245,13 +270,13 @@ class HyperliquidFeed extends ExchangeWsFeed {
         this.ws = new NodeWebSocket(this.wsUrl);
 
         this.ws.on("open", () => {
-          this.state.mode = "ws";
-          // Subscribe to webData2 (positions + orders in real-time)
-          this.ws!.send(JSON.stringify({
-            method: "subscribe",
-            subscription: { type: "webData2", user: this.address },
-          }));
-          // Balance via REST (webData2 clearinghouse doesn't include dex pool funds)
+          this.refused = false;
+          // Documented user channels (webData2 is refused by the venue): positions + open orders,
+          // each a full snapshot on subscribe, re-pushed every few seconds.
+          for (const type of ["clearinghouseState", "openOrders"]) {
+            this.ws!.send(JSON.stringify({ method: "subscribe", subscription: { type, user: this.address } }));
+          }
+          // Balance via REST (clearinghouseState doesn't include dex pool funds)
           this.startBalancePolling();
           // Start data timeout — switch to REST if no data within 5s
           this.startWsDataTimeout();
@@ -261,8 +286,18 @@ class HyperliquidFeed extends ExchangeWsFeed {
         this.ws.on("message", (raw) => {
           try {
             const msg = JSON.parse(String(raw));
-            if (msg.channel === "webData2" && msg.data) {
-              this.handleWebData2(msg.data);
+            if (msg.channel === "error") {
+              // A refused subscription: this socket will not carry the full state — REST at once,
+              // not after WS_DATA_TIMEOUT.
+              this.refused = true;
+              this.recordError("ws-error", new Error(String(msg.data)));
+              this.startRestFallback();
+            } else if (this.refused) {
+              return; // a partial state never replaces the REST data
+            } else if (msg.channel === "clearinghouseState" && msg.data?.clearinghouseState) {
+              this.handleClearinghouseState(msg.data.clearinghouseState);
+            } else if (msg.channel === "openOrders" && Array.isArray(msg.data?.orders)) {
+              this.handleOpenOrders(msg.data.orders);
             }
           } catch (e) { this.recordError("ws-parse", e); }
         });
@@ -276,10 +311,9 @@ class HyperliquidFeed extends ExchangeWsFeed {
         });
 
         this.ws.on("error", (err) => {
-          if (this.state.mode === "connecting") {
-            this.startRestFallback();
-            reject(err);
-          }
+          // Settles a reconnect's connect() too (a no-op once open): it never hangs unsettled.
+          this.startRestFallback();
+          reject(err);
         });
       } catch (err) {
         this.startRestFallback();
@@ -288,13 +322,13 @@ class HyperliquidFeed extends ExchangeWsFeed {
     });
   }
 
-  /** Poll balance via REST (webData2 clearinghouse doesn't include dex pool funds) */
+  /** Poll balance via REST (clearinghouseState doesn't include dex pool funds) */
   private startBalancePolling() {
     if (this.balanceTimer) return;
     const poll = async () => {
       try {
         this.state.balance = await this.exchange.adapter.getBalance();
-        this.recordOk("balance-poll");
+        this.recordAuxOk("balance-poll");
       } catch (e) { this.recordError("balance-poll", e); }
     };
     poll(); // immediate
@@ -305,56 +339,45 @@ class HyperliquidFeed extends ExchangeWsFeed {
     if (this.balanceTimer) { clearInterval(this.balanceTimer); this.balanceTimer = null; }
   }
 
-  private handleWebData2(data: Record<string, unknown>) {
+  /** clearinghouseState frame: positions (the balance is handled by REST polling, it includes dex pool funds). */
+  private handleClearinghouseState(chs: Record<string, unknown>) {
     try {
-      // Balance is handled by REST polling (includes dex pool funds)
-      // WS handles positions + orders only
-      const chs = data.clearinghouseState as Record<string, unknown> | undefined;
-      if (chs) {
-        const assetPositions = (chs.assetPositions ?? []) as Array<Record<string, unknown>>;
-        this.state.positions = assetPositions
-          .filter((ap) => {
-            const pos = (ap.position ?? ap) as Record<string, unknown>;
-            const szi = numStr(pos.szi);
-            if (szi === null) throw new Error(`webData2 position without szi: ${JSON.stringify(pos).slice(0, 200)}`);
-            return Number(szi) !== 0;
-          })
-          .map((ap) => {
-            const pos = (ap.position ?? ap) as Record<string, string>;
-            const szi = Number(pos.szi);
-            const posValue = numStr(pos.positionValue);
-            return {
-              symbol: String(pos.coin ?? ""),
-              side: (szi > 0 ? "long" : "short") as "long" | "short",
-              size: String(Math.abs(szi)),
-              // A field the message did not carry is unknown (null), never "0".
-              entryPrice: numStr(pos.entryPx),
-              markPrice: posValue !== null ? (Number(posValue) / Math.abs(szi)).toFixed(2) : null,
-              liquidationPrice: pos.liquidationPx ?? null, // HL sends null when there is no liquidation price
-              unrealizedPnl: numStr(pos.unrealizedPnl),
-              leverage: Number((ap.leverage as Record<string, { value?: number }>)?.value ?? 1),
-            };
-          });
-      }
-
-      // Open orders
-      const openOrders = data.openOrders as Array<Record<string, unknown>> | undefined;
-      if (openOrders) {
-        this.state.orders = openOrders.map((o) => ({
-          orderId: String(o.oid ?? ""),
-          symbol: String(o.coin ?? ""),
-          side: o.side === "B" ? "buy" as const : "sell" as const,
-          price: String(o.limitPx ?? "0"),
-          size: String(o.sz ?? ""),
-          filled: "0",
-          status: "open",
-          type: String(o.orderType ?? "limit"),
-          triggerPrice: o.isTrigger === true && Number(o.triggerPx) > 0 ? String(o.triggerPx) : null,
-        }));
-      }
-
+      const assetPositions = (chs.assetPositions ?? []) as Array<Record<string, unknown>>;
+      this.state.positions = assetPositions
+        .filter((ap) => {
+          const pos = (ap.position ?? ap) as Record<string, unknown>;
+          const szi = numStr(pos.szi);
+          if (szi === null) throw new Error(`clearinghouseState position without szi: ${JSON.stringify(pos).slice(0, 200)}`);
+          return Number(szi) !== 0;
+        })
+        .map((ap) => {
+          const pos = (ap.position ?? ap) as Record<string, string>;
+          const szi = Number(pos.szi);
+          const posValue = numStr(pos.positionValue);
+          const leverage = numStr((pos.leverage as unknown as { value?: number } | undefined)?.value);
+          return {
+            symbol: String(pos.coin ?? ""),
+            side: (szi > 0 ? "long" : "short") as "long" | "short",
+            size: String(Math.abs(szi)),
+            // A field the message did not carry is unknown (null), never "0".
+            entryPrice: numStr(pos.entryPx),
+            markPrice: posValue !== null ? formatComputedPrice(Number(posValue) / Math.abs(szi)) : null, // as hlPositionRows
+            liquidationPrice: pos.liquidationPx ?? null, // HL sends null when there is no liquidation price
+            unrealizedPnl: numStr(pos.unrealizedPnl),
+            leverage: leverage === null ? null : Number(leverage), // position.leverage {type, value}
+          };
+        });
       this.emitUpdate();
-    } catch (e) { this.recordError("ws-webData2", e); }
+    } catch (e) { this.recordError("ws-clearinghouseState", e); }
+  }
+
+  /** openOrders frame: the account's open orders (frontendOpenOrders rows). */
+  private handleOpenOrders(openOrders: Array<Record<string, unknown>>) {
+    try {
+      // The REST read's mapper: spot rows left out, an unreadable row throws (recorded below).
+      this.state.orders = hlOpenOrderRows(openOrders, (coin) => coin);
+      this.emitUpdate();
+    } catch (e) { this.recordError("ws-openOrders", e); }
   }
 
   close() {
@@ -365,15 +388,52 @@ class HyperliquidFeed extends ExchangeWsFeed {
 
 // ── Pacifica WS Feed ──
 
+/** How often the Pacifica open orders are re-read over REST (reconciles an update the stream missed). */
+const ORDERS_RECONCILE_MS = 60_000;
+/** Order updates kept while the open-orders snapshot is unread / in flight. */
+const MAX_PENDING_ORDER_UPDATES = 1000;
+
 class PacificaFeed extends ExchangeWsFeed {
   private account: string;
   private markPriceTimer: ReturnType<typeof setInterval> | null = null;
   private markPrices = new Map<string, string>();
+  /** Open orders by id. account_order_updates is a change stream without a snapshot: the list is
+   *  read over REST at every (re)subscribe and again every ORDERS_RECONCILE_MS (an update missed
+   *  while the subscription became active is not left until the next reconnect), and each update is
+   *  applied to it. Updates that arrive while a read is in flight are replayed over its answer (an
+   *  upsert / removal by id is idempotent). null = not read yet. */
+  private orderMap: Map<string, ExchangeOrder> | null = null;
+  private pendingOrderUpdates: unknown[] = [];
+  private ordersLoading = false;
+  private ordersReadAt = 0;
+  /** Spot symbols (SOL-USDC …): their order updates are left out, as getOpenOrders leaves them out. */
+  private spotSymbols = new Set<string>();
 
   constructor(exchange: DashboardExchange, onUpdate: (state: WsFeedState) => void) {
     super(exchange, onUpdate);
     const adapter = exchange.adapter as unknown as Record<string, unknown>;
     this.account = String(adapter.publicKey ?? adapter.account ?? "");
+  }
+
+  /** The open-orders snapshot of socket `ws` (dropped when a newer socket replaced it). */
+  private async loadOpenOrders(ws: NodeWebSocket | null) {
+    if (this.ordersLoading) return;
+    this.ordersLoading = true;
+    try {
+      const adapter = this.exchange.adapter as ExchangeAdapter & Pick<PacificaAdapter, "nonPerpSymbols">;
+      const [orders, spot] = await Promise.all([adapter.getOpenOrders(), adapter.nonPerpSymbols()]);
+      if (ws !== this.ws) return;
+      this.spotSymbols = spot;
+      this.orderMap = new Map(orders.map(o => [o.orderId, o]));
+      this.ordersReadAt = Date.now();
+      this.ordersLoading = false; // the replay below applies, it is not buffered again
+      this.handleOrders(this.pendingOrderUpdates.splice(0), false);
+    } catch (e) {
+      if (this.orderMap !== null) this.pendingOrderUpdates = []; // a failed re-read: those updates are applied already
+      this.recordError("orders-snapshot", e);
+    } finally {
+      this.ordersLoading = false;
+    }
   }
 
   get wsUrl() { return "wss://ws.pacifica.fi/ws"; }
@@ -388,19 +448,22 @@ class PacificaFeed extends ExchangeWsFeed {
         this.ws = new NodeWebSocket(this.wsUrl);
 
         this.ws.on("open", () => {
-          this.state.mode = "ws";
           // Subscribe to private channels
           const sub = (source: string) =>
             this.ws!.send(JSON.stringify({ method: "subscribe", params: { source, account: this.account } }));
           sub("account_info");
           sub("account_positions");
           sub("account_order_updates");
-          // Heartbeat
+          this.orderMap = null;
+          this.pendingOrderUpdates = [];
+          void this.loadOpenOrders(this.ws);
+          // Heartbeat: Pacifica closes a socket after 60 s without a client message. The pong also
+          // confirms the (change-only) account channels are live, so ping well within FEED_STALE_MS.
           this._heartbeat = setInterval(() => {
             if (this.ws?.readyState === NodeWebSocket.OPEN) {
               this.ws.send(JSON.stringify({ method: "ping" }));
             }
-          }, 30000);
+          }, FEED_STALE_MS / 3);
           // Poll mark prices (WS positions don't include them)
           this.startMarkPricePolling();
           // Start data timeout — switch to REST if no data within 5s
@@ -412,7 +475,8 @@ class PacificaFeed extends ExchangeWsFeed {
           try {
             const msg = JSON.parse(String(raw));
             const ch = msg.channel || msg.source;
-            if (ch === "account_info") this.handleAccountInfo(msg.data ?? msg);
+            if (ch === "pong" && this.state.mode === "ws") this.recordOk("ws-pong"); // confirms only the live source
+            else if (ch === "account_info") this.handleAccountInfo(msg.data ?? msg);
             else if (ch === "account_positions") this.handlePositions(msg.data ?? msg);
             else if (ch === "account_order_updates") this.handleOrders(msg.data ?? msg);
           } catch (e) { this.recordError("ws-parse", e); }
@@ -427,10 +491,9 @@ class PacificaFeed extends ExchangeWsFeed {
         });
 
         this.ws.on("error", (err) => {
-          if (this.state.mode === "connecting") {
-            this.startRestFallback();
-            reject(err);
-          }
+          // Settles a reconnect's connect() too (a no-op once open): it never hangs unsettled.
+          this.startRestFallback();
+          reject(err);
         });
       } catch (err) {
         this.startRestFallback();
@@ -449,13 +512,18 @@ class PacificaFeed extends ExchangeWsFeed {
   private startMarkPricePolling() {
     if (this.markPriceTimer) return;
     const poll = async () => {
+      // A failed open-orders snapshot is read again (the order updates cannot rebuild the list), and
+      // a read one is re-read every ORDERS_RECONCILE_MS.
+      if (this.ws?.readyState === NodeWebSocket.OPEN && (this.orderMap === null || Date.now() - this.ordersReadAt >= ORDERS_RECONCILE_MS)) {
+        void this.loadOpenOrders(this.ws);
+      }
       try {
         // Use adapter's getPositions which includes mark prices
         const positions = await this.exchange.adapter.getPositions();
         for (const p of positions) {
           this.markPrices.set(p.symbol, p.markPrice);
         }
-        this.recordOk("mark-poll");
+        this.recordAuxOk("mark-poll");
         // Update existing WS positions with mark prices + compute PnL
         if (this.state.positions && this.state.positions.length > 0) {
           let changed = false;
@@ -476,7 +544,7 @@ class PacificaFeed extends ExchangeWsFeed {
             }
           }
           if (changed && this.state.balance) this.state.balance = { ...this.state.balance, unrealizedPnl: this.positionsUpnl() };
-          if (changed) this.emitUpdate();
+          if (changed) this.emitUpdate(false);
         }
       } catch (e) { this.recordError("mark-poll", e); }
     };
@@ -542,7 +610,7 @@ class PacificaFeed extends ExchangeWsFeed {
         markPrice: mark,
         liquidationPrice: p.l != null ? String(p.l) : p.liquidation_price != null ? String(p.liquidation_price) : null,
         unrealizedPnl: pnl,
-        leverage: Number(p.leverage ?? 1),
+        leverage: numStr(p.leverage) === null ? null : Number(p.leverage), // not in account_positions: unknown
       });
     }
     this.state.positions = positions;
@@ -550,28 +618,43 @@ class PacificaFeed extends ExchangeWsFeed {
     this.emitUpdate();
   }
 
-  private handleOrders(data: unknown) {
+  /** account_order_updates rows: one change per order (open / partially_filled rest on the book, any
+   *  other status left it); `ip` is the order price (`p` is the average fill price). */
+  private handleOrders(data: unknown, fromWs = true) {
     if (!Array.isArray(data)) return;
-    const open = data.filter((o: Record<string, unknown>) => String(o.os ?? o.order_status ?? "") === "open");
-    // A row without a readable price / size / filled amount is reported, never shown as "0".
-    const readable = open.filter((o: Record<string, unknown>) => {
-      const ok = numStr(o.p ?? o.price) !== null && numStr(o.a ?? o.amount) !== null && numStr(o.f ?? o.filled) !== null;
-      if (!ok) this.recordError("order-row", `order ${String(o.i ?? o.order_id ?? "?")} without price / amount / filled`);
-      return ok;
-    });
-    this.state.orders = readable
-      .map((o: Record<string, unknown>) => ({
-        orderId: String(o.i ?? o.order_id ?? ""),
+    if (this.orderMap === null || this.ordersLoading) {
+      this.pendingOrderUpdates.push(...data);
+      // Bounded: the oldest are the ones the snapshot (read after them) already reflects.
+      if (this.pendingOrderUpdates.length > MAX_PENDING_ORDER_UPDATES) this.pendingOrderUpdates.splice(0, this.pendingOrderUpdates.length - MAX_PENDING_ORDER_UPDATES);
+      if (this.orderMap === null) return;
+    }
+    for (const o of data as Record<string, unknown>[]) {
+      const id = String(o.i ?? o.order_id ?? "");
+      if (this.spotSymbols.has(String(o.s ?? o.symbol ?? ""))) continue;
+      const status = String(o.os ?? o.order_status ?? "");
+      if (status === "") {
+        // Unknown status: neither kept nor removed on a guess — reported (the order stays as last read).
+        this.recordError("order-row", `order ${id || "?"} without status`);
+        continue;
+      }
+      if (status !== "open" && status !== "partially_filled") { this.orderMap.delete(id); continue; }
+      // A row without a readable price / size / filled amount is reported, never shown as "0".
+      const price = numStr(o.ip ?? o.price), size = numStr(o.a ?? o.amount), filled = numStr(o.f ?? o.filled);
+      if (price === null || size === null || filled === null) {
+        this.recordError("order-row", `order ${id || "?"} without price / amount / filled`);
+        continue;
+      }
+      this.orderMap.set(id, {
+        orderId: id,
         symbol: String(o.s ?? o.symbol ?? ""),
-        side: (o.d ?? o.side) === "bid" ? "buy" as const : "sell" as const,
-        price: numStr(o.p ?? o.price)!,
-        size: numStr(o.a ?? o.amount)!,
-        filled: numStr(o.f ?? o.filled)!,
-        status: "open",
+        side: (o.d ?? o.side) === "bid" ? "buy" : "sell",
+        price, size, filled, status,
         type: String(o.ot ?? o.order_type ?? ""),
         triggerPrice: Number(o.sp ?? o.stop_price) > 0 ? String(o.sp ?? o.stop_price) : null,
-      }));
-    this.emitUpdate();
+      });
+    }
+    this.state.orders = [...this.orderMap.values()];
+    this.emitUpdate(fromWs);
   }
 
   close() {
@@ -589,6 +672,7 @@ class PacificaFeed extends ExchangeWsFeed {
 
 class LighterFeed extends ExchangeWsFeed {
   private accountIndex: number;
+  private keepalive: ReturnType<typeof setInterval> | null = null;
 
   constructor(exchange: DashboardExchange, onUpdate: (state: WsFeedState) => void) {
     super(exchange, onUpdate);
@@ -643,7 +727,6 @@ class LighterFeed extends ExchangeWsFeed {
         this.ws = new NodeWebSocket(this.wsUrl);
 
         this.ws.on("open", () => {
-          this.state.mode = "ws";
           // Subscribe to authenticated channels (positions + orders)
           const authChannels = [
             `account_all_positions/${this.accountIndex}`,
@@ -654,6 +737,12 @@ class LighterFeed extends ExchangeWsFeed {
           }
           // Subscribe to public channel for balance (no auth needed)
           this.ws!.send(JSON.stringify({ type: "subscribe", channel: `user_stats/${this.accountIndex}` }));
+          // Keepalive: Lighter closes a socket after 2 minutes without a client frame. The pong also
+          // confirms the (change-only) account channels are live, so ping well within FEED_STALE_MS.
+          const ping = VENUE_STATIC[this.exchange.name === "lighter-rh" ? "lighter-rh" : "lighter"].ping!;
+          this.keepalive = setInterval(() => {
+            if (this.ws?.readyState === NodeWebSocket.OPEN) this.ws.send(ping.message);
+          }, Math.min(ping.everyMs, FEED_STALE_MS / 3));
           // Start data timeout — switch to REST if no data within 5s
           this.startWsDataTimeout();
           resolve();
@@ -667,6 +756,7 @@ class LighterFeed extends ExchangeWsFeed {
         });
 
         this.ws.on("close", () => {
+          this.stopKeepalive();
           if (!this.closed) {
             this.startRestFallback();
             this.scheduleReconnect();
@@ -674,10 +764,9 @@ class LighterFeed extends ExchangeWsFeed {
         });
 
         this.ws.on("error", (err) => {
-          if (this.state.mode === "connecting") {
-            this.startRestFallback();
-            reject(err);
-          }
+          // Settles a reconnect's connect() too (a no-op once open): it never hangs unsettled.
+          this.startRestFallback();
+          reject(err);
         });
       } catch (err) {
         this.startRestFallback();
@@ -686,11 +775,21 @@ class LighterFeed extends ExchangeWsFeed {
     });
   }
 
+  private stopKeepalive() {
+    if (this.keepalive) { clearInterval(this.keepalive); this.keepalive = null; }
+  }
+
+  close() {
+    this.stopKeepalive();
+    super.close();
+  }
+
   /** Cached position map: market_id → position data (for incremental updates) */
   private positionMap = new Map<string, Record<string, unknown>>();
 
   private handleMessage(msg: Record<string, unknown>) {
     const type = String(msg.type ?? "");
+    if (type === "pong" && this.state.mode === "ws") this.recordOk("ws-pong"); // confirms only the live source
 
     // Balance: user_stats channel (public, no auth) provides portfolio_value, available_balance, etc.
     if (type.includes("user_stats")) {
@@ -757,7 +856,7 @@ class LighterFeed extends ExchangeWsFeed {
               unrealizedPnl: numStr(p.unrealized_pnl),
               leverage: Number(p.initial_margin_fraction ?? 0) > 0
                 ? Math.round(10000 / Number(p.initial_margin_fraction))
-                : 1,
+                : null, // no margin fraction: unknown, never 1
             };
           });
         this.emitUpdate();
