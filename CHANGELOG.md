@@ -4,6 +4,18 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### JSON contract changes
+
+Migration notes for scripts and agents that read `--json` / MCP output (details in the entries below):
+
+- **Close sizes:** `trade close` / `close-all` / `flatten` / `reduce` `closed` / `residual` and MCP `trade_close` `closedSize` / `residual` are the measured size as a plain decimal, without padding: "0" (was "0.000"), "10" (was "10.000"). Compare them as numbers, not strings.
+- **TWAP:** a client-side TWAP whose slices were refused with at least one lot untraded now ends `ok: false` with `ORDER_PARTIAL` (some filled) or `ORDER_REJECTED` (none filled), the run in `error.details.twap` (was `ok: true` with the state). A slice below one lot is `SIZE_TOO_SMALL` before anything is sent; a background job refused before its first slice ends `error` (was `done`).
+- **Lighter open orders on a read-only adapter:** `account orders -e lighter` / `-e lighter-rh` and MCP `get_open_orders` now fail with `NO_SIGNER_AVAILABLE` or `AGENT_EXPIRED` (was `ok: true` with `[]`); `account orders` without `-e` lists the venue under `errors`. `trade cancel-all`, `trade cancel <symbol>` and `flatten` fail the same way (were exit 0). In `portfolio` (and `portfolio --serve`) an exchange entry's `openOrders` is `number | null` with a new `openOrdersError` (string or null); null means unknown, not 0 (also for a venue that could not be read at all, which reported `openOrders: 0`). MCP `portfolio` `exchanges[].openOrders` is `number | null` with `openOrdersError`; `totalOpenOrders` sums the known venues only and the new `openOrdersUnknown` (string[]) lists the others. `perp stream` heartbeats carry `openOrders: null` + `openOrdersError` in that case.
+- **Risk:** `perp risk status` / `perp risk check` fail with `PRICE_STALE` when an open position's notional cannot be computed (an Aster mark "N/A", or a mark of "0" / "" / null such as RISEx "0"); they returned `ok: true` with NaN-based metrics. `trade check` / MCP `trade_preview` report `risk_limits` `passed: false` with that reason for an opening order (was `passed: true`, "Risk check skipped"); reduce-only stays `passed: true` with a warning.
+- **Lighter error codes:** `/sendTx` codes 52001 / 52002 / 62007 are `ORDER_REJECTED` (orders) / `ACTION_REJECTED` (other actions), not `ORDER_PENDING`: nothing executed and the symbol is no longer quarantined. Codes 21507 / 21508 are `MARGIN_INSUFFICIENT` (was `ORDER_REJECTED`).
+- **Hyperliquid outcome orders:** rows whose coin starts with `#` (HIP-4 outcomes) are no longer in perp open orders (`account orders -e hyperliquid`, MCP `get_open_orders`) and are not cancelled by `trade cancel-all` / `flatten`. Read them with `perp outcome` commands.
+- **Plan `cancel_all` on Ondo, Arcus, QFEX, TxFlow and RISEx:** a step whose cancel failed or is unproven now fails (`ORDER_PARTIAL` / `ORDER_REJECTED` / `ORDER_PENDING`, the per-order outcome in the error); it completed as `success`. Under the default `onFailure: "abort"` a plan such as `[cancel_all, close_position]` now stops before the close. To close anyway, set `"onFailure": "skip"` on the `cancel_all` step.
+
 ### Fixed — `trade scale-tp` / `scale-in` accepted a percent that is no number
 
 - **Each `--levels` percent must be a positive decimal (`INVALID_PARAMS`, nothing sent).** `parseFloat` made "x50" NaN, and the "sum must be 100" check is false for NaN: "75000:x50" as the last level was placed with the remainder of the size, and as an earlier level it threw an untyped `RangeError`. "50abc" (read as 50) is refused too.
