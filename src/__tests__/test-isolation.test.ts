@@ -30,10 +30,10 @@ describe("unit-test HOME isolation", () => {
 
   it("the quarantine file resolves inside the isolated home and quarantineSymbol writes there", async () => {
     const q = await import("../bot/quarantine.js");
-    expect(underFakeHome(q.QUARANTINE_FILE)).toBe(true);
+    expect(underFakeHome(q.quarantineFile())).toBe(true);
     q.quarantineSymbol("isolation-guard", "GUARDCOIN", "isolation guard", "none", () => {});
     expect(existsSync(join(fakeHome, ".perp", "bot-quarantine.json"))).toBe(true);
-    expect(readFileSync(q.QUARANTINE_FILE, "utf8")).toContain("GUARDCOIN");
+    expect(readFileSync(q.quarantineFile(), "utf8")).toContain("GUARDCOIN");
     // The real file (if any) never sees the guard entry.
     const realFile = join(realHome, ".perp", "bot-quarantine.json");
     if (existsSync(realFile)) expect(readFileSync(realFile, "utf8")).not.toContain("GUARDCOIN");

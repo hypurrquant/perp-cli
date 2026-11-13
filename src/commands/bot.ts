@@ -490,14 +490,14 @@ export function registerStrategyCommands(
     .command("quarantine")
     .description("List quarantined symbols (unknown / unverified order outcome or unhedged leg) — blocked for every bot strategy, arb exec and arb auto (~/.perp/bot-quarantine.json)")
     .action(async () => {
-      const { listQuarantine, QUARANTINE_FILE } = await import("../bot/quarantine.js");
+      const { listQuarantine, quarantineFile } = await import("../bot/quarantine.js");
       const entries = listQuarantine();
-      if (isJson()) return printJson(jsonOk({ file: QUARANTINE_FILE, entries }));
+      if (isJson()) return printJson(jsonOk({ file: quarantineFile(), entries }));
       if (entries.length === 0) {
         console.log(chalk.gray("\n  No quarantined bot positions.\n"));
         return;
       }
-      console.log(chalk.red.bold(`\n  Quarantined symbols — blocked for all bots and arb paths (${QUARANTINE_FILE}):\n`));
+      console.log(chalk.red.bold(`\n  Quarantined symbols — blocked for all bots and arb paths (${quarantineFile()}):\n`));
       for (const e of entries) {
         console.log(`    ${chalk.white(`${e.strategy} ${e.symbol}`)} ${chalk.gray(`${e.time} · ${e.network ?? "any network (set by a process that did not declare one)"}`)}`);
         console.log(`      ${e.reason}`);

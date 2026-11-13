@@ -1,8 +1,7 @@
 import { existsSync, appendFileSync, readFileSync, mkdirSync, writeFileSync } from "fs";
-import { resolve } from "path";
+import { perpDir, perpPath } from "./paths.js";
 
-const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
-const LOG_FILE = resolve(PERP_DIR, "executions.jsonl");
+function logFile(): string { return perpPath("executions.jsonl"); }
 
 export interface ExecutionRecord {
   id: string;
@@ -22,7 +21,7 @@ export interface ExecutionRecord {
 }
 
 function ensureDir() {
-  if (!existsSync(PERP_DIR)) mkdirSync(PERP_DIR, { recursive: true, mode: 0o700 });
+  if (!existsSync(perpDir())) mkdirSync(perpDir(), { recursive: true, mode: 0o700 });
 }
 
 function genId(): string {
@@ -41,9 +40,9 @@ export function logExecution(record: Omit<ExecutionRecord, "id" | "timestamp">):
   // on stderr and the caller continues with the real result.
   try {
     ensureDir();
-    appendFileSync(LOG_FILE, JSON.stringify(full) + "\n", { mode: 0o600 });
+    appendFileSync(logFile(), JSON.stringify(full) + "\n", { mode: 0o600 });
   } catch (e) {
-    process.stderr.write(`[perp] Warning: could not write the execution log (${LOG_FILE}): ${e instanceof Error ? e.message : String(e)} — the ${record.type} on ${record.exchange} was recorded as "${record.status}" in memory only\n`);
+    process.stderr.write(`[perp] Warning: could not write the execution log (~/.perp/executions.jsonl): ${e instanceof Error ? e.message : String(e)} — the ${record.type} on ${record.exchange} was recorded as "${record.status}" in memory only\n`);
   }
   return full;
 }
@@ -57,9 +56,9 @@ export function readExecutionLog(opts?: {
   since?: string;  // ISO date string
   dryRunOnly?: boolean;
 }): ExecutionRecord[] {
-  if (!existsSync(LOG_FILE)) return [];
+  if (!existsSync(logFile())) return [];
 
-  const lines = readFileSync(LOG_FILE, "utf-8").trim().split("\n").filter(Boolean);
+  const lines = readFileSync(logFile(), "utf-8").trim().split("\n").filter(Boolean);
   let records: ExecutionRecord[] = lines.map(line => {
     try { return JSON.parse(line); } catch { return null; }
   }).filter(Boolean);
@@ -127,9 +126,9 @@ export function getExecutionStats(since?: string): {
 
 /** Clear old records (keep last N days) */
 export function pruneExecutionLog(keepDays: number = 30): number {
-  if (!existsSync(LOG_FILE)) return 0;
+  if (!existsSync(logFile())) return 0;
 
-  const lines = readFileSync(LOG_FILE, "utf-8").trim().split("\n").filter(Boolean);
+  const lines = readFileSync(logFile(), "utf-8").trim().split("\n").filter(Boolean);
   const cutoff = Date.now() - keepDays * 24 * 60 * 60 * 1000;
 
   const kept = lines.filter(line => {
@@ -143,6 +142,6 @@ export function pruneExecutionLog(keepDays: number = 30): number {
 
   const pruned = lines.length - kept.length;
   ensureDir();
-  writeFileSync(LOG_FILE, kept.join("\n") + (kept.length > 0 ? "\n" : ""), { mode: 0o600 });
+  writeFileSync(logFile(), kept.join("\n") + (kept.length > 0 ? "\n" : ""), { mode: 0o600 });
   return pruned;
 }

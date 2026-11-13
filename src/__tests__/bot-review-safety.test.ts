@@ -34,7 +34,7 @@ import type { StrategyAction, StrategyContext } from "../bot/strategy-types.js";
 import { FundingArbV2Strategy } from "../bot/strategies/funding-arb-v2.js";
 import { FundingArbStrategy } from "../bot/strategies/funding-arb-strategy.js";
 import {
-  QUARANTINE_FILE, clearQuarantine, isQuarantined, listQuarantine, quarantineEntryFor, quarantineSymbol,
+  quarantineFile, clearQuarantine, isQuarantined, listQuarantine, quarantineEntryFor, quarantineSymbol,
   resetQuarantineNetwork, setQuarantineNetwork,
 } from "../bot/quarantine.js";
 import { runDCA } from "../strategies/dca.js";
@@ -44,7 +44,7 @@ import { PerpError } from "../errors.js";
 const noop = () => {};
 
 beforeEach(() => {
-  rmSync(QUARANTINE_FILE, { force: true });
+  rmSync(quarantineFile(), { force: true });
   resetQuarantineNetwork();
 });
 afterEach(() => resetQuarantineNetwork());
@@ -296,13 +296,13 @@ describe("quarantine network scope (11)", () => {
     expect(isQuarantined("ETH", noop)).toBe(false);
     resetQuarantineNetwork();
     expect(isQuarantined("BTC", noop) && isQuarantined("ETH", noop)).toBe(true);
-    const f = JSON.parse(readFileSync(QUARANTINE_FILE, "utf8"));
+    const f = JSON.parse(readFileSync(quarantineFile(), "utf8"));
     expect(Object.keys(f.entries).sort()).toEqual(["arb-auto:ETH", "testnet:arb-auto:BTC"]);
   });
 
   it("legacy (untagged) entries apply to mainnet only; an entry set without a declared network applies everywhere", () => {
-    mkdirSync(dirname(QUARANTINE_FILE), { recursive: true });
-    writeFileSync(QUARANTINE_FILE, JSON.stringify({ version: 1, entries: { "funding-arb:SOL": { strategy: "funding-arb", symbol: "SOL", reason: "old", remediation: "m", time: "t" } } }));
+    mkdirSync(dirname(quarantineFile()), { recursive: true });
+    writeFileSync(quarantineFile(), JSON.stringify({ version: 1, entries: { "funding-arb:SOL": { strategy: "funding-arb", symbol: "SOL", reason: "old", remediation: "m", time: "t" } } }));
     setQuarantineNetwork("mainnet");
     expect(isQuarantined("SOL", noop)).toBe(true);
     setQuarantineNetwork("testnet");

@@ -1,7 +1,7 @@
 import { Keypair } from "@solana/web3.js";
 import bs58 from "bs58";
 import chalk from "chalk";
-import { resolve } from "path";
+import { perpPath } from "./paths.js";
 import { existsSync, readFileSync } from "fs";
 import { createRequire } from "node:module";
 import { PerpError } from "./errors.js";
@@ -71,7 +71,7 @@ export function getOwsWalletName(key: string): string {
 }
 
 function legacyKeyFile(venue: LegacyVenueId): string {
-  return resolve(process.env.HOME || "~", ".perp", `${venue}.key`);
+  return perpPath(`${venue}.key`);
 }
 
 function envKeyOf(venue: LegacyVenueId): string | null {

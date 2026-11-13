@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { resolve } from "path";
+import { perpDir, perpPath } from "./paths.js";
 import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "./exchanges/index.js";
 
 // ── Risk Configuration ──
@@ -45,13 +45,12 @@ export function effectiveLimit(usdLimit: number, pctLimit: number | undefined, t
 }
 
 
-const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
-const RISK_FILE = resolve(PERP_DIR, "risk.json");
+function riskFile(): string { return perpPath("risk.json"); }
 
 export function loadRiskLimits(): RiskLimits {
-  if (!existsSync(RISK_FILE)) return { ...DEFAULT_LIMITS };
+  if (!existsSync(riskFile())) return { ...DEFAULT_LIMITS };
   try {
-    const stored = JSON.parse(readFileSync(RISK_FILE, "utf-8"));
+    const stored = JSON.parse(readFileSync(riskFile(), "utf-8"));
     return { ...DEFAULT_LIMITS, ...stored };
   } catch {
     return { ...DEFAULT_LIMITS };
@@ -59,8 +58,8 @@ export function loadRiskLimits(): RiskLimits {
 }
 
 export function saveRiskLimits(limits: RiskLimits): void {
-  if (!existsSync(PERP_DIR)) mkdirSync(PERP_DIR, { recursive: true, mode: 0o700 });
-  writeFileSync(RISK_FILE, JSON.stringify(limits, null, 2), { mode: 0o600 });
+  if (!existsSync(perpDir())) mkdirSync(perpDir(), { recursive: true, mode: 0o700 });
+  writeFileSync(riskFile(), JSON.stringify(limits, null, 2), { mode: 0o600 });
 }
 
 // ── Risk Assessment ──

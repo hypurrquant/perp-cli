@@ -12,6 +12,7 @@ import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readF
 import { resolve } from "path";
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
 import { PerpError } from "../errors.js";
+import { perpPath } from "../paths.js";
 
 const KDF = { dklen: 32, n: 65536, p: 1, r: 8 } as const;
 
@@ -39,9 +40,7 @@ function assertSafeSegment(s: string, what: string): void {
 
 export function venueKeystoreDir(dir: string): string {
   assertSafeSegment(dir, "directory");
-  const home = process.env["HOME"];
-  if (!home) throw new PerpError("INVALID_PARAMS", "HOME is not set; cannot locate ~/.perp keystore");
-  return resolve(home, ".perp", dir);
+  return perpPath(dir);
 }
 
 export function venueKeystorePath(dir: string, name: string): string {

@@ -494,9 +494,9 @@ describe("adapter: placeOrder", () => {
     const e = await a.placeOrder(req({ clientOrderId: "424242" })).catch((x: unknown) => x as PerpError) as PerpError;
     expect(e.structured.code).toBe("ORDER_PENDING");
     expect(e.structured.details).toMatchObject({ nonceConsumed: null, reconcileError: expect.stringContaining("rpc down") });
-    const { QUARANTINE_FILE } = await import("../../bot/quarantine.js");
-    expect(existsSync(QUARANTINE_FILE)).toBe(true);
-    expect(readFileSync(QUARANTINE_FILE, "utf-8")).toContain("c:424242");
+    const { quarantineFile } = await import("../../bot/quarantine.js");
+    expect(existsSync(quarantineFile())).toBe(true);
+    expect(readFileSync(quarantineFile(), "utf-8")).toContain("c:424242");
   });
 
   it("unknown outcome, nonce consumed and the client id found → reconciled final result", async () => {
