@@ -357,7 +357,7 @@ perp --json arb scan --history [SYMBOL] [--hours 24]        # LOCAL snapshots on
 #   Real settled history: perp --json -e <EX> market funding <SYM> -l <N>  (newest first; rate = fraction per
 #   intervalHours → hourly = rate / intervalHours, annual % = hourly × 8760 × 100; average the rows yourself)
 perp --json arb scan --compare <SYMBOL>                     # compare a symbol across exchanges
-perp --json arb scan --positions                            # position funding impact; actual24h null + fundingHistoryErrors when a venue's history is unreadable
+perp --json arb scan --positions                            # position funding impact; actual24h null + fundingHistoryErrors when a venue's history is unreadable or not proven to cover the 24 h
 perp --json arb scan --live --interval 60                   # continuous monitoring
 perp --json arb scan --top 10 --hold-days 7 --bridge-cost 0 --size 100  # cost-aware filtering
 perp --json -e extended market list                          # Extended (read-only): rows carry assetClass, venueSymbol (TSLA_24_5-USD), tickSize, minSize, tradable, fundingRateKind "accruing"
@@ -558,8 +558,8 @@ perp --json history prune                      # purge old entries
 perp --json history summary                    # trading performance summary (replaces former 'stats')
 perp --json history pnl                        # P&L breakdown by exchange; errors + partial name venues whose reads failed (left out, not 0); incomplete names histories not proven to cover --period (summed, a lower bound; partial stays false for those); --limit applies only to venues without a period read
 perp --json history funding                    # funding payment aggregation; same errors / partial / incomplete
-perp --json history report                     # full performance report (summary + pnl + funding); errors + partial + venuesRead
-perp --json history compare                    # compare strategies / accounts
+perp --json history report                     # full performance report (summary + pnl + funding); errors + partial + venuesRead; costs cover --since, incomplete names histories not proven to cover it (a lower bound)
+perp --json history compare                    # compare strategies / accounts; incomplete names funding histories not proven to cover --period (a lower bound)
 perp --json history snapshot                   # equity snapshot
 perp --json history track                      # PnL tracking helper
 perp --json history perf --period daily        # daily PnL breakdown
