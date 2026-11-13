@@ -24,6 +24,7 @@ import {
   isBridgeEvmSigner, isSolanaSigner, pkEvmSigner, pkSolanaSigner, signTypedDataChecked, signVersionedSolanaTx,
   type BridgeEvmSigner,
 } from "./bridge-signers.js";
+import { fetchWithTimeout } from "./http.js";
 
 /**
  * What signs a bridge leg: a master-wallet signer (OWS vault signer or raw-key signer from
@@ -301,7 +302,7 @@ async function getCctpRelayFee(
   // (over-fee) or get the bridge stuck (under-fee). Errors must propagate so
   // the caller can decide whether to retry or abort.
   const qs = useForwarding ? "?forward=true" : "";
-  const res = await fetch(`${CCTP_FEE_API}/${srcDomain}/${dstDomain}${qs}`);
+  const res = await fetchWithTimeout(`${CCTP_FEE_API}/${srcDomain}/${dstDomain}${qs}`);
   if (!res.ok) {
     throw new Error(`CCTP fee API ${srcDomain}→${dstDomain} returned HTTP ${res.status}`);
   }
@@ -537,7 +538,7 @@ async function getHyperCoreCctpFees(
   });
   let res: Response;
   try {
-    res = await fetch(url);
+    res = await fetchWithTimeout(url);
   } catch (e) {
     throw fail(e instanceof Error ? e.message : String(e));
   }
@@ -773,7 +774,7 @@ export async function getDebridgeQuote(
   });
   appendDebridgeBuilderParams(quoteParams);
 
-  const quoteRes = await fetch(`${DLN_API}/quote?${quoteParams}`);
+  const quoteRes = await fetchWithTimeout(`${DLN_API}/quote?${quoteParams}`);
   if (!quoteRes.ok) throw new Error(`deBridge quote failed: ${quoteRes.status} ${await quoteRes.text()}`);
   const quote = await quoteRes.json() as Record<string, unknown>;
 
@@ -885,7 +886,7 @@ export async function executeDebridgeBridge(
   });
   appendDebridgeBuilderParams(createParams);
 
-  const createRes = await fetch(`${DLN_API}/create-tx?${createParams}`);
+  const createRes = await fetchWithTimeout(`${DLN_API}/create-tx?${createParams}`);
   if (!createRes.ok) throw new Error(`deBridge create-tx failed: ${createRes.status} ${await createRes.text()}`);
   const createTx = await createRes.json() as Record<string, unknown>;
 
@@ -1362,10 +1363,10 @@ async function executeCctpHyperCoreToEvm(
   const sigHex = await signTypedDataChecked(signer, domain, types, message, "HyperCore sendToEvmWithData");
   const sig = EthSig.from(sigHex);
 
-  // Submit to HL exchange API. A failure after the request left is an unknown outcome.
+  // Submit to HL exchange API. A failure after the request left (incl. a timeout) is an unknown outcome.
   let result: Record<string, unknown>;
   try {
-    const resp = await fetch(hlExchangeUrl, {
+    const resp = await fetchWithTimeout(hlExchangeUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1373,7 +1374,7 @@ async function executeCctpHyperCoreToEvm(
         nonce: timestamp,
         signature: { r: sig.r, s: sig.s, v: sig.v },
       }),
-    });
+    }, 30_000); // HyperliquidAdapter.EXCHANGE_TIMEOUT_MS: a timeout here is sendFailure → ORDER_PENDING
     result = await resp.json() as Record<string, unknown>;
   } catch (e) {
     throw sendFailure("hyperliquid", "sendToEvmWithData (HyperCore → EVM bridge)", e,
@@ -1849,7 +1850,7 @@ export async function completeEvmToSolanaMint(
   for (let i = 0; i < opts.attempts && message === null; i++) {
     await sleep(opts.intervalMs);
     try {
-      const res = await fetch(url);
+      const res = await fetchWithTimeout(url);
       if (!res.ok) continue; // 404 until Iris indexes the burn: keep polling (read-only)
       const body = await res.json() as { messages?: Array<{ status?: string; attestation?: string; message?: string }> };
       const msg = body.messages?.[0];
@@ -2052,7 +2053,7 @@ async function pollCctpV2Attestation(
   for (let i = 0; i < maxAttempts; i++) {
     await sleep(15_000);
     try {
-      const res = await fetch(url);
+      const res = await fetchWithTimeout(url);
       if (res.ok) {
         const data = await res.json() as {
           messages?: Array<{ message?: string; attestation?: string; status?: string }>;
@@ -2156,7 +2157,7 @@ function formatUnitsPlain(raw: bigint, decimals: number): string {
 async function nativeUsdPrices(symbols: string[]): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   try {
-    const res = await fetch("https://api.hyperliquid.xyz/info", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "allMids" }) });
+    const res = await fetchWithTimeout("https://api.hyperliquid.xyz/info", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "allMids" }) });
     if (!res.ok) return out;
     const mids = await res.json() as Record<string, unknown>;
     for (const sym of symbols) {
@@ -2300,7 +2301,7 @@ export async function executeBestBridge(
  * Check bridge order status via deBridge.
  */
 export async function checkDebridgeStatus(orderId: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`${DLN_API}/${orderId}/status`);
+  const res = await fetchWithTimeout(`${DLN_API}/${orderId}/status`);
   if (!res.ok) throw new Error(`Status check failed: ${res.status}`);
   return res.json() as Promise<Record<string, unknown>>;
 }

@@ -14,6 +14,8 @@ import { LighterAdapter } from "../exchanges/lighter.js";
 import { fetchLighterFundingRatesRaw } from "../api/public/lighter.js";
 import { PacificaClient } from "../pacifica/client.js";
 import { fetchPacificaPricesRaw } from "../api/public/pacifica.js";
+import { executeCctpBridge, checkDebridgeStatus } from "../bridge-engine.js";
+import { pkEvmSigner } from "../bridge-signers.js";
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
@@ -89,5 +91,18 @@ describe("Pacifica REST reads", () => {
 
   it("a shared public read (prices) that times out fails with TIMEOUT", async () => {
     expect(codeOf(await afterDeadline(() => fetchPacificaPricesRaw()))).toBe("TIMEOUT");
+  });
+});
+
+describe("bridge engine", () => {
+  it("a HyperCore → EVM withdrawal POST that times out (30 s) is ORDER_PENDING, never resent", async () => {
+    const signer = pkEvmSigner(`0x${"42".repeat(32)}`);
+    const e = await afterDeadline(() => executeCctpBridge("mainnet", "hyperliquid", "arbitrum", 10, signer, signer.getAddress()), 30_000);
+    expect(codeOf(e)).toBe("ORDER_PENDING");
+    expect((e as PerpError).structured.remediation).toMatch(/Do NOT resend/);
+  });
+
+  it("a deBridge status read that times out fails with TIMEOUT", async () => {
+    expect(codeOf(await afterDeadline(() => checkDebridgeStatus("0xorder")))).toBe("TIMEOUT");
   });
 });
