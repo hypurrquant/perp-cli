@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — venue requests that could hang forever
+
+- **HTTP requests that had no deadline now time out.** About 70 `fetch` calls had no timeout, so a venue that stopped answering hung the CLI, `perp-mcp` or a bot indefinitely. They now go through one shared helper (`src/http.ts`, `fetchWithTimeout`, default 15 s — the GRVT / TxFlow / Lighter `sendTx` value). Covered: Aster signed and public REST (orders, cancels, spot), Hyperliquid `/info` reads, Lighter and Pacifica REST reads, the shared public fetchers, bridge-engine (Circle, deBridge, and the HyperCore → EVM withdrawal POST at 30 s, the Hyperliquid exchange value), the MCP order-book tool, `perp health` pings, arb-auto book reads and `wallet agent verify` / `import` reads. A timed-out read fails with `TIMEOUT`. A timed-out write (order, cancel, withdrawal) is `ORDER_PENDING` — the outcome is unknown, do NOT resubmit — never a rejection, and nothing is retried. Agent approve / revoke, builder-fee approval, relayer deposits, Lighter ChangePubKey, notifications and the WS library are not covered yet.
+
 ### Fixed — the shared cache stopped working once its directory was removed
 
 - **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).
