@@ -3,7 +3,7 @@
  * `./~/.perp` in the CWD (path.resolve does not expand "~"; SSOT Rule #2).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PerpError } from "../errors.js";
@@ -64,6 +64,42 @@ describe("perpPath / owsPath", () => {
     delete process.env.HOME;
     process.env.USERPROFILE = saved.HOME;
     expect(caught(() => perpDir())).toBeInstanceOf(PerpError);
+  });
+});
+
+describe("assertNoLegacyCwdPerpDir: state left in <cwd>/~/.perp by HOME-less runs", () => {
+  let cwd: string;
+  const prevCwd = process.cwd();
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "perp-paths-legacy-"));
+    process.chdir(cwd);
+  });
+
+  afterEach(() => {
+    process.chdir(prevCwd);
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("refuses with a remediation naming the legacy and the current directory", async () => {
+    const { assertNoLegacyCwdPerpDir } = await import("../paths.js");
+    mkdirSync(join(cwd, "~", ".perp"), { recursive: true });
+    const err = caught(() => assertNoLegacyCwdPerpDir());
+    expect(err).toBeInstanceOf(PerpError);
+    const remediation = (err as PerpError).structured.remediation ?? "";
+    expect(remediation).toContain(join(realpathSync(cwd), "~", ".perp"));
+    expect(remediation).toContain(join(saved.HOME!, ".perp"));
+  });
+
+  it("passes when there is no ./~/.perp (normal users)", async () => {
+    const { assertNoLegacyCwdPerpDir } = await import("../paths.js");
+    expect(caught(() => assertNoLegacyCwdPerpDir())).toBeNull();
+  });
+
+  it("passes once the legacy directory was renamed (the documented dismissal)", async () => {
+    const { assertNoLegacyCwdPerpDir } = await import("../paths.js");
+    mkdirSync(join(cwd, "~", ".perp.migrated"), { recursive: true });
+    expect(caught(() => assertNoLegacyCwdPerpDir())).toBeNull();
   });
 });
 

@@ -21,7 +21,7 @@ import { listVenues } from "./exchanges/venue.js";
 import { optionsVenueWords } from "./exchanges/options-venues.js";
 import { PerpError } from "./errors.js";
 import { loadSettings } from "./settings.js";
-import { perpPath } from "./paths.js";
+import { assertNoLegacyCwdPerpDir, homeDirOrNull, perpPath } from "./paths.js";
 import { jsonError, jsonOk, printCliError, printJson } from "./utils.js";
 import { LANDING_EXCHANGES, asterAgentMissing as getAsterAgentMissing, renderLandingExchangeLine, type LandingExchangeStatus } from "./landing.js";
 import { buildProgram, landingData, numericNetworkFlagError } from "./cli-program.js";
@@ -30,9 +30,10 @@ const _require = createRequire(import.meta.url);
 const _pkg = _require("../package.json") as { version: string };
 
 // Resolve default exchange from settings (fallback: "pacifica").
-// A malformed settings.json or an unset HOME is a hard stop (SSOT Rule #2): report it cleanly and exit.
+// A malformed settings.json, an unset HOME or a legacy ./~/.perp is a hard stop (SSOT Rule #2): report it cleanly and exit.
 function loadStartupSettings(): ReturnType<typeof loadSettings> {
   try {
+    assertNoLegacyCwdPerpDir();
     config({ path: perpPath(".env") });
     return loadSettings();
   } catch (err) {
@@ -47,8 +48,10 @@ function loadStartupSettings(): ReturnType<typeof loadSettings> {
     process.exit(1);
   }
 }
-const _settings = loadStartupSettings();
-const _defaultExchange = _settings.defaultExchange || "pacifica";
+// --help / --version read no state: with no HOME they still work (help shows the shipped default exchange).
+const _infoOnly = process.argv.slice(2).some((a) => a === "-h" || a === "--help" || a === "-V" || a === "--version");
+const _settings = _infoOnly && homeDirOrNull() === null ? null : loadStartupSettings();
+const _defaultExchange = _settings?.defaultExchange || "pacifica";
 
 const { program, getAdapterForExchange, isJson } = buildProgram({ defaultExchange: _defaultExchange, version: _pkg.version });
 
