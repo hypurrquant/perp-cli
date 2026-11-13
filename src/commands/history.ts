@@ -769,6 +769,9 @@ function registerAnalyticsSubcommands(
       const exchangeFilter = cliExchangeFilter(parent);
       await withJsonErrors(isJson(), async () => {
         const since = parseSince(opts.since);
+        // The venue reads (fees, funding) cover the same period as the execution log.
+        const sinceMs = since ? Date.parse(since) : 0;
+        if (Number.isNaN(sinceMs)) throw new Error(`invalid --since "${opts.since}" (use 24h, 7d, 30d or an ISO date)`);
         const stats = getExecutionStats(since);
         const records = readExecutionLog({ since });
 
@@ -790,6 +793,8 @@ function registerAnalyticsSubcommands(
         const symbolSet = new Set<string>();
         // A venue whose read failed is reported here and left out of the totals — never counted as 0.
         const errors: Record<string, string> = {};
+        // A history not proven to cover the period: summed, but a lower bound (partial stays for read failures).
+        const incomplete: Record<string, string> = {};
         const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
         let venuesRead = 0;
 
@@ -811,15 +816,17 @@ function registerAnalyticsSubcommands(
               errors[`${ex}.balance`] = errText(e);
               return;
             }
-            const [trades, funding] = await Promise.allSettled([adapter.getTradeHistory(50), adapter.getFundingPayments(50)]);
+            const [trades, funding] = await Promise.allSettled([tradesInWindow(adapter, sinceMs, 50), fundingPaymentsInWindow(adapter, sinceMs, 50)]);
             if (trades.status === "fulfilled") {
-              for (const t of trades.value) {
+              if (!trades.value.complete) incomplete[`${ex}.trades`] = coverageNote("trades", trades.value.from);
+              for (const t of trades.value.rows) {
                 totalFees += Number(t.fee);
                 symbolSet.add(t.symbol);
               }
             } else errors[`${ex}.trades`] = errText(trades.reason);
             if (funding.status === "fulfilled") {
-              for (const f of funding.value) totalFunding += Number(f.payment);
+              if (!funding.value.complete) incomplete[`${ex}.funding`] = coverageNote("funding", funding.value.from);
+              for (const f of funding.value.rows) totalFunding += Number(f.payment);
             } else errors[`${ex}.funding`] = errText(funding.reason);
           }),
         );
@@ -850,6 +857,7 @@ function registerAnalyticsSubcommands(
               : "0",
           },
           errors,
+          incomplete,
           // partial: some venue read failed — portfolio / costs cover only the venues that answered.
           partial: Object.keys(errors).length > 0,
           venuesRead,
@@ -874,6 +882,7 @@ function registerAnalyticsSubcommands(
         console.log(`    Funding Income:  ${formatPnl(totalFunding)}`);
         console.log(`    Net:             ${formatPnl(totalFunding - totalFees)}`);
         for (const [k, msg] of Object.entries(errors)) console.log(chalk.yellow(`    ⚠ ${k} unavailable (left out of the totals): ${msg}`));
+        for (const [k, msg] of Object.entries(incomplete)) console.log(chalk.yellow(`    ⚠ ${k}: ${msg} — the totals are a lower bound`));
         console.log();
       });
     });

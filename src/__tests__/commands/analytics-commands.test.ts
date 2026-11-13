@@ -435,6 +435,38 @@ describe("analytics funding — failed venue reads are reported, never counted a
   });
 });
 
+describe("analytics report --since — the venue totals cover the period, or are labelled", () => {
+  function programWith(getAdapter: (ex: string) => Promise<ExchangeAdapter>) {
+    program = new Command();
+    addRootSafetyOptions(program);
+    program.option("--json", "JSON output");
+    registerHistoryCommands(program, () => program.opts().json ?? false, getAdapter);
+  }
+
+  it("--since 24h: funding older than 24 h is not counted", async () => {
+    const res = await run(["analytics", "report", "--since", "24h"]);
+    expect(res.data.costs.totalFunding).toBeCloseTo(3 * 5.5, 6); // the newest payment of each of 3 venues
+  });
+
+  it("--since 24h: fees of trades older than 24 h are not counted", async () => {
+    const res = await run(["analytics", "report", "--since", "24h"]);
+    expect(res.data.costs.totalFees).toBe(0);
+  });
+
+  it("--since 30d with a capped list reaching back 2 days: listed in incomplete with how far back", async () => {
+    programWith(async (ex) => ({ ...mockAdapter(ex), historyReach: undefined }));
+    const res = await run(["analytics", "report", "--since", "30d"]);
+    const back = `read back to ${new Date(now - 2 * day).toISOString()} only`;
+    expect(res.data.incomplete["hyperliquid.funding"]).toBe(`funding ${back}`);
+    expect(res.data.incomplete["hyperliquid.trades"]).toBe(`trades ${back}`);
+  });
+
+  it("an unparseable --since is refused, not read as a period", async () => {
+    const res = await run(["analytics", "report", "--since", "yesterday"]);
+    expect(res.ok).toBe(false);
+  });
+});
+
 describe("analytics compare — a funding history not proven to cover --period is labelled, never the total", () => {
   function programWith(getAdapter: (ex: string) => Promise<ExchangeAdapter>) {
     program = new Command();

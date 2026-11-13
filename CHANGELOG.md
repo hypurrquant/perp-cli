@@ -12,6 +12,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **`history pnl` and `history funding` label it too.** With `--period` they read the same way, summed `--limit` rows before; new `incomplete` map (`"<venue>.funding"` / `"<venue>.trades"`) and a warning line; `partial` keeps its meaning (a venue read failed). `--limit` now applies only to venues without a period read.
 - **`portfolio` `totals.funding24h` is null when no venue's funding was read** (it was 0, which reads as a known zero). See "JSON contract changes".
 - **`history compare --period` reads the period too.** It summed `getFundingPayments(--limit)` filtered to the period with no label, so a capped list was shown as the period's funding. It now reads like MCP `get_arb_compare`; new `incomplete` map (`"<venue>.funding"`) and a warning line. See "JSON contract changes".
+- **`history report --since` totals cover the period.** `costs.totalFees` / `totalFunding` summed the newest 50 trades and 50 funding payments with no time filter, under `period: "24h"`: a 24 h report counted fees and funding from weeks back. They now read the period (`tradesInWindow` / `fundingPaymentsInWindow`, 50 rows on venues without a period read); new `incomplete` map (`"<venue>.trades"` / `"<venue>.funding"`) and a warning line. An unparseable `--since` (not `<n>h|d|w` or a date) is now an error instead of an empty period. See "JSON contract changes".
 
 ### Fixed — the shared cache stopped working once its directory was removed
 
@@ -29,6 +30,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 - **`portfolio` `totals.funding24h` is `number | null`** (was always a number): null when no venue's funding was read, and `totals.fundingIncomplete` is then true; the `--serve` envelope, which reads nothing, carries null too. Read it as unknown, not 0.
 - **`history compare` gains `incomplete`** (`Record<string, string>`, `"<venue>.funding"` → how far back the read reaches). A listed venue's `funding` / `totals.funding` is a lower bound. Migration: treat a non-empty `incomplete` like `partial` before relying on the funding totals.
+- **`history report` gains `incomplete`** (same shape, `"<venue>.trades"` / `"<venue>.funding"`), and `costs.totalFees` / `totalFunding` / `netFunding` now cover `period` only (they summed the newest 50 rows whatever the period). Migration: expect smaller totals for a short `--since`; a non-empty `incomplete` means the listed venue's part is a lower bound.
 
 ## [0.17.0] — 2026-10-28
 
