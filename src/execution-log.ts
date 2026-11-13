@@ -42,7 +42,7 @@ export function logExecution(record: Omit<ExecutionRecord, "id" | "timestamp">):
     ensureDir();
     appendFileSync(logFile(), JSON.stringify(full) + "\n", { mode: 0o600 });
   } catch (e) {
-    process.stderr.write(`[perp] Warning: could not write the execution log (~/.perp/executions.jsonl): ${e instanceof Error ? e.message : String(e)} — the ${record.type} on ${record.exchange} was recorded as "${record.status}" in memory only\n`);
+    process.stderr.write(`[perp] Warning: could not write the execution log ($HOME/.perp/executions.jsonl): ${e instanceof Error ? e.message : String(e)} — the ${record.type} on ${record.exchange} was recorded as "${record.status}" in memory only\n`);
   }
   return full;
 }

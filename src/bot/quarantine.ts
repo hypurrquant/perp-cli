@@ -161,7 +161,7 @@ export function quarantineSymbol(
     });
   } catch (e) {
     unpersisted.set(k, entry);
-    log(`  [QUARANTINE] CRITICAL: could not persist quarantine to ~/.perp/bot-quarantine.json (${e instanceof Error ? e.message : String(e)}) — it holds only until this process stops`);
+    log(`  [QUARANTINE] CRITICAL: could not persist quarantine to $HOME/.perp/bot-quarantine.json (${e instanceof Error ? e.message : String(e)}) — it holds only until this process stops`);
   }
 }
 
@@ -180,7 +180,7 @@ export function quarantineEntryFor(symbol: string, log: (msg: string) => void): 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     log(`  [QUARANTINE] CRITICAL: ${msg} — treating ${sym} as quarantined`);
-    return { strategy: "quarantine-file", symbol: sym, reason: msg, remediation: "Fix or remove ~/.perp/bot-quarantine.json", time: new Date().toISOString(), network: activeNetwork };
+    return { strategy: "quarantine-file", symbol: sym, reason: msg, remediation: "Fix or remove $HOME/.perp/bot-quarantine.json", time: new Date().toISOString(), network: activeNetwork };
   }
 }
 

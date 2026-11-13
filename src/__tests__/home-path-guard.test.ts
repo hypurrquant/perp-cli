@@ -39,8 +39,12 @@ describe("home directory resolution lives only in src/paths.ts", () => {
     expect(offenders(/HOME["'\]]*\s*(\|\||\?\?)\s*["']~["']/)).toEqual([]);
   });
 
-  it("no direct process.env.HOME read outside src/paths.ts", () => {
-    expect(offenders(/process\.env(\.HOME\b|\[\s*["']HOME["']\s*\])/)).toEqual([]);
+  it("no direct process.env.HOME read (incl. `const { HOME } = process.env`) outside src/paths.ts", () => {
+    expect(offenders(/process\.env(\.HOME\b|\[\s*["']HOME["']\s*\])|\{[^}]*\bHOME\b[^}]*\}\s*=\s*process\.env\b/)).toEqual([]);
+  });
+
+  it('no literal "~" path segment before ".perp" / ".ows" (path.resolve / join do not expand "~")', () => {
+    expect(offenders(/["'`]~["'`]\s*,\s*["'`]\.(perp|ows)["'`]/)).toEqual([]);
   });
 
   it("no os.homedir() call outside src/paths.ts", () => {
