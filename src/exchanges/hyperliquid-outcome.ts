@@ -609,8 +609,7 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
 
   async getOpenOrders(): Promise<unknown[]> {
     await this.init();
-    const orders = await this._hl.getOpenOrders();
-    return orders.filter((o) => typeof o.symbol === "string" && o.symbol.startsWith("#"));
+    return this._hl.getOutcomeOpenOrders();
   }
 
   // ── Private ──────────────────────────────────────────────────────────────

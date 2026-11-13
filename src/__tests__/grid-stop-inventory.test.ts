@@ -31,7 +31,8 @@ describe("settleGridInventory", () => {
   it("--close-on-stop closes only the grid's delta, reduce-only verified (pre-existing position untouched)", async () => {
     closePerpVerified.mockResolvedValue({ closed: 0.05, residual: 0, note: null });
     const inv = await settleGridInventory(adapter([{ symbol: "SOL", side: "long", size: "0.15" }]), "SOL", "0.10", true, vi.fn());
-    expect(closePerpVerified).toHaveBeenCalledWith(expect.anything(), "aster", "SOL", "sell", "0.05", { decimals: 2 });
+    // No printed-size decimals: closePerpVerified floors a partial close's residual to the market lot.
+    expect(closePerpVerified).toHaveBeenCalledWith(expect.anything(), "aster", "SOL", "sell", "0.05");
     expect(inv).toMatchObject({ gridDelta: "0.05", closed: "0.05", leftOpen: "0.00" });
   });
 

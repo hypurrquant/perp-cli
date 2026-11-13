@@ -3,7 +3,7 @@ import type { ExchangeAdapter } from "../../exchanges/index.js";
 import { registerStrategy } from "../strategy-registry.js";
 import { toHourlyRate, annualizeHourlyRate } from "../../funding/normalize.js";
 import { isQuarantined, quarantineSymbol } from "../quarantine.js";
-import { closePerpVerified, isOutcomeUnknown, placePerpVerified, trimFirstLegToHedge, type PerpCloseResult } from "../perp-order.js";
+import { closePerpVerified, closeSizeText, isOutcomeUnknown, placePerpVerified, trimFirstLegToHedge, type PerpCloseResult } from "../perp-order.js";
 import { fillSizeString, sizeDecimalsOf } from "../../exchanges/spot-result.js";
 import { PerpError } from "../../errors.js";
 import { assertFundingArbLegs } from "./funding-arb-utils.js";
@@ -653,9 +653,9 @@ class FundingAutoStrategy implements Strategy {
       }
       ctx.log(`[funding-auto] Perp-perp entry failed ${opp.symbol} (short leg): ${msg} — rolling back the long (reduce-only)`);
       try {
-        const rb = await closePerpVerified(longAdapter, opp.longExchange, opp.symbol, "sell", longOpen, { decimals: dec });
+        const rb = await closePerpVerified(longAdapter, opp.longExchange, opp.symbol, "sell", longOpen);
         if (rb.residual > 0) {
-          this.quarantine(ctx, opp, `entry short failed (${msg}); the long rollback closed ${fillSizeString(rb.closed, dec)} of ${longOpen}, ${fillSizeString(rb.residual, dec)} still open${rb.note !== null ? ` (${rb.note})` : ""} — orphaned long on ${opp.longExchange}`);
+          this.quarantine(ctx, opp, `entry short failed (${msg}); the long rollback closed ${closeSizeText(rb.closed)} of ${longOpen}, ${closeSizeText(rb.residual)} still open${rb.note !== null ? ` (${rb.note})` : ""} — orphaned long on ${opp.longExchange}`);
           return false;
         }
         ctx.log(`[funding-auto] Rollback OK: closed long ${longOpen} ${opp.symbol} on ${opp.longExchange}`);
@@ -665,7 +665,7 @@ class FundingAutoStrategy implements Strategy {
       return false;
     }
     try {
-      const trimmed = await trimFirstLegToHedge(longAdapter, opp.longExchange, opp.symbol, "buy", longFilled, shortFilled, dec);
+      const trimmed = await trimFirstLegToHedge(longAdapter, opp.longExchange, opp.symbol, "buy", longFilled, shortFilled);
       if (trimmed !== "0") ctx.log(`[funding-auto] Short filled ${fillSizeString(shortFilled, dec)} of ${longOpen} — trimmed long by ${trimmed} (reduce-only)`);
     } catch (trimErr) {
       this.quarantine(ctx, opp, `entry short filled ${fillSizeString(shortFilled, dec)} of ${longOpen}; trimming the long's excess on ${opp.longExchange} failed or is unconfirmed (${errText(trimErr)})`);

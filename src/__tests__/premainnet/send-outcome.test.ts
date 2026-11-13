@@ -157,6 +157,21 @@ describe("Lighter /sendTx (perp + spot share lighterPostSendTx) — M7", () => {
     expect(lighterSendTxCodeIsDefinite(undefined)).toBe(false);
   });
 
+  // docs.lighter.xyz data-structures-constants-and-errors — these were ORDER_PENDING (outcome unknown).
+  it.each([
+    [52001, "Unauthorized use of the API, contact our team if you think you got this in error."],
+    [52002, "You've reached the limit of Standard trading and can now only close or reduce positions."],
+    [62007, "maker-only api key can only send 0ms delay transactions"],
+  ])("account-level refusal %i is a definite rejection (ORDER_REJECTED), never ORDER_PENDING", async (code, message) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply(200, JSON.stringify({ code, message }))));
+    expect(codeOf(await caught(send()))).toBe("ORDER_REJECTED");
+  });
+
+  it.each([[21507, "maintenance"], [21508, "initial"]])("%i (below %s margin) → MARGIN_INSUFFICIENT", async (code, which) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply(200, JSON.stringify({ code, message: `account is below ${which} margin, can't execute transaction` }))));
+    expect(codeOf(await caught(send()))).toBe("MARGIN_INSUFFICIENT");
+  });
+
   it("documented validation codes are definite: ORDER_REJECTED / ACTION_REJECTED / balance", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply(400, "{\"code\":21104,\"message\":\"invalid nonce\"}")));
     expect(codeOf(await caught(send()))).toBe("ORDER_REJECTED");

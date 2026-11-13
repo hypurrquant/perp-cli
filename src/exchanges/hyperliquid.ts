@@ -267,6 +267,11 @@ export function hlIsSpotCoin(coin: string): boolean {
   return coin.startsWith("@") || coin.includes("/");
 }
 
+/** HL HIP-4 outcome coin names: "#<encoding>" (docs asset-ids; encoding = 10 × outcome + side). Not perps. */
+export function hlIsOutcomeCoin(coin: string): boolean {
+  return /^#\d+$/.test(coin);
+}
+
 /**
  * Destination of a withdraw3 / usdSend: a 20-byte hex address, sent lower-cased (the venue
  * hashes the string as signed; the official SDKs send lower-case). Anything else → INVALID_PARAMS.
@@ -1499,13 +1504,23 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * them. `type` = the venue orderType for a trigger order, else "limit".
    */
   async getOpenOrders(): Promise<ExchangeOrder[]> {
+    // Perp orders only. Without a dex, frontendOpenOrders also lists the account's SPOT orders
+    // (coin "@<index>" or "<BASE>/<QUOTE>") and HIP-4 OUTCOME orders ("#<encoding>"): they belong
+    // to the spot / outcome commands — a perp cancel-all / flatten must neither cancel nor be
+    // failed by them (an outcome coin has no perp asset index: SYMBOL_NOT_FOUND).
+    return this._frontendOpenOrders((coin) => !hlIsSpotCoin(coin) && !hlIsOutcomeCoin(coin));
+  }
+
+  /** The account's HIP-4 outcome orders (coin "#<encoding>") from frontendOpenOrders — the outcome commands' list. */
+  async getOutcomeOpenOrders(): Promise<ExchangeOrder[]> {
+    return this._frontendOpenOrders(hlIsOutcomeCoin);
+  }
+
+  private async _frontendOpenOrders(keep: (coin: string) => boolean): Promise<ExchangeOrder[]> {
     this.ensureAddress();
     const req: Record<string, unknown> = { type: "frontendOpenOrders", user: this._address };
     if (this._dex) req.dex = this._dex;
     const orders = await this._infoPost(req) as Record<string, unknown>[];
-    // Perp orders only. Without a dex, frontendOpenOrders also lists the account's SPOT orders
-    // (coin "@<index>" or "<BASE>/<QUOTE>"): they belong to the spot commands — a perp
-    // cancel-all / flatten must neither cancel nor be failed by a resting spot limit.
     if (!Array.isArray(orders)) {
       throw new PerpError("EXCHANGE_ERROR", "Hyperliquid frontendOpenOrders returned no array", { exchange: "hyperliquid", remediation: "Retry: perp -e hyperliquid account orders" });
     }
@@ -1517,7 +1532,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
         exchange: "hyperliquid", remediation: "Retry: perp -e hyperliquid account orders",
       });
     };
-    return orders.filter((o) => !hlIsSpotCoin(String(o.coin ?? ""))).map((o) => ({
+    return orders.filter((o) => keep(String(o.coin ?? ""))).map((o) => ({
       orderId: field(o, "oid"),
       symbol: this._dex ? String(o.coin ?? "") : this._displaySymbol(String(o.coin ?? "")),
       side: String(o.side) === "B" ? ("buy" as const) : String(o.side) === "A" ? ("sell" as const) : (String(o.side).toLowerCase() as "buy" | "sell"),

@@ -73,6 +73,19 @@ describe("enforceOrderRisk — manual-order risk gate", () => {
     expect(a.getMarkets).toHaveBeenCalledTimes(1);
   });
 
+  // Aster reports an unknown mark as "N/A" (positionRisk read failed): the NaN exposure passed every limit check.
+  it("an existing position whose notional cannot be computed (mark \"N/A\") → PRICE_STALE, the order is refused", async () => {
+    const a = mockAdapter({ getPositions: vi.fn().mockResolvedValue([{ symbol: "ETH", side: "long", size: "10", entryPrice: "2000", markPrice: "N/A", liquidationPrice: null, unrealizedPnl: "0", leverage: 5 }]) });
+    await expect(enforceOrderRisk(a, { symbol: "BTC", size: 0.1, price: 20000 })).rejects.toMatchObject({ structured: { code: "PRICE_STALE" } });
+  });
+
+  // RISEx publishes "0" for "no price" and passes it through as the position mark: Number("0") is
+  // finite, so a 100 BTC position counted as $0 exposure and passed maxTotalExposureUsd.
+  it("an existing position with mark \"0\" (no price) → PRICE_STALE, never $0 exposure", async () => {
+    const a = mockAdapter({ getPositions: vi.fn().mockResolvedValue([{ symbol: "BTC", side: "long", size: "100", entryPrice: "60000", markPrice: "0", liquidationPrice: null, unrealizedPnl: "0", leverage: 5 }]) });
+    await expect(enforceOrderRisk(a, { symbol: "BTC", size: 0.1, price: 20000 })).rejects.toMatchObject({ structured: { code: "PRICE_STALE" } });
+  });
+
   it("throws SYMBOL_NOT_FOUND when the symbol has no market to price against", async () => {
     const a = mockAdapter({ getMarkets: vi.fn().mockResolvedValue([]) });
     await expect(enforceOrderRisk(a, { symbol: "ZZZ", size: 1 }))

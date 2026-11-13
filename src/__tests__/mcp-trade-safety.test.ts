@@ -26,6 +26,8 @@ const createCtx: { network: string }[] = [];
 const fakeAdapter = {
   name: "hyperliquid",
   getPositions: vi.fn(async () => [] as unknown[]),
+  marketOrder: vi.fn(async () => ({})),
+  lotStepOf: () => "0.1", // HL-style lot step from the loaded meta
 };
 vi.mock("../config.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../config.js")>()),
@@ -153,6 +155,23 @@ describe("MCP trade_execute safety path", () => {
   it("invalid PERP_NETWORK → the server refuses to load (no silent mainnet)", async () => {
     await expect(loadServer("main")).rejects.toThrow(/Invalid network/);
     delete process.env["PERP_NETWORK"];
+  });
+});
+
+describe("MCP trade_close: verified close", () => {
+  it("a partial close's residual is floored to the market lot, not the decimals the size prints (10, 9.3 filled → closes 0.7)", async () => {
+    await loadServer(undefined);
+    let held = 10;
+    fakeAdapter.getPositions.mockImplementation(async () => held > 0 ? [{ symbol: "BTC", side: "long", size: String(held), entryPrice: "100", markPrice: "100", liquidationPrice: null, unrealizedPnl: "0", leverage: 1 }] : []);
+    placeAndConfirm.mockImplementation(async () => { held = 0.7; return placed(); }); // the venue fills 9.3 of 10
+    fakeAdapter.marketOrder.mockImplementation(async () => { held = 0; return {}; });
+    try {
+      const r = await tools.get("trade_close")!({ exchange: "hyperliquid", symbol: "BTC" });
+      expect(fakeAdapter.marketOrder).toHaveBeenCalledWith("BTC", "sell", "0.7", expect.objectContaining({ reduceOnly: true }));
+      expect(parse(r).data).toMatchObject({ closed: true, closedSize: "10", residual: "0" });
+    } finally {
+      fakeAdapter.getPositions.mockImplementation(async () => []);
+    }
   });
 });
 

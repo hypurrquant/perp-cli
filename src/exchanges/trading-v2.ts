@@ -342,3 +342,22 @@ export async function placeAndConfirm(adapter: TradingV2, caps: VenueCapabilitie
   }
   return { ...result, remediation: null };
 }
+
+/**
+ * The legacy `cancelAllOrders` contract of the Hyperliquid / Lighter / Pacifica adapters, applied
+ * to a TradingV2 cancelAllV2 result: it resolves only when no cancel failed or is unproven. Any
+ * other result is ONE error carrying the per-order outcome — the legacy callers (bot engine,
+ * grid, plan `cancel_all`) treat only a throw as a failure. Some cancelled → ORDER_PARTIAL; none,
+ * every failure a venue refusal → ORDER_REJECTED; none, a cancel unproven → ORDER_PENDING.
+ */
+export function requireAllCancelled(r: CancelResult): CancelResult {
+  const pending = r.pending ?? [];
+  if (r.failed.length === 0 && pending.length === 0) return r;
+  const code = r.cancelled.length > 0 ? "ORDER_PARTIAL" : pending.length === 0 ? "ORDER_REJECTED" : "ORDER_PENDING";
+  const refText = (ref: OrderRef | null) => (ref === null ? "(market)" : ref.kind === "clientOrderId" ? `c:${ref.value}` : ref.value);
+  const outcomes = [...r.failed.map(f => `${refText(f.ref)} failed (${f.error})`), ...pending.map(p => `${refText(p.ref)} unproven (${p.reason})`)];
+  throw new PerpError(code, `${r.venue} cancel-all: ${r.cancelled.length} of ${r.cancelled.length + r.failed.length + pending.length} order(s) cancelled; ${outcomes.join("; ")}`, {
+    exchange: r.venue, cancelled: r.cancelled, failed: r.failed, pending,
+    remediation: `Check which orders are still open (perp account orders -e ${r.venue}) and cancel the remaining ones individually`,
+  });
+}

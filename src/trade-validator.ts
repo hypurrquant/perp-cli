@@ -229,8 +229,19 @@ export async function validateTrade(
         warnings.push(`${v.rule}: ${v.message}`);
       }
     }
-  } catch {
-    checks.push({ check: "risk_limits", passed: true, message: "Risk check skipped (no limits configured)" });
+  } catch (e) {
+    if (e instanceof PerpError && e.structured.code === "PRICE_STALE") {
+      // An open position's notional is unknown: the order gate (enforceOrderRisk) refuses an
+      // opening order and exempts a reduce-only one — report the same, never "skipped".
+      if (params.reduceOnly) {
+        checks.push({ check: "risk_limits", passed: true, message: "Risk limits not checked (reduce-only order)", details: { code: "PRICE_STALE" } });
+        warnings.push(`risk_limits: ${e.message}`);
+      } else {
+        checks.push({ check: "risk_limits", passed: false, message: `Risk check failed: ${e.message}`, details: { code: "PRICE_STALE" } });
+      }
+    } else {
+      checks.push({ check: "risk_limits", passed: true, message: "Risk check skipped (no limits configured)" });
+    }
   }
 
   // 6. Position check (for reduce-only)

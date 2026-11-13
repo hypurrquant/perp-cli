@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { resolve } from "path";
 import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "./exchanges/index.js";
+import { PerpError } from "./errors.js";
 
 // ── Risk Configuration ──
 
@@ -162,8 +163,17 @@ export function assessRisk(
   let totalExposure = 0;
   let largestPositionUsd = 0;
   let maxLeverageUsed = 0;
-  for (const { position: p } of positions) {
+  for (const { exchange, position: p } of positions) {
     const notional = Math.abs(Number(p.size) * Number(p.markPrice));
+    // Rule #2: an unknown mark (Aster "N/A" when its positionRisk read failed) is no exposure: NaN
+    // fails every "> limit" comparison and would pass the order gate. A mark of "0", "" or null
+    // (RISEx "0" = none; QFEX / Ondo / Arcus pass the venue mark through) is finite but no price:
+    // the position would count as $0 exposure. Fail closed on both.
+    if (!Number.isFinite(notional) || (Number(p.size) !== 0 && !(Number(p.markPrice) > 0))) {
+      throw new PerpError("PRICE_STALE", `${exchange} ${p.symbol} position notional unknown (size ${p.size}, mark ${p.markPrice}) — cannot check the risk limits`, {
+        exchange, remediation: `Retry when ${exchange} reports the ${p.symbol} mark price; an order can skip the local risk check with --force`,
+      });
+    }
     totalExposure += notional;
     if (notional > largestPositionUsd) largestPositionUsd = notional;
     const lev = Number(p.leverage) || 0;

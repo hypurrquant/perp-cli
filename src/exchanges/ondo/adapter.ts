@@ -47,7 +47,7 @@ import type {
 import type { ResolvedSlippage } from "../slippage.js";
 import { alignProtectionPrice, floorSize, formatComputedPrice, requireOnTick, slippagePrice, subDecimal } from "../precision.js";
 import type { TradingV2 } from "../trading-v2.js";
-import { unsupported, validateLegacyTif, validateOrderRequest } from "../trading-v2.js";
+import { requireAllCancelled, unsupported, validateLegacyTif, validateOrderRequest } from "../trading-v2.js";
 import type { VenueCapabilities, VenueCreateContext, VenueDefinition } from "../venue.js";
 import { networkConfig, requireCapabilities } from "../venue.js";
 import type {
@@ -978,7 +978,7 @@ export class OndoAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   async cancelAllOrders(symbol?: string): Promise<CancelResult> {
-    return this.cancelAllV2(symbol === undefined ? null : symbol);
+    return requireAllCancelled(await this.cancelAllV2(symbol === undefined ? null : symbol));
   }
 
   async setLeverage(symbol: string, leverage: number, marginMode?: "cross" | "isolated"): Promise<LeverageResult> {

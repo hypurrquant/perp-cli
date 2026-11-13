@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { ExchangeAdapter, ExchangeBalance } from "../exchanges/interface.js";
+import { PerpError } from "../errors.js";
 
 vi.mock("../cache.js", () => ({
   TTL_ACCOUNT: 1,
@@ -106,6 +107,22 @@ describe("dashboard live feeds — stale / error tracking", () => {
       expect(st.positions).toBeNull();
       expect(isFeedStale(st)).toBe(true);
       expect(stderrSpy.mock.calls.filter((c: unknown[]) => String(c[0]).includes("aster rest-poll failed")).length).toBe(1);
+    } finally {
+      mgr.close();
+    }
+  });
+
+  it("Lighter without an auth token (read-only / expired agent): the REST fallback keeps balance + positions, orders null", async () => {
+    stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const lighter = Object.assign(adapter("lighter", { getOpenOrders: async () => { throw new PerpError("NO_SIGNER_AVAILABLE", "This command requires a Lighter API key."); } }),
+      { _accountIndex: 7, network: { wsUrl: "wss://lighter.invalid/stream" } }); // no signer → no auth token → REST
+    const mgr = new WsFeedManager([{ name: "lighter", adapter: lighter }], { onUpdate: () => {} });
+    try {
+      await mgr.start();
+      await vi.waitFor(() => expect(mgr.getState("lighter")!.balance).toEqual(BAL));
+      const st = mgr.getState("lighter")!;
+      expect(st.positions).toEqual([]);
+      expect(st.orders).toBeNull();
     } finally {
       mgr.close();
     }

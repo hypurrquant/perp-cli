@@ -192,6 +192,20 @@ describe("LighterAdapter._resolveSigner / activeSignerTier — 3-tier priority",
     expect(() => resolveSigner(a)()).toThrow(/expired/i);
   });
 
+  // /accountActiveOrders needs the API key's auth token: an empty list let cancel-all / flatten exit 0 with orders live.
+  it("read-only (address, no API key): getOpenOrders refuses with NO_SIGNER_AVAILABLE, never an empty list", async () => {
+    const a = new LighterAdapter("", true);
+    a.setAddress("0x1111111111111111111111111111111111111111");
+    await expect(a.getOpenOrders()).rejects.toMatchObject({ structured: { code: "NO_SIGNER_AVAILABLE" } });
+  });
+
+  it("expired agent: getOpenOrders refuses with AGENT_EXPIRED, never an empty list", async () => {
+    const a = new LighterAdapter("", true);
+    a.setAddress("0x1111111111111111111111111111111111111111");
+    a.setAgentSigner(makeMeta(past), "deadbeef");
+    await expect(a.getOpenOrders()).rejects.toMatchObject({ structured: { code: "AGENT_EXPIRED" } });
+  });
+
   it("_resolveSigner throws NO_SIGNER_AVAILABLE when nothing is configured", () => {
     const a = new LighterAdapter("", true);
     expect(() => resolveSigner(a)()).toThrow(/No signing path/i);

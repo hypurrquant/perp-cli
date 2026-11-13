@@ -10,6 +10,7 @@ import { WebSocket as NodeWebSocket } from "ws";
 import type { ExchangeBalance, ExchangePosition, ExchangeOrder } from "../exchanges/index.js";
 import type { DashboardExchange } from "./server.js";
 import type { LighterAdapter } from "../exchanges/lighter.js";
+import { openOrdersForView } from "../exchanges/open-orders-view.js";
 
 /** Balance as the dashboard knows it: unrealizedPnl null = the venue feed does not report it / unknown. */
 export type DashboardBalance = Omit<ExchangeBalance, "unrealizedPnl"> & { unrealizedPnl: string | null };
@@ -179,11 +180,12 @@ abstract class ExchangeWsFeed {
         const [balance, positions, orders] = await Promise.all([
           adapter.getBalance(),
           adapter.getPositions(),
-          adapter.getOpenOrders(),
+          openOrdersForView(adapter),
         ]);
         this.state.balance = balance;
         this.state.positions = positions.filter(p => Number(p.size) !== 0);
-        this.state.orders = orders;
+        // null = unknown (read-only Lighter / expired agent; reported as unavailable), never a stale list.
+        this.state.orders = orders.orders;
         this.emitUpdate();
       } catch (e) {
         // Keep the last-read data but mark the feed stale (lastError) — never blank it to 0 / empty.

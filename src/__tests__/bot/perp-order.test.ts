@@ -4,7 +4,7 @@
  * position delta, else the measured delta (≥ 80%); anything unprovable is ORDER_PENDING.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { closePerpVerified, isOutcomeUnknown, placePerpVerified, rejectedLotSize, trimFirstLegToHedge } from "../../bot/perp-order.js";
+import { closePerpVerified, closeSizeText, isOutcomeUnknown, placePerpVerified, rejectedLotSize, trimFirstLegToHedge } from "../../bot/perp-order.js";
 import { PerpError } from "../../errors.js";
 import type { ExchangeAdapter } from "../../exchanges/interface.js";
 import { isPositionGone } from "../../bot/strategies/funding-arb-utils.js";
@@ -230,9 +230,9 @@ describe("closePerpVerified — residual handling", () => {
   it("partial first close → ONE reduce-only market close of the measured residual", async () => {
     let calls = 0;
     const v = venue({ net: 1, fill: (_s, q) => (++calls === 1 ? q * 0.85 : q) });
-    const r = await closePerpVerified(v.adapter, "hyperliquid", "BTC", "sell", "1", { slippage: SLIP, decimals: 4 });
+    const r = await closePerpVerified(v.adapter, "hyperliquid", "BTC", "sell", "1", { slippage: SLIP, stepSize: "0.0001" });
     expect(v.marketOrder).toHaveBeenCalledTimes(2);
-    expect(v.marketOrder).toHaveBeenNthCalledWith(2, "BTC", "sell", "0.1500", { // floored to `decimals` (fillSizeString)
+    expect(v.marketOrder).toHaveBeenNthCalledWith(2, "BTC", "sell", "0.15", { // floored to the lot (floorToStep)
       reduceOnly: true, slippage: SLIP });
     expect(r.residual).toBe(0);
     expect(r.closed).toBeCloseTo(1, 9);
@@ -242,10 +242,45 @@ describe("closePerpVerified — residual handling", () => {
     vi.useFakeTimers();
     let calls = 0;
     const v = venue({ net: 1, fill: (_s, q) => (++calls === 1 ? q * 0.85 : 0) });
-    const r = await settle(closePerpVerified(v.adapter, "hyperliquid", "BTC", "sell", "1", { slippage: SLIP, decimals: 4 }));
+    const r = await settle(closePerpVerified(v.adapter, "hyperliquid", "BTC", "sell", "1", { slippage: SLIP, stepSize: "0.0001" }));
     expect(v.marketOrder).toHaveBeenCalledTimes(2);
     expect(r.residual).toBeCloseTo(0.15, 9);
-    expect(r.note).toMatch(/residual close of 0\.1500 unconfirmed/);
+    expect(r.note).toMatch(/residual close of 0\.15 unconfirmed/);
+  });
+
+  it("a full close reads no market list (a market left out of it must not block the close)", async () => {
+    const v = venue({ net: 1 });
+    const getMarkets = vi.fn(async () => { throw new Error("markets down"); });
+    Object.assign(v.adapter, { getMarkets });
+    await expect(closePerpVerified(v.adapter, "hyperliquid", "BTC", "sell", "1", { slippage: SLIP })).resolves.toEqual({ closed: 1, residual: 0, note: null });
+    expect(getMarkets).not.toHaveBeenCalled();
+  });
+
+  it("lot step unknown after a partial close → the residual is reported (never floored away), no blind residual order", async () => {
+    const v = venue({ net: 10, fill: () => 9.3 });
+    Object.assign(v.adapter, { getMarkets: async () => [] });
+    const r = await closePerpVerified(v.adapter, "hyperliquid", "BTC", "sell", "10", { slippage: SLIP });
+    expect(r.residual).toBeCloseTo(0.7, 9);
+    expect(r.note).toMatch(/lot step unknown/);
+    expect(v.marketOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it("a non-decimal lot: the residual close is floored onto the lot grid (lot 0.5, 0.7 open → sends 0.5)", async () => {
+    let calls = 0;
+    const v = venue({ net: 10, fill: (_s, q) => (++calls === 1 ? 9.3 : q) });
+    Object.assign(v.adapter, { lotStepOf: () => "0.5" });
+    const r = await closePerpVerified(v.adapter, "hyperliquid", "BTC", "sell", "10", { slippage: SLIP });
+    expect(v.marketOrder).toHaveBeenNthCalledWith(2, "BTC", "sell", "0.5", { reduceOnly: true, slippage: SLIP });
+    expect(r.residual).toBe(0); // the 0.2 left is below one lot
+  });
+
+  it("measured sizes carry no float noise (8.700000000186 + 1.2 closed → 9.9, printed \"9.9\")", async () => {
+    let calls = 0;
+    const v = venue({ net: 10, fill: (_s, q) => (++calls === 1 ? 8.700000000186 : q) });
+    Object.assign(v.adapter, { lotStepOf: () => "0.1" });
+    const r = await closePerpVerified(v.adapter, "hyperliquid", "BTC", "sell", "10", { slippage: SLIP });
+    expect(r.closed).toBe(9.9);
+    expect(closeSizeText(r.closed)).toBe("9.9");
   });
 
   it("first close outcome unknown → ORDER_PENDING propagates (caller quarantines)", async () => {
@@ -259,14 +294,29 @@ describe("closePerpVerified — residual handling", () => {
 describe("trimFirstLegToHedge", () => {
   it("reduces the first leg by exactly this trade's excess, reduce-only", async () => {
     const v = venue({ net: 1 });
-    const excess = await trimFirstLegToHedge(v.adapter, "hyperliquid", "BTC", "buy", 1, 0.7, 4);
-    expect(excess).toBe("0.3000"); // floored to 4 decimals
-    expect(v.marketOrder).toHaveBeenCalledWith("BTC", "sell", "0.3000", { reduceOnly: true, slippage: expect.objectContaining({ bps: 50 }) });
+    Object.assign(v.adapter, { lotStepOf: () => "0.0001" });
+    const excess = await trimFirstLegToHedge(v.adapter, "hyperliquid", "BTC", "buy", 1, 0.7);
+    expect(excess).toBe("0.3"); // floored to the lot
+    expect(v.marketOrder).toHaveBeenCalledWith("BTC", "sell", "0.3", { reduceOnly: true, slippage: expect.objectContaining({ bps: 50 }) });
   });
 
   it("legs already matched → '0', nothing sent", async () => {
     const v = venue({ net: 1 });
-    await expect(trimFirstLegToHedge(v.adapter, "hyperliquid", "BTC", "buy", 1, 1, 4)).resolves.toBe("0");
+    await expect(trimFirstLegToHedge(v.adapter, "hyperliquid", "BTC", "buy", 1, 1)).resolves.toBe("0");
+    expect(v.marketOrder).not.toHaveBeenCalled();
+  });
+
+  it("the excess is floored to the market lot, not the decimals a size prints (10 vs 9.3 filled → trims 0.7)", async () => {
+    const v = venue({ net: 10 });
+    Object.assign(v.adapter, { lotStepOf: () => "0.1" });
+    await expect(trimFirstLegToHedge(v.adapter, "hyperliquid", "BTC", "buy", 10, 9.3)).resolves.toBe("0.7");
+    expect(v.marketOrder).toHaveBeenCalledWith("BTC", "sell", "0.7", expect.objectContaining({ reduceOnly: true }));
+  });
+
+  it("lot unknown with an excess → throws (the caller quarantines), nothing sent", async () => {
+    const v = venue({ net: 10 });
+    Object.assign(v.adapter, { getMarkets: async () => [] });
+    await expect(trimFirstLegToHedge(v.adapter, "hyperliquid", "BTC", "buy", 10, 9.3)).rejects.toThrow();
     expect(v.marketOrder).not.toHaveBeenCalled();
   });
 });

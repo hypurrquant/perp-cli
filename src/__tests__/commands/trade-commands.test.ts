@@ -4,6 +4,7 @@ import { addRootSafetyOptions } from "../../cli-flags.js";
 import { registerTradeCommands } from "../../commands/trade.js";
 import type { ExchangeAdapter } from "../../exchanges/interface.js";
 import { PerpError } from "../../errors.js";
+import { LighterAdapter } from "../../exchanges/lighter.js";
 
 // ── Mock dependencies to prevent file I/O ──
 
@@ -454,6 +455,14 @@ describe("trade cancel -- parameter correctness", () => {
 // 6. Cancel All Orders
 // ══════════════════════════════════════════════════════════════
 
+describe("trade cancel <symbol> on a HIP-3 dex", () => {
+  it("cancels the dex market's orders ('xyz:TSLA' for 'TSLA') — never '0 cancelled' reported as success", async () => {
+    const adapter = mockAdapter(liveVenue([], [openOrder("401", "xyz:TSLA")]));
+    await run(adapter, ["trade", "cancel", "TSLA"]);
+    expect(adapter.cancelOrder).toHaveBeenCalledWith("xyz:TSLA", "401");
+  });
+});
+
 describe("trade cancel-all", () => {
   // CHANGELOG: "flatten / cancel-all cancel through cancelAllV2" — one per-order cancel for each
   // order listed open (per-order proof), then a live re-list; the venue-wide cancelAllOrders()
@@ -490,6 +499,12 @@ describe("trade cancel-all", () => {
 
     expect(adapter.marketOrder).not.toHaveBeenCalled();
     expect(adapter.limitOrder).not.toHaveBeenCalled();
+  });
+
+  it("a read-only Lighter adapter (no API key) fails with NO_SIGNER_AVAILABLE — never 'no order cancelled'", async () => {
+    const lt = new LighterAdapter("", false);
+    lt.setAddress("0x1111111111111111111111111111111111111111");
+    await expect(run(lt, ["trade", "cancel-all"])).rejects.toMatchObject({ structured: { code: "NO_SIGNER_AVAILABLE" } });
   });
 });
 
@@ -604,6 +619,16 @@ describe("trade close -- side mapping", () => {
     await run(adapter, ["trade", "close", "sol"]);
 
     expect(adapter.marketOrder).toHaveBeenCalledWith("SOL", "sell", "100", closeOpts);
+  });
+
+  // HL / Lighter / Aster print a 10.0 position as "10": flooring the residual to 0 decimals made 0.7 → 0 (reported closed).
+  it("a partial close's residual is floored to the market lot, not the decimals the size prints (10, 9.3 filled → closes 0.7)", async () => {
+    const venue = liveVenue([{ symbol: "SOL", side: "long", size: "10", entryPrice: "150", markPrice: "150", liquidationPrice: null, unrealizedPnl: "0", leverage: 3 }]);
+    const fill = venue.marketOrder.getMockImplementation()!;
+    venue.marketOrder.mockImplementationOnce(async (s: string, side: "buy" | "sell") => fill(s, side, "9.3")); // the venue fills 9.3 of 10
+    const adapter = mockAdapter({ ...venue, getMarkets: vi.fn().mockResolvedValue([{ ...market("SOL"), sizeDecimals: 1, stepSize: "0.1" }]) });
+    await run(adapter, ["trade", "close", "sol"]);
+    expect(adapter.marketOrder).toHaveBeenNthCalledWith(2, "SOL", "sell", "0.7", closeOpts);
   });
 
   it("logs execution after closing", async () => {
@@ -768,6 +793,31 @@ describe("trade flatten -- cancel + close", () => {
         meta: expect.objectContaining({ action: "flatten", originalSide: "long" }),
       }),
     );
+  });
+});
+
+describe("trade flatten -- QFEX orphaned reduce-only orders", () => {
+  it("an orphan cancel that throws (the venue removed the stop itself) does not stop the next orphan's cancel", async () => {
+    let flat = false;
+    const cancelByRef = vi.fn(async (_s: string, ref: { kind: "orderId"; value: string }) => {
+      if (ref.value === "stop-1") throw new PerpError("ORDER_NOT_FOUND", "QFEX: no open order stop-1 on GOLD-USD");
+      return { venue: "qfex", cancelled: [ref], failed: [], pending: [], venueRaw: null };
+    });
+    const adapter = {
+      name: "qfex", placeOrder: vi.fn(), getOrderStatus: vi.fn(), getVenueMarkets: vi.fn(async () => []), cancelByRef,
+      getMarkets: vi.fn(async () => [market("GOLD")]),
+      cancelAllV2: vi.fn(async () => ({ venue: "qfex", cancelled: [], failed: [], pending: [], venueRaw: null })),
+      getPositions: vi.fn(async () => flat ? [] : [{ symbol: "GOLD", side: "long", size: "0.003", entryPrice: "4000", markPrice: "4000", liquidationPrice: null, unrealizedPnl: "0", leverage: 5 }]),
+      marketOrder: vi.fn(async () => { flat = true; return {}; }),
+      orphanedReduceOnlyOrders: vi.fn(async () => ["stop-1", "stop-2"].map(orderId => ({ symbol: "GOLD", orderId, type: "STOP_LOSS", side: "SELL", price: "3900", quantity: "0.003" }))),
+    } as unknown as ExchangeAdapter;
+    try {
+      await run(adapter, ["trade", "flatten"]);
+      expect(cancelByRef).toHaveBeenCalledWith("GOLD", { kind: "orderId", value: "stop-2" });
+      expect(process.exitCode).toBe(1); // stop-1 unproven → flatten incomplete (ORDER_PARTIAL with the close results)
+    } finally {
+      process.exitCode = undefined;
+    }
   });
 });
 
@@ -1309,6 +1359,19 @@ describe("scale-tp / scale-in — level sizing and outcome", () => {
     { symbol: "ETH", side: "long", size, entryPrice: "100", markPrice: "100", liquidationPrice: null, unrealizedPnl: "0", leverage: 5 },
   ]);
   const rejected = () => new PerpError("ORDER_REJECTED", "venue said no", { exchange: VENUE });
+
+  // parseFloat("x50") is NaN: `Math.abs(NaN - 100) > 0.01` is false, so the sum guard let it through.
+  it.each(["110:50,120:x50", "110:x50,120:50"])("scale-tp --levels %s (a percent that is no number) → INVALID_PARAMS, nothing sent", async (levels) => {
+    const adapter = mockAdapter({ ...longEth("1") });
+    await expect(run(adapter, ["trade", "scale-tp", "ETH", "--levels", levels])).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+    expect(adapter.limitOrder).not.toHaveBeenCalled();
+  });
+
+  it("scale-in --levels with a percent that is no number → INVALID_PARAMS, nothing sent", async () => {
+    const adapter = mockAdapter();
+    await expect(run(adapter, ["trade", "scale-in", "ETH", "buy", "--levels", "90:50,80:x50", "--size", "1"])).rejects.toMatchObject({ structured: { code: "INVALID_PARAMS" } });
+    expect(adapter.limitOrder).not.toHaveBeenCalled();
+  });
 
   it("floors every level to the lot and gives the remainder to the last (0.0041 split 50/50 → 0.002 + 0.0021)", async () => {
     const adapter = mockAdapter({ ...longEth("0.0041") });
