@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Security — dependency advisories (`pnpm audit --prod`: 18 → 5)
+
+- **Refreshed zod and corrected stale `pnpm.overrides` pins.** zod (direct) 4.3.6 → 4.6.7 (high advisory, fixed in >=4.6.6, inside `^4.3.6`). The overrides for `hono`, `@hono/node-server`, `fast-uri`, `qs` and `body-parser` pinned versions that were themselves still vulnerable; they now require hono >=4.13.16, @hono/node-server >=1.19.18, fast-uri >=3.1.9, qs >=6.16.1, body-parser >=2.4.0. No major bump, no new package. Remaining 5 (moderate): `@solana/web3.js` 1.x > jayson > uuid / stream-json (4, need a web3.js major migration) and one @hono/node-server advisory fixed only in 2.x.
+
 ### Fixed — the shared cache stopped working once its directory was removed
 
 - **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).
