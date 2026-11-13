@@ -343,6 +343,12 @@ describe("Aster trades: a full userTrades page (1000) proves nothing older than 
     expect(w).toMatchObject({ complete: false, from: NOW - 999 * 60_000 });
   });
 
+  it("a full page whose oldest fill is exactly at the window start: not complete (fills of that millisecond may be cut)", async () => {
+    const { ast } = asterAdapter([commission], q => fills(1500).slice(0, Math.min(Number(q.limit), 1000)));
+    const w = await tradesInWindow(ast, NOW - 999 * 60_000);
+    expect(w.complete).toBe(false);
+  });
+
   it("getTradeHistory(5000) asks userTrades for at most 1000 rows per symbol", async () => {
     const asked: string[] = [];
     const { ast } = asterAdapter([commission], q => { asked.push(q.limit); return []; });

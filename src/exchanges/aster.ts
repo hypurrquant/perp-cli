@@ -1132,13 +1132,15 @@ export class AsterAdapter implements ExchangeAdapter {
   /**
    * Trades since `startTime`, newest first, for period totals; `from` = the earliest time the rows
    * cover without a gap: the 7 days the symbol discovery and userTrades' default window prove, later
-   * when a symbol's answer is a full page (its older fills are unread: covered back to its oldest row).
+   * when a symbol's answer is a full page (its older fills are unread: covered back to its oldest row,
+   * not that millisecond itself — other fills of it may have been cut, so a window starting exactly
+   * there is not complete; the Hyperliquid getTradesSince rule).
    * Symbol discovery relies on COMMISSION income rows, so a zero-fee fill on a symbol with no open
    * position or order can be missed.
    */
   async getTradesSince(startTime: number): Promise<{ rows: ExchangeTrade[]; from: number }> {
     const { rows, from } = await this._userTradeRows(ASTER_USER_TRADES_MAX);
-    return { rows: rows.filter(t => t.time >= startTime).sort((a, b) => b.time - a.time), from };
+    return { rows: rows.filter(t => t.time >= startTime).sort((a, b) => b.time - a.time), from: from === startTime ? from + 1 : from };
   }
 
   /**
