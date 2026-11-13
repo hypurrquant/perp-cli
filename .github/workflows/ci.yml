@@ -18,7 +18,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [20, 22, 24]
+        node-version: [22, 24]
 
     steps:
       - uses: actions/checkout@v4
@@ -50,12 +50,26 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
-      - name: Integration tests (mainnet public read-only — non-fatal)
-        # Hits live HL/PAC/LT/Aster public APIs (market list, prices, funding).
-        # Marked continue-on-error: a single venue outage shouldn't block CI.
-        # Failure surfaces as a yellow check; investigate manually if persistent.
+      - name: Unit test coverage (report only, Node 24)
+        # Informational: prints the v8 coverage summary into the job summary.
+        # No threshold is enforced. Runs the unit suite a second time on one
+        # Node version only.
+        if: matrix.node-version == 24
+        run: |
+          pnpm test:coverage
+          {
+            echo '### Unit test coverage'
+            echo '```'
+            node -e "const t=require('./coverage/coverage-summary.json').total;for(const k of ['lines','statements','functions','branches'])console.log(k.padEnd(11),t[k].pct+'%','('+t[k].covered+'/'+t[k].total+')')"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dependency audit (prod, informational)
+        # Reports known advisories in production dependencies. Non-blocking:
+        # an advisory landing upstream should not fail unrelated PRs.
+        if: matrix.node-version == 24
         continue-on-error: true
-        run: pnpm test:integration
+        run: pnpm audit --prod
 
       - name: Package smoke test
         run: |

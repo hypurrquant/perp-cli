@@ -25,10 +25,10 @@ suite (§3) with an id, and the ones still open are listed in `KNOWN_FAILURES` (
 | 3 | **Cross-venue conformance suite** | `src/__tests__/conformance/` + `src/__tests__/fixtures/conformance/` | `pnpm test` (offline replay) | **Mandatory for every venue.** A registered venue is included automatically; it fails without a capability-table entry and a recorded fixture (§3). |
 | 4 | **CLI ⇄ MCP parity** | `conformance/cross.conformance.test.ts` | `pnpm test` | Any change to a read command or an MCP read tool (`get_markets`, `get_funding_rates`, `get_prices`, `health_check`). |
 | 5 | **WS library gates** | `src/__tests__/ws/**`, `conformance/ws.conformance.test.ts`, `scripts/ws-gate/release-gate.mjs` | `pnpm test`; the gate before a WS release | Any change under `src/ws/` (codecs, stream, transport). The release gate (bundle purity, tarball, consumer typecheck, Next build, live smoke) before publishing `perp-cli/ws` / `@hypurrquant/perp-ws`. |
-| 6 | **Opt-in live smoke** | the same conformance suite with `PERP_LIVE=1` (`pnpm test:conformance:live`); legacy `src/__tests__/integration/` (`pnpm test:integration`) | nightly workflow; locally on demand | Before re-recording fixtures; when a venue changes its API; nightly. Never part of `pnpm test`. Read-only public endpoints only. |
+| 6 | **Opt-in live smoke** | the same conformance suite with `PERP_LIVE=1` (`pnpm test:conformance:live`); legacy `src/__tests__/integration/` (`pnpm test:integration`) | nightly workflow (conformance only; `pnpm test:integration` is not run in CI); locally on demand | Before re-recording fixtures; when a venue changes its API; nightly. Never part of `pnpm test`. Read-only public endpoints only. |
 | 7 | **Pre-release live QA against the published tarball** | `scripts/release-qa/run.mjs` (`pnpm release-qa --version <v>`) | by the releaser; nightly against `latest` | **Required before every release is announced** (and for every `@hypurrquant/perp-ws` publish): install the published packages into a clean dir, run the read matrix (the conformance suite against the installed binary), the WS checks and the MCP checks. A failure not in `KNOWN_FAILURES` blocks the release announcement / requires a patch release. |
 
-`pnpm test` = layers 1–5 offline (no network). `ci.yml` runs it on Node 20 / 22 / 24.
+`pnpm test` = layers 1–5 offline (no network). `ci.yml` runs it on Node 22 / 24.
 
 ---
 
