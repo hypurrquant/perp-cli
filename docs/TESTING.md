@@ -28,7 +28,7 @@ suite (§3) with an id, and the ones still open are listed in `KNOWN_FAILURES` (
 | 6 | **Opt-in live smoke** | the same conformance suite with `PERP_LIVE=1` (`pnpm test:conformance:live`); legacy `src/__tests__/integration/` (`pnpm test:integration`) | nightly workflow (conformance only; `pnpm test:integration` is not run in CI); locally on demand | Before re-recording fixtures; when a venue changes its API; nightly. Never part of `pnpm test`. Read-only public endpoints only. |
 | 7 | **Pre-release live QA against the published tarball** | `scripts/release-qa/run.mjs` (`pnpm release-qa --version <v>`) | by the releaser; nightly against `latest` | **Required before every release is announced** (and for every `@hypurrquant/perp-ws` publish): install the published packages into a clean dir, run the read matrix (the conformance suite against the installed binary), the WS checks and the MCP checks. A failure not in `KNOWN_FAILURES` blocks the release announcement / requires a patch release. |
 
-`pnpm test` = layers 1–5 offline (no network). `ci.yml` runs it on Node 20 / 22 / 24.
+`pnpm test` = layers 1–5 offline (no network). `ci.yml` runs it on Node 22 / 24.
 
 ---
 
