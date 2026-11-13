@@ -35,7 +35,7 @@ export interface SpotBalance {
   held: string;
   entryNtl?: string;     // cost basis in USDC (HL only)
   /**
-   * true = this balance is the same money as the perp account (Pacifica USDC,
+   * true = this balance is the same money as the perp account (every Pacifica row,
    * HL unified). Aggregators must not add it on top of perp equity.
    */
   shared: boolean;

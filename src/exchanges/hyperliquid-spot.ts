@@ -12,7 +12,7 @@ import { HyperliquidOutcomeAdapter } from "./hyperliquid-outcome.js";
 import type { ResolvedSlippage } from "./slippage.js";
 import { PERP_TO_SPOT_MAP, SPOT_PERP_TOKEN_MAP } from "./spot-interface.js";
 import type { HyperliquidAdapter } from "./hyperliquid.js";
-import { type HlAbstractionMode, assertHlAppliedBps, hlIocOutcome, hlProtectionPrice, hlRequirePriceOnGrid, hlSizeStep, hlTif } from "./hyperliquid.js";
+import { type HlAbstractionMode, assertHlAppliedBps, hlIocOutcome, hlIsPortfolioCollateral, hlProtectionPrice, hlRequirePriceOnGrid, hlSizeStep, hlTif } from "./hyperliquid.js";
 import { floorSize } from "./precision.js";
 import { PerpError, isDefiniteOrderFailure, isTransportFailure, orderNotSent, orderOutcomeUnknown } from "../errors.js";
 import { invalidateCache } from "../cache.js";
@@ -26,17 +26,24 @@ function hlRoundSize(size: string, szDecimals: number): string {
  * Spot balances from info `spotClearinghouseState` — the one mapper behind the keyed spot adapter
  * and the keyless `account balance --address`. `shared` (already counted in the perp equity) follows
  * the account mode: unified → the USDC row; portfolio margin → USDC and every eligible collateral row
- * (the venue marks those with `ltv`); any other mode, or `null` (a HIP-3 dex scope / mode unknown) → none.
+ * (the venue marks those with `ltv`); any other mode, or `null` (mode unknown) → none.
+ * `dexCollateralToken` (a HIP-3 dex scope): the rows the dex's getBalance (hlBalanceOf) reports as
+ * equity — the dex collateral token's row when spot is the truth source (unified, dexAbstraction),
+ * plus every eligible collateral row under portfolio margin; standard / default → none.
  */
-export function hlSpotBalanceRows(state: Record<string, unknown>, mode: HlAbstractionMode | null): SpotBalance[] {
+export function hlSpotBalanceRows(state: Record<string, unknown>, mode: HlAbstractionMode | null, dexCollateralToken: number | null = null): SpotBalance[] {
   const balances = (state?.balances ?? []) as Record<string, unknown>[];
+  const sharedOnDex = (b: Record<string, unknown>, token: number): boolean => mode === "portfolio"
+    ? hlIsPortfolioCollateral(b, token)
+    : (mode === "unified" || mode === "dexAbstraction") && Number(b.token) === token;
   return balances.map((b) => ({
     token: String(b.coin ?? ""),
     total: String(b.total ?? "0"),
     available: String(Number(b.total ?? 0) - Number(b.hold ?? 0)),
     held: String(b.hold ?? "0"),
     entryNtl: b.entryNtl !== undefined ? String(b.entryNtl) : undefined,
-    shared: (mode === "unified" || mode === "portfolio") && String(b.coin ?? "") === "USDC"
+    shared: dexCollateralToken !== null ? sharedOnDex(b, dexCollateralToken)
+      : (mode === "unified" || mode === "portfolio") && String(b.coin ?? "") === "USDC"
       || mode === "portfolio" && Object.prototype.hasOwnProperty.call(b, "ltv"),
   }));
 }
@@ -224,8 +231,11 @@ export class HyperliquidSpotAdapter implements SpotAdapter, SpotHoldingPricesCap
     // in the funding-arb bot (and a misleading empty holdings table).
     // Reuse cached spot clearinghouse state (shared with getBalance() — saves 1 API call).
     const state = await this._hl._getSpotClearinghouseState({ fresh });
-    // HIP-3 dex-scoped adapters report dex equity, which never contains spot balances.
-    return hlSpotBalanceRows(state, this._hl.dex === "" ? this._hl.accountMode : null);
+    if (this._hl.dex === "") return hlSpotBalanceRows(state, this._hl.accountMode);
+    // HIP-3 dex scope: the dex getBalance reads the same mode + collateral token, and reports the
+    // spot collateral as the dex equity whenever spot is the truth source — mark those rows shared.
+    const [mode, token] = await Promise.all([this._hl._getAbstractionMode(), this._hl._getCollateralToken()]);
+    return hlSpotBalanceRows(state, mode, token);
   }
 
   async spotMarketOrder(symbol: string, side: "buy" | "sell", size: string, opts: { slippage: ResolvedSlippage }): Promise<unknown> {

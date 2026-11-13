@@ -4,6 +4,23 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — Lighter classic accounts counted the spot USDC twice
+
+- **On a Lighter / Lighter RH classic account the spot USDC (USDG) is no longer part of the perp `equity`, so `portfolio` counts it once.** A classic account keeps "perpetual and spot balances … separately" (docs unified-trading-accounts), and perp-cli lists that balance as a spot row (`shared: false`, moved with `trade spot-transfer`), but the balance also added it to `equity`: `portfolio` showed 2000 for perp 1000 + spot 500, and a multi-venue bot's equity counted it twice the same way. `equity` is now the venue's perp `total_asset_value`; the spot quote stays a spot row that `portfolio`, the landing page and bot equity add once. Unified accounts are unchanged (their quote is the perp margin, inside `total_asset_value`). The lower `equity` on classic accounts holding spot USDC is listed under "JSON contract changes" below.
+- **A Lighter account answer without an `assets` list is an error, not "no spot assets".** It read as an empty spot list, so a classic account's spot USDC could drop out of the `portfolio` totals unseen. The spot read now fails with `EXCHANGE_ERROR`, and `portfolio` reports a failed or timed-out spot read in the entry's new `spotError` field (it went to stderr only); the totals leave that venue's spot out.
+
+### Fixed — multi-venue bot equity counted shared spot rows twice
+
+- **A multi-venue bot's equity no longer adds spot rows that are already in a venue's equity.** It skipped only the quote asset of a unified account, so a Hyperliquid portfolio-margin collateral row (HYPE with `ltv`) or a HIP-3 dex collateral row was added on top of the equity that already holds it. Every row the spot adapter marks `shared` is now skipped.
+
+### Fixed — Pacifica spot holdings counted twice in portfolio totals
+
+- **`perp portfolio` (and the landing page total) no longer adds Pacifica spot tokens on top of the account equity.** Pacifica's `account_equity`, which perp-cli reports as the equity, is "Account balance + unrealized PnL + isolated margin + raw spot market value" (docs get-account-info): the spot holdings are already in it. The spot rows (SOL, …) were marked `shared: false` and added again — an account with equity 1400 holding 2 SOL at 200 showed 1800. Every Pacifica spot row is now `shared: true` (`portfolio`, `trade spot-balance`, `account balance --address` / MCP `get_balance_by_address` `spot[].shared`).
+
+### Fixed — HIP-3 dex portfolio counted unified spot collateral twice
+
+- **`perp -e hyperliquid --dex <d> portfolio` no longer adds the spot collateral on top of the dex equity.** On a unified / portfolio-margin account (and dexAbstraction with a dex whose collateral is not USDC) the dex balance reports the spot collateral row as the dex equity, but the dex-scoped spot rows were never marked `shared`, so `totalAccountValueUsd` / `totals.accountValueUsd` counted the same USDC twice (2000 for 1000 USDC). The dex spot rows now follow the same account mode and dex collateral token as the dex balance (`hlSpotBalanceRows`), and the portfolio totals (`spotValueUsd`, the text balance line) skip every `shared` row.
+
 ### Fixed — the shared cache stopped working once its directory was removed
 
 - **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).
@@ -15,6 +32,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 ### Fixed — Lighter / Lighter RH WebSocket refused in restricted regions
 
 - **Lighter WebSockets now connect read-only (`?readonly=true`).** The plain URL answered HTTP 400 to the nightly conformance's US runners on every run since 2026-10-27, while REST worked. There, `market list` / MCP `get_markets` / funding showed Lighter and Lighter RH with `fundingRate` and `fundingRateKind` null (stderr: "settled funding rate unavailable … Unexpected server response: 400"), and perp-ws Lighter streams reconnect-looped to `closed` with no event. docs.lighter.xyz/api/websocket gives the read-only URL for "a restricted region"; perp-cli only reads over WS (orders go through REST `/sendTx`), and the read-only socket serves the same channels and frames (side-by-side probe 2026-11-01). Affects the CLI funding reader, the `portfolio --serve` Lighter feed and the perp-ws `lighter` / `lighterRh` codecs (`codec.url()` now returns the read-only URL). Fixtures: the WS URL keys gain the query (frames unchanged).
+
+### JSON contract changes
+
+- **Lighter / Lighter RH classic accounts: `equity` no longer includes the spot USDC (USDG).** `portfolio` `exchanges[].perp.equity` (and `totals.equity`), MCP `get_balance` / `portfolio` `totalEquity`, `account balance --address` `accounts[].balance.equity`, `risk status` `totalEquity` and `history snapshot` `equity` are now the venue's perp `total_asset_value`. That USDC is counted once, as its own spot row (`spot[]`, `shared: false`; `portfolio` adds it to `totalAccountValueUsd` and `totals.spotValueUsd`). Unified accounts are unchanged. Migration: read `totalAccountValueUsd` for the whole account, or add the classic quote row's `total` to `equity` to rebuild the old figure; equity history recorded before this version includes the spot USDC, so expect a one-time step on such accounts.
+- **`spot[].shared` is `true` on more rows.** Every Pacifica spot row (`portfolio` `exchanges[].spot`, `trade spot-balance`, `account balance --address` / MCP `get_balance_by_address` `spot`), and on a Hyperliquid unified / portfolio-margin account (dexAbstraction with a non-USDC dex collateral) the HIP-3 dex-scoped spot rows that the dex balance reports as equity (`perp -e hyperliquid --dex <d> portfolio`). Migration: when adding `spot[]` values to `equity`, skip `shared` rows — they are already in it (`totalAccountValueUsd` does this).
 
 ## [0.17.0] — 2026-10-28
 
