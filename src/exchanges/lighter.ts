@@ -32,6 +32,7 @@ import { fetchAndCache, invalidateCache, setCached, withCache, TTL_ACCOUNT } fro
 import type { LighterVenueId } from "./venues/lighter-family.js";
 
 import { LighterWasmSigner, type LighterSignResult } from "./lighter-signer.js";
+import { fetchWithTimeout } from "../http.js";
 
 type WasmTxResponse = LighterSignResult;
 
@@ -984,7 +985,7 @@ export class LighterAdapter implements ExchangeAdapter {
       // not found"} (no `accounts`) → the adapter stays read-only; a rate limit or transport
       // failure propagates (it is never read as "no account").
       await this.rhRate("/account");
-      const res = await fetch(`${this._baseUrl}/api/v1/account?by=l1_address&value=${this._address}`);
+      const res = await fetchWithTimeout(`${this._baseUrl}/api/v1/account?by=l1_address&value=${this._address}`);
       const body = await res.text();
       if (res.status === 429) throw rateLimitedError(this.name, res.headers.get("retry-after"), body);
       const waf = lighterWafChallenge(this.name, res.status, body);
@@ -1295,7 +1296,7 @@ export class LighterAdapter implements ExchangeAdapter {
     url.searchParams.set("account_index", String(this._accountIndex));
     url.searchParams.set("client_order_indexes", clientOrderIndexes.join(","));
     await this.rhRate("/accountOrders");
-    const res = await fetch(url.toString(), { headers: { Authorization: auth } });
+    const res = await fetchWithTimeout(url.toString(), { headers: { Authorization: auth } });
     const text = await res.text();
     if (res.status === 429) throw rateLimitedError(this.name, res.headers.get("retry-after"), text);
     const waf = lighterWafChallenge(this.name, res.status, text);
@@ -2619,7 +2620,7 @@ export class LighterAdapter implements ExchangeAdapter {
    */
   async createIntentAddress(chainId: number): Promise<unknown> {
     await this.rhRate("createIntentAddress");
-    const res = await fetch(`${this._baseUrl}/api/v1/createIntentAddress`, {
+    const res = await fetchWithTimeout(`${this._baseUrl}/api/v1/createIntentAddress`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -2745,7 +2746,7 @@ export class LighterAdapter implements ExchangeAdapter {
     const url = new URL(`${this._baseUrl}/api/v1${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     await this.rhRate(path);
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString());
     if (!res.ok) {
       const text = await res.text();
       // apidocs.lighter.xyz/docs/rate-limits: a breached limit answers "HTTP 429".

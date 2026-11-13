@@ -20,6 +20,7 @@ import { alignProtectionPrice, floorSize, formatComputedPrice, requireOnTick, sl
 import { unsupported } from "./trading-v2.js";
 import { rateLimitedError } from "./rate-limiter.js";
 import { PerpError, orderNotSent, parsePositiveDecimal } from "../errors.js";
+import { fetchWithTimeout } from "../http.js";
 
 /** The row match (market + send time) _placeOrder attached to its result; absent → null (no extra match). */
 function lighterRowMatchOf(result: Record<string, unknown>): LighterRowMatch | null {
@@ -1000,7 +1001,7 @@ export class LighterSpotAdapter implements SpotAdapter {
     const url = new URL(`${baseUrl}/api/v1${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     await this._lt.rhRate(path);
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString());
     if (!res.ok) {
       const text = await res.text();
       // apidocs.lighter.xyz/docs/rate-limits: a breached limit answers "HTTP 429" (as LighterAdapter.restGet).

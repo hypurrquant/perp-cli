@@ -10,6 +10,8 @@ import { hangingFetch } from "./helpers/hanging-fetch.js";
 import { AsterAdapter } from "../exchanges/aster.js";
 import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
 import { fetchHyperliquidAllMidsRaw } from "../api/public/hyperliquid.js";
+import { LighterAdapter } from "../exchanges/lighter.js";
+import { fetchLighterFundingRatesRaw } from "../api/public/lighter.js";
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
@@ -62,5 +64,17 @@ describe("Hyperliquid /info reads", () => {
 
   it("a shared public read (allMids) that times out fails with TIMEOUT", async () => {
     expect(codeOf(await afterDeadline(() => fetchHyperliquidAllMidsRaw()))).toBe("TIMEOUT");
+  });
+});
+
+describe("Lighter REST reads", () => {
+  it("an adapter REST GET that times out fails with TIMEOUT", async () => {
+    const lt = Object.assign(Object.create(LighterAdapter.prototype), { _baseUrl: "https://lighter.test", rhRate: async () => {} }) as
+      { restGet(path: string, params: Record<string, string>): Promise<unknown> };
+    expect(codeOf(await afterDeadline(() => lt.restGet("/nextNonce", { account_index: "1" })))).toBe("TIMEOUT");
+  });
+
+  it("a shared public read (funding rates) that times out fails with TIMEOUT", async () => {
+    expect(codeOf(await afterDeadline(() => fetchLighterFundingRatesRaw()))).toBe("TIMEOUT");
   });
 });
