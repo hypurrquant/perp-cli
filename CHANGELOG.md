@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — a failed HIP-3 dex vanished from `--hip3` fan-outs
+
+- **`market list --hip3` and `account positions|orders --hip3` report a dex whose read failed** instead of dropping it as if it had no markets / positions (SSOT Rule #2): `meta.errors["hip3:<dex>"]` (`{ code, message }`) in the single-venue JSON, whose `data` keeps its shape (the venue's rows, or `{ main, hip3 }` when a dex has rows); `data.errors["hip3:<dex>"]` in the existing errors map of the all-venue view; a gray line in text output. The other dexes are kept.
+
 ### Fixed — the shared cache stopped working once its directory was removed
 
 - **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).
