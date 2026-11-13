@@ -8,7 +8,6 @@ import "./_stderr-filter.js";
 // Save original process.exit before any SDK (Go WASM) can patch it
 const _origExit = process.exit.bind(process);
 import { config } from "dotenv";
-import { resolve } from "path";
 import { createRequire } from "node:module";
 
 // SSOT Rule #3: load only ~/.perp/.env. The CWD .env auto-load was removed
@@ -16,12 +15,13 @@ import { createRequire } from "node:module";
 // containing leftover dev keys (`wallet show` returned env-derived addresses
 // instead of the OWS active wallet's). If you need ad-hoc env overrides,
 // export them in your shell — keystore is the canonical source.
-config({ path: resolve(process.env.HOME || "~", ".perp", ".env") });
+// Loaded in loadStartupSettings() below, so a missing HOME is reported like a bad settings.json.
 import chalk from "chalk";
 import { listVenues } from "./exchanges/venue.js";
 import { optionsVenueWords } from "./exchanges/options-venues.js";
 import { PerpError } from "./errors.js";
 import { loadSettings } from "./settings.js";
+import { assertNoLegacyCwdPerpDir, homeDirOrNull, perpPath } from "./paths.js";
 import { jsonError, jsonOk, printCliError, printJson } from "./utils.js";
 import { LANDING_EXCHANGES, asterAgentMissing as getAsterAgentMissing, renderLandingExchangeLine, type LandingExchangeStatus } from "./landing.js";
 import { buildProgram, landingData, numericNetworkFlagError } from "./cli-program.js";
@@ -30,9 +30,11 @@ const _require = createRequire(import.meta.url);
 const _pkg = _require("../package.json") as { version: string };
 
 // Resolve default exchange from settings (fallback: "pacifica").
-// A malformed settings.json is a hard stop (SSOT Rule #2): report it cleanly and exit.
+// A malformed settings.json, an unset HOME or a legacy ./~/.perp is a hard stop (SSOT Rule #2): report it cleanly and exit.
 function loadStartupSettings(): ReturnType<typeof loadSettings> {
   try {
+    assertNoLegacyCwdPerpDir();
+    config({ path: perpPath(".env") });
     return loadSettings();
   } catch (err) {
     const s = err instanceof PerpError ? err.structured : null;
@@ -46,8 +48,10 @@ function loadStartupSettings(): ReturnType<typeof loadSettings> {
     process.exit(1);
   }
 }
-const _settings = loadStartupSettings();
-const _defaultExchange = _settings.defaultExchange || "pacifica";
+// --help / --version read no state: with no HOME they still work (help shows the shipped default exchange).
+const _infoOnly = process.argv.slice(2).some((a) => a === "-h" || a === "--help" || a === "-V" || a === "--version");
+const _settings = _infoOnly && homeDirOrNull() === null ? null : loadStartupSettings();
+const _defaultExchange = _settings?.defaultExchange || "pacifica";
 
 const { program, getAdapterForExchange, isJson } = buildProgram({ defaultExchange: _defaultExchange, version: _pkg.version });
 

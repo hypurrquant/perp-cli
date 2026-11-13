@@ -1,5 +1,6 @@
 import { copyFileSync, constants as fsConstants, existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "fs";
 import { resolve } from "path";
+import { perpPath } from "../paths.js";
 import { PerpError } from "../errors.js";
 import { withFileLock } from "./file-lock.js";
 import type { Network } from "../exchanges/venue-types.js";
@@ -22,24 +23,22 @@ import type { Network } from "../exchanges/venue-types.js";
  * (adopt as mainnet, or move it to the testnet path). Nothing is ever dropped or copied
  * into both networks.
  */
-const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
-const STATE_FILE = resolve(PERP_DIR, "arb-state.json");
-
-// Allow overriding the (mainnet) state file path for testing; testnet derives from it.
-let stateFilePath = STATE_FILE;
+// Override of the (mainnet) state file path for testing (null = ~/.perp/arb-state.json); testnet derives from it.
+let stateFilePath: string | null = null;
 
 export function setStateFilePath(path: string): void {
   stateFilePath = path;
 }
 
 export function resetStateFilePath(): void {
-  stateFilePath = STATE_FILE;
+  stateFilePath = null;
 }
 
 /** Absolute state-file path for `network` (mainnet = the pre-network path). */
 export function arbStateFilePath(network: Network): string {
-  if (network === "mainnet") return stateFilePath;
-  return stateFilePath.endsWith(".json") ? `${stateFilePath.slice(0, -5)}.testnet.json` : `${stateFilePath}.testnet`;
+  const mainnet = stateFilePath ?? perpPath("arb-state.json");
+  if (network === "mainnet") return mainnet;
+  return mainnet.endsWith(".json") ? `${mainnet.slice(0, -5)}.testnet.json` : `${mainnet}.testnet`;
 }
 
 export interface ArbPositionState {

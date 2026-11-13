@@ -4,10 +4,9 @@ import { PerpError } from "./errors.js";
 import { parseBuilderSettings, type BuilderSettings } from "./exchanges/builder-fee.js";
 import { existsSync, readFileSync, mkdirSync } from "fs";
 import { writeKeystoreAtomic } from "./agent-wallet/venue-keystore.js";
-import { resolve } from "path";
+import { perpDir, perpPath } from "./paths.js";
 
-const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
-const SETTINGS_FILE = resolve(PERP_DIR, "settings.json");
+function settingsFile(): string { return perpPath("settings.json"); }
 
 export interface ExchangeFees {
   taker: number;  // fraction, e.g. 0.00035 = 0.035%
@@ -408,8 +407,8 @@ function freshDefaults(): Settings {
 }
 
 function invalidSettings(problem: string): PerpError {
-  return new PerpError("INVALID_PARAMS", `Invalid ${SETTINGS_FILE}: ${problem}`, {
-    remediation: `Fix the offending value in ${SETTINGS_FILE} (or move the file aside to start from defaults — it also holds agent registrations), then retry.`,
+  return new PerpError("INVALID_PARAMS", `Invalid ${settingsFile()}: ${problem}`, {
+    remediation: `Fix the offending value in ${settingsFile()} (or move the file aside to start from defaults — it also holds agent registrations), then retry.`,
   });
 }
 
@@ -437,10 +436,10 @@ function migrateLegacyPacificaBuilderCode(stored: Record<string, any>): void {
 
 export function loadSettings(): Settings {
   // A missing file is not a failure: the user has not configured anything yet.
-  if (!existsSync(SETTINGS_FILE)) return freshDefaults();
+  if (!existsSync(settingsFile())) return freshDefaults();
   let stored: any; // parsed JSON; validated field by field below
   try {
-    stored = JSON.parse(readFileSync(SETTINGS_FILE, "utf-8"));
+    stored = JSON.parse(readFileSync(settingsFile(), "utf-8"));
   } catch (e) {
     throw invalidSettings(`not valid JSON (${e instanceof Error ? e.message : String(e)})`);
   }
@@ -560,6 +559,6 @@ export function saveSettings(settings: Settings): void {
  * or full disk never leaves a truncated settings.json (which loadSettings would refuse).
  */
 function writeSettingsFile(contents: unknown): void {
-  if (!existsSync(PERP_DIR)) mkdirSync(PERP_DIR, { recursive: true, mode: 0o700 });
-  writeKeystoreAtomic(SETTINGS_FILE, JSON.stringify(contents, null, 2));
+  if (!existsSync(perpDir())) mkdirSync(perpDir(), { recursive: true, mode: 0o700 });
+  writeKeystoreAtomic(settingsFile(), JSON.stringify(contents, null, 2));
 }

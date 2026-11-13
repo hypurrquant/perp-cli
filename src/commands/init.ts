@@ -4,7 +4,7 @@ import chalk from "chalk";
 import { createInterface } from "node:readline/promises";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { writeKeystoreAtomic } from "../agent-wallet/venue-keystore.js";
-import { resolve } from "path";
+import { perpDir, perpPath } from "../paths.js";
 import { loadSettings, saveSettings, SHIPPED_DEFAULT_SLIPPAGE_BPS, type Settings } from "../settings.js";
 import { PerpError, classifyError, type StructuredError } from "../errors.js";
 import { jsonOk, jsonError, printJson } from "../utils.js";
@@ -27,8 +27,7 @@ import {
   type ImportAgentParams, type ImportSecret, type ImportVerification,
 } from "./agent-import.js";
 
-const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
-const ENV_FILE = resolve(PERP_DIR, ".env");
+function envFile(): string { return perpPath(".env"); }
 
 // ── .env helpers ──────────────────────────────────────────────
 //
@@ -36,15 +35,15 @@ const ENV_FILE = resolve(PERP_DIR, ".env");
 // master keys live in the OWS vault, agent keys in OWS / ~/.perp/<venue>-agents/).
 // `settings env` still uses these for existing legacy-key users (`wallet set` imports into OWS).
 
-export { ENV_FILE, loadEnvFile, setEnvVar };
+export { envFile, loadEnvFile, setEnvVar };
 
 function ensurePerpDir() {
-  if (!existsSync(PERP_DIR)) mkdirSync(PERP_DIR, { recursive: true, mode: 0o700 });
+  if (!existsSync(perpDir())) mkdirSync(perpDir(), { recursive: true, mode: 0o700 });
 }
 
 function loadEnvFile(): Record<string, string> {
-  if (!existsSync(ENV_FILE)) return {};
-  const lines = readFileSync(ENV_FILE, "utf-8").split("\n");
+  if (!existsSync(envFile())) return {};
+  const lines = readFileSync(envFile(), "utf-8").split("\n");
   const env: Record<string, string> = {};
   for (const line of lines) {
     const trimmed = line.trim();
@@ -69,7 +68,7 @@ function writeEnvFile(env: Record<string, string>) {
   }
   lines.push("");
   // Atomic, explicit 0600 (writeFileSync's mode is ignored when the file already exists).
-  writeKeystoreAtomic(ENV_FILE, lines.join("\n"));
+  writeKeystoreAtomic(envFile(), lines.join("\n"));
 }
 
 function setEnvVar(key: string, value: string) {
@@ -809,7 +808,7 @@ export async function runInteractiveSetup(p: Prompter, passphraseFlag: string | 
   console.log(chalk.cyan.bold("\n  perp-cli Setup Wizard\n"));
   const legacy = legacyEnvKeyNames();
   if (legacy.length > 0) {
-    console.log(chalk.yellow(`  ⚠ ${ENV_FILE} holds raw private keys (${legacy.join(", ")}).`));
+    console.log(chalk.yellow(`  ⚠ ${envFile()} holds raw private keys (${legacy.join(", ")}).`));
     console.log(chalk.yellow("    They keep working, but consider moving them into the encrypted OWS vault:"));
     console.log(chalk.yellow("    perp wallet import --name <name> [--chain evm|solana|dual] (hidden prompt / stdin), then"));
     console.log(chalk.yellow("    perp settings env remove <NAME> for each entry. This wizard does not touch them.\n"));
@@ -1300,7 +1299,7 @@ export async function runNonInteractiveSetup(opts: SetupOpts): Promise<void> {
       console.log(chalk.yellow(`  [warn] ${IMPORT_KEY_WARNING}`));
     }
     if (data.legacyEnvKeys.length > 0) {
-      console.log(chalk.yellow(`\n  ⚠ ${ENV_FILE} holds raw private keys (${data.legacyEnvKeys.join(", ")}); consider moving them to the OWS vault (perp wallet import).`));
+      console.log(chalk.yellow(`\n  ⚠ ${envFile()} holds raw private keys (${data.legacyEnvKeys.join(", ")}); consider moving them to the OWS vault (perp wallet import).`));
     }
     console.log(chalk.gray(`\n  Vault: ~/.ows/ (AES-256-GCM encrypted)`));
     console.log(chalk.white.bold("\n  Next steps:"));

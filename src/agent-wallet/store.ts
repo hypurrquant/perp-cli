@@ -1,17 +1,17 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from "fs";
 import { resolve } from "path";
+import { perpPath } from "../paths.js";
 import type { AgentMeta, AgentSource, AnyAgentMeta, ArcusAgentMeta, OndoAgentMeta, QfexAgentMeta, RisexAgentMeta, TxflowAgentMeta } from "../settings.js";
 import { loadSettings, saveSettings } from "../settings.js";
 import { PerpError } from "../errors.js";
 import type { Network } from "../exchanges/venue-types.js";
 
-const PERP_DIR = resolve(process.env["HOME"] ?? "~", ".perp");
-const LOCKS_DIR = resolve(PERP_DIR, "locks");
+function locksDir(): string { return perpPath("locks"); }
 
 const LOCK_STALE_MS = 5 * 60 * 1000; // 5 minutes
 
 function lockPath(exchange: string): string {
-  return resolve(LOCKS_DIR, `agent-approve-${exchange}.lock`);
+  return resolve(locksDir(), `agent-approve-${exchange}.lock`);
 }
 
 /**
@@ -23,7 +23,7 @@ function lockPath(exchange: string): string {
  * full approve flow) before calling setAgent.
  */
 export function acquireLock(exchange: string): void {
-  mkdirSync(LOCKS_DIR, { recursive: true, mode: 0o700 });
+  mkdirSync(locksDir(), { recursive: true, mode: 0o700 });
   const path = lockPath(exchange);
 
   if (existsSync(path)) {

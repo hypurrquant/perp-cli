@@ -1,9 +1,8 @@
 import { existsSync, appendFileSync, readFileSync, mkdirSync } from "fs";
-import { resolve } from "path";
+import { perpDir, perpPath } from "./paths.js";
 import { randomUUID } from "crypto";
 
-const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
-const CLIENT_IDS_FILE = resolve(PERP_DIR, "client-ids.jsonl");
+function clientIdsFile(): string { return perpPath("client-ids.jsonl"); }
 
 export interface ClientIdRecord {
   clientOrderId: string;
@@ -20,7 +19,7 @@ export interface ClientIdRecord {
 }
 
 function ensureDir() {
-  if (!existsSync(PERP_DIR)) mkdirSync(PERP_DIR, { recursive: true, mode: 0o700 });
+  if (!existsSync(perpDir())) mkdirSync(perpDir(), { recursive: true, mode: 0o700 });
 }
 
 /** Generate a unique client order ID */
@@ -34,7 +33,7 @@ export function generateClientId(prefix?: string): string {
 export function logClientId(record: ClientIdRecord): void {
   try {
     ensureDir();
-    appendFileSync(CLIENT_IDS_FILE, JSON.stringify(record) + "\n", { mode: 0o600 });
+    appendFileSync(clientIdsFile(), JSON.stringify(record) + "\n", { mode: 0o600 });
   } catch (e) {
     // Before the order is sent ("pending") a failed write stops the order. Afterwards the order
     // already has an outcome: a tracking-file failure is warned, never thrown as an order failure.
@@ -45,8 +44,8 @@ export function logClientId(record: ClientIdRecord): void {
 
 /** Look up a client order ID */
 export function lookupClientId(clientOrderId: string): ClientIdRecord | null {
-  if (!existsSync(CLIENT_IDS_FILE)) return null;
-  const lines = readFileSync(CLIENT_IDS_FILE, "utf-8").trim().split("\n").filter(Boolean);
+  if (!existsSync(clientIdsFile())) return null;
+  const lines = readFileSync(clientIdsFile(), "utf-8").trim().split("\n").filter(Boolean);
   // Reverse to find latest status for this ID
   for (let i = lines.length - 1; i >= 0; i--) {
     try {
@@ -79,8 +78,8 @@ export function updateClientId(clientOrderId: string, update: Partial<ClientIdRe
 
 /** Read all client ID records (most recent N) */
 export function readClientIds(limit = 100): ClientIdRecord[] {
-  if (!existsSync(CLIENT_IDS_FILE)) return [];
-  const lines = readFileSync(CLIENT_IDS_FILE, "utf-8").trim().split("\n").filter(Boolean);
+  if (!existsSync(clientIdsFile())) return [];
+  const lines = readFileSync(clientIdsFile(), "utf-8").trim().split("\n").filter(Boolean);
   const records: ClientIdRecord[] = [];
   // Take the last `limit` lines
   const start = Math.max(0, lines.length - limit);

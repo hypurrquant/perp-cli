@@ -14,8 +14,16 @@
 // (a project tree's leftover dev keys would silently become this server's credentials).
 import { setQuarantineNetwork } from "./bot/quarantine.js";
 import { config as loadDotenv } from "dotenv";
-import { resolve as resolvePath } from "node:path";
-loadDotenv({ path: resolvePath(process.env.HOME || "~", ".perp", ".env") });
+import { assertNoLegacyCwdPerpDir, perpPath } from "./paths.js";
+// HOME unset or a legacy ./~/.perp → one stderr line and exit 1 before serving (SSOT Rule #2).
+try {
+  assertNoLegacyCwdPerpDir();
+  loadDotenv({ path: perpPath(".env") });
+} catch (e) {
+  const remediation = e instanceof PerpError ? e.structured.remediation : undefined;
+  process.stderr.write(`perp-mcp: ${e instanceof Error ? e.message : String(e)}${remediation ? ` — ${remediation}` : ""}\n`);
+  process.exit(1);
+}
 import { registerAdapterNetwork } from "./exchanges/adapter-network.js";
 import { builderPlanFor } from "./exchanges/builder-fee.js";
 import { resolveAdapterSlippage } from "./exchanges/slippage.js";

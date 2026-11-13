@@ -10,10 +10,11 @@
  */
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { resolve } from "path";
+import { perpPath } from "../paths.js";
 import { PerpError } from "../errors.js";
 
 function noncePath(): string {
-  return resolve(process.env.HOME || "~", ".perp", "aster-nonces.json");
+  return perpPath("aster-nonces.json");
 }
 
 function readNonces(path: string): Record<string, string> {

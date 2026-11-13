@@ -5,11 +5,11 @@
  * Computes daily PnL, Sharpe ratio, max drawdown, win/loss stats.
  */
 
-import { homedir } from "os";
+import { perpPath } from "./paths.js";
 import { join } from "path";
 import { mkdirSync, appendFileSync, existsSync, readdirSync, readFileSync } from "fs";
 
-const BASE_DIR = join(homedir(), ".perp", "equity-history");
+function baseDir(): string { return perpPath("equity-history"); }
 
 export interface EquitySnapshot {
   ts: string;         // ISO timestamp
@@ -53,11 +53,11 @@ export interface PnlMetrics {
 
 function getFilePath(date: Date): string {
   const ym = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-  return join(BASE_DIR, `${ym}.jsonl`);
+  return join(baseDir(), `${ym}.jsonl`);
 }
 
 export function saveEquitySnapshot(snap: EquitySnapshot): void {
-  mkdirSync(BASE_DIR, { recursive: true });
+  mkdirSync(baseDir(), { recursive: true });
   const file = getFilePath(new Date(snap.ts));
   appendFileSync(file, JSON.stringify(snap) + "\n");
 }
@@ -67,9 +67,9 @@ export function readEquityHistory(opts?: {
   since?: Date;
   until?: Date;
 }): EquitySnapshot[] {
-  if (!existsSync(BASE_DIR)) return [];
+  if (!existsSync(baseDir())) return [];
 
-  const files = readdirSync(BASE_DIR)
+  const files = readdirSync(baseDir())
     .filter(f => f.endsWith(".jsonl"))
     .sort();
 
@@ -83,7 +83,7 @@ export function readEquityHistory(opts?: {
       if (fileMonth < sinceMonth) continue;
     }
 
-    const content = readFileSync(join(BASE_DIR, file), "utf-8");
+    const content = readFileSync(join(baseDir(), file), "utf-8");
     for (const line of content.split("\n")) {
       if (!line.trim()) continue;
       try {
