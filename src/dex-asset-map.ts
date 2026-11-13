@@ -15,6 +15,7 @@
  */
 
 import { HYPERLIQUID_API_URL, sharedApiNetwork } from "./api/public/urls.js";
+import { fetchWithTimeout } from "./http.js";
 
 /** Known aliases: different symbol → same underlying */
 const ALIASES: Record<string, string> = {
@@ -91,7 +92,7 @@ export interface DexArbPair {
 
 async function hlInfoPost(body: Record<string, unknown>): Promise<unknown> {
   // Selected network (review L7): HYPERLIQUID_API_URL follows -n via setSharedApiNetwork (live binding).
-  const res = await fetch(HYPERLIQUID_API_URL, {
+  const res = await fetchWithTimeout(HYPERLIQUID_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

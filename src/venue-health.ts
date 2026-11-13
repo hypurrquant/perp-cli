@@ -16,6 +16,7 @@ import { getVenue, listVenues, networkConfig, type VenueDefinition } from "./exc
 import type { Network, VenueId } from "./exchanges/venue-types.js";
 import { pingHyperliquid, pingLighter, pingPacifica } from "./shared-api.js";
 import "./exchanges/venues/index.js";
+import { fetchWithTimeout } from "./http.js";
 
 export interface VenueProbe {
   venue: VenueId;
@@ -50,7 +51,7 @@ async function timed(probe: VenueProbe["probe"], fn: () => Promise<{ ok: boolean
 }
 
 const restPing = (url: string) => timed("ping", async () => {
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url);
   return { ok: res.ok, status: res.status };
 });
 
@@ -70,7 +71,7 @@ function pingFor(id: VenueId, network: Network): (() => Promise<Result>) | null 
     case "qfex": return () => restPing(`${networkConfig(getVenue("qfex"), network).restUrl}/refdata?ticker=AAPL-USD`);
     // GRVT: one public instrument read (the market-data probe would fan out over every ticker).
     case "grvt": return () => timed("ping", async () => {
-      const res = await fetch(`${networkConfig(getVenue("grvt"), network).restUrl}/full/v1/instrument`, {
+      const res = await fetchWithTimeout(`${networkConfig(getVenue("grvt"), network).restUrl}/full/v1/instrument`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ instrument: "BTC_USDT_Perp" }),
       });
       return { ok: res.ok, status: res.status };

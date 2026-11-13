@@ -53,6 +53,7 @@ import {
   type AsterWithdrawLimits, type AsterWithdrawResult,
 } from "./aster-funds.js";
 import { nextAsterNonce } from "./aster-nonce.js";
+import { fetchWithTimeout } from "../http.js";
 
 /** Per-symbol price filters from GET /fapi/v3/exchangeInfo (loaded with LOT_SIZE). */
 interface AsterPriceFilters {
@@ -1809,7 +1810,7 @@ export class AsterAdapter implements ExchangeAdapter {
     // Any order write (place / modify) makes the open-orders snapshot stale — before and after the request.
     this.invalidateOpenOrdersCache();
     try {
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         method,
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: "",
@@ -1889,7 +1890,7 @@ export class AsterAdapter implements ExchangeAdapter {
       // Rebuild signed query string with fresh nonce on each attempt.
       const qs = await this._buildSignedQueryString(params, resolved);
       const url = `${host}${path}?${qs}`;
-      const res = await fetch(url, method === "DELETE" ? { method: "DELETE" } : undefined);
+      const res = await fetchWithTimeout(url, method === "DELETE" ? { method: "DELETE" } : undefined);
       // 429 → backoff + retry. All other paths (including non-429 venue
       // errors wrapped in HTTP 200 with code≠0) throw immediately via
       // _handleAsterResponse — no silent fallback (Rule #2).
@@ -2030,7 +2031,7 @@ export class AsterAdapter implements ExchangeAdapter {
       .join("&");
     const url = `${this._baseUrl}${path}${qs ? `?${qs}` : ""}`;
     for (let attempt = 0; attempt < 3; attempt++) {
-      const res = await fetch(url);
+      const res = await fetchWithTimeout(url);
       let result: unknown;
       try {
         result = await this._handleResponse(res, "GET", path, attempt);

@@ -16,6 +16,7 @@ import { type HlAbstractionMode, assertHlAppliedBps, hlIocOutcome, hlProtectionP
 import { floorSize } from "./precision.js";
 import { PerpError, isDefiniteOrderFailure, isTransportFailure, orderNotSent, orderOutcomeUnknown } from "../errors.js";
 import { invalidateCache } from "../cache.js";
+import { fetchWithTimeout } from "../http.js";
 
 /** HL size: floored to the szDecimals lot (never rounded up past the request); 0 → SIZE_TOO_SMALL. */
 function hlRoundSize(size: string, szDecimals: number): string {
@@ -568,7 +569,7 @@ export class HyperliquidSpotAdapter implements SpotAdapter, SpotHoldingPricesCap
     const baseUrl = this._hl.isTestnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
-    const res = await fetch(`${baseUrl}/info`, {
+    const res = await fetchWithTimeout(`${baseUrl}/info`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

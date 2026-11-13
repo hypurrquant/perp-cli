@@ -30,6 +30,7 @@ import { scrubSecretEnv } from "../secret-env.js";
 import { networkOf } from "../cli-flags.js";
 import type { Network } from "../exchanges/venue-types.js";
 import { probeVenueHealth, type VenueProbe } from "../venue-health.js";
+import { fetchWithTimeout } from "../http.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -754,7 +755,7 @@ async function runWatch(
  * a stale list hides positions on any dex Hyperliquid adds later.
  */
 export async function fetchHip3DexNames(): Promise<string[]> {
-  const res = await fetch(HYPERLIQUID_API_URL, {
+  const res = await fetchWithTimeout(HYPERLIQUID_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "perpDexs" }),
@@ -777,7 +778,7 @@ export async function fetchHip3DexNames(): Promise<string[]> {
 export async function checkDexPositions(address: string, dex: string): Promise<number | null> {
   try {
     // Selected network (review L7): follows -n via setSharedApiNetwork (live binding).
-    const res = await fetch(HYPERLIQUID_API_URL, {
+    const res = await fetchWithTimeout(HYPERLIQUID_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "clearinghouseState", user: address, dex }),
