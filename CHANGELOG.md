@@ -11,6 +11,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **A total counts as complete only when the read provably covers the period.** That is a windowed read that fit its budget, a list the venue ends (Lighter follows the cursor to the end; Pacifica trades and funding follow `next_cursor` until `has_more` is false, up to 10 pages of 200 rows — the funding list takes no time filter and its order is not documented, so it is read whole), fewer than 2000 Hyperliquid fills (`userFills` holds the latest 2000; a full list covers back to its oldest fill), or rows reaching past the period's start. A short list on any other venue proves nothing: its time window or server page cap may be below the limit asked. Anything else is a lower bound, labelled with how far back it reaches: `portfolio` `funding24h` is null with `fundingError`, `account pnl` reports `fundingIncomplete` / `tradesIncomplete` (new fields) with the note in `meta.warnings` and a warning line, and MCP `get_funding_analysis` / `get_pnl_analysis` / `get_arb_compare` list the venue in `meta.incomplete`. Expect these labels on RISEx, TxFlow, Arcus and Ondo when the account has no rows older than the period (their list ends are not proven), on Aster for a window past 7 days, and on a Pacifica list longer than 10 pages.
 - **`history pnl` and `history funding` label it too.** With `--period` they read the same way, summed `--limit` rows before; new `incomplete` map (`"<venue>.funding"` / `"<venue>.trades"`) and a warning line; `partial` keeps its meaning (a venue read failed). `--limit` now applies only to venues without a period read.
 - **`portfolio` `totals.funding24h` is null when no venue's funding was read** (it was 0, which reads as a known zero). See "JSON contract changes".
+- **`history compare --period` reads the period too.** It summed `getFundingPayments(--limit)` filtered to the period with no label, so a capped list was shown as the period's funding. It now reads like MCP `get_arb_compare`; new `incomplete` map (`"<venue>.funding"`) and a warning line. See "JSON contract changes".
 
 ### Fixed — the shared cache stopped working once its directory was removed
 
@@ -27,6 +28,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 ### JSON contract changes
 
 - **`portfolio` `totals.funding24h` is `number | null`** (was always a number): null when no venue's funding was read, and `totals.fundingIncomplete` is then true; the `--serve` envelope, which reads nothing, carries null too. Read it as unknown, not 0.
+- **`history compare` gains `incomplete`** (`Record<string, string>`, `"<venue>.funding"` → how far back the read reaches). A listed venue's `funding` / `totals.funding` is a lower bound. Migration: treat a non-empty `incomplete` like `partial` before relying on the funding totals.
 
 ## [0.17.0] — 2026-10-28
 

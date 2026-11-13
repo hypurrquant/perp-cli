@@ -435,6 +435,33 @@ describe("analytics funding — failed venue reads are reported, never counted a
   });
 });
 
+describe("analytics compare — a funding history not proven to cover --period is labelled, never the total", () => {
+  function programWith(getAdapter: (ex: string) => Promise<ExchangeAdapter>) {
+    program = new Command();
+    addRootSafetyOptions(program);
+    program.option("--json", "JSON output");
+    registerHistoryCommands(program, () => program.opts().json ?? false, getAdapter);
+  }
+
+  it("--period 30d with a capped list reaching back 2 days: listed in incomplete with how far back", async () => {
+    programWith(async (ex) => ({ ...mockAdapter(ex), historyReach: undefined }));
+    const res = await run(["analytics", "compare", "--period", "30d"]);
+    expect(res.data.incomplete["hyperliquid.funding"]).toBe(`funding read back to ${new Date(now - 2 * day).toISOString()} only`);
+  });
+
+  it("--period 30d on a venue with a windowed read: its rows count past --limit", async () => {
+    const rows = Array.from({ length: 300 }, (_, i) => ({ time: now - i * 1000, symbol: "ETH", payment: "1" }));
+    programWith(async (ex) => ex === "hyperliquid"
+      ? { ...mockAdapter(ex), getFundingPaymentsSince: vi.fn().mockResolvedValue({ rows, from: now - 31 * day }) }
+      : mockAdapter(ex));
+    const res = await run(["analytics", "compare", "--period", "30d", "--limit", "200"]);
+    const eth = res.data.positions.find((p: { symbol: string }) => p.symbol === "ETH");
+    // hyperliquid (long leg): 300 rows; lighter (short leg): its 3 mock payments (5.20 + 4.80 + 5.50).
+    expect(eth.funding).toBeCloseTo(300 + 15.5, 6);
+    expect(res.data.incomplete).toEqual({});
+  });
+});
+
 describe("analytics compare — a failed venue's funding / price is null, never 0 / the entry price", () => {
   it("rows touching a failed venue report null; totals skip them and flag partial", async () => {
     program = new Command();

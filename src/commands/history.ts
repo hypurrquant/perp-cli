@@ -914,6 +914,8 @@ function registerAnalyticsSubcommands(
         const errors: Record<string, string> = {};
         const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
         const fundingFailed = new Set<string>();
+        // A venue whose funding history is not proven to cover the period: summed, but a lower bound.
+        const incomplete: Record<string, string> = {};
 
         await Promise.allSettled(
           [...exchangeSet].map(async (ex) => {
@@ -926,12 +928,12 @@ function registerAnalyticsSubcommands(
               return;
             }
             const [funding, livePositions] = await Promise.allSettled([
-              adapter.getFundingPayments(limit),
+              fundingPaymentsInWindow(adapter, sinceMs, limit),
               adapter.getPositions(),
             ]);
             if (funding.status === "fulfilled") {
-              for (const f of funding.value) {
-                if (sinceMs && f.time < sinceMs) continue;
+              if (!funding.value.complete) incomplete[`${ex}.funding`] = coverageNote("funding", funding.value.from);
+              for (const f of funding.value.rows) {
                 const key = `${ex}:${f.symbol}`;
                 fundingByExSym.set(key, (fundingByExSym.get(key) ?? 0) + Number(f.payment));
               }
@@ -1021,6 +1023,7 @@ function registerAnalyticsSubcommands(
             roi: totals.notional > 0 ? (totals.totalPnl / totals.notional) * 100 : 0,
           },
           errors,
+          incomplete,
           partial,
         };
 
@@ -1055,6 +1058,7 @@ function registerAnalyticsSubcommands(
         }
         if (partial) console.log(chalk.yellow("    ⚠ Partial: totals leave out the unavailable values above"));
         for (const [k, msg] of Object.entries(errors)) console.log(chalk.yellow(`    ⚠ ${k} unavailable: ${msg}`));
+        for (const [k, msg] of Object.entries(incomplete)) console.log(chalk.yellow(`    ⚠ ${k}: ${msg} — the funding totals are a lower bound`));
         console.log();
       });
     });
