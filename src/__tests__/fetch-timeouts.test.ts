@@ -16,6 +16,7 @@ import { PacificaClient } from "../pacifica/client.js";
 import { fetchPacificaPricesRaw } from "../api/public/pacifica.js";
 import { executeCctpBridge, checkDebridgeStatus } from "../bridge-engine.js";
 import { pkEvmSigner } from "../bridge-signers.js";
+import { probeVenueHealth } from "../venue-health.js";
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
@@ -104,5 +105,17 @@ describe("bridge engine", () => {
 
   it("a deBridge status read that times out fails with TIMEOUT", async () => {
     expect(codeOf(await afterDeadline(() => checkDebridgeStatus("0xorder")))).toBe("TIMEOUT");
+  });
+});
+
+describe("health probes", () => {
+  it("a venue that never answers its ping is reported unhealthy instead of hanging the health check", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", hangingFetch());
+    const p = probeVenueHealth("mainnet", ["aster"]);
+    await vi.advanceTimersByTimeAsync(HTTP_TIMEOUT_MS);
+    const h = await p;
+    expect(h.allHealthy).toBe(false);
+    expect(h.probes[0]).toMatchObject({ venue: "aster", ok: false, error: expect.stringMatching(/timed out/) });
   });
 });

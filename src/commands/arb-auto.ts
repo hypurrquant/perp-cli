@@ -122,6 +122,7 @@ import { MAX_PRICE_DEVIATION_PCT } from "../exchanges/spot-interface.js";
 import { isQuarantined, quarantineEntryFor, quarantineKey, quarantineSymbol, setQuarantineNetwork } from "../bot/quarantine.js";
 import { clearPendingEntry, orphanedPendingEntries, writePendingEntry } from "../arb/pending-entry.js";
 import { closePerpVerified, isOutcomeUnknown, placePerpVerified, rejectedLotSize, trimFirstLegToHedge, type PerpCloseResult, type PerpFill } from "../bot/perp-order.js";
+import { fetchWithTimeout } from "../http.js";
 
 // ── Venue order minimums ──
 
@@ -3585,7 +3586,7 @@ export async function handleArbPnl(
 
 async function fetchHLOrderbook(symbol: string): Promise<[number, number][]> {
   const { HYPERLIQUID_API_URL } = await import("../shared-api.js");
-  const res = await fetch(HYPERLIQUID_API_URL, {
+  const res = await fetchWithTimeout(HYPERLIQUID_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "l2Book", coin: symbol }),
@@ -3597,13 +3598,13 @@ async function fetchHLOrderbook(symbol: string): Promise<[number, number][]> {
 
 async function fetchLighterOrderbook(symbol: string): Promise<[number, number][]> {
   const { LIGHTER_API_URL } = await import("../shared-api.js");
-  const detailsRes = await fetch(`${LIGHTER_API_URL}/api/v1/orderBookDetails`);
+  const detailsRes = await fetchWithTimeout(`${LIGHTER_API_URL}/api/v1/orderBookDetails`);
   const details = await detailsRes.json();
   const m = ((details as Record<string, unknown>).order_book_details as Array<Record<string, unknown>> ?? [])
     .find(d => d.symbol === symbol);
   if (!m) return [];
   const marketId = Number(m.market_id);
-  const obRes = await fetch(`${LIGHTER_API_URL}/api/v1/orderBookOrders?market_id=${marketId}&limit=10`);
+  const obRes = await fetchWithTimeout(`${LIGHTER_API_URL}/api/v1/orderBookOrders?market_id=${marketId}&limit=10`);
   const ob = await obRes.json();
   const bids = (ob as Record<string, unknown>).bids as Array<Record<string, string>> ?? [];
   return bids.map(l => [Number(l.price), Number(l.remaining_base_amount)] as [number, number]);
