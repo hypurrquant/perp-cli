@@ -4,6 +4,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Changed — CI
+
+- **PR CI no longer runs `pnpm test:integration`, and Node 20 left the test matrix.** The integration step hit live mainnet endpoints on every PR (continue-on-error, result ignored); the nightly conformance workflow covers it. Node 20 reached EOL on 2026-04-30; CI now tests Node 22 and 24. `engines` is unchanged.
+- **Coverage and audit reporting.** New `pnpm test:coverage` (v8, unit suite). CI prints a coverage summary on Node 24 and runs a non-blocking `pnpm audit --prod`. No threshold is enforced yet.
+
 ### Fixed — the shared cache stopped working once its directory was removed
 
 - **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).
