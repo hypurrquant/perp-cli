@@ -17,6 +17,7 @@
 import type { Command } from "commander";
 import chalk from "chalk";
 import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "../exchanges/index.js";
+import { coverageNote, fundingPaymentsInWindow } from "../exchanges/interface.js";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import { isDexCapable } from "../exchanges/capabilities.js";
 import type { DashboardExchange } from "../dashboard/index.js";
@@ -89,8 +90,8 @@ interface Totals {
   accountValueUsd: number;
   marginUsed: number;
   marginPct: number;
-  /** Sum over the venues whose funding was read (see fundingIncomplete). */
-  funding24h: number;
+  /** Sum over the venues whose funding was read (see fundingIncomplete); null when no venue's was. */
+  funding24h: number | null;
   /** true = at least one venue's funding24h is null and is left out of the sum. */
   fundingIncomplete: boolean;
 }
@@ -364,12 +365,14 @@ async function fetchExchangeEntry(
 ): Promise<ExchangeEntry> {
   try {
     const adapter = await getAdapter(exName);
+    const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
     const [bal, positionsRaw, orders, fundingPayments] = await Promise.all([
       adapter.getBalance(),
       adapter.getPositions(),
       adapter.getOpenOrders(),
-      adapter.getFundingPayments(200).then(
-        (rows) => ({ rows, error: null as string | null }),
+      // A history not proven to cover the 24 h is a lower bound: unknown (null), never the total.
+      fundingPaymentsInWindow(adapter, cutoff24h).then(
+        (w) => (w.complete ? { rows: w.rows, error: null as string | null } : { rows: null, error: `${coverageNote("funding history", w.from)} — the 24 h total is unknown` }),
         (e: unknown) => ({ rows: null, error: e instanceof Error ? e.message : String(e) }),
       ),
     ]);
@@ -395,11 +398,8 @@ async function fetchExchangeEntry(
       warn(`${def.displayName} spot balances unavailable: ${e instanceof Error ? e.message : String(e)}`);
     }
 
-    const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
     if (fundingPayments.error !== null) warn(`${def.displayName} funding history unavailable (funding24h null): ${fundingPayments.error}`);
-    const funding24h = fundingPayments.rows === null
-      ? null
-      : fundingPayments.rows.filter(f => f.time >= cutoff24h).reduce((sum, f) => sum + Number(f.payment), 0);
+    const funding24h = fundingPayments.rows === null ? null : fundingPayments.rows.reduce((sum, f) => sum + Number(f.payment), 0);
 
     // Shared balances (Pacifica USDC, HL unified USDC) are already in perp equity.
     const nonUsdcSpotValue = spot.filter(b => !b.shared).reduce((s, b) => s + b.valueUsd, 0);
@@ -453,7 +453,7 @@ function buildTotals(entries: ExchangeEntry[]): { totals: Totals; risk: RiskBloc
   let equity = 0;
   let spotValueUsd = 0;
   let marginUsed = 0;
-  let funding24h = 0;
+  let funding24h: number | null = null;
   let fundingIncomplete = false;
   let accountValueUsd = 0;
 
@@ -463,7 +463,7 @@ function buildTotals(entries: ExchangeEntry[]): { totals: Totals; risk: RiskBloc
       marginUsed += Number(e.perp.marginUsed);
     }
     if (e.funding24h === null) fundingIncomplete = true;
-    else funding24h += e.funding24h;
+    else funding24h = (funding24h ?? 0) + e.funding24h;
 
     // Non-USDC spot value (for unified accounts USDC is already in equity)
     const exSpot = e.isUnified
@@ -889,7 +889,7 @@ async function runServe(
       scope: resolved.scope,
       mode: "serve",
       exchanges: [],
-      totals: { equity: 0, spotValueUsd: 0, accountValueUsd: 0, marginUsed: 0, marginPct: 0, funding24h: 0, fundingIncomplete: false },
+      totals: { equity: 0, spotValueUsd: 0, accountValueUsd: 0, marginUsed: 0, marginPct: 0, funding24h: null, fundingIncomplete: false },
       risk: { level: "LOW", marginPct: 0 },
       serve: {
         url: `http://localhost:${dashboard.port}`,

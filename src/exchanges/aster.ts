@@ -219,6 +219,15 @@ type ResolvedSigner = {
  * that the read refuses (EXCHANGE_ERROR) rather than returning a partial history.
  */
 export const ASTER_INCOME_MAX_PAGES = 60;
+/**
+ * How far back GET /fapi/v3/income is proven to answer: "the recent 7-day data" when no time is
+ * sent (docs). Its retention beyond that is not documented, so a window reaching further back is
+ * read but covered only from here (a minute's slack: a caller's period starts before the read).
+ */
+export const ASTER_INCOME_PROVEN_MS = 7 * 86_400_000 + 60_000;
+
+/** GET /fapi/v3/userTrades rows asked per symbol at most (the endpoint's limit max, Binance-style API; not re-checked live); a full answer may leave older fills unread. */
+export const ASTER_USER_TRADES_MAX = 1000;
 
 /** GET /fapi/v3/klines maximum rows per request (docs: limit max 1500). */
 const ASTER_KLINE_PAGE = 1500;
@@ -235,6 +244,13 @@ export class AsterAdapter implements ExchangeAdapter {
   readonly name = "aster";
   readonly chain = "bnb";
   readonly aliases = ["ast"] as const;
+  /**
+   * Not read: period totals use the windowed reads (getFundingPaymentsSince / getTradesSince), which
+   * report their own coverage, so no reach is declared for the capped lists. (getFundingPayments
+   * reads 7 days of income; getTradeHistory finds its symbols there — COMMISSION rows, so a zero-fee
+   * fill on a symbol with no open position / order is not found — and userTrades defaults to 7 days.)
+   */
+  readonly historyReach = { funding: null, trades: null };
 
   private _baseUrl: string;
   private _testnet: boolean;
@@ -962,23 +978,40 @@ export class AsterAdapter implements ExchangeAdapter {
   }
 
   /**
-   * Every income row of `incomeType` in the last 7 days. The response order of GET /fapi/v3/income
-   * is not documented, so nothing assumes it: the window is read as disjoint [start, end] slices
-   * (startTime / endTime inclusive; one day each) and a slice that comes back full (1000 rows, the
-   * endpoint max) is split in half and re-read. More than ASTER_INCOME_MAX_PAGES requests, or a
-   * full slice of one millisecond → EXCHANGE_ERROR, never a partial list.
+   * Every income row of `incomeType` since `start` (default the last 7 days); `from` = the earliest
+   * time they cover without a gap (never before ASTER_INCOME_PROVEN_MS ago). The response order of
+   * GET /fapi/v3/income is not documented, so nothing assumes it: the window is read as disjoint
+   * [start, end] slices (startTime / endTime inclusive; one day each) and a slice that comes back full
+   * (1000 rows, the endpoint max) is split in half and re-read. More than ASTER_INCOME_MAX_PAGES
+   * requests → EXCHANGE_ERROR, never a partial list — unless `newestFirst`: the whole window is asked
+   * once first (fewer than 1000 rows = all of it, whatever the order), and only a full answer is read
+   * as day slices from now backward, so the rows read up to the cap cover [from, now] without a hole.
+   * A full slice of one millisecond → EXCHANGE_ERROR.
    */
-  private async _incomeRows(incomeType: "COMMISSION" | "FUNDING_FEE", r: ReturnType<AsterAdapter["_resolveSigner"]>): Promise<Array<Record<string, unknown>>> {
+  private async _incomeRows(incomeType: "COMMISSION" | "FUNDING_FEE", r: ReturnType<AsterAdapter["_resolveSigner"]>, windowStart?: number, newestFirst = false): Promise<{ rows: Array<Record<string, unknown>>; from: number }> {
     const end = Date.now();
-    const start = end - 7 * 86_400_000;
-    const slices: Array<[number, number]> = [];
-    for (let s = start; s < end; s += 86_400_000) slices.push([s, Math.min(s + 86_400_000 - 1, end)]);
-    slices[slices.length - 1][1] = end; // last slice ends exactly at `end` (inclusive), no extra 1-ms request
+    const start = windowStart ?? end - 7 * 86_400_000;
+    const proven = (t: number) => Math.max(t, end - ASTER_INCOME_PROVEN_MS);
+    // newestFirst reads at most ASTER_INCOME_MAX_PAGES slices, so only the newest that many are built
+    // (a window from 0 would otherwise list ~20 000 days); `sliceFloor` > start = older days left out.
+    const dayCount = Math.ceil((end - start) / 86_400_000);
+    const sliceFloor = newestFirst && dayCount > ASTER_INCOME_MAX_PAGES ? start + (dayCount - ASTER_INCOME_MAX_PAGES) * 86_400_000 : start;
+    const daySlices = (): Array<[number, number]> => {
+      const out: Array<[number, number]> = [];
+      for (let s = sliceFloor; s < end; s += 86_400_000) out.push([s, Math.min(s + 86_400_000 - 1, end)]);
+      if (out.length > 0) out[out.length - 1][1] = end; // last slice ends exactly at `end` (inclusive), no extra 1-ms request
+      return out;
+    };
+    // newestFirst: the whole window first; a full answer is replaced by the day slices below.
+    const slices: Array<[number, number]> = newestFirst ? [[start, end]] : daySlices();
+    let whole = newestFirst;
     const rows: Array<Record<string, unknown>> = [];
     let requests = 0;
+    let from = end;
     while (slices.length > 0) {
-      const [s, e] = slices.shift()!;
+      const [s, e] = newestFirst ? slices.pop()! : slices.shift()!;
       if (++requests > ASTER_INCOME_MAX_PAGES) {
+        if (newestFirst) return { rows, from: proven(from) };
         throw new PerpError("EXCHANGE_ERROR", `Aster ${incomeType} history needs more than ${ASTER_INCOME_MAX_PAGES} requests for 7 days — the result would be incomplete`, {
           exchange: "aster", remediation: "Check the history per symbol in the Aster web app",
         });
@@ -987,6 +1020,12 @@ export class AsterAdapter implements ExchangeAdapter {
       if (!Array.isArray(page)) {
         throw new PerpError("EXCHANGE_ERROR", `Aster income history is not a list (${JSON.stringify(page).slice(0, 120)})`, { exchange: "aster" });
       }
+      if (page.length >= 1000 && whole) {
+        whole = false;
+        slices.push(...daySlices());
+        continue;
+      }
+      whole = false;
       if (page.length >= 1000) {
         if (e <= s) {
           throw new PerpError("EXCHANGE_ERROR", `Aster returned 1000+ ${incomeType} rows at one millisecond (${s}) — the list cannot be read completely`, {
@@ -994,7 +1033,8 @@ export class AsterAdapter implements ExchangeAdapter {
           });
         }
         const mid = Math.floor((s + e) / 2);
-        slices.unshift([s, mid], [mid + 1, e]);
+        if (newestFirst) slices.push([s, mid], [mid + 1, e]);
+        else slices.unshift([s, mid], [mid + 1, e]);
         continue;
       }
       for (const row of page as Array<Record<string, unknown>>) {
@@ -1003,8 +1043,9 @@ export class AsterAdapter implements ExchangeAdapter {
         }
         rows.push(row);
       }
+      from = s;
     }
-    return rows;
+    return { rows, from: proven(sliceFloor === start ? start : from) };
   }
 
   /**
@@ -1031,7 +1072,7 @@ export class AsterAdapter implements ExchangeAdapter {
     for (const o of open as Array<Record<string, unknown>>) {
       if (typeof o.symbol === "string" && o.symbol !== "") apiSymbols.add(o.symbol);
     }
-    for (const row of await this._incomeRows("COMMISSION", r)) {
+    for (const row of (await this._incomeRows("COMMISSION", r)).rows) {
       if (typeof row.symbol === "string" && row.symbol !== "") apiSymbols.add(row.symbol);
     }
     return apiSymbols;
@@ -1089,7 +1130,31 @@ export class AsterAdapter implements ExchangeAdapter {
    * A failed read throws (never an empty list); a row without a readable field → EXCHANGE_ERROR.
    */
   async getTradeHistory(limit = 30): Promise<ExchangeTrade[]> {
+    const { rows } = await this._userTradeRows(Math.min(limit, ASTER_USER_TRADES_MAX));
+    return rows.sort((a, b) => b.time - a.time).slice(0, limit);
+  }
+
+  /**
+   * Trades since `startTime`, newest first, for period totals; `from` = the earliest time the rows
+   * cover without a gap: the 7 days the symbol discovery and userTrades' default window prove, later
+   * when a symbol's answer is a full page (its older fills are unread: covered back to its oldest row,
+   * not that millisecond itself — other fills of it may have been cut, so a window starting exactly
+   * there is not complete; the Hyperliquid getTradesSince rule).
+   * Symbol discovery relies on COMMISSION income rows, so a zero-fee fill on a symbol with no open
+   * position or order can be missed.
+   */
+  async getTradesSince(startTime: number): Promise<{ rows: ExchangeTrade[]; from: number }> {
+    const { rows, from } = await this._userTradeRows(ASTER_USER_TRADES_MAX);
+    return { rows: rows.filter(t => t.time >= startTime).sort((a, b) => b.time - a.time), from: from === startTime ? from + 1 : from };
+  }
+
+  /**
+   * userTrades of every symbol with account activity (see _tradedApiSymbols), `perSymbol` rows each
+   * (≤ ASTER_USER_TRADES_MAX). `from`: see getTradesSince — a full page proves nothing older than its oldest row.
+   */
+  private async _userTradeRows(perSymbol: number): Promise<{ rows: ExchangeTrade[]; from: number }> {
     const r = this._resolveSigner();
+    let from = Date.now() - ASTER_INCOME_PROVEN_MS;
     const apiSymbols = await this._tradedApiSymbols(r);
     const field = (t: Record<string, unknown>, k: string): string => {
       const v = t[k];
@@ -1098,10 +1163,11 @@ export class AsterAdapter implements ExchangeAdapter {
     };
     const allTrades: ExchangeTrade[] = [];
     for (const sym of apiSymbols) {
-      const trades = await this._signedGetEip712("/fapi/v3/userTrades", { symbol: sym, limit: String(limit) }, r);
+      const trades = await this._signedGetEip712("/fapi/v3/userTrades", { symbol: sym, limit: String(perSymbol) }, r);
       if (!Array.isArray(trades)) {
         throw new PerpError("EXCHANGE_ERROR", `Aster userTrades for ${sym} is not a list (${JSON.stringify(trades).slice(0, 120)})`, { exchange: "aster" });
       }
+      const pageStart = allTrades.length;
       for (const t of trades as Array<Record<string, unknown>>) {
         if (typeof t.buyer !== "boolean") {
           throw new PerpError("EXCHANGE_ERROR", `Aster userTrades row without a boolean buyer: ${JSON.stringify(t).slice(0, 160)}`, { exchange: "aster" });
@@ -1117,20 +1183,31 @@ export class AsterAdapter implements ExchangeAdapter {
           fee: field(t, "commission"),
         });
       }
+      if (trades.length >= ASTER_USER_TRADES_MAX) from = Math.max(from, allTrades.slice(pageStart).reduce((m, t) => Math.min(m, t.time), Infinity));
     }
-    return allTrades.sort((a, b) => b.time - a.time).slice(0, limit);
+    return { rows: allTrades, from };
   }
 
   /** FUNDING_FEE income of the last 7 days (see _incomeRows), newest first, at most `limit` rows. */
   async getFundingPayments(limit = 200): Promise<ExchangeFundingPayment[]> {
-    const rows = await this._incomeRows("FUNDING_FEE", this._resolveSigner());
-    return rows.map((f) => {
-      const time = Number(f.time);
-      if (typeof f.symbol !== "string" || f.symbol === "" || (typeof f.income !== "string" && typeof f.income !== "number") || f.income === "") {
-        throw new PerpError("EXCHANGE_ERROR", `Aster funding income row without symbol / income: ${JSON.stringify(f).slice(0, 160)}`, { exchange: "aster" });
-      }
-      return { time, symbol: this._fromApi(f.symbol), payment: String(f.income) };
-    }).sort((x, y) => y.time - x.time).slice(0, limit);
+    const { rows } = await this._incomeRows("FUNDING_FEE", this._resolveSigner());
+    return rows.map(f => this._fundingRow(f)).sort((x, y) => y.time - x.time).slice(0, limit);
+  }
+
+  /**
+   * FUNDING_FEE income since `startTime`, newest first, for period totals; `from` = the earliest time
+   * the rows cover without a gap (`startTime` = the whole window, later = ASTER_INCOME_MAX_PAGES ran out).
+   */
+  async getFundingPaymentsSince(startTime: number): Promise<{ rows: ExchangeFundingPayment[]; from: number }> {
+    const { rows, from } = await this._incomeRows("FUNDING_FEE", this._resolveSigner(), startTime, true);
+    return { rows: rows.map(f => this._fundingRow(f)).sort((x, y) => y.time - x.time), from };
+  }
+
+  private _fundingRow(f: Record<string, unknown>): ExchangeFundingPayment {
+    if (typeof f.symbol !== "string" || f.symbol === "" || (typeof f.income !== "string" && typeof f.income !== "number") || f.income === "") {
+      throw new PerpError("EXCHANGE_ERROR", `Aster funding income row without symbol / income: ${JSON.stringify(f).slice(0, 160)}`, { exchange: "aster" });
+    }
+    return { time: Number(f.time), symbol: this._fromApi(f.symbol), payment: String(f.income) };
   }
 
   /**

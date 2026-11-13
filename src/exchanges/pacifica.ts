@@ -381,6 +381,8 @@ export const PACIFICA_FUNDING_PAGE = 4000;
 export const PACIFICA_KLINE_MAX_BARS = 4000;
 /** Requests one funding / kline read may send (the venue meters reads by credits). */
 export const PACIFICA_MAX_PAGES = 10;
+/** Rows asked per page of the account history reads (/trades/history, /funding/history): the docs state no maximum. */
+export const PACIFICA_ACCOUNT_HISTORY_PAGE = 200;
 /**
  * GET /kline intervals (venue error text, live 2026-10-19: "Must be one of 1m, 3m, 5m, 15m, 30m,
  * 1h, 2h, 4h, 8h, 12h, 1d, 1w, 1M"; each answered 200 with rows labelled `i` = the interval).
@@ -1795,17 +1797,18 @@ export class PacificaAdapter implements ExchangeAdapter {
     if (!Array.isArray(rows)) {
       throw new PerpError("EXCHANGE_ERROR", `Pacifica /trades/history returned no list (${JSON.stringify(rows).slice(0, 120)})`, { exchange: "pacifica" });
     }
-    return (rows as Array<Record<string, unknown>>).slice(0, limit).map((t) => {
-      const side = pacificaFillSide(pacificaField(t, "side", "/trades/history"), "/trades/history");
-      return {
-        time: pacificaTime(t, "/trades/history"),
-        symbol: pacificaField(t, "symbol", "/trades/history"),
-        side,
-        price: pacificaField(t, "price", "/trades/history"),
-        size: pacificaField(t, "amount", "/trades/history"),
-        fee: pacificaField(t, "fee", "/trades/history"),
-      };
-    });
+    return (rows as Array<Record<string, unknown>>).slice(0, limit).map((t) => this._trade(t));
+  }
+
+  private _trade(t: Record<string, unknown>): ExchangeTrade {
+    return {
+      time: pacificaTime(t, "/trades/history"),
+      symbol: pacificaField(t, "symbol", "/trades/history"),
+      side: pacificaFillSide(pacificaField(t, "side", "/trades/history"), "/trades/history"),
+      price: pacificaField(t, "price", "/trades/history"),
+      size: pacificaField(t, "amount", "/trades/history"),
+      fee: pacificaField(t, "fee", "/trades/history"),
+    };
   }
 
   /** Funding paid / received per position (GET /funding/history, `payout` signed). Strict like getTradeHistory. */
@@ -1815,10 +1818,64 @@ export class PacificaAdapter implements ExchangeAdapter {
     if (!Array.isArray(rows)) {
       throw new PerpError("EXCHANGE_ERROR", `Pacifica /funding/history returned no list (${JSON.stringify(rows).slice(0, 120)})`, { exchange: "pacifica" });
     }
-    return (rows as Array<Record<string, unknown>>).slice(0, limit).map((h) => ({
+    return (rows as Array<Record<string, unknown>>).slice(0, limit).map((h) => this._fundingPayment(h));
+  }
+
+  /**
+   * Funding payments since `startTime`, newest first, for period totals. /funding/history takes no
+   * time filter and its row order is not documented, so the whole list is read (cursor) and filtered:
+   * the venue ending it (`has_more` false) proves the window (`from` = startTime); a list longer than
+   * the page budget proves nothing whatever the order (`from` Infinity).
+   */
+  async getFundingPaymentsSince(startTime: number): Promise<{ rows: ExchangeFundingPayment[]; from: number }> {
+    if (!this._hasRealKey) throw noAccountKeyError("pacifica");
+    const { rows, ended } = await this._accountHistoryPages("/funding/history", {});
+    const out = rows.map((h) => this._fundingPayment(h)).filter((f) => f.time >= startTime).sort((a, b) => b.time - a.time);
+    return { rows: out, from: ended ? startTime : Infinity };
+  }
+
+  /**
+   * Trades since `startTime`, newest first, for period totals: /trades/history filtered by the venue
+   * to [startTime, now] (start_time / end_time, docs) and read to the end of the list (cursor). The
+   * venue ending it proves the window whatever the row order; past the page budget nothing is proven.
+   */
+  async getTradesSince(startTime: number): Promise<{ rows: ExchangeTrade[]; from: number }> {
+    if (!this._hasRealKey) throw noAccountKeyError("pacifica");
+    const { rows, ended } = await this._accountHistoryPages("/trades/history", { start_time: String(startTime), end_time: String(Date.now()) });
+    const out = rows.map((t) => this._trade(t)).filter((t) => t.time >= startTime).sort((a, b) => b.time - a.time);
+    return { rows: out, from: ended ? startTime : Infinity };
+  }
+
+  /**
+   * Every row of an account history list, following `next_cursor` while the venue says `has_more`
+   * ("True if there exists a next_cursor", docs). `ended` = the venue ended the list within
+   * PACIFICA_MAX_PAGES requests. has_more without a cursor → EXCHANGE_ERROR.
+   */
+  private async _accountHistoryPages(path: "/funding/history" | "/trades/history", filter: Record<string, string>): Promise<{ rows: Array<Record<string, unknown>>; ended: boolean }> {
+    const rows: Array<Record<string, unknown>> = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < PACIFICA_MAX_PAGES; page++) {
+      const params: Record<string, string> = { account: this.account, ...filter, limit: String(PACIFICA_ACCOUNT_HISTORY_PAGE) };
+      if (cursor !== null) params.cursor = cursor;
+      const env = await this.client.getEnvelope(path, params);
+      if (env.success !== true || !Array.isArray(env.data)) {
+        throw new PerpError("EXCHANGE_ERROR", `Pacifica ${path} returned no row list (${JSON.stringify(env).slice(0, 120)})`, { exchange: "pacifica" });
+      }
+      rows.push(...(env.data as Array<Record<string, unknown>>));
+      if (env.has_more !== true) return { rows, ended: true };
+      if (typeof env.next_cursor !== "string" || env.next_cursor === "") {
+        throw new PerpError("EXCHANGE_ERROR", `Pacifica ${path}: has_more without a next_cursor`, { exchange: "pacifica" });
+      }
+      cursor = env.next_cursor;
+    }
+    return { rows, ended: false };
+  }
+
+  private _fundingPayment(h: Record<string, unknown>): ExchangeFundingPayment {
+    return {
       time: pacificaTime(h, "/funding/history"),
       symbol: pacificaField(h, "symbol", "/funding/history"),
       payment: pacificaField(h, "payout", "/funding/history"),
-    }));
+    };
   }
 }
