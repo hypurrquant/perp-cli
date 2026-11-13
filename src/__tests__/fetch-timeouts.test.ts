@@ -61,6 +61,18 @@ describe("Aster", () => {
     expect(codeOf(e)).toBe("TIMEOUT");
   });
 
+  it("an order POST whose 2xx body stalls is ORDER_PENDING when the deadline passes", async () => {
+    vi.useFakeTimers();
+    const f = vi.fn((_input: unknown, init?: { signal?: AbortSignal }) => Promise.resolve(new Response(new ReadableStream({
+      start(ctl) { init?.signal?.addEventListener("abort", () => ctl.error(init.signal!.reason)); },
+    }), { status: 200 })));
+    vi.stubGlobal("fetch", f);
+    const p = aster()._signedPostEip712("/fapi/v3/order", { symbol: "BTCUSDT" }, {}).then(() => { throw new Error("expected a rejection"); }, (e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(HTTP_TIMEOUT_MS);
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(codeOf(await p)).toBe("ORDER_PENDING");
+  });
+
   const spot = (): AsterSpotAdapter => Object.assign(Object.create(AsterSpotAdapter.prototype), {
     _perp: Object.assign(aster(), { _resolveSigner: () => ({}), _testnet: false }),
     _resolve: (s: string) => ({ wire: s.replace("/", ""), base: s.split("/")[0], quote: s.split("/")[1] }),
