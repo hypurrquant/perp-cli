@@ -30,6 +30,7 @@ import {
   buildApproveAgentTypedData,
   buildDelAgentTypedData,
 } from "../exchanges/aster-typed-data.js";
+import { fetchWithTimeout } from "../http.js";
 
 /**
  * Subcommand `--passphrase <pp>`: still accepted (existing scripts) but deprecated like the root
@@ -235,7 +236,7 @@ async function verifyHyperliquid(network: Network, opts: VerifyOpts): Promise<Ve
   }
 
   const user = masterAddress.toLowerCase();
-  const resp = await fetch(`${networkConfig(getVenue("hyperliquid"), network).restUrl}/info`, {
+  const resp = await fetchWithTimeout(`${networkConfig(getVenue("hyperliquid"), network).restUrl}/info`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "extraAgents", user }),
@@ -319,7 +320,7 @@ async function verifyPacifica(network: Network, opts: VerifyOpts): Promise<Verif
     expiry_window: built.header.expiry_window,
   };
 
-  const resp = await fetch(`${networkConfig(getVenue("pacifica"), network).restUrl}/agent/list`, {
+  const resp = await fetchWithTimeout(`${networkConfig(getVenue("pacifica"), network).restUrl}/agent/list`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -406,7 +407,7 @@ async function verifyLighter(venue: LighterVenueId, network: Network, opts: Veri
   }
 
   const restUrl = networkConfig(getVenue(venue), network).restUrl;
-  const resp = await fetch(
+  const resp = await fetchWithTimeout(
     `${restUrl}/api/v1/apikeys?account_index=${accountIndex}`,
     { method: "GET" },
   );

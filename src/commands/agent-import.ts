@@ -36,6 +36,7 @@ import { LIGHTER_RH_RESERVED_KEY_INDEXES, type LighterVenueId } from "../exchang
 import { loadOws } from "../signer/ows-loader.js";
 import { defaultAgentName, isLighterFamilyVenue, parseExpiresIn, promptHidden, qfexWithdrawKeyWarning } from "./agent.js";
 import { importOwsWallet, normalizeSolanaKey } from "./wallet.js";
+import { fetchWithTimeout } from "../http.js";
 
 /** Shown wherever an import is offered: what the imported key can and cannot do. */
 export const IMPORT_SCOPE_NOTE =
@@ -457,7 +458,7 @@ function baseMeta(agentName: string, network: Network, expiresAt: string | null)
 }
 
 async function postJson(url: string, body: unknown, what: string): Promise<unknown> {
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const text = await res.text();
   if (!res.ok) throw new PerpError("EXCHANGE_ERROR", `${what} failed (HTTP ${res.status}): ${text.slice(0, 200)}`);
   try {
@@ -671,7 +672,7 @@ async function importLighter(p: ImportAgentParams, venue: LighterVenueId, agentN
 
   // 1) the account exists on this network → owner L1 address
   const restUrl = networkConfig(getVenue(venue), p.network).restUrl;
-  const res = await fetch(`${restUrl}/api/v1/account?by=index&value=${accountIndex}`);
+  const res = await fetchWithTimeout(`${restUrl}/api/v1/account?by=index&value=${accountIndex}`);
   const text = await res.text();
   let acct: { accounts?: Array<{ account_index?: unknown; index?: unknown; l1_address?: unknown }> } | null = null;
   try { acct = JSON.parse(text); } catch { /* handled below */ }
