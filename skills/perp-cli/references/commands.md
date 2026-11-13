@@ -372,7 +372,7 @@ perp --json -e qfex market funding AAPL -l 72               # hourly windows; ou
 # netSpread / grossSpread = annualized % (netSpread = gross minus round-trip costs amortized over --hold-days)
 # estFeesPct = round trip on BOTH legs = 2 × (taker fee leg A + taker fee leg B) + 2 × 0.05 % slippage, taker fees from
 #   `perp settings fees show` (settings.fees, else the shipped table — the spot leg uses its venue's perp taker rate);
-#   e.g. hl+hl: 2 × (0.035 + 0.035) + 0.1 = 0.24 %. `settings fees show` is the per-fill rate, estFeesPct the round trip.
+#   e.g. hl+hl: 2 × (0.045 + 0.045) + 0.1 = 0.28 %. `settings fees show` is the per-fill rate, estFeesPct the round trip.
 # perp-perp rows: mode, longExch, shortExch, markPrice, grossSpread(Pct), netSpread(Pct), estFeesPct, priceGapPct
 # spot-perp rows: mode, spotExchanges[], perpExchange, direction, perpFundingRate, netSpreadPct / grossSpreadPct AND
 #   netSpread / grossSpread (same values), estFeesPct, estHourlyIncomeUsd (per $1000), breakEvenDays, markPrice.

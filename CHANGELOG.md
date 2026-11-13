@@ -4,6 +4,13 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — stale fee rates in cost estimates
+
+- **Published base-tier fees refreshed (read 2026-11-04):** Hyperliquid taker 0.045% / maker 0.015% (was 0.035% / 0.002%; docs trading/fees, info `userFees` of a zero-volume address), Pacifica tier 1 taker 0.040% / maker 0.015% (was 0.035% / 0.01%; docs trading-fees), Arcus Base tier since 2026-10-23 taker 450 / maker 150 ppm on crypto markets (was 225 / 0; `GET /v1/feetiers`, `/v1/markets` effective fees). Arcus RWA markets are 225 / 0 ppm, so the crypto rate never understates an Arcus order. These feed the `arb scan` / `arb auto` round-trip costs (`estFeesPct`, `netSpread`; hl+hl 0.24 % → 0.28 %), the spot-perp entry fees of `arb status` and the venue-agnostic arb estimates (`DEFAULT_TAKER_FEE`, now the Hyperliquid base 0.045%).
+- `trade check` / MCP `trade_preview` (`estimatedCost.fee`) use the venue's taker fee instead of a flat 0.035%, and `backtest grid` (`tradingFees`) the Hyperliquid taker fee — its candles are Hyperliquid's.
+- `settings fees sync` no longer saves a made-up rate when the venue's answer lacks one (it fell back to 0.035% / 0.002% for Hyperliquid, 0.035% / 0.01% for Pacifica): that venue keeps its saved fees and is reported (`meta.errors.<venue>` in JSON, a ✗ line in text).
+- **Old shipped fees stored in `settings.json` no longer override the new ones.** Every save wrote the shipped `fees` into `settings.json`, so files written by an earlier version still held them and they took precedence. A stored entry exactly equal to a retired default (Hyperliquid 0.035% / 0.002%, Pacifica 0.035% / 0.01%) is now treated as unset at load and the current default applies; any other stored value still wins (`perp settings fees sync` / `fees set` change it).
+
 ### Fixed — the shared cache stopped working once its directory was removed
 
 - **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).

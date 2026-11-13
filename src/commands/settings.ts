@@ -9,7 +9,7 @@ import { ENV_FILE, loadEnvFile, setEnvVar, EXCHANGE_ENV_MAP, validateKey } from 
 import { getVenue, resolveVenueId } from "../exchanges/venue.js";
 import "../exchanges/venues/index.js";
 import { maxDefaultSlippageBps, parseSlippageSettingBps } from "../exchanges/slippage.js";
-import { PerpError } from "../errors.js";
+import { PerpError, classifyError } from "../errors.js";
 import { isSecretEnvName } from "../secret-env.js";
 import { BUILDER_FEE_CAPABILITIES, parseBuilderEntry, requireBuilderCapability } from "../exchanges/builder-fee.js";
 import { validateDebridgeAffiliate, validateWithdrawGate, WITHDRAW_GATE_VENUES, type WithdrawGate, type WithdrawGateVenue } from "../settings.js";
@@ -90,6 +90,13 @@ function resolveEnvKey(nameOrKey: string): { envKey: string; chain: "solana" | "
   const aliased = aliases[nameOrKey.toLowerCase()];
   if (aliased) return resolveEnvKey(aliased);
   return null;
+}
+
+/** A fee rate read from a venue answer; missing / non-numeric → EXCHANGE_ERROR, never a stale default (SSOT Rule #2). */
+function venueFeeRate(v: unknown, what: string): number {
+  const n = (typeof v === "string" && v !== "") || typeof v === "number" ? Number(v) : NaN;
+  if (!Number.isFinite(n)) throw new PerpError("EXCHANGE_ERROR", `${what} is ${JSON.stringify(v ?? null)} — fees not synced`);
+  return n;
 }
 
 export function registerSettingsCommands(
@@ -190,6 +197,8 @@ export function registerSettingsCommands(
         const s = loadSettings();
         const exchanges = only !== undefined ? [only.toLowerCase()] : ["hyperliquid", "pacifica", "lighter"];
         const results: Record<string, ExchangeFees & { source: string }> = {};
+        // A venue that failed is reported (meta.errors / ✗ line) and keeps its saved fees.
+        const errors: Record<string, { code: string; message: string }> = {};
 
         for (const ex of exchanges) {
           try {
@@ -209,8 +218,8 @@ export function registerSettingsCommands(
                 const feeData = await hlAdapter.getUserFees();
                 // HL returns: { activeReferralDiscount, dailyUserVlm, feeSchedule: { ... }, userCrossRate, userAddRate }
                 // userCrossRate is the effective taker fee, userAddRate is the maker fee
-                const taker = parseFloat(feeData?.userCrossRate ?? feeData?.takerRate ?? "0.00035");
-                const maker = parseFloat(feeData?.userAddRate ?? feeData?.makerRate ?? "0.00002");
+                const taker = venueFeeRate(feeData?.userCrossRate, "Hyperliquid userFees userCrossRate");
+                const maker = venueFeeRate(feeData?.userAddRate, "Hyperliquid userFees userAddRate");
                 s.fees.hyperliquid = { taker: Math.abs(taker), maker };
                 results.hyperliquid = { taker: Math.abs(taker), maker, source: "API (getUserFees)" };
                 if (!isJson()) {
@@ -230,8 +239,8 @@ export function registerSettingsCommands(
               const pacAdapter = adapter as any;
               if (typeof pacAdapter.sdk?.getAccount === "function" && pacAdapter.publicKey) {
                 const info = await pacAdapter.sdk.getAccount(pacAdapter.publicKey);
-                const taker = parseFloat(info?.taker_fee ?? "0.00035");
-                const maker = parseFloat(info?.maker_fee ?? "0.0001");
+                const taker = venueFeeRate(info?.taker_fee, "Pacifica /account taker_fee");
+                const maker = venueFeeRate(info?.maker_fee, "Pacifica /account maker_fee");
                 s.fees.pacifica = { taker, maker };
                 results.pacifica = { taker, maker, source: "API (getAccount)" };
                 if (!isJson()) {
@@ -247,15 +256,15 @@ export function registerSettingsCommands(
 
             if (!isJson()) console.log(chalk.yellow(`  ⚠ ${ex}: unknown exchange, skipped`));
           } catch (err) {
-            if (!isJson()) {
-              console.log(chalk.red(`  ✗ ${ex}: ${err instanceof Error ? err.message : String(err)}`));
-            }
+            const { code, message } = classifyError(err, ex);
+            errors[ex] = { code, message };
+            if (!isJson()) console.log(chalk.red(`  ✗ ${ex}: ${errors[ex].message}`));
           }
         }
 
         saveSettings(s);
 
-        if (isJson()) return printJson(jsonOk(results));
+        if (isJson()) return printJson(jsonOk(results, Object.keys(errors).length > 0 ? { errors } : undefined));
         console.log(chalk.gray("\n  Fees saved to ~/.perp/settings.json\n"));
       });
     });

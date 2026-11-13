@@ -1,7 +1,7 @@
 import type { ExchangeAdapter, ExchangeMarketInfo } from "./exchanges/index.js";
 import { maxLeverageForNotional } from "./exchanges/interface.js";
 import { symbolMatch } from "./utils.js";
-import { DEFAULT_TAKER_FEE } from "./constants.js";
+import { getTakerFee } from "./constants.js";
 import { PerpError } from "./errors.js";
 import { resolveAdapterSlippage } from "./exchanges/slippage.js";
 
@@ -40,8 +40,6 @@ export interface TradeCheckParams {
   leverage?: number;
   reduceOnly?: boolean;
 }
-
-// Use centralized DEFAULT_TAKER_FEE from constants.ts (0.035%)
 
 /**
  * Validate a trade before execution.
@@ -257,8 +255,8 @@ export async function validateTrade(
     }
   }
 
-  // Estimated cost
-  const fee = notional * DEFAULT_TAKER_FEE;
+  // Estimated cost: the venue's taker fee (settings.fees, else its published base tier)
+  const fee = notional * getTakerFee(adapter.name);
   const estimatedSlippage = params.type === "limit" ? 0 : notional * 0.001;
 
   const valid = checks.every(c => c.passed);
