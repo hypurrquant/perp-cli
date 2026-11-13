@@ -1,0 +1,53 @@
+/**
+ * Venue requests that had no deadline now time out (src/http.ts): a read fails with TIMEOUT, a
+ * write that is on the wire becomes an unknown outcome (ORDER_PENDING — do NOT resubmit).
+ * Each test drives a fetch that never answers with fake timers.
+ */
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { PerpError, classifyError } from "../errors.js";
+import { HTTP_TIMEOUT_MS } from "../http.js";
+import { hangingFetch } from "./helpers/hanging-fetch.js";
+import { AsterAdapter } from "../exchanges/aster.js";
+
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+/** Run `call` against a never-answering fetch and return what it rejects with after `ms`. */
+async function afterDeadline(call: () => Promise<unknown>, ms: number = HTTP_TIMEOUT_MS): Promise<unknown> {
+  vi.useFakeTimers();
+  const f = hangingFetch();
+  vi.stubGlobal("fetch", f);
+  const p = call().then(() => { throw new Error("expected a rejection"); }, (e: unknown) => e);
+  await vi.advanceTimersByTimeAsync(ms);
+  expect(f).toHaveBeenCalled();
+  return p;
+}
+const codeOf = (e: unknown) => (e instanceof PerpError ? e.structured.code : classifyError(e).code);
+
+describe("Aster", () => {
+  type AsterInternals = {
+    _signedPostEip712(path: string, params: Record<string, string>, r: unknown): Promise<unknown>;
+    _signedDeleteEip712(path: string, params: Record<string, string>, r: unknown): Promise<unknown>;
+    _publicGet(path: string): Promise<unknown>;
+  };
+  const aster = (): AsterInternals => Object.assign(Object.create(AsterAdapter.prototype), {
+    _baseUrl: "https://fapi.test",
+    _buildSignedQueryString: async () => "symbol=BTCUSDT&signature=0x00",
+    invalidateOpenOrdersCache: () => {},
+  }) as AsterInternals;
+
+  it("an order POST that times out is ORDER_PENDING, not a rejection", async () => {
+    const e = await afterDeadline(() => aster()._signedPostEip712("/fapi/v3/order", { symbol: "BTCUSDT" }, {}));
+    expect(codeOf(e)).toBe("ORDER_PENDING");
+    expect((e as PerpError).structured.remediation).toMatch(/Do NOT resubmit/);
+  });
+
+  it("a cancel DELETE that times out is ORDER_PENDING", async () => {
+    const e = await afterDeadline(() => aster()._signedDeleteEip712("/fapi/v3/order", { symbol: "BTCUSDT", orderId: "1" }, {}));
+    expect(codeOf(e)).toBe("ORDER_PENDING");
+  });
+
+  it("a public GET that times out fails with TIMEOUT", async () => {
+    const e = await afterDeadline(() => aster()._publicGet("/fapi/v3/ticker/price"));
+    expect(codeOf(e)).toBe("TIMEOUT");
+  });
+});

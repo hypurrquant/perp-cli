@@ -36,6 +36,7 @@ import { unsupported } from "./trading-v2.js";
 import { asterIocOutcome, type AsterAdapter } from "./aster.js";
 import { PerpError, isTransportFailure, orderNotSent, orderOutcomeUnknown, sendFailure, unknownActionRemediation } from "../errors.js";
 import { addDecimal, alignProtectionPrice, exactUnits, floorSize, requireOnTick, requirePositive, slippagePrice, subDecimal } from "./precision.js";
+import { fetchWithTimeout } from "../http.js";
 
 /** Default quote for a bare base symbol (= venue spot quoteAssets[0]). */
 const DEFAULT_QUOTE = "USDT";
@@ -614,7 +615,7 @@ export class AsterSpotAdapter implements SpotAdapter, SpotTransferCapable, SpotO
   private async _publicGet(path: string, params: Record<string, string>): Promise<unknown> {
     const qs = new URLSearchParams(params).toString();
     const url = `${this._perp.spotBaseUrl}${path}${qs ? `?${qs}` : ""}`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     const text = await res.text();
     if (!res.ok) {
       throw new PerpError(res.status === 429 ? "RATE_LIMITED" : "EXCHANGE_ERROR", `GET ${path} failed (${res.status}): ${text.slice(0, 200)}`, {
