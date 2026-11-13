@@ -2296,11 +2296,13 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   /**
    * Trades in this adapter's scope since `startTime`, newest first, for period totals. userFills is
    * the account's latest HL_USER_FILLS_CAP fills: fewer than that (counted before the scope filter)
-   * is the whole list (`from` = startTime); a full list covers back to its oldest fill only.
+   * is the whole list (`from` = startTime); a full list covers back to its oldest fill only, and not
+   * that millisecond itself (other fills of it may have been cut): a window starting exactly there is not complete.
    */
   async getTradesSince(startTime: number): Promise<{ rows: ExchangeTrade[]; from: number }> {
     const fills = await this._userFills();
-    const from = fills.length < HL_USER_FILLS_CAP ? startTime : fills.reduce((m, t) => Math.min(m, t.time), Infinity);
+    const oldest = fills.reduce((m, t) => Math.min(m, t.time), Infinity);
+    const from = fills.length < HL_USER_FILLS_CAP ? startTime : oldest === startTime ? oldest + 1 : oldest;
     const rows = fills.filter((t) => t.time >= startTime && this._inHistoryScope(t.coin)).map(({ coin: _coin, ...t }) => t);
     return { rows, from };
   }

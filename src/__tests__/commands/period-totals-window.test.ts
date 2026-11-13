@@ -257,6 +257,13 @@ describe("Hyperliquid trades: userFills is the latest 2000 fills — fewer is th
     expect(meta.warnings).toEqual(expect.arrayContaining([`trades read back to ${new Date(NOW - 2000 * 60_000).toISOString()} only — totals are a lower bound`]));
   });
 
+  it("2000 fills whose oldest is exactly at the window start: not complete (fills of that millisecond may be cut)", async () => {
+    const fills = Array.from({ length: 2000 }, (_, i) => hlFill(coins(1)[0], NOW - (i + 1) * 60_000));
+    const { hl } = await hlAdapter([], fills);
+    const w = await tradesInWindow(hl, NOW - 2000 * 60_000);
+    expect(w.complete).toBe(false);
+  });
+
   it("a fill older than the period proves it: not flagged", async () => {
     const { hl } = await hlAdapter([], [hlFill(coins(1)[0], NOW - DAY), hlFill(coins(1)[0], NOW - 40 * DAY)]);
     const { data } = await accountPnl("hyperliquid", hl, "30d");
@@ -397,6 +404,15 @@ describe("a list longer than the read budget proves nothing (its order is not do
   it("account pnl --period 30d: the rows read are summed and flagged fundingIncomplete", async () => {
     const { data } = await accountPnl("pacifica", pacificaAdapter(pacFunding(PAC_OVER_BUDGET, 1000)), "30d");
     expect(data).toMatchObject({ funding: -(PAC_OVER_BUDGET - 1), fundingPayments: PAC_OVER_BUDGET - 1, fundingIncomplete: true });
+  });
+});
+
+describe("a capped list proves coverage only from before the window start", () => {
+  const capped = (): ExchangeAdapter => ({ getFundingPayments: vi.fn().mockResolvedValue([{ time: NOW - HOUR, symbol: "ETH", payment: "1" }, { time: NOW - 2 * HOUR, symbol: "ETH", payment: "1" }]) }) as unknown as ExchangeAdapter;
+
+  it("a full list whose oldest row is exactly at the window start: not complete", async () => {
+    const w = await fundingPaymentsInWindow(capped(), NOW - 2 * HOUR, 2);
+    expect(w.complete).toBe(false);
   });
 });
 

@@ -187,7 +187,8 @@ export type HistoryReach = number | "all" | null;
 
 /**
  * The earliest time a capped newest-first history read (`limit` asked) covers without a gap: its
- * oldest row when the list is full or the reach is not proven, else the declared reach (with a
+ * oldest row when the list is full or the reach is not proven (exclusive: other rows of that
+ * millisecond may have been cut, so callers require from < the window start), else the declared reach (with a
  * minute's slack: a caller's period starts seconds before the read). A window that starts earlier
  * is not provably covered (Infinity when nothing was read and the reach is not proven).
  */
@@ -214,7 +215,7 @@ export async function tradesInWindow(adapter: ExchangeAdapter, sinceMs: number, 
   }
   const rows = await adapter.getTradeHistory(limit);
   const from = coveredFrom(rows, limit, adapter.historyReach?.trades ?? null);
-  return { rows: rows.filter(r => r.time >= sinceMs), complete: from <= sinceMs, from: Math.max(from, sinceMs) };
+  return { rows: rows.filter(r => r.time >= sinceMs), complete: from < sinceMs, from: Math.max(from, sinceMs) };
 }
 
 /**
@@ -231,7 +232,7 @@ export async function fundingPaymentsInWindow(adapter: ExchangeAdapter, sinceMs:
   }
   const rows = await adapter.getFundingPayments(limit);
   const from = coveredFrom(rows, limit, adapter.historyReach?.funding ?? null);
-  return { rows: rows.filter(r => r.time >= sinceMs), complete: from <= sinceMs, from: Math.max(from, sinceMs) };
+  return { rows: rows.filter(r => r.time >= sinceMs), complete: from < sinceMs, from: Math.max(from, sinceMs) };
 }
 
 /**
