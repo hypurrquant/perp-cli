@@ -1,7 +1,7 @@
 import { execFileSync, execSync, spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { perpPath } from "./paths.js";
 import { randomBytes } from "node:crypto";
 import type { Command } from "commander";
 import { parse as parseDotenv } from "dotenv";
@@ -14,8 +14,8 @@ import { startRefusal, unsupported } from "./exchanges/trading-v2.js";
 import { TXFLOW_AUTOMATION_GATE } from "./exchanges/venues/txflow.js";
 import { scrubSecretEnv, secretEnvNamesIn } from "./secret-env.js";
 
-const JOBS_DIR = join(homedir(), ".perp", "jobs");
-const LOGS_DIR = join(homedir(), ".perp", "logs");
+function jobsDir(): string { return perpPath("jobs"); }
+function logsDir(): string { return perpPath("logs"); }
 
 export interface JobEntry {
   id: string;
@@ -30,8 +30,8 @@ export interface JobEntry {
 }
 
 function ensureDirs() {
-  mkdirSync(JOBS_DIR, { recursive: true, mode: 0o700 });
-  mkdirSync(LOGS_DIR, { recursive: true, mode: 0o700 });
+  mkdirSync(jobsDir(), { recursive: true, mode: 0o700 });
+  mkdirSync(logsDir(), { recursive: true, mode: 0o700 });
 }
 
 /**
@@ -56,11 +56,11 @@ function writePrivate(path: string, data: string, flag: "w" | "a"): void {
 }
 
 function jobFile(id: string) {
-  return join(JOBS_DIR, `${id}.json`);
+  return join(jobsDir(), `${id}.json`);
 }
 
 export function logFile(id: string) {
-  return join(LOGS_DIR, `${id}.log`);
+  return join(logsDir(), `${id}.log`);
 }
 
 function genId(): string {
@@ -104,9 +104,9 @@ export function loadJob(id: string): JobEntry | null {
 
 export function listJobs(): JobEntry[] {
   ensureDirs();
-  const files = readdirSync(JOBS_DIR).filter((f) => f.endsWith(".json"));
+  const files = readdirSync(jobsDir()).filter((f) => f.endsWith(".json"));
   return files.map((f) => {
-    const job = JSON.parse(readFileSync(join(JOBS_DIR, f), "utf-8")) as JobEntry;
+    const job = JSON.parse(readFileSync(join(jobsDir(), f), "utf-8")) as JobEntry;
     // Check if tmux session is still alive
     if (job.status === "running" && !tmuxSessionExists(job.tmuxSession)) {
       job.status = "done";
@@ -405,7 +405,7 @@ export function removeJob(id: string): boolean {
  * dropping them would make the child sign with a different account — so refuse.
  */
 function shellOnlySecrets(env: NodeJS.ProcessEnv): string[] {
-  const envFile = join(process.env.HOME || homedir(), ".perp", ".env");
+  const envFile = perpPath(".env");
   const fromFile = existsSync(envFile) ? parseDotenv(readFileSync(envFile, "utf-8")) : {};
   return secretEnvNamesIn(env).filter((k) => {
     const v = env[k];

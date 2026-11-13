@@ -14,8 +14,8 @@
 // (a project tree's leftover dev keys would silently become this server's credentials).
 import { setQuarantineNetwork } from "./bot/quarantine.js";
 import { config as loadDotenv } from "dotenv";
-import { resolve as resolvePath } from "node:path";
-loadDotenv({ path: resolvePath(process.env.HOME || "~", ".perp", ".env") });
+import { perpPath } from "./paths.js";
+loadDotenv({ path: perpPath(".env") }); // HOME unset → PerpError at startup (SSOT Rule #2)
 import { registerAdapterNetwork } from "./exchanges/adapter-network.js";
 import { builderPlanFor } from "./exchanges/builder-fee.js";
 import { resolveAdapterSlippage } from "./exchanges/slippage.js";

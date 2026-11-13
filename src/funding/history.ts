@@ -7,7 +7,7 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { perpPath } from "../paths.js";
 import { join } from "node:path";
 import type { ExchangeFundingRate } from "./rates.js";
 
@@ -30,14 +30,14 @@ export interface HistoricalAverages {
 
 // ── Constants ──
 
-const DATA_DIR = join(homedir(), ".perp", "funding-rates");
+function dataDir(): string { return perpPath("funding-rates"); }
 const DEDUP_INTERVAL_MS = 5 * 60 * 1000;  // 5 minutes
 const CLEANUP_MAX_AGE_DAYS = 30;
 
 // ── Internal helpers ──
 
 function ensureDataDir(): void {
-  mkdirSync(DATA_DIR, { recursive: true });
+  mkdirSync(dataDir(), { recursive: true });
 }
 
 function getMonthKey(date: Date): string {
@@ -47,7 +47,7 @@ function getMonthKey(date: Date): string {
 }
 
 function getFilePath(monthKey: string): string {
-  return join(DATA_DIR, `${monthKey}.jsonl`);
+  return join(dataDir(), `${monthKey}.jsonl`);
 }
 
 /** Read all entries from a JSONL file, returning [] if file doesn't exist. */
@@ -133,14 +133,14 @@ export function cleanupOldFiles(): void {
   const cutoffKey = getMonthKey(cutoff);
 
   try {
-    const files = readdirSync(DATA_DIR);
+    const files = readdirSync(dataDir());
     for (const file of files) {
       if (!file.endsWith(".jsonl")) continue;
       const monthKey = file.replace(".jsonl", "");
       // Compare YYYY-MM strings lexicographically
       if (monthKey < cutoffKey) {
         try {
-          unlinkSync(join(DATA_DIR, file));
+          unlinkSync(join(dataDir(), file));
         } catch {
           // ignore deletion errors
         }

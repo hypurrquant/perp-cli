@@ -5,9 +5,9 @@ import chalk from "chalk";
 import bs58 from "bs58";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { writeKeystoreAtomic } from "../agent-wallet/venue-keystore.js";
-import { resolve } from "path";
+import { owsPath, perpDir, perpPath } from "../paths.js";
 import { formatUsd, makeTable, printJson, jsonOk, withJsonErrors } from "../utils.js";
-import { EXCHANGE_ENV_MAP, validateKey, loadEnvFile, ENV_FILE } from "./init.js";
+import { EXCHANGE_ENV_MAP, validateKey, loadEnvFile, envFile } from "./init.js";
 import { scrubSecretEnv } from "../secret-env.js";
 import { loadSettings, saveSettings } from "../settings.js";
 import { deprecatedPassphraseOption, registerWalletAgentCommands, warnDeprecatedPassphrase } from "./agent.js";
@@ -40,12 +40,11 @@ import type { ExchangeAdapter } from "../exchanges/index.js";
 //
 // Future maintainers: do NOT collapse these. They protect different layers.
 async function runOwsCli(args: string[], timeout = 30000): Promise<{ stdout: string; stderr: string }> {
-  const { resolve: pathResolve } = await import("path");
   const { existsSync: fsExists } = await import("fs");
   const { spawnSync } = await import("child_process");
 
   const owsBin = [
-    pathResolve(process.env.HOME || "~", ".ows", "bin", "ows"),
+    owsPath("bin", "ows"),
     "/usr/local/bin/ows",
   ].find(p => fsExists(p));
 
@@ -54,7 +53,7 @@ async function runOwsCli(args: string[], timeout = 30000): Promise<{ stdout: str
   }
 
   // The OWS CLI child never receives key material (SSOT Rule #3): secret env vars are stripped.
-  const owsEnv = { ...scrubSecretEnv(process.env), PATH: `${pathResolve(process.env.HOME || "~", ".ows", "bin")}:${process.env.PATH}` };
+  const owsEnv = { ...scrubSecretEnv(process.env), PATH: `${owsPath("bin")}:${process.env.PATH}` };
   const proc = spawnSync(owsBin, args, { encoding: "utf-8", timeout, env: owsEnv });
 
   if (proc.error) throw new Error(`OWS CLI failed: ${proc.error.message}`);
@@ -76,18 +75,17 @@ interface WalletStore {
   active: Record<string, string>; // exchange -> wallet name
 }
 
-const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
-const WALLETS_FILE = resolve(PERP_DIR, "wallets.json");
+function walletsFile(): string { return perpPath("wallets.json"); }
 
 function ensurePerpDir() {
-  if (!existsSync(PERP_DIR)) mkdirSync(PERP_DIR, { recursive: true, mode: 0o700 });
+  if (!existsSync(perpDir())) mkdirSync(perpDir(), { recursive: true, mode: 0o700 });
 }
 
 function loadStore(): WalletStore {
   ensurePerpDir();
-  if (!existsSync(WALLETS_FILE)) return { wallets: {}, active: {} };
+  if (!existsSync(walletsFile())) return { wallets: {}, active: {} };
   try {
-    return JSON.parse(readFileSync(WALLETS_FILE, "utf-8"));
+    return JSON.parse(readFileSync(walletsFile(), "utf-8"));
   } catch {
     return { wallets: {}, active: {} };
   }
@@ -96,7 +94,7 @@ function loadStore(): WalletStore {
 function saveStore(store: WalletStore) {
   ensurePerpDir();
   // Atomic, explicit 0600 (writeFileSync's mode is ignored when the file already exists).
-  writeKeystoreAtomic(WALLETS_FILE, JSON.stringify(store, null, 2));
+  writeKeystoreAtomic(walletsFile(), JSON.stringify(store, null, 2));
 }
 
 /** Exported for smart landing page in index.ts */
@@ -714,7 +712,7 @@ export function registerWalletCommands(
 
       if (isJson()) {
         const data = results.map((r) => ({ exchange: r.name, address: r.address, source: r.source }));
-        return printJson(jsonOk({ envFile: ENV_FILE, owsActive, exchanges: data }));
+        return printJson(jsonOk({ envFile: envFile(), owsActive, exchanges: data }));
       }
 
       console.log(chalk.cyan.bold("\n  Configured Wallets\n"));
@@ -1344,11 +1342,10 @@ export function registerWalletCommands(
         o.getWallet(walletName);
 
         // Find OWS CLI binary
-        const { resolve: pathResolve } = await import("path");
         const { existsSync: fsExists } = await import("fs");
 
         const owsBin = [
-          pathResolve(process.env.HOME || "~", ".ows", "bin", "ows"),
+          owsPath("bin", "ows"),
           "/usr/local/bin/ows",
         ].find(p => fsExists(p));
 
@@ -1359,7 +1356,7 @@ export function registerWalletCommands(
         // Call OWS CLI subprocess for native MoonPay deposit
         // OWS CLI writes addresses to stderr, URL to stdout
         // The OWS CLI child never receives key material (SSOT Rule #3): secret env vars are stripped.
-        const owsEnv = { ...scrubSecretEnv(process.env), PATH: `${pathResolve(process.env.HOME || "~", ".ows", "bin")}:${process.env.PATH}` };
+        const owsEnv = { ...scrubSecretEnv(process.env), PATH: `${owsPath("bin")}:${process.env.PATH}` };
         try {
           const { spawnSync } = await import("child_process");
           const proc = spawnSync(owsBin, ["fund", "deposit", "--wallet", walletName, "--chain", chain], {
