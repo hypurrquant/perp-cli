@@ -245,11 +245,12 @@ export class AsterAdapter implements ExchangeAdapter {
   readonly chain = "bnb";
   readonly aliases = ["ast"] as const;
   /**
-   * getFundingPayments reads 7 days of income; getTradeHistory finds its symbols there (COMMISSION
-   * rows — a zero-fee fill on a symbol with no open position / order is not found) and userTrades
-   * defaults to 7 days. Period totals use getTradesSince, which also flags a full per-symbol page.
+   * Not read: period totals use the windowed reads (getFundingPaymentsSince / getTradesSince), which
+   * report their own coverage, so no reach is declared for the capped lists. (getFundingPayments
+   * reads 7 days of income; getTradeHistory finds its symbols there — COMMISSION rows, so a zero-fee
+   * fill on a symbol with no open position / order is not found — and userTrades defaults to 7 days.)
    */
-  readonly historyReach = { funding: 7 * 86_400_000, trades: 7 * 86_400_000 };
+  readonly historyReach = { funding: null, trades: null };
 
   private _baseUrl: string;
   private _testnet: boolean;
