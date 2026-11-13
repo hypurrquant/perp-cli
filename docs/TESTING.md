@@ -267,6 +267,22 @@ Errors: unknown symbol → `SYMBOL_NOT_FOUND` + remediation; unsupported feature
 | #3 single secret source | Each venue's secret storage is in the venue definition (`secretStorage`) and SSOT_RULES #3 table; tests assert no secret on argv / env / settings / logs and no key load on refused paths (§5.9). |
 | Venue definition is the SSOT | Roles, capabilities, intervals, caps come from the registry / adapter tables and are imported by tests, not copied (`server-caps.ts` imports adapter interval tables). |
 
+### 6.1 Source-scanning guards (no linter, no dependencies)
+
+Three vitest guards scan `src/` (comments and string text are blanked first, so prose never
+matches; helper: `src/__tests__/helpers/strip-source.ts`). Two are **ratchets** — a per-file
+baseline of existing violations that may only go down; the failure message prints the current map
+to paste back as `BASELINE`.
+
+| Guard (test file) | Fails when | Fix |
+|---|---|---|
+| `rule2-typed-errors-guard` | plain `throw new Error(` in `src/commands`, `src/exchanges`, `src/bot` exceeds the file's baseline | throw `PerpError` with a typed code (`src/errors.ts`) instead of relying on the `classifyError` string heuristic |
+| `rule2-fetch-timeout-guard` | a `fetch(` call in `src/` without `AbortSignal` / `signal` exceeds the file's baseline | pass `signal: AbortSignal.timeout(ms)` (or the shared HTTP helper) |
+| `rule2-silent-catch-guard` | an empty `catch` has no explanatory comment (exact, no baseline) | log / rethrow, or write why the failure is safe to ignore inside the catch |
+
+A baseline that is **too high** also fails ("lower this baseline"), so removed violations cannot be
+re-introduced later. Never raise a baseline to make a new violation pass.
+
 ---
 
 ## 7. Definition of done
