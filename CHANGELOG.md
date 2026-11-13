@@ -30,7 +30,7 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ### JSON contract changes
 
-- **`portfolio` `totals.funding24h` is `number | null`** (was always a number): null when no venue's funding was read, and `totals.fundingIncomplete` is then true; the `--serve` envelope, which reads nothing, carries null too. Read it as unknown, not 0.
+- **`portfolio` `totals.funding24h` is `number | null`** (was always a number): null when no venue's funding was read. `totals.fundingIncomplete` is true when a venue's funding was not read (failed or not proven to cover the 24 h); with no venue at all (an empty result, and the `--serve` envelope, which reads nothing) `funding24h` is null and `fundingIncomplete` false — nothing is missing, nothing was read. Read null as unknown, not 0.
 - **`history compare` gains `incomplete`** (`Record<string, string>`, `"<venue>.funding"` → how far back the read reaches). A listed venue's `funding` / `totals.funding` is a lower bound. Migration: treat a non-empty `incomplete` like `partial` before relying on the funding totals.
 - **`history report` gains `incomplete`** (same shape, `"<venue>.trades"` / `"<venue>.funding"`), and `costs.totalFees` / `totalFunding` / `netFunding` now cover `period` only (they summed the newest 50 rows whatever the period). Migration: expect smaller totals for a short `--since`; a non-empty `incomplete` means the listed venue's part is a lower bound.
 
