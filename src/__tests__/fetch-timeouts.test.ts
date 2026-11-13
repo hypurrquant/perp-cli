@@ -8,6 +8,8 @@ import { PerpError, classifyError } from "../errors.js";
 import { HTTP_TIMEOUT_MS } from "../http.js";
 import { hangingFetch } from "./helpers/hanging-fetch.js";
 import { AsterAdapter } from "../exchanges/aster.js";
+import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
+import { fetchHyperliquidAllMidsRaw } from "../api/public/hyperliquid.js";
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
@@ -49,5 +51,16 @@ describe("Aster", () => {
   it("a public GET that times out fails with TIMEOUT", async () => {
     const e = await afterDeadline(() => aster()._publicGet("/fapi/v3/ticker/price"));
     expect(codeOf(e)).toBe("TIMEOUT");
+  });
+});
+
+describe("Hyperliquid /info reads", () => {
+  it("an adapter account read (portfolio) that times out fails with TIMEOUT", async () => {
+    const hl = Object.assign(Object.create(HyperliquidAdapter.prototype), { _address: "0x0000000000000000000000000000000000000001", _testnet: true }) as HyperliquidAdapter;
+    expect(codeOf(await afterDeadline(() => hl.getPortfolio()))).toBe("TIMEOUT");
+  });
+
+  it("a shared public read (allMids) that times out fails with TIMEOUT", async () => {
+    expect(codeOf(await afterDeadline(() => fetchHyperliquidAllMidsRaw()))).toBe("TIMEOUT");
   });
 });

@@ -1,5 +1,6 @@
 import { HYPERLIQUID_API_URL, sharedApiNetwork } from "./urls.js";
 import { assertOk } from "./_http.js";
+import { fetchWithTimeout } from "../../http.js";
 import { withCache, TTL_MARKET } from "../../cache.js";
 
 // ── Types ──
@@ -14,7 +15,7 @@ interface HyperliquidAsset {
 
 async function hlPost(type: string): Promise<unknown> {
   // SSOT rule #2: a non-2xx response is a real failure, not "no rows" — see assertOk.
-  const res = await fetch(HYPERLIQUID_API_URL, {
+  const res = await fetchWithTimeout(HYPERLIQUID_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type }),
@@ -89,7 +90,7 @@ export function fetchHyperliquidAllMidsRaw(): Promise<unknown> {
 export async function pingHyperliquid(): Promise<{ ok: boolean; latencyMs: number; status: number }> {
   const start = Date.now();
   try {
-    const res = await fetch(HYPERLIQUID_API_URL, {
+    const res = await fetchWithTimeout(HYPERLIQUID_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "allMids" }),
