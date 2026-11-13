@@ -226,6 +226,9 @@ export const ASTER_INCOME_MAX_PAGES = 60;
  */
 export const ASTER_INCOME_PROVEN_MS = 7 * 86_400_000 + 60_000;
 
+/** GET /fapi/v3/userTrades rows asked per symbol at most (the endpoint's limit max, Binance-style API; not re-checked live); a full answer may leave older fills unread. */
+export const ASTER_USER_TRADES_MAX = 1000;
+
 /** GET /fapi/v3/klines maximum rows per request (docs: limit max 1500). */
 const ASTER_KLINE_PAGE = 1500;
 /** Page cap for one range (150 000 bars). */
@@ -241,7 +244,11 @@ export class AsterAdapter implements ExchangeAdapter {
   readonly name = "aster";
   readonly chain = "bnb";
   readonly aliases = ["ast"] as const;
-  /** getFundingPayments reads 7 days of income; getTradeHistory finds its symbols there and userTrades defaults to 7 days. */
+  /**
+   * getFundingPayments reads 7 days of income; getTradeHistory finds its symbols there (COMMISSION
+   * rows — a zero-fee fill on a symbol with no open position / order is not found) and userTrades
+   * defaults to 7 days. Period totals use getTradesSince, which also flags a full per-symbol page.
+   */
   readonly historyReach = { funding: 7 * 86_400_000, trades: 7 * 86_400_000 };
 
   private _baseUrl: string;
@@ -1118,7 +1125,29 @@ export class AsterAdapter implements ExchangeAdapter {
    * A failed read throws (never an empty list); a row without a readable field → EXCHANGE_ERROR.
    */
   async getTradeHistory(limit = 30): Promise<ExchangeTrade[]> {
+    const { rows } = await this._userTradeRows(Math.min(limit, ASTER_USER_TRADES_MAX));
+    return rows.sort((a, b) => b.time - a.time).slice(0, limit);
+  }
+
+  /**
+   * Trades since `startTime`, newest first, for period totals; `from` = the earliest time the rows
+   * cover without a gap: the 7 days the symbol discovery and userTrades' default window prove, later
+   * when a symbol's answer is a full page (its older fills are unread: covered back to its oldest row).
+   * Symbol discovery relies on COMMISSION income rows, so a zero-fee fill on a symbol with no open
+   * position or order can be missed.
+   */
+  async getTradesSince(startTime: number): Promise<{ rows: ExchangeTrade[]; from: number }> {
+    const { rows, from } = await this._userTradeRows(ASTER_USER_TRADES_MAX);
+    return { rows: rows.filter(t => t.time >= startTime).sort((a, b) => b.time - a.time), from };
+  }
+
+  /**
+   * userTrades of every symbol with account activity (see _tradedApiSymbols), `perSymbol` rows each
+   * (≤ ASTER_USER_TRADES_MAX). `from`: see getTradesSince — a full page proves nothing older than its oldest row.
+   */
+  private async _userTradeRows(perSymbol: number): Promise<{ rows: ExchangeTrade[]; from: number }> {
     const r = this._resolveSigner();
+    let from = Date.now() - ASTER_INCOME_PROVEN_MS;
     const apiSymbols = await this._tradedApiSymbols(r);
     const field = (t: Record<string, unknown>, k: string): string => {
       const v = t[k];
@@ -1127,10 +1156,11 @@ export class AsterAdapter implements ExchangeAdapter {
     };
     const allTrades: ExchangeTrade[] = [];
     for (const sym of apiSymbols) {
-      const trades = await this._signedGetEip712("/fapi/v3/userTrades", { symbol: sym, limit: String(limit) }, r);
+      const trades = await this._signedGetEip712("/fapi/v3/userTrades", { symbol: sym, limit: String(perSymbol) }, r);
       if (!Array.isArray(trades)) {
         throw new PerpError("EXCHANGE_ERROR", `Aster userTrades for ${sym} is not a list (${JSON.stringify(trades).slice(0, 120)})`, { exchange: "aster" });
       }
+      const pageStart = allTrades.length;
       for (const t of trades as Array<Record<string, unknown>>) {
         if (typeof t.buyer !== "boolean") {
           throw new PerpError("EXCHANGE_ERROR", `Aster userTrades row without a boolean buyer: ${JSON.stringify(t).slice(0, 160)}`, { exchange: "aster" });
@@ -1146,8 +1176,9 @@ export class AsterAdapter implements ExchangeAdapter {
           fee: field(t, "commission"),
         });
       }
+      if (trades.length >= ASTER_USER_TRADES_MAX) from = Math.max(from, allTrades.slice(pageStart).reduce((m, t) => Math.min(m, t.time), Infinity));
     }
-    return allTrades.sort((a, b) => b.time - a.time).slice(0, limit);
+    return { rows: allTrades, from };
   }
 
   /** FUNDING_FEE income of the last 7 days (see _incomeRows), newest first, at most `limit` rows. */

@@ -16,7 +16,7 @@ import { HyperliquidAdapter } from "../../exchanges/hyperliquid.js";
 import { PacificaAdapter, PACIFICA_ACCOUNT_HISTORY_PAGE, PACIFICA_MAX_PAGES } from "../../exchanges/pacifica.js";
 import { AsterAdapter, ASTER_INCOME_MAX_PAGES } from "../../exchanges/aster.js";
 import { LighterAdapter } from "../../exchanges/lighter.js";
-import { coverageNote, coveredFrom, fundingPaymentsInWindow, type ExchangeAdapter } from "../../exchanges/interface.js";
+import { coverageNote, coveredFrom, fundingPaymentsInWindow, tradesInWindow, type ExchangeAdapter } from "../../exchanges/interface.js";
 import { invalidateCache } from "../../cache.js";
 import type { AgentMeta } from "../../settings.js";
 import HL_RECORDED from "../fixtures/hyperliquid/read-path-2026-10-19.json";
@@ -112,8 +112,8 @@ const PAC_OVER_BUDGET = PACIFICA_ACCOUNT_HISTORY_PAGE * PACIFICA_MAX_PAGES + 1;
 const NOT_PROVEN = "no row read proves how far back the venue's history reaches";
 
 // ── Aster ──
-/** A real AsterAdapter whose signed request reads `income` (rows in [startTime, endTime]); `incomeRequests()` counts them. */
-function asterAdapter(income: Array<{ symbol: string; incomeType: string; income: string; time: number }>): { ast: AsterAdapter; incomeRequests: () => number } {
+/** A real AsterAdapter whose signed request reads `income` (rows in [startTime, endTime]) and `userTrades` (per symbol, at most 1000 — the endpoint max); `incomeRequests()` counts income reads. */
+function asterAdapter(income: Array<{ symbol: string; incomeType: string; income: string; time: number }>, userTrades: (q: Record<string, string>) => unknown[] = () => []): { ast: AsterAdapter; incomeRequests: () => number } {
   let requests = 0;
   const ast = new AsterAdapter(undefined, false);
   const t = ast as unknown as Record<string, unknown>;
@@ -126,7 +126,7 @@ function asterAdapter(income: Array<{ symbol: string; incomeType: string; income
         return income.filter(r => r.incomeType === q.incomeType && r.time >= Number(q.startTime) && r.time <= Number(q.endTime)).slice(0, Number(q.limit));
       case "/fapi/v3/accountWithJoinMargin": return { positions: [] };
       case "/fapi/v3/openOrders": await new Promise(r => setTimeout(r, 5)); return []; // a read takes time: the period started before it
-      case "/fapi/v3/userTrades": return [];
+      case "/fapi/v3/userTrades": return userTrades(q);
       default: throw new Error(`unexpected ${path}`);
     }
   };
@@ -322,6 +322,25 @@ describe("Aster: getFundingPayments stops at 7 days, a period total reads its wi
     expect(w.from).toBe(start);
     expect(w.rows).toHaveLength(1500);
     expect(w.rows.map(r => r.time)).toEqual([...w.rows.map(r => r.time)].sort((a, b) => b - a));
+  });
+});
+
+describe("Aster trades: a full userTrades page (1000) proves nothing older than its oldest fill", () => {
+  /** `n` BTCUSDT fills one minute apart up to now (newest first); the symbol is found through a COMMISSION row. */
+  const fills = (n: number) => Array.from({ length: n }, (_, i) => ({ symbol: "BTCUSDT", buyer: true, price: "100", qty: "1", commission: "0.1", time: NOW - i * 60_000 }));
+  const commission = { symbol: "BTCUSDT", incomeType: "COMMISSION", income: "-0.1", time: NOW - HOUR };
+
+  it("a period total asking more than 1000 rows: a symbol's full page is flagged incomplete, read back to its oldest fill", async () => {
+    const { ast } = asterAdapter([commission], q => fills(1500).slice(0, Math.min(Number(q.limit), 1000)));
+    const w = await tradesInWindow(ast, NOW - 3 * DAY, 5000);
+    expect(w).toMatchObject({ complete: false, from: NOW - 999 * 60_000 });
+  });
+
+  it("getTradeHistory(5000) asks userTrades for at most 1000 rows per symbol", async () => {
+    const asked: string[] = [];
+    const { ast } = asterAdapter([commission], q => { asked.push(q.limit); return []; });
+    await ast.getTradeHistory(5000);
+    expect(asked).toEqual(["1000"]);
   });
 });
 
