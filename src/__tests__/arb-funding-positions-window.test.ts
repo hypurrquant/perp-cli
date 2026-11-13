@@ -1,5 +1,5 @@
 /**
- * `arb funding --positions` "Actual 24h": the funding received / paid over the last 24 h, read for
+ * `arb scan --positions` "Actual 24h": the funding received / paid over the last 24 h, read for
  * that window — never a capped list filtered to it. A read not proven to cover the 24 h gives
  * actual24h null with the reason in fundingHistoryErrors (never a partial sum). No network: the
  * adapter is a plain object.
@@ -38,7 +38,7 @@ async function run(a: ExchangeAdapter): Promise<{ positions: Array<{ actual24h: 
 
 afterEach(() => vi.restoreAllMocks());
 
-describe("arb funding --positions: Actual 24h covers the 24 h or is null", () => {
+describe("arb scan --positions: Actual 24h covers the 24 h or is null", () => {
   it("a capped list whose rows all fall inside the 24 h (reach not proven): actual24h null, not a partial sum", async () => {
     const res = await run(adapter({ getFundingPayments: vi.fn().mockResolvedValue([{ time: NOW - HOUR, symbol: "ETH", payment: "-1" }]) }));
     expect(res.positions[0].actual24h).toBeNull();
