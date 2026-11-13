@@ -25,6 +25,7 @@ import {
   type BridgeEvmSigner,
 } from "./bridge-signers.js";
 import { fetchWithTimeout } from "./http.js";
+import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
 
 /**
  * What signs a bridge leg: a master-wallet signer (OWS vault signer or raw-key signer from
@@ -1374,7 +1375,7 @@ async function executeCctpHyperCoreToEvm(
         nonce: timestamp,
         signature: { r: sig.r, s: sig.s, v: sig.v },
       }),
-    }, 30_000); // HyperliquidAdapter.EXCHANGE_TIMEOUT_MS: a timeout here is sendFailure → ORDER_PENDING
+    }, HyperliquidAdapter.EXCHANGE_TIMEOUT_MS); // a timeout here is sendFailure → ORDER_PENDING
     result = await resp.json() as Record<string, unknown>;
   } catch (e) {
     throw sendFailure("hyperliquid", "sendToEvmWithData (HyperCore → EVM bridge)", e,

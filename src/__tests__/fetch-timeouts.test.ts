@@ -123,11 +123,24 @@ describe("Pacifica REST reads", () => {
 });
 
 describe("bridge engine", () => {
-  it("a HyperCore → EVM withdrawal POST that times out (30 s) is ORDER_PENDING, never resent", async () => {
+  it("a HyperCore → EVM withdrawal POST that times out is ORDER_PENDING, never resent", async () => {
     const signer = pkEvmSigner(`0x${"42".repeat(32)}`);
-    const e = await afterDeadline(() => executeCctpBridge("mainnet", "hyperliquid", "arbitrum", 10, signer, signer.getAddress()), 30_000);
+    const e = await afterDeadline(() => executeCctpBridge("mainnet", "hyperliquid", "arbitrum", 10, signer, signer.getAddress()), HyperliquidAdapter.EXCHANGE_TIMEOUT_MS);
     expect(codeOf(e)).toBe("ORDER_PENDING");
     expect((e as PerpError).structured.remediation).toMatch(/Do NOT resend/);
+  });
+
+  it("the HyperCore → EVM withdrawal POST waits the Hyperliquid exchange deadline, not the 15 s default", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", hangingFetch());
+    const signer = pkEvmSigner(`0x${"42".repeat(32)}`);
+    let settled = false;
+    const p = executeCctpBridge("mainnet", "hyperliquid", "arbitrum", 10, signer, signer.getAddress()).catch(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(HyperliquidAdapter.EXCHANGE_TIMEOUT_MS - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await p;
+    expect(settled).toBe(true);
   });
 
   it("a deBridge status read that times out fails with TIMEOUT", async () => {
