@@ -8,6 +8,7 @@ import { PerpError, classifyError } from "../errors.js";
 import { HTTP_TIMEOUT_MS } from "../http.js";
 import { hangingFetch } from "./helpers/hanging-fetch.js";
 import { AsterAdapter } from "../exchanges/aster.js";
+import { AsterSpotAdapter } from "../exchanges/aster-spot.js";
 import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
 import { fetchHyperliquidAllMidsRaw } from "../api/public/hyperliquid.js";
 import { LighterAdapter } from "../exchanges/lighter.js";
@@ -58,6 +59,20 @@ describe("Aster", () => {
   it("a public GET that times out fails with TIMEOUT", async () => {
     const e = await afterDeadline(() => aster()._publicGet("/fapi/v3/ticker/price"));
     expect(codeOf(e)).toBe("TIMEOUT");
+  });
+
+  const spot = (): AsterSpotAdapter => Object.assign(Object.create(AsterSpotAdapter.prototype), {
+    _perp: Object.assign(aster(), { _resolveSigner: () => ({}), _testnet: false }),
+    _resolve: (s: string) => ({ wire: s.replace("/", ""), base: s.split("/")[0], quote: s.split("/")[1] }),
+    _requireSpotPermission: () => {},
+  }) as AsterSpotAdapter;
+
+  it("a spot cancel that times out is ORDER_PENDING, not a retryable TIMEOUT", async () => {
+    expect(codeOf(await afterDeadline(() => spot().spotCancelOrder("ASTER/USDT", "123")))).toBe("ORDER_PENDING");
+  });
+
+  it("a spot cancel-all that times out is ORDER_PENDING", async () => {
+    expect(codeOf(await afterDeadline(() => spot().spotCancelAllOrders("ASTER/USDT")))).toBe("ORDER_PENDING");
   });
 });
 
