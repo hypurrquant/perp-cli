@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Removed — unused dependencies
+
+- **`ink-table`, `ink-spinner` (dependencies) and `ts-morph` (devDependency) removed.** None is imported anywhere in src, scripts, packages, config files or package.json scripts.
+
 ### Security — dependency advisories (`pnpm audit --prod`: 18 → 5)
 
 - **Refreshed zod and corrected stale `pnpm.overrides` pins.** zod (direct) 4.3.6 → 4.6.7 (high advisory, fixed in >=4.6.6, inside `^4.3.6`). The overrides for `hono`, `@hono/node-server`, `fast-uri`, `qs` and `body-parser` pinned versions that were themselves still vulnerable; they now require hono >=4.13.16, @hono/node-server >=1.19.18, fast-uri >=3.1.9, qs >=6.16.1, body-parser >=2.4.0. No major bump, no new package. Remaining 5 (moderate): `@solana/web3.js` 1.x > jayson > uuid / stream-json (4, need a web3.js major migration) and one @hono/node-server advisory fixed only in 2.x.
