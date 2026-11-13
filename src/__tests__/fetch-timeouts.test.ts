@@ -12,6 +12,8 @@ import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
 import { fetchHyperliquidAllMidsRaw } from "../api/public/hyperliquid.js";
 import { LighterAdapter } from "../exchanges/lighter.js";
 import { fetchLighterFundingRatesRaw } from "../api/public/lighter.js";
+import { PacificaClient } from "../pacifica/client.js";
+import { fetchPacificaPricesRaw } from "../api/public/pacifica.js";
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
@@ -76,5 +78,16 @@ describe("Lighter REST reads", () => {
 
   it("a shared public read (funding rates) that times out fails with TIMEOUT", async () => {
     expect(codeOf(await afterDeadline(() => fetchLighterFundingRatesRaw()))).toBe("TIMEOUT");
+  });
+});
+
+describe("Pacifica REST reads", () => {
+  it("a client GET that times out fails with TIMEOUT", async () => {
+    const pac = new PacificaClient({ network: "testnet" }) as unknown as { get(path: string): Promise<unknown> };
+    expect(codeOf(await afterDeadline(() => pac.get("/info")))).toBe("TIMEOUT");
+  });
+
+  it("a shared public read (prices) that times out fails with TIMEOUT", async () => {
+    expect(codeOf(await afterDeadline(() => fetchPacificaPricesRaw()))).toBe("TIMEOUT");
   });
 });
