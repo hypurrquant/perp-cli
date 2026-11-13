@@ -992,9 +992,13 @@ export class AsterAdapter implements ExchangeAdapter {
     const end = Date.now();
     const start = windowStart ?? end - 7 * 86_400_000;
     const proven = (t: number) => Math.max(t, end - ASTER_INCOME_PROVEN_MS);
+    // newestFirst reads at most ASTER_INCOME_MAX_PAGES slices, so only the newest that many are built
+    // (a window from 0 would otherwise list ~20 000 days); `sliceFloor` > start = older days left out.
+    const dayCount = Math.ceil((end - start) / 86_400_000);
+    const sliceFloor = newestFirst && dayCount > ASTER_INCOME_MAX_PAGES ? start + (dayCount - ASTER_INCOME_MAX_PAGES) * 86_400_000 : start;
     const daySlices = (): Array<[number, number]> => {
       const out: Array<[number, number]> = [];
-      for (let s = start; s < end; s += 86_400_000) out.push([s, Math.min(s + 86_400_000 - 1, end)]);
+      for (let s = sliceFloor; s < end; s += 86_400_000) out.push([s, Math.min(s + 86_400_000 - 1, end)]);
       if (out.length > 0) out[out.length - 1][1] = end; // last slice ends exactly at `end` (inclusive), no extra 1-ms request
       return out;
     };
@@ -1041,7 +1045,7 @@ export class AsterAdapter implements ExchangeAdapter {
       }
       from = s;
     }
-    return { rows, from: proven(start) };
+    return { rows, from: proven(sliceFloor === start ? start : from) };
   }
 
   /**
