@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Changed — Node 20 is no longer supported
+
+- **`engines.node` is `^22.0.0 || ^24.0.0`** (was `^20.0.0 || ^22.0.0 || ^24.0.0`). Node 20 reached end of life on 2026-04-30 and CI no longer tests it. On Node 20, `npm install -g perp-cli` warns about the engine (it fails with `engine-strict`); upgrade to Node 22 or 24. The standalone `@hypurrquant/perp-ws` package is unchanged (`>=20`).
+
 ### Fixed — `mixedKinds` counted unverified rows; the `--history` hint named a removed command
 
 - **`mixedKinds` (`arb scan --rates` / `--compare`, MCP `get_funding_rates`) is computed over the verified (ranked) rates.** With `--include-unverified` a display-only row of another kind (GRVT "predicted" next to Hyperliquid / Aster "accruing") set it, although every ranked rate was of one kind.
