@@ -15,6 +15,7 @@ vi.mock("../../cache.js", async () => ({
 }));
 
 import { HyperliquidAdapter } from "../../exchanges/hyperliquid.js";
+import { HyperliquidOutcomeAdapter } from "../../exchanges/hyperliquid-outcome.js";
 
 const USER = "0xabcdef0000000000000000000000000000000001";
 
@@ -78,6 +79,27 @@ describe("native perps: raw coins on the wire, '-PERP' display names", () => {
     expect(orders.map(o => [o.symbol, o.side])).toEqual([["ETH-PERP", "sell"]]);
     const pos = await hl.getPositions();
     expect(pos[0]).toMatchObject({ symbol: "BTC-PERP", side: "short", size: "0.1" });
+  });
+
+  // HIP-4 outcome orders ("#<encoding>") were listed as perps: cancel-all / flatten failed on their asset index.
+  const OUTCOME_ROUTES = {
+    meta: () => META,
+    userAbstraction: () => "disabled",
+    frontendOpenOrders: () => [{ oid: 7, coin: "ETH", side: "A", limitPx: "3100", sz: "0.5", isTrigger: false, orderType: "Limit" }, { oid: 9, coin: "#240710", side: "B", limitPx: "0.4", sz: "25", isTrigger: false, orderType: "Limit" }],
+  };
+
+  it("getOpenOrders leaves out HIP-4 outcome orders (coin \"#<encoding>\") — they are not perp orders", async () => {
+    const { hl } = adapterWith(OUTCOME_ROUTES);
+    await hl.init();
+    expect((await hl.getOpenOrders()).map(o => o.orderId)).toEqual(["7"]);
+  });
+
+  it("the outcome adapter still lists the account's outcome orders", async () => {
+    const { hl } = adapterWith(OUTCOME_ROUTES);
+    await hl.init();
+    const outcome = new HyperliquidOutcomeAdapter(hl);
+    vi.spyOn(outcome as unknown as { _infoPost: () => Promise<unknown> }, "_infoPost").mockResolvedValue({ outcomes: [], questions: [] }); // outcomeMeta
+    expect((await outcome.getOpenOrders() as Array<{ orderId: string; symbol: string }>).map(o => [o.orderId, o.symbol])).toEqual([["9", "#240710"]]);
   });
 
   it("getKlines posts candleSnapshot with the raw coin", async () => {

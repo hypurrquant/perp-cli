@@ -36,7 +36,7 @@ import type {
 import type { ResolvedSlippage } from "../slippage.js";
 import { alignProtectionPrice, floorSize, mulDecimal, requirePositive, slippagePrice, subDecimal, toUnitsExact, unitsToString } from "../precision.js";
 import {
-  newClientOrderId, unsupported, validateLegacyTif, validateOrderRequest, type TradingV2,
+  newClientOrderId, requireAllCancelled, unsupported, validateLegacyTif, validateOrderRequest, type TradingV2,
 } from "../trading-v2.js";
 import type { VenueCapabilities, VenueCreateContext, VenueDefinition } from "../venue.js";
 import { networkConfig, requireCapabilities } from "../venue.js";
@@ -1211,7 +1211,7 @@ export class ArcusAdapter implements ExchangeAdapter, TradingV2 {
   }
 
   async cancelAllOrders(symbol?: string): Promise<unknown> {
-    return this.cancelAllV2(symbol ?? null);
+    return requireAllCancelled(await this.cancelAllV2(symbol ?? null));
   }
 
   async setLeverage(symbol: string, leverage: number, marginMode?: "cross" | "isolated"): Promise<unknown> {

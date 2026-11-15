@@ -551,12 +551,17 @@ describe("validateTrade — estimated cost", () => {
     const cost = result.estimatedCost!;
     // margin = 6000 / 20 = 300
     expect(cost.margin).toBeCloseTo(300, 0);
-    // fee = 6000 * 0.00035 = 2.1
-    expect(cost.fee).toBeCloseTo(2.1, 1);
+    // fee = 6000 * 0.00045 (Hyperliquid base taker) = 2.7
+    expect(cost.fee).toBeCloseTo(2.7, 1);
     // slippage = 6000 * 0.001 = 6 (for market orders)
     expect(cost.slippage).toBeCloseTo(6, 1);
     // total = margin + fee + slippage
     expect(cost.total).toBeCloseTo(cost.margin + cost.fee + cost.slippage, 1);
+  });
+
+  it("the fee estimate is the venue's taker fee (Lighter: 0%)", async () => {
+    const result = await validateTrade(mockAdapter({ name: "lighter" }), { symbol: "BTC", side: "buy", size: 0.1 });
+    expect(result.estimatedCost!.fee).toBe(0);
   });
 
   it("sets slippage to 0 for limit orders", async () => {
@@ -584,8 +589,8 @@ describe("validateTrade — estimated cost", () => {
     const cost = result.estimatedCost!;
     // margin = 5900 / 20 = 295
     expect(cost.margin).toBeCloseTo(295, 0);
-    // fee = 5900 * 0.00035 = 2.065
-    expect(cost.fee).toBeCloseTo(2.065, 1);
+    // fee = 5900 * 0.00045 = 2.655
+    expect(cost.fee).toBeCloseTo(2.655, 1);
   });
 });
 
@@ -893,5 +898,33 @@ describe("validateTrade — max leverage not published by the venue", () => {
     const result = await validateTrade(unpublished(), { symbol: "BTC", side: "buy", size: 0.01, leverage: 5 });
     expect(result.warnings.some(w => w.includes("not published") || w.includes("exceeds"))).toBe(false);
     expect(result.estimatedCost!.margin).toBeCloseTo(120, 6);
+  });
+});
+
+// assessRisk fails closed with PRICE_STALE when an open position's notional is unknown (Aster
+// mark "N/A"). It used to be caught as "Risk check skipped (no limits configured)", passed: true.
+describe("validateTrade — risk limits with an unknown position notional (PRICE_STALE)", () => {
+  const stale = async () => {
+    const { assessRisk } = await import("../risk.js");
+    const { PerpError } = await import("../errors.js");
+    vi.mocked(assessRisk).mockImplementationOnce(() => { throw new PerpError("PRICE_STALE", "aster ETH position notional unknown (size 1, mark N/A)"); });
+  };
+
+  it("an opening order fails the risk check with the real reason", async () => {
+    await stale();
+    const result = await validateTrade(mockAdapter() as never, { symbol: "BTC", side: "buy", size: 0.1 });
+    const risk = result.checks.find(c => c.check === "risk_limits");
+    expect(risk).toMatchObject({ passed: false, message: expect.stringContaining("position notional unknown") });
+    expect(result.valid).toBe(false);
+  });
+
+  it("a reduce-only order passes (the gate exempts reduce-only) with a warning naming the reason", async () => {
+    await stale();
+    const adapter = mockAdapter({ getPositions: vi.fn().mockResolvedValue([{ symbol: "BTC-PERP", side: "long", size: "1", entryPrice: "60000", markPrice: "60000", liquidationPrice: null, unrealizedPnl: "0", leverage: 1 }]) });
+    const result = await validateTrade(adapter as never, { symbol: "BTC", side: "sell", size: 0.5, reduceOnly: true });
+    const risk = result.checks.find(c => c.check === "risk_limits");
+    expect(risk?.passed).toBe(true);
+    expect(risk?.message).not.toContain("no limits configured");
+    expect(result.warnings).toContainEqual(expect.stringContaining("position notional unknown"));
   });
 });

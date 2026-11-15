@@ -244,7 +244,7 @@ describe("Lighter", () => {
     ]);
     expect(await codeOf(a.orderStatusRow("ETH", { kind: "clientOrderId", value: "7" }))).toBe("INVALID_PARAMS");
   });
-  it("getBalance: no account → EXCHANGE_ERROR, not a zero balance; unreadable assets → EXCHANGE_ERROR", async () => {
+  it("getBalance: no account → EXCHANGE_ERROR, not a zero balance; equity = total_asset_value (spot assets are spot rows)", async () => {
     const a = lighter();
     a._address = "0x0000000000000000000000000000000000000001";
     a._accountIndex = 3;
@@ -252,11 +252,7 @@ describe("Lighter", () => {
     a.fetchAccount = vi.fn().mockResolvedValue(null);
     expect(await codeOf(a.getBalance())).toBe("EXCHANGE_ERROR");
     const acct = { total_asset_value: "10", available_balance: "5", collateral: "8", positions: [] };
-    a.fetchAccount = vi.fn().mockResolvedValue(acct);
-    expect(await codeOf(a.getBalance())).toBe("EXCHANGE_ERROR");
     a.fetchAccount = vi.fn().mockResolvedValue({ ...acct, assets: [{ symbol: "USDC", balance: "2" }] });
-    expect((await a.getBalance()).equity).toBe("12");
-    a.fetchAccount = vi.fn().mockResolvedValue({ ...acct, assets: [] });
     expect((await a.getBalance()).equity).toBe("10");
   });
   it("lighterRowField: missing / empty → EXCHANGE_ERROR (no '0' / 'open' defaults)", () => {

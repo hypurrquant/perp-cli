@@ -134,8 +134,8 @@ describe("Flow 1: 스프레드 스캔 → 기회 평가 → 진입 판단", () =
 
   it("computeRoundTripCostPct calculates trading costs", () => {
     const cost = computeRoundTripCostPct("hyperliquid", "pacifica");
-    // 2 * (0.035 + 0.035) + 2 * 0.05 = 0.24%
-    expect(cost).toBeCloseTo(0.24, 2);
+    // 2 * (0.045 + 0.040) + 2 * 0.05 = 0.27%
+    expect(cost).toBeCloseTo(0.27, 2);
   });
 
   it("computeNetSpread subtracts costs from gross spread", () => {
@@ -162,7 +162,8 @@ describe("Flow 1: 스프레드 스캔 → 기회 평가 → 진입 판단", () =
   });
 
   it("--min-spread threshold accepts good opportunity", () => {
-    const grossSpread = computeAnnualSpread(pacRawRate, "pacifica", hlRawRate, "hyperliquid");
+    // PAC 0.0055%/h: gross 47.3% − the 0.27% round trip amortized over 7 days (14.1%) ≥ 30%
+    const grossSpread = computeAnnualSpread(0.000055, "pacifica", hlRawRate, "hyperliquid");
     const roundTripCost = computeRoundTripCostPct("hyperliquid", "pacifica");
     const netSpread = computeNetSpread(grossSpread, 7, roundTripCost);
     const minSpread = 30;
@@ -230,7 +231,7 @@ describe("Flow 2: 데몬 라이프사이클 — 진입 → 펀딩 축적 → 스
   });
 
   it("step 3: entry spread passes minSpread threshold", () => {
-    const pacRate = 0.00005;
+    const pacRate = 0.000055;
     const hlRate = 0.000001;
     const grossSpread = computeAnnualSpread(pacRate, "pacifica", hlRate, "hyperliquid");
     const rtCost = computeRoundTripCostPct("hyperliquid", "pacifica");
