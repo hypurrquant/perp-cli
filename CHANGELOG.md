@@ -4,6 +4,14 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Removed — unused dependencies
+
+- **`ink-table`, `ink-spinner` (dependencies) and `ts-morph` (devDependency) removed.** None is imported anywhere in src, scripts, packages, config files or package.json scripts.
+
+### Security — dependency advisories (`pnpm audit --prod`: 18 → 5)
+
+- **Refreshed zod and corrected stale `pnpm.overrides` pins.** zod (direct) 4.3.6 → 4.6.7 (high advisory, fixed in >=4.6.6, inside `^4.3.6`). The overrides for `hono`, `@hono/node-server`, `fast-uri`, `qs` and `body-parser` pinned versions that were themselves still vulnerable; they now require hono >=4.13.16, @hono/node-server >=1.19.18, fast-uri >=3.1.9, qs >=6.16.1, body-parser >=2.4.0. No major bump, no new package. Remaining 5 (moderate): `@solana/web3.js` 1.x > jayson > uuid / stream-json (4, need a web3.js major migration) and one @hono/node-server advisory fixed only in 2.x.
+
 ### Changed — HOME unset is now an error (no more `./~/.perp` in the working directory)
 
 - **With HOME unset, perp-cli now refuses with `INVALID_PARAMS` ("HOME is not set; cannot locate ~/.perp …", remediation: set HOME).** Before, about 20 modules resolved `resolve(process.env.HOME || "~", ".perp")`. `path.resolve` does not expand "~", so under cron, a systemd unit without `User=` or a bare container, settings, Aster / RISEx nonces, the execution log, the bot quarantine, arb state, agent locks and `~/.perp/.env` were read from and written to `./~/.perp` in the current directory. A different working directory then saw empty state: an empty quarantine, a reused nonce, fresh defaults. The `perp` CLI and `perp-mcp` now stop at startup: the CLI prints the error (or the `--json` envelope), `perp-mcp` prints one `perp-mcp: …` line on stderr, and both exit 1. `perp --help` and `perp --version` still work without HOME (help then shows the shipped default exchange). The OWS CLI lookup (`~/.ows/bin/ows`, used by `wallet fund` and the OWS subprocess) had the same pattern: it could run an `ows` binary found under `./~/.ows/bin` in the working directory; it now uses the same resolver.
