@@ -12,7 +12,7 @@ import type { StrategyAction, StrategyContext, EnrichedSnapshot } from "./strate
 import type { BotTuiState, ExchangeBalance, StateListener, LogListener } from "./tui/index.js";
 import chalk from "chalk";
 import { appendFileSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
+import { perpPath } from "../paths.js";
 import { join } from "node:path";
 import { prepareLimitQuote, prepareMarketSize, quoteRulesOf, type QuoteRules, alignComputedLimitPrice } from "./quote-rules.js";
 
@@ -217,7 +217,7 @@ export async function runBot(
   let paused = false;
 
   // Log file: always write to ~/.perp/logs/<bot-name>.log
-  const logDir = join(homedir(), ".perp", "logs");
+  const logDir = perpPath("logs");
   try { mkdirSync(logDir, { recursive: true }); } catch { /* ignore */ }
   const logFile = join(logDir, `${config.name}.log`);
   const writeLog = (msg: string) => {

@@ -24,6 +24,7 @@ import {
   chmodSync,
 } from "fs";
 import { resolve } from "path";
+import { perpPath } from "../paths.js";
 import {
   randomBytes,
   scryptSync,
@@ -59,7 +60,7 @@ interface KeystoreFile {
 }
 
 function lighterAgentsDir(): string {
-  return resolve(process.env["HOME"] ?? "~", ".perp", "lighter-agents");
+  return perpPath("lighter-agents");
 }
 
 /** Pure: deterministic absolute path for the keystore file. */
@@ -291,8 +292,7 @@ function clearEnvLegacyKeys(): void {
   // Use the same .env parser/writer the rest of the CLI uses so we don't
   // accidentally drop comments or other entries.
   // Sync read + write via fs.
-  const PERP_DIR = resolve(process.env["HOME"] ?? "~", ".perp");
-  const ENV_FILE = resolve(PERP_DIR, ".env");
+  const ENV_FILE = perpPath(".env");
   if (!existsSync(ENV_FILE)) return;
 
   const lines = readFileSync(ENV_FILE, "utf-8").split("\n");
