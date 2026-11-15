@@ -25,6 +25,7 @@ import { HL_CLOID_RE } from "./venues/hyperliquid.js";
 import { rateLimitedError } from "./rate-limiter.js";
 import { fetchAndCache, withCache, TTL_ACCOUNT } from "../cache.js";
 import { approvalFromMax, builderGateOf, hlFeeTenthsBps, NO_BUILDER, requireFeeBps, type BuilderApproval, type BuilderDecision, type BuilderFeeGate, type BuilderTarget } from "./builder-fee.js";
+import { fetchWithTimeout } from "../http.js";
 
 /** HL native time-in-force values. */
 export type HlTif = "Gtc" | "Ioc" | "Alo";
@@ -267,6 +268,11 @@ export function hlIsSpotCoin(coin: string): boolean {
   return coin.startsWith("@") || coin.includes("/");
 }
 
+/** HL HIP-4 outcome coin names: "#<encoding>" (docs asset-ids; encoding = 10 × outcome + side). Not perps. */
+export function hlIsOutcomeCoin(coin: string): boolean {
+  return /^#\d+$/.test(coin);
+}
+
 /**
  * Destination of a withdraw3 / usdSend: a 20-byte hex address, sent lower-cased (the venue
  * hashes the string as signed; the official SDKs send lower-case). Anything else → INVALID_PARAMS.
@@ -395,6 +401,8 @@ export function hlL1ActionRejection(type: string, e: unknown): unknown {
 const HL_FUNDING_PAGE = 500;
 /** 7 days of hourly funding = 168 rows per coin; 20 pages = 10 000 rows (~60 coins). */
 const HL_FUNDING_MAX_PAGES = 20;
+/** userFills answers at most this many of the account's most recent fills (live 2026-10-13). */
+export const HL_USER_FILLS_CAP = 2000;
 
 /**
  * candleSnapshot intervals (docs "Candle snapshot": "Supported intervals") with their nominal
@@ -481,6 +489,44 @@ export function hlPositionRows(state: Record<string, unknown>, symbolOf: (coin: 
         ),
       };
     });
+}
+
+/**
+ * Open perp orders of a frontendOpenOrders list (info `frontendOpenOrders`, or the `openOrders`
+ * WS channel's rows): the ONE row mapper of `getOpenOrders` and the dashboard feed. Spot and HIP-4
+ * outcome rows are left out by default; a row without oid / limitPx / sz throws (never id "" or price / size "0").
+ */
+export function hlOpenOrderRows(
+  orders: unknown,
+  symbolOf: (coin: string) => string,
+  keep: (coin: string) => boolean = (coin) => !hlIsSpotCoin(coin) && !hlIsOutcomeCoin(coin),
+): ExchangeOrder[] {
+  // Default: perp orders only. Without a dex, frontendOpenOrders also lists the account's SPOT
+  // orders (coin "@<index>" or "<BASE>/<QUOTE>") and HIP-4 OUTCOME orders ("#<encoding>"): they
+  // belong to the spot / outcome commands — a perp cancel-all / flatten must neither cancel nor
+  // be failed by them. `keep` selects other rows (the outcome commands' list).
+  if (!Array.isArray(orders)) {
+    throw new PerpError("EXCHANGE_ERROR", "Hyperliquid frontendOpenOrders returned no array", { exchange: "hyperliquid", remediation: "Retry: perp -e hyperliquid account orders" });
+  }
+  // Rule #2: a row without its oid / limitPx / sz is unreadable — never listed as id "" or price/size "0".
+  const field = (o: Record<string, unknown>, k: "oid" | "limitPx" | "sz"): string => {
+    const v = o[k];
+    if ((typeof v === "number" && Number.isFinite(v)) || (typeof v === "string" && v.trim() !== "")) return String(v);
+    throw new PerpError("EXCHANGE_ERROR", `Hyperliquid frontendOpenOrders row without ${k}: ${JSON.stringify(o).slice(0, 200)}`, {
+      exchange: "hyperliquid", remediation: "Retry: perp -e hyperliquid account orders",
+    });
+  };
+  return (orders as Record<string, unknown>[]).filter((o) => keep(String(o.coin ?? ""))).map((o) => ({
+    orderId: field(o, "oid"),
+    symbol: symbolOf(String(o.coin ?? "")),
+    side: String(o.side) === "B" ? ("buy" as const) : String(o.side) === "A" ? ("sell" as const) : (String(o.side).toLowerCase() as "buy" | "sell"),
+    price: field(o, "limitPx"),
+    size: field(o, "sz"),
+    filled: "0",
+    status: "open",
+    type: o.isTrigger === true && typeof o.orderType === "string" ? o.orderType : "limit",
+    triggerPrice: o.isTrigger === true && Number(o.triggerPx) > 0 ? String(o.triggerPx) : null,
+  }));
 }
 
 /** The user's account abstraction mode (info `userAbstraction`, see HyperliquidAdapter._getAbstractionMode). */
@@ -1499,35 +1545,23 @@ export class HyperliquidAdapter implements ExchangeAdapter {
    * them. `type` = the venue orderType for a trigger order, else "limit".
    */
   async getOpenOrders(): Promise<ExchangeOrder[]> {
+    // Perp orders only. Without a dex, frontendOpenOrders also lists the account's SPOT orders
+    // (coin "@<index>" or "<BASE>/<QUOTE>") and HIP-4 OUTCOME orders ("#<encoding>"): they belong
+    // to the spot / outcome commands — a perp cancel-all / flatten must neither cancel nor be
+    // failed by them (an outcome coin has no perp asset index: SYMBOL_NOT_FOUND).
+    return this._frontendOpenOrders((coin) => !hlIsSpotCoin(coin) && !hlIsOutcomeCoin(coin));
+  }
+
+  /** The account's HIP-4 outcome orders (coin "#<encoding>") from frontendOpenOrders — the outcome commands' list. */
+  async getOutcomeOpenOrders(): Promise<ExchangeOrder[]> {
+    return this._frontendOpenOrders(hlIsOutcomeCoin);
+  }
+
+  private async _frontendOpenOrders(keep: (coin: string) => boolean): Promise<ExchangeOrder[]> {
     this.ensureAddress();
     const req: Record<string, unknown> = { type: "frontendOpenOrders", user: this._address };
     if (this._dex) req.dex = this._dex;
-    const orders = await this._infoPost(req) as Record<string, unknown>[];
-    // Perp orders only. Without a dex, frontendOpenOrders also lists the account's SPOT orders
-    // (coin "@<index>" or "<BASE>/<QUOTE>"): they belong to the spot commands — a perp
-    // cancel-all / flatten must neither cancel nor be failed by a resting spot limit.
-    if (!Array.isArray(orders)) {
-      throw new PerpError("EXCHANGE_ERROR", "Hyperliquid frontendOpenOrders returned no array", { exchange: "hyperliquid", remediation: "Retry: perp -e hyperliquid account orders" });
-    }
-    // Rule #2: a row without its oid / limitPx / sz is unreadable — never listed as id "" or price/size "0".
-    const field = (o: Record<string, unknown>, k: "oid" | "limitPx" | "sz"): string => {
-      const v = o[k];
-      if ((typeof v === "number" && Number.isFinite(v)) || (typeof v === "string" && v.trim() !== "")) return String(v);
-      throw new PerpError("EXCHANGE_ERROR", `Hyperliquid frontendOpenOrders row without ${k}: ${JSON.stringify(o).slice(0, 200)}`, {
-        exchange: "hyperliquid", remediation: "Retry: perp -e hyperliquid account orders",
-      });
-    };
-    return orders.filter((o) => !hlIsSpotCoin(String(o.coin ?? ""))).map((o) => ({
-      orderId: field(o, "oid"),
-      symbol: this._dex ? String(o.coin ?? "") : this._displaySymbol(String(o.coin ?? "")),
-      side: String(o.side) === "B" ? ("buy" as const) : String(o.side) === "A" ? ("sell" as const) : (String(o.side).toLowerCase() as "buy" | "sell"),
-      price: field(o, "limitPx"),
-      size: field(o, "sz"),
-      filled: "0",
-      status: "open",
-      type: o.isTrigger === true && typeof o.orderType === "string" ? o.orderType : "limit",
-      triggerPrice: o.isTrigger === true && Number(o.triggerPx) > 0 ? String(o.triggerPx) : null,
-    }));
+    return hlOpenOrderRows(await this._infoPost(req), (coin) => this._dex ? coin : this._displaySymbol(coin), keep);
   }
 
   /** HL order id for a cancel: a decimal integer that is exactly representable (else INVALID_PARAMS, nothing sent). */
@@ -2287,18 +2321,40 @@ export class HyperliquidAdapter implements ExchangeAdapter {
 
   /** Fills: POST /info {type:"userFills"} (at most 2000 most recent, newest first — live 2026-10-13). */
   async getTradeHistory(limit = 30): Promise<ExchangeTrade[]> {
+    const fills = await this._userFills();
+    return fills.filter((t) => this._inHistoryScope(t.coin)).slice(0, limit).map(({ coin: _coin, ...t }) => t);
+  }
+
+  /**
+   * Trades in this adapter's scope since `startTime`, newest first, for period totals. userFills is
+   * the account's latest HL_USER_FILLS_CAP fills: fewer than that (counted before the scope filter)
+   * is the whole list (`from` = startTime); a full list covers back to its oldest fill only, and not
+   * that millisecond itself (other fills of it may have been cut): a window starting exactly there is not complete.
+   */
+  async getTradesSince(startTime: number): Promise<{ rows: ExchangeTrade[]; from: number }> {
+    const fills = await this._userFills();
+    const oldest = fills.reduce((m, t) => Math.min(m, t.time), Infinity);
+    const from = fills.length < HL_USER_FILLS_CAP ? startTime : oldest === startTime ? oldest + 1 : oldest;
+    const rows = fills.filter((t) => t.time >= startTime && this._inHistoryScope(t.coin)).map(({ coin: _coin, ...t }) => t);
+    return { rows, from };
+  }
+
+  /** Every userFills row (all coins, the venue's order), mapped; `coin` is the raw name for _inHistoryScope. */
+  private async _userFills(): Promise<Array<ExchangeTrade & { coin: string }>> {
     this.ensureAddress();
     const fills = await this._infoPost({ type: "userFills", user: this._address });
     if (!Array.isArray(fills)) {
       throw new PerpError("EXCHANGE_ERROR", `Hyperliquid userFills returned no list (${JSON.stringify(fills).slice(0, 120)})`, { exchange: "hyperliquid" });
     }
     await this._historyScopeReady();
-    return (fills as Array<Record<string, unknown>>).filter((f) => this._inHistoryScope(hlField(f, "coin", "userFills"))).slice(0, limit).map((f) => {
+    return (fills as Array<Record<string, unknown>>).map((f) => {
+      const coin = hlField(f, "coin", "userFills");
       const time = Number(hlField(f, "time", "userFills"));
       if (!Number.isFinite(time)) throw new PerpError("EXCHANGE_ERROR", "Hyperliquid userFills row with a non-numeric time", { exchange: "hyperliquid" });
       return {
+        coin,
         time,
-        symbol: this._displaySymbol(hlField(f, "coin", "userFills")),
+        symbol: this._displaySymbol(coin),
         side: hlSide(f.side, "userFills"),
         price: hlField(f, "px", "userFills"),
         size: hlField(f, "sz", "userFills"),
@@ -2322,21 +2378,60 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   }
 
   /**
-   * Every userFunding row since `startTime`. The endpoint returns rows OLDEST first, at most 500
-   * per response (live 2026-10-13), and every coin of a funding hour shares one millisecond — so
-   * pages continue from the last row's time INCLUSIVE and rows are deduped by time + coin (funding
-   * rows carry a zero hash). A full page that adds nothing new, or more than HL_FUNDING_MAX_PAGES
-   * pages → EXCHANGE_ERROR (never a list with payments silently missing).
+   * Funding payments in this adapter's scope since `startTime`, newest first, for period totals;
+   * `from` = the earliest time they cover without a gap (`startTime` = the whole window). One page
+   * answers a window of fewer than 500 rows; a larger one is read backward in chunks [end − span,
+   * end) with the span doubling from 24 h, each chunk whole, so when the HL_FUNDING_MAX_PAGES budget
+   * runs out the rows read still cover [from, now] — a partial newest stretch, never a hole. Chunks
+   * stop at the first page's earliest row (oldest first: nothing older exists in the window), so the
+   * budget is not spent on the empty stretch before the account's first funding.
    */
+  async getFundingPaymentsSince(startTime: number): Promise<{ rows: ExchangeFundingPayment[]; from: number }> {
+    this.ensureAddress();
+    await this._historyScopeReady();
+    const newestFirst = (rows: ExchangeFundingPayment[]) => rows.sort((a, b) => b.time - a.time);
+    const first = await this._fundingBetween(startTime, null, { pages: 1 });
+    if (first.done) return { rows: newestFirst(first.rows), from: startTime };
+    const budget = { pages: HL_FUNDING_MAX_PAGES - 1 };
+    const out: ExchangeFundingPayment[] = [];
+    let end = Date.now();
+    for (let span = 24 * 60 * 60 * 1000; end > first.earliest; span *= 2) {
+      const from = Math.max(first.earliest, end - span);
+      // startTime and endTime are both inclusive (docs userFunding): chunks [from, end − 1] do not overlap.
+      const chunk = await this._fundingBetween(from, end - 1, budget);
+      if (!chunk.done) return { rows: newestFirst(out), from: end };
+      out.push(...chunk.rows);
+      end = from;
+    }
+    return { rows: newestFirst(out), from: startTime };
+  }
+
+  /** Every userFunding row since `startTime` (see _fundingBetween); more than HL_FUNDING_MAX_PAGES pages → EXCHANGE_ERROR. */
   private async _fundingSince(startTime: number): Promise<ExchangeFundingPayment[]> {
+    const { rows, done } = await this._fundingBetween(startTime, null, { pages: HL_FUNDING_MAX_PAGES });
+    if (!done) {
+      throw new PerpError("EXCHANGE_ERROR", `Hyperliquid funding history needs more than ${HL_FUNDING_MAX_PAGES} pages — the result would be incomplete`, { exchange: "hyperliquid" });
+    }
+    return rows;
+  }
+
+  /**
+   * The userFunding rows in [startTime, endTime] (null = now) in this adapter's scope; `earliest` =
+   * the earliest row of any coin. The endpoint returns rows OLDEST first, at most 500 per response
+   * (live 2026-10-13), and every coin of a funding hour shares one millisecond — so pages continue
+   * from the last row's time INCLUSIVE and rows are deduped by time + coin (funding rows carry a
+   * zero hash). Each request spends one of `budget.pages`; a window that needs more → done: false
+   * (callers never present those rows as the window). A full page that adds nothing new → EXCHANGE_ERROR.
+   */
+  private async _fundingBetween(startTime: number, endTime: number | null, budget: { pages: number }): Promise<{ rows: ExchangeFundingPayment[]; earliest: number; done: boolean }> {
     const out: ExchangeFundingPayment[] = [];
     const seen = new Set<string>();
     let from = startTime;
-    for (let page = 0; ; page++) {
-      if (page >= HL_FUNDING_MAX_PAGES) {
-        throw new PerpError("EXCHANGE_ERROR", `Hyperliquid funding history needs more than ${HL_FUNDING_MAX_PAGES} pages — the result would be incomplete`, { exchange: "hyperliquid" });
-      }
-      const rows = await this._infoPost({ type: "userFunding", user: this._address, startTime: from });
+    let earliest = Infinity;
+    for (;;) {
+      if (budget.pages <= 0) return { rows: out, earliest, done: false };
+      budget.pages--;
+      const rows = await this._infoPost({ type: "userFunding", user: this._address, startTime: from, ...(endTime !== null ? { endTime } : {}) });
       if (!Array.isArray(rows)) {
         throw new PerpError("EXCHANGE_ERROR", `Hyperliquid userFunding returned no list (${JSON.stringify(rows).slice(0, 120)})`, { exchange: "hyperliquid" });
       }
@@ -2349,6 +2444,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
           throw new PerpError("EXCHANGE_ERROR", `Hyperliquid userFunding row without time / delta.coin / delta.usdc: ${JSON.stringify(h).slice(0, 160)}`, { exchange: "hyperliquid" });
         }
         last = Math.max(last, time);
+        earliest = Math.min(earliest, time);
         const key = `${time}|${delta.coin}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -2361,7 +2457,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
       }
       from = last;
     }
-    return out;
+    return { rows: out, earliest, done: true };
   }
 
   /** The asset map backs _displaySymbol / _inHistoryScope; load it before mapping history rows. */
@@ -2907,7 +3003,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     };
     if (startTime) body.startTime = startTime;
     if (endTime) body.endTime = endTime;
-    const res = await fetch(`${baseUrl}/info`, {
+    const res = await fetchWithTimeout(`${baseUrl}/info`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -2923,7 +3019,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const baseUrl = this._testnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
-    const res = await fetch(`${baseUrl}/info`, {
+    const res = await fetchWithTimeout(`${baseUrl}/info`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "portfolio", user: this._address }),
@@ -2941,7 +3037,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const baseUrl = this._testnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
-    const res = await fetch(`${baseUrl}/info`, {
+    const res = await fetchWithTimeout(`${baseUrl}/info`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "orderStatus", user: this._address, oid: orderId }),
@@ -3085,7 +3181,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const baseUrl = this._testnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
-    const res = await fetch(`${baseUrl}/info`, {
+    const res = await fetchWithTimeout(`${baseUrl}/info`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

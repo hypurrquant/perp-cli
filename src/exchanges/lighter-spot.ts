@@ -20,6 +20,7 @@ import { alignProtectionPrice, floorSize, formatComputedPrice, requireOnTick, sl
 import { unsupported } from "./trading-v2.js";
 import { rateLimitedError } from "./rate-limiter.js";
 import { PerpError, orderNotSent, parsePositiveDecimal } from "../errors.js";
+import { fetchWithTimeout } from "../http.js";
 
 /** The row match (market + send time) _placeOrder attached to its result; absent → null (no extra match). */
 function lighterRowMatchOf(result: Record<string, unknown>): LighterRowMatch | null {
@@ -57,10 +58,11 @@ interface PreparedSpotOrder {
  */
 export function lighterSpotBalanceRows(acct: Record<string, unknown>, venue: string, quote: string): SpotBalance[] {
   const balances: SpotBalance[] = [];
-  if (acct.assets !== undefined && !Array.isArray(acct.assets)) {
-    throw new PerpError("EXCHANGE_ERROR", `${venue} spot balances: account.assets is not an array`, { exchange: venue, raw: acct.assets });
+  // A missing list is unknown, not "no assets" (a classic account's spot USDC would vanish from totals).
+  if (!Array.isArray(acct.assets)) {
+    throw new PerpError("EXCHANGE_ERROR", `${venue} spot balances: account.assets is ${acct.assets === undefined ? "missing" : "not an array"}`, { exchange: venue, raw: acct.assets ?? null });
   }
-  const assets = (acct.assets ?? []) as Array<{ symbol: string; asset_id: number; balance: string; locked_balance: string; margin_balance?: unknown }>;
+  const assets = acct.assets as Array<{ symbol: string; asset_id: number; balance: string; locked_balance: string; margin_balance?: unknown }>;
   // Docs (docs.lighter.xyz/trading/unified-trading-accounts): "Unified Trading Accounts (UTA)
   // enables unified margin on Spot and Perpetuals USDC balances." vs Simple: "perpetual and spot
   // balances are maintained separately." Mode = this same response's account_trading_mode
@@ -1000,7 +1002,7 @@ export class LighterSpotAdapter implements SpotAdapter {
     const url = new URL(`${baseUrl}/api/v1${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     await this._lt.rhRate(path);
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString());
     if (!res.ok) {
       const text = await res.text();
       // apidocs.lighter.xyz/docs/rate-limits: a breached limit answers "HTTP 429" (as LighterAdapter.restGet).

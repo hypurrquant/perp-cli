@@ -4,10 +4,9 @@ import { PerpError } from "./errors.js";
 import { parseBuilderSettings, type BuilderSettings } from "./exchanges/builder-fee.js";
 import { existsSync, readFileSync, mkdirSync } from "fs";
 import { writeKeystoreAtomic } from "./agent-wallet/venue-keystore.js";
-import { resolve } from "path";
+import { perpDir, perpPath } from "./paths.js";
 
-const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
-const SETTINGS_FILE = resolve(PERP_DIR, "settings.json");
+function settingsFile(): string { return perpPath("settings.json"); }
 
 export interface ExchangeFees {
   taker: number;  // fraction, e.g. 0.00035 = 0.035%
@@ -373,9 +372,10 @@ const DEFAULTS: Settings = {
     hyperliquid: false,
     lighter: false,
   },
+  // The published base tiers of constants.ts TAKER_FEES / MAKER_FEES (sources and dates there).
   fees: {
-    hyperliquid: { taker: 0.00035, maker: 0.00002 },
-    pacifica: { taker: 0.00035, maker: 0.0001 },
+    hyperliquid: { taker: 0.00045, maker: 0.00015 },
+    pacifica: { taker: 0.0004, maker: 0.00015 },
     lighter: { taker: 0, maker: 0 },
   },
   alerts: {
@@ -408,8 +408,8 @@ function freshDefaults(): Settings {
 }
 
 function invalidSettings(problem: string): PerpError {
-  return new PerpError("INVALID_PARAMS", `Invalid ${SETTINGS_FILE}: ${problem}`, {
-    remediation: `Fix the offending value in ${SETTINGS_FILE} (or move the file aside to start from defaults — it also holds agent registrations), then retry.`,
+  return new PerpError("INVALID_PARAMS", `Invalid ${settingsFile()}: ${problem}`, {
+    remediation: `Fix the offending value in ${settingsFile()} (or move the file aside to start from defaults — it also holds agent registrations), then retry.`,
   });
 }
 
@@ -435,12 +435,23 @@ function migrateLegacyPacificaBuilderCode(stored: Record<string, any>): void {
   }
 }
 
+/**
+ * DEFAULTS.fees entries earlier versions shipped. Every save wrote DEFAULTS.fees into settings.json,
+ * so a stored entry exactly equal to one of these is the old default, not a user choice: it is
+ * treated as unset at load and the current default applies (2026-11-05). Any other stored value
+ * still wins — including a venue DEFAULTS.fees never held (an entry there came from `fees set`).
+ */
+const RETIRED_DEFAULT_FEES: Readonly<Record<string, ExchangeFees>> = {
+  hyperliquid: { taker: 0.00035, maker: 0.00002 },
+  pacifica: { taker: 0.00035, maker: 0.0001 },
+};
+
 export function loadSettings(): Settings {
   // A missing file is not a failure: the user has not configured anything yet.
-  if (!existsSync(SETTINGS_FILE)) return freshDefaults();
+  if (!existsSync(settingsFile())) return freshDefaults();
   let stored: any; // parsed JSON; validated field by field below
   try {
-    stored = JSON.parse(readFileSync(SETTINGS_FILE, "utf-8"));
+    stored = JSON.parse(readFileSync(settingsFile(), "utf-8"));
   } catch (e) {
     throw invalidSettings(`not valid JSON (${e instanceof Error ? e.message : String(e)})`);
   }
@@ -459,6 +470,8 @@ export function loadSettings(): Settings {
       if (fee === null || typeof fee !== "object" || Array.isArray(fee) || !ok(fee.taker) || !ok(fee.maker)) {
         throw invalidSettings(`fees.${ex} must be { taker: <fraction>, maker: <fraction> } (got ${JSON.stringify(f)})`);
       }
+      const retired = RETIRED_DEFAULT_FEES[ex];
+      if (retired !== undefined && fee.taker === retired.taker && fee.maker === retired.maker) continue;
       fees[ex] = { taker: fee.taker, maker: fee.maker };
     }
   }
@@ -560,6 +573,6 @@ export function saveSettings(settings: Settings): void {
  * or full disk never leaves a truncated settings.json (which loadSettings would refuse).
  */
 function writeSettingsFile(contents: unknown): void {
-  if (!existsSync(PERP_DIR)) mkdirSync(PERP_DIR, { recursive: true, mode: 0o700 });
-  writeKeystoreAtomic(SETTINGS_FILE, JSON.stringify(contents, null, 2));
+  if (!existsSync(perpDir())) mkdirSync(perpDir(), { recursive: true, mode: 0o700 });
+  writeKeystoreAtomic(settingsFile(), JSON.stringify(contents, null, 2));
 }

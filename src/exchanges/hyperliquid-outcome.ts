@@ -26,6 +26,7 @@ import type {
   OutcomeViewUnderlying,
 } from "./outcome-interface.js";
 import type { HyperliquidAdapter } from "./hyperliquid.js";
+import { fetchWithTimeout } from "../http.js";
 
 const OUTCOME_ASSET_OFFSET = 100_000_000;
 /** docs error-responses MinTradeSpotNtl: "Order must have minimum value of 10 {quote_token}." */
@@ -609,8 +610,7 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
 
   async getOpenOrders(): Promise<unknown[]> {
     await this.init();
-    const orders = await this._hl.getOpenOrders();
-    return orders.filter((o) => typeof o.symbol === "string" && o.symbol.startsWith("#"));
+    return this._hl.getOutcomeOpenOrders();
   }
 
   // ── Private ──────────────────────────────────────────────────────────────
@@ -760,7 +760,7 @@ export class HyperliquidOutcomeAdapter implements OutcomeAdapter {
     const baseUrl = this._hl.isTestnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
-    const res = await fetch(`${baseUrl}/info`, {
+    const res = await fetchWithTimeout(`${baseUrl}/info`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

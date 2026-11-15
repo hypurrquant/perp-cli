@@ -12,7 +12,7 @@ import type { StrategyAction, StrategyContext, EnrichedSnapshot } from "./strate
 import type { BotTuiState, ExchangeBalance, StateListener, LogListener } from "./tui/index.js";
 import chalk from "chalk";
 import { appendFileSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
+import { perpPath } from "../paths.js";
 import { join } from "node:path";
 import { prepareLimitQuote, prepareMarketSize, quoteRulesOf, type QuoteRules, alignComputedLimitPrice } from "./quote-rules.js";
 
@@ -217,7 +217,7 @@ export async function runBot(
   let paused = false;
 
   // Log file: always write to ~/.perp/logs/<bot-name>.log
-  const logDir = join(homedir(), ".perp", "logs");
+  const logDir = perpPath("logs");
   try { mkdirSync(logDir, { recursive: true }); } catch { /* ignore */ }
   const logFile = join(logDir, `${config.name}.log`);
   const writeLog = (msg: string) => {
@@ -792,11 +792,12 @@ export async function openPositionsAtStop(
 
 /**
  * Bot equity in USD. Single-venue bot: the venue's account equity. Multi-venue bot (extra
- * adapters): Σ every venue's account equity + its bot spot holdings — tokens at the shared
- * valuation price (spotMarketsForValuation: spot market price, HIP-4 outcome tokens at their
- * outcome mid), and the spot quote balance when the spot account is separate from the perp
- * margin (spotSharesPerpMargin false). Any failed read or unpriced token → throws (equity unknown;
- * never a partial sum that would read as a loss).
+ * adapters): Σ every venue's account equity + its bot spot holdings not already in that equity
+ * (rows the venue marks `shared`: HL unified USDC, portfolio-margin collateral, HIP-3 dex
+ * collateral, a Lighter unified quote) — tokens at the shared valuation price
+ * (spotMarketsForValuation: spot market price, HIP-4 outcome tokens at their outcome mid), the
+ * spot quote 1:1. Any failed read or unpriced token → throws (equity unknown; never a partial sum
+ * that would read as a loss).
  */
 async function botEquity(primary: ExchangeAdapter, extra: Map<string, ExchangeAdapter> | undefined): Promise<number> {
   const eq = (v: string, who: string): number => {
@@ -805,7 +806,7 @@ async function botEquity(primary: ExchangeAdapter, extra: Map<string, ExchangeAd
     return n;
   };
   if (extra === undefined || extra.size === 0) return eq((await primary.getBalance()).equity, primary.name);
-  const { getBotSpotAdapter, isSpotQuoteAsset, spotMarketsForValuation, spotNetworkOf, spotTokenBase, spotSharesPerpMargin } = await import("../exchanges/spot-factory.js");
+  const { getBotSpotAdapter, isSpotQuoteAsset, spotMarketsForValuation, spotNetworkOf, spotTokenBase } = await import("../exchanges/spot-factory.js");
   const { getVenue } = await import("../exchanges/venue.js");
   const all = new Map<string, ExchangeAdapter>([[primary.name, primary], ...[...extra].filter(([n]) => n !== primary.name)]);
   let total = 0;
@@ -815,15 +816,15 @@ async function botEquity(primary: ExchangeAdapter, extra: Map<string, ExchangeAd
     if (spot === null) continue;
     const def = getVenue(name);
     const net = spotNetworkOf(spot);
-    const shared = spotSharesPerpMargin(def, a);
     // Shared valuation prices (spot markets + held HIP-4 outcome tokens at their outcome mid).
     const balances = await spot.getSpotBalances();
     const markets = await spotMarketsForValuation(def, spot, balances, net);
     const price = new Map(markets.map(m => [m.baseToken.toUpperCase(), m.markPrice]));
     for (const b of balances) {
       const qty = Number(b.total);
-      if (!(qty > 0)) continue;
-      if (isSpotQuoteAsset(def, net, b.token)) { if (!shared) total += qty; continue; }
+      // A `shared` row is already in this venue's equity.
+      if (!(qty > 0) || b.shared) continue;
+      if (isSpotQuoteAsset(def, net, b.token)) { total += qty; continue; }
       const px = Number(price.get(spotTokenBase(b.token)));
       if (!(px > 0)) throw new PerpError("PRICE_STALE", `${name} spot ${b.token}: no market price — bot equity unknown`);
       total += qty * px;

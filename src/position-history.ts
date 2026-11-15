@@ -4,11 +4,10 @@
  */
 
 import { existsSync, appendFileSync, readFileSync, mkdirSync } from "fs";
-import { resolve } from "path";
+import { perpDir, perpPath } from "./paths.js";
 import type { StreamEvent } from "./event-stream.js";
 
-const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
-const POSITIONS_FILE = resolve(PERP_DIR, "positions.jsonl");
+function positionsFile(): string { return perpPath("positions.jsonl"); }
 
 export interface PositionRecord {
   id: string;                    // unique per open→close cycle
@@ -45,7 +44,7 @@ export interface PositionStats {
 }
 
 function ensureDir() {
-  if (!existsSync(PERP_DIR)) mkdirSync(PERP_DIR, { recursive: true, mode: 0o700 });
+  if (!existsSync(perpDir())) mkdirSync(perpDir(), { recursive: true, mode: 0o700 });
 }
 
 function genId(): string {
@@ -84,7 +83,7 @@ function requireNumericString(value: unknown, fieldName: string, eventType: stri
 /** Append a position record to the log */
 export function logPosition(record: PositionRecord): void {
   ensureDir();
-  appendFileSync(POSITIONS_FILE, JSON.stringify(record) + "\n", { mode: 0o600 });
+  appendFileSync(positionsFile(), JSON.stringify(record) + "\n", { mode: 0o600 });
 }
 
 /** Read position history with optional filters */
@@ -95,9 +94,9 @@ export function readPositionHistory(opts?: {
   limit?: number;
   since?: string;
 }): PositionRecord[] {
-  if (!existsSync(POSITIONS_FILE)) return [];
+  if (!existsSync(positionsFile())) return [];
 
-  const lines = readFileSync(POSITIONS_FILE, "utf-8").trim().split("\n").filter(Boolean);
+  const lines = readFileSync(positionsFile(), "utf-8").trim().split("\n").filter(Boolean);
   let records: PositionRecord[] = lines.map(line => {
     try { return JSON.parse(line); } catch { return null; }
   }).filter(Boolean);

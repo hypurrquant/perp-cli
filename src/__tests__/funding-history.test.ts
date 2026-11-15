@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-// Use vi.hoisted so TEST_DIR is available when vi.mock runs (hoisted)
+// vi.hoisted: TEST_DIR is computed before the module under test is imported
 const { TEST_DIR } = vi.hoisted(() => {
   const { tmpdir } = require("node:os");
   const { join } = require("node:path");
@@ -11,14 +11,8 @@ const { TEST_DIR } = vi.hoisted(() => {
   };
 });
 
-// Mock the homedir to redirect storage to our test directory
-vi.mock("node:os", async () => {
-  const actual = await vi.importActual<typeof import("node:os")>("node:os");
-  return {
-    ...actual,
-    homedir: () => join(TEST_DIR, "home"),
-  };
-});
+// Redirect storage to our test directory (paths are resolved from HOME at call time)
+process.env.HOME = join(TEST_DIR, "home");
 
 import {
   saveFundingSnapshot,

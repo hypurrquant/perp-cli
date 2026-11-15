@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { ExchangeAdapter, ExchangeBalance } from "../exchanges/interface.js";
+import { PerpError } from "../errors.js";
 
 vi.mock("../cache.js", () => ({
   TTL_ACCOUNT: 1,
@@ -83,13 +84,13 @@ describe("dashboard REST snapshot (pollSnapshot path)", () => {
 describe("dashboard live feeds — stale / error tracking", () => {
   const base: WsFeedState = { balance: null, positions: null, orders: null, lastUpdate: 0, mode: "rest", lastOkAt: null, lastError: null, lastErrorAt: null };
 
-  it("isFeedStale: never read, error newer than last success, or polling data too old", () => {
+  it("isFeedStale: never read, error newer than last success, or data too old (polled or live)", () => {
     const now = 1_000_000;
     expect(isFeedStale(base, now)).toBe(true);
     expect(isFeedStale({ ...base, lastOkAt: now - 1000 }, now)).toBe(false);
     expect(isFeedStale({ ...base, lastOkAt: now - 1000, lastErrorAt: now - 500, lastError: "x" }, now)).toBe(true);
     expect(isFeedStale({ ...base, lastOkAt: now - FEED_STALE_MS - 1 }, now)).toBe(true);
-    expect(isFeedStale({ ...base, mode: "ws", lastOkAt: now - FEED_STALE_MS - 1 }, now)).toBe(false);
+    expect(isFeedStale({ ...base, mode: "ws", lastOkAt: now - FEED_STALE_MS - 1 }, now)).toBe(true); // an open socket is no proof
   });
 
   it("a failing REST poll leaves the data null (not $0) and records lastError; logged once", async () => {
@@ -106,6 +107,22 @@ describe("dashboard live feeds — stale / error tracking", () => {
       expect(st.positions).toBeNull();
       expect(isFeedStale(st)).toBe(true);
       expect(stderrSpy.mock.calls.filter((c: unknown[]) => String(c[0]).includes("aster rest-poll failed")).length).toBe(1);
+    } finally {
+      mgr.close();
+    }
+  });
+
+  it("Lighter without an auth token (read-only / expired agent): the REST fallback keeps balance + positions, orders null", async () => {
+    stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const lighter = Object.assign(adapter("lighter", { getOpenOrders: async () => { throw new PerpError("NO_SIGNER_AVAILABLE", "This command requires a Lighter API key."); } }),
+      { _accountIndex: 7, network: { wsUrl: "wss://lighter.invalid/stream" } }); // no signer → no auth token → REST
+    const mgr = new WsFeedManager([{ name: "lighter", adapter: lighter }], { onUpdate: () => {} });
+    try {
+      await mgr.start();
+      await vi.waitFor(() => expect(mgr.getState("lighter")!.balance).toEqual(BAL));
+      const st = mgr.getState("lighter")!;
+      expect(st.positions).toEqual([]);
+      expect(st.orders).toBeNull();
     } finally {
       mgr.close();
     }

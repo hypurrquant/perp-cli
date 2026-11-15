@@ -25,6 +25,7 @@ import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { writeKeystoreAtomic } from "./agent-wallet/venue-keystore.js";
 import { PerpError } from "./errors.js";
+import { perpPath } from "./paths.js";
 import type { WithdrawGate, WithdrawGateVenue } from "./settings.js";
 
 export interface WithdrawLedgerEntry {
@@ -39,9 +40,7 @@ export interface WithdrawLedgerEntry {
 }
 
 function ledgerPath(): string {
-  const home = process.env["HOME"];
-  if (!home) throw new PerpError("INVALID_PARAMS", "HOME is not set; cannot locate ~/.perp/withdraw-ledger.json");
-  return resolve(home, ".perp", "withdraw-ledger.json");
+  return perpPath("withdraw-ledger.json");
 }
 
 function readLedger(): WithdrawLedgerEntry[] {

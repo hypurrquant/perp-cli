@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { resolve } from "path";
+import { perpDir, perpPath } from "./paths.js";
 import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "./exchanges/index.js";
+import { PerpError } from "./errors.js";
 
 // ── Risk Configuration ──
 
@@ -45,13 +46,12 @@ export function effectiveLimit(usdLimit: number, pctLimit: number | undefined, t
 }
 
 
-const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
-const RISK_FILE = resolve(PERP_DIR, "risk.json");
+function riskFile(): string { return perpPath("risk.json"); }
 
 export function loadRiskLimits(): RiskLimits {
-  if (!existsSync(RISK_FILE)) return { ...DEFAULT_LIMITS };
+  if (!existsSync(riskFile())) return { ...DEFAULT_LIMITS };
   try {
-    const stored = JSON.parse(readFileSync(RISK_FILE, "utf-8"));
+    const stored = JSON.parse(readFileSync(riskFile(), "utf-8"));
     return { ...DEFAULT_LIMITS, ...stored };
   } catch {
     return { ...DEFAULT_LIMITS };
@@ -59,8 +59,8 @@ export function loadRiskLimits(): RiskLimits {
 }
 
 export function saveRiskLimits(limits: RiskLimits): void {
-  if (!existsSync(PERP_DIR)) mkdirSync(PERP_DIR, { recursive: true, mode: 0o700 });
-  writeFileSync(RISK_FILE, JSON.stringify(limits, null, 2), { mode: 0o600 });
+  if (!existsSync(perpDir())) mkdirSync(perpDir(), { recursive: true, mode: 0o700 });
+  writeFileSync(riskFile(), JSON.stringify(limits, null, 2), { mode: 0o600 });
 }
 
 // ── Risk Assessment ──
@@ -162,8 +162,17 @@ export function assessRisk(
   let totalExposure = 0;
   let largestPositionUsd = 0;
   let maxLeverageUsed = 0;
-  for (const { position: p } of positions) {
+  for (const { exchange, position: p } of positions) {
     const notional = Math.abs(Number(p.size) * Number(p.markPrice));
+    // Rule #2: an unknown mark (Aster "N/A" when its positionRisk read failed) is no exposure: NaN
+    // fails every "> limit" comparison and would pass the order gate. A mark of "0", "" or null
+    // (RISEx "0" = none; QFEX / Ondo / Arcus pass the venue mark through) is finite but no price:
+    // the position would count as $0 exposure. Fail closed on both.
+    if (!Number.isFinite(notional) || (Number(p.size) !== 0 && !(Number(p.markPrice) > 0))) {
+      throw new PerpError("PRICE_STALE", `${exchange} ${p.symbol} position notional unknown (size ${p.size}, mark ${p.markPrice}) — cannot check the risk limits`, {
+        exchange, remediation: `Retry when ${exchange} reports the ${p.symbol} mark price; an order can skip the local risk check with --force`,
+      });
+    }
     totalExposure += notional;
     if (notional > largestPositionUsd) largestPositionUsd = notional;
     const lev = Number(p.leverage) || 0;

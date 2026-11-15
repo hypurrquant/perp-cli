@@ -468,6 +468,31 @@ describe("executePlan — action types", () => {
     expect(r.steps[0].result).toEqual({ symbol: "BTC", side: "sell", size: "0.5", closed: 0.5 });
   });
 
+  it("rollback: a partial reverse's residual is floored to the market lot, not the decimals the step size prints (10, 9.3 filled → closes 0.7)", async () => {
+    const venue = liveVenue();
+    const fill = venue.marketOrder.getMockImplementation()!;
+    venue.marketOrder
+      .mockImplementationOnce(async (s: string, side: "buy" | "sell") => fill(s, side, "10")) // the entry fills 10
+      .mockImplementationOnce(async (s: string, side: "buy" | "sell") => fill(s, side, "9.3")); // the reverse fills 9.3 of 10
+    const adapter = mockAdapter({ ...venue, lotStepOf: () => "0.1", limitOrder: vi.fn().mockRejectedValue(rejected("Price stale")) });
+    const r = await executePlan(adapter, { version: "1.0", steps: [
+      { id: "1", action: "market_order", params: { symbol: "BTC", side: "buy", size: "10" } },
+      { id: "2", action: "limit_order", params: { symbol: "ETH", side: "sell", size: "1", price: "2000" }, onFailure: "rollback" },
+    ] });
+    expect(adapter.marketOrder).toHaveBeenNthCalledWith(3, "BTC", "sell", "0.7", closeOpts);
+    expect(r.steps[0].status).toBe("rolled_back");
+    expect(await adapter.getPositions()).toEqual([]);
+  });
+
+  it("close_position: a partial close's residual is floored to the market lot, not the decimals the size prints (10, 9.3 filled → 0.7)", async () => {
+    const venue = liveVenue([{ symbol: "BTC", side: "long", size: "10", entryPrice: "65000", unrealizedPnl: "0", liquidationPrice: null, markPrice: "66000", leverage: 10 }]);
+    const fill = venue.marketOrder.getMockImplementation()!;
+    venue.marketOrder.mockImplementationOnce(async (s: string, side: "buy" | "sell") => fill(s, side, "9.3")); // the venue fills 9.3 of 10
+    const adapter = mockAdapter({ ...venue, getMarkets: vi.fn().mockResolvedValue([{ symbol: "BTC", markPrice: "66000", indexPrice: "66000", fundingRate: "0", volume24h: "0", openInterest: "0", maxLeverage: 40, sizeDecimals: 1, stepSize: "0.1", fundingHours: 1, marginTiers: null }]) });
+    await executePlan(adapter, { version: "1.0", steps: [{ id: "1", action: "close_position", params: { symbol: "BTC" } }] });
+    expect(adapter.marketOrder).toHaveBeenNthCalledWith(2, "BTC", "sell", "0.7", closeOpts);
+  });
+
   it("fails close_position when no position exists", async () => {
     const adapter = mockAdapter();
     const plan: ExecutionPlan = {

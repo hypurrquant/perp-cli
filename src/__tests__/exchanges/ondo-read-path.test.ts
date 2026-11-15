@@ -79,6 +79,11 @@ describe("Ondo listing state", () => {
     expect(by("BTC")).toMatchObject({ tradable: true, status: "active", fundingRate: "0.0000125" });
   });
 
+  it("funding comparison rows leave out a closed market (CXMT isClosed), like every non-tradable listing", async () => {
+    const rows = await getVenue("ondo").publicData.fetchFundingRates("mainnet");
+    expect(rows.map(r => r.symbol).sort()).toEqual(["AAPL", "BTC"]);
+  });
+
   it("every per-symbol read of a disabled market refuses with one error, before any market-data request", async () => {
     const a = adapter();
     const reads: Array<() => Promise<unknown>> = [

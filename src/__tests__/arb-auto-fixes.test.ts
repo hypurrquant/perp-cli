@@ -13,7 +13,7 @@ import {
   type ArbPositionState,
 } from "../arb-state.js";
 import { toHourlyRate } from "../funding.js";
-import { getTakerFee, DEFAULT_TAKER_FEE } from "../constants.js";
+import { getTakerFee, getMakerFee, DEFAULT_TAKER_FEE } from "../constants.js";
 import { SETTLEMENT_SCHEDULES } from "../arb-utils.js";
 import {
   computeNetSpread,
@@ -288,26 +288,33 @@ describe("Fix 2-3: Settle boost applied to entry threshold", () => {
 // ────────────────────────────────────────────
 
 describe("Fix 3-2: TAKER_FEE centralized", () => {
-  it("getTakerFee returns correct fee for known exchanges", () => {
-    expect(getTakerFee("hyperliquid")).toBe(0.00035);
-    expect(getTakerFee("pacifica")).toBe(0.00035);
+  it("getTakerFee returns the published base-tier taker (HL 0.045%, Pacifica 0.040%, Arcus crypto 450 ppm; 2026-11-04)", () => {
+    expect(getTakerFee("hyperliquid")).toBe(0.00045);
+    expect(getTakerFee("pacifica")).toBe(0.0004);
+    expect(getTakerFee("arcus")).toBe(0.00045);
     expect(getTakerFee("lighter")).toBe(0); // Lighter has 0% fees
   });
 
-  it("getTakerFee returns fallback for unknown exchange", () => {
-    expect(getTakerFee("unknown")).toBe(0.00035);
-    expect(getTakerFee("default")).toBe(0.00035);
+  it("getMakerFee returns the published base-tier maker (HL / Pacifica 0.015%, Arcus crypto 150 ppm; 2026-11-04)", () => {
+    expect(getMakerFee("hyperliquid")).toBe(0.00015);
+    expect(getMakerFee("pacifica")).toBe(0.00015);
+    expect(getMakerFee("arcus")).toBe(0.00015);
   });
 
-  it("DEFAULT_TAKER_FEE matches expected value", () => {
-    expect(DEFAULT_TAKER_FEE).toBe(0.00035);
+  it("getTakerFee returns fallback for unknown exchange", () => {
+    expect(getTakerFee("unknown")).toBe(DEFAULT_TAKER_FEE);
+    expect(getTakerFee("default")).toBe(DEFAULT_TAKER_FEE);
+  });
+
+  it("DEFAULT_TAKER_FEE is the Hyperliquid base taker", () => {
+    expect(DEFAULT_TAKER_FEE).toBe(getTakerFee("hyperliquid"));
   });
 
   it("computeRoundTripCostPct uses centralized fees", () => {
     // 2 * (longFee + shortFee) + 2 * slippage
-    // 2 * (0.035% + 0.035%) + 2 * 0.05% = 0.14% + 0.1% = 0.24%
+    // 2 * (0.045% + 0.040%) + 2 * 0.05% = 0.17% + 0.1% = 0.27%
     const cost = computeRoundTripCostPct("hyperliquid", "pacifica", 0.05);
-    expect(cost).toBeCloseTo(0.24, 4);
+    expect(cost).toBeCloseTo(0.27, 4);
   });
 });
 

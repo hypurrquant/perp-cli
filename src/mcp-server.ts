@@ -12,10 +12,19 @@
 
 // SSOT Rule #3: load only ~/.perp/.env, like the CLI (src/index.ts) — never a .env in the CWD
 // (a project tree's leftover dev keys would silently become this server's credentials).
+import { openOrdersForView } from "./exchanges/open-orders-view.js";
 import { setQuarantineNetwork } from "./bot/quarantine.js";
 import { config as loadDotenv } from "dotenv";
-import { resolve as resolvePath } from "node:path";
-loadDotenv({ path: resolvePath(process.env.HOME || "~", ".perp", ".env") });
+import { assertNoLegacyCwdPerpDir, perpPath } from "./paths.js";
+// HOME unset or a legacy ./~/.perp → one stderr line and exit 1 before serving (SSOT Rule #2).
+try {
+  assertNoLegacyCwdPerpDir();
+  loadDotenv({ path: perpPath(".env") });
+} catch (e) {
+  const remediation = e instanceof PerpError ? e.structured.remediation : undefined;
+  process.stderr.write(`perp-mcp: ${e instanceof Error ? e.message : String(e)}${remediation ? ` — ${remediation}` : ""}\n`);
+  process.exit(1);
+}
 import { registerAdapterNetwork } from "./exchanges/adapter-network.js";
 import { builderPlanFor } from "./exchanges/builder-fee.js";
 import { resolveAdapterSlippage } from "./exchanges/slippage.js";
@@ -23,7 +32,7 @@ import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import type { ExchangeAdapter } from "./exchanges/interface.js";
+import { coverageNote, fundingPaymentsInWindow, tradesInWindow, type ExchangeAdapter } from "./exchanges/interface.js";
 import { hasCredentials, listConfiguredAccountVenues, resolveCredentials, NO_CLI_CREDENTIAL_OPTS } from "./config.js";
 import { HyperliquidAdapter } from "./exchanges/hyperliquid.js";
 import { getVenue, listPublicBalanceVenues, listPublicPositionVenues, listVenues, listVenuesWithRole, networkConfig, READ_ONLY_CREDENTIALS, requireCapabilities, roleUnsupported, type VenueDefinition } from "./exchanges/venue.js";
@@ -32,9 +41,8 @@ import type { OrderRequest, VenueId } from "./exchanges/venue-types.js";
 import { venueMarketRow } from "./exchanges/venue-types.js";
 import { lighterFundingStatsWarning } from "./exchanges/lighter-public.js";
 import { newVenueClientOrderId, placeAndConfirm, validateLegacyTif, validateOrderRequest, type PlacedOrder } from "./exchanges/trading-v2.js";
-import { closePerpVerified, isOutcomeUnknown } from "./bot/perp-order.js";
+import { closePerpVerified, closeSizeText, isOutcomeUnknown } from "./bot/perp-order.js";
 import { quarantineSymbol } from "./bot/quarantine.js";
-import { fillSizeString, sizeDecimalsOf } from "./exchanges/spot-result.js";
 import { tradingV2Of } from "./exchanges/legacy-trading-v2.js";
 import { PerpError, classifyError, extractErrorMessage, isDefiniteOrderFailure, orderOutcomeUnknown, parsePositiveDecimal } from "./errors.js";
 import { invalidateCache } from "./cache.js";
@@ -51,6 +59,7 @@ import { setSharedApiNetwork } from "./api/public/urls.js";
 import { logClientId } from "./client-id-tracker.js";
 import { loadSettings } from "./settings.js";
 import { registerPacificaEarnMcpTools } from "./mcp-pacifica-earn.js";
+import { fetchWithTimeout } from "./http.js";
 
 /**
  * The one network this server serves: PERP_NETWORK, validated like `-n` (an invalid value
@@ -211,7 +220,7 @@ async function fetchOrderbookPublic(exchange: string, symbol: string): Promise<B
   const sym = symbol.toUpperCase();
   if (def.id === "hyperliquid") {
     const { HYPERLIQUID_API_URL } = await import("./api/public/urls.js");
-    const res = await fetch(HYPERLIQUID_API_URL, {
+    const res = await fetchWithTimeout(HYPERLIQUID_API_URL, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "l2Book", coin: sym }),
     });
@@ -235,7 +244,7 @@ async function fetchOrderbookPublic(exchange: string, symbol: string): Promise<B
     if (!market) {
       throw new PerpError("SYMBOL_NOT_FOUND", `${def.displayName} has no market ${sym}`, { exchange: def.id, remediation: `List markets with get_markets (exchange: ${def.id})` });
     }
-    const res = await fetch(`${networkConfig(def, MCP_NETWORK).restUrl}/api/v1/orderBookOrders?market_id=${market.venueSymbol}&limit=20`);
+    const res = await fetchWithTimeout(`${networkConfig(def, MCP_NETWORK).restUrl}/api/v1/orderBookOrders?market_id=${market.venueSymbol}&limit=20`);
     if (!res.ok) throw new PerpError("EXCHANGE_ERROR", `${def.displayName} orderBookOrders ${sym}: HTTP ${res.status}`, { exchange: def.id });
     const data = await res.json() as { bids?: unknown; asks?: unknown };
     if (!Array.isArray(data.bids) || !Array.isArray(data.asks)) {
@@ -366,7 +375,7 @@ server.tool(
   },
   async ({ symbols, minSpread, includeUnverified }) => {
     try {
-      const snapshot = await fetchAllFundingRates({ symbols, minSpread, includeUnverified: includeUnverified === true });
+      const snapshot = await fetchAllFundingRates({ symbols, minSpread, includeUnverified: includeUnverified === true, explicitSymbols: symbols !== undefined });
       return {
         content: [{
           type: "text",
@@ -684,7 +693,9 @@ server.tool(
       connected: boolean;
       balance: { equity: string; available: string; marginUsed: string; unrealizedPnl: string } | null;
       positions: Awaited<ReturnType<ExchangeAdapter["getPositions"]>>;
-      openOrders: number;
+      /** null = unknown (the venue cannot list orders without a signer): see openOrdersError. */
+      openOrders: number | null;
+      openOrdersError?: string;
       error?: string;
     }
 
@@ -695,9 +706,11 @@ server.tool(
           const [balance, positions, orders] = await Promise.all([
             adapter.getBalance(),
             adapter.getPositions(),
-            adapter.getOpenOrders(),
+            openOrdersForView(adapter),
           ]);
-          return { exchange: name, connected: true, balance, positions, openOrders: orders.length };
+          return orders.orders === null
+            ? { exchange: name, connected: true, balance, positions, openOrders: null, openOrdersError: orders.error ?? undefined }
+            : { exchange: name, connected: true, balance, positions, openOrders: orders.orders.length };
         } catch (e) {
           return {
             exchange: name,
@@ -720,6 +733,8 @@ server.tool(
     let totalUnrealizedPnl = 0;
     let totalPositions = 0;
     let totalOpenOrders = 0;
+    /** Venues whose open orders are unknown: totalOpenOrders covers the others only. */
+    const openOrdersUnknown: string[] = [];
     const allPositions: (Awaited<ReturnType<ExchangeAdapter["getPositions"]>>[number] & { exchange: string })[] = [];
 
     for (const snap of snapshots) {
@@ -730,7 +745,8 @@ server.tool(
         totalUnrealizedPnl += Number(snap.balance.unrealizedPnl);
       }
       totalPositions += snap.positions.length;
-      totalOpenOrders += snap.openOrders;
+      if (snap.openOrders === null) openOrdersUnknown.push(snap.exchange);
+      else totalOpenOrders += snap.openOrders;
       for (const pos of snap.positions) {
         allPositions.push({ ...pos, exchange: snap.exchange });
       }
@@ -766,6 +782,7 @@ server.tool(
       totalUnrealizedPnl: known ? totalUnrealizedPnl : null,
       totalPositions,
       totalOpenOrders,
+      openOrdersUnknown,
       exchanges: snapshots,
       positions: allPositions,
       riskMetrics: { marginUtilization: known ? marginUtilization : null, largestPosition, exchangeConcentration },
@@ -2191,7 +2208,6 @@ server.tool(
       };
       const holder: { placed: PlacedOrder | null } = { placed: null };
       const nowIso = (): string => new Date().toISOString();
-      const dec = sizeDecimalsOf(closeSize);
       const qLog = (m: string) => process.stderr.write(`${m}\n`);
       const remediation = `Check ${pos.symbol} on ${adapter.name} (get_positions), close any residual by hand, then: perp strategy quarantine-clear ${pos.symbol}`;
       let c: Awaited<ReturnType<typeof closePerpVerified>>;
@@ -2199,7 +2215,6 @@ server.tool(
         // Verified close: the first leg is the TradingV2 reduce-only market order; the fill is
         // measured / venue-final, and one residual market close is attempted (closePerpVerified).
         c = await closePerpVerified(adapter, adapter.name, pos.symbol, closeSide, closeSize, {
-          decimals: dec,
           slippage: req.slippage ?? undefined,
           place: async () => {
             if (req.clientOrderId !== null) logClientId({ clientOrderId: req.clientOrderId, exchange: adapter.name, symbol: pos.symbol, side: closeSide, size: closeSize, type: "market", status: "pending", createdAt: nowIso(), updatedAt: nowIso() });
@@ -2215,8 +2230,8 @@ server.tool(
         logMcpExecution(MCP_NETWORK, { type: "market_order", exchange: adapter.name, symbol: pos.symbol, side: closeSide, size: closeSize, status: isOutcomeUnknown(e) ? "unverified" : "failed", error: extractErrorMessage(e), meta: { reduceOnly: true, action: "close" } });
         throw e;
       }
-      const closedSize = fillSizeString(c.closed, dec);
-      const residual = fillSizeString(c.residual, dec);
+      const closedSize = closeSizeText(c.closed);
+      const residual = closeSizeText(c.residual);
       if (req.clientOrderId !== null) logClientId({ clientOrderId: req.clientOrderId, exchange: adapter.name, symbol: pos.symbol, side: closeSide, size: closeSize, type: "market", status: "submitted", createdAt: nowIso(), updatedAt: nowIso() });
       logMcpExecution(MCP_NETWORK, { type: "market_order", exchange: adapter.name, symbol: pos.symbol, side: closeSide, size: closedSize, status: c.residual > 0 ? "failed" : "success", ...(c.residual > 0 ? { error: `residual ${residual} still open` } : {}), meta: { reduceOnly: true, action: "close", requested: closeSize } });
       const closedPosition = { side: pos.side, size: pos.size, entryPrice: pos.entryPrice, unrealizedPnl: pos.unrealizedPnl };
@@ -2272,16 +2287,18 @@ server.tool(
       const allFunding: FundingEntry[] = [];
       const posNotionals = new Map<string, number>();
 
-      // Per-venue failures are reported in meta.errors (never silently dropped from the totals).
+      // Per-venue failures are reported in meta.errors (never silently dropped from the totals);
+      // a venue whose history is not proven to cover the period is in meta.incomplete (a lower bound).
       const errors: Record<string, string> = {};
+      const incomplete: Record<string, string> = {};
       const settled = await Promise.allSettled(exchanges.map(async (ex) => {
         const adapter = await getOrCreateAdapter(ex);
-        const [payments, positions] = await Promise.all([
-          adapter.getFundingPayments(200),
+        const [window, positions] = await Promise.all([
+          fundingPaymentsInWindow(adapter, sinceMs),
           adapter.getPositions(),
         ]);
-        for (const p of payments) {
-          if (sinceMs && p.time < sinceMs) continue;
+        if (!window.complete) incomplete[ex] = `${coverageNote("funding", window.from)} — its funding is a lower bound`;
+        for (const p of window.rows) {
           if (symFilter && !p.symbol.toUpperCase().includes(symFilter.toUpperCase())) continue;
           allFunding.push({ exchange: ex, symbol: p.symbol, payment: Number(p.payment), time: p.time });
         }
@@ -2326,7 +2343,7 @@ server.tool(
         arbPositions,
       };
 
-      return { content: [{ type: "text", text: ok(data, { errors }) }] };
+      return { content: [{ type: "text", text: ok(data, { errors, ...(Object.keys(incomplete).length > 0 ? { incomplete } : {}) }) }] };
     } catch (e) {
       return { content: [{ type: "text", text: errOf(e) }], isError: true };
     }
@@ -2351,11 +2368,20 @@ server.tool(
       const byExchange = new Map<string, { trades: number; volume: number; fees: number; funding: number }>();
       const dailyMap = new Map<string, { fees: number; funding: number }>();
 
-      // Per-venue failures are reported in meta.errors (never silently dropped from the totals).
+      // Per-venue failures are reported in meta.errors (never silently dropped from the totals);
+      // a history not proven to cover the period is in meta.incomplete (a lower bound).
       const errors: Record<string, string> = {};
+      const incomplete: Record<string, string> = {};
       const settled = await Promise.allSettled(exchanges.map(async (ex) => {
         const adapter = await getOrCreateAdapter(ex);
-        const [trades, funding] = await Promise.all([adapter.getTradeHistory(200), adapter.getFundingPayments(200)]);
+        const [tradeWindow, window] = await Promise.all([tradesInWindow(adapter, sinceMs), fundingPaymentsInWindow(adapter, sinceMs)]);
+        const trades = tradeWindow.rows;
+        const cut = [
+          tradeWindow.complete ? null : coverageNote("trades", tradeWindow.from),
+          window.complete ? null : coverageNote("funding", window.from),
+        ].filter((c): c is string => c !== null);
+        if (cut.length > 0) incomplete[ex] = `${cut.join("; ")} — a lower bound`;
+        const funding = window.rows;
         const exData = byExchange.get(ex) ?? { trades: 0, volume: 0, fees: 0, funding: 0 };
         for (const t of trades) {
           if (sinceMs && t.time < sinceMs) continue;
@@ -2383,7 +2409,7 @@ server.tool(
         daily: [...dailyMap.entries()].sort().map(([date, d]) => ({ date, fees: d.fees, funding: d.funding, net: d.funding - d.fees })),
       };
 
-      return { content: [{ type: "text", text: ok(data, { errors }) }] };
+      return { content: [{ type: "text", text: ok(data, { errors, ...(Object.keys(incomplete).length > 0 ? { incomplete } : {}) }) }] };
     } catch (e) {
       return { content: [{ type: "text", text: errOf(e) }], isError: true };
     }
@@ -2417,11 +2443,13 @@ server.tool(
       // A venue whose reads failed has unknown funding / prices: its rows report null, the reason is in meta.errors.
       const errors: Record<string, string> = {};
       const venues = [...exchangeSet];
+      // A venue whose funding history is not proven to cover the period is in meta.incomplete (a lower bound).
+      const incomplete: Record<string, string> = {};
       const settled = await Promise.allSettled(venues.map(async (ex) => {
         const adapter = await getOrCreateAdapter(ex);
-        const [funding, livePos] = await Promise.all([adapter.getFundingPayments(200), adapter.getPositions()]);
-        for (const f of funding) {
-          if (sinceMs && f.time < sinceMs) continue;
+        const [window, livePos] = await Promise.all([fundingPaymentsInWindow(adapter, sinceMs), adapter.getPositions()]);
+        if (!window.complete) incomplete[ex] = `${coverageNote("funding", window.from)} — its funding is a lower bound`;
+        for (const f of window.rows) {
           const key = `${ex}:${f.symbol}`;
           fundingByExSym.set(key, (fundingByExSym.get(key) ?? 0) + Number(f.payment));
         }
@@ -2457,7 +2485,7 @@ server.tool(
       const sumOrNull = (vals: (number | null)[]): number | null => (vals.some(v => v === null) ? null : (vals as number[]).reduce((s, v) => s + v, 0));
       const totals = { funding: sumOrNull(rows.map(r => r.funding)), pricePnl: sumOrNull(rows.map(r => r.pricePnl)), totalPnl: sumOrNull(rows.map(r => r.totalPnl)) };
 
-      return { content: [{ type: "text", text: ok({ period, positionCount: rows.length, positions: rows, unpricedPositions, totals }, { errors }) }] };
+      return { content: [{ type: "text", text: ok({ period, positionCount: rows.length, positions: rows, unpricedPositions, totals }, { errors, ...(Object.keys(incomplete).length > 0 ? { incomplete } : {}) }) }] };
     } catch (e) {
       return { content: [{ type: "text", text: errOf(e) }], isError: true };
     }

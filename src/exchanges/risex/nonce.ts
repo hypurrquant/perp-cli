@@ -21,6 +21,7 @@
 
 import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { perpPath } from "../../paths.js";
 import { PerpError } from "../../errors.js";
 import type { Network } from "../venue-types.js";
 import type { NonceSlot } from "./typed-data.js";
@@ -32,7 +33,7 @@ const LOCK_STALE_MS = 60_000;
 export interface RemoteNonceState { anchor: bigint; currentBitmapIndex: number }
 
 export function risexNonceDir(): string {
-  return resolve(process.env.HOME || "~", ".perp", "risex-nonce");
+  return perpPath("risex-nonce");
 }
 
 function statePath(dir: string, net: Network, account: string): string {
