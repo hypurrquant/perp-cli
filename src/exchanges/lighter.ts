@@ -624,6 +624,8 @@ export class LighterAdapter implements ExchangeAdapter {
   /** Settlement chain of the venue network ("ethereum" for Lighter, "robinhood" for Lighter RH). */
   readonly chain: string;
   readonly aliases: readonly string[];
+  /** historyRows follows the venue's cursor until the list ends: a short list is the whole history. */
+  readonly historyReach = { funding: "all", trades: "all" } as const;
   readonly networkName: Network;
   private readonly _network: VenueNetworkConfig;
   private _signer!: LighterWasmSigner;

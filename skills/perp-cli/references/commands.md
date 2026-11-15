@@ -48,10 +48,10 @@ perp --json -e <EX> account trades             # trade fill history
 perp --json -e <EX> account funding-history    # funding payments
 perp --json -e <EX> account settings           # per-market leverage & margin mode
 perp --json -e <EX> account margin <SYMBOL>    # position margin info
-perp --json -e <EX> account pnl                # realized + unrealized + funding
+perp --json -e <EX> account pnl                # realized + unrealized + funding (tradesIncomplete / fundingIncomplete: the history read is not proven to cover --period — a lower bound; meta.warnings says how far back)
 perp --json -e <EX> account twap-orders        # active TWAP orders
 perp --json portfolio                          # cross-exchange unified view
-# funding24h is null (with fundingError) when a venue's funding history is unreadable; totals.fundingIncomplete = true then
+# funding24h is null (with fundingError) when a venue's funding history is unreadable or not proven to cover the 24 h; totals.fundingIncomplete = true then (totals.funding24h sums the venues read, null when none was)
 # --address (public-address positions): hyperliquid / lighter / lighter-rh / risex take a 0x address, pacifica a base58
 #   Solana address (a wrong format → INVALID_PARAMS before any request); other venues → CAPABILITY_UNSUPPORTED
 #   (feature publicPositions). Rows = the account positions rows with plain symbols, plus:
@@ -357,7 +357,7 @@ perp --json arb scan --history [SYMBOL] [--hours 24]        # LOCAL snapshots on
 #   Real settled history: perp --json -e <EX> market funding <SYM> -l <N>  (newest first; rate = fraction per
 #   intervalHours → hourly = rate / intervalHours, annual % = hourly × 8760 × 100; average the rows yourself)
 perp --json arb scan --compare <SYMBOL>                     # compare a symbol across exchanges
-perp --json arb scan --positions                            # position funding impact; actual24h null + fundingHistoryErrors when a venue's history is unreadable
+perp --json arb scan --positions                            # position funding impact; actual24h null + fundingHistoryErrors when a venue's history is unreadable or not proven to cover the 24 h
 perp --json arb scan --live --interval 60                   # continuous monitoring
 perp --json arb scan --top 10 --hold-days 7 --bridge-cost 0 --size 100  # cost-aware filtering
 perp --json -e extended market list                          # Extended (read-only): rows carry assetClass, venueSymbol (TSLA_24_5-USD), tickSize, minSize, tradable, fundingRateKind "accruing"
@@ -556,10 +556,10 @@ perp --json history list                       # execution audit trail
 perp --json history positions                  # position lifetime tracking
 perp --json history prune                      # purge old entries
 perp --json history summary                    # trading performance summary (replaces former 'stats')
-perp --json history pnl                        # P&L breakdown by exchange; errors + partial name venues whose reads failed (left out, not 0)
-perp --json history funding                    # funding payment aggregation
-perp --json history report                     # full performance report (summary + pnl + funding); errors + partial + venuesRead
-perp --json history compare                    # compare strategies / accounts
+perp --json history pnl                        # P&L breakdown by exchange; errors + partial name venues whose reads failed (left out, not 0); incomplete names histories not proven to cover --period (summed, a lower bound; partial stays false for those); --limit applies only to venues without a period read
+perp --json history funding                    # funding payment aggregation; same errors / partial / incomplete
+perp --json history report                     # full performance report (summary + pnl + funding); errors + partial + venuesRead; costs cover --since, incomplete names histories not proven to cover it (a lower bound)
+perp --json history compare                    # compare strategies / accounts; incomplete names funding histories not proven to cover --period (a lower bound)
 perp --json history snapshot                   # equity snapshot
 perp --json history track                      # PnL tracking helper
 perp --json history perf --period daily        # daily PnL breakdown
