@@ -4,6 +4,50 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — `mixedKinds` counted unverified rows; the `--history` hint named a removed command
+
+- **`mixedKinds` (`arb scan --rates` / `--compare`, MCP `get_funding_rates`) is computed over the verified (ranked) rates.** With `--include-unverified` a display-only row of another kind (GRVT "predicted" next to Hyperliquid / Aster "accruing") set it, although every ranked rate was of one kind.
+- `arb scan --history` without recorded snapshots says `Run 'perp arb scan --rates' to start collecting` (it named `perp arb rates`, which no longer exists).
+
+### Fixed — `backtest funding-arb`: holding time, flipped spreads, positions open at the end
+
+- **Holding time is a number of hours** (every trade showed `NaNh`; `holdingHours` was null in `--json`): the hour keys (`2026-11-04T03`) were handed to `new Date()`, which cannot parse them.
+- **A flipped spread is a cost, not income.** Income was summed as `|rateA − rateB|` and the close test used the absolute spread too, so a position stayed open and kept "earning" after the spread turned against it. A trade now earns (rate of the venue it shorts − rate of the venue it longs, both fixed at entry) × size per hour and closes when that spread falls below `--spread-close`: a flip closes it, and with a negative `--spread-close` the flipped hours it holds through are costs.
+- **An N-hour hold sums N hourly samples** (entry hour up to the exit hour, not including it); the exit hour's spread was counted too.
+- **A position still open at the end of the data is reported** — closed at the last data point, labelled `openAtEnd: true` (Exit "(open)" in the table) and counted in the totals — instead of being dropped. Trades gain `openAtEnd` (additive).
+- Negative amounts read `-$3.70` (were `$-3.70`), and a negative funding total is no longer printed in green.
+
+### Fixed — `arb status` showed funding a position pays as income
+
+- **A perp-perp pair's `currentSpread` is signed.** It was `|short − long|`, so a pair whose short leg now funds below its long leg (the pair pays funding) showed a positive spread, a positive `estimatedFundingIncome` / `dailyFundingEstimate` and a breakeven date. `currentSpread` is now short − long (annualized %): negative when the pair pays, and the funding estimates, `netPnl` and `breakeven` follow the sign (`daysToBreakeven` null: not reached at the current rates).
+- **Spot-perp rows are signed from the short perp leg.** `dailyFundingEstimate` was `|rate| × notional × 24` and a recorded position's `currentSpread` was `|annual rate|`, so a negative perp rate (the short pays) read as income, and the aggregate / Summary added these absolute values to the signed perp-perp ones. A negative rate is now a negative `dailyFundingEstimate` / `currentSpread`.
+- **A perp-perp pair without a current funding rate has `dailyFundingEstimate` null** (was 0) and is listed in `aggregate.fundingUnknown`, left out of the daily / APR sums as spot-perp rows already were.
+
+### Fixed — `arb scan` tables mixed funding intervals and hid legs
+
+- **The `arb scan --rates` table shows every venue's rate per hour** (`+0.001250%/h`: the rows' `hourlyRate`, 6 decimals like `--compare`). It printed each venue's raw rate per its own interval — Aster 8 h / 4 h next to Hyperliquid's 1 h, up to 8x apart — so a venue could look cheapest when it was not (live 2026-11-04: TRUMP on Aster at -0.0052 % per 4 h). `--json` is unchanged.
+- **The `arb scan` perp-perp Rates column lists every leg of the comparison, a 0 rate included, per hour** (`AST:0.001250%/h(accruing)`). It hid a leg whose rate is exactly 0 (Aster equity perps fund at 0), printed Aster per its interval, and `--live` listed Pacifica / Hyperliquid / Lighter only. `--json` is unchanged.
+
+### Fixed — funding symbol filters and alerts ignored venue tickers / aliases
+
+- **`arb scan --rates --symbol` / `--symbols` resolve venue tickers and aliases the way `--compare` does** (`XAU` → GOLD, `kPEPE` → 1000PEPE, `US500` → SPX). They matched canonical keys only, so `--symbol XAU` returned nothing (live 2026-11-04). The same resolution applies to MCP `get_funding_rates` / `arb_scan` `symbols` and to `arb scan --basis <symbol>`.
+- **The default top-symbol list carries `1000PEPE`** (was `PEPE`, which no canonical row has: Hyperliquid kPEPE and Lighter 1000PEPE are 1000PEPE), so `arb scan --rates` and the portfolio arb top-5 include it.
+- **A symbol named with `--symbol` / `--symbols` (or MCP `get_funding_rates` `symbols`) that one venue quotes is shown, not dropped.** `--symbols BTC,BMT` answered BTC only (BMT has a verified rate on Aster alone). It is now a display-only row: `longExchange` / `shortExchange` / `maxSpreadAnnual` null, as for fewer than two verified rates; the table's Direction reads "unranked (1 venue)". The default scan (top symbols), unfiltered scans and `--compare` (`available: false`) are unchanged.
+- **Alert rules on a venue ticker or alias match.** The daemon compares rules with the comparison's canonical symbols, while `alerts add` stored the symbol as typed (`XAU`, `KPEPE`), so such a rule matched no row. `alerts add` now stores the canonical key (XAU → GOLD, by the local alias tables — no network read); rules stored before this fix match by their canonical key, and `alerts remove XAU` removes the GOLD rule. The `--exchange` help no longer names qfex (unverified funding is not in the comparison the daemon reads).
+
+### Fixed — closed Ondo markets ranked as funding arb legs
+
+- **A closed Ondo market is no longer compared.** The Ondo funding rows left out only disabled (delisted / paused) contracts, so a market with `isClosed: true` in `/v1/perps/contracts` (`-e ondo market info` shows `tradable: false`, `status: "closed"`) was ranked as a leg of an `executable: true` pair (live 2026-11-04: UNITREE aster/ondo 137.1 %/yr in `arb scan --rates`). Funding comparisons (`arb scan --rates` / `--compare`, MCP `get_funding_rates` / `arb_scan`, alerts, dashboard, and the perp legs of the spot-perp scan, `arb scan --mode spot-perp` / `all`) now take tradable ("active") Ondo markets only, the rule the other venues already apply; a reduce-only market is left out for the same reason. `market list` still lists closed markets with `tradable: false`.
+
+### JSON contract changes
+
+- `arb scan --rates --symbol` / `--symbols` and MCP `get_funding_rates` with `symbols`: a named symbol one venue quotes is now a row with `longExchange` / `shortExchange` / `maxSpreadAnnual` / `estHourlyIncomeUsd` null and `executable: false` (it was left out). Migration: rank only rows whose `longExchange` is not null (or `executable` is true), as for the `--include-unverified` display rows.
+- `alerts add` stores the canonical symbol: `alerts add XAU` stores `symbol: "GOLD"` (`alerts list` shows GOLD). Migration: look rules up by the canonical key (`perp arb scan --compare <ticker>` names it); `alerts remove` takes either form.
+- `arb status`: perp-perp `currentSpread`, `estimatedFundingIncome`, `dailyFundingEstimate` and `netPnl`, spot-perp `dailyFundingEstimate` and recorded-position `currentSpread`, and the `aggregate` sums are negative when the position pays funding; they were absolute values. Migration: read a negative value as a cost, never take its absolute value.
+- `arb status` perp-perp rows: `dailyFundingEstimate` and `breakeven.dailyIncome` are null when a leg's funding rate is unknown (were 0); `aggregate.fundingUnknown` lists such pairs as `<long>/<short>:<symbol>` and `aggregate.dailyFundingIncomplete` is true. Migration: read null as unknown, not 0.
+- `backtest funding-arb`: `trades[].fundingCollected` and `totalFundingCollected` can be negative; `totalTrades` (and the cost / PnL totals) count a trade still open at the end of the data (`openAtEnd: true`); `trades[].holdingHours` is a number (was null — NaN in the process); negative money strings read `-$3.70` (were `$-3.70`). Migration: read a leading `-` before `$`; leave out `openAtEnd` trades to count closed trades only.
+- `arb scan --rates` / `--compare`, MCP `get_funding_rates`: `mixedKinds` counts verified rows only, so it is false on display-only rows (fewer than two verified rates) and no longer true because of an unverified row. Migration: compare the `rateKind` of the rows yourself when unverified rows matter.
+
 ### Fixed — the shared cache stopped working once its directory was removed
 
 - **A running process kept caching after `/tmp/perp-cli-cache` disappeared.** It didn't before: `cache.ts` created the directory once per process and remembered it, so after the directory was removed (a tmp cleaner, `rm -rf`, the conformance harness's `Session.start`) every later write failed silently. That process then never cached again. This hit long-running processes: `perp-mcp`, `portfolio --serve` / `--watch`, bots and background jobs. Every read went to the venue, which meant more requests and more `RATE_LIMITED`, and cross-process sharing stopped (one Variational stats call per 5 s, account snapshots). The directory is now created on every write. In the live conformance suite this cut requests from 2444 to 2189 (Hyperliquid 111 → 85, Lighter 78 → 58, Variational 16 → 13).
