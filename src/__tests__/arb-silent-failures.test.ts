@@ -16,7 +16,7 @@ vi.mock("../cache.js", async (importOriginal) => {
 import { scanDexArb, fetchAllDexAssetsDetailed } from "../dex-asset-map.js";
 import { dexCloseBlockedBy, collectArbPnlPositions, arbPnlPairStatus } from "../commands/arb-auto.js";
 import { checkChainMargins, marginEntryBlocks } from "../cross-chain-margin.js";
-import { resolveRebalanceAdapters, spotPerpFundingView } from "../commands/arb/index.js";
+import { portfolioAprLine, resolveRebalanceAdapters, signedUsd, spotPerpFundingView } from "../commands/arb/index.js";
 import { handleBasisScan } from "../commands/arb.js";
 
 afterEach(() => {
@@ -172,11 +172,23 @@ describe("M10: spot-perp funding view", () => {
     expect(spotPerpFundingView(undefined, 1000)).toEqual({ hourlyRate: null, annualPct: null, direction: null, dailyFundingEstimate: null });
   });
 
-  it("published rate → numbers and direction", () => {
+  it("published rate → numbers and direction; the perp leg is short, so a negative rate is a daily cost", () => {
     const v = spotPerpFundingView({ exchange: "hyperliquid", rate: -0.0001, fundingHours: 1 }, 1000);
     expect(v.hourlyRate).toBeCloseTo(-0.0001);
     expect(v.direction).toBe("sell-spot-long-perp");
-    expect(v.dailyFundingEstimate).toBeCloseTo(2.4);
+    expect(v.dailyFundingEstimate).toBeCloseTo(-2.4);
+  });
+});
+
+describe("arb status text: funding can be a net cost", () => {
+  it("a negative amount prints -$x", () => {
+    expect(signedUsd(-1.5)).toBe("-$1.5000");
+    expect(signedUsd(2)).toBe("$2.0000");
+  });
+
+  it("a negative portfolio APR keeps its Summary row; exactly 0 has none", () => {
+    expect(portfolioAprLine(-12.34)).toContain("-12.3%");
+    expect(portfolioAprLine(0)).toBeNull();
   });
 });
 

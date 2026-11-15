@@ -391,7 +391,9 @@ export function lighterIocOutcomeOf(raw: unknown): { filledSize: string; final: 
  */
 export function lighterSendTxRejection(venue: string, json: { code?: unknown; message?: string }, kind: "order" | "action"): PerpError {
   const message = `${venue} sendTx rejected (code ${String(json.code)}): ${json.message ?? JSON.stringify(json)}`;
-  const specific = classifyError(new Error(json.message ?? "")).code;
+  // docs.lighter.xyz data-structures-constants-and-errors: 21507 / 21508 "account is below
+  // maintenance / initial margin, can't execute transaction".
+  const specific = json.code === 21507 || json.code === 21508 ? "MARGIN_INSUFFICIENT" : classifyError(new Error(json.message ?? "")).code;
   const code = specific === "INSUFFICIENT_BALANCE" || specific === "MARGIN_INSUFFICIENT" ? specific
     : kind === "order" ? "ORDER_REJECTED" : "ACTION_REJECTED";
   return new PerpError(code, message, { exchange: venue, venueCode: json.code });
@@ -401,11 +403,15 @@ export function lighterSendTxRejection(venue: string, json: { code?: unknown; me
  * A /sendTx `code` that says the venue VALIDATED the tx and refused it (nothing executed): the
  * documented validation / rate-limit ranges 20000–28999 (apidocs "Data Structures, Constants and
  * Errors": 21xxx account / collateral / tx / order-book / order / asset errors, 23xxx rate limits).
+ * Also definite, the account-level refusals on docs.lighter.xyz developers/reference/
+ * data-structures-constants-and-errors: 52001 "Unauthorized use of the API", 52002 "You've reached
+ * the limit of Standard trading and can now only close or reduce positions", 62007 "maker-only api
+ * key can only send 0ms delay transactions".
  * NOT definite: a missing / non-numeric code, 29xxx (29500 internal server error, 29501 process
- * timeout — the tx may still execute) and anything outside the documented ranges.
+ * timeout — the tx may still execute) and anything else outside the documented ranges.
  */
 export function lighterSendTxCodeIsDefinite(code: unknown): boolean {
-  return typeof code === "number" && Number.isInteger(code) && code >= 20_000 && code <= 28_999;
+  return typeof code === "number" && Number.isInteger(code) && ((code >= 20_000 && code <= 28_999) || code === 52001 || code === 52002 || code === 62007);
 }
 
 /**
@@ -485,10 +491,12 @@ export function lighterRowCreatedMs(row: Record<string, unknown>): number | null
  */
 /**
  * Balance of one Lighter-family account object (GET /account) — the one implementation behind
- * LighterAdapter.getBalance() and the keyless `account balance --address`. Equity includes the
- * spot collateral asset (USDC on Lighter, USDG on Lighter RH; separate from perp collateral).
+ * LighterAdapter.getBalance() and the keyless `account balance --address`. Equity is the perp
+ * `total_asset_value`: a classic account's spot assets — its spot USDC / USDG included — are a
+ * separate balance ("perpetual and spot balances are maintained separately", docs
+ * unified-trading-accounts), listed as spot rows (lighterSpotBalanceRows, not shared).
  */
-export function lighterBalanceOf(acct: Record<string, unknown>, venue: string, collateralSymbol: string): ExchangeBalance {
+export function lighterBalanceOf(acct: Record<string, unknown>): ExchangeBalance {
   const totalAsset = parseFiniteVenueNumber(acct.total_asset_value, "total_asset_value", "lighter");
   const available = parseFiniteVenueNumber(acct.available_balance, "available_balance", "lighter");
   const collateral = parseFiniteVenueNumber(acct.collateral, "collateral", "lighter");
@@ -498,17 +506,8 @@ export function lighterBalanceOf(acct: Record<string, unknown>, venue: string, c
     0,
   ) ?? 0;
 
-  // Include spot collateral balance (USDC on Lighter, USDG on Lighter RH; separate from perp collateral)
-  // An account without that asset holds none of it (0); an unreadable assets list / balance throws.
-  let spotUsdc = 0;
-  if (!Array.isArray(acct.assets)) {
-    throw new PerpError("EXCHANGE_ERROR", `${venue} account has no assets list — spot ${collateralSymbol} balance unknown`, { exchange: venue });
-  }
-  const usdcAsset = (acct.assets as Array<Record<string, unknown>>).find(a => a?.symbol === collateralSymbol);
-  if (usdcAsset !== undefined) spotUsdc = parseFiniteVenueNumber(usdcAsset.balance, `assets.${collateralSymbol}.balance`, "lighter");
-
   return {
-    equity: String(totalAsset + spotUsdc),
+    equity: String(totalAsset),
     available: String(available),
     marginUsed: String(Math.max(0, collateral - available)),
     unrealizedPnl: String(unrealizedPnl),
@@ -624,6 +623,8 @@ export class LighterAdapter implements ExchangeAdapter {
   /** Settlement chain of the venue network ("ethereum" for Lighter, "robinhood" for Lighter RH). */
   readonly chain: string;
   readonly aliases: readonly string[];
+  /** historyRows follows the venue's cursor until the list ends: a short list is the whole history. */
+  readonly historyReach = { funding: "all", trades: "all" } as const;
   readonly networkName: Network;
   private readonly _network: VenueNetworkConfig;
   private _signer!: LighterWasmSigner;
@@ -1585,7 +1586,7 @@ export class LighterAdapter implements ExchangeAdapter {
       });
     }
 
-    return lighterBalanceOf(acct, this.name, this.collateralSymbol);
+    return lighterBalanceOf(acct);
   }
 
   async getPositions(): Promise<ExchangePosition[]> {
@@ -1625,7 +1626,11 @@ export class LighterAdapter implements ExchangeAdapter {
 
   async getOpenOrders(): Promise<ExchangeOrder[]> {
     if (!this._address) throw noAccountKeyError(this.name);
-    if (this._accountIndex < 0 || this._readOnly) return [];
+    // The read takes an auth token signed with the account's API key: a read-only adapter (no
+    // API key, an expired agent, no account index) cannot list the orders, and an unknown list is
+    // never "no orders" (cancel-all / flatten would report success with orders live) — refused
+    // with the reason (ensureSigner).
+    if (this._accountIndex < 0 || this._readOnly) this.ensureSigner();
     // ONE request for every perp market. Docs (apidocs.lighter.xyz/reference/accountactiveorders):
     // market_id — "If not specified, returns active orders for all markets."; market_type —
     // "all" | "spot" | "perp". (The former per-market fan-out read every perp market — 235 on

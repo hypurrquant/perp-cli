@@ -131,7 +131,7 @@ export async function lighterBalanceByAddress(venue: LighterVenueId, net: Networ
   }
   const rows = chooseLighterAccounts(venue, accounts, opts.accountIndex).map(a => ({
     accountIndex: lighterAccountIndexOf(a),
-    balance: lighterBalanceOf(a, venue, collateral),
+    balance: lighterBalanceOf(a),
     spot: lighterSpotBalanceRows(a, venue, collateral),
   }));
   return { ...EMPTY, accounts: rows, errors: {}, notes: [] };

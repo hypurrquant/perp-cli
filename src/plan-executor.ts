@@ -432,7 +432,7 @@ async function rollbackSteps(
         if (!(Number(size) > 0)) continue;
         const closeSide = order.side === "buy" ? "sell" : "buy";
         log(`[rollback] Reversing ${step.stepId}: reduce-only ${closeSide} ${size} ${order.symbol}`);
-        const c = await closePerpVerified(adapter, adapter.name, order.symbol, closeSide, size, { decimals: order.decimals });
+        const c = await closePerpVerified(adapter, adapter.name, order.symbol, closeSide, size);
         if (c.residual > 0) throw new Error(`closed ${c.closed}; ${c.residual} still open${c.note !== null ? ` (${c.note})` : ""}`);
       } else {
         // Resting limit / stop: cancel ONLY this step's order (never the user's other orders
