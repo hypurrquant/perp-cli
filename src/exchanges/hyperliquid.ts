@@ -483,6 +483,39 @@ export function hlPositionRows(state: Record<string, unknown>, symbolOf: (coin: 
     });
 }
 
+/**
+ * Open perp orders of a frontendOpenOrders list (info `frontendOpenOrders`, or the `openOrders`
+ * WS channel's rows): the ONE row mapper of `getOpenOrders` and the dashboard feed. Spot rows are
+ * left out; a row without oid / limitPx / sz throws (never id "" or price / size "0").
+ */
+export function hlOpenOrderRows(orders: unknown, symbolOf: (coin: string) => string): ExchangeOrder[] {
+  // Perp orders only. Without a dex, frontendOpenOrders also lists the account's SPOT orders
+  // (coin "@<index>" or "<BASE>/<QUOTE>"): they belong to the spot commands — a perp
+  // cancel-all / flatten must neither cancel nor be failed by a resting spot limit.
+  if (!Array.isArray(orders)) {
+    throw new PerpError("EXCHANGE_ERROR", "Hyperliquid frontendOpenOrders returned no array", { exchange: "hyperliquid", remediation: "Retry: perp -e hyperliquid account orders" });
+  }
+  // Rule #2: a row without its oid / limitPx / sz is unreadable — never listed as id "" or price/size "0".
+  const field = (o: Record<string, unknown>, k: "oid" | "limitPx" | "sz"): string => {
+    const v = o[k];
+    if ((typeof v === "number" && Number.isFinite(v)) || (typeof v === "string" && v.trim() !== "")) return String(v);
+    throw new PerpError("EXCHANGE_ERROR", `Hyperliquid frontendOpenOrders row without ${k}: ${JSON.stringify(o).slice(0, 200)}`, {
+      exchange: "hyperliquid", remediation: "Retry: perp -e hyperliquid account orders",
+    });
+  };
+  return (orders as Record<string, unknown>[]).filter((o) => !hlIsSpotCoin(String(o.coin ?? ""))).map((o) => ({
+    orderId: field(o, "oid"),
+    symbol: symbolOf(String(o.coin ?? "")),
+    side: String(o.side) === "B" ? ("buy" as const) : String(o.side) === "A" ? ("sell" as const) : (String(o.side).toLowerCase() as "buy" | "sell"),
+    price: field(o, "limitPx"),
+    size: field(o, "sz"),
+    filled: "0",
+    status: "open",
+    type: o.isTrigger === true && typeof o.orderType === "string" ? o.orderType : "limit",
+    triggerPrice: o.isTrigger === true && Number(o.triggerPx) > 0 ? String(o.triggerPx) : null,
+  }));
+}
+
 /** The user's account abstraction mode (info `userAbstraction`, see HyperliquidAdapter._getAbstractionMode). */
 export type HlAbstractionMode = "unified" | "standard" | "portfolio" | "default" | "dexAbstraction";
 
@@ -1502,32 +1535,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     this.ensureAddress();
     const req: Record<string, unknown> = { type: "frontendOpenOrders", user: this._address };
     if (this._dex) req.dex = this._dex;
-    const orders = await this._infoPost(req) as Record<string, unknown>[];
-    // Perp orders only. Without a dex, frontendOpenOrders also lists the account's SPOT orders
-    // (coin "@<index>" or "<BASE>/<QUOTE>"): they belong to the spot commands — a perp
-    // cancel-all / flatten must neither cancel nor be failed by a resting spot limit.
-    if (!Array.isArray(orders)) {
-      throw new PerpError("EXCHANGE_ERROR", "Hyperliquid frontendOpenOrders returned no array", { exchange: "hyperliquid", remediation: "Retry: perp -e hyperliquid account orders" });
-    }
-    // Rule #2: a row without its oid / limitPx / sz is unreadable — never listed as id "" or price/size "0".
-    const field = (o: Record<string, unknown>, k: "oid" | "limitPx" | "sz"): string => {
-      const v = o[k];
-      if ((typeof v === "number" && Number.isFinite(v)) || (typeof v === "string" && v.trim() !== "")) return String(v);
-      throw new PerpError("EXCHANGE_ERROR", `Hyperliquid frontendOpenOrders row without ${k}: ${JSON.stringify(o).slice(0, 200)}`, {
-        exchange: "hyperliquid", remediation: "Retry: perp -e hyperliquid account orders",
-      });
-    };
-    return orders.filter((o) => !hlIsSpotCoin(String(o.coin ?? ""))).map((o) => ({
-      orderId: field(o, "oid"),
-      symbol: this._dex ? String(o.coin ?? "") : this._displaySymbol(String(o.coin ?? "")),
-      side: String(o.side) === "B" ? ("buy" as const) : String(o.side) === "A" ? ("sell" as const) : (String(o.side).toLowerCase() as "buy" | "sell"),
-      price: field(o, "limitPx"),
-      size: field(o, "sz"),
-      filled: "0",
-      status: "open",
-      type: o.isTrigger === true && typeof o.orderType === "string" ? o.orderType : "limit",
-      triggerPrice: o.isTrigger === true && Number(o.triggerPx) > 0 ? String(o.triggerPx) : null,
-    }));
+    return hlOpenOrderRows(await this._infoPost(req), (coin) => this._dex ? coin : this._displaySymbol(coin));
   }
 
   /** HL order id for a cancel: a decimal integer that is exactly representable (else INVALID_PARAMS, nothing sent). */

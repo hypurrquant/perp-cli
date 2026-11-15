@@ -77,60 +77,65 @@ export function registerBacktestCommands(
       // Sort by time
       const sortedKeys = [...rateMap.keys()].sort();
 
-      // Simulate
+      // Simulate. A position shorts the venue with the higher rate at entry (entryDir = sign(rateA - rateB)):
+      // each hour it earns entryDir * (rateA - rateB) * size — a cost once the spread has flipped.
       let inPosition = false;
       let entrySpread = 0;
       let entryTime = "";
+      let entryDir = 0;
+      let lastKey = "";
       let totalTrades = 0;
       let totalFundingCollected = 0;
       let totalHoldingHours = 0;
-      const trades: Array<{ entryTime: string; exitTime: string; holdingHours: number; fundingCollected: number; spread: number }> = [];
+      const trades: Array<{ entryTime: string; exitTime: string; holdingHours: number; fundingCollected: number; spread: number; openAtEnd: boolean }> = [];
+      // An hour key ("2026-11-04T03", UTC) is not a timestamp Date parses as it is.
+      const hourMs = (key: string) => Date.parse(`${key}:00:00Z`);
+
+      const close = (key: string, openAtEnd: boolean) => {
+        const holdingHours = (hourMs(key) - hourMs(entryTime)) / (1000 * 60 * 60);
+        // Funding collected = sum of the position's hourly spreads from the entry hour to the exit hour (excluded)
+        let fundingCollected = 0;
+        for (const hk of sortedKeys) {
+          if (hk >= entryTime && hk < key) {
+            const p = rateMap.get(hk)!;
+            if (p.a !== undefined && p.b !== undefined) {
+              fundingCollected += entryDir * (p.a - p.b) * sizeUsd;
+            }
+          }
+        }
+        trades.push({ entryTime, exitTime: key, holdingHours, fundingCollected, spread: entrySpread, openAtEnd });
+        totalTrades++;
+        totalFundingCollected += fundingCollected;
+        totalHoldingHours += holdingHours;
+        inPosition = false;
+      };
 
       for (const key of sortedKeys) {
         const pair = rateMap.get(key)!;
         if (pair.a === undefined || pair.b === undefined) continue;
+        lastKey = key;
 
-        // Annual spread = |rateA - rateB| * 8760 * 100
-        const hourlySpread = Math.abs(pair.a - pair.b);
-        const annualSpreadPct = hourlySpread * 8760 * 100;
+        // Enter on |rateA - rateB| * 8760 * 100 (either way round); close on the open position's own spread
+        const annualSpreadPct = Math.abs(pair.a - pair.b) * 8760 * 100;
 
         if (!inPosition && annualSpreadPct >= spreadEntry) {
           inPosition = true;
           entrySpread = annualSpreadPct;
           entryTime = key;
-        } else if (inPosition && annualSpreadPct < spreadClose) {
-          // Close position
-          const holdingHours = (new Date(key).getTime() - new Date(entryTime).getTime()) / (1000 * 60 * 60);
-          // Funding collected = sum of hourly spreads during holding period
-          let fundingCollected = 0;
-          for (const hk of sortedKeys) {
-            if (hk >= entryTime && hk <= key) {
-              const p = rateMap.get(hk)!;
-              if (p.a !== undefined && p.b !== undefined) {
-                fundingCollected += Math.abs(p.a - p.b) * sizeUsd;
-              }
-            }
-          }
-
-          trades.push({
-            entryTime,
-            exitTime: key,
-            holdingHours,
-            fundingCollected,
-            spread: entrySpread,
-          });
-          totalTrades++;
-          totalFundingCollected += fundingCollected;
-          totalHoldingHours += holdingHours;
-          inPosition = false;
+          entryDir = Math.sign(pair.a - pair.b);
+        } else if (inPosition && entryDir * (pair.a - pair.b) * 8760 * 100 < spreadClose) {
+          close(key, false);
         }
       }
+      // A position still open at the end of the data is closed at the last data point (openAtEnd).
+      if (inPosition) close(lastKey, true);
 
       // Summary
       const avgHoldingHours = totalTrades > 0 ? totalHoldingHours / totalTrades : 0;
       // Rough PnL estimate: funding collected minus estimated trading costs (0.1% per trade * 2 legs * 2 trades)
       const tradingCosts = totalTrades * 2 * 2 * sizeUsd * 0.001;
       const netPnl = totalFundingCollected - tradingCosts;
+      const usd = (v: number) => `${v < 0 ? "-" : ""}$${Math.abs(v).toFixed(2)}`;
 
       const summary = {
         symbol: sym,
@@ -142,9 +147,9 @@ export function registerBacktestCommands(
         sizeUsd,
         totalTrades,
         avgHoldingPeriod: `${avgHoldingHours.toFixed(1)}h`,
-        totalFundingCollected: `$${totalFundingCollected.toFixed(2)}`,
-        tradingCosts: `$${tradingCosts.toFixed(2)}`,
-        netPnl: `$${netPnl.toFixed(2)}`,
+        totalFundingCollected: usd(totalFundingCollected),
+        tradingCosts: usd(tradingCosts),
+        netPnl: usd(netPnl),
         trades,
       };
 
@@ -160,20 +165,20 @@ export function registerBacktestCommands(
       console.log(chalk.white.bold(`  Results:`));
       console.log(`  Total trades:          ${totalTrades}`);
       console.log(`  Avg holding period:    ${avgHoldingHours.toFixed(1)}h`);
-      console.log(`  Funding collected:     ${chalk.green(`$${totalFundingCollected.toFixed(2)}`)}`);
-      console.log(`  Trading costs:         ${chalk.red(`$${tradingCosts.toFixed(2)}`)}`);
+      console.log(`  Funding collected:     ${(totalFundingCollected >= 0 ? chalk.green : chalk.red)(usd(totalFundingCollected))}`);
+      console.log(`  Trading costs:         ${chalk.red(usd(tradingCosts))}`);
       const pnlColor = netPnl >= 0 ? chalk.green : chalk.red;
-      console.log(`  Net PnL:               ${pnlColor(`$${netPnl.toFixed(2)}`)}`);
+      console.log(`  Net PnL:               ${pnlColor(usd(netPnl))}`);
 
       if (trades.length > 0) {
         console.log(chalk.white.bold(`\n  Trade History:`));
         const rows = trades.map((t, i) => [
           String(i + 1),
           t.entryTime.replace("T", " "),
-          t.exitTime.replace("T", " "),
+          `${t.exitTime.replace("T", " ")}${t.openAtEnd ? " (open)" : ""}`,
           `${t.holdingHours.toFixed(1)}h`,
           `${t.spread.toFixed(1)}%`,
-          `$${t.fundingCollected.toFixed(2)}`,
+          usd(t.fundingCollected),
         ]);
         console.log(makeTable(["#", "Entry", "Exit", "Duration", "Spread", "Funding"], rows));
       }
