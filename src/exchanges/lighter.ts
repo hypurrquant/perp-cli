@@ -485,10 +485,12 @@ export function lighterRowCreatedMs(row: Record<string, unknown>): number | null
  */
 /**
  * Balance of one Lighter-family account object (GET /account) — the one implementation behind
- * LighterAdapter.getBalance() and the keyless `account balance --address`. Equity includes the
- * spot collateral asset (USDC on Lighter, USDG on Lighter RH; separate from perp collateral).
+ * LighterAdapter.getBalance() and the keyless `account balance --address`. Equity is the perp
+ * `total_asset_value`: a classic account's spot assets — its spot USDC / USDG included — are a
+ * separate balance ("perpetual and spot balances are maintained separately", docs
+ * unified-trading-accounts), listed as spot rows (lighterSpotBalanceRows, not shared).
  */
-export function lighterBalanceOf(acct: Record<string, unknown>, venue: string, collateralSymbol: string): ExchangeBalance {
+export function lighterBalanceOf(acct: Record<string, unknown>): ExchangeBalance {
   const totalAsset = parseFiniteVenueNumber(acct.total_asset_value, "total_asset_value", "lighter");
   const available = parseFiniteVenueNumber(acct.available_balance, "available_balance", "lighter");
   const collateral = parseFiniteVenueNumber(acct.collateral, "collateral", "lighter");
@@ -498,17 +500,8 @@ export function lighterBalanceOf(acct: Record<string, unknown>, venue: string, c
     0,
   ) ?? 0;
 
-  // Include spot collateral balance (USDC on Lighter, USDG on Lighter RH; separate from perp collateral)
-  // An account without that asset holds none of it (0); an unreadable assets list / balance throws.
-  let spotUsdc = 0;
-  if (!Array.isArray(acct.assets)) {
-    throw new PerpError("EXCHANGE_ERROR", `${venue} account has no assets list — spot ${collateralSymbol} balance unknown`, { exchange: venue });
-  }
-  const usdcAsset = (acct.assets as Array<Record<string, unknown>>).find(a => a?.symbol === collateralSymbol);
-  if (usdcAsset !== undefined) spotUsdc = parseFiniteVenueNumber(usdcAsset.balance, `assets.${collateralSymbol}.balance`, "lighter");
-
   return {
-    equity: String(totalAsset + spotUsdc),
+    equity: String(totalAsset),
     available: String(available),
     marginUsed: String(Math.max(0, collateral - available)),
     unrealizedPnl: String(unrealizedPnl),
@@ -1585,7 +1578,7 @@ export class LighterAdapter implements ExchangeAdapter {
       });
     }
 
-    return lighterBalanceOf(acct, this.name, this.collateralSymbol);
+    return lighterBalanceOf(acct);
   }
 
   async getPositions(): Promise<ExchangePosition[]> {

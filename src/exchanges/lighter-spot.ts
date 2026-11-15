@@ -57,10 +57,11 @@ interface PreparedSpotOrder {
  */
 export function lighterSpotBalanceRows(acct: Record<string, unknown>, venue: string, quote: string): SpotBalance[] {
   const balances: SpotBalance[] = [];
-  if (acct.assets !== undefined && !Array.isArray(acct.assets)) {
-    throw new PerpError("EXCHANGE_ERROR", `${venue} spot balances: account.assets is not an array`, { exchange: venue, raw: acct.assets });
+  // A missing list is unknown, not "no assets" (a classic account's spot USDC would vanish from totals).
+  if (!Array.isArray(acct.assets)) {
+    throw new PerpError("EXCHANGE_ERROR", `${venue} spot balances: account.assets is ${acct.assets === undefined ? "missing" : "not an array"}`, { exchange: venue, raw: acct.assets ?? null });
   }
-  const assets = (acct.assets ?? []) as Array<{ symbol: string; asset_id: number; balance: string; locked_balance: string; margin_balance?: unknown }>;
+  const assets = acct.assets as Array<{ symbol: string; asset_id: number; balance: string; locked_balance: string; margin_balance?: unknown }>;
   // Docs (docs.lighter.xyz/trading/unified-trading-accounts): "Unified Trading Accounts (UTA)
   // enables unified margin on Spot and Perpetuals USDC balances." vs Simple: "perpetual and spot
   // balances are maintained separately." Mode = this same response's account_trading_mode
