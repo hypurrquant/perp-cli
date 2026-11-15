@@ -372,9 +372,10 @@ const DEFAULTS: Settings = {
     hyperliquid: false,
     lighter: false,
   },
+  // The published base tiers of constants.ts TAKER_FEES / MAKER_FEES (sources and dates there).
   fees: {
-    hyperliquid: { taker: 0.00035, maker: 0.00002 },
-    pacifica: { taker: 0.00035, maker: 0.0001 },
+    hyperliquid: { taker: 0.00045, maker: 0.00015 },
+    pacifica: { taker: 0.0004, maker: 0.00015 },
     lighter: { taker: 0, maker: 0 },
   },
   alerts: {
@@ -434,6 +435,17 @@ function migrateLegacyPacificaBuilderCode(stored: Record<string, any>): void {
   }
 }
 
+/**
+ * DEFAULTS.fees entries earlier versions shipped. Every save wrote DEFAULTS.fees into settings.json,
+ * so a stored entry exactly equal to one of these is the old default, not a user choice: it is
+ * treated as unset at load and the current default applies (2026-11-05). Any other stored value
+ * still wins — including a venue DEFAULTS.fees never held (an entry there came from `fees set`).
+ */
+const RETIRED_DEFAULT_FEES: Readonly<Record<string, ExchangeFees>> = {
+  hyperliquid: { taker: 0.00035, maker: 0.00002 },
+  pacifica: { taker: 0.00035, maker: 0.0001 },
+};
+
 export function loadSettings(): Settings {
   // A missing file is not a failure: the user has not configured anything yet.
   if (!existsSync(settingsFile())) return freshDefaults();
@@ -458,6 +470,8 @@ export function loadSettings(): Settings {
       if (fee === null || typeof fee !== "object" || Array.isArray(fee) || !ok(fee.taker) || !ok(fee.maker)) {
         throw invalidSettings(`fees.${ex} must be { taker: <fraction>, maker: <fraction> } (got ${JSON.stringify(f)})`);
       }
+      const retired = RETIRED_DEFAULT_FEES[ex];
+      if (retired !== undefined && fee.taker === retired.taker && fee.maker === retired.maker) continue;
       fees[ex] = { taker: fee.taker, maker: fee.maker };
     }
   }

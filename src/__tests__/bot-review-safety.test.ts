@@ -52,7 +52,7 @@ afterEach(() => resetQuarantineNetwork());
 function venue(name: string, over: Record<string, unknown> = {}): ExchangeAdapter {
   return {
     name,
-    getMarkets: vi.fn(async () => [{ symbol: "ETH", markPrice: "100", indexPrice: "100", fundingRate: "0", volume24h: "1", openInterest: "1", maxLeverage: 10 }]),
+    getMarkets: vi.fn(async () => [{ symbol: "ETH", markPrice: "100", indexPrice: "100", fundingRate: "0", volume24h: "1", openInterest: "1", maxLeverage: 10, sizeDecimals: 2, stepSize: "0.01" }]),
     getKlines: vi.fn(async () => []),
     getOrderbook: vi.fn(async () => ({ bids: [], asks: [] })),
     getBalance: vi.fn(async () => ({ equity: "100", available: "100", marginUsed: "0", unrealizedPnl: "0" })),

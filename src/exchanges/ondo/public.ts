@@ -325,7 +325,9 @@ async function fetchFundingRates(net: Network): Promise<VenueFundingRate[]> {
 
   const out: VenueFundingRate[] = [];
   for (const c of contracts) {
-    if (c.disabled) continue; // delisted/paused listings carry a stale rate and a zero last price
+    // Tradable ("active") markets only, the listing's `tradable`: delisted / paused listings carry a
+    // stale rate and a zero last price; a closed / reduce-only market cannot open a leg.
+    if (ondoMarketStatus({}, c) !== "active") continue;
     const rate = strOrNull(c.fundingRate);
     if (rate === null) {
       throw new PerpError("EXCHANGE_ERROR", `Ondo Perps: ${c.market} has no fundingRate in /v1/perps/contracts`);

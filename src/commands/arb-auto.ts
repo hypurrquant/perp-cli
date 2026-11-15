@@ -121,7 +121,7 @@ import { floorSize, floorToStep, lotStepOf } from "../exchanges/precision.js";
 import { MAX_PRICE_DEVIATION_PCT } from "../exchanges/spot-interface.js";
 import { isQuarantined, quarantineEntryFor, quarantineKey, quarantineSymbol, setQuarantineNetwork } from "../bot/quarantine.js";
 import { clearPendingEntry, orphanedPendingEntries, writePendingEntry } from "../arb/pending-entry.js";
-import { closePerpVerified, isOutcomeUnknown, placePerpVerified, rejectedLotSize, trimFirstLegToHedge, type PerpCloseResult, type PerpFill } from "../bot/perp-order.js";
+import { closePerpVerified, closeSizeText, isOutcomeUnknown, placePerpVerified, rejectedLotSize, trimFirstLegToHedge, type PerpCloseResult, type PerpFill } from "../bot/perp-order.js";
 
 // ── Venue order minimums ──
 
@@ -246,21 +246,21 @@ export async function openPerpPairVerified(p: {
     log(`  short leg on ${shortExch} failed: ${msg} — rolling back long ${longOpen} on ${longExch} (reduce-only)`);
     let rb: PerpCloseResult;
     try {
-      rb = await closePerpVerified(longAdapter, longExch, longSym, "sell", longOpen, { decimals: dec });
+      rb = await closePerpVerified(longAdapter, longExch, longSym, "sell", longOpen);
     } catch (rbErr) {
       return q(`short failed (${msg}) and the long rollback ${isOutcomeUnknown(rbErr) ? "is unconfirmed" : "failed"} (${errText(rbErr)})`,
         `long ${longOpen} on ${longExch} (unhedged${isOutcomeUnknown(rbErr) ? ", rollback unconfirmed" : ""})`);
     }
     if (rb.residual > 0) {
-      const residual = fillSizeString(rb.residual, dec);
-      return q(`short failed (${msg}); the long rollback closed ${fillSizeString(rb.closed, dec)} of ${longOpen}${rb.note !== null ? ` (${rb.note})` : ""}`, `long ${residual} on ${longExch} (unhedged)`);
+      const residual = closeSizeText(rb.residual);
+      return q(`short failed (${msg}); the long rollback closed ${closeSizeText(rb.closed)} of ${longOpen}${rb.note !== null ? ` (${rb.note})` : ""}`, `long ${residual} on ${longExch} (unhedged)`);
     }
     return { status: "not_opened", reason: `short leg on ${shortExch}: ${msg}`, rolledBack: longOpen, lotSize: null };
   }
   const hedged = fillSizeString(shortFilled, dec);
   let trimmed: string;
   try {
-    trimmed = await trimFirstLegToHedge(longAdapter, longExch, longSym, "buy", longFilled, shortFilled, dec);
+    trimmed = await trimFirstLegToHedge(longAdapter, longExch, longSym, "buy", longFilled, shortFilled);
   } catch (e) {
     return q(`short filled ${hedged} of ${longOpen}; trimming the long's excess on ${longExch} ${isOutcomeUnknown(e) ? "is unconfirmed" : "failed"} (${errText(e)})`,
       `long ${longOpen} on ${longExch} vs short ${hedged} on ${shortExch}`);
@@ -562,6 +562,14 @@ const _warnedArbPriceMismatch = new Set<string>();
 
 /** " (lastSettled)"-style tag of a snapshot leg's rate kind; "" when the venue is not a leg. */
 const kindTag = (s: FundingSnapshot, ex: string) => { const k = s.rateKinds?.[ex]; return k === undefined ? "" : `(${k ?? "?"})`; };
+
+/**
+ * Rates cell of a perp-perp row: every venue of the comparison (rateKinds), a rate of exactly 0
+ * included (Aster equity perps), per hour with 6 decimals like `arb scan --rates` (Aster quotes per
+ * 1–8 h); each leg names which rate it is (lastSettled / accruing / predicted; ? = unknown).
+ */
+const ratesCell = (s: FundingSnapshot) => Object.keys(SNAPSHOT_MARK_COLUMNS).filter(ex => s.rateKinds?.[ex] !== undefined)
+  .map(ex => `${SNAPSHOT_MARK_COLUMNS[ex].label}:${(snapshotHourly(s, ex) * 100).toFixed(6)}%/h${kindTag(s, ex)}`).join(" ");
 
 export async function fetchFundingSpreads(): Promise<FundingSnapshot[]> {
   // The SAME rate rows as `arb scan --rates` (fetchVenuesRates over each venue's public directory):
@@ -1851,11 +1859,6 @@ export function registerArbAutoCommands(
                 const netSpread = computeNetSpread(grossSpread, holdDays, rtCost, bridgeCostUsd, sizeUsd);
                 const grossColor = grossSpread >= 50 ? chalk.green.bold : grossSpread >= 30 ? chalk.green : chalk.yellow;
                 const netColor = netSpread >= 20 ? chalk.green : netSpread >= 0 ? chalk.yellow : chalk.red;
-                const rates: string[] = [];
-                // Each leg names which rate it is (lastSettled / accruing / predicted; ? = unverified).
-                if (s.pacRate) rates.push(`PAC:${(s.pacRate * 100).toFixed(4)}%${kindTag(s, "pacifica")}`);
-                if (s.hlRate) rates.push(`HL:${(s.hlRate * 100).toFixed(4)}%${kindTag(s, "hyperliquid")}`);
-                if (s.ltRate) rates.push(`LT:${(s.ltRate * 100).toFixed(4)}%${kindTag(s, "lighter")}`);
                 let liqInfo = "";
                 const ld = liqData.get(s.symbol);
                 if (ld) liqInfo = chalk.gray(` | depth: HL $${ld.hlDepth.toLocaleString()} LT $${ld.ltDepth.toLocaleString()} gap:${ld.gap}%`);
@@ -1864,7 +1867,7 @@ export function registerArbAutoCommands(
                   `${grossColor(`${grossSpread.toFixed(1)}%`.padEnd(8))} ` +
                   `${netColor(`net:${netSpread.toFixed(1)}%`.padEnd(12))} ` +
                   `${direction.padEnd(7)} ` +
-                  rates.join(" ") + liqInfo
+                  ratesCell(s) + liqInfo
                 );
               }
               console.log(chalk.gray(`  * Net spreads are predicted estimates (${holdDays}d hold, $${bridgeCostUsd} bridge)`));
@@ -2021,12 +2024,6 @@ export function registerArbAutoCommands(
         const mid = (longPrice + shortPrice) / 2;
         const priceGapPct = mid > 0 ? Math.abs(longPrice - shortPrice) / mid * 100 : 0;
         const gapColor = priceGapPct >= 0.5 ? chalk.red : priceGapPct >= 0.1 ? chalk.yellow : chalk.gray;
-        const rates: string[] = [];
-        // Each leg names which rate it is (lastSettled / accruing / predicted; ? = unverified).
-        if (s.pacRate) rates.push(`PAC:${(s.pacRate * 100).toFixed(4)}%${kindTag(s, "pacifica")}`);
-        if (s.hlRate) rates.push(`HL:${(s.hlRate * 100).toFixed(4)}%${kindTag(s, "hyperliquid")}`);
-        if (s.ltRate) rates.push(`LT:${(s.ltRate * 100).toFixed(4)}%${kindTag(s, "lighter")}`);
-        if (s.astRate) rates.push(`AST:${(s.astRate * 100).toFixed(4)}%${kindTag(s, "aster")}`);
         return [
           chalk.white.bold(s.symbol),
           grossColor(`${grossSpread.toFixed(1)}%`),
@@ -2034,7 +2031,7 @@ export function registerArbAutoCommands(
           chalk.gray(`${rtCost.toFixed(2)}%`),
           gapColor(`${priceGapPct.toFixed(3)}%`),
           direction,
-          rates.join(" "),
+          ratesCell(s),
         ];
       });
       console.log(makeTable(["Symbol", "Gross", "Net", "Fees", "Gap", "Dir", "Rates"], rows));
@@ -2568,7 +2565,7 @@ export function registerArbAutoCommands(
         if (!isJson()) console.log(chalk.yellow(`  ${why} — reducing perp short by ${excess} to match`));
         // One verified reduce-only close (+ one residual close inside closePerpVerified); never resubmitted.
         try {
-          const c = await closePerpVerified(perpAdapter, perpExch, sym, "buy", excess, { decimals: sizeDecimalsOf(perpStep), stepSize: perpStep });
+          const c = await closePerpVerified(perpAdapter, perpExch, sym, "buy", excess, { stepSize: perpStep });
           shortOpen = floorToStep(Math.max(0, Number(shortOpen) - c.closed), perpStep);
           if (c.residual > 0) warnings.push(`Perp reduce of ${excess} ${sym} on ${perpExch} closed ${c.closed}, ${c.residual} still open${c.note !== null ? ` (${c.note})` : ""} — MANUAL CLOSE REQUIRED`);
         } catch (e) {

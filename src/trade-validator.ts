@@ -1,7 +1,7 @@
 import type { ExchangeAdapter, ExchangeMarketInfo } from "./exchanges/index.js";
 import { maxLeverageForNotional } from "./exchanges/interface.js";
 import { symbolMatch } from "./utils.js";
-import { DEFAULT_TAKER_FEE } from "./constants.js";
+import { getTakerFee } from "./constants.js";
 import { PerpError } from "./errors.js";
 import { resolveAdapterSlippage } from "./exchanges/slippage.js";
 
@@ -40,8 +40,6 @@ export interface TradeCheckParams {
   leverage?: number;
   reduceOnly?: boolean;
 }
-
-// Use centralized DEFAULT_TAKER_FEE from constants.ts (0.035%)
 
 /**
  * Validate a trade before execution.
@@ -229,8 +227,19 @@ export async function validateTrade(
         warnings.push(`${v.rule}: ${v.message}`);
       }
     }
-  } catch {
-    checks.push({ check: "risk_limits", passed: true, message: "Risk check skipped (no limits configured)" });
+  } catch (e) {
+    if (e instanceof PerpError && e.structured.code === "PRICE_STALE") {
+      // An open position's notional is unknown: the order gate (enforceOrderRisk) refuses an
+      // opening order and exempts a reduce-only one — report the same, never "skipped".
+      if (params.reduceOnly) {
+        checks.push({ check: "risk_limits", passed: true, message: "Risk limits not checked (reduce-only order)", details: { code: "PRICE_STALE" } });
+        warnings.push(`risk_limits: ${e.message}`);
+      } else {
+        checks.push({ check: "risk_limits", passed: false, message: `Risk check failed: ${e.message}`, details: { code: "PRICE_STALE" } });
+      }
+    } else {
+      checks.push({ check: "risk_limits", passed: true, message: "Risk check skipped (no limits configured)" });
+    }
   }
 
   // 6. Position check (for reduce-only)
@@ -257,8 +266,8 @@ export async function validateTrade(
     }
   }
 
-  // Estimated cost
-  const fee = notional * DEFAULT_TAKER_FEE;
+  // Estimated cost: the venue's taker fee (settings.fees, else its published base tier)
+  const fee = notional * getTakerFee(adapter.name);
   const estimatedSlippage = params.type === "limit" ? 0 : notional * 0.001;
 
   const valid = checks.every(c => c.passed);

@@ -19,6 +19,7 @@ import chalk from "chalk";
 import type { ExchangeAdapter, ExchangeBalance, ExchangePosition } from "../exchanges/index.js";
 import { makeTable, formatUsd, formatPnl, printJson, jsonOk, jsonError, withJsonErrors } from "../utils.js";
 import { isDexCapable } from "../exchanges/capabilities.js";
+import { openOrdersForView } from "../exchanges/open-orders-view.js";
 import type { DashboardExchange } from "../dashboard/index.js";
 import { getVenue, listVenuesWithRole, roleUnsupported, tryResolveVenueId } from "../exchanges/venue.js";
 import { PerpError } from "../errors.js";
@@ -46,7 +47,7 @@ interface SpotHolding {
   available: string;
   held?: string;
   valueUsd: number;
-  /** true = same money as perp equity (Pacifica USDC, HL unified USDC) — not added to totals. */
+  /** true = same money as perp equity (every Pacifica row, HL unified USDC) — not added to totals. */
   shared: boolean;
 }
 
@@ -74,8 +75,12 @@ interface ExchangeEntry {
   isUnified: boolean;
   perp: PerpSummary | null;
   spot: SpotHolding[];
+  /** The spot read failed or timed out: `spot` is empty and the totals leave the venue's spot out (unknown, not 0). */
+  spotError: string | null;
   positions: PositionEntry[];
-  openOrders: number;
+  /** null = the venue cannot list orders without a signer (read-only / expired agent): see openOrdersError. */
+  openOrders: number | null;
+  openOrdersError: string | null;
   /** Funding paid / received in the last 24 h; null = the venue's funding history could not be read. */
   funding24h: number | null;
   fundingError: string | null;
@@ -358,7 +363,7 @@ function resolveOptions(
 
 // ── Per-exchange snapshot fetch ────────────────────────────────────────────
 
-async function fetchExchangeEntry(
+export async function fetchExchangeEntry(
   exName: string,
   getAdapter: (exchange: string) => Promise<ExchangeAdapter>,
 ): Promise<ExchangeEntry> {
@@ -367,7 +372,7 @@ async function fetchExchangeEntry(
     const [bal, positionsRaw, orders, fundingPayments] = await Promise.all([
       adapter.getBalance(),
       adapter.getPositions(),
-      adapter.getOpenOrders(),
+      openOrdersForView(adapter),
       adapter.getFundingPayments(200).then(
         (rows) => ({ rows, error: null as string | null }),
         (e: unknown) => ({ rows: null, error: e instanceof Error ? e.message : String(e) }),
@@ -377,6 +382,7 @@ async function fetchExchangeEntry(
     // Spot balances for every venue with def.spot. Failures are surfaced on
     // stderr (the perp snapshot is still reported); unpriced tokens are excluded + warned.
     let spot: SpotHolding[] = [];
+    let spotError: string | null = null;
     let isUnified = false;
     const def = getVenue(exName);
     const warn = (msg: string) => process.stderr.write(`[warn] ${msg}\n`);
@@ -387,12 +393,14 @@ async function fetchExchangeEntry(
         spot = (await fetchValuedSpotBalances(def, spotAdapter, warn)).map(b => ({
           token: b.token, total: b.total, available: b.available, held: b.held, valueUsd: b.valueUsd, shared: b.shared,
         }));
-        // HIP-3 dex accounts always run standard (non-unified) semantics. Codex v0.12.12 final QA #1.
+        // isUnified (USDC by name) is native-only: a HIP-3 dex's collateral may be another token; the
+        // dex spot rows already in its equity arrive marked `shared` (hlSpotBalanceRows).
         const dexScoped = isDexCapable(adapter) && !!adapter.dex;
         isUnified = !dexScoped && spotSharesPerpMargin(def, adapter);
       }
     } catch (e) {
-      warn(`${def.displayName} spot balances unavailable: ${e instanceof Error ? e.message : String(e)}`);
+      spotError = e instanceof Error ? e.message : String(e);
+      warn(`${def.displayName} spot balances unavailable: ${spotError}`);
     }
 
     const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
@@ -401,7 +409,7 @@ async function fetchExchangeEntry(
       ? null
       : fundingPayments.rows.filter(f => f.time >= cutoff24h).reduce((sum, f) => sum + Number(f.payment), 0);
 
-    // Shared balances (Pacifica USDC, HL unified USDC) are already in perp equity.
+    // Shared balances (every Pacifica row, HL unified USDC) are already in perp equity.
     const nonUsdcSpotValue = spot.filter(b => !b.shared).reduce((s, b) => s + b.valueUsd, 0);
 
     return {
@@ -415,6 +423,7 @@ async function fetchExchangeEntry(
         unrealizedPnl: bal.unrealizedPnl,
       },
       spot,
+      spotError,
       positions: positionsRaw.map(p => ({
         symbol: p.symbol,
         side: p.side,
@@ -425,7 +434,8 @@ async function fetchExchangeEntry(
         unrealizedPnl: p.unrealizedPnl,
         leverage: p.leverage,
       })),
-      openOrders: orders.length,
+      openOrders: orders.orders === null ? null : orders.orders.length,
+      openOrdersError: orders.error,
       funding24h,
       fundingError: fundingPayments.error,
       totalAccountValueUsd: Number(bal.equity) + nonUsdcSpotValue,
@@ -438,8 +448,12 @@ async function fetchExchangeEntry(
       isUnified: false,
       perp: null,
       spot: [],
+      // The whole venue was unreadable: spot is unknown for the same reason.
+      spotError: err instanceof Error ? err.message : String(err),
       positions: [],
-      openOrders: 0,
+      // The whole venue was unreadable: its open orders are unknown for the same reason (never 0).
+      openOrders: null,
+      openOrdersError: err instanceof Error ? err.message : String(err),
       funding24h: null,
       // The whole venue was unreadable: funding is unknown for the same reason.
       fundingError: err instanceof Error ? err.message : String(err),
@@ -465,10 +479,8 @@ function buildTotals(entries: ExchangeEntry[]): { totals: Totals; risk: RiskBloc
     if (e.funding24h === null) fundingIncomplete = true;
     else funding24h += e.funding24h;
 
-    // Non-USDC spot value (for unified accounts USDC is already in equity)
-    const exSpot = e.isUnified
-      ? e.spot.filter(b => b.token.replace(/-SPOT$/i, "").toUpperCase() !== "USDC")
-      : e.spot;
+    // Spot value not already in perp equity (shared rows; unified accounts' USDC)
+    const exSpot = e.spot.filter(b => !b.shared && !(e.isUnified && b.token.replace(/-SPOT$/i, "").toUpperCase() === "USDC"));
     const exSpotVal = exSpot.reduce((s, b) => s + b.valueUsd, 0);
     spotValueUsd += exSpotVal;
     accountValueUsd += e.totalAccountValueUsd;
@@ -585,9 +597,7 @@ function renderSnapshotText(data: PortfolioEnvelopeData): void {
     }
     const equity = e.perp ? Number(e.perp.equity) : 0;
     const margin = e.perp ? Number(e.perp.marginUsed) : 0;
-    const exSpot = e.isUnified
-      ? e.spot.filter(b => b.token.replace(/-SPOT$/i, "").toUpperCase() !== "USDC")
-      : e.spot;
+    const exSpot = e.spot.filter(b => !b.shared && !(e.isUnified && b.token.replace(/-SPOT$/i, "").toUpperCase() === "USDC"));
     const exSpotVal = exSpot.reduce((s, b) => s + b.valueUsd, 0);
     const total = equity + exSpotVal;
     const usagePct = equity > 0 ? (margin / equity) * 100 : 0;
