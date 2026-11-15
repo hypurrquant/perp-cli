@@ -6,7 +6,7 @@ Thank you for your interest in contributing to perp-cli! This guide will help yo
 
 ### Prerequisites
 
-- **Node.js** >= 20
+- **Node.js** 22 or 24
 - **pnpm** >= 10
 
 ### Setup

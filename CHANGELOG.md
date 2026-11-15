@@ -17,6 +17,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 - **Request cost of `history report` / `history compare` with no `--since` / `--period`.** The period is then the whole history (start 0), so each venue with a windowed read reads all of it, per venue and per command: Hyperliquid funding up to 20 `userFunding` requests (it stops at the account's first funding), Aster funding up to 60 `/fapi/v3/income` requests (past that the sum covers the newest stretch and is labelled), Pacifica up to 10 requests per list. Pass `--since` / `--period` to keep a report cheap.
 - **`arb scan --positions` "Actual 24h" reads the 24 h.** It filtered `getFundingPayments(100)` to the last 24 h, so a venue with more than 100 payments in a day (many positions funded hourly) showed a partial sum as the day's funding. It now reads the 24 h window; when the read does not prove it covers the 24 h, that venue's positions show `actual24h` null with the reason in `fundingHistoryErrors` (the existing field), never a partial sum.
 
+### Changed — Node 20 is no longer supported
+
+- **`engines.node` is `^22.0.0 || ^24.0.0`** (was `^20.0.0 || ^22.0.0 || ^24.0.0`). Node 20 reached end of life on 2026-04-30 and CI no longer tests it. On Node 20, `npm install -g perp-cli` warns about the engine (it fails with `engine-strict`); upgrade to Node 22 or 24. The standalone `@hypurrquant/perp-ws` package is unchanged (`>=20`).
+
 ### JSON contract changes
 
 Migration notes for scripts and agents that read `--json` / MCP output (details in the entries below):
