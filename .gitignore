@@ -33,3 +33,6 @@ docs/MAINNET-VERIFICATION-STATUS.md
 AGENTS.md
 docs/QA_WORKFLOW.md
 docs/bridge.md
+
+# test coverage output
+coverage/

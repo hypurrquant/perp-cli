@@ -4,6 +4,11 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Changed — CI
+
+- **PR CI no longer runs `pnpm test:integration`.** The step hit live mainnet endpoints on every PR (continue-on-error, result ignored); the nightly conformance workflow covers it.
+- **Coverage and audit reporting.** New `pnpm test:coverage` (v8, unit suite). CI prints a coverage summary on Node 24 and runs a non-blocking `pnpm audit --prod`. No threshold is enforced yet.
+
 ### Removed — unused dependencies
 
 - **`ink-table`, `ink-spinner` (dependencies) and `ts-morph` (devDependency) removed.** None is imported anywhere in src, scripts, packages, config files or package.json scripts.
