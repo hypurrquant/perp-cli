@@ -5,8 +5,8 @@
  */
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { perpPath } from "../paths.js";
+import { dirname } from "node:path";
 
 export interface JournalEntry {
   timestamp: number;
@@ -24,7 +24,7 @@ export interface JournalEntry {
 }
 
 function journalPath(): string {
-  return join(homedir(), ".perp", "trade-journal.jsonl");
+  return perpPath("trade-journal.jsonl");
 }
 
 function ensureDir(filePath: string): void {

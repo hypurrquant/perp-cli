@@ -38,6 +38,7 @@ import type {
   LakeDepositParams,
   LakeWithdrawParams,
 } from "./types/index.js";
+import { fetchWithTimeout } from "../http.js";
 
 type SignMessageFn = (message: Uint8Array) => Promise<Uint8Array>;
 
@@ -164,7 +165,7 @@ export class PacificaClient {
     const ticket = await this.rate.acquire(`GET ${path}`, PACIFICA_READ_NEED);
     let res: Response;
     try {
-      res = await fetch(url.toString(), { headers: this.headers() });
+      res = await fetchWithTimeout(url.toString(), { headers: this.headers() });
     } finally {
       ticket.release();
     }

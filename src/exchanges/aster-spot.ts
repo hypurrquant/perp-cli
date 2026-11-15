@@ -36,6 +36,22 @@ import { unsupported } from "./trading-v2.js";
 import { asterIocOutcome, type AsterAdapter } from "./aster.js";
 import { PerpError, isTransportFailure, orderNotSent, orderOutcomeUnknown, sendFailure, unknownActionRemediation } from "../errors.js";
 import { addDecimal, alignProtectionPrice, exactUnits, floorSize, requireOnTick, requirePositive, slippagePrice, subDecimal } from "./precision.js";
+import { fetchWithTimeout } from "../http.js";
+
+/**
+ * A spot cancel that reached the venue (signedRequest skips the perp _perpWrite): the same
+ * contract as _submitOrder / _transfer — a 5xx, an unreadable 2xx body or a transport failure
+ * (socket reset, timeout) leaves the outcome unknown → ORDER_PENDING; no connection at all →
+ * not sent; venue refusals pass through unchanged.
+ */
+function spotCancelFailure(what: string, e: unknown): unknown {
+  const d = e instanceof PerpError ? e.structured.details : undefined;
+  const http = typeof d?.httpStatus === "number" ? d.httpStatus : null;
+  const remediation = "Do NOT resubmit blindly — the cancel may have been applied. List the open spot orders first: perp -e aster trade spot-orders";
+  if (d?.responseUnreadable === true || (http !== null && http >= 500)) return orderOutcomeUnknown("aster", what, e, remediation);
+  if (isTransportFailure(e)) return sendFailure("aster", what, e, remediation);
+  return e;
+}
 
 /** Default quote for a bare base symbol (= venue spot quoteAssets[0]). */
 const DEFAULT_QUOTE = "USDT";
@@ -345,7 +361,7 @@ export class AsterSpotAdapter implements SpotAdapter, SpotTransferCapable, SpotO
           remediation: "List the open spot orders: perp -e aster trade spot-orders",
         });
       }
-      throw e;
+      throw spotCancelFailure(`spot cancel ${orderId} on ${m.base}/${m.quote}`, e);
     }
     return this._toResult(m, raw, false);
   }
@@ -375,14 +391,19 @@ export class AsterSpotAdapter implements SpotAdapter, SpotTransferCapable, SpotO
   /** Venue requires a symbol; null cancels per symbol that has open orders. */
   async spotCancelAllOrders(symbol: string | null): Promise<unknown> {
     this._requireSpotPermission();
-    if (symbol !== null) {
-      return this._signed("DELETE", "/api/v3/allOpenOrders", { symbol: this._resolve(symbol).wire });
-    }
+    const cancelAll = async (sym: string): Promise<unknown> => {
+      try {
+        return await this._signed("DELETE", "/api/v3/allOpenOrders", { symbol: this._resolve(sym).wire });
+      } catch (e) {
+        throw spotCancelFailure(`spot cancel-all ${sym}`, e);
+      }
+    };
+    if (symbol !== null) return cancelAll(symbol);
     const open = await this.getSpotOpenOrders(null);
     const symbols = [...new Set(open.map((o) => o.symbol))];
     const results: unknown[] = [];
     for (const s of symbols) {
-      results.push(await this._signed("DELETE", "/api/v3/allOpenOrders", { symbol: this._resolve(s).wire }));
+      results.push(await cancelAll(s));
     }
     return results;
   }
@@ -614,7 +635,7 @@ export class AsterSpotAdapter implements SpotAdapter, SpotTransferCapable, SpotO
   private async _publicGet(path: string, params: Record<string, string>): Promise<unknown> {
     const qs = new URLSearchParams(params).toString();
     const url = `${this._perp.spotBaseUrl}${path}${qs ? `?${qs}` : ""}`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     const text = await res.text();
     if (!res.ok) {
       throw new PerpError(res.status === 429 ? "RATE_LIMITED" : "EXCHANGE_ERROR", `GET ${path} failed (${res.status}): ${text.slice(0, 200)}`, {

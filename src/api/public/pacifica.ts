@@ -5,6 +5,7 @@ import { assertOk } from "./_http.js";
 import { withCache, TTL_MARKET } from "../../cache.js";
 import { getNetworkConfig } from "../../pacifica/constants.js";
 import { PACIFICA_COST_STANDARD, PACIFICA_READ_NEED, pacificaRateLimiter } from "../../pacifica/rate-limit.js";
+import { fetchWithTimeout } from "../../http.js";
 
 // ── Types ──
 
@@ -29,7 +30,7 @@ async function pacificaPublicGet(url: string, what: string): Promise<Response> {
   const ticket = await rate.acquire(what, { ...PACIFICA_READ_NEED, maxWaitMs: 0 });
   let res: Response;
   try {
-    res = await fetch(url);
+    res = await fetchWithTimeout(url);
   } finally {
     ticket.release();
   }
@@ -145,7 +146,7 @@ export async function pingPacifica(): Promise<{ ok: boolean; latencyMs: number; 
   const rate = publicRate();
   const ticket = rate.track(PACIFICA_COST_STANDARD);
   try {
-    const res = await fetch(PACIFICA_API_URL);
+    const res = await fetchWithTimeout(PACIFICA_API_URL);
     ticket.settle(res);
     return { ok: res.ok, latencyMs: Date.now() - start, status: res.status };
   } catch {

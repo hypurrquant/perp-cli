@@ -15,8 +15,16 @@
 import { openOrdersForView } from "./exchanges/open-orders-view.js";
 import { setQuarantineNetwork } from "./bot/quarantine.js";
 import { config as loadDotenv } from "dotenv";
-import { resolve as resolvePath } from "node:path";
-loadDotenv({ path: resolvePath(process.env.HOME || "~", ".perp", ".env") });
+import { assertNoLegacyCwdPerpDir, perpPath } from "./paths.js";
+// HOME unset or a legacy ./~/.perp → one stderr line and exit 1 before serving (SSOT Rule #2).
+try {
+  assertNoLegacyCwdPerpDir();
+  loadDotenv({ path: perpPath(".env") });
+} catch (e) {
+  const remediation = e instanceof PerpError ? e.structured.remediation : undefined;
+  process.stderr.write(`perp-mcp: ${e instanceof Error ? e.message : String(e)}${remediation ? ` — ${remediation}` : ""}\n`);
+  process.exit(1);
+}
 import { registerAdapterNetwork } from "./exchanges/adapter-network.js";
 import { builderPlanFor } from "./exchanges/builder-fee.js";
 import { resolveAdapterSlippage } from "./exchanges/slippage.js";
@@ -51,6 +59,7 @@ import { setSharedApiNetwork } from "./api/public/urls.js";
 import { logClientId } from "./client-id-tracker.js";
 import { loadSettings } from "./settings.js";
 import { registerPacificaEarnMcpTools } from "./mcp-pacifica-earn.js";
+import { fetchWithTimeout } from "./http.js";
 
 /**
  * The one network this server serves: PERP_NETWORK, validated like `-n` (an invalid value
@@ -211,7 +220,7 @@ async function fetchOrderbookPublic(exchange: string, symbol: string): Promise<B
   const sym = symbol.toUpperCase();
   if (def.id === "hyperliquid") {
     const { HYPERLIQUID_API_URL } = await import("./api/public/urls.js");
-    const res = await fetch(HYPERLIQUID_API_URL, {
+    const res = await fetchWithTimeout(HYPERLIQUID_API_URL, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "l2Book", coin: sym }),
     });
@@ -235,7 +244,7 @@ async function fetchOrderbookPublic(exchange: string, symbol: string): Promise<B
     if (!market) {
       throw new PerpError("SYMBOL_NOT_FOUND", `${def.displayName} has no market ${sym}`, { exchange: def.id, remediation: `List markets with get_markets (exchange: ${def.id})` });
     }
-    const res = await fetch(`${networkConfig(def, MCP_NETWORK).restUrl}/api/v1/orderBookOrders?market_id=${market.venueSymbol}&limit=20`);
+    const res = await fetchWithTimeout(`${networkConfig(def, MCP_NETWORK).restUrl}/api/v1/orderBookOrders?market_id=${market.venueSymbol}&limit=20`);
     if (!res.ok) throw new PerpError("EXCHANGE_ERROR", `${def.displayName} orderBookOrders ${sym}: HTTP ${res.status}`, { exchange: def.id });
     const data = await res.json() as { bids?: unknown; asks?: unknown };
     if (!Array.isArray(data.bids) || !Array.isArray(data.asks)) {
