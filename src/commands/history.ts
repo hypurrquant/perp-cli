@@ -7,6 +7,7 @@ import { printJson, jsonOk, jsonError, makeTable, formatUsd, formatPnl, withJson
 import { readExecutionLog, getExecutionStats, pruneExecutionLog } from "../execution-log.js";
 import { loadArbState } from "../arb/index.js";
 import { networkOf } from "../cli-flags.js";
+import { PerpError } from "../errors.js";
 import { readPositionHistory, getPositionStats } from "../position-history.js";
 import {
   saveEquitySnapshot,
@@ -771,7 +772,11 @@ function registerAnalyticsSubcommands(
         const since = parseSince(opts.since);
         // The venue reads (fees, funding) cover the same period as the execution log.
         const sinceMs = since ? Date.parse(since) : 0;
-        if (Number.isNaN(sinceMs)) throw new Error(`invalid --since "${opts.since}" (use 24h, 7d, 30d or an ISO date)`);
+        if (Number.isNaN(sinceMs)) {
+          throw new PerpError("INVALID_PARAMS", `invalid --since "${opts.since}" (use 24h, 7d, 30d or an ISO date)`, {
+            remediation: "Retry with a period such as: perp history report --since 7d",
+          });
+        }
         const stats = getExecutionStats(since);
         const records = readExecutionLog({ since });
 

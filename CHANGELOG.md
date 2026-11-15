@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — `history report --since <unparseable>` had no typed error code
+
+- **An unparseable `--since` fails with `INVALID_PARAMS`** and a remediation (it threw a plain `Error`, reported under the generic code). Found by the Rule #2 typed-error guard.
+
 ### Changed — CI
 
 - **PR CI no longer runs `pnpm test:integration`.** The step hit live mainnet endpoints on every PR (continue-on-error, result ignored); the nightly conformance workflow covers it.
