@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — a failed HIP-3 dex vanished from `--hip3` fan-outs
+
+- **`market list --hip3` and `account positions|orders --hip3` report a dex whose read failed** instead of dropping it as if it had no markets / positions (SSOT Rule #2): `meta.errors["hip3:<dex>"]` (`{ code, message }`) in the single-venue JSON, whose `data` keeps its shape (the venue's rows, or `{ main, hip3 }` when a dex has rows); `data.errors["hip3:<dex>"]` in the existing errors map of the all-venue view; a gray line in text output. The other dexes are kept.
+
 ### Fixed — security: the `portfolio --serve` dashboard served the account to any web page
 
 - **The dashboard's WebSocket now accepts only the dashboard's own page.** It accepted a connection from any Origin and pushed it the account snapshot (equity, positions with liquidation prices, open orders), so any web page open in the browser could read it from `ws://127.0.0.1:<port>` (cross-site WebSocket hijacking; a client sending `Origin: https://evil.example` received the snapshot). A handshake whose Origin is not `http://localhost:<port>` or `http://127.0.0.1:<port>` is now refused with HTTP 403. A client that sends no Origin is accepted: browsers always send one, so it is a local process, which can read `/api/snapshot` over plain HTTP anyway.
