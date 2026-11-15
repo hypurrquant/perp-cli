@@ -83,13 +83,13 @@ describe("dashboard REST snapshot (pollSnapshot path)", () => {
 describe("dashboard live feeds — stale / error tracking", () => {
   const base: WsFeedState = { balance: null, positions: null, orders: null, lastUpdate: 0, mode: "rest", lastOkAt: null, lastError: null, lastErrorAt: null };
 
-  it("isFeedStale: never read, error newer than last success, or polling data too old", () => {
+  it("isFeedStale: never read, error newer than last success, or data too old (polled or live)", () => {
     const now = 1_000_000;
     expect(isFeedStale(base, now)).toBe(true);
     expect(isFeedStale({ ...base, lastOkAt: now - 1000 }, now)).toBe(false);
     expect(isFeedStale({ ...base, lastOkAt: now - 1000, lastErrorAt: now - 500, lastError: "x" }, now)).toBe(true);
     expect(isFeedStale({ ...base, lastOkAt: now - FEED_STALE_MS - 1 }, now)).toBe(true);
-    expect(isFeedStale({ ...base, mode: "ws", lastOkAt: now - FEED_STALE_MS - 1 }, now)).toBe(false);
+    expect(isFeedStale({ ...base, mode: "ws", lastOkAt: now - FEED_STALE_MS - 1 }, now)).toBe(true); // an open socket is no proof
   });
 
   it("a failing REST poll leaves the data null (not $0) and records lastError; logged once", async () => {
