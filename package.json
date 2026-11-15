@@ -100,7 +100,7 @@
     "url": "https://github.com/hypurrquant/perp-cli/issues"
   },
   "engines": {
-    "node": "^20.0.0 || ^22.0.0 || ^24.0.0"
+    "node": "^22.0.0 || ^24.0.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

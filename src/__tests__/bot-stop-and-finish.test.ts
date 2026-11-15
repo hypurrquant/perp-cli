@@ -135,7 +135,7 @@ function venue(name: string, positions: ReturnType<typeof pos>[]): ExchangeAdapt
     marketOrder: vi.fn(async () => ({ status: "FILLED", avgPrice: "109" })),
   } as unknown as ExchangeAdapter;
 }
-const hlSpot = (balances: Array<{ token: string; total: string }>, markets: Array<{ baseToken: string; markPrice: string | null }>) => ({
+const hlSpot = (balances: Array<{ token: string; total: string; shared?: boolean }>, markets: Array<{ baseToken: string; markPrice: string | null }>) => ({
   name: "hyperliquid-spot",
   getSpotBalances: vi.fn(async () => balances.map(b => ({ ...b, available: b.total, held: "0" }))),
   getSpotMarkets: vi.fn(async () => markets.map(m => ({ ...m, quoteToken: "USDC", symbol: `${m.baseToken}/USDC` }))),
@@ -255,6 +255,22 @@ describe("JSON mode stop summary (25) and unknown equity (26)", () => {
     expect((sp.spot as ReturnType<typeof holding>).getHoldingPrices).toHaveBeenCalledWith(["+14881"]);
     sp.spot = holding("USDH");
     expect((await run()).equity).toBeNull();
+  }, 20_000);
+
+  it("multi-venue equity skips the spot rows a venue marks shared (already in its equity: HL portfolio-margin collateral)", async () => {
+    sp.spot = hlSpot([{ token: "HYPE", total: "1", shared: true }, { token: "PURR", total: "10", shared: false }], [{ baseToken: "HYPE", markPrice: "42" }, { baseToken: "PURR", markPrice: "0.2" }]);
+    const a = venue("aster", []);
+    const hl = venue("hyperliquid", []);
+    registerAdapterNetwork(a, "mainnet");
+    const cfg = { ...dcaConfig("t-eq-shared"), exit_conditions: [{ type: "time_after" as const, value: 0.3 }], strategy: { type: "dca", amount: 0.05, interval_sec: 3600, total_orders: 0, side: "buy" } as never };
+    const stdout = vi.spyOn(console, "log").mockImplementation(() => {});
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await runBot(a, cfg, undefined, () => {}, new Map([["hyperliquid", hl]]), "json", false);
+      const done = stdout.mock.calls.map(c => String(c[0])).filter(l => l.startsWith("{")).map(l => JSON.parse(l)).find(j => j.event === "done");
+      // aster 100 + hyperliquid 100 (its equity holds the HYPE collateral) + 10 PURR × 0.2
+      expect(done.equity).toBeCloseTo(202, 6);
+    } finally { stdout.mockRestore(); stderr.mockRestore(); }
   }, 20_000);
 
   it("equity conditions never fire on unknown equity", () => {

@@ -299,7 +299,7 @@ export async function settleGridInventory(
   const size = held.toFixed(dec);
   log(`[GRID] --close-on-stop: closing ${size} ${symbol} ${dir} (reduce-only, verified)...`);
   try {
-    const c = await closePerpVerified(adapter, adapter.name, symbol, delta > 0 ? "sell" : "buy", size, { decimals: dec });
+    const c = await closePerpVerified(adapter, adapter.name, symbol, delta > 0 ? "sell" : "buy", size);
     const closed = c.closed.toFixed(dec);
     const leftOpen = Math.max(0, Math.abs(delta) - c.closed).toFixed(dec);
     if (c.residual > 0 || Number(leftOpen) > 0) {
