@@ -34,7 +34,8 @@ node dist/mcp-server.js
 # Unit tests (required before submitting a PR)
 pnpm test
 
-# Integration tests (optional — requires exchange API keys)
+# Legacy live read-only integration tests (maintainers; hits mainnet public
+# endpoints and some need exchange keys; not run by CI — nightly conformance covers it)
 pnpm run test:integration
 ```
 
