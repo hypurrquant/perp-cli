@@ -4,6 +4,10 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Changed — Node 20 is no longer supported
+
+- **`engines.node` is `^22.0.0 || ^24.0.0`** (was `^20.0.0 || ^22.0.0 || ^24.0.0`). Node 20 reached end of life on 2026-04-30 and CI no longer tests it. On Node 20, `npm install -g perp-cli` warns about the engine (it fails with `engine-strict`); upgrade to Node 22 or 24. The standalone `@hypurrquant/perp-ws` package is unchanged (`>=20`).
+
 ### JSON contract changes
 
 Migration notes for scripts and agents that read `--json` / MCP output (details in the entries below):
