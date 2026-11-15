@@ -4,6 +4,13 @@ All notable changes to `perp-cli`. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+### Fixed — stale fee rates in cost estimates
+
+- **Published base-tier fees refreshed (read 2026-11-04):** Hyperliquid taker 0.045% / maker 0.015% (was 0.035% / 0.002%; docs trading/fees, info `userFees` of a zero-volume address), Pacifica tier 1 taker 0.040% / maker 0.015% (was 0.035% / 0.01%; docs trading-fees), Arcus Base tier since 2026-10-23 taker 450 / maker 150 ppm on crypto markets (was 225 / 0; `GET /v1/feetiers`, `/v1/markets` effective fees). Arcus RWA markets are 225 / 0 ppm, so the crypto rate never understates an Arcus order. These feed the `arb scan` / `arb auto` round-trip costs (`estFeesPct`, `netSpread`; hl+hl 0.24 % → 0.28 %), the spot-perp entry fees of `arb status` and the venue-agnostic arb estimates (`DEFAULT_TAKER_FEE`, now the Hyperliquid base 0.045%).
+- `trade check` / MCP `trade_preview` (`estimatedCost.fee`) use the venue's taker fee instead of a flat 0.035%, and `backtest grid` (`tradingFees`) the Hyperliquid taker fee — its candles are Hyperliquid's.
+- `settings fees sync` no longer saves a made-up rate when the venue's answer lacks one (it fell back to 0.035% / 0.002% for Hyperliquid, 0.035% / 0.01% for Pacifica): that venue keeps its saved fees and is reported (`meta.errors.<venue>` in JSON, a ✗ line in text).
+- **Old shipped fees stored in `settings.json` no longer override the new ones.** Every save wrote the shipped `fees` into `settings.json`, so files written by an earlier version still held them and they took precedence. A stored entry exactly equal to a retired default (Hyperliquid 0.035% / 0.002%, Pacifica 0.035% / 0.01%) is now treated as unset at load and the current default applies; any other stored value still wins (`perp settings fees sync` / `fees set` change it).
+
 ### Fixed — Lighter classic accounts counted the spot USDC twice
 
 - **On a Lighter / Lighter RH classic account the spot USDC (USDG) is no longer part of the perp `equity`, so `portfolio` counts it once.** A classic account keeps "perpetual and spot balances … separately" (docs unified-trading-accounts), and perp-cli lists that balance as a spot row (`shared: false`, moved with `trade spot-transfer`), but the balance also added it to `equity`: `portfolio` showed 2000 for perp 1000 + spot 500, and a multi-venue bot's equity counted it twice the same way. `equity` is now the venue's perp `total_asset_value`; the spot quote stays a spot row that `portfolio`, the landing page and bot equity add once. Unified accounts are unchanged (their quote is the perp margin, inside `total_asset_value`). The lower `equity` on classic accounts holding spot USDC is listed under "JSON contract changes" below.
