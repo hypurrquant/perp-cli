@@ -25,6 +25,7 @@ import { HL_CLOID_RE } from "./venues/hyperliquid.js";
 import { rateLimitedError } from "./rate-limiter.js";
 import { fetchAndCache, withCache, TTL_ACCOUNT } from "../cache.js";
 import { approvalFromMax, builderGateOf, hlFeeTenthsBps, NO_BUILDER, requireFeeBps, type BuilderApproval, type BuilderDecision, type BuilderFeeGate, type BuilderTarget } from "./builder-fee.js";
+import { fetchWithTimeout } from "../http.js";
 
 /** HL native time-in-force values. */
 export type HlTif = "Gtc" | "Ioc" | "Alo";
@@ -3002,7 +3003,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     };
     if (startTime) body.startTime = startTime;
     if (endTime) body.endTime = endTime;
-    const res = await fetch(`${baseUrl}/info`, {
+    const res = await fetchWithTimeout(`${baseUrl}/info`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -3018,7 +3019,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const baseUrl = this._testnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
-    const res = await fetch(`${baseUrl}/info`, {
+    const res = await fetchWithTimeout(`${baseUrl}/info`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "portfolio", user: this._address }),
@@ -3036,7 +3037,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const baseUrl = this._testnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
-    const res = await fetch(`${baseUrl}/info`, {
+    const res = await fetchWithTimeout(`${baseUrl}/info`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "orderStatus", user: this._address, oid: orderId }),
@@ -3180,7 +3181,7 @@ export class HyperliquidAdapter implements ExchangeAdapter {
     const baseUrl = this._testnet
       ? "https://api.hyperliquid-testnet.xyz"
       : "https://api.hyperliquid.xyz";
-    const res = await fetch(`${baseUrl}/info`, {
+    const res = await fetchWithTimeout(`${baseUrl}/info`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

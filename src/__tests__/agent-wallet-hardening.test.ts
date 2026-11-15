@@ -15,7 +15,7 @@ import type { AgentMeta } from "../settings.js";
 
 const { rotateVenueAgent, qfexWithdrawKeyWarning, deprecatedPassphraseOption, warnDeprecatedPassphrase } = await import("../commands/agent.js");
 const { setAgent, getAgent } = await import("../agent-wallet/store.js");
-const { setEnvVar, ENV_FILE } = await import("../commands/init.js");
+const { setEnvVar, envFile } = await import("../commands/init.js");
 const { registerSettingsCommands } = await import("../commands/settings.js");
 
 afterEach(() => vi.restoreAllMocks());
@@ -88,16 +88,16 @@ describe("deprecated subcommand --passphrase", () => {
 
 describe("~/.perp/.env rewrites are 0600", () => {
   const seed = () => {
-    mkdirSync(resolve(ENV_FILE, ".."), { recursive: true });
-    writeFileSync(ENV_FILE, "FOO=1\nBAR=2\n");
-    chmodSync(ENV_FILE, 0o644);
+    mkdirSync(resolve(envFile(), ".."), { recursive: true });
+    writeFileSync(envFile(), "FOO=1\nBAR=2\n");
+    chmodSync(envFile(), 0o644);
   };
 
   it("setEnvVar (perp setup) forces 0600 on an existing looser file", () => {
     seed();
     setEnvVar("BAZ", "3");
-    expect(statSync(ENV_FILE).mode & 0o777).toBe(0o600);
-    expect(readFileSync(ENV_FILE, "utf-8")).toContain("BAZ=3");
+    expect(statSync(envFile()).mode & 0o777).toBe(0o600);
+    expect(readFileSync(envFile(), "utf-8")).toContain("BAZ=3");
   });
 
   it("settings env remove forces 0600 on an existing looser file", async () => {
@@ -107,8 +107,8 @@ describe("~/.perp/.env rewrites are 0600", () => {
     registerSettingsCommands(prog, () => true);
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     await prog.parseAsync(["node", "perp", "--json", "settings", "env", "remove", "FOO"]);
-    expect(existsSync(ENV_FILE)).toBe(true);
-    expect(statSync(ENV_FILE).mode & 0o777).toBe(0o600);
-    expect(readFileSync(ENV_FILE, "utf-8")).not.toContain("FOO=1");
+    expect(existsSync(envFile())).toBe(true);
+    expect(statSync(envFile()).mode & 0o777).toBe(0o600);
+    expect(readFileSync(envFile(), "utf-8")).not.toContain("FOO=1");
   });
 });

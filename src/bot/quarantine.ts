@@ -32,14 +32,13 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
-import { resolve } from "path";
+import { perpDir, perpPath } from "../paths.js";
 import { PerpError } from "../errors.js";
 import { DENOMINATION_ALIASES } from "../exchanges/canonical-symbols.js";
 import type { Network } from "../exchanges/venue-types.js";
 import { withFileLock } from "../arb/file-lock.js";
 
-const PERP_DIR = resolve(process.env.HOME || "~", ".perp");
-export const QUARANTINE_FILE = resolve(PERP_DIR, "bot-quarantine.json");
+export function quarantineFile(): string { return perpPath("bot-quarantine.json"); }
 
 export interface QuarantineEntry {
   /** Who quarantined it: a strategy name or a CLI path ("arb-exec"). */
@@ -100,19 +99,19 @@ function applies(e: QuarantineEntry): boolean {
 
 /** Read the file. A missing file = nothing quarantined; an unreadable / malformed file throws (never "empty"). */
 function load(): QuarantineFile {
-  if (!existsSync(QUARANTINE_FILE)) return { version: 1, entries: {} };
+  if (!existsSync(quarantineFile())) return { version: 1, entries: {} };
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(QUARANTINE_FILE, "utf-8"));
+    parsed = JSON.parse(readFileSync(quarantineFile(), "utf-8"));
   } catch (e) {
-    throw new PerpError("INVALID_PARAMS", `Bot quarantine file is unreadable: ${QUARANTINE_FILE} (${e instanceof Error ? e.message : String(e)})`, {
-      remediation: `Fix or remove ${QUARANTINE_FILE} after verifying every quarantined position on the venues`,
+    throw new PerpError("INVALID_PARAMS", `Bot quarantine file is unreadable: ${quarantineFile()} (${e instanceof Error ? e.message : String(e)})`, {
+      remediation: `Fix or remove ${quarantineFile()} after verifying every quarantined position on the venues`,
     });
   }
   const f = parsed as Partial<QuarantineFile> | null;
   if (f === null || f.version !== 1 || typeof f.entries !== "object" || f.entries === null) {
-    throw new PerpError("INVALID_PARAMS", `Bot quarantine file has an unexpected shape: ${QUARANTINE_FILE}`, {
-      remediation: `Fix or remove ${QUARANTINE_FILE} after verifying every quarantined position on the venues`,
+    throw new PerpError("INVALID_PARAMS", `Bot quarantine file has an unexpected shape: ${quarantineFile()}`, {
+      remediation: `Fix or remove ${quarantineFile()} after verifying every quarantined position on the venues`,
     });
   }
   // Legacy entries (written before network scoping) have no tag: they are mainnet.
@@ -123,14 +122,14 @@ function load(): QuarantineFile {
 }
 
 function withQuarantineLock<T>(fn: () => T): T {
-  return withFileLock(QUARANTINE_FILE, "Bot quarantine file", fn);
+  return withFileLock(quarantineFile(), "Bot quarantine file", fn);
 }
 
 function save(f: QuarantineFile): void {
-  if (!existsSync(PERP_DIR)) mkdirSync(PERP_DIR, { recursive: true, mode: 0o700 });
-  const tmp = QUARANTINE_FILE + ".tmp";
+  if (!existsSync(perpDir())) mkdirSync(perpDir(), { recursive: true, mode: 0o700 });
+  const tmp = quarantineFile() + ".tmp";
   writeFileSync(tmp, JSON.stringify(f, null, 2), { mode: 0o600 });
-  renameSync(tmp, QUARANTINE_FILE);
+  renameSync(tmp, quarantineFile());
 }
 
 /**
@@ -162,7 +161,7 @@ export function quarantineSymbol(
     });
   } catch (e) {
     unpersisted.set(k, entry);
-    log(`  [QUARANTINE] CRITICAL: could not persist quarantine to ${QUARANTINE_FILE} (${e instanceof Error ? e.message : String(e)}) — it holds only until this process stops`);
+    log(`  [QUARANTINE] CRITICAL: could not persist quarantine to $HOME/.perp/bot-quarantine.json (${e instanceof Error ? e.message : String(e)}) — it holds only until this process stops`);
   }
 }
 
@@ -181,7 +180,7 @@ export function quarantineEntryFor(symbol: string, log: (msg: string) => void): 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     log(`  [QUARANTINE] CRITICAL: ${msg} — treating ${sym} as quarantined`);
-    return { strategy: "quarantine-file", symbol: sym, reason: msg, remediation: `Fix or remove ${QUARANTINE_FILE}`, time: new Date().toISOString(), network: activeNetwork };
+    return { strategy: "quarantine-file", symbol: sym, reason: msg, remediation: "Fix or remove $HOME/.perp/bot-quarantine.json", time: new Date().toISOString(), network: activeNetwork };
   }
 }
 

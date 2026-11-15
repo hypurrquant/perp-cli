@@ -2,10 +2,9 @@
  * Vitest setup file (vitest.config.ts → setupFiles): points HOME (and TMPDIR) at a
  * fresh temp directory for every unit test file, BEFORE any module under test is imported.
  *
- * Production modules resolve their paths from HOME at import time (~/.perp/settings.json,
+ * Production modules resolve their paths from HOME (~/.perp/settings.json,
  * bot-quarantine.json, executions.jsonl, client-ids.jsonl, arb-state.json, agent keystores,
- * equity-history, jobs, logs, trade-journal — all via process.env.HOME or os.homedir(),
- * which reads HOME) and the cache from os.tmpdir() (TMPDIR). Without this, unit tests read
+ * equity-history, jobs, logs, trade-journal — all via src/paths.ts, at call time) and the cache from os.tmpdir() (TMPDIR). Without this, unit tests read
  * the developer's real settings (strict parsing makes results machine-dependent) and WRITE
  * to the real quarantine file — a mocked "outcome unknown" order quarantined BTC/ETH for
  * the user's live bots (2026-10-01).

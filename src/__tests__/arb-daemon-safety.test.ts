@@ -15,13 +15,13 @@ import { gracefulStop, interruptibleSleep, quarantineOrphanedEntries, finishPend
 import { clearPendingEntry, orphanedPendingEntries, pendingEntryFilePath, writePendingEntry } from "../arb/pending-entry.js";
 import { addPosition, arbStateFilePath, getPositions, positionKey, removePositionEntry, type ArbPositionState } from "../arb/state.js";
 import { FILE_LOCK_STALE_MS, withFileLock } from "../arb/file-lock.js";
-import { QUARANTINE_FILE, quarantineEntryFor } from "../bot/quarantine.js";
+import { quarantineFile, quarantineEntryFor } from "../bot/quarantine.js";
 import { JOB_STOP_TIMEOUT_MS, loadJob, updateJobState } from "../jobs.js";
 
 const noop = () => {};
 
 beforeEach(() => {
-  rmSync(QUARANTINE_FILE, { force: true });
+  rmSync(quarantineFile(), { force: true });
   rmSync(arbStateFilePath("mainnet"), { force: true });
   rmSync(pendingEntryFilePath("mainnet"), { force: true });
 });
@@ -127,13 +127,13 @@ describe("arb state keying + lock (8)", () => {
 
   it("the quarantine file is written under its lock (a held lock → the entry is kept in memory, logged)", async () => {
     const { quarantineSymbol } = await import("../bot/quarantine.js");
-    mkdirSync(dirname(QUARANTINE_FILE), { recursive: true });
-    writeFileSync(`${QUARANTINE_FILE}.lock`, "");
+    mkdirSync(dirname(quarantineFile()), { recursive: true });
+    writeFileSync(`${quarantineFile()}.lock`, "");
     const log = vi.fn();
     quarantineSymbol("arb-auto", "AVAX", "r", "m", log);
     expect(log.mock.calls.some(c => /could not persist quarantine.*locked/.test(String(c[0])))).toBe(true);
     expect(quarantineEntryFor("AVAX", noop)).not.toBeNull();
-    rmSync(`${QUARANTINE_FILE}.lock`, { force: true });
+    rmSync(`${quarantineFile()}.lock`, { force: true });
   }, 15_000);
 });
 
