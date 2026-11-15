@@ -20,6 +20,7 @@ import { iocLotTolerance, isIocOutcomeCapable } from "./ioc-outcome.js";
 import { isQueryOrderCapable } from "./capabilities.js";
 import type { ResolvedSlippage } from "./slippage.js";
 import { floorSize, lotStepOf } from "./precision.js";
+import { symbolMatch } from "../utils.js";
 import { getVenue, requireCapabilities, type VenueCapabilities, type VenueDefinition } from "./venue.js";
 import { isTradingV2, unsupported, validateOrderRequest, type TradingV2 } from "./trading-v2.js";
 import { LIGHTER_GTT_EXPIRY_MS } from "./venues/lighter-family.js";
@@ -805,8 +806,8 @@ class LegacyTradingV2 implements TradingV2 {
    * Orders placed after the first listing and still open at the re-list are reported pending too.
    */
   async cancelAllV2(symbol: string | null): Promise<CancelResult> {
-    const norm = (s: string) => s.toUpperCase().replace(/-PERP$/, "");
-    const inScope = (o: { symbol: string }) => symbol === null || norm(o.symbol) === norm(symbol);
+    // The CLI's symbol match (symbolMatch): a HIP-3 dex adapter lists "xyz:TSLA" for the "TSLA" typed with --dex xyz.
+    const inScope = (o: { symbol: string }) => symbol === null || symbolMatch(o.symbol, symbol);
     const remediation = `Verify before acting again: perp account orders -e ${this.venue.id}`;
     const targets = (await this.freshOpenOrders()).filter(inScope);
     const res: Required<CancelResult> = { venue: this.venue.id, cancelled: [], failed: [], pending: [], venueRaw: [] as unknown[] };

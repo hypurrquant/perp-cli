@@ -452,6 +452,12 @@ describe("adapter: placeOrder", () => {
     expect(fetchMock.mock.calls.some(c => String(c[0]).includes("/v1/orders/place"))).toBe(false);
   });
 
+  it("a reduce-only market still takes a non-reduce-only market (IOC) order — only resting orders must be reduce-only", async () => {
+    routeFetch([...base, url => url.pathname === "/v1/orders/place" ? err(400, "FailedPrecondition", "FailedPrecondition: PlaceOrder reverted: X() => (0x1)") : undefined]);
+    await (await adapter()).placeOrder(req({ symbol: "NEW", type: "market", price: null, tif: null, slippage: { bps: 100, source: "flag" } })).catch(() => undefined);
+    expect(fetchMock.mock.calls.some(c => String(c[0]).includes("/v1/orders/place"))).toBe(true);
+  });
+
   it("venue revert → ORDER_REJECTED with the decoded error; the nonce bit stays burned", async () => {
     routeFetch([...base,
       url => url.pathname === "/v1/orders/place" ? err(400, "FailedPrecondition", "FailedPrecondition: PlaceOrder reverted: SignerNotAuthorized(address) => (0x1)") : undefined,
@@ -574,6 +580,25 @@ describe("adapter: cancel / cancel-all / leverage", () => {
     const f = await (await adapter()).cancelAllV2(null);
     expect(f.cancelled).toEqual([]);
     expect(f.failed).toEqual([{ ref: { kind: "orderId", value: "0xa1" }, error: "left the open list filled (not cancelled)" }]);
+  });
+
+  const a2 = { ...OPEN[0], order_id: "0xa2", resting_order_id: "25769803885", client_order_id: "78" };
+  const acceptAll = (url: URL) => url.pathname === "/v1/orders/cancel-all" ? ok({ tx_hash: "0x2", block_number: "2", success: true }) : undefined;
+
+  it("cancel-all: a by-id read failing after the accepted tx leaves that order pending — the proven cancel is not also 'failed'", async () => {
+    let lists = 0;
+    routeFetch([...base, url => url.pathname === "/v1/orders/open" ? ok({ orders: lists++ === 0 ? [...OPEN, a2] : [] }) : undefined, acceptAll,
+      byId("ORDER_STATUS_CANCELLED"), url => url.pathname === "/v1/orders/by-id/0xa2" ? err(404, "NotFound", "order not found") : undefined]);
+    const r = await (await adapter()).cancelAllV2(null);
+    expect([r.cancelled, r.failed, (r.pending ?? []).map(p => p.ref)]).toEqual([[{ kind: "orderId", value: "0xa1" }], [], [{ kind: "orderId", value: "0xa2" }]]);
+  });
+
+  it("cancel-all: a permit failing for one market fails that market's orders only (the other market keeps its result)", async () => {
+    let lists = 0, nonceReads = 0;
+    routeFetch([url => url.pathname.startsWith("/v1/nonce-state/") && nonceReads++ > 0 ? err(500, "Internal", "nonce state unavailable") : undefined, ...base,
+      url => url.pathname === "/v1/orders/open" ? ok({ orders: lists++ === 0 ? [...OPEN, { ...a2, market_id: 17 }] : [] }) : undefined, acceptAll, byId("ORDER_STATUS_CANCELLED")]);
+    const r = await (await adapter()).cancelAllV2(null);
+    expect([r.cancelled, r.failed.map(f => f.ref)]).toEqual([[{ kind: "orderId", value: "0xa1" }], [{ kind: "orderId", value: "0xa2" }]]);
   });
 
   it("margin-mode switch with an open position is refused before sending; leverage bounded by the market", async () => {
