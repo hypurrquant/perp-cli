@@ -5,6 +5,7 @@
  * Uses poll-based diffing for cross-exchange compatibility.
  */
 
+import { openOrdersForView } from "./exchanges/open-orders-view.js";
 import type {
   ExchangeAdapter,
   ExchangePosition,
@@ -75,11 +76,12 @@ export async function startEventStream(
     const ts = new Date().toISOString();
 
     try {
-      const [positions, orders, balance] = await Promise.all([
+      const [positions, ordersView, balance] = await Promise.all([
         adapter.getPositions(),
-        adapter.getOpenOrders(),
+        openOrdersForView(adapter),
         adapter.getBalance(),
       ]);
+      const orders = ordersView.orders;
 
       // ── Position diffs ──
       const currentPositions = new Map<string, PositionSnapshot>();
@@ -174,37 +176,39 @@ export async function startEventStream(
 
       prevPositions = currentPositions;
 
-      // ── Order diffs ──
-      const currentOrders = new Map<string, OrderSnapshot>();
-      for (const o of orders) {
-        currentOrders.set(o.orderId, {
-          orderId: o.orderId,
-          symbol: o.symbol,
-          side: o.side,
-          price: o.price,
-          size: o.size,
-          status: o.status,
-        });
-      }
-
-      // New orders
-      for (const [id, order] of currentOrders) {
-        if (!prevOrders.has(id)) {
-          emit({ type: "order_placed", exchange: adapter.name, timestamp: ts, data: { ...order } });
+      // ── Order diffs ── (skipped while the orders are unknown: no false cancel / fill events)
+      if (orders !== null) {
+        const currentOrders = new Map<string, OrderSnapshot>();
+        for (const o of orders) {
+          currentOrders.set(o.orderId, {
+            orderId: o.orderId,
+            symbol: o.symbol,
+            side: o.side,
+            price: o.price,
+            size: o.size,
+            status: o.status,
+          });
         }
-      }
 
-      // Removed orders (filled or cancelled)
-      for (const [id, prev] of prevOrders) {
-        if (!currentOrders.has(id)) {
-          // Can't distinguish filled vs cancelled from diff alone; mark as filled if position changed
-          const posChanged = currentPositions.get(prev.symbol)?.size !== prevPositions.get(prev.symbol)?.size;
-          const type = posChanged ? "order_filled" : "order_cancelled";
-          emit({ type, exchange: adapter.name, timestamp: ts, data: { ...prev } });
+        // New orders
+        for (const [id, order] of currentOrders) {
+          if (!prevOrders.has(id)) {
+            emit({ type: "order_placed", exchange: adapter.name, timestamp: ts, data: { ...order } });
+          }
         }
-      }
 
-      prevOrders = currentOrders;
+        // Removed orders (filled or cancelled)
+        for (const [id, prev] of prevOrders) {
+          if (!currentOrders.has(id)) {
+            // Can't distinguish filled vs cancelled from diff alone; mark as filled if position changed
+            const posChanged = currentPositions.get(prev.symbol)?.size !== prevPositions.get(prev.symbol)?.size;
+            const type = posChanged ? "order_filled" : "order_cancelled";
+            emit({ type, exchange: adapter.name, timestamp: ts, data: { ...prev } });
+          }
+        }
+
+        prevOrders = currentOrders;
+      }
 
       // ── Balance updates ──
       if (prevBalance) {
@@ -256,7 +260,8 @@ export async function startEventStream(
           data: {
             cycle,
             positions: positions.length,
-            openOrders: orders.length,
+            openOrders: orders === null ? null : orders.length,
+            ...(ordersView.error !== null ? { openOrdersError: ordersView.error } : {}),
             equity: balance.equity,
           },
         });
