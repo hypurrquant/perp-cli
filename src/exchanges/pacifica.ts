@@ -980,11 +980,15 @@ export class PacificaAdapter implements ExchangeAdapter {
     return max;
   }
 
+  /** Symbols of the non-perp (spot) markets: their orders are not perp orders (getOpenOrders, the dashboard feed). */
+  async nonPerpSymbols(): Promise<Set<string>> {
+    return nonPerpInfoSymbols(await this.client.getInfo());
+  }
+
   async getOpenOrders(): Promise<ExchangeOrder[]> {
     if (!this._hasRealKey) throw noAccountKeyError("pacifica");
     // GET /orders covers every market; spot orders (SOL-USDC) belong to the spot adapter.
-    const [orders, info] = await Promise.all([this.client.getOrders(this.account), this.client.getInfo()]);
-    const nonPerp = nonPerpInfoSymbols(info);
+    const [orders, nonPerp] = await Promise.all([this.client.getOrders(this.account), this.nonPerpSymbols()]);
     return orders.filter((o) => !nonPerp.has(String((o as unknown as Record<string, unknown>).symbol))).map((o) => {
       const raw = o as unknown as Record<string, unknown>;
       return {

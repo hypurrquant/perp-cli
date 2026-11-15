@@ -58,10 +58,11 @@ interface ArbPairPosition {
   estimatedFees: number;
   unrealizedPnl: number;
   netPnl: number;
-  dailyFundingEstimate: number;
+  /** null = a leg's current funding rate is unknown (never 0) */
+  dailyFundingEstimate: number | null;
   breakeven: {
     daysToBreakeven: number | null;
-    dailyIncome: number;
+    dailyIncome: number | null;
     totalCosts: number;
     remainingToBreakeven: number;
   };
@@ -208,9 +209,21 @@ function formatDuration(ms: number): string {
   return `${minutes}m`;
 }
 
+/** Estimated funding can be a cost: "-$1.5000", not "$-1.5000". */
+export function signedUsd(v: number): string {
+  return `${v < 0 ? "-" : ""}$${Math.abs(v).toFixed(4)}`;
+}
+
+/** The Summary's APR row: a negative APR (funding is a net cost) is shown; exactly 0 has no row. */
+export function portfolioAprLine(apr: number): string | null {
+  return apr === 0 ? null : `Portfolio APR:   ${chalk.cyan(`${apr.toFixed(1)}%`)}`;
+}
+
 /**
- * Spot-perp funding view from the perp venue's current rate entry. A missing entry → every
- * field null ("unknown"): never a 0 rate / 0 daily income / a guessed direction.
+ * Spot-perp funding view from the perp venue's current rate entry. The perp leg is SHORT (arb status
+ * pairs spot with a perp short): a positive rate is income, a negative one a cost, and annualPct /
+ * dailyFundingEstimate carry that sign. A missing entry → every field null ("unknown"): never a 0
+ * rate / 0 daily income / a guessed direction.
  */
 export function spotPerpFundingView(
   perpRate: { exchange: string; rate: number; fundingHours: number | null } | undefined,
@@ -222,7 +235,7 @@ export function spotPerpFundingView(
     hourlyRate,
     annualPct: hourlyRate * 8760 * 100,
     direction: hourlyRate >= 0 ? "long-spot-short-perp" : "sell-spot-long-perp",
-    dailyFundingEstimate: Math.abs(hourlyRate) * perpNotional * 24,
+    dailyFundingEstimate: hourlyRate * perpNotional * 24,
   };
 }
 
@@ -335,6 +348,10 @@ function findArbEntryForPair(symbol: string, longExchange?: string, shortExchang
   return successful[0];
 }
 
+/**
+ * Annualized spread % the pair earns: the short leg's hourly rate minus the long leg's (the short
+ * receives a positive rate, the long pays it). Negative = the spread flipped and the pair pays.
+ */
 function getCurrentSpreadForSymbol(
   symbol: string,
   longExchange: string,
@@ -348,7 +365,7 @@ function getCurrentSpreadForSymbol(
   const shortRate = rates.find(r => r.exchange === shortExchange);
   if (!longRate || !shortRate) return null;
 
-  return Math.abs(entryHourly(shortRate) - entryHourly(longRate)) * 24 * 365 * 100;
+  return (entryHourly(shortRate) - entryHourly(longRate)) * 24 * 365 * 100;
 }
 
 // ── Registration ──
@@ -451,15 +468,13 @@ export function registerArbManageCommands(
             const totalUpnl = longPos.unrealizedPnl + shortPos.unrealizedPnl;
             const netPnl = totalUpnl + estimatedFundingIncome - totalFees;
 
-            // Daily funding estimate from current spread
-            const dailyFundingEstimate = currentSpread
-              ? (currentSpread / 100) / 365 * avgNotional
-              : 0;
+            // Daily funding estimate from current spread (null = a leg's rate is unknown, never 0)
+            const dailyFundingEstimate = currentSpread === null ? null : (currentSpread / 100) / 365 * avgNotional;
 
             // Breakeven analysis
             const totalCosts = totalFees; // entry+exit fees
             const remainingToBreakeven = totalCosts - estimatedFundingIncome - totalUpnl;
-            const daysToBreakeven = dailyFundingEstimate > 0 && remainingToBreakeven > 0
+            const daysToBreakeven = dailyFundingEstimate !== null && dailyFundingEstimate > 0 && remainingToBreakeven > 0
               ? remainingToBreakeven / dailyFundingEstimate
               : remainingToBreakeven <= 0 ? 0 : null;
 
@@ -698,7 +713,7 @@ export function registerArbManageCommands(
           perpLeverage: shortPos.leverage,
           perpNotionalUsd: perpNotional,
           direction: fv.direction,
-          currentSpread: fv.annualPct === null ? null : Math.abs(fv.annualPct),
+          currentSpread: fv.annualPct,
           holdDuration: formatDuration(holdDurationMs),
           holdDurationMs,
           estimatedFundingIncome: persisted.accumulatedFunding ?? 0,
@@ -718,12 +733,16 @@ export function registerArbManageCommands(
       const unconfirmedPairs = arbPairs.filter(p => p.provenance === "inferred");
       arbPairs.splice(0, arbPairs.length, ...arbPairs.filter(p => p.provenance !== "inferred"));
 
-      const fundingUnknownSP = spotPerpPositions.filter(p => p.dailyFundingEstimate === null).map(p => `${p.perpExchange}:${p.symbol}`);
+      // Positions whose funding rate is unknown are left out of the daily / APR sums (never counted as 0).
+      const fundingUnknown = [
+        ...arbPairs.filter(p => p.dailyFundingEstimate === null).map(p => `${p.longExchange}/${p.shortExchange}:${p.symbol}`),
+        ...spotPerpPositions.filter(p => p.dailyFundingEstimate === null).map(p => `${p.perpExchange}:${p.symbol}`),
+      ];
 
       // ── JSON output ──
       if (isJson()) {
         const totalNotionalPP = arbPairs.reduce((s, p) => s + (p.longPosition.notionalUsd + p.shortPosition.notionalUsd) / 2, 0);
-        const totalDailyPP = arbPairs.reduce((s, p) => s + p.dailyFundingEstimate, 0);
+        const totalDailyPP = arbPairs.reduce((s, p) => s + (p.dailyFundingEstimate ?? 0), 0);
         const totalNotionalSP = spotPerpPositions.reduce((s, p) => s + p.perpNotionalUsd, 0);
         const totalDailySP = spotPerpPositions.reduce((s, p) => s + (p.dailyFundingEstimate ?? 0), 0);
         const totalNotionalJ = totalNotionalPP + totalNotionalSP;
@@ -745,9 +764,8 @@ export function registerArbManageCommands(
             netPnl: arbPairs.reduce((s, p) => s + p.netPnl, 0) + spotPerpPositions.reduce((s, p) => s + p.netPnl, 0),
             dailyFundingEstimate: totalDailyJ,
             annualizedApr: totalNotionalJ > 0 ? (totalDailyJ * 365 / totalNotionalJ) * 100 : 0,
-            // Spot-perp positions whose funding rate is unknown are excluded from the daily / APR sums.
-            dailyFundingIncomplete: fundingUnknownSP.length > 0,
-            fundingUnknown: fundingUnknownSP,
+            dailyFundingIncomplete: fundingUnknown.length > 0,
+            fundingUnknown,
           },
         }));
       }
@@ -788,7 +806,7 @@ export function registerArbManageCommands(
             `$${p.longPosition.entryPrice.toFixed(2)} / $${p.shortPosition.entryPrice.toFixed(2)}`,
             `$${p.longPosition.markPrice.toFixed(2)}`,
             formatPnl(p.unrealizedPnl),
-            chalk.yellow(`$${p.estimatedFundingIncome.toFixed(4)}`),
+            chalk.yellow(signedUsd(p.estimatedFundingIncome)),
             `${entrySpreadStr} -> ${spreadStr}`,
             basisStr,
             holdStr,
@@ -839,12 +857,12 @@ export function registerArbManageCommands(
           console.log(chalk.white.bold("  PnL Breakdown:"));
           console.log(`    Spot PnL:        ${formatPnl(spotPnl)}`);
           console.log(`    Perp PnL:        ${formatPnl(sp.perpUnrealizedPnl)}`);
-          console.log(`    Funding Earned:  ${chalk.yellow(`$${sp.estimatedFundingIncome.toFixed(4)}`)}${sp.fundingSource === "estimate" ? chalk.yellow(` (estimate — funding history unavailable: ${sp.fundingError})`) : sp.fundingSource === "partial" ? chalk.yellow(` (partial: ${sp.fundingError})`) : ""}`);
+          console.log(`    Funding Earned:  ${chalk.yellow(signedUsd(sp.estimatedFundingIncome))}${sp.fundingSource === "estimate" ? chalk.yellow(` (estimate — funding history unavailable: ${sp.fundingError})`) : sp.fundingSource === "partial" ? chalk.yellow(` (partial: ${sp.fundingError})`) : ""}`);
           console.log(`    Trading Fees:    ${chalk.red(`-$${sp.estimatedFees.toFixed(4)}`)}`);
           console.log(`    ${chalk.white.bold("Total PnL:")}       ${formatPnl(sp.netPnl)}${roi !== 0 ? chalk.gray(` (ROI: ${roi >= 0 ? "+" : ""}${roi.toFixed(2)}%)`) : ""}`);
           console.log("");
           console.log(`    Current Spread:  ${spreadStr}`);
-          console.log(`    Daily Income:    ${sp.dailyFundingEstimate === null ? chalk.yellow(`unknown (no current ${sp.perpExchange} funding rate)`) : chalk.cyan(`$${sp.dailyFundingEstimate.toFixed(4)}/day`)}`);
+          console.log(`    Daily Income:    ${sp.dailyFundingEstimate === null ? chalk.yellow(`unknown (no current ${sp.perpExchange} funding rate)`) : chalk.cyan(`${signedUsd(sp.dailyFundingEstimate)}/day`)}`);
           if (annRoi !== 0) console.log(`    Annualized ROI:  ${chalk.cyan(`${annRoi >= 0 ? "+" : ""}${annRoi.toFixed(1)}%`)}`);
         }
         console.log("");
@@ -859,7 +877,7 @@ export function registerArbManageCommands(
         + spotPerpPositions.reduce((s, p) => s + p.estimatedFees, 0);
       const totalNet = arbPairs.reduce((s, p) => s + p.netPnl, 0)
         + spotPerpPositions.reduce((s, p) => s + p.netPnl, 0);
-      const totalDailyFunding = arbPairs.reduce((s, p) => s + p.dailyFundingEstimate, 0)
+      const totalDailyFunding = arbPairs.reduce((s, p) => s + (p.dailyFundingEstimate ?? 0), 0)
         + spotPerpPositions.reduce((s, p) => s + (p.dailyFundingEstimate ?? 0), 0);
       const totalNotional = arbPairs.reduce((s, p) => s + (p.longPosition.notionalUsd + p.shortPosition.notionalUsd) / 2, 0)
         + spotPerpPositions.reduce((s, p) => s + p.perpNotionalUsd, 0);
@@ -870,13 +888,12 @@ export function registerArbManageCommands(
       console.log(`    Spot-Perp:       ${spotPerpPositions.length} positions`);
       console.log(`    Total Notional:  $${formatUsd(totalNotional)}`);
       console.log(`    Unrealized PnL:  ${formatPnl(totalUpnl)}`);
-      console.log(`    Est. Funding:    ${chalk.yellow(`$${totalFunding.toFixed(4)}`)}`);
+      console.log(`    Est. Funding:    ${chalk.yellow(signedUsd(totalFunding))}`);
       console.log(`    Est. Fees:       ${chalk.red(`-$${totalFees.toFixed(4)}`)}`);
       console.log(`    Net PnL:         ${formatPnl(totalNet)}`);
-      console.log(`    Daily Income:    ${chalk.cyan(`$${totalDailyFunding.toFixed(4)}/day`)}${fundingUnknownSP.length > 0 ? chalk.yellow(` (incomplete — funding rate unknown: ${fundingUnknownSP.join(", ")})`) : ""}`);
-      if (portfolioApr > 0) {
-        console.log(`    Portfolio APR:   ${chalk.cyan(`${portfolioApr.toFixed(1)}%`)}`);
-      }
+      console.log(`    Daily Income:    ${chalk.cyan(`${signedUsd(totalDailyFunding)}/day`)}${fundingUnknown.length > 0 ? chalk.yellow(` (incomplete — funding rate unknown: ${fundingUnknown.join(", ")})`) : ""}`);
+      const aprLine = portfolioAprLine(portfolioApr);
+      if (aprLine !== null) console.log(`    ${aprLine}`);
       console.log(chalk.gray(`    (Fees assume ${(TAKER_FEE * 100).toFixed(3)}% taker for entry + exit.)\n`));
 
       // Always show actual funding payments earned

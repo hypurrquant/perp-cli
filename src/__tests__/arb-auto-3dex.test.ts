@@ -359,21 +359,21 @@ describe("computeNetSpread", () => {
 
 describe("computeRoundTripCostPct", () => {
   it("computes round-trip cost for same-fee exchanges", () => {
-    // 2 × (0.035% + 0.035%) + 2 × 0.05% = 0.24%
+    // 2 × (0.045% + 0.040%) + 2 × 0.05% = 0.27%
     const cost = computeRoundTripCostPct("hyperliquid", "pacifica", 0.05);
-    expect(cost).toBeCloseTo(0.24, 4);
+    expect(cost).toBeCloseTo(0.27, 4);
   });
 
   it("uses default slippage of 0.05%", () => {
     const cost = computeRoundTripCostPct("hyperliquid", "lighter");
-    // lighter taker fee = 0%, so: 2 × (0.035% + 0%) + 2 × 0.05% = 0.17%
-    expect(cost).toBeCloseTo(0.17, 4);
+    // lighter taker fee = 0%, so: 2 × (0.045% + 0%) + 2 × 0.05% = 0.19%
+    expect(cost).toBeCloseTo(0.19, 4);
   });
 
   it("handles custom slippage", () => {
     const cost = computeRoundTripCostPct("hyperliquid", "pacifica", 0.1);
-    // 2 × (0.035% + 0.035%) + 2 × 0.1% = 0.34%
-    expect(cost).toBeCloseTo(0.34, 4);
+    // 2 × (0.045% + 0.040%) + 2 × 0.1% = 0.37%
+    expect(cost).toBeCloseTo(0.37, 4);
   });
 });
 

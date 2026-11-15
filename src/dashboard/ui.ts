@@ -245,6 +245,8 @@ function spreadClass(v) { return v>=50?'spread-high':v>=20?'spread-mid':'spread-
 // null = the venue value could not be read / is unknown → shown as such, never as $0.
 const NA = '<span style="color:var(--yellow,#e5c07b)">unavailable</span>';
 function usdOrNA(v, d=2) { return v==null ? NA : '$'+fmt(v,d); }
+// A position's notional / ROE / leverage cell: an unknown (null) leverage is "-" with no ROE (never computed at 1x).
+function positionFigures(p) { const notional = p.markPrice == null ? null : Math.abs(Number(p.size)) * Number(p.markPrice); const margin = notional == null || p.leverage == null ? null : p.leverage > 0 ? notional / p.leverage : notional; const roe = margin != null && margin > 0 && p.unrealizedPnl != null ? (Number(p.unrealizedPnl) / margin * 100) : null; return { notional, roe, leverage: p.leverage == null ? '-' : p.leverage + 'x' }; }
 function pnlOrNA(v) { return v==null ? NA : pnlSign(v); }
 // Every venue-supplied string (symbol, quoteAsset, dex, exchange, order fields) goes through this before innerHTML.
 function escHtml(v) { return String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
@@ -326,10 +328,8 @@ function renderPanels(exchanges) {
       \${filteredPositions.length?\`<table><thead><tr>\${isHL?'<th>DEX</th>':''}<th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Liq</th><th>Value</th><th>PnL</th><th>ROE%</th><th>Lev</th></tr></thead><tbody>\${filteredPositions.map(p=>{
         const dex = getDex(p.symbol);
         const sym = p.symbol.includes(':') ? p.symbol.split(':').slice(1).join(':') : p.symbol;
-        const notional = p.markPrice == null ? null : Math.abs(Number(p.size)) * Number(p.markPrice);
-        const margin = notional == null ? null : p.leverage > 0 ? notional / p.leverage : notional;
-        const roe = margin != null && margin > 0 && p.unrealizedPnl != null ? (Number(p.unrealizedPnl) / margin * 100) : null;
-        return \`<tr>\${isHL?\`<td style="color:var(--purple);font-size:11px">\${escHtml(dex)}</td>\`:''}<td>\${escHtml(sym)}</td><td class="side-\${escHtml(p.side)}">\${escHtml(String(p.side).toUpperCase())}</td><td>\${escHtml(p.size)}</td><td>\${usdOrNA(p.entryPrice)}</td><td>\${usdOrNA(p.markPrice)}</td><td>\${(p.liquidationPrice==null||p.liquidationPrice==='N/A')?'-':'$'+fmt(p.liquidationPrice)}</td><td style="color:var(--muted)">\${usdOrNA(notional)}</td><td class="\${pnlClass(p.unrealizedPnl)}">\${pnlOrNA(p.unrealizedPnl)}</td><td class="\${pnlClass(p.unrealizedPnl)}">\${roe==null?NA:(roe>=0?'+':'')+fmt(roe,1)+'%'}</td><td>\${p.leverage}x</td></tr>\`;
+        const { notional, roe, leverage } = positionFigures(p);
+        return \`<tr>\${isHL?\`<td style="color:var(--purple);font-size:11px">\${escHtml(dex)}</td>\`:''}<td>\${escHtml(sym)}</td><td class="side-\${escHtml(p.side)}">\${escHtml(String(p.side).toUpperCase())}</td><td>\${escHtml(p.size)}</td><td>\${usdOrNA(p.entryPrice)}</td><td>\${usdOrNA(p.markPrice)}</td><td>\${(p.liquidationPrice==null||p.liquidationPrice==='N/A')?'-':'$'+fmt(p.liquidationPrice)}</td><td style="color:var(--muted)">\${usdOrNA(notional)}</td><td class="\${pnlClass(p.unrealizedPnl)}">\${pnlOrNA(p.unrealizedPnl)}</td><td class="\${pnlClass(p.unrealizedPnl)}">\${roe==null?NA:(roe>=0?'+':'')+fmt(roe,1)+'%'}</td><td>\${leverage}</td></tr>\`;
       }).join('')}</tbody></table>\`:(posKnown?'<div class="empty-msg">No open positions</div>':'<div class="empty-msg">Positions '+NA+'</div>')}
       <div class="section-title">Open Orders (\${ordKnown ? filteredOrders.length : '?'})</div>
       \${filteredOrders.length?\`<table><thead><tr>\${isHL?'<th>DEX</th>':''}<th>Symbol</th><th>Side</th><th>Type</th><th>Price</th><th>Size</th><th>Filled</th><th>Status</th></tr></thead><tbody>\${filteredOrders.map(o=>{
