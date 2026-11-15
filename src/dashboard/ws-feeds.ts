@@ -10,6 +10,7 @@ import { WebSocket as NodeWebSocket } from "ws";
 import type { ExchangeAdapter, ExchangeBalance, ExchangePosition, ExchangeOrder } from "../exchanges/index.js";
 import type { DashboardExchange } from "./server.js";
 import type { LighterAdapter } from "../exchanges/lighter.js";
+import { openOrdersForView } from "../exchanges/open-orders-view.js";
 import type { PacificaAdapter } from "../exchanges/pacifica.js";
 import { hlOpenOrderRows } from "../exchanges/hyperliquid.js";
 import { formatComputedPrice } from "../exchanges/precision.js";
@@ -197,14 +198,15 @@ abstract class ExchangeWsFeed {
         const [balance, positions, orders] = await Promise.all([
           adapter.getBalance(),
           adapter.getPositions(),
-          adapter.getOpenOrders(),
+          openOrdersForView(adapter),
         ]);
         // Polling stopped (socket data arrived) while this read was in flight: it is older than
         // what the socket delivered — discarded, never applied over it.
         if (this.restFallbackTimer !== timer) return;
         this.state.balance = balance;
         this.state.positions = positions.filter(p => Number(p.size) !== 0);
-        this.state.orders = orders;
+        // null = unknown (read-only Lighter / expired agent; reported as unavailable), never a stale list.
+        this.state.orders = orders.orders;
         this.emitUpdate(false);
       } catch (e) {
         if (this.restFallbackTimer !== timer) return; // an obsolete read's failure says nothing

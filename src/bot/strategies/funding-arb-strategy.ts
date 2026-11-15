@@ -25,7 +25,7 @@ import { fillSizeString, sizeDecimalsOf, spotLotStepOf, spotMarketFill } from ".
 import { floorToStep, lotStepOf } from "../../exchanges/precision.js";
 import { isQuarantined, quarantineKey, quarantineSymbol } from "../quarantine.js";
 import { SpotPerpExecutor } from "./spot-perp-executor.js";
-import { closePerpVerified, isOutcomeUnknown, placePerpVerified, trimFirstLegToHedge } from "../perp-order.js";
+import { closePerpVerified, closeSizeText, isOutcomeUnknown, placePerpVerified, trimFirstLegToHedge } from "../perp-order.js";
 import { reportedAvgFillPrice } from "../../exchanges/ioc-outcome.js";
 import { recordSpotPerpClose, recordSpotPerpEntry } from "./spot-perp-state.js";
 
@@ -759,9 +759,9 @@ export class FundingArbStrategy implements Strategy {
             ctx.log(`  [ARB] Short leg failed for ${best.symbol}: ${msg} — ROLLING BACK long leg (cooldown 5m)`);
             // Rollback: close what the long leg actually filled (reduce-only, verified)
             try {
-              const rb = await closePerpVerified(longAdapter, best.longExchange, best.symbol, "sell", longOpen, { decimals: sizeDec });
+              const rb = await closePerpVerified(longAdapter, best.longExchange, best.symbol, "sell", longOpen);
               if (rb.residual > 0) {
-                const rbMsg = `rollback closed ${fillSizeString(rb.closed, sizeDec)} of ${longOpen}; ${fillSizeString(rb.residual, sizeDec)} still open${rb.note !== null ? ` (${rb.note})` : ""}`;
+                const rbMsg = `rollback closed ${closeSizeText(rb.closed)} of ${longOpen}; ${closeSizeText(rb.residual)} still open${rb.note !== null ? ` (${rb.note})` : ""}`;
                 logExecution({ type: "multi_leg_rollback", exchange: best.longExchange, symbol: best.symbol, side: "sell", size: longOpen, status: "failed", error: rbMsg, dryRun: false });
                 this.quarantine(best.symbol, `short leg failed (${msg}); ${rbMsg} — orphaned long on ${best.longExchange}`, best.longExchange, ctx);
                 continue;
@@ -782,7 +782,7 @@ export class FundingArbStrategy implements Strategy {
           // this trade's excess (reduce-only, verified). Not trimmed → unhedged → quarantine.
           const hedgedSize = fillSizeString(shortFilled, sizeDec);
           try {
-            const trimmed = await trimFirstLegToHedge(longAdapter, best.longExchange, best.symbol, "buy", longFilled, shortFilled, sizeDec);
+            const trimmed = await trimFirstLegToHedge(longAdapter, best.longExchange, best.symbol, "buy", longFilled, shortFilled);
             if (trimmed !== "0") ctx.log(`  [ARB] Short filled ${hedgedSize} of ${longOpen} — trimmed long by ${trimmed} (reduce-only)`);
           } catch (trimErr) {
             const trimMsg = errText(trimErr);

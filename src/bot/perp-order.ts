@@ -38,7 +38,8 @@ import type { ExchangeAdapter } from "../exchanges/index.js";
 import { invalidateCache } from "../cache.js";
 import { resolveAdapterSlippage, type ResolvedSlippage } from "../exchanges/slippage.js";
 import { PerpError, extractErrorMessage, isDefiniteOrderFailure, isTransportFailure, isUnknownOutcomeServerError, orderNotSent, orderOutcomeUnknown } from "../errors.js";
-import { fillSizeString, sizeDecimalsOf } from "../exchanges/spot-result.js";
+import { sizeDecimalsOf } from "../exchanges/spot-result.js";
+import { floorToStep, lotStepOf } from "../exchanges/precision.js";
 import { iocLotTolerance, isIocOutcomeCapable } from "../exchanges/ioc-outcome.js";
 import { matchSymbol } from "./strategies/funding-arb-utils.js";
 import { HyperliquidAdapter } from "../exchanges/hyperliquid.js";
@@ -257,10 +258,11 @@ export function isOutcomeUnknown(e: unknown): boolean {
 /**
  * Second-leg residual correction: the second leg is sized to the first
  * leg's VERIFIED fill but may itself fill less (≥ 80% measured, or any venue-final partial fill). Reduce the first leg by exactly
- * this trade's excess (firstFilled − secondFilled, floored to `decimals`) — reduce-only,
- * verified, never the venue's whole position. `firstSide` is the side the first leg
- * opened with. Returns the excess closed ("0" when the legs already match). Throws when
- * the correction was rejected or is unverified: the residual is unhedged → the caller
+ * this trade's excess (firstFilled − secondFilled, floored to the market lot — never to the
+ * decimals a size prints: "10" vs 9.3 is a 0.7 excess, not 0) — reduce-only, verified, never the
+ * venue's whole position. `firstSide` is the side the first leg opened with. Returns the excess
+ * closed ("0" when the legs already match or differ by less than one lot). Throws when the lot is
+ * unknown or the correction was rejected / is unverified: the residual is unhedged → the caller
  * quarantines.
  */
 export async function trimFirstLegToHedge(
@@ -270,15 +272,25 @@ export async function trimFirstLegToHedge(
   firstSide: "buy" | "sell",
   firstFilled: number,
   secondFilled: number,
-  decimals: number,
 ): Promise<string> {
-  const excess = fillSizeString(firstFilled - secondFilled, decimals);
+  if (!(firstFilled - secondFilled > firstFilled * 1e-6)) return "0";
+  const excess = floorToStep(firstFilled - secondFilled, await lotStepOf(adapter, symbol));
   if (!(Number(excess) > 0)) return "0";
-  const c = await closePerpVerified(adapter, venue, symbol, firstSide === "buy" ? "sell" : "buy", excess, { decimals });
+  const c = await closePerpVerified(adapter, venue, symbol, firstSide === "buy" ? "sell" : "buy", excess);
   if (c.residual > 0) {
-    throw new PerpError("ORDER_PARTIAL", `${venue} trim of ${excess} ${symbol} closed ${c.closed}; ${c.residual} left unhedged${c.note !== null ? ` (${c.note})` : ""}`, { exchange: venue });
+    throw new PerpError("ORDER_PARTIAL", `${venue} trim of ${excess} ${symbol} closed ${closeSizeText(c.closed)}; ${closeSizeText(c.residual)} left unhedged${c.note !== null ? ` (${c.note})` : ""}`, { exchange: venue });
   }
   return excess;
+}
+
+/** A close size as a plain decimal ("9.3", "10", "0"); closePerpVerified's sizes are already rounded. */
+export function closeSizeText(size: number): string {
+  return size.toFixed(12).replace(/\.?0+$/, "");
+}
+
+/** A measured size with float noise dropped: to `decimals` when the lot is known, else to 10 significant digits. */
+function measured(size: number, decimals: number | null): number {
+  return decimals !== null ? Number(size.toFixed(decimals)) : Number(size.toPrecision(10));
 }
 
 export interface PerpCloseResult {
@@ -296,7 +308,12 @@ export interface PerpCloseResult {
  * not leave the rest silently open, so:
  *  1. reduce-only close of `size` (opts.place, e.g. a smartOrder IOC, or a market order);
  *  2. if it filled less than `size`, re-read the position: the residual is
- *     min(size − closed, open size in the closed direction), floored to `decimals`;
+ *     min(size − closed, open size in the closed direction), floored to the market lot
+ *     (opts.stepSize, else lotStepOf; floorToStep, so a "0.5" lot works) — never to the decimals
+ *     `size` prints: HL / Lighter / Aster print a 10.0 position as "10", and a 0.7 residual
+ *     floored to 0 reads as fully closed. The lot is read only here: a full close needs no market
+ *     list (a market can be left out of it, e.g. RISEx with mark "0"). An unknown lot is reported
+ *     as `residual` + `note`;
  *  3. residual > 0 → ONE more verified reduce-only MARKET close of the residual;
  *  4. re-read; whatever is still open is returned as `residual` (never retried again).
  * Errors of the FIRST close propagate unchanged (definite → nothing happened; ORDER_PENDING →
@@ -309,38 +326,47 @@ export async function closePerpVerified(
   symbol: string,
   side: "buy" | "sell",
   size: string,
-  opts: { place?: () => Promise<unknown>; decimals?: number; slippage?: ResolvedSlippage; stepSize?: string | null } = {},
+  opts: { place?: () => Promise<unknown>; slippage?: ResolvedSlippage; stepSize?: string | null } = {},
 ): Promise<PerpCloseResult> {
   const requested = Number(size);
-  const dec = opts.decimals ?? sizeDecimalsOf(size);
   const slip = { ...(opts.slippage !== undefined ? { slippage: opts.slippage } : {}), ...(opts.stepSize !== undefined ? { stepSize: opts.stepSize } : {}) };
   const first = await placePerpVerified(adapter, venue, symbol, side, size, { reduceOnly: true, ...slip, ...(opts.place !== undefined ? { place: opts.place } : {}) });
   let closed = first.filledSize;
-  /** Residual of this close still open on the venue (closing a long = sell → the long part). */
+  /** Residual of this close still open on the venue (closing a long = sell → the long part), not floored. */
   const openResidual = async (): Promise<number> => {
     const pos = await signedPerpPosition(adapter, symbol);
     const openInDir = side === "sell" ? Math.max(pos, 0) : Math.max(-pos, 0);
-    return Number(fillSizeString(Math.min(requested - closed, openInDir), dec));
+    return Math.min(requested - closed, openInDir);
   };
-  if (closed >= requested * (1 - 1e-6)) return { closed, residual: 0, note: null };
-  let residual: number;
+  // A full close: `closed` ≈ `size`, so the decimals `size` prints hold it.
+  if (closed >= requested * (1 - 1e-6)) return { closed: measured(closed, sizeDecimalsOf(size)), residual: 0, note: null };
+  let open: number;
   try {
-    residual = await openResidual();
+    open = await openResidual();
   } catch (e) {
-    return { closed, residual: Number(fillSizeString(requested - closed, dec)), note: `position unreadable after a partial close: ${extractErrorMessage(e)}` };
+    return { closed: measured(closed, null), residual: measured(requested - closed, null), note: `position unreadable after a partial close: ${extractErrorMessage(e)}` };
   }
-  if (!(residual > 0)) return { closed, residual: 0, note: null };
-  const resStr = fillSizeString(residual, dec);
+  if (!(open > requested * 1e-6)) return { closed: measured(closed, null), residual: 0, note: null };
+  let step: string;
+  try {
+    step = opts.stepSize ?? await lotStepOf(adapter, symbol);
+  } catch (e) {
+    return { closed: measured(closed, null), residual: measured(open, null), note: `lot step unknown after a partial close: ${extractErrorMessage(e)}` };
+  }
+  const dec = sizeDecimalsOf(step);
+  const resStr = floorToStep(open, step);
+  let residual = Number(resStr);
+  if (!(residual > 0)) return { closed: measured(closed, dec), residual: 0, note: null };
   try {
     closed += (await placePerpVerified(adapter, venue, symbol, side, resStr, { reduceOnly: true, ...slip })).filledSize;
   } catch (e) {
-    return { closed, residual, note: `residual close of ${resStr} ${isOutcomeUnknown(e) ? "unconfirmed" : "failed"}: ${extractErrorMessage(e)}` };
+    return { closed: measured(closed, dec), residual, note: `residual close of ${resStr} ${isOutcomeUnknown(e) ? "unconfirmed" : "failed"}: ${extractErrorMessage(e)}` };
   }
-  if (closed >= requested * (1 - 1e-6)) return { closed, residual: 0, note: null };
+  if (closed >= requested * (1 - 1e-6)) return { closed: measured(closed, dec), residual: 0, note: null };
   try {
-    residual = await openResidual();
+    residual = Number(floorToStep(await openResidual(), step));
   } catch (e) {
-    return { closed, residual: Number(fillSizeString(requested - closed, dec)), note: `position unreadable after the residual close: ${extractErrorMessage(e)}` };
+    return { closed: measured(closed, dec), residual: measured(requested - closed, dec), note: `position unreadable after the residual close: ${extractErrorMessage(e)}` };
   }
-  return { closed, residual, note: residual > 0 ? `residual close of ${resStr} filled partially` : null };
+  return { closed: measured(closed, dec), residual, note: residual > 0 ? `residual close of ${resStr} filled partially` : null };
 }
