@@ -51,6 +51,7 @@ import { setSharedApiNetwork } from "./api/public/urls.js";
 import { logClientId } from "./client-id-tracker.js";
 import { loadSettings } from "./settings.js";
 import { registerPacificaEarnMcpTools } from "./mcp-pacifica-earn.js";
+import { fetchWithTimeout } from "./http.js";
 
 /**
  * The one network this server serves: PERP_NETWORK, validated like `-n` (an invalid value
@@ -211,7 +212,7 @@ async function fetchOrderbookPublic(exchange: string, symbol: string): Promise<B
   const sym = symbol.toUpperCase();
   if (def.id === "hyperliquid") {
     const { HYPERLIQUID_API_URL } = await import("./api/public/urls.js");
-    const res = await fetch(HYPERLIQUID_API_URL, {
+    const res = await fetchWithTimeout(HYPERLIQUID_API_URL, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "l2Book", coin: sym }),
     });
@@ -235,7 +236,7 @@ async function fetchOrderbookPublic(exchange: string, symbol: string): Promise<B
     if (!market) {
       throw new PerpError("SYMBOL_NOT_FOUND", `${def.displayName} has no market ${sym}`, { exchange: def.id, remediation: `List markets with get_markets (exchange: ${def.id})` });
     }
-    const res = await fetch(`${networkConfig(def, MCP_NETWORK).restUrl}/api/v1/orderBookOrders?market_id=${market.venueSymbol}&limit=20`);
+    const res = await fetchWithTimeout(`${networkConfig(def, MCP_NETWORK).restUrl}/api/v1/orderBookOrders?market_id=${market.venueSymbol}&limit=20`);
     if (!res.ok) throw new PerpError("EXCHANGE_ERROR", `${def.displayName} orderBookOrders ${sym}: HTTP ${res.status}`, { exchange: def.id });
     const data = await res.json() as { bids?: unknown; asks?: unknown };
     if (!Array.isArray(data.bids) || !Array.isArray(data.asks)) {
