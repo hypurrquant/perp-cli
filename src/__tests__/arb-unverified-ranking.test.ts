@@ -52,6 +52,14 @@ describe("unverified rows are shown, never ranked", () => {
     expect(isRankedComparison(snap.symbols[0])).toBe(false);
   });
 
+  it("mixedKinds counts the verified (ranked) rows only: an unverified row of another kind does not set it", async () => {
+    // hyperliquid / aster: accruing (verified, ranked); grvt: predicted (unverified, display only).
+    stubVenues({ hyperliquid: [row("hyperliquid", "BTC", "0.00001")], aster: [row("aster", "BTC", "0.00003")], grvt: [row("grvt", "BTC", "0.001")] });
+    const c = (await fetchSymbolFundingRates("BTC", true))!;
+    expect(c.rates.map(r => r.rateKind).sort()).toEqual(["accruing", "accruing", "predicted"]);
+    expect(c.mixedKinds).toBe(false);
+  });
+
   it("ranked rows sort before display-only rows; without --include-unverified nothing unverified is read", async () => {
     stubVenues(ROWS);
     const all = await fetchAllFundingRates({ symbols: ["BTC", "SOLO"], includeUnverified: true });
