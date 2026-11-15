@@ -120,6 +120,7 @@ function makeProgram(adapterFactory?: (exchange: string) => Promise<unknown>) {
     getOpenOrders: vi.fn().mockResolvedValue([]),
     getFundingPayments: vi.fn().mockResolvedValue([]),
     address: "0xDefaultAddr",
+    historyReach: { funding: "all", trades: "all" },
   });
 
   const factory: (exchange: string) => Promise<unknown> = adapterFactory ?? defaultFactory;
@@ -806,6 +807,7 @@ describe("Test 13: funding history read failure is reported, never counted as 0"
       getFundingPayments: exchange === "hyperliquid"
         ? vi.fn().mockRejectedValue(new Error("HTTP 429"))
         : vi.fn().mockResolvedValue([{ time: now - 1000, symbol: "ETH", payment: "0.5" }]),
+      historyReach: { funding: "all", trades: "all" },
       address: "0xAddr",
     }));
     const prog = makeProgram(factory as never);
